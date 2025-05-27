@@ -1,0 +1,27 @@
+# Source
+src/
+
+# Development
+examples/
+.vscode/
+.idea/
+.DS_Store
+.git/
+.gitignore
+.github/
+
+# Build configs
+tsconfig.json
+build.js
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test files
+__tests__/
+*.test.ts
+*.test.tsx
+coverage/ 
