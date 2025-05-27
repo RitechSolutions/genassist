@@ -1,0 +1,214 @@
+services:
+  # Database
+  db:
+    image: postgres:15
+    container_name: genassist_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: core_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - genassist-network
+
+
+  # Main application service
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: genassist-app
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - RAG_VECTOR_DB_TYPE=chroma
+      - RAG_CHROMA_PERSIST_DIRECTORY=/app/data/chroma
+      - RAG_CHROMA_COLLECTION_NAME=default
+      - RAG_GRAPH_DB_TYPE=neo4j
+      - RAG_NEO4J_URL=bolt://neo4j:7687
+      - RAG_NEO4J_USERNAME=neo4j
+      - RAG_NEO4J_PASSWORD=password
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - DB_HOST=genassist_db
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - DB_NAME=core_db
+      - DB_PORT=5432
+      - CREATE_DB=true
+      - JWT_SECRET_KEY=change-me-to-secure-key
+      - DEBUG=false
+      - FASTAPI_DEBUG=false
+      - LOG_LEVEL=WARNING
+      - FASTAPI_RUN_PORT=8000
+      - USE_SSL=false
+    depends_on:
+      - neo4j
+      - chroma
+      - db
+      - redis
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # UI service
+  ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: genassist-ui
+    ports:
+      - "8080:8080"
+      - "80:80"
+    environment:
+      GENASSIST_API_PRIVATE_URL: 'http://localhost:8000/api'
+      GENASSIST_API_PUBLIC_URL: 'http://localhost:8000/api'
+    depends_on:
+      - app
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # Neo4j graph database
+  neo4j:
+    image: neo4j:5.9.0
+    container_name: genassist-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_dbms_memory_pagecache_size=1G
+      - NEO4J_dbms_memory_heap_initial__size=1G
+      - NEO4J_dbms_memory_heap_max__size=2G
+      - NEO4JLABS_PLUGINS=["apoc"]  # Enable APOC plugin
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # Chroma vector database
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: genassist-chroma
+    ports:
+      - "8005:8005"  # API
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - CHROMA_DB_IMPL=duckdb+parquet
+      - CHROMA_PERSIST_DIRECTORY=/chroma/chroma
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # Optional: Pinecone proxy (if you want to use Pinecone locally for development)
+  # pinecone-proxy:
+  #   image: pinecone/pinecone-proxy:latest
+  #   container_name: genagent-pinecone-proxy
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - PINECONE_API_KEY=${PINECONE_API_KEY}
+  #   networks:
+  #     - genagent-network
+  #   restart: unless-stopped
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: genassist-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # Celery worker
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: genassist-celery-worker
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+    environment:
+      - ENVIRONMENT=dev
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=genassist_db
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - DB_NAME=core_db
+      - DB_PORT=5432
+      - CREATE_DB=false
+      - FASTAPI_RUN_PORT=8000
+    depends_on:
+      - redis
+      - db
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # Celery beat for periodic tasks
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: genassist-celery-beat
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    environment:
+      - ENVIRONMENT=dev
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=genassist_db
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - DB_NAME=core_db
+      - DB_PORT=5432
+      - CREATE_DB=false
+      - FASTAPI_RUN_PORT=8000
+    depends_on:
+      - redis
+      - db
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # Flower for monitoring
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: genassist-flower
+    command: celery -A app.tasks.celery_app flower --port=5555 --persistent=True --db="flower_db" --basic-auth="user1:password1"
+    ports:
+      - "5555:5555"
+    environment:
+      - ENVIRONMENT=dev
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery_worker
+      - db
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+networks:
+  genassist-network:
+    driver: bridge
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
+  chroma_data: 
+  pgdata: 
