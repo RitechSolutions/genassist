@@ -1,0 +1,13 @@
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    environment:
+      GENASSIST_API_PRIVATE_URL: 'https://api-dev-internal-genassist.ritech.io:8751/api'
+      GENASSIST_API_PUBLIC_URL: 'https://api-dev-genassist.ritech.io:8751/api'
+    restart: always
+
