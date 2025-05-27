@@ -9,7 +9,9 @@ async def test_create_datasource(client):
     datasource_data = {
         "name": "Test Datasource",
         "source_type": "postgresql",
-        "connection_data": "postgresql://user:pass@localhost:5432/db",
+        "connection_data": {
+            "url": "postgresql://user:pass@localhost:5432/db"
+        },
         "is_active": 1
     }
     

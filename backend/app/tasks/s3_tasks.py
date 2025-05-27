@@ -114,7 +114,7 @@ async def import_s3_files_to_kb_async(kb_id: UUID, db: AsyncSession):
             )
             continue
 
-        conn_data = json.loads(ds.connection_data)
+        conn_data = ds.connection_data
 
         prefix = conn_data["prefix"]
         bucket = conn_data["bucket_name"]

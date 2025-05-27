@@ -187,8 +187,8 @@ async def seed_data(session: AsyncSession):
     await session.commit()
 
     # Seed default DataSource
-    data_source = DataSourceModel(id=UUID(seed_test_data.data_source_id),name="default", source_type="S3", connection_data=("{"
-                                                                                      "\"bucket\":\"genassist-default-bucket\"}"), is_active=1)
+    data_source = DataSourceModel(id=UUID(seed_test_data.data_source_id),name="default", source_type="S3",
+                                  connection_data={"bucket_name": "genassist-default-bucket"}, is_active=1)
     session.add(data_source)
     await session.commit()
 

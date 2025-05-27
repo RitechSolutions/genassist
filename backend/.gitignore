@@ -9,7 +9,6 @@ build/
 /uploads
 .env
 /genassist_env
-/certs
 /containers/db
 /tests/__pycache__
 /.pytest_cache
@@ -26,3 +25,6 @@ agents_config/
 chroma_db/
 lightrag_data/
 infra/.terraform/
+/certs/*.key
+/certs/*.crt
+/certs/*.pem

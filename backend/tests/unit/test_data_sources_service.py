@@ -21,7 +21,9 @@ def sample_data_source_data():
     return {
         "name": "test_source",
         "source_type": "test_type",
-        "connection_data": "postgresql://user:pass@localhost:5432/db",
+        "connection_data": {
+            "url": "postgresql://user:pass@localhost:5432/db"
+        },
         "is_active": 1
     }
 
@@ -160,7 +162,9 @@ async def test_update_data_source_success(data_source_service, mock_repository):
     update_data = DataSourceUpdate(
         name="updated_source",
         source_type="updated_type",
-        connection_data="postgresql://updated:pass@localhost:5432/db",
+        connection_data={
+            "url": "postgresql://updated:pass@localhost:5432/db"
+        },
         is_active=0
     )
     mock_updated_source = create_autospec(DataSourceModel, instance=True)

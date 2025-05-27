@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from app.auth.dependencies import auth, permissions
 from app.schemas.datasource import DataSourceRead, DataSourceCreate, DataSourceUpdate
 from app.services.datasources import DataSourceService
+from app.modules.agents.data.supported_configuration import DATA_SOURCE_SCHEMAS
 
 router = APIRouter()
 
@@ -16,6 +17,10 @@ async def create(
     service: DataSourceService = Depends()
 ):
     return await service.create(datasource)
+
+@router.get("/schemas", dependencies=[Depends(auth)])
+async def get_schemas():
+    return DATA_SOURCE_SCHEMAS
 
 @router.get("/{datasource_id}", response_model=DataSourceRead, dependencies=[
     Depends(auth),

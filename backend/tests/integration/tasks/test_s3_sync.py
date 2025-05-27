@@ -18,15 +18,13 @@ def new_datasource_data():
     data = {
         "name": "Test S3 Data Source",
         "source_type": "s3",
-        "connection_data": json.dumps(
-            {
+        "connection_data": {
                 "bucket_name": os.getenv("AWS_S3_TEST_BUCKET"),
                 "prefix": "docs/",
                 "aws_access_key_id": os.getenv("S3_ACCESS_KEY_ID"),
                 "aws_secret_access_key": os.getenv("S3_SECRET_ACCESS_KEY"),
                 "region_name": os.getenv("S3_REGION_NAME"),
-            }
-        ),
+            },
         "is_active": 1,
     }
     return data
@@ -89,7 +87,7 @@ async def test_s3_sync_new_files(
         f.write("Test content for S3 sync")
         f.flush()
 
-        conn_data = json.loads(new_datasource_data["connection_data"])
+        conn_data = new_datasource_data["connection_data"]
         logger.info(f"Connection data: {conn_data}")
 
         s3_client = S3Client(
