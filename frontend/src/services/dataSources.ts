@@ -1,5 +1,8 @@
 import { apiRequest } from "@/config/api";
-import { DataSource } from "@/interfaces/dataSource.interface";
+import {
+  DataSource,
+  DataSourcesConfig,
+} from "@/interfaces/dataSource.interface";
 
 export const getAllDataSources = async (): Promise<DataSource[]> => {
   try {
@@ -57,6 +60,15 @@ export const deleteDataSource = async (id: string): Promise<void> => {
     await apiRequest<void>("DELETE", `datasources/${id}`);
   } catch (error) {
     console.error("Error deleting data source:", error);
+    throw error;
+  }
+};
+
+export const getDataSourceSchemas = async (): Promise<DataSourcesConfig> => {
+  try {
+    return await apiRequest("GET", "/datasources/schemas");
+  } catch (error) {
+    console.error("Error fetching data source schemas", error);
     throw error;
   }
 };

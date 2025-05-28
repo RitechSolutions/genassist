@@ -1,4 +1,5 @@
 export interface LLMProvider {
+    llm_model: any;
     id: string;
     name: string;
     is_active: number;

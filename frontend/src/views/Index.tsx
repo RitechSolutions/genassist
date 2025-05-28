@@ -68,6 +68,11 @@ const Index = () => {
               <TopicsReport />
               </section>
             </div>
+    <footer>
+          <p className="text-right p-2 pr-4 text-sm text-gray-500">
+                  Version: <span>{import.meta.env.VITE_UI_VERSION || '1.0'}</span>
+          </p>
+    </footer>
           </div>
         </main>
       </div>

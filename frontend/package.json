@@ -8,7 +8,8 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:versioned": "sh -c 'cp .env.template .env && sed -i \"\" \"s/__UI_VERSION__/${UI_VERSION:-dev}/g\" .env && vite build'"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

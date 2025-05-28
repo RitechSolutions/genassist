@@ -156,7 +156,7 @@ export function LLMAnalystDialog({
                   {providers.map((provider) => (
                     <>
                     <SelectItem key={provider.id} value={provider.id}>
-                      {`${provider.llm_type} - ${provider.model_name}`}
+                      {`${provider.name} -  (${provider.llm_model})`}
                     </SelectItem>
                     </>
                   ))}

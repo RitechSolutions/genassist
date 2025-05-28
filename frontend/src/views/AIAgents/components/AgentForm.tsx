@@ -281,7 +281,11 @@ const AgentForm: React.FC = () => {
       {error && (
         <div className="flex items-center gap-2 p-3 text-destructive bg-destructive/10 rounded-md">
           <AlertCircle className="h-4 w-4" />
-          <p className="text-sm font-medium">{error}</p>
+            <p className="text-sm font-medium">
+            {(error.includes("email") && error.includes("exist")) || error.includes("400")
+              ? "This email already exists. Please use a different email."
+              : error}
+            </p>
         </div>
       )}
   
@@ -337,7 +341,7 @@ const AgentForm: React.FC = () => {
                           <SelectContent>
                             {llmProviders.map((provider) => (
                               <SelectItem key={provider.id} value={provider.id}>
-                                {provider.name} ({provider.llm_type})
+                                {provider.name} ({provider.llm_model_provider})
                               </SelectItem>
                             ))}
                           </SelectContent>

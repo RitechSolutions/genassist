@@ -21,6 +21,51 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      const refreshToken = localStorage.getItem("refresh_token");
+      if (!refreshToken) {
+        console.warn("No refresh token found");
+        return Promise.reject(error);
+      }
+
+      try {
+        const baseURL = await getApiUrl();
+
+        const params = new URLSearchParams();
+        params.append("refresh_token", refreshToken);
+
+        const refreshResponse = await axios.post(
+          `${baseURL}auth/refresh_token`,
+          params,
+          {
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+          }
+        );
+
+        const { access_token, token_type } = refreshResponse.data;
+        localStorage.setItem("access_token", access_token);
+        localStorage.setItem("token_type", token_type || "Bearer");
+
+        originalRequest.headers.Authorization = `${token_type} ${access_token}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        return Promise.reject(refreshError);
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 export const PRIVATE_WS = {
   host: "api-dev-internal-genassist.ritech.io",
   port: "8751",
@@ -50,7 +95,6 @@ export const getApiUrl = async (): Promise<string> => {
       console.warn(
         `Private API failed: ${privateApi}. ${err.message} Switching to Public API...`
       );
-
       console.log(`Connecting to Public API: ${publicApi}`);
       return ensureTrailingSlash(publicApi);
     }

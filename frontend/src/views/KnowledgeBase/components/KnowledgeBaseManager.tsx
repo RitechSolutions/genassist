@@ -6,11 +6,15 @@ import {
   deleteKnowledgeItem,
   uploadFile as apiUploadFile,
 } from "@/services/api";
+import { getAllDataSources } from '@/services/dataSources';
+
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Textarea } from "@/components/textarea";
 import { Switch } from "@/components/switch";
+
+
 import {
   Select,
   SelectContent,
@@ -32,6 +36,7 @@ import {
   ChevronLeft,
   Trash2,
 } from "lucide-react";
+import { UUID } from "crypto";
 
 interface VectorDB {
   enabled: boolean;
@@ -66,6 +71,9 @@ interface KnowledgeItem {
   description: string;
   content: string;
   type: string;
+  sync_source_id: string;
+  sync_schedule?: string;
+  sync_active?: boolean;
   file?: string | null;
   rag_config?: RagConfig;
   [key: string]: unknown;
@@ -81,7 +89,9 @@ const KnowledgeBaseManager: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [showForm, setShowForm] = useState<boolean>(false);
 
-  const [typeFilter, setTypeFilter] = useState<string>("text");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [availableSources, setAvailableSources] = useState([]);
+  const [cronError, setCronError] = useState<string | null>(null);
 
 
   const [editingItem, setEditingItem] = useState<KnowledgeItem | null>(null);
@@ -91,6 +101,9 @@ const KnowledgeBaseManager: React.FC = () => {
     description: "",
     content: "",
     type: "text", // Default to text type
+    sync_source_id: null, //valid for datasource: s3, database
+    sync_schedule: "", // valid for S3
+    sync_active: false, // valid for S3
     file: null,
     rag_config: {
       enabled: false,
@@ -128,6 +141,21 @@ const KnowledgeBaseManager: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    const fetchSources = async () => {
+      if (formData.type == "s3" || formData.type == "database") {
+        const allSources = await getAllDataSources();
+        const filtered = allSources.filter(
+          (source) => source.source_type.toLowerCase() === formData.type
+        );
+        setAvailableSources(filtered);
+      }
+    };
+
+    fetchSources();
+  }, [formData.type]);
+
+
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
@@ -140,9 +168,9 @@ const KnowledgeBaseManager: React.FC = () => {
 
   const handleRagConfigChange = (updatedRagConfig: RagConfig) => {
     const anyOn =
-    Boolean(updatedRagConfig.vector_db?.enabled) ||
-    Boolean(updatedRagConfig.graph_db?.enabled) ||
-    Boolean(updatedRagConfig.light_rag?.enabled);
+      Boolean(updatedRagConfig.vector_db?.enabled) ||
+      Boolean(updatedRagConfig.graph_db?.enabled) ||
+      Boolean(updatedRagConfig.light_rag?.enabled);
 
     setFormData((prev) => ({
       ...prev,
@@ -171,12 +199,12 @@ const KnowledgeBaseManager: React.FC = () => {
 
     try {
       const result = await apiUploadFile(selectedFile);
+      console.log("Upload successful:", result);
       return result;
     } catch (error) {
       console.error("Error uploading file:", error);
       setError(
-        `Failed to upload file: ${
-          error instanceof Error ? error.message : String(error)
+        `Failed to upload file: ${error instanceof Error ? error.message : String(error)
         }`
       );
       return null;
@@ -205,6 +233,23 @@ const KnowledgeBaseManager: React.FC = () => {
         throw new Error("Please select a file");
       }
 
+      if (formData.type === "s3" && !formData.sync_source_id) {
+        throw new Error("Please select valid S3 datasource")
+      }
+
+      if (formData.type === "database" && !formData.sync_source_id) {
+        throw new Error("Please select valid Database datasource")
+      }
+      if (formData.type === "s3" && formData.sync_active) {
+        if (!formData.sync_schedule || !isValidCron(formData.sync_schedule)) {
+          setCronError("Invalid cron expression. Please correct it.");
+          setLoading(false);
+          return;
+        }
+      }
+
+
+
       const dataToSubmit = { ...formData };
 
       if (formData.type === "file" && selectedFile && !formData.file) {
@@ -225,7 +270,12 @@ const KnowledgeBaseManager: React.FC = () => {
           Boolean(dataToSubmit.rag_config.graph_db?.enabled) ||
           Boolean(dataToSubmit.rag_config.light_rag?.enabled),
       };
-    
+
+      console.log("dataToSubmit: ", JSON.stringify(dataToSubmit, null, 2));
+      //console.log("editingItem",editingItem);
+      //if(dataToSubmit.type=="s3"||dataToSubmit.type=="database"){
+      //    dataToSubmit.type="datasource";
+      //}
       if (editingItem) {
         await updateKnowledgeItem(editingItem.id, dataToSubmit);
         setSuccess(
@@ -235,6 +285,7 @@ const KnowledgeBaseManager: React.FC = () => {
         if (!dataToSubmit.id) {
           dataToSubmit.id = uuidv4();
         }
+
         await createKnowledgeItem(dataToSubmit);
         setSuccess(
           `Knowledge base item "${dataToSubmit.name}" created successfully`
@@ -247,6 +298,7 @@ const KnowledgeBaseManager: React.FC = () => {
         description: "",
         content: "",
         type: "text",
+        sync_source_id: null,
         file: null,
         rag_config: {
           enabled: false,
@@ -271,8 +323,7 @@ const KnowledgeBaseManager: React.FC = () => {
       fetchItems();
     } catch (err) {
       setError(
-        `Failed to ${editingItem ? "update" : "create"} knowledge base item: ${
-          err instanceof Error ? err.message : String(err)
+        `Failed to ${editingItem ? "update" : "create"} knowledge base item: ${err instanceof Error ? err.message : String(err)
         }`
       );
       console.error(err);
@@ -288,6 +339,7 @@ const KnowledgeBaseManager: React.FC = () => {
       description: "",
       content: "",
       type: "text",
+      sync_source_id: null,
       file: null,
       rag_config: {
         enabled: false,
@@ -327,6 +379,9 @@ const KnowledgeBaseManager: React.FC = () => {
       description: item.description,
       content: item.content,
       type: item.type || "text",
+      sync_source_id: item.sync_source_id,
+      sync_schedule: item.sync_schedule || "",
+      sync_active: item.sync_active || false,
       file: item.file || null,
       rag_config: {
         enabled: item.rag_config?.enabled || false,
@@ -355,8 +410,7 @@ const KnowledgeBaseManager: React.FC = () => {
         fetchItems();
       } catch (err) {
         setError(
-          `Failed to delete knowledge base item: ${
-            err instanceof Error ? err.message : String(err)
+          `Failed to delete knowledge base item: ${err instanceof Error ? err.message : String(err)
           }`
         );
         console.error(err);
@@ -377,8 +431,14 @@ const KnowledgeBaseManager: React.FC = () => {
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.description.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesQuery && item.type === typeFilter;
+    return matchesQuery && (item.type.toLowerCase() === typeFilter || typeFilter==="all");
   });
+
+
+  const isValidCron = (cron: string): boolean => {
+    const cronRegex = /^(\*|([0-5]?\d)) (\*|([01]?\d|2[0-3])) (\*|([1-9]|[12]\d|3[01])) (\*|([1-9]|1[0-2])) (\*|([0-6]))$/;
+    return cronRegex.test(cron.trim());
+  };
 
 
   return (
@@ -425,7 +485,7 @@ const KnowledgeBaseManager: React.FC = () => {
                         Basic information about the knowledge base.
                       </p>
                     </div>
-                    
+
                     <div className="col-span-2 space-y-6">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -439,7 +499,7 @@ const KnowledgeBaseManager: React.FC = () => {
                             required
                           />
                         </div>
-                        
+
                         <div>
                           <div className="mb-1">Description</div>
                           <Input
@@ -452,7 +512,7 @@ const KnowledgeBaseManager: React.FC = () => {
                           />
                         </div>
                       </div>
-                      
+
                       <div>
                         <div className="mb-1">Type</div>
                         <Select
@@ -474,7 +534,7 @@ const KnowledgeBaseManager: React.FC = () => {
                           </SelectContent>
                         </Select>
                       </div>
-                      
+
                       {formData.type === "text" ? (
                         <div>
                           <div className="mb-1">Content</div>
@@ -489,7 +549,7 @@ const KnowledgeBaseManager: React.FC = () => {
                             className="min-h-32"
                           />
                         </div>
-                      ) : (
+                      ) : formData.type === "file" ? (
                         <div>
                           <div className="mb-1">Upload File</div>
                           <div className="flex flex-col gap-2">
@@ -503,8 +563,8 @@ const KnowledgeBaseManager: React.FC = () => {
                                   {selectedFile
                                     ? selectedFile.name
                                     : formData.file
-                                    ? "Replace file"
-                                    : "Select file to upload"}
+                                      ? "Replace file"
+                                      : "Select file to upload"}
                                 </span>
                                 <input
                                   id="file-upload"
@@ -555,6 +615,85 @@ const KnowledgeBaseManager: React.FC = () => {
                             )}
                           </div>
                         </div>
+                      ) : (
+                        // --- Data source dropdown block ---
+                        <div>
+                          <div className="mb-1">Select Source</div>
+                          <select
+                            id="sync_source_id"
+                            name="sync_source_id"
+                            value={formData.sync_source_id || ""}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                sync_source_id: e.target.value,
+                              }))
+                            }
+                            className="border p-2 rounded-md w-full"
+                            required
+                          >
+                            <option value="" disabled>Select a data source</option>
+                            {availableSources.map((source) => (
+                              <option key={source.id} value={source.id}>
+                                {source.name}
+                              </option>
+                            ))}
+                          </select>
+                          {formData.type === "s3" && (
+                            <>
+                              <div className="col-span-2 space-y-4">
+                                <div className="mt-6">
+                                  <div className="bg-gray-50 rounded-lg">
+                                    <div className="flex items-center justify-between p-4">
+                                      <div>
+                                        <div>
+                                          <div className="mb-1">Sync Schedule/Enable</div>
+                                          <Input
+                                            id="sync_schedule"
+                                            name="sync_schedule"
+                                            value={formData.sync_schedule ?? ""}
+                                            onChange={(e) => {
+                                              const value = e.target.value;
+                                              setFormData((prev) => ({
+                                                ...prev,
+                                                sync_schedule: value,
+                                              }));
+
+                                              if (!isValidCron(value)) {
+                                                setCronError("Invalid cron expression. Expected format: * * * * *");
+                                              } else {
+                                                setCronError(null);
+                                              }
+                                            }}
+                                            placeholder="e.g. */15 * * * * "
+                                            required
+                                          />
+                                          {cronError && (
+                                            <p className="text-sm text-red-500 mt-1">{cronError}</p>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center justify-between mt-2">
+
+                                        <Switch
+                                          id="sync_active"
+                                          checked={Boolean(formData.sync_active) || false}
+                                          onCheckedChange={(checked) =>
+                                            setFormData((prev) => ({
+                                              ...prev,
+                                              sync_active: checked,
+                                            }))
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div></div>
+                            </>
+                          )}
+
+                        </div>
                       )}
                     </div>
                   </div>
@@ -563,6 +702,8 @@ const KnowledgeBaseManager: React.FC = () => {
                 <div className="-mx-6 my-0 border-t border-gray-200" />
 
                 {/* RAG Configuration */}
+                {formData.type !== "database" && (
+                  //hide RAD Configuration for type "database"
                 <div className="p-6">
                   <div className="grid grid-cols-3 gap-6">
                     <div>
@@ -571,7 +712,7 @@ const KnowledgeBaseManager: React.FC = () => {
                         Configure Retrieval Augmented Generation settings
                       </p>
                     </div>
-                    
+
                     <div className="col-span-2 space-y-4">
                       <div className="bg-gray-50 rounded-lg">
                         <div className="flex items-center justify-between p-4">
@@ -596,7 +737,7 @@ const KnowledgeBaseManager: React.FC = () => {
                             }}
                           />
                         </div>
-                        
+
                         {formData.rag_config?.vector_db?.enabled && (
                           <div className="p-4 pt-0 space-y-4">
                             <div>
@@ -624,7 +765,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                 </SelectContent>
                               </Select>
                             </div>
-                            
+
                             <div>
                               <div className="mb-1">Collection Name</div>
                               <Input
@@ -645,7 +786,7 @@ const KnowledgeBaseManager: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      
+
                       <div className="bg-gray-50 rounded-lg">
                         <div className="flex items-center justify-between p-4">
                           <div className="flex items-center gap-2">
@@ -669,7 +810,7 @@ const KnowledgeBaseManager: React.FC = () => {
                             }}
                           />
                         </div>
-                        
+
                         {formData.rag_config?.light_rag?.enabled && (
                           <div className="p-4 pt-0 space-y-2">
                             <div>
@@ -697,7 +838,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                 </SelectContent>
                               </Select>
                             </div>
-                            
+
                             <p className="text-sm text-gray-500 mt-4">
                               Mix mode integrates knowledge graph and vector retrieval for best results.
                             </p>
@@ -707,6 +848,7 @@ const KnowledgeBaseManager: React.FC = () => {
                     </div>
                   </div>
                 </div>
+                )}
               </div>
 
               {/* Submit buttons */}
@@ -722,8 +864,8 @@ const KnowledgeBaseManager: React.FC = () => {
                   {loading || isUploading
                     ? "Saving..."
                     : editingItem
-                    ? "Update Knowledge Base"
-                    : "Create Knowledge Base"}
+                      ? "Update Knowledge Base"
+                      : "Create Knowledge Base"}
                 </Button>
               </div>
             </div>
@@ -741,16 +883,17 @@ const KnowledgeBaseManager: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative">
-                  <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value)} defaultValue="text">
+                  <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value)} defaultValue="all">
                     <SelectTrigger className="min-w-32">
                       <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="all">(Show all)</SelectItem>
                       <SelectItem value="text">Text</SelectItem>
                       <SelectItem value="file">File</SelectItem>
                       <SelectItem value="s3">S3</SelectItem>
                       <SelectItem value="database">Database</SelectItem>
-                   </SelectContent>
+                    </SelectContent>
                   </Select>
                 </div>
                 <div className="relative">
@@ -813,7 +956,7 @@ const KnowledgeBaseManager: React.FC = () => {
                               {item.name}
                             </h4>
                             <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black">
-                              {item.type === "file" ? "FILE" : "TEXT"}
+                              {item.type.toUpperCase()}
                             </span>
                           </div>
                           <p className="text-sm text-gray-500">

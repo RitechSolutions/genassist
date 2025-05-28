@@ -1,5 +1,12 @@
 import { Card } from "@/components/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/table";
 import { Badge } from "@/components/badge";
 import { useState } from "react";
 import { Edit, Trash, Loader2 } from "lucide-react";
@@ -16,7 +23,7 @@ interface DataSourceCardProps {
 
 export function DataSourceCard({
   searchQuery,
-  dataSources, 
+  dataSources,
   onEditDataSource,
   onDeleteDataSource,
 }: DataSourceCardProps) {
@@ -24,10 +31,13 @@ export function DataSourceCard({
   const [error, setError] = useState<string | null>(null);
 
   const filteredDataSources = dataSources.filter((dataSource) => {
-    const name = dataSource.name?.toLowerCase() || ''; 
-    const sourceType = dataSource.source_type?.toLowerCase() || ''; 
-  
-    return name.includes(searchQuery.toLowerCase()) || sourceType.includes(searchQuery.toLowerCase());
+    const name = dataSource.name?.toLowerCase() || "";
+    const sourceType = dataSource.source_type?.toLowerCase() || "";
+
+    return (
+      name.includes(searchQuery.toLowerCase()) ||
+      sourceType.includes(searchQuery.toLowerCase())
+    );
   });
 
   if (loading) {
@@ -50,7 +60,9 @@ export function DataSourceCard({
     return (
       <Card className="p-8">
         <div className="text-center text-muted-foreground">
-          {searchQuery ? "No data sources found matching your search" : "No data sources found"}
+          {searchQuery
+            ? "No data sources found matching your search"
+            : "No data sources found"}
         </div>
       </Card>
     );
@@ -73,7 +85,9 @@ export function DataSourceCard({
             <TableRow key={dataSource.id}>
               <TableCell className="font-medium">{dataSource.name}</TableCell>
               <TableCell>{dataSource.source_type}</TableCell>
-              <TableCell className="max-w-[150px]">{dataSource.connection_data}</TableCell>
+              <TableCell className="max-w-[150px] whitespace-normal break-words">
+                {JSON.stringify(dataSource.connection_data)}
+              </TableCell>
               <TableCell className="text-center">
                 <Badge variant={dataSource.is_active ? "default" : "secondary"}>
                   {dataSource.is_active ? "Active" : "Inactive"}
