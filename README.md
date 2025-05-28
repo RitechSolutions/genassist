@@ -34,15 +34,32 @@ GenAssist provides a comprehensive solution for building, managing, and deployin
 - Node.js and npm (for local development)
 - Python 3.10+ (for local development)
 
-### Clone the Repository with Submodules
+### Clone the Repository
 
 ```bash
 # Clone the repository
 git clone https://github.com/RitechSolutions/genassist
 cd genassist
 
-# Build and run the docker containers:
-OPENAI_API_KEY=<YOUR_KEY_HERE> HUGGINGFACE_TOKEN=<YOUR_HF_KEY_HERE> docker compose up --build
+## Docker Containers
+### Prepare .env files
+Create a .env.frontend environment file based on .env.frontend.example
+Create a .env.backend environment file based on .env.backend.example
+
+### Build containers from source
+```bash
+#RUN
+docker compose -f docker-compose.dev.yml -p genassist_local_01 up --build -d
+#STOP
+docker compose -f docker-compose.dev.yml -p genassist_local_01 down
+```
+
+### Use container registry
+```bash
+#RUN
+docker compose -f docker-compose.yml -p genassist_local_01 up -d
+#STOP
+docker compose -f docker-compose.yml -p genassist_local_01 down
 ```
 
 ## Local Development
@@ -54,7 +71,7 @@ cd frontend
 ```
 Follow Readme.md for frontend project
 
-Access the frontend app at: http://localhost:8080
+Access the frontend app at: http://localhost
 User: admin
 Password: genadmin
 
@@ -79,12 +96,26 @@ GenAssist provides multiple integration options:
 ### React Integration
 
 ```bash
-cd plugins/react
-npm install genassist-chat-react
+#Build the plugin
+cd plugin-react
+npm run build
 
+#Run chat plugin example
+cd example-app
+npm run dev
 ```
 
-## Testing
+## UI Test Automation
+
+```bash
+# Frontend Tests
+cd ui_tests
+
+npx playwright install
+npx playwright test
+```
+
+## Backend Testing
 
 ```bash
 # Backend Tests
