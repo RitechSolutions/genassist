@@ -59,8 +59,6 @@ async def update(
         service: ConversationService = Depends(),
         socket_connection_manager: SocketConnectionManager = Depends(get_socket_connection_manager),
         agent_config_service: AgentConfigService = Depends(),
-        data_sources_service: AgentDataSourceService = Depends(get_agent_datasource_service),
-        kb_service: KnowledgeBaseService = Depends(),
         ):
     """
     Append segments to an existing in-progress conversation.
@@ -80,12 +78,8 @@ async def update(
         agent = await agent_config_service.get_by_user_id(get_current_user_id())
         agent_response = await run_query_agent_logic(
                 str(agent.id),
-                str(conversation_id),
-                QueryRequest(query=model.messages[-1].text),
-                config_service=agent_config_service,
-                agent_registry=get_agent_registry(),
-                datasource_service=data_sources_service,
-                knowledge_service=kb_service
+                user_query=model.messages[-1].text,
+                metadata={"thread_id": str(conversation_id)}
                 )
         agent_answer = agent_response.get("response",
                                           "No answer found")

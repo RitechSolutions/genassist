@@ -34,12 +34,12 @@ class UserService:
         user_auth = UserRead.model_validate(user)
         return user_auth
 
-    @cache(
-            expire=300,
-            namespace="users:get_by_id_for_auth",
-            key_builder=userid_key_builder,
-            coder=PickleCoder
-            )
+    # @cache(
+    #         expire=300,
+    #         namespace="users:get_by_id_for_auth",
+    #         key_builder=userid_key_builder,
+    #         coder=PickleCoder
+    #         )
     async def get_by_id_for_auth(self, user_id: UUID) -> UserReadAuth | None:
         """Retrieve a user by ID."""
         user = await self.repository.get_full(user_id)

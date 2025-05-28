@@ -8,6 +8,7 @@ import logging
 
 from app.core.utils.encryption_utils import decrypt_key
 from app.db.models import AgentModel
+from app.modules.agents.llm.provider import LLMProvider
 from app.modules.agents.tools import DynamicToolGenerator
 from app.schemas.agent_tool import ToolConfigRead
 from app.schemas.llm import LlmProviderRead
@@ -42,20 +43,16 @@ class Agent:
         """Initialize the agent based on its configuration"""
         try:
             # Initialize the agent based on the provider
-            llm_provider_read = LlmProviderRead.model_validate(self.agent_model.llm_provider)
-            llm_provider = self.agent_model.llm_provider.llm_model_provider
-            llm_model = self.agent_model.llm_provider.llm_model
             
-            # Create the LLM based on the provider
-            if llm_provider == "openai":
-                os.environ["OPENAI_API_KEY"] = decrypt_key(llm_provider_read.connection_data['api_key'])
+            # # Create the LLM based on the provider
+            # if llm_provider == "openai":
+            #     os.environ["OPENAI_API_KEY"] = decrypt_key(llm_provider_read.connection_data['api_key'])
                 
-            model = init_chat_model(
-                model_provider=llm_provider,
-                model=llm_model,
-                temperature=0.7
-            )
-            
+            model = LLMProvider.get_instance().get_model("")
+            model_config = LLMProvider.get_instance().get_configuration("")
+            logger.error(f"Model config: {model_config.llm_model_provider}, {model_config.llm_model}")
+            logger.error(f"Model: {model}")
+
             tools = DynamicToolGenerator.generate_tools_from_configs(self.tool_configs)
 
             model.bind_tools(tools)
@@ -104,8 +101,8 @@ class Agent:
             return {
                 "status": "initialized", 
                 "agent_id": self.agent_id,
-                "provider": llm_provider,
-                "model": llm_model   
+                "provider": model_config.llm_model_provider,
+                "model": model_config.llm_model   
             }
             
         except Exception as e:
@@ -122,6 +119,8 @@ class Agent:
             knowledge_search_results: Optional pre-fetched knowledge base search results
         """
         try:
+            logger.error(f"Running query: {query}")
+            
             enhanced_query = query
             rag_used = False
 
@@ -135,13 +134,16 @@ class Agent:
                 
             logger.info("run_query : enhanced_query")
             logger.info(enhanced_query)
-            
+            logger.error(f"Thread ID: {thread_id}")
+            logger.error(f"enhanced_query: {enhanced_query}")
             try:      
+                
                 # Run the query through the agent
                 response = self.agent.invoke(
                     {"messages": [HumanMessage(content=enhanced_query)]},
                     {"configurable": {"thread_id": thread_id}}
                 )
+                logger.error(f"Response: {response}")
                 
                 last_message = response["messages"][-1].content
             except Exception as e:

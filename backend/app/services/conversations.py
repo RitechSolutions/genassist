@@ -220,7 +220,7 @@ class ConversationService:
 
     async def get_conversations(self, conversation_filter: ConversationFilter):
 
-        # If not supervisor or admin, you can see all filter only your conversations
+        # If not supervisor or admin, you can see only your conversations
         if not is_current_user_supervisor_or_admin():
             conversation_filter.operator_id = get_current_operator_id()
 

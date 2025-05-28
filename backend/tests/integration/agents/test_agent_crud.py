@@ -9,17 +9,25 @@ logger = logging.getLogger(__name__)
 def new_agent_data():
     return {
         "name": "Test Agent",
-        "llm_provider_id": seed_test_data.llm_provider_id,
         "description": "Test description",
-        "email": "test_crud@test.com",
-        "knowledge_base_ids": [],
-        "tool_ids": [],
-        "system_prompt": "You are a professional customer service agent",
-        "settings": {},
         "is_active": True,
         "welcome_message": "Welcome to the test agent!",
-        "possible_queries": ["What can you do?", "What can you not do?"]
+        "possible_queries": ["What can you do?", "What can you not do?"],
+        "workflow_id": "" 
     }
+
+@pytest.mark.asyncio
+async def test_get_agents(authorized_client, new_agent_data):
+    response = authorized_client.get("/api/genagent/agents/configs/")
+
+    data = response.json()
+    logger.info(f" test get agents response:{data}")
+
+    assert response.status_code == 200
+
+    assert isinstance(data, list)
+    assert any("id" in item for item in data)
+    new_agent_data["workflow_id"] = data[0]["workflow_id"] #reuse same workflow id for all tests
 
 
 @pytest.mark.asyncio
@@ -34,19 +42,6 @@ async def test_create_agent(authorized_client, new_agent_data):
     assert "id" in data
     assert data["name"] == new_agent_data["name"]
     new_agent_data["id"] = data["id"]  # Store for use in later tests
-
-
-@pytest.mark.asyncio
-async def test_get_agents(authorized_client):
-    response = authorized_client.get("/api/genagent/agents/configs/")
-
-    data = response.json()
-    logger.info(f" test get agents response:{data}")
-
-    assert response.status_code == 200
-
-    assert isinstance(data, list)
-    assert any("id" in item for item in data)
 
 
 @pytest.mark.asyncio

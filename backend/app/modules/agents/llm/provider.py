@@ -66,6 +66,13 @@ class LLMProvider:
         """
         return self.configurations
     
+    def get_configuration(self, model_id: str) -> LlmProvidersModel:
+        """
+        Get an LLM configuration by its ID
+        """
+        default = next((c for c in self.configurations if c.is_default==1), self.configurations[0])
+        return next((c for c in self.configurations if str(c.id) == model_id), default)
+    
 
     def get_model(self, model_id: str) -> BaseChatModel:
         """
@@ -83,11 +90,9 @@ class LLMProvider:
         logger.info(f"Getting configurations {self.configurations}")
         if model_id not in self.llm_instances:
             # Find the configuration
-            config = next((c for c in self.configurations if str(c.id) == model_id), None)
+            config = self.get_configuration(model_id)
             if not config:
-                config = next((c for c in self.configurations if c.is_default==1), None)
-                if not config:
-                    raise ValueError(f"No configuration found for model ID: {model_id}")
+                raise ValueError(f"No configuration found for model ID: {model_id}")
             
             try:
                 # Validate connection data

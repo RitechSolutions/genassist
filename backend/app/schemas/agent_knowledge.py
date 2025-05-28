@@ -14,7 +14,7 @@ class RagConfigRead(BaseModel):
 class KBBase(BaseModel):
     name: str
     description: Optional[str] = None
-    type: Literal["file", "url", "text", "datasource"]
+    type: Literal["file", "url", "text", "datasource","s3","database"]
     source: Optional[str] = None
     content: Optional[str] = None
     file_path: Optional[str] = None

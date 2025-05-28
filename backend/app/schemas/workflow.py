@@ -8,8 +8,9 @@ import json
 class WorkflowBase(BaseModel):
     name: str
     description: Optional[str] = None
-    nodes: List[dict]
-    edges: List[dict]
+    nodes: Optional[List[dict]] = None
+    edges: Optional[List[dict]] = None
+    user_id: Optional[UUID] = None
     version: str
     
 class WorkflowCreate(WorkflowBase):
@@ -26,7 +27,7 @@ class WorkflowUpdate(BaseModel):
 
 class WorkflowInDB(WorkflowBase):
     id: UUID
-    user_id: UUID
+    user_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
 

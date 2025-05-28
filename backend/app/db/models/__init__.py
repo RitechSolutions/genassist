@@ -20,8 +20,6 @@ from app.db.utils.event_hooks_config import auto_register_updated_by
 from .agent import AgentModel
 from .tool import ToolModel
 from .knowledge_base import KnowledgeBaseModel
-from .agent_tool import AgentToolModel
-from .agent_knowledge_base import AgentKnowledgeBaseModel
 from .workflow import WorkflowModel
 
 
@@ -51,8 +49,6 @@ __all__ = [
     "ToolModel",
     "KnowledgeBaseModel",
     "AgentModel",
-    "AgentToolModel",
-    "AgentKnowledgeBaseModel",
     "WorkflowModel",
     ]
 
@@ -79,8 +75,6 @@ models = [
     UserRoleModel,
     KnowledgeBaseModel,
     AgentModel,
-    AgentToolModel,
-    AgentKnowledgeBaseModel,
     WorkflowModel,
     ]
 

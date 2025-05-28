@@ -14,7 +14,3 @@ class ToolModel(Base):
     api_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     function_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     parameters_schema: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-
-    # relationships
-    agent_tools = relationship(
-            "AgentToolModel", back_populates="tool", foreign_keys="[AgentToolModel.tool_id]", passive_deletes="all")

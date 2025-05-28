@@ -28,12 +28,6 @@ class KnowledgeBaseModel(Base):
     extra_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     embeddings_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
-
-    # relationships
-    agent_knowledge_bases = relationship(
-            "AgentKnowledgeBaseModel", back_populates="knowledge_base",
-            foreign_keys="[AgentKnowledgeBaseModel.knowledge_base_id]", passive_deletes="all")
-
     # sync configuration
     sync_active: Mapped[Optional[int]] = mapped_column(Integer)
     sync_source_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("data_sources.id"), nullable=True)

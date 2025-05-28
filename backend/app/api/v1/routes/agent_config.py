@@ -4,7 +4,6 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends
 
 from app.auth.dependencies import auth
-from app.core.utils.mapping_utils import to_agent_read
 from app.modules.agents.llm.provider import LLMProvider
 from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
 from app.services.agent_config import AgentConfigService
@@ -22,7 +21,7 @@ async def get_all_configs(
     """Get all agent configurations"""
     models = await config_service.get_all_full()
     agent_reads = [
-        to_agent_read(agent_model).model_copy(update={
+        AgentRead(**agent_model.__dict__).model_copy(update={
             "user_id": agent_model.operator.user.id
             })
         for agent_model in models
@@ -39,7 +38,7 @@ async def get_config_by_id(
 ):
     """Get a specific agent configuration by ID"""
     agent_model = await config_service.get_by_id_full(agent_id)
-    agent_read =  to_agent_read(agent_model).model_copy(update={
+    agent_read = AgentRead(**agent_model.__dict__).model_copy(update={
             "user_id": agent_model.operator.user.id
             })
     agent_read.user_id = agent_model.operator.user.id
@@ -57,9 +56,6 @@ async def create_config(
 
     return AgentRead(
             **result.__dict__,
-            tool_ids=agent_create.tool_ids,  # add from request because lazy loaded from db
-            knowledge_base_ids=agent_create.knowledge_base_ids,  # add from request because lazy loaded from db
-            email=result.operator.user.email
             )
 
 
@@ -76,8 +72,6 @@ async def update_config(
     result = await agent_config_service.update(agent_id, agent_update)
     return AgentRead(
             **result.__dict__,
-            tool_ids=agent_update.tool_ids,  # add from request because lazy loaded from db
-            knowledge_base_ids=agent_update.knowledge_base_ids,  # add from request because lazy loaded from db
             )
 
 

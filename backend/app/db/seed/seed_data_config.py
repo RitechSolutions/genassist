@@ -19,6 +19,7 @@ class SeedTestData:
     llm_analyst_kpi_analyzer_id: str = "00000196-3d9e-4b48-ab7f-f62281c1d634"
     llm_analyst_in_progress_hostility_id: str = "00000196-3daa-544d-baee-2d0bb52aefae"
     llm_provider_id: str = "00000196-19d2-9c28-a2dd-561fff608fa0"
+    local_llm_provider_id: str = "00000196-19d2-9c28-a2dd-562fff608fa0"
     default_agent_id: str = "00000196-a688-fd6f-af6d-8dc6c281d697"
 
     # Prompts

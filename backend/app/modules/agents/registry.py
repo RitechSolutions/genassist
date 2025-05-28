@@ -1,17 +1,22 @@
 import asyncio
 import logging
-from typing import List, Optional
+from typing import Optional
 from langgraph.checkpoint.memory import MemorySaver
 from app.db.models import AgentModel
 from app.db.session import get_db
-from app.modules.agents.agent import Agent
+from app.modules.agents.workflow.builder import WorkflowBuilder
 from app.repositories.agent import AgentRepository
-from app.repositories.tool import ToolRepository
-from app.schemas.agent import AgentRead
-from app.schemas.agent_tool import ToolConfigRead
 
 
 logger = logging.getLogger(__name__)
+
+class RegistryItem:
+    """Item in the registry"""
+    def __init__(self, agent_model: AgentModel):
+        self.agent_model = agent_model
+        self.workflow_model = agent_model.workflow
+        logger.info(f"Workflow model: {self.workflow_model.__dict__}")
+        self.executor = WorkflowBuilder(workflow_model=agent_model.workflow)
 
 class AgentRegistry:
     """Registry for managing initialized agents"""
@@ -37,33 +42,30 @@ class AgentRegistry:
         """Initialize the registry"""
         async for db in get_db():
             agent_repository = AgentRepository(db)
-            tool_repository = ToolRepository(db)
             agents: list[AgentModel] = await agent_repository.get_all_full()
             for agent in agents:
                 if agent.is_active:
-                    tools = await tool_repository.get_by_ids([tool.id for tool in agent.agent_tools])
-                    self.register_agent(str(agent.id), agent,
-                                        [ToolConfigRead.model_validate(tool) for tool in tools])
+                    self.register_agent(str(agent.id), agent)
                     logger.info(f"Agent {agent.id} registered")
-            logger.info("AgentRegistry initialized with active agents")
+                
 
 
-    def register_agent(self, agent_id: str, agent_model: AgentModel, tools_config: List[ToolConfigRead]) -> None:
+    def register_agent(self, agent_id: str, agent_model: AgentModel) -> RegistryItem:
         """Register an agent in the registry"""
-        # Create the agent
-        agent = Agent(
-            agent_id=agent_id,
-            agent_model=agent_model,
-            memory=self.memory,
-            tool_configs=tools_config,
-        )
-        self.initialized_agents[agent_id] = agent
+        self.initialized_agents[agent_id] = RegistryItem(agent_model)
         logger.info(f"Agent {agent_id} registered")
-        return agent
+        return self.initialized_agents[agent_id]
     
-    def get_agent(self, agent_id: str) -> Optional[Agent]:
+
+    def get_agent(self, agent_id: str) -> Optional[RegistryItem]:
         """Get an agent from the registry"""
         return self.initialized_agents.get(agent_id)
+    
+    def execute_workflow(self, agent_id: str, user_query: str, metadata: dict) -> dict:
+        """Execute a workflow"""
+        agent = self.get_agent(agent_id)
+        return agent.executor.execute(user_query, metadata)
+    
     
     def is_agent_initialized(self, agent_id: str) -> bool:
         """Check if an agent is initialized"""

@@ -76,6 +76,7 @@ class WorkflowBuilder:
     def __init__(self, workflow_model: Workflow = None):
         """Initialize the workflow builder"""
         self.workflow_model = workflow_model
+        logger.info(f"Workflow model: : {self.workflow_model.__dict__}")
         self.workflow_id = workflow_model.id if workflow_model and hasattr(workflow_model, 'id') else None
         self.context = WorkflowContext(
             nodes={},
@@ -83,7 +84,7 @@ class WorkflowBuilder:
             target_edges={},
             node_processors={},
             state=None,
-            workflow_id=self.workflow_id
+            workflow_id=str(self.workflow_id)
         )
         self._initialize()
     

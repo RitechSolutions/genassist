@@ -37,6 +37,5 @@ class LlmProvidersModel(Base):
     llm_model: Mapped[Optional[str]] = mapped_column(String)
 
     llm_analysts = relationship("LlmAnalystModel", back_populates="llm_provider", foreign_keys="[LlmAnalystModel.llm_provider_id]")
-    agents = relationship("AgentModel", back_populates="llm_provider")
 
 

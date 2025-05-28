@@ -1,17 +1,13 @@
 from typing import List, Dict, Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 import logging
-from app.db.models.workflow import WorkflowModel
-from app.modules.agents.data.datasource_service import AgentDataSourceService
-from app.modules.agents.workflow.builder import WorkflowContext
 from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowUpdate
-from app.repositories.workflow import WorkflowRepository
 from app.auth.dependencies import auth, permissions
 from app.modules.agents.workflow.nodes.knowledge_tool import KnowledgeToolNodeProcessor
 from app.modules.agents.workflow import WorkflowRunner
 from app.services.agent_knowledge import KnowledgeBaseService
+from app.services.workflow import WorkflowService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -26,13 +22,13 @@ logger = logging.getLogger(__name__)
 async def create_workflow(
     workflow_data: WorkflowCreate,
     request: Request,
-    repository: WorkflowRepository = Depends()
+    service: WorkflowService = Depends()
 ):
     """
     Create a new workflow
     """
     current_user = request.state.user
-    workflow = WorkflowModel(
+    workflow = WorkflowCreate(
         name=workflow_data.name,
         description=workflow_data.description,
         nodes=workflow_data.nodes,
@@ -40,7 +36,7 @@ async def create_workflow(
         version=workflow_data.version,
         user_id=current_user.id
     )
-    workflow = await repository.create(workflow)
+    workflow = await service.create(workflow)
     return workflow
 
 
@@ -53,20 +49,20 @@ async def create_workflow(
 async def get_workflow(
     workflow_id: UUID,
     request: Request,
-    repository: WorkflowRepository = Depends()
+    service: WorkflowService = Depends()
 ):
     """
     Get a workflow by ID
     """
     current_user = request.state.user
-    workflow = await repository.get_by_id(workflow_id)
+    workflow = await service.get_by_id(workflow_id)
     
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     
     # Check if the user owns this workflow
-    if workflow.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this workflow")
+    # if workflow.user_id != current_user.id:
+    #     raise HTTPException(status_code=403, detail="Not authorized to access this workflow")
     
     return workflow
 
@@ -79,13 +75,13 @@ async def get_workflow(
             ])
 async def get_workflows(
     request: Request,
-    repository: WorkflowRepository = Depends()
+    service: WorkflowService = Depends()
 ):
     """
     Get all workflows for the current user
     """
     # current_user = request.state.user
-    workflows = await repository.get_all()
+    workflows = await service.get_all()
     return workflows
 
 
@@ -98,22 +94,22 @@ async def update_workflow(
     workflow_id: UUID,
     workflow_data: WorkflowUpdate,
     request: Request,
-    repository: WorkflowRepository = Depends()
+    service: WorkflowService = Depends()
 ):
     """
     Update a workflow
     """
     logger.info(f"Updating workflow: {workflow_id}")
     logger.info(f"Workflow data: {workflow_data}")
-    workflow = await repository.get_by_id(workflow_id)
+    workflow = await service.get_by_id(workflow_id)
     
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     
     current_user = request.state.user
     # Check if the user owns this workflow
-    if workflow.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to modify this workflow")
+    # if workflow.user_id != current_user.id:
+    #     raise HTTPException(status_code=403, detail="Not authorized to modify this workflow")
     
     # Update the workflow
     workflow.name = workflow_data.name
@@ -123,7 +119,7 @@ async def update_workflow(
     workflow.version = workflow_data.version
     
     
-    updated_workflow = await repository.update(workflow)
+    updated_workflow = await service.update(workflow_id, workflow)
     return updated_workflow
 
 
@@ -134,13 +130,13 @@ async def update_workflow(
 async def delete_workflow(
     workflow_id: UUID,
     request: Request,
-    repository: WorkflowRepository = Depends()
+    service: WorkflowService = Depends()
 ):
     """
     Delete a workflow
     """
     current_user = request.state.user
-    workflow = await repository.get_by_id(workflow_id)
+    workflow = await service.get_by_id(workflow_id)
     
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -149,7 +145,7 @@ async def delete_workflow(
     if workflow.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this workflow")
     
-    await repository.delete(workflow)
+    await service.delete(workflow_id)
 
 
 @router.post("/{workflow_id}/execute", 
@@ -169,12 +165,12 @@ async def execute_workflow(
     
     # Get the input message from the request body
     input_message = input_data.get("message", "")
-    session = input_data.get("session", {})
+    metadata = input_data.get("metadata", {})
     if not input_message:
         raise HTTPException(status_code=400, detail="Input message is required")
     
     # Run the workflow
-    result = await WorkflowRunner.run_workflow(str(workflow_id), user_query=input_message, metadata=session)
+    result = await WorkflowRunner.run_workflow(str(workflow_id), user_query=input_message, metadata=metadata)
     
     if result.get("status") == "error":
         raise HTTPException(status_code=500, detail=result.get("message", "Unknown error"))
@@ -200,12 +196,12 @@ async def test_workflow(
     # Extract the configuration and message from the request body
     test_workflow = test_data.get("workflow")
     test_message = test_data.get("message")
-    session = test_data.get("session", {})
+    metadata = test_data.get("metadata", {})
 
     
     logger.info(f"Workflow model: {test_workflow}")
     logger.info(f"Message: {test_message}")
-    logger.info(f"Session: {session}")
+    logger.info(f"Session: {metadata}")
     # Validate inputs
     if not test_workflow:
         raise HTTPException(status_code=400, detail="Workflow model is required")
@@ -215,7 +211,7 @@ async def test_workflow(
     
     workflow = WorkflowUpdate(**test_workflow)
     # Run the workflow directly from the configuration
-    result = await WorkflowRunner.run_from_configuration(workflow, user_query=test_message, metadata=session)
+    result = await WorkflowRunner.run_from_configuration(workflow, user_query=test_message, metadata=metadata)
     logger.info(f"Result: {result}")
     if result.get("status") == "error":
         raise HTTPException(status_code=500, detail=result.get("message", "Unknown error"))

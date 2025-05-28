@@ -9,7 +9,7 @@ import logging
 from app.auth.utils import hash_api_key
 from app.core.utils.bi_utils import get_masked_api_key
 from app.core.utils.encryption_utils import encrypt_key
-from app.db.models import AgentKnowledgeBaseModel, AgentModel, AgentToolModel
+from app.db.models import AgentModel
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.customer import CustomerModel
@@ -27,9 +27,11 @@ from app.modules.agents.data.datasource_service import AgentDataSourceService
 from app.repositories.agent import AgentRepository
 from app.repositories.user_types import UserTypesRepository
 from app.repositories.users import UserRepository
+from app.repositories.workflow import WorkflowRepository
 from app.schemas.agent import AgentCreate
 from app.schemas.recording import RecordingCreate
 from app.core.config.settings import settings
+from app.schemas.workflow import WorkflowCreate
 from app.services.audio import AudioService
 from app.repositories.recordings import RecordingsRepository
 from app.repositories.conversations import ConversationRepository
@@ -53,6 +55,7 @@ from app.services.agent_knowledge import KnowledgeBaseService
 from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_config import AgentConfigService
 from app.repositories.file_repository import FileRepository
+from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +212,17 @@ async def seed_data(session: AsyncSession):
                 "masked_api_key": get_masked_api_key(settings.OPENAI_API_KEY)
                 }
             )
-    session.add(llm_provider)
+    local_llm_provider = LlmProvidersModel(
+            id=UUID(seed_test_data.local_llm_provider_id),
+            name='qwen local',
+            llm_model_provider="ollama",
+            is_active=1,
+            llm_model="qwen2.5vl:7b",
+            connection_data={
+                "test": "test",
+                }
+            )
+    session.add_all([llm_provider, local_llm_provider])
     await session.commit()
 
     # Seed LLM analyst speaker separator
@@ -276,7 +289,7 @@ async def seed_data(session: AsyncSession):
     product_docs = await seed_knowledge_base(session, admin.id)
 
     # Seed agents
-    await seed_agents(session, product_docs.id, currency_tool.id, agent_role)
+    await seed_agents(session, agent_role)
 
     # Seed conversation
     await create_conversation(session, operator, data_source, customer)
@@ -446,7 +459,7 @@ async def seed_knowledge_base(session: AsyncSession, created_by: UUID):
     logger.debug("Knowledge base seeding complete.")
     return res
 
-async def seed_agents(session: AsyncSession, knowledge_base_id: UUID, tool_id: UUID, agent_role: RoleModel):
+async def seed_agents(session: AsyncSession, agent_role: RoleModel):
     """Seed initial agents into the database."""
     # Initialize the agent config service with file repository
     opService = OperatorService(operator_repository=OperatorRepository(session),
@@ -454,31 +467,33 @@ async def seed_agents(session: AsyncSession, knowledge_base_id: UUID, tool_id: U
                                 user_repository=UserRepository(session),
                                 user_types_repository=UserTypesRepository(session))
 
-    config_service = AgentConfigService(repository=AgentRepository(session),
-                                        knowledge_base_service=KnowledgeBaseService(
-                                                                repository=KnowledgeBaseRepository(session)),
-                                        agent_data_sources_service=AgentDataSourceService().get_instance(),
-                                        operator_service=opService,
-                                        user_types_repository=UserTypesRepository(session),
-                                        db=session)
+
+    
+    workflow_service = WorkflowService(repository=WorkflowRepository(session)) 
+    workflow = WorkflowCreate(
+        name="Support Assistant",
+        description="AI assistant specialized in providing product support and answering customer queries",
+        nodes=[
+        ],
+        edges=[
+        ],
+        version="1.0",
+    )
+    workflow_model = await workflow_service.create(workflow)
+
     support_agent = AgentCreate(
         name="Support Assistant",
         description="AI assistant specialized in providing product support and answering customer queries",
-        llm_provider_id=seed_test_data.llm_provider_id,
-        knowledge_base_ids=[str(knowledge_base_id)],
-        tool_ids=[str(tool_id)],
-        system_prompt=seed_test_data.default_agent_prompt,
-        settings={
-            "temperature": 0.7,
-            "max_tokens": 1000,
-            "top_p": 0.9
-        },
         is_active=False,
-        email="test@gmail.com",
-            welcome_message="Welcome, how may I help you?",
-            possible_queries=["What can you do?", "What are queries?"]
-    )
+        welcome_message="Welcome, how may I help you?",
+        possible_queries=["What can you do?", "What are queries?"],
+        workflow_id=workflow_model.id
 
+    )
+    config_service = AgentConfigService(repository=AgentRepository(session),
+                                        operator_service=opService,
+                                        user_types_repository=UserTypesRepository(session),
+                                        db=session)
     # Create the agent configuration
     agent_model = await config_service.create(support_agent)
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
@@ -487,11 +502,53 @@ async def seed_agents(session: AsyncSession, knowledge_base_id: UUID, tool_id: U
     urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
     session.add(urm)
     await session.commit()
-    
+
     agent_key = ApiKeyModel(key_val=hash_api_key('agent123'), name='test agent key',
                             is_active=1, user_id=full_agent.operator.user.id,
                             masked_value='ag***123')
     agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
     session.add(agent_key)
+
     await session.commit()
+
+    # local agent
+
+    # local_agent_workflow = WorkflowCreate(
+    #     name="Local Support Assistant",
+    #     description="Local AI assistant specialized in providing product support and answering customer queries",
+    #     nodes=[
+    #     ],
+    #     edges=[
+    #     ],
+    #     version="1.0",
+    # )
+    # local_workflow_model = await workflow_service.create(local_agent_workflow)
+    #
+    # local_support_agent = AgentCreate(
+    #     name="Local Support Assistant",
+    #     description="Local AI assistant specialized in providing product support and answering customer queries",
+    #     is_active=False,
+    #     welcome_message="Welcome, how may I help you?",
+    #     possible_queries=["What can you do?", "What are queries?"],
+    #     workflow_id=local_workflow_model.id
+    #
+    # )
+    #
+    # # Create the local agent configuration
+    # local_agent_model = await config_service.create(local_support_agent)
+    # full_local_agent: AgentModel = await config_service.get_by_id_full(local_agent_model.id)
+    #
+    # await session.refresh(agent_role)
+    # urm = UserRoleModel(role_id=agent_role.id, user_id=full_local_agent.operator.user.id)
+    # session.add(urm)
+    # await session.commit()
+    #
+    # local_agent_key = ApiKeyModel(key_val=hash_api_key('localagent123'), name='test local agent key',
+    #                         is_active=1, user_id=full_local_agent.operator.user.id,
+    #                         masked_value='loc***123')
+    # local_agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
+    # session.add(local_agent_key)
+    #
+    # await session.commit()
+
     logger.debug("Agents seeding complete.")
