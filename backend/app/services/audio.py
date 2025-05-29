@@ -4,8 +4,36 @@ import shutil
 import uuid
 from pathlib import Path
 from fastapi import UploadFile, Depends
+<<<<<<< HEAD
+from app.core.config.settings import settings
+=======
+<<<<<<<< HEAD:app/services/audio_service.py
+from app.configs.project_parameters import project_params
+from app.configs.seed_data_config import seed_test_data
+from app.dependencies.helpers import get_gpt_kpi_analyzer, get_question_answerer_service, get_speaker_separator
+from app.exceptions.error_messages import ErrorKey
+from app.exceptions.exception_classes import AppException
+from app.models.database_models import LlmAnalyst
+from app.models.pydantic_models.conversation_pyd_models.conversations_pydantic_models import ConversationCreate
+from app.models.pydantic_models.recording_pydantic_models.question_pydantic_model import QuestionCreate
+from app.models.pydantic_models.recording_pydantic_models.recording_pydantic_model import RecordingCreate
+from app.models.pydantic_models.conversation_pyd_models.conversation_pydantic_models import ConversationTranscriptCreate, \
+    TranscriptSegmentInput
+from app.repositories.recording_repository import AudioRepository
+from app.service_implementations.bi.llm_services.llm_analyst_service import LlmAnalystService
+from app.service_implementations.bi.operator_service import OperatorService
+from app.service_implementations.llm.gpt_question_service import QuestionAnswerer
+from app.service_implementations.llm.gpt_kpi_analyzer_service import GptKpiAnalyzer
+from app.service_implementations.bi.conversation_analysis_service import ConversationAnalysisService
+from app.service_implementations.bi.conversation_service import ConversationService
+from app.service_implementations.llm.gpt_speaker_separator_service import SpeakerSeparator
+from app.service_implementations.bi.operator_statistics_service import OperatorStatisticsService
+from app.service_implementations.audio.transcription import transcribe_audio_whisper, transcribe_audio_whisper_no_save
+from app.utils.bi_utils import allowed_file, calculate_duration_from_transcript, calculate_speaker_ratio_form_segments, extract_transcript_from_whisper_model
+========
 from app.core.config.settings import settings
 from app.core.utils.enums.conversation_type_enum import ConversationType
+>>>>>>> development
 from app.db.models.llm import LlmAnalystModel
 from app.db.seed.seed_data_config import seed_test_data
 from app.core.exceptions.error_messages import ErrorKey
@@ -25,12 +53,25 @@ from app.services.llm_analysts import LlmAnalystService
 from app.services.operator_statistics import OperatorStatisticsService
 from app.services.operators import OperatorService
 from app.services.transcription import transcribe_audio_whisper, transcribe_audio_whisper_no_save
+<<<<<<< HEAD
+from app.core.utils.bi_utils import allowed_file, calculate_duration_from_transcript, calculate_speaker_ratio_form_segments, extract_transcript_from_whisper_model
+=======
 from app.core.utils.bi_utils import allowed_file, calculate_duration_from_transcript, calculate_speaker_ratio_from_segments, extract_transcript_from_whisper_model
+>>>>>>>> development:app/services/audio.py
+>>>>>>> development
 
 
 class AudioService:
     def __init__(self,
+<<<<<<< HEAD
                  recording_repo: RecordingsRepository = Depends(),
+=======
+<<<<<<<< HEAD:app/services/audio_service.py
+                 recording_repo: AudioRepository = Depends(),
+========
+                 recording_repo: RecordingsRepository = Depends(),
+>>>>>>>> development:app/services/audio.py
+>>>>>>> development
                  conversation_service: ConversationService = Depends(),
                  conversation_analysis_service: ConversationAnalysisService = Depends(),
                  operator_statistics_service: OperatorStatisticsService = Depends(),
@@ -110,7 +151,11 @@ class AudioService:
 
         transcript_segments: list[TranscriptSegmentInput] = [TranscriptSegmentInput(**item) for item in separated_speakers]
 
+<<<<<<< HEAD
+        agent_ratio, customer_ratio, total_word_count = calculate_speaker_ratio_form_segments(transcript_segments)
+=======
         agent_ratio, customer_ratio, total_word_count = calculate_speaker_ratio_from_segments(transcript_segments)
+>>>>>>> development
 
         # Calculate duration from transcript segments
         duration = calculate_duration_from_transcript(transcript_segments)
@@ -128,7 +173,10 @@ class AudioService:
                 customer_ratio=customer_ratio,
                 agent_ratio=agent_ratio,
                 duration=duration,
+<<<<<<< HEAD
+=======
                 conversation_type=ConversationType.AUDIO.value,
+>>>>>>> development
                 )
 
         saved_conversation = await self.conversation_service.save_conversation(conversation_data)
@@ -186,16 +234,38 @@ class AudioService:
             raise AppException(error_key=ErrorKey.OPERATOR_NOT_FOUND)
 
         #  Calculate word counts
+<<<<<<< HEAD
+        agent_ratio, customer_ratio, total_word_count = calculate_speaker_ratio_form_segments(model.transcript)
+
+        # Calculate duration from transcript segments
+        conversation_duration = calculate_duration_from_transcript(model.transcript)
+
+        transcript_string = json.dumps([item.model_dump() for item in model.transcript], ensure_ascii=False,
+=======
         agent_ratio, customer_ratio, total_word_count = calculate_speaker_ratio_from_segments(model.messages)
 
         # Calculate duration from transcript segments
         conversation_duration = calculate_duration_from_transcript(model.messages)
 
         transcript_string = json.dumps([item.model_dump() for item in model.messages], ensure_ascii=False,
+>>>>>>> development
                                        default=str)
 
         #  Save conversation
         conversation_data = ConversationCreate(
+<<<<<<< HEAD
+            operator_id=model.operator_id,
+            data_source_id=model.data_source_id,
+            recording_id=None,  # No recording file here
+            transcription=transcript_string,
+            conversation_date=model.recorded_at,
+            customer_id=model.customer_id,
+            word_count=total_word_count,
+            customer_ratio=customer_ratio,
+            agent_ratio=agent_ratio,
+            duration=conversation_duration
+        )
+=======
                 operator_id=model.operator_id,
                 data_source_id=model.data_source_id,
                 recording_id=None,  # No recording file here
@@ -208,6 +278,7 @@ class AudioService:
                 duration=conversation_duration,
                 conversation_type=ConversationType.TRANSCRIPT.value,
                 )
+>>>>>>> development
 
         saved_conversation = await self.conversation_service.save_conversation(conversation_data)
 

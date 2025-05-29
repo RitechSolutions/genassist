@@ -3,17 +3,25 @@ from pydantic import BaseModel, EmailStr, Field, constr, ConfigDict
 from typing import Optional
 from typing import Annotated
 from datetime import datetime
+<<<<<<< HEAD
+
+from app.schemas.api_key import ApiKeyBase
+=======
 from app.schemas.api_key import ApiKeyBase
 from app.schemas.operator_auth import OperatorAuth
+>>>>>>> development
 from app.schemas.role import RoleRead
 
 
 
 class UserTypeBase(BaseModel):
     name: str = Field(..., min_length=4, max_length=255, description="User type name")
+<<<<<<< HEAD
+=======
     model_config = ConfigDict(
         from_attributes = True
     )
+>>>>>>> development
 
 
 class UserTypeCreate(UserTypeBase):
@@ -22,9 +30,14 @@ class UserTypeCreate(UserTypeBase):
 
 class UserTypeRead(UserTypeBase):
     id: UUID = Field(..., description="User unique ID")
+<<<<<<< HEAD
+    created_at: datetime = Field(..., description="User type creation datetime")
+    updated_at: datetime = Field(..., description="User type update datetime")
+=======
     model_config = ConfigDict(
         from_attributes = True
     )
+>>>>>>> development
 
 
 class UserTypeUpdate(BaseModel):
@@ -51,13 +64,19 @@ class UserRead(BaseModel):
     email: EmailStr
     is_active: int
     roles: list[RoleRead] = []
+<<<<<<< HEAD
+    user_type: Optional[UserTypeRead]
+=======
     user_type: Optional[UserTypeRead] = None
+>>>>>>> development
     api_keys: Optional[list[ApiKeyBase]] = []
 
     model_config = ConfigDict(
         from_attributes = True
     )
 
+<<<<<<< HEAD
+=======
 class UserReadAuth(UserRead):
     permissions: Optional[list[str]] = Field([], description="Permissions needed for authorization")
     operator: Optional[OperatorAuth] = Field(None, description="Operator needed for authorization")
@@ -66,6 +85,7 @@ class UserReadAuth(UserRead):
         from_attributes = True
     )
 
+>>>>>>> development
 class UserUpdate(BaseModel):
     email: EmailStr | None = None
     is_active: int | None = None
@@ -74,4 +94,7 @@ class UserUpdate(BaseModel):
     role_ids: list[UUID] | None = None
     notes: str | None = None
 
+<<<<<<< HEAD
+=======
 
+>>>>>>> development

@@ -71,7 +71,11 @@ class GraphDBProvider(DataSourceProvider):
         except Exception as e:
             logger.error(f"Failed to create Neo4j schema: {str(e)}")
     
+<<<<<<< HEAD
+    def add_document(self, doc_id: str, content: str, metadata: Dict[str, Any]) -> bool:
+=======
     async def add_document(self, doc_id: str, content: str, metadata: Dict[str, Any]) -> bool:
+>>>>>>> development
         """Add a document to Neo4j as a Document node with chunked content"""
         try:
             if not self.graph:
@@ -179,7 +183,11 @@ class GraphDBProvider(DataSourceProvider):
             logger.error(f"Failed to add document to Neo4j: {str(e)}")
             return False
     
+<<<<<<< HEAD
+    def delete_document(self, doc_id: str) -> bool:
+=======
     async def delete_document(self, doc_id: str) -> bool:
+>>>>>>> development
         """Delete a document and all its chunks from Neo4j"""
         try:
             if not self.graph:
@@ -231,12 +239,15 @@ class GraphDBProvider(DataSourceProvider):
                 chunk_keyword_query = """
                 MATCH (c:Chunk)-[:HAS_KEYWORD]->(k:Keyword)
                 WHERE k.name IN $keywords
+<<<<<<< HEAD
+=======
                 """
                 
                 if doc_ids:
                     chunk_keyword_query += " AND c.doc_id IN $doc_ids"
                 
                 chunk_keyword_query += """
+>>>>>>> development
                 WITH c, count(DISTINCT k) as matches
                 ORDER BY matches DESC
                 LIMIT $limit
@@ -251,8 +262,12 @@ class GraphDBProvider(DataSourceProvider):
                     chunk_keyword_query,
                     params={
                         "keywords": keywords,
+<<<<<<< HEAD
+                        "limit": limit * 3  # Get more chunks to consolidate
+=======
                         "limit": limit * 3,  # Get more chunks to consolidate
                         "doc_ids": doc_ids if doc_ids else None
+>>>>>>> development
                     }
                 )
                 
@@ -260,6 +275,11 @@ class GraphDBProvider(DataSourceProvider):
                 doc_chunks = {}
                 for record in chunk_results:
                     doc_id = record["id"]
+<<<<<<< HEAD
+                    if doc_ids and doc_id not in doc_ids:
+                        continue
+=======
+>>>>>>> development
                     if doc_id not in doc_chunks:
                         doc_chunks[doc_id] = {
                             'chunks': [],
@@ -310,12 +330,15 @@ class GraphDBProvider(DataSourceProvider):
                 content_query = """
                 MATCH (c:Chunk)
                 WHERE c.content CONTAINS $query
+<<<<<<< HEAD
+=======
                 """
                 
                 if doc_ids:
                     content_query += " AND c.doc_id IN $doc_ids"
                 
                 content_query += """
+>>>>>>> development
                 AND NOT c.doc_id IN $existing_ids
                 WITH c, 0.5 as score
                 LIMIT $limit
@@ -331,8 +354,12 @@ class GraphDBProvider(DataSourceProvider):
                     params={
                         "query": query,
                         "existing_ids": list(existing_ids),
+<<<<<<< HEAD
+                        "limit": remaining * 3  # Get more chunks to consolidate
+=======
                         "limit": remaining * 3,  # Get more chunks to consolidate
                         "doc_ids": doc_ids if doc_ids else None
+>>>>>>> development
                     }
                 )
                 
@@ -401,6 +428,9 @@ class GraphDBProvider(DataSourceProvider):
         word_counts = Counter(filtered_words)
         keywords = [word for word, count in word_counts.most_common(15)]
         
+<<<<<<< HEAD
+        return keywords 
+=======
         return keywords
 
     async def get_document_ids(self, kb_id: str) -> List[str]:
@@ -593,3 +623,4 @@ class GraphDBProvider(DataSourceProvider):
         except Exception as e:
             logger.error(f"Failed to search Neo4j graph: {str(e)}")
             return [] 
+>>>>>>> development

@@ -10,7 +10,7 @@ import os
 from typing import Optional
 
 from app.db.session import get_db
-from app.schemas.api_key import ApiKeyReadAfterCreate
+from app.schemas.api_key import ApiKeyRead
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class QuotaService:
             decode_responses=True
         )
 
-    async def enforce_quota(self, api_key: ApiKeyReadAfterCreate):
+    async def enforce_quota(self, api_key: ApiKeyRead):
         """
         Enforce usage quota for a given API key using a sliding window algorithm with Redis.
         """

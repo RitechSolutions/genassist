@@ -15,6 +15,7 @@ async def init_fastapi_cache_with_redis(app, settings):
     app.state.redis = redis  # type: ignore[attr-defined]
 
     FastAPICache.init(RedisBackend(redis), prefix="auth")
+    await FastAPICache.clear() #clean cache on start
 
 def make_key_builder(param: str | int = 1) -> Callable[[Any, str, Any], str]:
     """

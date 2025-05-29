@@ -13,7 +13,6 @@ class AgentBase(BaseModel):
                                  description="Welcome message returned when starting a conversation with an agent.")
     possible_queries: list[str] = Field(...,
                                   description="Possible queries, suggested when starting a conversation with an agent.")
-    workflow_id: UUID
     model_config = ConfigDict(extra='forbid', from_attributes=True)  # shared rules
 
 
@@ -27,13 +26,14 @@ class AgentUpdate(AgentBase):
     is_active: Optional[bool] = None
     welcome_message: Optional[str] = None
     possible_queries: Optional[list[str]] = None
-    workflow_id: Optional[UUID] = None
 
 class AgentRead(AgentBase):
     id: UUID
     model_config = ConfigDict(extra='ignore')  # shared rules
     user_id: Optional[UUID] = None
     operator_id: UUID
+    workflow_id: UUID
+
     @field_validator("possible_queries", mode="before")
     def deserialize_possible_queries(cls, v: Any) -> list[str]:
         if isinstance(v, str):

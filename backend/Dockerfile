@@ -24,6 +24,7 @@ COPY ./pytest.ini /src/pytest.ini
 
 COPY ./alembic /src/alembic
 COPY ./alembic.ini /src/alembic.ini
+COPY ./migrations.py /src/migrations.py
 
 COPY ./models /root/.cache
 RUN ls /root/.cache

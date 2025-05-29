@@ -2,7 +2,11 @@ from typing import Optional
 from sqlalchemy import Integer, PrimaryKeyConstraint, String, UniqueConstraint, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import TYPE_CHECKING
+<<<<<<< HEAD
+
+=======
 from uuid import UUID
+>>>>>>> development
 from app.db.base import Base
 from app.db.models.user_role import UserRoleModel
 from app.db.models.user_type import UserTypeModel
@@ -29,9 +33,12 @@ class UserModel(Base):
     user_roles = relationship("UserRoleModel", back_populates="user", foreign_keys="[UserRoleModel.user_id]")
     user_type = relationship("UserTypeModel", back_populates="users", foreign_keys=[user_type_id])
     api_keys = relationship("ApiKeyModel", back_populates="user", foreign_keys="[ApiKeyModel.user_id]")
+<<<<<<< HEAD
+=======
     operator = relationship("OperatorModel", back_populates="user", uselist=False, foreign_keys="["
                                                                                                 "OperatorModel.user_id]")
     workflows = relationship("WorkflowModel", back_populates="user", foreign_keys="[WorkflowModel.user_id]")
+>>>>>>> development
 
     @property
     def roles(self) -> list["RoleModel"]:

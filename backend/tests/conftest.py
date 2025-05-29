@@ -3,12 +3,16 @@ import sys
 from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
+<<<<<<< HEAD
+from app.db.seed.seed_data_config import seed_test_data
+=======
 from app.core.config.settings import settings
 from app.db.seed.seed_data_config import seed_test_data
 
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+>>>>>>> development
 
 
 @pytest.fixture(scope="session")

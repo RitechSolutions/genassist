@@ -2,6 +2,12 @@ import pytest
 from uuid import UUID
 from httpx import AsyncClient
 from fastapi import FastAPI
+<<<<<<< HEAD:tests/datasources/test_datasources.py
+=======
+import logging
+
+logger = logging.getLogger(__name__)
+>>>>>>> development:tests/integration/datasources/test_datasources.py
 
 @pytest.mark.asyncio
 async def test_create_datasource(client):
@@ -23,6 +29,8 @@ async def test_create_datasource(client):
     )
     assert response.status_code == 200
     created_datasource = response.json()
+    logger.info(f" test create datasource response:{created_datasource}")
+
     assert created_datasource["name"] == datasource_data["name"]
     assert created_datasource["source_type"] == datasource_data["source_type"]
     assert created_datasource["connection_data"] == datasource_data["connection_data"]

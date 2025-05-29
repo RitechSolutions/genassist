@@ -1,7 +1,11 @@
 import os
+
 import uvicorn
 import logging
-from app import create_app  # Import after logging is set up
+
+from app import create_app
+from app.core.config.settings import settings
+from migrations import run_migrations  # Import after logging is set up
 
 logger = logging.getLogger(__name__)
 
@@ -9,6 +13,9 @@ logger = logging.getLogger(__name__)
 app = create_app()
 
 if __name__ == "__main__":
+
+    run_migrations(settings.DATABASE_URL_SYNC)
+
     port = int(os.environ.get("FASTAPI_RUN_PORT", 8000))
     debug_mode = os.environ.get("FASTAPI_DEBUG", "False").lower() == "true"
 
@@ -24,8 +31,12 @@ if __name__ == "__main__":
     # Start Uvicorn server
     uvicorn.run("run:app", host="0.0.0.0", port=port, reload=debug_mode,
                 reload_includes=["*.py"],
-                reload_excludes=["./containers","./.git", "./.idea", "./logs"],
+                reload_excludes=["./containers","./.git", "./.idea", "./logs", "./alembic"],
                 reload_dirs=["./app"],
+<<<<<<< HEAD
+                ssl_keyfile=os.environ.get("SSL_KEYFILE_PATH", ""),
+                ssl_certfile=os.environ.get("SSL_CERTFILE_PATH", "")
+=======
                 ssl_keyfile=os.environ.get("SSL_KEYFILE_PATH", "") if os.environ.get("USE_SSL", "True").lower() == 'true' else None,
                 ssl_certfile=os.environ.get("SSL_CERTFILE_PATH", "") if os.environ.get("USE_SSL", "True").lower() == 'true' else None,
                 log_level=os.environ.get("LOG_LEVEL", "debug").lower(),
@@ -34,4 +45,5 @@ if __name__ == "__main__":
                 access_log=os.environ.get("ACCESS_LOG", "False").lower() == "true",
                 use_colors=os.environ.get("USE_COLORS", "True").lower() == "true",
                 proxy_headers=os.environ.get("PROXY_HEADERS", "False").lower() == "true",
+>>>>>>> development
                 )

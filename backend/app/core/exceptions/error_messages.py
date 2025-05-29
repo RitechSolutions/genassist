@@ -1,4 +1,8 @@
 import logging
+<<<<<<< HEAD
+from app.core.config.settings import settings
+=======
+>>>>>>> development
 from enum import Enum
 
 from fastapi import Request
@@ -63,6 +67,9 @@ class ErrorKey(Enum):
     TOOL_CREATION_FAILED = "TOOL_CREATION_FAILED",
     TOOL_UPDATE_FAILED = "TOOL_UPDATE_FAILED",
     TOOL_DELETION_FAILED = "TOOL_DELETION_FAILED",
+<<<<<<< HEAD
+    KB_NOT_FOUND = "KB_NOT_FOUND"
+=======
     KB_NOT_FOUND = "KB_NOT_FOUND",
     AGENT_NOT_ACTIVE = "AGENT_NOT_ACTIVE"
     # MISSING_API_KEY_LLM_PROVIDER = "MISSING_API_KEY_LLM_PROVIDER"
@@ -72,8 +79,13 @@ class ErrorKey(Enum):
     APP_SETTINGS_NOT_FOUND = "APP_SETTINGS_NOT_FOUND"
     FEATURE_FLAG_NOT_FOUND = "FEATURE_FLAG_NOT_FOUND"
     WORKFLOW_NOT_FOUND = "WORKFLOW_NOT_FOUND"
-    OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING"
+    OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING",
+    CREATE_USER_TYPE_IN_MENU = "CREATE_USER_TYPE_IN_MENU"
+    LOGIN_ERROR_CONSOLE_USER = "LOGIN_ERROR_CONSOLE_USER"
+    INVALID_API_KEY_ENCRYPTION = "INVALID_API_KEY_ENCRYPTION"
+    CONVERSATION_MUST_START_EMPTY = "CONVERSATION_MUST_START_EMPTY"
 
+>>>>>>> development
 
 ERROR_MESSAGES = {
     'en': {
@@ -132,6 +144,8 @@ ERROR_MESSAGES = {
         ErrorKey.TOOL_UPDATE_FAILED: "Tool update failed.",
         ErrorKey.TOOL_DELETION_FAILED: "Tool deletion failed.",
         ErrorKey.KB_NOT_FOUND: "KB not found.",
+<<<<<<< HEAD
+=======
         ErrorKey.AGENT_NOT_ACTIVE: "Agent is not active.",
         # ErrorKey.MISSING_API_KEY_LLM_PROVIDER: "Missing Api Key in connection data.",
         ErrorKey.EMAIL_ALREADY_EXISTS: "Email already exists.",
@@ -140,7 +154,11 @@ ERROR_MESSAGES = {
         ErrorKey.APP_SETTINGS_NOT_FOUND: "App Settings not found.",
         ErrorKey.FEATURE_FLAG_NOT_FOUND: "Feature Flags not found.",
         ErrorKey.OPERATOR_ROLE_MISSING: "Operator role missing.",
-        
+        ErrorKey.CREATE_USER_TYPE_IN_MENU: "Operators and ai agents should be created in their specific menus.",
+        ErrorKey.LOGIN_ERROR_CONSOLE_USER: "Failed to give access for console type user.",
+        ErrorKey.INVALID_API_KEY_ENCRYPTION: "Invalid API key encryption.",
+        ErrorKey.CONVERSATION_MUST_START_EMPTY: "Conversation must start empty."
+>>>>>>> development
         },
     'fr': {
         ErrorKey.INTERNAL_ERROR: 'Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.',

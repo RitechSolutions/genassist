@@ -1,3 +1,11 @@
+<<<<<<< HEAD
+from typing import Optional
+from uuid import UUID
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.orm import joinedload
+=======
 import datetime
 from typing import List, Optional, Tuple
 from uuid import UUID
@@ -7,12 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
+>>>>>>> development
 from app.db.models.conversation import ConversationModel
 from app.db.session import get_db
 from app.schemas.conversation import ConversationCreate
 from app.schemas.filter import ConversationFilter
 from app.core.utils.bi_utils import filter_conversation_date
+<<<<<<< HEAD
+=======
 from app.db.models.conversation import ConversationAnalysisModel
+>>>>>>> development
 
 
 class ConversationRepository:
@@ -22,7 +34,22 @@ class ConversationRepository:
 
     async def save_conversation(self, conversation_data: ConversationCreate):
         new_conversation = ConversationModel(
+<<<<<<< HEAD
+            operator_id=conversation_data.operator_id,
+            data_source_id=conversation_data.data_source_id,
+            recording_id=conversation_data.recording_id,
+            transcription=conversation_data.transcription,
+            conversation_date=conversation_data.conversation_date,
+            customer_id=conversation_data.customer_id,
+            word_count=conversation_data.word_count,
+            customer_ratio=conversation_data.customer_ratio,
+            agent_ratio=conversation_data.agent_ratio,
+            requires_supervisor=conversation_data.requires_supervisor,
+            status=conversation_data.status,
+            duration=conversation_data.duration,
+=======
             **conversation_data.model_dump()
+>>>>>>> development
         )
         self.db.add(new_conversation)
         await self.db.commit()
@@ -82,14 +109,19 @@ class ConversationRepository:
         if conversation_filter.conversation_status:
             query = query.where(ConversationModel.status == conversation_filter.conversation_status)
         query = filter_conversation_date(conversation_filter, query)
+<<<<<<< HEAD
+=======
         if conversation_filter.operator_id:
             query = query.where(ConversationModel.operator_id == conversation_filter.operator_id)
+>>>>>>> development
 
         # Pagination
         query = query.offset(conversation_filter.skip).limit(conversation_filter.limit)
 
         result = await self.db.execute(query)
         return result.scalars().all()
+<<<<<<< HEAD
+=======
 
     async def get_stale_conversations(self, cutoff_time: datetime):
         query = select(ConversationModel).where(
@@ -124,3 +156,4 @@ class ConversationRepository:
 
         result = await self.db.execute(stmt)
         return result.all()
+>>>>>>> development

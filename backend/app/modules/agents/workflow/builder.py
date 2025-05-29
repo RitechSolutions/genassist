@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Optional
 import logging
+import uuid
 from pydantic import BaseModel, ConfigDict
 
 from app.modules.agents.workflow.base_processor import NodeProcessor
@@ -22,7 +23,7 @@ class WorkflowContext(BaseModel):
     nodes: Dict[str, Any]
     source_edges: Dict[str, Any]
     target_edges: Dict[str, Any]
-    node_processors: Dict[str, Any]
+    node_processors: Dict[str, NodeProcessor]
     state: Optional[WorkflowState]
     workflow_id: Optional[str]
     
@@ -99,6 +100,11 @@ class WorkflowBuilder:
             node_id = node.get("id")
             if node_id:
                 self.context.nodes[node_id] = node
+                # processor = self._create_node_processor(node_id)
+                # if not processor:
+                #     logger.error(f"Could not create processor for node {node_id}")
+                #     return
+                # self.context.node_processors[node_id] = processor
         
         # Parse edges and group by source
         for edge in self.workflow_model.edges:
@@ -112,6 +118,7 @@ class WorkflowBuilder:
                 if target not in self.context.get_all_target_edges():
                     self.context.target_edges[target] = []
                 self.context.target_edges[target].append(edge)
+                
 
     def _create_node_processor(self, node_id: str) -> Optional[NodeProcessor]:
         """Create a processor for the given node ID"""
@@ -136,7 +143,7 @@ class WorkflowBuilder:
             processor = ChatOutputNodeProcessor(self.context, node_id, node_data)
         elif node_type == "apiToolNode":
             processor = ApiToolNodeProcessor(self.context, node_id, node_data)
-        elif node_type == "knowledgeToolNode":
+        elif node_type == "knowledgeToolNode" or node_type == "knowledgeBaseNode":
             processor = KnowledgeToolNodeProcessor(self.context, node_id, node_data)
         elif node_type == "agentNode":
             processor = AgentNodeProcessor(self.context, node_id, node_data)
@@ -144,6 +151,8 @@ class WorkflowBuilder:
             logger.warning(f"Unsupported node type: {node_type}")
             return None
         return processor
+    
+    
     
     def _get_next_nodes(self, node_id: str) -> List[str]:
         """Get the IDs of nodes that follow the given node in the workflow"""
@@ -160,6 +169,42 @@ class WorkflowBuilder:
                 return node_id
         return None
     
+    def _get_input_provider_nodes(self, node_id: str, visited: set) -> set:
+        """Get all nodes that provide inputs to the given node"""
+        if node_id in visited:
+            return set()
+        
+        visited.add(node_id)
+        input_providers = set()
+        
+        # Get all target edges (nodes that provide input to this node)
+        for edge in self.context.get_target_edges(node_id):
+            source = edge.get("source")
+            target = edge.get("target")
+            if source and "input_tools" not in target:
+                input_providers.add(source)
+                # Recursively get input providers for the source node
+                input_providers.update(self._get_input_provider_nodes(source, visited))
+        
+        return input_providers
+    
+    
+    def initialize_all_processors(self) -> None:
+        """Initialize all processors"""
+        for node_id in self.context.get_nodes():
+            self.initialize_processor(node_id)
+            
+        logger.info(f"Initialized processors: {self.context.get_all_node_processors()}")
+            
+    def initialize_processor(self, node_id: str) -> None:
+        """Initialize a processor for a node"""
+        if node_id not in self.context.get_all_node_processors():
+            processor = self._create_node_processor(node_id)
+            if not processor:
+                logger.error(f"Could not create processor for node {node_id}")
+                return
+            self.context.node_processors[node_id] = processor
+
     async def _execute_node_and_successors(self, node_id: str, visited: set) -> None:
         """Execute a node and all its successors in the workflow"""
         if node_id in visited:
@@ -167,25 +212,53 @@ class WorkflowBuilder:
         
         visited.add(node_id)
         
-        if node_id not in self.context.get_all_node_processors():
-            processor = self._create_node_processor(node_id)
-            if not processor:
-                logger.error(f"Could not create processor for node {node_id}")
-                return
-            self.context.node_processors[node_id] = processor
+        # # First, collect all nodes that need to be processed
+        # all_nodes_to_process = set()
+        # current_node = node_id
         
+        # # Get all nodes in the forward path
+        # while current_node:
+        #     all_nodes_to_process.add(current_node)
+        #     next_nodes = self._get_next_nodes(current_node)
+        #     if next_nodes:
+        #         current_node = next_nodes[0]  # Take the first next node
+        #     else:
+        #         current_node = None
+        
+        # # Get all input provider nodes for the collected nodes
+        # input_providers = set()
+        # for node in all_nodes_to_process:
+        #     input_providers.update(self._get_input_provider_nodes(node, set()))
+        
+        # # Add input providers to the set of nodes to process
+        # all_nodes_to_process.update(input_providers)
+        
+        # # Process all nodes in the correct order
+        # for node_id in all_nodes_to_process:
+        #     if node_id not in self.context.get_all_node_processors():
+        #         processor = self._create_node_processor(node_id)
+        #         if not processor:
+        #             logger.error(f"Could not create processor for node {node_id}")
+        #             continue
+        #         self.context.node_processors[node_id] = processor
+            
+        #     await self.context.get_node_processor(node_id).process()
+        
+        # self.initialize_processor(node_id)
         await self.context.get_node_processor(node_id).process()
         
         next_nodes = self._get_next_nodes(node_id)
         for next_node_id in next_nodes:
             await self._execute_node_and_successors(next_node_id, visited)
+
     
     async def execute(self, user_query: str = None, start_node_id: str = None, metadata: dict = None) -> Dict[str, Any]:
         """Execute the workflow with the given input message"""
-        if metadata is None or metadata.get("thread_id") is None:
-            raise ValueError("Thread ID is required in metadata")
+        thread_id = metadata.get("thread_id", str(uuid.uuid4()))
+
+        # if metadata is None or metadata.get("thread_id") is None:
+        #     raise ValueError("Thread ID is required in metadata")
             
-        thread_id = metadata.get("thread_id")
         self.context.state = WorkflowState(thread_id=thread_id, input=user_query, metadata=metadata)
         self.context.state.get_memory().add_user_message(user_query)
         
@@ -195,6 +268,7 @@ class WorkflowBuilder:
                 return {"status": "error", "message": "No starting nodes found"}
         
         self.context.node_processors = {}
+        self.initialize_all_processors()
         visited = set()
         await self._execute_node_and_successors(start_node_id, visited)
         

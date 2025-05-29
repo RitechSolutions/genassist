@@ -1,7 +1,8 @@
 from typing import Dict, Any, List
 import json
 import logging
-from langchain_core.messages import HumanMessage
+import re
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain.chat_models import init_chat_model
 import os
 
@@ -19,6 +20,19 @@ class AgentNodeProcessor(NodeProcessor):
     
 
     
+
+    def _clean_and_parse_json(self, content: str) -> Dict:
+        """Clean and parse JSON content that might include markdown code blocks."""
+        # Remove markdown code block syntax if present
+        content = re.sub(r'```json\s*', '', content)
+        content = re.sub(r'```\s*$', '', content)
+        # Clean any leading/trailing whitespace
+        content = content.strip()
+        try:
+            return json.loads(content)
+        except Exception as e:
+            logger.error(f"Failed to parse JSON response: {str(e)}")
+            raise
 
     async def process(self, input_data: Dict[str, Any] = None) -> str:
         """Process an agent node with tool selection and execution"""
@@ -39,6 +53,13 @@ class AgentNodeProcessor(NodeProcessor):
 
         # prompt = await self.get_process_input(input_data, 'prompt')
         input_data = await self.get_process_input(input_data)
+        logger.info(f"Input data: {input_data}")
+        system_prompt = input_data.get("system_prompt")
+        logger.info(f"System prompt: {system_prompt}")
+        
+        system_prompt_messages = []
+        if system_prompt:
+            system_prompt_messages.append(SystemMessage(content=system_prompt))
 
         prompt = input_data.get("prompt")
         tools = input_data.get("tools")
@@ -54,8 +75,8 @@ class AgentNodeProcessor(NodeProcessor):
             # Create tool selection prompt
                 tool_selection_prompt = create_tool_selection_prompt(str(prompt), tools)
                 # Get tool selection decision
-                tool_selection_response = llm.invoke([HumanMessage(content=tool_selection_prompt)])
-                tool_selection = json.loads(tool_selection_response.content)
+                tool_selection_response = llm.invoke([*system_prompt_messages, HumanMessage(content=tool_selection_prompt)])
+                tool_selection = self._clean_and_parse_json(tool_selection_response.content)
             
             
             response = None
@@ -92,18 +113,19 @@ class AgentNodeProcessor(NodeProcessor):
                             "result": tool_result,
                             "missing_parameters": selected_tool.get("missing_parameters", [])
                         })
+                logger.info(f"Results: {results}")
                 response = json.dumps(results, indent=2)
-                
+                logger.info(f"Response: {response}")
                 if human_enabled:
                 # Create a prompt to format the results in a human-friendly way
                     format_prompt = create_json_human_prompt(prompt, results)
-                    formatted_response = llm.invoke([HumanMessage(content=format_prompt)])
+                    formatted_response = llm.invoke([*system_prompt_messages, HumanMessage(content=format_prompt)])
                     response = formatted_response.content
             else:
                 # If no tools are selected, use the LLM to directly answer the input
                 direct_response_prompt = create_direct_response_prompt(str(prompt))
 
-                direct_response = llm.invoke([HumanMessage(content=direct_response_prompt)])
+                direct_response = llm.invoke([*system_prompt_messages, HumanMessage(content=direct_response_prompt)])
                 response = direct_response.content
             # Create final response
           

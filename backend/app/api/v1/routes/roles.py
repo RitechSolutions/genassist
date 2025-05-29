@@ -39,7 +39,11 @@ async def create(role: RoleCreate, service: RolesService = Depends()):
     Depends(permissions("update:role"))
     ])
 async def update(role_id: UUID, role: RoleUpdate, service: RolesService = Depends()):
+<<<<<<< HEAD
+    return await service.update(role_id, role)
+=======
     return await service.update_partial(role_id, role)
+>>>>>>> development
 
 
 @router.delete("/{role_id}", dependencies=[

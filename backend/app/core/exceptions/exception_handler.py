@@ -1,3 +1,14 @@
+<<<<<<< HEAD
+from app.core.exceptions.error_messages import get_error_message, ErrorKey
+from app.core.exceptions.exception_classes import AppException
+from fastapi import Request, WebSocket
+import logging
+import json
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+import re
+=======
 import json
 import logging
 import os
@@ -10,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions.error_messages import ErrorKey, get_error_message
 from app.core.exceptions.exception_classes import AppException
+>>>>>>> development
 
 
 logger = logging.getLogger(__name__)
@@ -19,13 +31,20 @@ def init_error_handlers(app):
     @app.exception_handler(AppException)
     def handle_app_exception(request: Request, error: AppException):
         if error.error_detail:
+<<<<<<< HEAD
+            logger.debug(error.error_detail)
+=======
             logger.exception(error.error_detail)
+>>>>>>> development
         response = {
             'error': get_error_message(request=request, error_key=error.error_key),
             # TODO Put error_key instead of status code since status code is already in headers
             'error_code': error.status_code,
+<<<<<<< HEAD
+=======
             'error_key': error.error_key.value if os.getenv("ENV") == "dev" else None,
             'error_detail': error.error_detail if os.getenv("ENV") == "dev" else None,
+>>>>>>> development
             }
         return JSONResponse(content=jsonable_encoder(response), status_code=error.status_code)
 
@@ -64,7 +83,11 @@ def init_error_handlers(app):
 
     @app.exception_handler(500)
     def handle_internal_server_error(request: Request, error: Exception):
+<<<<<<< HEAD
+        logger.debug(error)
+=======
         logger.exception(error)
+>>>>>>> development
         response = {
             "error": get_error_message(error_key=ErrorKey.INTERNAL_ERROR, request=request),
             }

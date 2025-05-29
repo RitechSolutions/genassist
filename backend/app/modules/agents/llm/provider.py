@@ -1,6 +1,5 @@
 import asyncio
-import json
-from typing import Dict, List, Optional
+from typing import Dict, List
 import os
 import logging
 from langchain.chat_models import init_chat_model
@@ -97,8 +96,9 @@ class LLMProvider:
             try:
                 # Validate connection data
                 validated_data = config.connection_data
-                del validated_data['masked_api_key']
-                validated_data['api_key'] = decrypt_key(validated_data['api_key'])
+                validated_data.pop('masked_api_key', None)
+                if 'api_key' in validated_data:
+                    validated_data['api_key'] = decrypt_key(validated_data['api_key'])
                 # Set up environment variables if needed
                 if config.llm_model_provider.lower() == "openai":
                     os.environ["OPENAI_API_KEY"] = validated_data['api_key']

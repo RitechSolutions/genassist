@@ -1,6 +1,10 @@
 from uuid import UUID
 from typing import Any, Dict, Optional, Literal
+<<<<<<< HEAD
+
+=======
 from datetime import datetime
+>>>>>>> development
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -14,7 +18,11 @@ class RagConfigRead(BaseModel):
 class KBBase(BaseModel):
     name: str
     description: Optional[str] = None
+<<<<<<< HEAD
+    type: Literal["file", "url", "text"]
+=======
     type: Literal["file", "url", "text", "datasource","s3","database"]
+>>>>>>> development
     source: Optional[str] = None
     content: Optional[str] = None
     file_path: Optional[str] = None
@@ -27,6 +35,8 @@ class KBBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True, extra="allow")
 
+<<<<<<< HEAD
+=======
     last_synced: Optional[datetime] = None
     last_sync_status: Optional[str] = None
     last_sync_error: Optional[str] = None
@@ -34,6 +44,7 @@ class KBBase(BaseModel):
     sync_schedule: Optional[str] = None
     sync_active: Optional[bool] = None
     sync_source_id: Optional[UUID] = None
+>>>>>>> development
 
 class KBCreate(KBBase):
     """Body model for POST / PUT (no id)"""

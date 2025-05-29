@@ -12,13 +12,18 @@ class RoleModel(Base):
 
     name: Mapped[Optional[str]] = mapped_column(String(255))
     description: Mapped[Optional[str]] = mapped_column(String(255))
+    role_type: Mapped[Optional[str]] = mapped_column(String(50), server_default='external')
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
 
     # In Roles model
     user_roles = relationship("UserRoleModel", back_populates="role")
     api_key_roles = relationship("ApiKeyRoleModel", back_populates="role", foreign_keys="[ApiKeyRoleModel.role_id]")
 
+<<<<<<< HEAD
+    role_permissions = relationship("RolePermissionModel", back_populates="role")
+=======
     role_permissions = relationship("RolePermissionModel", back_populates="role", cascade="all, delete-orphan")
+>>>>>>> development
 
     @property
     def permissions(self) -> list[str]:

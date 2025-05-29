@@ -1,3 +1,36 @@
+<<<<<<< HEAD
+import logging
+import os
+import sys
+from app.core.config.settings import settings
+
+logger = logging.getLogger(__name__)
+
+DEBUG_MODE = settings.DEBUG
+LOG_LEVEL = settings.LOG_LEVEL
+
+
+def configure_logging():
+    """Applies the logging configuration globally and ensures all loggers are set."""
+    logging.basicConfig(
+            level=LOG_LEVEL,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            stream=sys.stdout  # Ensures everything logs to stdout (PyCharm: white)
+            )
+
+    # Set custom levels for key loggers
+    logging.getLogger("uvicorn").setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
+    logging.getLogger("uvicorn.error").setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
+    logging.getLogger("uvicorn.access").setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
+
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG if DEBUG_MODE else logging.WARNING)
+
+    # Optional: Reduce noise from other verbose libraries
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    logger.info(f"✅ Logging initialized (Log Level: {LOG_LEVEL}, Debug Mode: {DEBUG_MODE})")
+=======
 """
 Central logging configuration for the whole project.
 Call  init_logging()  *once* early in startup (before anything logs).
@@ -5,16 +38,11 @@ Call  init_logging()  *once* early in startup (before anything logs).
 import logging
 import os
 import sys
-import time
-import uuid
-from typing import Dict
 
-from fastapi import Request
 from contextvars import ContextVar
-from starlette.middleware.base import BaseHTTPMiddleware
 from loguru import logger
 from app.core.config.settings import settings
-from starlette_context import context as sctx
+
 
 # --------------------------------------------------------------------------- #
 # Context variables that middlewares will fill in per-request
@@ -126,86 +154,4 @@ def init_logging() -> None:
 
     logger.info("✅ Loguru logging configured")
 
-
-# --------------------------------------------------------------------------- #
-# Middleware that writes request/response info into context vars
-# --------------------------------------------------------------------------- #
-
-class RequestContextMiddleware(BaseHTTPMiddleware):
-    """Logs start/end of every request and populates Loguru ContextVars."""
-
-    async def dispatch(self, request: Request, call_next):
-        start = time.perf_counter()
-
-        # ------------------------------------------------------------------ #
-        # 1️⃣  Prepare contextual values
-        # ------------------------------------------------------------------ #
-        rid = (
-                sctx.get("X-Request-ID")  # created by RequestIdPlugin
-                or request.headers.get("X-Request-ID")  # client-supplied
-                or str(uuid.uuid4())  # last-chance fallback
-        )
-        ip   = request.client.host if request.client else "-"
-        meth = request.method
-        pth  = request.url.path
-        uid  = getattr(getattr(request.state, "user", None), "id", "guest")
-
-        # ------------------------------------------------------------------ #
-        # 2️⃣  Set ContextVars *and keep the tokens* so we can restore later
-        # ------------------------------------------------------------------ #
-        tokens: Dict = {
-            request_id_ctx: request_id_ctx.set(rid),
-            ip_ctx:         ip_ctx.set(ip),
-            method_ctx:     method_ctx.set(meth),
-            path_ctx:       path_ctx.set(pth),
-            uid_ctx:        uid_ctx.set(uid),
-        }
-
-        # ------------------------------------------------------------------ #
-        # 3️⃣  Log “request started”
-        # ------------------------------------------------------------------ #
-        logger.bind(request_id=rid, ip=ip, method=meth, path=pth, uid=uid) \
-              .info("➡️  Request start")
-
-        try:
-            # Do the work
-            response = await call_next(request)
-            code = response.status_code
-            ok = True
-        except Exception as exc:
-            code = 500
-            ok = False
-            raise exc
-        finally:
-            # ------------------------------------------------------------------ #
-            # 4️⃣  Compute duration and fill the remaining vars
-            # ------------------------------------------------------------------ #
-            dur_ms = (time.perf_counter() - start) * 1000
-            status_ctx.set(code)
-            duration_ctx.set(f"{dur_ms:.2f}")
-
-            bind_common = dict(
-                request_id=rid,
-                ip=ip,
-                method=meth,
-                path=pth,
-                uid=uid,
-                status=code,
-                duration=f"{dur_ms:.2f}",
-            )
-
-            if ok:
-                logger.bind(**bind_common).info("✅ Request handled")
-            else:
-                logger.bind(**bind_common).exception("❌ Request error")
-
-            # ------------------------------------------------------------------ #
-            # 5️⃣  Always restore ContextVars to previous state
-            # ------------------------------------------------------------------ #
-            for var, token in tokens.items():
-                var.reset(token)
-            # duration_ctx and status_ctx were never set before, no tokens
-            duration_ctx.set(-1)
-            status_ctx.set(-1)
-
-        return response
+>>>>>>> development

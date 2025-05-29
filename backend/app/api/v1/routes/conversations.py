@@ -1,4 +1,21 @@
+<<<<<<< HEAD
+from fastapi import APIRouter, Depends, WebSocket, Query
+from uuid import UUID
+from app.auth.utils import get_current_user_id
+from app.dependencies.ws import get_socket_connection_manager
+from app.schemas.conversation import ConversationRead
+from app.schemas.conversation_transcript import ConversationTranscriptCreate, InProgConvTranscrUpdate, InProgressConversationTranscriptFinalize
+from app.schemas.filter import ConversationFilter
+from app.services.conversations import ConversationService
+from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+from app.auth.dependencies import auth, permissions
+import logging
+from typing import Optional
+from app.services.auth import AuthService
+from app.modules.websockets.handlers.in_progress_conversation_handler import handle_conversation_socket
+=======
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -10,20 +27,18 @@ from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
-from app.dependencies.agents import get_agent_datasource_service, get_agent_registry
 from app.dependencies.ws import get_socket_connection_manager
-from app.modules.agents.data.datasource_service import AgentDataSourceService
 from app.modules.websockets.handlers.in_progress_conversation_handler import handle_conversation_socket
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.schemas.agent import AgentRead, QueryRequest
+from app.schemas.agent import AgentRead
 from app.schemas.conversation import ConversationRead
 from app.schemas.conversation_transcript import ConversationTranscriptCreate, InProgConvTranscrUpdate, \
     InProgressConversationTranscriptFinalize, TranscriptSegmentInput
 from app.schemas.filter import ConversationFilter
 from app.services.agent_config import AgentConfigService
-from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.auth import AuthService
 from app.services.conversations import ConversationService
+>>>>>>> development
 
 
 logger = logging.getLogger(__name__)
@@ -35,19 +50,38 @@ router = APIRouter()
     ])
 async def start(
         model: ConversationTranscriptCreate,
+<<<<<<< HEAD
+        service: ConversationService = Depends()
+=======
         service: ConversationService = Depends(),
         agent_config_service: AgentConfigService = Depends(),
+>>>>>>> development
         ):
     """
     Create a new in-progress conversation and store the partial transcript.
     """
-    agent = await agent_config_service.get_by_user_id(get_current_user_id())
+<<<<<<< HEAD
+    conversation = await service.start_in_progress_conversation(model)
+    return {"message": "Conversation started", "conversation_id": conversation.id}
+=======
+    if model.messages:
+        raise AppException(error_key=ErrorKey.CONVERSATION_MUST_START_EMPTY, status_code=400)
+    userid = get_current_user_id()
+    logger.debug("userid:"+str(userid))
+
+    agent = await agent_config_service.get_by_user_id(userid)
+    if not agent:
+        logger.debug("agent not found")
+    else:
+        logger.debug("agent:"+agent.name)
+
     agent_read = AgentRead.model_validate(agent)
     model.operator_id = agent.operator_id
     conversation = await service.start_in_progress_conversation(model)
     return {"message": "Conversation started", "conversation_id": conversation.id, "agent_welcome_message":
         agent_read.welcome_message, "agent_possible_queries": agent_read.possible_queries}
 
+>>>>>>> development
 
 @router.patch("/in-progress/update/{conversation_id}", dependencies=[
     Depends(auth),
@@ -57,18 +91,32 @@ async def update(
         conversation_id: UUID,
         model: InProgConvTranscrUpdate,
         service: ConversationService = Depends(),
+<<<<<<< HEAD
+        socket_connection_manager: SocketConnectionManager = Depends(get_socket_connection_manager)
+=======
         socket_connection_manager: SocketConnectionManager = Depends(get_socket_connection_manager),
         agent_config_service: AgentConfigService = Depends(),
+>>>>>>> development
         ):
     """
     Append segments to an existing in-progress conversation.
     """
+<<<<<<< HEAD
+    updated_conversation =  await service.update_in_progress_conversation(conversation_id, model)
+
+    transcript_json = [segment.model_dump() for segment in model.transcript]
+    await socket_connection_manager.broadcast(message_type="message", transcript=transcript_json,
+                                              conversation_id=updated_conversation.id,
+                                              current_user_id=get_current_user_id())
+=======
+
     transcript_json = [segment.model_dump() for segment in model.messages]
 
     asyncio.create_task(socket_connection_manager.broadcast(msg_type="message", payload=transcript_json[0],
                                                             conversation_id=conversation_id,
                                                             current_user_id=get_current_user_id(),
                                                             required_topic="message"))
+
 
     conversation = await service.get_conversation_by_id(conversation_id)
     if conversation.status == ConversationStatus.FINALIZED.value:
@@ -106,7 +154,7 @@ async def update(
                                                                 required_topic="message"))
 
 
-    
+
     updated_conversation =  await service.update_in_progress_conversation(conversation_id, model)
     upd_conv_pyd = ConversationRead.model_validate(updated_conversation)
 
@@ -116,6 +164,7 @@ async def update(
                                                             conversation_id=conversation_id,
                                                             current_user_id=get_current_user_id(),
                                                             required_topic="statistics"))
+>>>>>>> development
 
     return updated_conversation
 
@@ -133,6 +182,13 @@ async def finalize(
     Finalize the conversation so that no more partial updates are allowed.
     Optionally trigger the final analysis or let another endpoint handle it.
     """
+<<<<<<< HEAD
+    finalized_conversation_analysis =  await service.finalize_in_progress_conversation(finalize.llm_analyst_id,
+                                                                                conversation_id)
+    await socket_connection_manager.broadcast(message_type="finalize",
+                                              conversation_id=finalized_conversation_analysis.conversation_id,
+                                              current_user_id=get_current_user_id())
+=======
     asyncio.create_task(socket_connection_manager.broadcast(msg_type="finalize",
                                                             conversation_id=conversation_id,
                                                             current_user_id=get_current_user_id(),
@@ -140,6 +196,7 @@ async def finalize(
 
     finalized_conversation_analysis =  await service.finalize_in_progress_conversation(finalize.llm_analyst_id,
                                                                                 conversation_id)
+>>>>>>> development
     return finalized_conversation_analysis
 
 @router.patch("/in-progress/takeover-super/{conversation_id}", dependencies=[
@@ -155,10 +212,16 @@ async def takeover_supervisor(
         Take over conversation from agent by a supervisor.
     """
     conversation_taken_over =  await service.supervisor_takeover_conversation(conversation_id)
+<<<<<<< HEAD
+    await socket_connection_manager.broadcast(message_type="takeover",
+                                              conversation_id=conversation_taken_over.id,
+                                              current_user_id=get_current_user_id())
+=======
     asyncio.create_task(socket_connection_manager.broadcast(msg_type="takeover",
                                               conversation_id=conversation_taken_over.id,
                                               current_user_id=get_current_user_id(),
                                               required_topic="takeover"))
+>>>>>>> development
     return conversation_taken_over
 
 @router.get("/", response_model=list[ConversationRead], dependencies=[
@@ -174,11 +237,18 @@ async def get(conversation_filter: ConversationFilter = Depends(),
 async def websocket_endpoint(
         websocket: WebSocket,
         conversation_id: UUID,
+<<<<<<< HEAD
+        access_token: str = Query(None),
+        api_key: str = Query(None),
+        lang: Optional[str] = Query("en"),
+        auth_service: AuthService = Depends(),
+=======
         access_token: str = Query(default=None),
         api_key: str = Query(default=None),
         lang: Optional[str] = Query(default="en"),
         auth_service: AuthService = Depends(),
         topics: list[str] = Query(default=["message"]),
+>>>>>>> development
         socket_connection_manager: SocketConnectionManager = Depends(get_socket_connection_manager),
         ):
     await handle_conversation_socket(
@@ -189,5 +259,8 @@ async def websocket_endpoint(
             lang=lang,
             auth_service=auth_service,
             socket_connection_manager=socket_connection_manager,
+<<<<<<< HEAD
+=======
             topics=topics,
+>>>>>>> development
             )

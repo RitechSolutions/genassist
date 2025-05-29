@@ -1,6 +1,9 @@
 import pytest
+<<<<<<< HEAD:tests/llm_providers/test_llm_providers.py
+=======
 
 from app import settings
+>>>>>>> development:tests/integration/llm_providers/test_llm_providers.py
 
 
 @pytest.fixture(scope="module")

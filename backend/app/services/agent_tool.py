@@ -4,7 +4,11 @@ from fastapi import Depends
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+<<<<<<< HEAD
+from app.db.models import Tool
+=======
 from app.db.models import ToolModel
+>>>>>>> development
 from app.repositories.tool import ToolRepository
 from app.schemas.agent_tool import ToolConfigBase, ToolConfigRead
 
@@ -37,7 +41,11 @@ class ToolService:
     # ---------- WRITE ----------
     async def create(self, data: ToolConfigBase) -> ToolConfigRead:
         # convert schema ➜ ORM
+<<<<<<< HEAD
+        new_tool = Tool(**data.model_dump())
+=======
         new_tool = ToolModel(**data.model_dump())
+>>>>>>> development
         created = await self.repository.create(new_tool)
         return ToolConfigRead.model_validate(created, from_attributes=True)
 

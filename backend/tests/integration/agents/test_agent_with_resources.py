@@ -1,3 +1,4 @@
+import json
 import logging
 import pytest
 import os
@@ -5,27 +6,9 @@ import uuid
 
 from app.db.seed.seed_data_config import seed_test_data
 from app.schemas.agent_tool import ApiConfig
+from app.schemas.workflow import Workflow, WorkflowCreate
 
 logger = logging.getLogger(__name__)
-
-@pytest.fixture(scope="module")
-def new_tool_data():
-    tool_id = str(uuid.uuid4())
-    return {
-        "id": tool_id,
-        "name": f"test_get_products_{tool_id[:8]}",
-        "description": "Get list of products from the API",
-        "type": "api",
-        "api_config": ApiConfig(
-            endpoint="https://api.restful-api.dev/objects",
-            method="GET",
-            headers={"Content-Type": "application/json"},
-            query_params={},
-            body={}
-        ).model_dump(),
-        "parameters_schema": {
-        }
-    }
 
 @pytest.fixture(scope="module")
 def new_knowledge_base_data():
@@ -81,15 +64,9 @@ def new_knowledge_base_data():
         "embeddings_model": "text-embedding-ada-002"
     }
 
-@pytest.mark.skip(reason="Disabled temporarily #TODO: fix this by creating a workflow with proper nodes")
-async def test_create_agent_with_tools_and_kb(authorized_client, new_tool_data, new_knowledge_base_data):
-    # Create tool
-    tool_response = authorized_client.post("/api/genagent/tools", json=new_tool_data)
-    if tool_response.status_code != 201:
-        logger.info("Tool creation failed with status code:", tool_response.status_code)
-        logger.info("Error response:", tool_response.json())
-    assert tool_response.status_code == 201
-    tool_id = tool_response.json()["id"]
+#@pytest.mark.skip(reason="Disabled temporarily #TODO: fix this by creating a workflow with proper nodes")
+@pytest.mark.asyncio
+async def test_create_agent_with_tools_and_kb(authorized_client, new_knowledge_base_data):
 
     # Create knowledge base
     kb_response = authorized_client.post("/api/genagent/knowledge/items", json=new_knowledge_base_data)
@@ -101,18 +78,49 @@ async def test_create_agent_with_tools_and_kb(authorized_client, new_tool_data, 
 
     # Create agent configuration
     agent_id = str(uuid.uuid4())
+    agent_name = f"test_support_agent_{agent_id[:8]}"
     agent_data = {
-        "name": f"test_support_agent_{agent_id[:8]}",
+        "name": agent_name,
         "description": "AI assistant specialized in providing product support and answering customer queries. Use tools and knowledge base to assist. Call the tools only when necessary.",
         "welcome_message": "Welcome to the test agent!",
         "possible_queries": ["What can you do?", "What can you not do?"],
-        "workflow_id": "",
         "is_active": False  # Start as inactive
     }
 
     agentsResp = authorized_client.get("/api/genagent/agents/configs/")
     print("Current agents:"+str(agentsResp.json()))
-    agent_data["workflow_id"] = agentsResp.json()[0]["workflow_id"]
+    #agent_data["workflow_id"] = agentsResp.json()[0]["workflow_id"]
+
+    sample_wf = None
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    filename = dir_path+'/test_wf_data.json'
+
+    from pathlib import Path
+    file_path = Path(filename)
+    json_str = file_path.read_text()
+    json_str = json_str.replace("KNOWLEDGEBASE_ID",kb_id)
+    
+    sample_wf = json.loads(json_str)
+
+    wf_nodes = sample_wf["nodes"]
+    wf_edges = sample_wf["edges"]
+
+    #print(f"nodes: {wf_nodes}")
+    #print(f"edges: {wf_edges}")
+
+    wf_data = WorkflowCreate(name=agent_name, 
+                             description=f"Test agent workflow for {agent_name}",
+                             nodes=wf_nodes,
+                             edges=wf_edges,
+                             version="1.0")
+    
+    # Create wf
+    wf_response = authorized_client.post("/api/genagent/workflow", json=wf_data.dict())
+    if wf_response.status_code not in (200, 201):
+        logger.info(f"Error response in agent creation: {wf_response.json()}")
+    assert wf_response.status_code in (200, 201)
+    wf_id = wf_response.json()["id"]
+    logger.info(f"Created wf with ID: {wf_id}")
 
     # Create agent
     agent_response = authorized_client.post("/api/genagent/agents/configs", json=agent_data)
@@ -128,28 +136,25 @@ async def test_create_agent_with_tools_and_kb(authorized_client, new_tool_data, 
         logger.info(f"Error response in switch agent: {switch_response.json()}")
     assert switch_response.status_code == 200
 
-    # Wait for the agent to be fully initialized
-    # max_retries = 10
-    # retry_delay = 1
-    # for attempt in range(max_retries):
-    #     # Check if the agent is active
-    #     agent_config = authorized_client.get(f"/api/genagent/agents/configs/{agent_id}").json()
-    #     if agent_config["is_active"]:
-    #         # Also check if the agent is initialized in the registry
-    #         registry_check = authorized_client.get(f"/api/genagent/agents/status/{agent_id}")
-    #         if registry_check.status_code == 200 and registry_check.json().get("initialized", False):
-    #             break
-    #     print(f"Waiting for agent initialization (attempt {attempt + 1}/{max_retries})...")
-    #     await asyncio.sleep(retry_delay)
-    # else:
-    #     raise AssertionError("Agent failed to become active and initialized after maximum retries")
-
     # Create a thread ID for the conversation
     thread_id = str(uuid.uuid4())
 
     # Test the agent with a question about both product features and currency conversion
     question = "What are the system requirements for your product?"
-    response = authorized_client.post(f"/api/genagent/agents/{agent_id}/query/{thread_id}", json={"query": question})
+
+    test_data = {
+        "message": question,
+        "session": {
+            "base_url":"api.restful-api.dev",
+            "thread_id":thread_id,
+            "user_id":"test_user_id",
+            "user_name":"test_user_name"
+        },
+        "workflow": wf_response.json()
+    }
+
+    #response = authorized_client.post(f"/api/genagent/agents/{agent_id}/query/{thread_id}", json={"query": question})
+    response = authorized_client.post(f"/api/genagent/workflow/test", json=test_data)
     if response.status_code != 200:
         logger.info("Agent query failed with status code:", response.status_code)
         logger.info("Error response:", response.json())
@@ -158,19 +163,30 @@ async def test_create_agent_with_tools_and_kb(authorized_client, new_tool_data, 
     logger.info("Agent q1:"+str(response_data))
 
     # Verify response contains relevant information
-    assert "ram" in response_data["response"].lower() or "storage" in response_data["response"].lower() or "requirements" in response_data["response"].lower()
+    assert "ram" in response_data["output"].lower() or "storage" in response_data["output"].lower() or "requirements" in response_data["output"].lower()
 
-    question = "What are the available products?"
-    response = authorized_client.post(f"/api/genagent/agents/{agent_id}/query/{thread_id}", json={"query": question})
+    question2 = "What are the available products?"
+    test_data2 = {
+        "message": question2,
+        "session": {
+            "base_url":"api.restful-api.dev",
+            "thread_id":thread_id,
+            "user_id":"test_user_id",
+            "user_name":"test_user_name"
+        },
+        "workflow": wf_response.json()
+    }
+    #response = authorized_client.post(f"/api/genagent/agents/{agent_id}/query/{thread_id}", json={"query": question})
+    response = authorized_client.post(f"/api/genagent/workflow/test", json=test_data2)
     if response.status_code != 200:
         logger.info("Agent query failed with status code:", response.status_code)
         logger.info("Error response:", response.json())
     assert response.status_code == 200
     response_data = response.json()
     logger.info("Agent q2"+str(response_data))
-    assert "ipad" in response_data["response"].lower()
+    assert "ipad" in response_data["output"].lower()
 
     # Cleanup
-    authorized_client.delete(f"/api/genagent/tools/{tool_id}")
     authorized_client.delete(f"/api/genagent/knowledge/items/{kb_id}")
     authorized_client.delete(f"/api/genagent/agents/configs/{agent_id}")
+    authorized_client.delete(f"/api/genagent/workflow/{wf_id}")

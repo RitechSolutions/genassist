@@ -11,7 +11,10 @@ from fastapi import Depends
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+<<<<<<< HEAD
+=======
 from app.core.utils.encryption_utils import decrypt_key
+>>>>>>> development
 
 from app.schemas.llm import LlmAnalyst
 from app.services.llm_analysts import LlmAnalystService
@@ -21,6 +24,20 @@ logger = logging.getLogger(__name__)
 
 
 class SpeakerSeparator:
+<<<<<<< HEAD
+    def __init__(
+        self,
+        model_name: str = None,
+        temperature: float = 0.0,
+        llm_analyst_service: LlmAnalystService = Depends()
+    ):
+        self.model_name = model_name or settings.DEFAULT_OPEN_AI_GPT_MODEL
+        self.temperature = temperature
+        self.llm_type = "OpenAI"
+        self.llm = ChatOpenAI(model=self.model_name, temperature=self.temperature)
+        self.llm_analyst_service = llm_analyst_service
+=======
+>>>>>>> development
 
     def _switch_model(self, llm_analyst: LlmAnalyst):
         """Switch the active LLM model and library based on provider."""

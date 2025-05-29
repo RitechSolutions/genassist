@@ -60,7 +60,11 @@ async def analyze_audio(
                    Depends(auth),
                    Depends(permissions("create:upload_transcript"))
                    ])
+<<<<<<< HEAD
+async def process_uploaded_transcript(
+=======
 async def process_transcript(
+>>>>>>> development
         model: ConversationTranscriptCreate, service: AudioService = Depends()
         ):
     analysis_data = await service.process_transcript(model)

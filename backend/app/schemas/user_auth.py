@@ -8,8 +8,6 @@ from app.schemas.role import RoleRead
 class UserAuth(BaseModel):
     id: UUID
     operator: Optional[OperatorAuth] = None
-    # roles: list[RoleRead] = Field([], exclude=True)
-    # permissions: list[str] = Field([], exclude=True)
 
 
     model_config = ConfigDict(

@@ -6,20 +6,51 @@ from starlette_context import context
 from typing import Callable, Awaitable
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+<<<<<<< HEAD
+from app.schemas.user import UserRead
+=======
 from app.schemas.user import UserReadAuth
+>>>>>>> development
 from app.services.auth import AuthService
 logger = logging.getLogger(__name__)
 
 
+<<<<<<< HEAD
+async def get_current_user(token: str = Depends(oauth2), api_key: Optional[str] = Depends(api_key_header), auth_service: AuthService = Depends()):
+=======
 async def get_current_user(request: Request, token: str = Depends(oauth2), api_key: Optional[str] = Depends(
         api_key_header), auth_service: AuthService = Depends()):
+>>>>>>> development
     if token is None:
         if api_key is None:
             return None
         api_key_object = await auth_service.authenticate_api_key(api_key)
         if api_key_object is None:
             return None
+<<<<<<< HEAD
+        return api_key_object.user
+    
+    user = await auth_service.decode_jwt(token)
+    return user  
+
+# Checks for api key header or user JWT token
+async def auth(request: Request, api_key: Optional[str] = Depends(api_key_header),
+                     user: Optional[UserRead] = Depends(get_current_user), auth_service: AuthService = Depends()):
+    """
+    Authenticates the API key or the JWT Token. If there is a valid authentication then continues.
+    """
+    if api_key:
+        # Authenticate API Key if provided
+        logger.debug(f"checking api key {api_key}")
+        api_key_object = await auth_service.authenticate_api_key(api_key)
+        request.state.api_key = api_key_object  # Attach ApiKey object to request.
+
+        context["user_id"] = api_key_object.user_id  # store in context
+        context["auth_mode"] = "api_key"
+        context['user_roles'] = api_key_object.roles
+=======
         request.state.api_key = api_key_object
+        #logger.debug("user:"+str(api_key_object.user.id)+" for api key:"+api_key)
         return api_key_object.user
 
     user = await auth_service.decode_jwt(token)
@@ -39,19 +70,28 @@ async def auth(request: Request, api_key: Optional[str] = Depends(api_key_header
         context["auth_mode"] = "api_key"
         context['user_roles'] = request.state.api_key.roles
         context["operator_id"] = user.operator.id if  user.operator else None
+>>>>>>> development
     elif user:
         request.state.user = user  # Attach user to the state
         context["auth_mode"] = "token"
         context["user_id"] = user.id  # store in context
         context['user_roles'] = user.roles
+<<<<<<< HEAD
+=======
         context["operator_id"] = user.operator.id if user.operator else None  # store in context
+>>>>>>> development
     else:
         raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
 
 def permissions(*permissions: str) -> Callable[[Request], Awaitable[None]]:
     async def wrapper(request: Request):
         if hasattr(request.state, "api_key") and request.state.api_key:
-            pass #await auth_service.check_api_key_permission(request.state.api_key, permission)
+<<<<<<< HEAD
+            pass#await auth_service.check_api_key_permission(request.state.api_key, permission)
+=======
+            if not has_permission(request.state.api_key.permissions, *permissions):
+                raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
+>>>>>>> development
 
         elif hasattr(request.state, "user") and request.state.user:
             user = request.state.user

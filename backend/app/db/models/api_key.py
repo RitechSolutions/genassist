@@ -12,7 +12,7 @@ class ApiKeyModel(Base):
 
     name: Mapped[Optional[str]] = mapped_column(String(255))
     key_val: Mapped[Optional[str]] = mapped_column(String(255))
-    masked_value: Mapped[Optional[str]] = mapped_column(String(9))
+    hashed_value: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     user_id: Mapped[UUID] = mapped_column(UUID, ForeignKey("users.id"), nullable=False)
 

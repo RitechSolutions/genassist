@@ -4,16 +4,33 @@ from typing import List
 import asyncio
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+<<<<<<< HEAD
+
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
+=======
 from app.core.utils.encryption_utils import decrypt_key
+>>>>>>> development
 from app.schemas.conversation_analysis import AnalysisResult
 from app.schemas.conversation_transcript import TranscriptSegment
 from app.schemas.llm import LlmAnalyst
 from app.core.utils.bi_utils import clean_gpt_json_response
 from langchain_anthropic import ChatAnthropic
+<<<<<<< HEAD
+from app.core.config.settings import settings
+=======
+>>>>>>> development
 logger = logging.getLogger(__name__)
 
 
 class GptKpiAnalyzer:
+<<<<<<< HEAD
+    def __init__(self, model_name=settings.DEFAULT_OPEN_AI_GPT_MODEL, temperature=0):
+        self.model_name = model_name
+        self.temperature = temperature
+        self.llm = ChatOpenAI(model=model_name, temperature=temperature)
+=======
+>>>>>>> development
 
     def _switch_model(self, llm_analyst: LlmAnalyst):
         """Switch the active LLM model and library based on provider."""
@@ -41,7 +58,14 @@ class GptKpiAnalyzer:
 
         self._switch_model(llm_analyst)
 
+        if transcript is None or transcript.strip() == "" or len(transcript) == 0 or transcript == "[]":
+            raise ValueError("Transcript is empty! Nothing to analyze!")
+        else:
+            logger.debug(f"analyzing transcript: {transcript}")
+
         last_error_msg = ""
+        last_response = ""
+        user_prompt = ""
 
         for attempt in range(1, max_attempts + 1):
             try:
@@ -60,6 +84,7 @@ class GptKpiAnalyzer:
                     [system_msg, user_msg]
                 )
                 response_text = response.content.strip()
+                last_response = response_text
 
                 summary_data = self._extract_summary_and_title(response_text)
                 summary = summary_data.get("summary")
@@ -79,7 +104,7 @@ class GptKpiAnalyzer:
 
             except Exception as e:
                 last_error_msg = str(e)
-                logger.error(f"Attempt {attempt}: Failed to parse GPT response as JSON. Error: {last_error_msg}")
+                logger.error(f"Attempt {attempt}: Failed to parse GPT response as JSON. Error: {last_error_msg} - LastResponse: {last_response} - Prompt: {user_prompt}")
 
         #raise AppException(error_key=ErrorKey.GPT_RETURNED_INCOMPLETE_RESULT)
 

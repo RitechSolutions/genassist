@@ -1,7 +1,11 @@
 import decimal
 from typing import Optional
+<<<<<<< HEAD
+from sqlalchemy import UUID, BigInteger, ForeignKeyConstraint, Integer, LargeBinary, Numeric, PrimaryKeyConstraint, \
+=======
 from sqlalchemy import ForeignKey, UUID, BigInteger, ForeignKeyConstraint, Integer, LargeBinary, Numeric, \
     PrimaryKeyConstraint, \
+>>>>>>> development
     String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,13 +26,20 @@ class OperatorModel(Base):
     avatar: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
 
+<<<<<<< HEAD
+    # One-to-one relationship instead of list
+=======
     # relationships
+>>>>>>> development
     operator_statistics = relationship(
         "OperatorStatisticsModel", back_populates='operator', uselist=False
     )
     conversations = relationship("ConversationModel", back_populates="operator")
+<<<<<<< HEAD
+=======
     user = relationship("UserModel", back_populates="operator", uselist=False, foreign_keys=[user_id])
     agent = relationship("AgentModel", back_populates="operator", uselist=False)
+>>>>>>> development
 
 class OperatorStatisticsModel(Base):
     __tablename__ = 'operator_statistics'

@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+from sqlalchemy import String, Text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
+=======
 import datetime
 from typing import Optional
 from uuid import UUID
@@ -5,6 +10,7 @@ from sqlalchemy import DateTime, Integer, String, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+>>>>>>> development
 from app.db.base import Base
 
 
@@ -28,6 +34,8 @@ class KnowledgeBaseModel(Base):
     extra_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     embeddings_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+<<<<<<< HEAD
+=======
     # sync configuration
     sync_active: Mapped[Optional[int]] = mapped_column(Integer)
     sync_source_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("data_sources.id"), nullable=True)
@@ -39,3 +47,4 @@ class KnowledgeBaseModel(Base):
 
     # Define the relationship to DataSourceModel
     sync_source = relationship("DataSourceModel", back_populates="knowledge_bases")
+>>>>>>> development

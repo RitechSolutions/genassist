@@ -1,6 +1,6 @@
 from typing import Any
 import logging
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage,SystemMessage
 from langchain.chat_models import init_chat_model
 import os
 
@@ -22,17 +22,31 @@ class LLMModelNodeProcessor(NodeProcessor):
         
         node_config = self.get_node_config()
         
-        new_llm_provider = LlmProviderUpdate(
-            llm_model=node_config.get("model", "gpt-3.5-turbo"),
-            llm_model_provider=node_config.get("provider", "openai"),
-            connection_data={"apiKey": node_config.get("apiKey", ""),
-                            "temperature": node_config.get("temperature", 0.7),
-                            "maxTokens": node_config.get("maxTokens", 1024)
-                            },
-        )
+        # new_llm_provider = LlmProviderUpdate(
+        #     llm_model=node_config.get("model", "gpt-3.5-turbo"),
+        #     llm_model_provider=node_config.get("provider", "openai"),
+        #     connection_data={"apiKey": node_config.get("apiKey", ""),
+        #                     "temperature": node_config.get("temperature", 0.7),
+        #                     "maxTokens": node_config.get("maxTokens", 1024)
+        #                     },
+        # )
         provider_id = node_config.get("providerId", None)
         process_input = await self.get_process_input(input_data)
         self.set_input(process_input)
+        
+        input_data = await self.get_process_input(input_data)
+        logger.info(f"Input data: {input_data}")
+        system_prompt = input_data.get("system_prompt")
+        logger.info(f"System prompt: {system_prompt}")
+        
+        system_prompt_messages = []
+        if system_prompt:
+            system_prompt_messages.append(SystemMessage(content=system_prompt))
+
+        prompt = input_data.get("prompt")
+        self.set_input(prompt)
+        
+        
         
         
         try:
@@ -41,7 +55,7 @@ class LLMModelNodeProcessor(NodeProcessor):
             llm = LLMProvider.get_instance().get_model(provider_id);
           
             # Process the input through the model
-            response = llm.invoke([HumanMessage(content=process_input)])
+            response = llm.invoke([*system_prompt_messages, HumanMessage(content=prompt)])
             result = response.content
             logger.info(f"LLMModelNodeProcessor result: {result}")
             

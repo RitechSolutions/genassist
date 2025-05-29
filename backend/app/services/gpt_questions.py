@@ -11,8 +11,13 @@ logger = logging.getLogger(__name__)
 
 
 class QuestionAnswerer:
+<<<<<<< HEAD
+    def __init__(self, model_name: str = settings.DEFAULT_OPEN_AI_GPT_MODEL, temperature: float = 0.0):
+        self.model_name = model_name
+=======
     def __init__(self, llm_model: str = settings.DEFAULT_OPEN_AI_GPT_MODEL, temperature: float = 0.0):
         self.llm_model = llm_model
+>>>>>>> development
         self.temperature = temperature
         self.llm = ChatOpenAI(model=llm_model, temperature=temperature)
         logger.debug(f"Initialized TranscriptQuestionAnswerer with model: {llm_model}")

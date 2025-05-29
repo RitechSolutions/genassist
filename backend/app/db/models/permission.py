@@ -13,7 +13,11 @@ class PermissionModel(Base):
     description: Mapped[str] = mapped_column(String(255)) 
 
     # Many-to-many via role_permissions
+<<<<<<< HEAD
+    role_permissions = relationship("RolePermissionModel", back_populates="permission")
+=======
     role_permissions = relationship("RolePermissionModel", back_populates="permission", cascade="all, delete-orphan")
+>>>>>>> development
     # api_key_permissions = relationship("ApiKeyPermissionModel", back_populates="permission")
 
     def __repr__(self):
