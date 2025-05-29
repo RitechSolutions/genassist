@@ -13,12 +13,11 @@ def new_agent_data():
         "is_active": True,
         "welcome_message": "Welcome to the test agent!",
         "possible_queries": ["What can you do?", "What can you not do?"],
-        "workflow_id": "" 
     }
 
 @pytest.mark.asyncio
 async def test_get_agents(authorized_client, new_agent_data):
-    response = authorized_client.get("/api/genagent/agents/configs/")
+    response = authorized_client.get("/api/genagent/agents/configs")
 
     data = response.json()
     logger.info(f" test get agents response:{data}")
@@ -27,7 +26,6 @@ async def test_get_agents(authorized_client, new_agent_data):
 
     assert isinstance(data, list)
     assert any("id" in item for item in data)
-    new_agent_data["workflow_id"] = data[0]["workflow_id"] #reuse same workflow id for all tests
 
 
 @pytest.mark.asyncio
@@ -66,6 +64,7 @@ async def test_update_agent(authorized_client, new_agent_data):
     response = authorized_client.put(f"/api/genagent/agents/configs/{id}", json=update)
     
     data = response.json()
+    print(f" test update agent response:{data}")
     logger.info(f" test update agent response:{data}")
 
     assert response.status_code == 200

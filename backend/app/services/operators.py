@@ -1,3 +1,11 @@
+<<<<<<< HEAD
+from typing import List
+from uuid import UUID
+from fastapi import Depends
+from app.repositories.conversation_analysis import ConversationAnalysisRepository
+from app.repositories.conversations import ConversationRepository
+from app.repositories.operators import OperatorRepository
+=======
 from uuid import UUID
 from fastapi import Depends
 from app.auth.utils import generate_unique_username, get_password_hash
@@ -9,6 +17,7 @@ from app.repositories.operators import OperatorRepository
 from app.repositories.roles import RolesRepository
 from app.repositories.user_types import UserTypesRepository
 from app.repositories.users import UserRepository
+>>>>>>> development
 from app.schemas.operator import OperatorCreate, OperatorRead
 
 
@@ -16,6 +25,42 @@ from app.schemas.operator import OperatorCreate, OperatorRead
 class OperatorService:
 
     def __init__(self,
+<<<<<<< HEAD
+                 operator_repo: OperatorRepository = Depends(),
+                 conversation_repo: ConversationRepository = Depends()
+                 ):  # Auto-inject repository
+        self.operator_repo = operator_repo
+        self.conversation_repo = conversation_repo
+
+    async def create(self, data: OperatorCreate):
+        model = await self.operator_repo.create(data)
+        return model
+
+    async def get_all(self):
+        operators = await self.operator_repo.get_all()
+
+        enriched = []
+        for operator in operators:
+            # Add the latest call only if operator has more than 1 call to not duplicate data in frontend
+            await self._set_operator_latest_call(operator)
+
+            enriched.append(operator)
+
+        return enriched
+
+    async def _set_operator_latest_call(self, operator: OperatorRead):
+        if operator.operator_statistics.call_count > 1:
+            latest_conversation = await self.conversation_repo.get_latest_conversation_with_analysis_for_operator(
+                    operator.id)
+            operator.latest_conversation_analysis = latest_conversation
+
+    async def get_by_id(self, operator_id: UUID):
+        # Step 1: Fetch operator with stats
+        operator = await self.operator_repo.get_by_id(operator_id)
+        await self._set_operator_latest_call(operator)
+
+        return operator
+=======
                  operator_repository: OperatorRepository = Depends(),
                  conversation_repository: ConversationRepository = Depends(),
                  user_repository: UserRepository = Depends(),
@@ -128,3 +173,4 @@ class OperatorService:
         # Step 1: Fetch operator with stats
         return  await self.operator_repo.get_by_id(operator_id)
 
+>>>>>>> development

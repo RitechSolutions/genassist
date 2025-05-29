@@ -32,9 +32,11 @@ async def test_create_user(authorized_client, new_user_data):
     response = authorized_client.get("/api/roles/")
     assert response.status_code == 200
     roles = response.json()
-    new_user_data["role_ids"] = [roles[0]["id"]]
+    admin_role = next((role for role in roles if role.get("name") == "admin"), None)
+    new_user_data["role_ids"] = [admin_role["id"]]
 
     response = authorized_client.post("/api/user", json=new_user_data)
+    print("create_user_response")
     print(response.json())
 
     assert response.status_code == 200

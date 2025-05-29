@@ -1,4 +1,5 @@
-from typing import Any
+import asyncio
+from typing import Any, Dict
 import logging
 
 
@@ -11,8 +12,20 @@ logger = logging.getLogger(__name__)
 
 class PromptNodeProcessor(NodeProcessor):
     """Processor for prompt template nodes"""
-    
+    def __init__(self, context, node_id, node_data):
+        super().__init__(context, node_id, node_data)
+        self.on_init()
+
+    def on_init(self):
+        # input_edges = self.get_inputs_from_source_nodes()
+        # logger.info(f"Input edges: {input_edges}")
+
+        # if not input_edges:
+        asyncio.create_task(self.process(None))
+        
+
     async def process(self, input_data: Any = None) -> str:
+        logger.info(f"PromptNodeProcessor input_data")
         """Process a prompt template node"""
         node_config = self.get_node_config()
         

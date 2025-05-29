@@ -14,17 +14,18 @@ services:
     networks:
       - genassist-network
 
-
   # Main application service
   app:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: genassist-app
+    image: genassist-app-image
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - ENVIRONMENT=development
       - RAG_VECTOR_DB_TYPE=chroma
       - RAG_CHROMA_PERSIST_DIRECTORY=/app/data/chroma
       - RAG_CHROMA_COLLECTION_NAME=default
@@ -32,43 +33,11 @@ services:
       - RAG_NEO4J_URL=bolt://neo4j:7687
       - RAG_NEO4J_USERNAME=neo4j
       - RAG_NEO4J_PASSWORD=password
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
-      - DB_HOST=genassist_db
-      - DB_USER=postgres
-      - DB_PASS=postgres
-      - DB_NAME=core_db
-      - DB_PORT=5432
-      - CREATE_DB=true
-      - JWT_SECRET_KEY=change-me-to-secure-key
-      - DEBUG=false
-      - FASTAPI_DEBUG=false
-      - LOG_LEVEL=WARNING
-      - FASTAPI_RUN_PORT=8000
-      - USE_SSL=false
     depends_on:
       - neo4j
       - chroma
       - db
       - redis
-    networks:
-      - genassist-network
-    restart: unless-stopped
-
-  # UI service
-  ui:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: genassist-ui
-    ports:
-      - "8080:8080"
-      - "80:80"
-    environment:
-      GENASSIST_API_PRIVATE_URL: 'http://localhost:8000/api'
-      GENASSIST_API_PUBLIC_URL: 'http://localhost:8000/api'
-    depends_on:
-      - app
     networks:
       - genassist-network
     restart: unless-stopped
@@ -135,21 +104,13 @@ services:
 
   # Celery worker
   celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: genassist-app-image
     container_name: genassist-celery-worker
     command: celery -A app.tasks.celery_app worker --loglevel=info
+    env_file:
+      - .env
     environment:
-      - ENVIRONMENT=dev
       - REDIS_URL=redis://redis:6379/0
-      - DB_HOST=genassist_db
-      - DB_USER=postgres
-      - DB_PASS=postgres
-      - DB_NAME=core_db
-      - DB_PORT=5432
-      - CREATE_DB=false
-      - FASTAPI_RUN_PORT=8000
     depends_on:
       - redis
       - db
@@ -159,21 +120,13 @@ services:
 
   # Celery beat for periodic tasks
   celery_beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: genassist-app-image
     container_name: genassist-celery-beat
     command: celery -A app.tasks.celery_app beat --loglevel=info
+    env_file:
+      - .env
     environment:
-      - ENVIRONMENT=dev
       - REDIS_URL=redis://redis:6379/0
-      - DB_HOST=genassist_db
-      - DB_USER=postgres
-      - DB_PASS=postgres
-      - DB_NAME=core_db
-      - DB_PORT=5432
-      - CREATE_DB=false
-      - FASTAPI_RUN_PORT=8000
     depends_on:
       - redis
       - db
@@ -183,15 +136,14 @@ services:
 
   # Flower for monitoring
   flower:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: genassist-app-image
     container_name: genassist-flower
     command: celery -A app.tasks.celery_app flower --port=5555 --persistent=True --db="flower_db" --basic-auth="user1:password1"
     ports:
       - "5555:5555"
+    env_file:
+      - .env
     environment:
-      - ENVIRONMENT=dev
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis

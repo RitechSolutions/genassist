@@ -18,6 +18,8 @@ LLM_FORM_SCHEMAS = {
                 "options": [
                     {"value": "gpt-3.5-turbo", "label": "GPT-3.5 Turbo"},
                     {"value": "gpt-3.5-turbo-16k", "label": "GPT-3.5 Turbo 16K"},
+                    {"value": "gpt-4o", "label": "GPT-4o"},
+                    {"value": "gpt-4o-mini", "label": "GPT-4o Mini"},
                     {"value": "gpt-4", "label": "GPT-4"},
                     {"value": "gpt-4-32k", "label": "GPT-4 32K"},
                     {"value": "gpt-4-turbo-preview", "label": "GPT-4 Turbo Preview"},
@@ -514,7 +516,10 @@ LLM_FORM_SCHEMAS = {
                 "default": "llama2",
                 "options": [
                     {"value": "llama2", "label": "Llama 2"},
-                    {"value": "mistral", "label": "Mistral"},
+                    {"value": "mistral:7b", "label": "Mistral 7B"},
+
+                    {"value": "mistral:7b-instruct", "label": "Mistral 7B Instruct"},
+                    {"value": "mistral:7b-instruct-v0.2", "label": "Mistral 7B Instruct v0.2"},
                     {"value": "codellama", "label": "CodeLlama"},
                     {"value": "neural-chat", "label": "Neural Chat"},
                     {"value": "starling-lm", "label": "Starling LM"}

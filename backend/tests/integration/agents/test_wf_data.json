@@ -1,0 +1,299 @@
+{
+  "name": "Support Assistant Workflow",
+  "description": "Default workflow for Support Assistant",
+  "nodes": [
+    {
+      "id": "b517909e-5d23-4d95-84c3-e175fc36e5a9",
+      "data": {
+        "label": "Chat Input",
+        "handlers": [
+          {
+            "id": "output",
+            "type": "source",
+            "compatibility": "text"
+          }
+        ],
+        "placeholder": "Type a message..."
+      },
+      "type": "chatInputNode",
+      "width": 300,
+      "height": 93,
+      "dragging": false,
+      "position": {
+        "x": -142.34346779901477,
+        "y": -230.61623805041052
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": -142.34346779901477,
+        "y": -230.61623805041052
+      }
+    },
+    {
+      "id": "a0277bf8-0a3a-4ab7-8040-5f0570311622",
+      "data": {
+        "label": "Chat Output",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "compatibility": "text"
+          }
+        ],
+        "messages": []
+      },
+      "type": "chatOutputNode",
+      "width": 300,
+      "height": 93,
+      "dragging": false,
+      "position": {
+        "x": 1317.2837522371647,
+        "y": 295.39783185667665
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 1317.2837522371647,
+        "y": 295.39783185667665
+      }
+    },
+    {
+      "id": "d04bff89-3be3-4804-a08c-f5bfd719fa17",
+      "data": {
+        "label": "Prompt Template",
+        "handlers": [
+          {
+            "id": "output",
+            "type": "source",
+            "compatibility": "text"
+          },
+          {
+            "id": "input_user_query",
+            "type": "target",
+            "compatibility": "text"
+          }
+        ],
+        "template": "Please configure Agent Workflow before using it! \n\nYour query: {{user_query}}",
+        "includeHistory": true
+      },
+      "type": "promptNode",
+      "width": 400,
+      "height": 261,
+      "dragging": false,
+      "position": {
+        "x": 284.6322125384895,
+        "y": -346.92752528208194
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 284.6322125384895,
+        "y": -346.92752528208194
+      }
+    },
+    {
+      "id": "521f73c8-f875-47f0-907c-c214af354974",
+      "data": {
+        "name": "Knowledge Base",
+        "label": "Knowledge Base",
+        "query": "",
+        "output": "",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "compatibility": "json"
+          },
+          {
+            "id": "output_reference",
+            "type": "source",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "compatibility": "json"
+          }
+        ],
+        "description": "Query multiple knowledge bases",
+        "inputSchema": {
+          "query": {
+            "type": "string",
+            "required": true,
+            "description": "Query to search in knowledge bases"
+          }
+        },
+        "outputSchema": {
+          "output": {
+            "type": "string",
+            "required": true,
+            "description": "Search results from knowledge bases"
+          }
+        },
+        "selectedBases": [
+          "KNOWLEDGEBASE_ID"
+        ]
+      },
+      "type": "knowledgeBaseNode",
+      "width": 400,
+      "height": 501,
+      "dragging": false,
+      "position": {
+        "x": -197.99020703291035,
+        "y": 237.58633579620755
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": -197.99020703291035,
+        "y": 237.58633579620755
+      }
+    },
+    {
+      "id": "26b51642-a7cb-471e-bec2-11aff74c95ce",
+      "data": {
+        "label": "Agent",
+        "handlers": [
+          {
+            "id": "input_system_prompt",
+            "type": "target",
+            "compatibility": "text"
+          },
+          {
+            "id": "input_prompt",
+            "type": "target",
+            "compatibility": "text"
+          },
+          {
+            "id": "input_tools",
+            "type": "target",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "compatibility": "text"
+          }
+        ],
+        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
+        "jsonParsing": false,
+        "localConfig": {
+          "model": "gpt-4o",
+          "apiKey": "",
+          "provider": "openai",
+          "maxTokens": 1024,
+          "temperature": 0.7
+        },
+        "outputFormat": "string"
+      },
+      "type": "agentNode",
+      "width": 320,
+      "height": 374,
+      "dragging": false,
+      "position": {
+        "x": 907.322302213601,
+        "y": -135.64449079081987
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 907.322302213601,
+        "y": -135.64449079081987
+      }
+    },
+    {
+      "id": "05494426-26f1-48fe-9b24-c9893fd23d4d",
+      "data": {
+        "name": "API Tool",
+        "label": "API Tool",
+        "method": "GET",
+        "headers": {},
+        "endpoint": "https://api.restful-api.dev/objects",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "compatibility": "json"
+          },
+          {
+            "id": "output_reference",
+            "type": "source",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "compatibility": "json"
+          }
+        ],
+        "response": "",
+        "parameters": {},
+        "description": "List products",
+        "requestBody": "",
+        "outputSchema": {
+          "data": {
+            "type": "any",
+            "required": true
+          },
+          "status": {
+            "type": "number",
+            "required": true
+          },
+          "headers": {
+            "type": "object",
+            "required": true
+          }
+        }
+      },
+      "type": "apiToolNode",
+      "width": 400,
+      "height": 445,
+      "dragging": false,
+      "position": {
+        "x": 466.4679113637063,
+        "y": 351.0266949149752
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 466.4679113637063,
+        "y": 351.0266949149752
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "reactflow__edge-b517909e-5d23-4d95-84c3-e175fc36e5a9output-d04bff89-3be3-4804-a08c-f5bfd719fa17input_user_query",
+      "source": "b517909e-5d23-4d95-84c3-e175fc36e5a9",
+      "target": "d04bff89-3be3-4804-a08c-f5bfd719fa17",
+      "sourceHandle": "output",
+      "targetHandle": "input_user_query"
+    },
+    {
+      "id": "reactflow__edge-26b51642-a7cb-471e-bec2-11aff74c95ceoutput-a0277bf8-0a3a-4ab7-8040-5f0570311622input",
+      "source": "26b51642-a7cb-471e-bec2-11aff74c95ce",
+      "target": "a0277bf8-0a3a-4ab7-8040-5f0570311622",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-521f73c8-f875-47f0-907c-c214af354974output_reference-26b51642-a7cb-471e-bec2-11aff74c95ceinput_tools",
+      "source": "521f73c8-f875-47f0-907c-c214af354974",
+      "target": "26b51642-a7cb-471e-bec2-11aff74c95ce",
+      "sourceHandle": "output_reference",
+      "targetHandle": "input_tools"
+    },
+    {
+      "id": "reactflow__edge-d04bff89-3be3-4804-a08c-f5bfd719fa17output-26b51642-a7cb-471e-bec2-11aff74c95ceinput_prompt",
+      "source": "d04bff89-3be3-4804-a08c-f5bfd719fa17",
+      "target": "26b51642-a7cb-471e-bec2-11aff74c95ce",
+      "sourceHandle": "output",
+      "targetHandle": "input_prompt"
+    },
+    {
+      "id": "reactflow__edge-05494426-26f1-48fe-9b24-c9893fd23d4doutput_reference-26b51642-a7cb-471e-bec2-11aff74c95ceinput_tools",
+      "source": "05494426-26f1-48fe-9b24-c9893fd23d4d",
+      "target": "26b51642-a7cb-471e-bec2-11aff74c95ce",
+      "sourceHandle": "output_reference",
+      "targetHandle": "input_tools"
+    }
+  ],
+  "user_id": null,
+  "version": "1.0",
+  "id": "01971d80-54da-777f-a3d2-d72bc4a5a1fd"
+}

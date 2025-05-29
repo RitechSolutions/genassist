@@ -1,5 +1,10 @@
 from fastapi import Depends
 from sqlalchemy import UUID
+<<<<<<< HEAD
+=======
+
+from app.db.models import RoleModel
+>>>>>>> development
 from app.schemas.role import RoleCreate, RoleUpdate
 from app.repositories.roles import RolesRepository
 from app.core.exceptions.exception_classes import AppException
@@ -13,7 +18,11 @@ class RolesService:
     async def create(self, role: RoleCreate):
         return await self.repository.create(role)
 
+<<<<<<< HEAD
     async def get_all(self):
+=======
+    async def get_all(self) -> list[RoleModel]:
+>>>>>>> development
         models = await self.repository.get_all()
         return models
 

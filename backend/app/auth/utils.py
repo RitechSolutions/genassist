@@ -1,9 +1,14 @@
+<<<<<<< HEAD
+import secrets
+import hashlib
+=======
 import re
 import secrets
 import hashlib
 import string
 import unicodedata
 
+>>>>>>> development
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from passlib.context import CryptContext
 from uuid import UUID
@@ -44,6 +49,8 @@ def hash_api_key(raw_key: str) -> str:
 def get_current_user_id() -> UUID:
     return socket_user_id.get() or (context.get("user_id") if context.exists() else None)
 
+<<<<<<< HEAD
+=======
 def get_current_operator_id() -> UUID:
     return context.get("operator_id") if context.exists() else None
 
@@ -60,10 +67,13 @@ def current_user_is_admin() -> bool:
         return "admin" in [role.name for role in roles]
     return False
 
+>>>>>>> development
 # def has_permission(user_or_api_key, required: str) -> bool:
 #     return required in user_or_api_key.permissions or "*" in user_or_api_key.permissions
 
 
+<<<<<<< HEAD
+=======
 def generate_password(length: int = 14) -> str:
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
@@ -84,3 +94,4 @@ async def generate_unique_username(user_repository, first: str, last: str) -> st
 
 def is_current_user_supervisor_or_admin():
     return current_user_is_supervisor() or current_user_is_admin()
+>>>>>>> development

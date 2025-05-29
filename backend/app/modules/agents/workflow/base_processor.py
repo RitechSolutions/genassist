@@ -1,4 +1,5 @@
-from typing import Dict, Any, List, Optional
+import asyncio
+from typing import Callable, Dict, Any, List, Optional
 import logging
 
 
@@ -20,6 +21,7 @@ class NodeProcessor:
         self.output = None
         self.input = None
         self.context = context
+        logger.info(f"Node initialized: {node_id} :{node_data.get('id')} : {node_data.get('type')}")
     
     def get_node_config(self) -> Dict[str, Any]:
         """Get the node config for this node"""
@@ -37,12 +39,13 @@ class NodeProcessor:
         """Get the input data for this node"""
         # This is the new method that doesn't take input_data as a parameter
         
-        input_edges = self.get_inputs_from_source_nodes()
+        input_edges = await self.get_inputs_from_source_nodes()
+        logger.info(f"Input edges: {input_edges}")
         target_handlers = self.get_target_handlers().copy()
         target_handlers = [h for h in target_handlers if field_name in h.get("id")]
 
         if not input_edges:
-            return direct_input
+            return direct_input if direct_input else {}
         
         for handler in target_handlers:
             handler["edges"] = [e for e in input_edges if e.get("target_handle") == handler.get("id")]
@@ -66,7 +69,7 @@ class NodeProcessor:
         
         else:
             pass
-        
+        logger.info(f"Result edges: {result}")
         final_result = {}
         
         for key, value in result.items():
@@ -109,7 +112,7 @@ class NodeProcessor:
         """Get the workflow for this node"""
         return self.context.workflow
     
-    def get_inputs_from_source_nodes(self, no_need_output: bool = True) -> List[Any]:
+    async def get_inputs_from_source_nodes(self, no_need_output: bool = True) -> List[Any]:
         """Get inputs from all incoming edges"""
         
         inputs = []
@@ -120,8 +123,20 @@ class NodeProcessor:
             if edges:
                 for edge in edges:
                     source_id = edge.get("source")
+                    logger.info(f"Source id: {source_id}")
                     source_output = self.get_context().state.get_node_output(source_id)
-                    logger.info(f"Source output: {source_output}")
+                    try:
+                        logger.info(f"Source output: {source_output}")
+                        node_processor = self.get_context().get_node_processor(source_id)
+                        target_handlers = node_processor.get_target_handlers()
+                        if target_handlers and len(target_handlers) > 0:
+                            logger.info(f"Target handlers: {node_processor.get_node_config()}")
+                            raise ValueError("Not runnable without input")
+                   
+                        await node_processor.process()
+                        source_output = node_processor.get_output()
+                    except Exception as e:
+                        logger.error(f"Error getting source output: {e}")
                     if source_output is not None or no_need_output:
                         # Check if there's a specific handle mapping
                         target_handle = edge.get("targetHandle")

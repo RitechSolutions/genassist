@@ -81,28 +81,28 @@ DATA_SOURCE_SCHEMAS = {
                 "name": "ssh_tunnel_host",
                 "type": "text",
                 "label": "SSH tunnel host",
-                "required": True,
+                "required": False,
                 "description": "Enter SSH tunnel host"
             },
             {
                 "name": "ssh_tunnel_port",
                 "type": "number",
                 "label": "SSH tunnel port",
-                "required": True,
+                "required": False,
                 "description": "Enter SSH tunnel port"
             },
             {
                 "name": "ssh_tunnel_user",
                 "type": "text",
                 "label": "SSH tunnel user",
-                "required": True,
+                "required": False,
                 "description": "Enter SSH tunnel user"
             },
             {
                 "name": "ssh_tunnel_private_key",
                 "type": "password",
                 "label": "SSH tunnel private key",
-                "required": True,
+                "required": False,
                 "description": "Enter SSH tunnel private key"
             }
         ]

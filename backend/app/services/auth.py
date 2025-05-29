@@ -8,8 +8,11 @@ from app.auth.utils import verify_password
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.api_key import ApiKeyModel
+<<<<<<< HEAD
+=======
 from app.schemas.api_key import ApiKeyInternal
 from app.schemas.user import UserReadAuth
+>>>>>>> development
 from app.services.api_keys import ApiKeysService
 from app.services.users import UserService
 
@@ -46,7 +49,11 @@ class AuthService:
         return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
 
 
+<<<<<<< HEAD
+    async def decode_jwt(self, token: str):
+=======
     async def decode_jwt(self, token: str) -> UserReadAuth:
+>>>>>>> development
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             username = payload.get("sub")
@@ -55,7 +62,11 @@ class AuthService:
             if username is None or user_id is None:
                 raise AppException(status_code=401, error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
                                    error_detail="JWT error: Username is None")
+<<<<<<< HEAD
+            user =  await self.user_service.get_by_id(user_id)
+=======
             user =  await self.user_service.get_by_id_for_auth(user_id)
+>>>>>>> development
 
             if user is None or not user.is_active:
                 raise AppException(error_key=ErrorKey.INVALID_USER, status_code=401)
@@ -68,11 +79,17 @@ class AuthService:
                                error_detail=f"JWT error: {error}", error_obj=error)
 
 
+<<<<<<< HEAD
+    async def authenticate_api_key(self, api_key: str):
+        """Authenticate and return API key object if valid."""
+        api_key = await self.api_keys_service.check_api_key_exists(api_key)
+        if not api_key:
+            raise AppException(status_code=401, error_key=ErrorKey.INVALID_API_KEY)
+=======
     async def authenticate_api_key(self, api_key: str) -> ApiKeyInternal:
         """Authenticate and return API key object if valid."""
         api_key = await self.api_keys_service.validate_and_get_api_key(api_key)
-        if not api_key:
-            raise AppException(status_code=401, error_key=ErrorKey.INVALID_API_KEY)
+>>>>>>> development
         return api_key
 
     async def check_api_key_permission(self, api_key: ApiKeyModel, permission: str):

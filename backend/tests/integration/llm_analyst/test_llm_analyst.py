@@ -1,5 +1,9 @@
 import pytest
+<<<<<<< HEAD:tests/llm_analyst/test_llm_analyst.py
+from app.db.seed.seed import seed_test_data
+=======
 from app.db.seed.seed_data_config import seed_test_data
+>>>>>>> development:tests/integration/llm_analyst/test_llm_analyst.py
 
 @pytest.fixture(scope="module")
 def new_llm_analyst_data():

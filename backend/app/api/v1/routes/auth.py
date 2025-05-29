@@ -33,7 +33,11 @@ async def me(user: Optional[dict] = Depends(get_current_user),
              user_service: UserService = Depends()):
     
     if user:
+<<<<<<< HEAD
+        user_details = await user_service.get_by_id(user.id)  # Get user details from database
+=======
         user_details = await user_service.get_by_id_for_auth(user.id)  # Get user details from database
+>>>>>>> development
         permissions = user_details.permissions
         return {"id": user_details.id, "username": user_details.username, "email": user_details.email, "permissions": permissions}  # Return user details
     else:

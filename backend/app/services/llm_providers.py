@@ -3,8 +3,11 @@ from app.core.exceptions.exception_classes import AppException
 from fastapi import Depends
 from uuid import UUID
 
+<<<<<<< HEAD
+=======
 from app.core.utils.bi_utils import get_masked_api_key
 from app.core.utils.encryption_utils import encrypt_key
+>>>>>>> development
 from app.repositories.llm_providers import LlmProviderRepository
 from app.schemas.llm import LlmProviderCreate, LlmProviderUpdate
 
@@ -15,6 +18,8 @@ class LlmProviderService:
 
 
     async def create(self, data: LlmProviderCreate):
+<<<<<<< HEAD
+=======
         connection_data = data.connection_data.copy()
 
         api_key = connection_data.get("api_key")
@@ -27,6 +32,7 @@ class LlmProviderService:
         #     raise AppException(error_key=ErrorKey.MISSING_API_KEY_LLM_PROVIDER)
         
         data.connection_data = connection_data
+>>>>>>> development
         model = await self.repository.create(data)
         return model
 

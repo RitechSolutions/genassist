@@ -5,6 +5,10 @@ from app.auth.dependencies import auth, permissions
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.user import UserRead, UserCreate, UserUpdate
+<<<<<<< HEAD
+=======
+from app.services.roles import RolesService
+>>>>>>> development
 from app.services.users import UserService
 
 router = APIRouter()
@@ -14,8 +18,18 @@ router = APIRouter()
     Depends(auth),
     Depends(permissions("create:user"))
     ])
+<<<<<<< HEAD
 async def create(user: UserCreate, service: UserService = Depends()):
     return await service.create(user)
+=======
+async def create(user: UserCreate, service: UserService = Depends(), role_service: RolesService = Depends()):
+    roles = await role_service.get_all()
+    internal_role_ids = [role.id for role in roles if role.role_type == "internal"]
+    if any(role in internal_role_ids for role in user.role_ids):
+        raise AppException(error_key=ErrorKey.CREATE_USER_TYPE_IN_MENU, status_code=400)
+    created_user =  await service.create(user)
+    return created_user
+>>>>>>> development
 
 
 

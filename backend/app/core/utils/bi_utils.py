@@ -210,8 +210,12 @@ def filter_conversation_date(conversation_filter, query):
         query = query.where(ConversationModel.conversation_date >= conversation_filter.from_date)
     if conversation_filter.to_date:
         query = query.where(ConversationModel.conversation_date <= conversation_filter.to_date)
+<<<<<<< HEAD
+    return query
+=======
     return query
 
 
 def get_masked_api_key(api_key):
     return api_key[:3] + "***" + api_key[-3:]
+>>>>>>> development

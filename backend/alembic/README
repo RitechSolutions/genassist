@@ -23,3 +23,14 @@ We never call `alembic revision` directly.
 Instead, run the helper script from the **scripts** folder using command:
 
 python scripts/alembic_create_migration_wrapper.py "short description of change"
+
+## 3 To upgrade we use standard commands:
+
+alembic upgrade head
+
+## 4 To downgrade we use standard commands
+
+alembic downgrade -1
+
+## 5 The database migration is called before app startup on run.py
+

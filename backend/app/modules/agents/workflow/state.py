@@ -63,7 +63,7 @@ class WorkflowState:
         """Set the output of a specific node"""
         self.node_outputs[node_id] = output
         if node_id not in self.execution_path:
-            self.execution_path.append(node_id)
+            self.execution_path.append(f"{node_id}")
 
     def set_node_input(self, node_id: str, input_data: Any) -> None:
         """Set the input for a specific node"""

@@ -13,7 +13,11 @@ class LlmProviderRepository:
         self.db = db
 
     async def create(self, data):
+<<<<<<< HEAD
+        obj = LlmProvidersModel(**data.model_dump(), created_by=context["user_id"])
+=======
         obj = LlmProvidersModel(**data.model_dump())
+>>>>>>> development
         self.db.add(obj)
         await self.db.commit()
         await self.db.refresh(obj)
@@ -23,6 +27,10 @@ class LlmProviderRepository:
         return await self.db.get(LlmProvidersModel, llm_provider_id)
 
     async def update(self, obj: LlmProvidersModel):
+<<<<<<< HEAD
+        obj.updated_by = context["user_id"]
+=======
+>>>>>>> development
         self.db.add(obj)
         await self.db.commit()
         await self.db.refresh(obj)

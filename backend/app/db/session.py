@@ -1,4 +1,11 @@
+<<<<<<< HEAD
 from sqlalchemy import create_engine
+=======
+import asyncio
+import logging
+import os
+from sqlalchemy import create_engine, inspect
+>>>>>>> development
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 
 from sqlalchemy.orm import sessionmaker
@@ -6,10 +13,19 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config.settings import settings
 from app.db.base import Base
 
+<<<<<<< HEAD
+if not settings.DB_ASYNC:
+    # Create SQLAlchemy engine
+    engine = create_engine(
+        settings.DATABASE_URL,
+=======
+logger = logging.getLogger(__name__)
+
 if not settings.DB_ASYNC:
     # Create SQLAlchemy engine
     engine = create_engine(
         settings.DATABASE_URL_SYNC,
+>>>>>>> development
         echo=False,  # Set True for SQL logging in development
         future=True
     )
@@ -47,7 +63,10 @@ else:
             yield session
             
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> development
 async def cold_start_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -55,4 +74,31 @@ async def cold_start_db():
 
     from .seed.seed import seed_data
     async with AsyncSessionLocal() as session:
+<<<<<<< HEAD
         await seed_data(session)
+=======
+        await seed_data(session)
+
+
+async def get_all_table_names_async():
+    """Helper to run synchronous sqlalchemy_inspect tasks in an async context."""
+    def sync_get_table_names(conn):
+        # Create inspector within the sync context provided by run_sync
+        inspector = inspect(conn)
+        return inspector.get_table_names()
+
+    async with engine.begin() as conn:
+        all_tables = await conn.run_sync(sync_get_table_names)
+        return all_tables
+
+async def run_db_init_actions():
+    """
+    Handles database initialization
+    """
+
+    all_table_names = await get_all_table_names_async()
+    print(f"Detected tables: {all_table_names}")
+
+    if settings.CREATE_DB or "users" not in all_table_names:
+        await cold_start_db()
+>>>>>>> development

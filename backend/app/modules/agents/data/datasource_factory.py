@@ -33,8 +33,11 @@ class DataSourceFactory:
                 embedding_model = config.get("embedding_model", "all-MiniLM-L6-v2")
                 chunk_size = config.get("chunk_size", 1000)
                 chunk_overlap = config.get("chunk_overlap", 200)
+<<<<<<< HEAD
+=======
 
                 logger.info(f"Creating Chroma vector DB provider with persist directory: {persist_dir}")
+>>>>>>> development
                 
                 return VectorDBProvider(
                     persist_directory=persist_dir,
@@ -58,8 +61,11 @@ class DataSourceFactory:
                 password = config.get("password", "password")
                 chunk_size = config.get("chunk_size", 1000)
                 chunk_overlap = config.get("chunk_overlap", 200)
+<<<<<<< HEAD
+=======
 
                 logger.info(f"Creating Neo4j graph DB provider with URI: {uri}")
+>>>>>>> development
                 
                 return GraphDBProvider(
                     uri=uri, 
@@ -76,7 +82,10 @@ class DataSourceFactory:
                 return None
         
         elif provider_type == "light_rag":
+<<<<<<< HEAD
+=======
             logger.info("Creating LightRAG provider")
+>>>>>>> development
             return LightRAGProvider()
         
         else:

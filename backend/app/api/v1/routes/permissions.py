@@ -17,7 +17,11 @@ async def create(
     permission_data: PermissionCreate,
     service: PermissionsService = Depends()
 ):
+<<<<<<< HEAD
+    return await service.create(request, permission_data)
+=======
     return await service.create(permission_data)
+>>>>>>> development
 
 @router.get("/", response_model=List[PermissionRead], dependencies=[
     Depends(auth),
@@ -43,7 +47,11 @@ async def get(
     Depends(permissions("delete:permission"))
 ])
 async def delete(
+<<<<<<< HEAD
+    permission_id: int,
+=======
     permission_id: UUID,
+>>>>>>> development
     service: PermissionsService = Depends()
 ):
     return await service.delete(permission_id)
@@ -53,8 +61,16 @@ async def delete(
     Depends(permissions("update:permission"))
 ])
 async def update(
+<<<<<<< HEAD
+    request: Request,
+=======
+>>>>>>> development
     permission_id: UUID,
     permission_data: PermissionUpdate,
     service: PermissionsService = Depends()
 ):
+<<<<<<< HEAD
+    return await service.update(request, permission_id, permission_data)
+=======
     return await service.update(permission_id, permission_data)
+>>>>>>> development

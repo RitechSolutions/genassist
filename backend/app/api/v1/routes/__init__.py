@@ -1,8 +1,12 @@
 from fastapi import APIRouter
+<<<<<<< HEAD
+from app.api.v1.routes import agent_config, agent_knowledge, agent_tools, agents, auth, recordings, operators, users, user_types, roles, api_keys, permissions, role_permissions, conversations, datasources, audit_logs, llm_providers, llm_analysts
+=======
 
 from app.api.v1.routes import agent_config, agent_knowledge, agent_tools, agents, api_keys, audit_logs, auth,conversations, datasources, llm_analysts, llm_providers, operators, permissions, recordings, role_permissions, roles, user_types, users, voice, app_settings, feature_flags, workflows, reports
 
 
+>>>>>>> development
 router = APIRouter()
 
 router.include_router(auth.router, prefix="/auth", tags=["Auth"])
@@ -23,9 +27,13 @@ router.include_router(llm_analysts.router, prefix="/llm-analyst", tags=["LlmAnal
 router.include_router(agents.router, prefix="/genagent/agents", tags=["agents"])
 router.include_router(agent_config.router, prefix="/genagent/agents", tags=["agents"])
 router.include_router(agent_knowledge.router, prefix="/genagent/knowledge", tags=["Knowledge Base"])
+<<<<<<< HEAD
+router.include_router(agent_tools.router, prefix="/genagent/tools", tags=["Tools"]) 
+=======
 router.include_router(agent_tools.router, prefix="/genagent/tools", tags=["Tools"])
 router.include_router(workflows.router, prefix="/genagent/workflow", tags=["Workflows"])
 router.include_router(voice.router, prefix="/voice", tags=["Voice"])
 router.include_router(app_settings.router, prefix="/app-settings", tags=["AppSettings"])
 router.include_router(feature_flags.router, prefix="/feature-flags", tags=["FeatureFlags"])
 router.include_router(reports.router, tags=["Reports"])
+>>>>>>> development

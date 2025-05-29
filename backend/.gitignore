@@ -28,3 +28,4 @@ infra/.terraform/
 /certs/*.key
 /certs/*.crt
 /certs/*.pem
+/logs/

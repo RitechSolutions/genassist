@@ -1,10 +1,16 @@
 from uuid import UUID
+<<<<<<< HEAD
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.utils import get_password_hash
+=======
 
 from fastapi_cache.coder import PickleCoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi_cache.decorator import cache
 from app.auth.utils import get_password_hash
 from app.cache.redis_cache import make_key_builder
+>>>>>>> development
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.role import RoleModel
@@ -16,6 +22,13 @@ from app.core.exceptions.exception_classes import AppException
 from fastapi import Depends
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy import delete, select
+<<<<<<< HEAD
+
+
+from starlette_context import context
+from app.schemas.user import UserCreate, UserUpdate
+from app.db.models.user import UserModel, UserRoleModel
+=======
 from starlette_context import context
 from app.schemas.user import UserCreate, UserUpdate
 from app.db.models.user import UserModel, UserRoleModel
@@ -26,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 username_key_builder = make_key_builder("username")
 userid_key_builder = make_key_builder("user_id")
+>>>>>>> development
 
 
 class UserRepository:
@@ -48,7 +62,10 @@ class UserRepository:
                 email=user.email,
                 is_active=user.is_active,
                 user_type_id=user.user_type_id,
+<<<<<<< HEAD
                 created_by=context["user_id"]
+=======
+>>>>>>> development
                 )
         self.db.add(new_user)
         await self.db.flush()
@@ -66,7 +83,10 @@ class UserRepository:
     async def get(self, user_id: UUID):
         return await self.db.get(UserModel, user_id)
 
+<<<<<<< HEAD
+=======
 
+>>>>>>> development
     async def get_full(self, user_id: UUID) -> UserModel | None:
         stmt = (
             select(UserModel)
@@ -86,10 +106,14 @@ class UserRepository:
                     .selectinload(RolePermissionModel.permission),
 
                     # 3) Load the user_type relationship:
+<<<<<<< HEAD
+                    joinedload(UserModel.user_type)
+=======
                     joinedload(UserModel.user_type),
 
                     # 4) Load Operator
                     joinedload(UserModel.operator)
+>>>>>>> development
                     )
         )
         result = await self.db.execute(stmt)
@@ -157,9 +181,12 @@ class UserRepository:
 
         await self.db.commit()
         await self.db.refresh(user)
+<<<<<<< HEAD
+=======
 
         # Invalidate the cache for this user
         cache_key = f"auth:users:get_full:{user_id}"
         await FastAPICache.get_backend().clear(key=cache_key)
 
+>>>>>>> development
         return user

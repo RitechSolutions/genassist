@@ -1,3 +1,4 @@
+from datetime import datetime
 import pytest
 from app.db.seed.seed_data_config import seed_test_data
 import logging
@@ -8,15 +9,7 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(scope='module')
 def new_in_progress_conversation_data():
     return {
-        "messages": [
-            {
-                "create_time": 1740401255699,
-                "start_time": 0.0,
-                "end_time": 2.0,
-                "speaker": "agent",
-                "text": "Hello, how can I help you?"
-                }
-            ],
+        "messages": [],
         "operator_id": seed_test_data.operator_id,
         "data_source_id": seed_test_data.data_source_id,
         "customer_id": None,
@@ -24,9 +17,24 @@ def new_in_progress_conversation_data():
         }
 
 
+@pytest.mark.asyncio(loop_scope="function")
+async def test_ensure_active_agent(authorized_client):
+    
+    agentsResp = authorized_client.get("/api/genagent/agents/configs/")
+    print("Current agents:"+str(agentsResp.json()))
+    assert agentsResp.status_code == 200
+    is_active = agentsResp.json()[0]["is_active"]
+
+    if is_active == 0:
+        agent_id = agentsResp.json()[0]["id"]
+        switch_response = authorized_client.post(f"/api/genagent/agents/switch/{agent_id}")
+        if switch_response.status_code != 200:
+            logger.info(f"Error response in switch agent: {switch_response.json()}")
+        assert switch_response.status_code == 200
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_create_in_progress_conversation(authorized_client_agent, new_in_progress_conversation_data):
+    
     response = authorized_client_agent.post("/api/conversations/in-progress/start", json=new_in_progress_conversation_data)
     assert response.status_code == 200
 
@@ -34,33 +42,32 @@ async def test_create_in_progress_conversation(authorized_client_agent, new_in_p
 
     new_in_progress_conversation_data['id'] =  response.json()['conversation_id']
 
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_in_progress_conversation(authorized_client_agent, new_in_progress_conversation_data):
+    payload = {
+        "messages": [
+            {   "create_time": datetime.now().isoformat(),
+                "start_time": 2.0,
+                "end_time": 4.0,
+                "speaker": "customer",
+                "text": "Thank you I dont need anything.",
+                "type": "message"
+            }
+        ]
+    }
 
-# @pytest.mark.asyncio(loop_scope="function")
-# async def test_update_in_progress_conversation(authorized_client, new_in_progress_conversation_data):
-#     payload = {
-#         "messages": [
-#             {   "create_time": 1740401255699,
-#                 "created_at": 0.0,
-#                 "start_time": 2.0,
-#                 "end_time": 4.0,
-#                 "speaker": "customer",
-#                 "text": "I have an issue with my bill."
-#             }
-#         ],
-#         "type": "message"
-#     }
-#
-#     response = authorized_client.patch(
-#         f"/api/conversations/in-progress/update/{new_in_progress_conversation_data['id']}",
-#         json=payload
-#     )
-#     assert response.status_code == 200
-#
-#     data = response.json()
-#     logger.info("test_update_in_progress_conversation - response: %s",response.json())
-#
-#     assert "id" in data
-#     assert data["id"] == new_in_progress_conversation_data['id']
+    response = authorized_client_agent.patch(
+        f"/api/conversations/in-progress/update/{new_in_progress_conversation_data['id']}",
+        json=payload
+    )
+
+    data = response.json()
+    logger.info("test_update_in_progress_conversation - response: %s",response.json())
+
+    assert response.status_code == 200
+
+    assert "id" in data
+    assert data["id"] == new_in_progress_conversation_data['id']
 
 @pytest.mark.asyncio(loop_scope="function")
 @pytest.mark.parametrize("token", ["supervisor"], indirect=True)

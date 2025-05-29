@@ -1,15 +1,21 @@
+<<<<<<< HEAD
+=======
 from datetime import datetime
 import io
 import os
 from fastapi import UploadFile
+>>>>>>> development
 from sqlalchemy.ext.asyncio import AsyncSession
 from passlib.context import CryptContext
 from uuid import UUID
 import logging
+
 from app.auth.utils import hash_api_key
-from app.core.utils.bi_utils import get_masked_api_key
+<<<<<<< HEAD
+=======
 from app.core.utils.encryption_utils import encrypt_key
 from app.db.models import AgentModel
+>>>>>>> development
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.customer import CustomerModel
@@ -23,6 +29,9 @@ from app.db.models.user import UserModel
 from app.db.models.user_role import UserRoleModel
 from app.db.models.user_type import UserTypeModel
 from app.db.seed.seed_data_config import seed_test_data
+<<<<<<< HEAD
+
+=======
 from app.modules.agents.data.datasource_service import AgentDataSourceService
 from app.repositories.agent import AgentRepository
 from app.repositories.user_types import UserTypesRepository
@@ -56,6 +65,7 @@ from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_config import AgentConfigService
 from app.repositories.file_repository import FileRepository
 from app.services.workflow import WorkflowService
+>>>>>>> development
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +84,23 @@ def create_crud_permissions(resource: str, description_template: str = "Allows {
 
 async def seed_data(session: AsyncSession):
     """Seeds initial data into the database."""
-    from app import settings
+<<<<<<< HEAD
 
     # Create roles
     admin_role = RoleModel(name='admin', is_active=1)
     supervisor_role = RoleModel(name='supervisor', is_active=1)
     operator_role = RoleModel(name='operator', is_active=1)
     api_role = RoleModel(name='api', is_active=1)
-    agent_role = RoleModel(name='ai agent', is_active=1)
+=======
+    from app import settings
+
+    # Create roles
+    admin_role = RoleModel(name='admin', role_type="external", is_active=1)
+    supervisor_role = RoleModel(name='supervisor', role_type="external", is_active=1)
+    operator_role = RoleModel(name='operator', role_type="internal", is_active=1)
+    api_role = RoleModel(name='api', role_type="external", is_active=1)
+    agent_role = RoleModel(name='ai agent', role_type="internal", is_active=1)
+>>>>>>> development
 
     # Create CRUD permissions
     user_permissions = create_crud_permissions("user")
@@ -96,6 +115,15 @@ async def seed_data(session: AsyncSession):
     data_sources_permissions = create_crud_permissions("data_source")
     metrics_permissions = create_crud_permissions("metrics")
     recording_permissions = create_crud_permissions("recording")
+<<<<<<< HEAD
+
+    audit_log_permissions = create_crud_permissions("audit_log")
+    conversation_in_progress_permissions = create_crud_permissions("in_progress_conversation")
+
+    # Create non-CRUD permissions
+    non_standard_crud_permissions = [
+        PermissionModel(name='takeover_in_progress_conversation', description='Allow takeover of in progress conversation.', is_active=True),
+=======
     conversation_permissions = create_crud_permissions("conversation")
 
     audit_log_permissions = create_crud_permissions("audit_log")
@@ -110,6 +138,7 @@ async def seed_data(session: AsyncSession):
     # Create non-CRUD permissions
     non_standard_crud_permissions = [
         takeover_supervisor_permission,
+>>>>>>> development
         PermissionModel(name='create:analyze_recording', description='Allow analysis and transcription of audio record.', is_active=True),
         PermissionModel(name='create:ask_question', description='Allow asking questions to LLM.', is_active=True),
         PermissionModel(name='create:upload_transcript', description='Allow transcript upload.', is_active=True),
@@ -120,10 +149,16 @@ async def seed_data(session: AsyncSession):
     # Assign all permissions to admin
     for permission in (
             user_permissions + user_type_permissions + role_prm_permissions + prm_permissions + apikey_permissions + recording_permissions +
+<<<<<<< HEAD
+            llm_analyst_permissions + llm_provider_permissions + operator_permissions + data_sources_permissions +
+            role_permissions + audit_log_permissions + conversation_in_progress_permissions + metrics_permissions +
+            non_standard_crud_permissions
+=======
             conversation_permissions + llm_analyst_permissions + llm_provider_permissions + operator_permissions +
             data_sources_permissions + role_permissions + audit_log_permissions +
             conversation_in_progress_permissions + metrics_permissions +
             non_standard_crud_permissions + app_settings_permissions + feature_flag_permissions
+>>>>>>> development
     ):
         admin_role.role_permissions.append(RolePermissionModel(permission=permission))
 
@@ -132,32 +167,45 @@ async def seed_data(session: AsyncSession):
         if permission.name in ("read:operator", "update:operator"):
             supervisor_role.role_permissions.append(RolePermissionModel(permission=permission))
 
+<<<<<<< HEAD
+=======
     supervisor_role.role_permissions.append(RolePermissionModel(permission=takeover_supervisor_permission))
 
+>>>>>>> development
     # Assign operator permissions
     for permission in operator_permissions:
         if permission.name == "read:operator":
             operator_role.role_permissions.append(RolePermissionModel(permission=permission))
 
+<<<<<<< HEAD
+=======
     for permission in conversation_permissions:
         if permission.name == "read:conversation":
             operator_role.role_permissions.append(RolePermissionModel(permission=permission))
 
+>>>>>>> development
     # Assign api role permissions
     for permission in operator_permissions:
         if permission.name == "read:operator":
             api_role.role_permissions.append(RolePermissionModel(permission=permission))
 
+<<<<<<< HEAD
+=======
     for permission in conversation_in_progress_permissions:
         if permission.name in ["create:in_progress_conversation", "update:in_progress_conversation", "read:in_progress_conversation"]:
             agent_role.role_permissions.append(RolePermissionModel(permission=permission))
 
+>>>>>>> development
     # Add all permissions and roles
     session.add_all(
         user_permissions + llm_analyst_permissions + llm_provider_permissions +
         operator_permissions + data_sources_permissions + non_standard_crud_permissions +
+<<<<<<< HEAD
+        [admin_role, supervisor_role, operator_role, api_role]
+=======
         app_settings_permissions + feature_flag_permissions +
         [admin_role, supervisor_role, operator_role, api_role, agent_role]
+>>>>>>> development
     )
 
     # Create user types
@@ -169,6 +217,16 @@ async def seed_data(session: AsyncSession):
     # Create users
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     admin = UserModel(username='admin', email='admin@genassist.ritech.io', is_active=1,
+<<<<<<< HEAD
+                  hashed_password=pwd_context.hash('genadmin'), user_type_id=interactive_user_type.id,
+                  id=seed_test_data.admin_user_id)
+    supervisor = UserModel(username='supervisor1', email='supervisor1@genassist.ritech.io', is_active=1,
+                       hashed_password=pwd_context.hash('gensupervisor1'), user_type_id=interactive_user_type.id)
+    operator = UserModel(username='operator1', email='operator1@genassist.ritech.io', is_active=1,
+                     hashed_password=pwd_context.hash('genoperator1'), user_type_id=interactive_user_type.id)
+    apiuser = UserModel(username='apiuser1', email='apiuser1@genassist.ritech.io', is_active=1,
+                    hashed_password=pwd_context.hash('genapiuser1'), user_type_id=console_user_type.id)
+=======
                       hashed_password=pwd_context.hash('genadmin'), user_type_id=interactive_user_type.id,
                       id=seed_test_data.admin_user_id)
     supervisor = UserModel(username='supervisor1', email='supervisor1@genassist.ritech.io', is_active=1,
@@ -179,6 +237,7 @@ async def seed_data(session: AsyncSession):
                          hashed_password=pwd_context.hash('genoperator1'), user_type_id=interactive_user_type.id)
     apiuser = UserModel(username='apiuser1', email='apiuser1@genassist.ritech.io', is_active=1,
                         hashed_password=pwd_context.hash('genapiuser1'), user_type_id=console_user_type.id)
+>>>>>>> development
 
     # Assign roles to users
     admin.user_roles.append(UserRoleModel(role=admin_role))
@@ -190,8 +249,12 @@ async def seed_data(session: AsyncSession):
     await session.commit()
 
     # Seed default DataSource
+<<<<<<< HEAD
+    data_source = DataSourceModel(name="default")
+=======
     data_source = DataSourceModel(id=UUID(seed_test_data.data_source_id),name="default", source_type="S3",
                                   connection_data={"bucket_name": "genassist-default-bucket"}, is_active=1)
+>>>>>>> development
     session.add(data_source)
     await session.commit()
 
@@ -202,6 +265,16 @@ async def seed_data(session: AsyncSession):
 
     # Seed LLM provider
     llm_provider = LlmProvidersModel(
+<<<<<<< HEAD
+        id=UUID(seed_test_data.llm_provider_id),
+        name='openai dev 1.0',
+        llm_type="OpenAI",
+        is_active=1,
+        model_name="gpt-4o",
+        connection_data="{key='key123'}"
+    )
+    session.add(llm_provider)
+=======
             id=UUID(seed_test_data.llm_provider_id),
             name='openai dev 1.0',
             llm_model_provider="openai",
@@ -209,7 +282,6 @@ async def seed_data(session: AsyncSession):
             llm_model="gpt-4o",
             connection_data={
                 "api_key": encrypt_key(settings.OPENAI_API_KEY),
-                "masked_api_key": get_masked_api_key(settings.OPENAI_API_KEY)
                 }
             )
     local_llm_provider = LlmProvidersModel(
@@ -223,6 +295,7 @@ async def seed_data(session: AsyncSession):
                 }
             )
     session.add_all([llm_provider, local_llm_provider])
+>>>>>>> development
     await session.commit()
 
     # Seed LLM analyst speaker separator
@@ -230,7 +303,11 @@ async def seed_data(session: AsyncSession):
         id=UUID(seed_test_data.llm_analyst_speaker_separator_id),
         name='gpt_speaker_separator_service prompt',
         llm_provider_id=llm_provider.id,
+<<<<<<< HEAD
+        prompt= seed_test_data.speaker_separation_llm_analyst_prompt,
+=======
         prompt=seed_test_data.speaker_separation_llm_analyst_prompt,
+>>>>>>> development
         is_active=1
     )
     # Seed LLM analyst kpi analyzer
@@ -238,7 +315,11 @@ async def seed_data(session: AsyncSession):
         id=UUID(seed_test_data.llm_analyst_kpi_analyzer_id),
         name='gpt_kpi_analyzer_service system prompt',
         llm_provider_id=llm_provider.id,
+<<<<<<< HEAD
+        prompt= seed_test_data.kpi_analyzer_system_prompt,
+=======
         prompt=seed_test_data.kpi_analyzer_system_prompt,
+>>>>>>> development
         is_active=1
     )
     # Seed LLM analyst hostility score
@@ -246,7 +327,11 @@ async def seed_data(session: AsyncSession):
         id=UUID(seed_test_data.llm_analyst_in_progress_hostility_id),
         name='gpt_kpi_analyzer_service in progress hostility system prompt',
         llm_provider_id=llm_provider.id,
+<<<<<<< HEAD
+        prompt= seed_test_data.in_progress_hostility_system_prompt,
+=======
         prompt=seed_test_data.in_progress_hostility_system_prompt,
+>>>>>>> development
         is_active=1
     )
     session.add_all([gpt_speaker_separator_llm_analyst, gpt_kpi_analyzer_llm_analyst, in_progress_hostility_llm_analyst])
@@ -267,6 +352,17 @@ async def seed_data(session: AsyncSession):
         first_name='Operator',
         last_name='01',
         is_active=1,
+<<<<<<< HEAD
+        email='operator01@genassist.ritech.io',
+        statistics_id=op_stats.id
+    )
+    session.add(operator)
+    await session.commit()
+
+    # Seed API key
+    api_key = ApiKeyModel(key_val=hash_api_key('test123'), name='test key', is_active=1, user_id=admin.id,
+                      masked_value='tes***123')
+=======
         statistics_id=op_stats.id,
         user_id=seed_test_data.operator_user_id
         )
@@ -275,13 +371,17 @@ async def seed_data(session: AsyncSession):
 
 
     # Seed API key
-    api_key = ApiKeyModel(key_val=hash_api_key('test123'), name='test key', 
-                          is_active=1, user_id=admin.id,
-                          masked_value='tes***123')
+    api_key = ApiKeyModel(key_val=encrypt_key('test123'), name='test key',
+                          hashed_value=hash_api_key('test123'),
+                          is_active=1, user_id=admin.id)
+>>>>>>> development
     api_key.api_key_roles.append(ApiKeyRoleModel(role=admin_role))
     session.add(api_key)
     await session.commit()
 
+<<<<<<< HEAD
+    logger.debug("Database seeding complete.")
+=======
     # Seed tools
     currency_tool = await seed_tools(session, admin.id)
 
@@ -473,11 +573,9 @@ async def seed_agents(session: AsyncSession, agent_role: RoleModel):
     workflow = WorkflowCreate(
         name="Support Assistant",
         description="AI assistant specialized in providing product support and answering customer queries",
-        nodes=[
-        ],
-        edges=[
-        ],
-        version="1.0",
+        nodes=[{"id": "b517909e-5d23-4d95-84c3-e175fc36e5a9", "data": {"label": "Chat Input", "handlers": [{"id": "output", "type": "source", "compatibility": "text"}], "placeholder": "Type a message..."}, "type": "chatInputNode", "width": 300, "height": 93, "position": {"x": 81.65653220098523, "y": 253.38376194958948}, "selected": False, "positionAbsolute": {"x": 81.65653220098523, "y": 253.38376194958948}}, {"id": "a0277bf8-0a3a-4ab7-8040-5f0570311622", "data": {"label": "Chat Output", "handlers": [{"id": "input", "type": "target", "compatibility": "text"}], "messages": []}, "type": "chatOutputNode", "width": 300, "height": 93, "dragging": False, "position": {"x": 1421.283752237165, "y": 253.39783185667665}, "selected": False, "positionAbsolute": {"x": 1421.283752237165, "y": 253.39783185667665}}, {"id": "d04bff89-3be3-4804-a08c-f5bfd719fa17", "data": {"label": "Prompt Template", "handlers": [{"id": "output", "type": "source", "compatibility": "text"}, {"id": "input_user_query", "type": "target", "compatibility": "text"}], "template": "Please configure Agent Workflow before using it! \n\nYour query: {{user_query}}", "includeHistory": False}, "type": "promptNode", "width": 400, "height": 261, "dragging": False, "position": {"x": 682.6322125384895, "y": 171.07247471791806}, "selected": False, "positionAbsolute": {"x": 682.6322125384895, "y": 171.07247471791806}}],
+        edges=[{"id": "reactflow__edge-b517909e-5d23-4d95-84c3-e175fc36e5a9output-d04bff89-3be3-4804-a08c-f5bfd719fa17input_user_query", "source": "b517909e-5d23-4d95-84c3-e175fc36e5a9", "target": "d04bff89-3be3-4804-a08c-f5bfd719fa17", "sourceHandle": "output", "targetHandle": "input_user_query"}, {"id": "reactflow__edge-d04bff89-3be3-4804-a08c-f5bfd719fa17output-a0277bf8-0a3a-4ab7-8040-5f0570311622input", "source": "d04bff89-3be3-4804-a08c-f5bfd719fa17", "target": "a0277bf8-0a3a-4ab7-8040-5f0570311622", "sourceHandle": "output", "targetHandle": "input"}],
+        version="1.0"
     )
     workflow_model = await workflow_service.create(workflow)
 
@@ -487,11 +585,10 @@ async def seed_agents(session: AsyncSession, agent_role: RoleModel):
         is_active=False,
         welcome_message="Welcome, how may I help you?",
         possible_queries=["What can you do?", "What are queries?"],
-        workflow_id=workflow_model.id
-
     )
     config_service = AgentConfigService(repository=AgentRepository(session),
                                         operator_service=opService,
+                                        workflow_service=workflow_service,
                                         user_types_repository=UserTypesRepository(session),
                                         db=session)
     # Create the agent configuration
@@ -503,52 +600,14 @@ async def seed_agents(session: AsyncSession, agent_role: RoleModel):
     session.add(urm)
     await session.commit()
 
-    agent_key = ApiKeyModel(key_val=hash_api_key('agent123'), name='test agent key',
-                            is_active=1, user_id=full_agent.operator.user.id,
-                            masked_value='ag***123')
+    agent_key = ApiKeyModel(key_val=encrypt_key('agent123'),
+                            hashed_value=hash_api_key('agent123'),
+                            name='test agent key',
+                            is_active=1, user_id=full_agent.operator.user.id,)
     agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
     session.add(agent_key)
 
     await session.commit()
 
-    # local agent
-
-    # local_agent_workflow = WorkflowCreate(
-    #     name="Local Support Assistant",
-    #     description="Local AI assistant specialized in providing product support and answering customer queries",
-    #     nodes=[
-    #     ],
-    #     edges=[
-    #     ],
-    #     version="1.0",
-    # )
-    # local_workflow_model = await workflow_service.create(local_agent_workflow)
-    #
-    # local_support_agent = AgentCreate(
-    #     name="Local Support Assistant",
-    #     description="Local AI assistant specialized in providing product support and answering customer queries",
-    #     is_active=False,
-    #     welcome_message="Welcome, how may I help you?",
-    #     possible_queries=["What can you do?", "What are queries?"],
-    #     workflow_id=local_workflow_model.id
-    #
-    # )
-    #
-    # # Create the local agent configuration
-    # local_agent_model = await config_service.create(local_support_agent)
-    # full_local_agent: AgentModel = await config_service.get_by_id_full(local_agent_model.id)
-    #
-    # await session.refresh(agent_role)
-    # urm = UserRoleModel(role_id=agent_role.id, user_id=full_local_agent.operator.user.id)
-    # session.add(urm)
-    # await session.commit()
-    #
-    # local_agent_key = ApiKeyModel(key_val=hash_api_key('localagent123'), name='test local agent key',
-    #                         is_active=1, user_id=full_local_agent.operator.user.id,
-    #                         masked_value='loc***123')
-    # local_agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
-    # session.add(local_agent_key)
-    #
-    # await session.commit()
-
     logger.debug("Agents seeding complete.")
+>>>>>>> development

@@ -255,7 +255,13 @@ class PythonToolImplementation(ToolImplementation):
             if not code:
                 return f"Error: Tool with ID {tool_id} has no Python code defined"
             
+<<<<<<< HEAD
+            result = self._execute_python_code(code, params)
+            print(result)
+            # Execute the Python code with the provided parameters
+=======
             result = self._execute_python_code(code, params)            # Execute the Python code with the provided parameters
+>>>>>>> development
             return result
         except Exception as e:
             logger.error(f"Error executing Python tool: {str(e)}")

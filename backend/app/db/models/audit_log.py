@@ -1,8 +1,15 @@
 import json
+<<<<<<< HEAD
+import datetime
+=======
+>>>>>>> development
 from sqlalchemy import UUID, Column, String, DateTime, event, Integer
 from sqlalchemy.orm import attributes, Session
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from app.auth.utils import get_current_user_id
+<<<<<<< HEAD
+from app.db.base import Base
+=======
 from app.core.utils.date_time_utils import utc_now
 from app.db.base import Base
 from sqlalchemy.inspection import inspect
@@ -10,6 +17,7 @@ import uuid
 
 
 
+>>>>>>> development
 # TODO recheck the limit and logic
 audit_json_limit = 4000
 # Define the AuditLog model

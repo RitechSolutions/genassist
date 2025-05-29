@@ -1,4 +1,15 @@
 # app/services/knowledge_base_service.py
+<<<<<<< HEAD
+from typing import List
+from uuid import UUID
+from fastapi import Depends
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
+from app.db.models.knowledge_base import KnowledgeBaseModel
+from app.repositories.knowledge_base import KnowledgeBaseRepository
+from app.schemas.agent_knowledge import KBCreate, KBRead
+
+=======
 import asyncio
 from typing import List, Optional
 from uuid import UUID
@@ -13,12 +24,15 @@ from app.schemas.agent_knowledge import KBCreate, KBRead
 
 import logging
 logger = logging.getLogger(__name__)
+>>>>>>> development
 
 class KnowledgeBaseService:
     """
     – Accepts / returns Pydantic models.
     – Converts to / from the ORM entity.
     """
+<<<<<<< HEAD
+=======
     _instance = None
 
     @staticmethod
@@ -30,6 +44,7 @@ class KnowledgeBaseService:
             logger.info("KnowledgeBaseService instance created")
         return KnowledgeBaseService._instance
 
+>>>>>>> development
 
     def __init__(self, repository: KnowledgeBaseRepository = Depends()):
         self.repository = repository

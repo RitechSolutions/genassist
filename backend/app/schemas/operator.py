@@ -2,9 +2,16 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
+<<<<<<< HEAD
+
+from app.schemas.conversation import ConversationRead
+from app.schemas.operator_statistics import OperatorStatisticsRead, OperatorStatisticsCreate
+
+=======
 from app.schemas.conversation import ConversationRead
 from app.schemas.operator_statistics import OperatorStatisticsRead, OperatorStatisticsCreate
 from app.schemas.user_minimal import UserCreateMinimal, UserReadMinimal
+>>>>>>> development
 
 
 class OperatorBase(BaseModel):

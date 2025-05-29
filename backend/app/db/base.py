@@ -2,7 +2,11 @@ import uuid
 
 from sqlalchemy.orm import DeclarativeBase
 from datetime import datetime, timezone
+<<<<<<< HEAD
+from sqlalchemy import Column, DateTime, text
+=======
 from sqlalchemy import Column, DateTime, Integer, text
+>>>>>>> development
 from sqlalchemy import UUID, Column
 
 from sqlalchemy.orm import Mapped, mapped_column
@@ -24,11 +28,14 @@ class TimestampMixin:
        server_default=text('CURRENT_TIMESTAMP'),
        onupdate=lambda: datetime.now(timezone.utc))
 
+<<<<<<< HEAD
+=======
 class SoftDeleteMixin:
     is_deleted: Mapped[Integer] = mapped_column(Integer, nullable=False, default=0,
                                                 sort_order=10 # Always put as last column
                                                 )
 
+>>>>>>> development
 
 
 def generate_sequential_uuid():
@@ -46,6 +53,10 @@ def generate_sequential_uuid():
 
 
 
+<<<<<<< HEAD
+class Base(DeclarativeBase, AuditMixin, TimestampMixin):
+=======
 class Base(DeclarativeBase, AuditMixin, TimestampMixin, SoftDeleteMixin):
+>>>>>>> development
     abstract = True
     id: Mapped[UUID] = mapped_column(UUID, primary_key=True, default=generate_sequential_uuid, sort_order=-1)

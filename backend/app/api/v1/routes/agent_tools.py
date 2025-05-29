@@ -48,7 +48,10 @@ async def update_tool(tool_id: UUID, tool: ToolConfigBase = Body(...), tool_serv
     ])
 async def delete_tool(tool_id: UUID, tool_service: ToolService = Depends()):
     return await tool_service.delete(tool_id)
+<<<<<<< HEAD
+=======
 
+>>>>>>> development
 @router.post("/python/test", response_model=Dict[str, Any])
 async def test_python_code(
     request: Dict[str, Any] = Body(...)
@@ -124,7 +127,11 @@ async def test_python_code_with_schema(
         
         # Create a temporary tool config
         tool_config = {
+<<<<<<< HEAD
+            "id": "temp_test_tool",
+=======
             "id": "00000000-0000-0000-0000-000000000000",
+>>>>>>> development
             "name": "Test Tool",
             "description": "This is a test tool",
             "type": "function",

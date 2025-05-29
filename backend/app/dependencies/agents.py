@@ -1,3 +1,15 @@
+<<<<<<< HEAD
+from functools import lru_cache
+import os
+
+from app.schemas.agent_config import AgentConfig
+# Set tokenizers parallelism before importing any libraries that might use tokenizers
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+from app.repositories.file_repository import FileRepository
+from app.services.agent_config import AgentConfigService
+from app.modules.agents.data.datasource_service import DataSourceService
+=======
 import os
 
 from app.db.session import get_db
@@ -7,17 +19,68 @@ from app.services.agent_knowledge import KnowledgeBaseService
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from app.modules.agents.data.datasource_service import AgentDataSourceService
+>>>>>>> development
 from app.modules.agents.registry import AgentRegistry
 
 from app.services.gpt_kpi_analyzer import GptKpiAnalyzer
 from app.services.gpt_questions import QuestionAnswerer
 from app.services.gpt_speaker_separator import SpeakerSeparator
+<<<<<<< HEAD
+from functools import lru_cache
+=======
+>>>>>>> development
 from app.core.config.settings import settings
 
 
 def get_agent_registry() -> AgentRegistry:
     return AgentRegistry.get_instance()
 
+<<<<<<< HEAD
+# @lru_cache()
+def get_agent_config_service() -> AgentConfigService:
+    repository = FileRepository("agents_config/agent_config.json", AgentConfig)
+    _config_service = AgentConfigService(repository)
+    return _config_service
+
+# @lru_cache()
+async def get_datasource_service() -> DataSourceService:
+    _datasource_service = DataSourceService()
+    await _datasource_service.load_knowledge_base()
+    return _datasource_service
+
+
+# # @lru_cache()
+# async def get_knowledge_service() -> KnowledgeService:
+#     repository = FileRepository("agents_config/knowledge_base.json", KnowledgeItem)
+#     _knowledge_service = KnowledgeService(repository)
+#     return _knowledge_service
+
+# # @lru_cache()
+# async def get_tool_service() -> ToolService:
+#     repository = FileRepository("agents_config/tools.json", ToolConfig)
+#     _tool_service = ToolService(repository=repository)
+#     return _tool_service
+
+
+def get_speaker_separator() -> SpeakerSeparator:
+    return SpeakerSeparator(model_name=settings.DEFAULT_OPEN_AI_GPT_MODEL, temperature=0.0)
+
+
+def get_gpt_kpi_analyzer() -> GptKpiAnalyzer:
+    return GptKpiAnalyzer(model_name=settings.DEFAULT_OPEN_AI_GPT_MODEL, temperature=0.0)
+
+
+def get_question_answerer_service() -> QuestionAnswerer:
+    return QuestionAnswerer(model_name=settings.DEFAULT_OPEN_AI_GPT_MODEL, temperature=0.0)
+
+
+
+
+
+
+
+
+=======
 
 # async def build_agent_config_service() -> AgentConfigService:
 #     # ── repositories ────────────────────────────────────────────────
@@ -73,3 +136,4 @@ def get_gpt_kpi_analyzer() -> GptKpiAnalyzer:
 
 def get_question_answerer_service() -> QuestionAnswerer:
     return QuestionAnswerer(llm_model=settings.DEFAULT_OPEN_AI_GPT_MODEL, temperature=0.0)
+>>>>>>> development
