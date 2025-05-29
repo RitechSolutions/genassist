@@ -2,10 +2,7 @@ from typing import Optional
 from sqlalchemy import ForeignKey, UUID, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
-<<<<<<< HEAD
-=======
 from sqlalchemy.dialects.postgresql import JSONB
->>>>>>> development
 
 
 
@@ -37,11 +34,8 @@ class LlmProvidersModel(Base):
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     is_default: Mapped[Optional[int]] = mapped_column(Integer)
 
-<<<<<<< HEAD
-=======
     llm_model: Mapped[Optional[str]] = mapped_column(String)
 
->>>>>>> development
     llm_analysts = relationship("LlmAnalystModel", back_populates="llm_provider", foreign_keys="[LlmAnalystModel.llm_provider_id]")
 
 

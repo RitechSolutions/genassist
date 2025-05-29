@@ -1,17 +1,3 @@
-<<<<<<< HEAD
-from starlette_context import context
-from uuid import UUID
-from fastapi import Depends
-
-from app.auth.utils import generate_api_key, hash_api_key
-from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.exception_classes import AppException
-from app.schemas.api_key import ApiKeyCreate, ApiKeyUpdate
-from app.repositories.api_keys import APiKeysRepository
-from app.schemas.role import RoleRead
-
-
-=======
 import logging
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
@@ -31,16 +17,11 @@ from cryptography.fernet import InvalidToken
 
 
 logger = logging.getLogger(__name__)
->>>>>>> development
 
 class ApiKeysService:
     def __init__(self, repository: APiKeysRepository = Depends()):
         self.repository = repository
 
-<<<<<<< HEAD
-    async def check_api_key_exists(self, api_key: str):
-        return await self.repository.check_exists(hash_api_key(api_key))
-=======
 
     @cache(
             expire=300,
@@ -56,7 +37,6 @@ class ApiKeysService:
             raise AppException(status_code=401, error_key=ErrorKey.INVALID_API_KEY)
         api_key_read = ApiKeyInternal.model_validate(api_key_model)
         return api_key_read
->>>>>>> development
 
     async def create(self, data: ApiKeyCreate):
         """
@@ -68,33 +48,18 @@ class ApiKeysService:
         self._validate_role_ids(user_roles, data.role_ids)
 
         generated_api_key = generate_api_key()
-<<<<<<< HEAD
-        hashed_api_key = hash_api_key(generated_api_key)
-
-        api_key_pyd_model = await self.repository.create(data, hashed_api_key, (generated_api_key[:3] + 3 * "*" + generated_api_key[-3:]))
-
-        # Build the pydantic return object, including the 'key_val' for one-time display
-=======
         encrypted_api_key = encrypt_key(generated_api_key)
         hashed_value = hash_api_key(encrypted_api_key)
 
         api_key_pyd_model = await self.repository.create(data, encrypted_api_key, hashed_value)
 
         # Build the pydantic return object, including the 'key_val'
->>>>>>> development
         api_key_pyd_model.key_val = generated_api_key
         return api_key_pyd_model
 
     async def get(self, api_key_id: UUID):
         api_key = await self.repository.get_by_id(api_key_id)
         if not api_key:
-<<<<<<< HEAD
-            raise AppException(error_key=ErrorKey.API_KEY_NOT_FOUND)
-        return api_key
-
-    async def get_all(self):
-        return await self.repository.get_all()
-=======
             raise AppException(error_key=ErrorKey.API_KEY_NOT_FOUND, status_code=404)
         try:
             api_key.key_val = decrypt_key(api_key.key_val)
@@ -111,16 +76,11 @@ class ApiKeysService:
                 raise AppException(error_key=ErrorKey.INVALID_API_KEY_ENCRYPTION, status_code=500)
         return api_keys
 
->>>>>>> development
 
     async def delete(self, api_key_id: UUID):
         api_key = await self.repository.get_by_id(api_key_id)
         if not api_key:
-<<<<<<< HEAD
-            raise AppException(error_key=ErrorKey.API_KEY_NOT_FOUND)
-=======
             raise AppException(error_key=ErrorKey.API_KEY_NOT_FOUND, status_code=404)
->>>>>>> development
         return await self.repository.delete(api_key)
 
     async def update(self, api_key_id: UUID, data: ApiKeyUpdate):

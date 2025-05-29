@@ -2,14 +2,8 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict
-<<<<<<< HEAD
-
-from app.schemas.role import RoleRead
-
-=======
 from app.schemas.role import RoleRead
 from app.schemas.user_auth import UserAuth
->>>>>>> development
 
 
 class ApiKeyBase(BaseModel):
@@ -28,26 +22,13 @@ class ApiKeyUpdate(BaseModel):
     is_active: Optional[int] = None
     role_ids: Optional[list[UUID]] = None
 
-<<<<<<< HEAD
-class ApiKeyBase(ApiKeyBase):
-=======
 
 class ApiKeyRead(ApiKeyBase):
->>>>>>> development
     id: UUID
     created_at: datetime
     updated_at: datetime
     user_id: UUID
-<<<<<<< HEAD
-    masked_value: str
-
     roles: list[RoleRead] = []
-
-class ApiKeyRead(ApiKeyBase):
-    # For single time show of api key
-=======
-    roles: list[RoleRead] = []
->>>>>>> development
     key_val: str
 
     model_config = ConfigDict(

@@ -1,36 +1,3 @@
-<<<<<<< HEAD
-import logging
-import os
-import sys
-from app.core.config.settings import settings
-
-logger = logging.getLogger(__name__)
-
-DEBUG_MODE = settings.DEBUG
-LOG_LEVEL = settings.LOG_LEVEL
-
-
-def configure_logging():
-    """Applies the logging configuration globally and ensures all loggers are set."""
-    logging.basicConfig(
-            level=LOG_LEVEL,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            stream=sys.stdout  # Ensures everything logs to stdout (PyCharm: white)
-            )
-
-    # Set custom levels for key loggers
-    logging.getLogger("uvicorn").setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
-    logging.getLogger("uvicorn.error").setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
-    logging.getLogger("uvicorn.access").setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
-
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG if DEBUG_MODE else logging.WARNING)
-
-    # Optional: Reduce noise from other verbose libraries
-    logging.getLogger("asyncio").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-
-    logger.info(f"✅ Logging initialized (Log Level: {LOG_LEVEL}, Debug Mode: {DEBUG_MODE})")
-=======
 """
 Central logging configuration for the whole project.
 Call  init_logging()  *once* early in startup (before anything logs).
@@ -154,4 +121,3 @@ def init_logging() -> None:
 
     logger.info("✅ Loguru logging configured")
 
->>>>>>> development

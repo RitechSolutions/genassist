@@ -2,12 +2,9 @@ import pytest
 from uuid import UUID
 from httpx import AsyncClient
 from fastapi import FastAPI
-<<<<<<< HEAD:tests/datasources/test_datasources.py
-=======
 import logging
 
 logger = logging.getLogger(__name__)
->>>>>>> development:tests/integration/datasources/test_datasources.py
 
 @pytest.mark.asyncio
 async def test_create_datasource(client):

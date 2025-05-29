@@ -30,10 +30,6 @@ class UserTypesRepository:
 
 
     async def update(self, user_type: UserTypeModel):
-<<<<<<< HEAD
-        user_type.updated_by = context["user_id"]
-=======
->>>>>>> development
         self.db.add(user_type)
         await self.db.commit()
         await self.db.refresh(user_type)

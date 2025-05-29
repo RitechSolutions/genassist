@@ -19,11 +19,7 @@ class RoleModel(Base):
     user_roles = relationship("UserRoleModel", back_populates="role")
     api_key_roles = relationship("ApiKeyRoleModel", back_populates="role", foreign_keys="[ApiKeyRoleModel.role_id]")
 
-<<<<<<< HEAD
-    role_permissions = relationship("RolePermissionModel", back_populates="role")
-=======
     role_permissions = relationship("RolePermissionModel", back_populates="role", cascade="all, delete-orphan")
->>>>>>> development
 
     @property
     def permissions(self) -> list[str]:

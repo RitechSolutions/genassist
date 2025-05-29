@@ -1,18 +1,7 @@
-<<<<<<< HEAD
-import os
-=======
->>>>>>> development
 from pathlib import Path
 from typing import Optional, Tuple
 from pydantic import computed_field, ConfigDict
 from pydantic_settings import BaseSettings
-<<<<<<< HEAD
-
-class ProjectSettings(BaseSettings):
-    # === LLM Keys ===
-    OPENAI_API_KEY: Optional[str]
-    HUGGINGFACE_TOKEN: Optional[str]
-=======
 import os
 
 
@@ -33,7 +22,6 @@ class ProjectSettings(BaseSettings):
     # === LLM Keys ===
     OPENAI_API_KEY: Optional[str] = None
     HUGGINGFACE_TOKEN: Optional[str] = None
->>>>>>> development
 
     # === Whisper Model Defaults ===
     DEFAULT_WHISPER_MODEL: str = "base.en"
@@ -62,14 +50,6 @@ class ProjectSettings(BaseSettings):
     DB_ASYNC: bool = True
     
     DEBUG: bool = True
-<<<<<<< HEAD
-    FASTAPI_DEBUG: bool = True
-    LOG_LEVEL: str = "DEBUG"
-    FASTAPI_RUN_PORT: int = 8000
-    
-    
-    
-=======
     DEV: bool = True
     FASTAPI_DEBUG: bool = True
     LOG_LEVEL: str = "DEBUG"
@@ -83,7 +63,6 @@ class ProjectSettings(BaseSettings):
     @property
     def REDIS_URL(self) -> str:
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
->>>>>>> development
 
     @computed_field
     @property

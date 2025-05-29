@@ -187,10 +187,7 @@ langchain_community
 langchain_neo4j
 langchain_chroma
 langchain-huggingface
-<<<<<<< HEAD
-=======
 langchain-ollama
->>>>>>> development
 sentence-transformers
 lightrag-hku
 pipmaster
@@ -198,9 +195,6 @@ graspologic
 pydantic-settings
 uuid6
 # pdfminer.six
-<<<<<<< HEAD
-textract==1.6.5
-=======
 textract==1.6.5
 cryptography==44.0.3
 wcwidth==0.2.13
@@ -210,4 +204,3 @@ fastapi-cache2==0.2.2
 boto3>=1.34.0
 croniter>=6.0.0
 loguru>=0.7.3
->>>>>>> development

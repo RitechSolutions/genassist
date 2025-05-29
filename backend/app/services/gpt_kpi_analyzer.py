@@ -4,33 +4,16 @@ from typing import List
 import asyncio
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-<<<<<<< HEAD
-
-from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.exception_classes import AppException
-=======
 from app.core.utils.encryption_utils import decrypt_key
->>>>>>> development
 from app.schemas.conversation_analysis import AnalysisResult
 from app.schemas.conversation_transcript import TranscriptSegment
 from app.schemas.llm import LlmAnalyst
 from app.core.utils.bi_utils import clean_gpt_json_response
 from langchain_anthropic import ChatAnthropic
-<<<<<<< HEAD
-from app.core.config.settings import settings
-=======
->>>>>>> development
 logger = logging.getLogger(__name__)
 
 
 class GptKpiAnalyzer:
-<<<<<<< HEAD
-    def __init__(self, model_name=settings.DEFAULT_OPEN_AI_GPT_MODEL, temperature=0):
-        self.model_name = model_name
-        self.temperature = temperature
-        self.llm = ChatOpenAI(model=model_name, temperature=temperature)
-=======
->>>>>>> development
 
     def _switch_model(self, llm_analyst: LlmAnalyst):
         """Switch the active LLM model and library based on provider."""

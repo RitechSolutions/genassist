@@ -1,9 +1,5 @@
-<<<<<<< HEAD
-from typing import Dict, Any
-=======
 import json
 from typing import Dict, Any, List
->>>>>>> development
 
 def generate_python_function_template(parameters_schema: Dict[str, Any]) -> str:
     """
@@ -167,8 +163,6 @@ def validate_params_against_schema(params: Dict[str, Any], schema: Dict[str, Any
             
     return result_params
 
-<<<<<<< HEAD
-=======
 
 def create_tool_description(tool: Dict[str, Any], index: int) -> str:
         """Create a description for a specific tool"""
@@ -309,4 +303,3 @@ def map_tool_to_schema(node: Dict[str, Any]) -> Dict[str, Any]:
             
         return tool
     
->>>>>>> development

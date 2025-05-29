@@ -1,8 +1,4 @@
 from typing import Optional
-<<<<<<< HEAD
-
-=======
->>>>>>> development
 from fastapi import WebSocket
 from jose import JWTError, ExpiredSignatureError
 from uuid import UUID
@@ -15,17 +11,6 @@ from app.auth.utils import has_permission, socket_user_id
 
 logger = logging.getLogger(__name__)
 
-<<<<<<< HEAD
-async def handle_conversation_socket(
-    websocket: WebSocket,
-    conversation_id: UUID,
-    access_token: Optional[str],
-    api_key: Optional[str],
-    lang: str,
-    auth_service,
-    socket_connection_manager: SocketConnectionManager
-):
-=======
 
 async def handle_conversation_socket(
         websocket: WebSocket,
@@ -37,7 +22,6 @@ async def handle_conversation_socket(
         socket_connection_manager: SocketConnectionManager,
         topics: list[str],
         ):
->>>>>>> development
     try:
         user = None
         api_key_object = None
@@ -68,11 +52,7 @@ async def handle_conversation_socket(
         await websocket.close(code=1011, reason="Authentication failure")
         return
 
-<<<<<<< HEAD
-    await socket_connection_manager.connect(websocket, conversation_id, user_id, permissions)
-=======
     await socket_connection_manager.connect(websocket, conversation_id, user_id, permissions, topics)
->>>>>>> development
 
     try:
         while True:

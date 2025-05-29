@@ -99,18 +99,11 @@ class LightRAGProvider(DataSourceProvider):
         """Async helper to insert a document into LightRAG"""
         await self.rag.ainsert(content)
         
-<<<<<<< HEAD
-    def delete_document(self, doc_id: str) -> bool:
-        """Delete a document from LightRAG"""
-        try:
-            if not self.rag:
-=======
     async def delete_document(self, doc_id: str) -> bool:
         """Delete a document from LightRAG"""
         try:
             if not self.rag:
                 # TODO @Krist, should this be awaited?
->>>>>>> development
                 if not self.initialize():
                     return False
             
@@ -214,9 +207,6 @@ class LightRAGProvider(DataSourceProvider):
             })
         # Sort by score and limit results
         formatted_results.sort(key=lambda x: x['score'], reverse=True)
-<<<<<<< HEAD
-        return formatted_results[:limit] 
-=======
         return formatted_results[:limit]
 
     async def get_document_ids(self, kb_id: str) -> List[str]:
@@ -251,4 +241,3 @@ class LightRAGProvider(DataSourceProvider):
         except Exception as e:
             self.logger.error(f"Failed to get document IDs from LightRAG: {str(e)}")
             return [] 
->>>>>>> development

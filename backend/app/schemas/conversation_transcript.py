@@ -1,21 +1,11 @@
 from dataclasses import dataclass
-<<<<<<< HEAD
-from uuid import UUID
-from pydantic import BaseModel
-from typing import List, Optional
-=======
->>>>>>> development
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-<<<<<<< HEAD
-
-=======
 from pydantic import BaseModel, ConfigDict
 
 
->>>>>>> development
 # class TranscriptSegment(BaseModel):
 #     start_time: float
 #     speaker: str
@@ -34,14 +24,11 @@ class TranscriptSegmentInput(BaseModel):
     end_time: float
     speaker: str
     text: str
-<<<<<<< HEAD
-=======
     type: Optional[str] = "message"
 
     model_config = ConfigDict(
             from_attributes=True,
             )
->>>>>>> development
     
 
 

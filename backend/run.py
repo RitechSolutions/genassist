@@ -33,10 +33,6 @@ if __name__ == "__main__":
                 reload_includes=["*.py"],
                 reload_excludes=["./containers","./.git", "./.idea", "./logs", "./alembic"],
                 reload_dirs=["./app"],
-<<<<<<< HEAD
-                ssl_keyfile=os.environ.get("SSL_KEYFILE_PATH", ""),
-                ssl_certfile=os.environ.get("SSL_CERTFILE_PATH", "")
-=======
                 ssl_keyfile=os.environ.get("SSL_KEYFILE_PATH", "") if os.environ.get("USE_SSL", "True").lower() == 'true' else None,
                 ssl_certfile=os.environ.get("SSL_CERTFILE_PATH", "") if os.environ.get("USE_SSL", "True").lower() == 'true' else None,
                 log_level=os.environ.get("LOG_LEVEL", "debug").lower(),
@@ -45,5 +41,4 @@ if __name__ == "__main__":
                 access_log=os.environ.get("ACCESS_LOG", "False").lower() == "true",
                 use_colors=os.environ.get("USE_COLORS", "True").lower() == "true",
                 proxy_headers=os.environ.get("PROXY_HEADERS", "False").lower() == "true",
->>>>>>> development
                 )

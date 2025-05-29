@@ -17,15 +17,10 @@ from app.db.models.conversation import ConversationModel, ConversationAnalysisMo
 from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
 from app.db.utils.event_hooks_config import auto_register_updated_by
-<<<<<<< HEAD
-from .tool import Tool
-from .knowledge_base import KnowledgeBaseModel
-=======
 from .agent import AgentModel
 from .tool import ToolModel
 from .knowledge_base import KnowledgeBaseModel
 from .workflow import WorkflowModel
->>>>>>> development
 
 
 __all__ = [
@@ -43,11 +38,7 @@ __all__ = [
     "LlmProvidersModel",
     "JobModel",
     "JobLogsModel",
-<<<<<<< HEAD
-#    "ApiKeyPermissionModel",
-=======
     #    "ApiKeyPermissionModel",
->>>>>>> development
     "ApiKeyModel",
     "AuditLogModel",
     "ApiKeyRoleModel",
@@ -55,13 +46,6 @@ __all__ = [
     "ConversationAnalysisModel",
     "CustomerModel",
     "DataSourceModel",
-<<<<<<< HEAD
-    "Tool",
-    "KnowledgeBaseModel",
-]
-
-models=[
-=======
     "ToolModel",
     "KnowledgeBaseModel",
     "AgentModel",
@@ -69,7 +53,6 @@ models=[
     ]
 
 models = [
->>>>>>> development
     ConversationModel,
     ConversationAnalysisModel,
     UserModel,
@@ -91,12 +74,8 @@ models = [
     AuditLogModel,
     UserRoleModel,
     KnowledgeBaseModel,
-<<<<<<< HEAD
-]
-=======
     AgentModel,
     WorkflowModel,
     ]
->>>>>>> development
 
 auto_register_updated_by(models)
