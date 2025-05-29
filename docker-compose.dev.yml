@@ -47,6 +47,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      additional_contexts:
+         plugins: ./plugins/react
     container_name: genassist-ui
     ports:
       - "8080:8080"

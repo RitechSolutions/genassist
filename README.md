@@ -97,12 +97,19 @@ GenAssist provides multiple integration options:
 
 ```bash
 #Build the plugin
-cd plugin-react
+cd plugins/react
 npm run build
 
 #Run chat plugin example
 cd example-app
 npm run dev
+```
+
+### IOS Integration
+
+```bash
+#Build the plugin
+cd plugins/ios
 ```
 
 ## UI Test Automation
