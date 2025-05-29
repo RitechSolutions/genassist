@@ -6,7 +6,7 @@ const CustomThemeExample: React.FC = () => {
     primaryColor: '#8e44ad',
     secondaryColor: '#f5f5f5',
     backgroundColor: '#ffffff',
-    textColor: '#333333',
+    textColor: '#00000',
     fontFamily: 'Roboto, sans-serif',
     fontSize: '15px',
   });

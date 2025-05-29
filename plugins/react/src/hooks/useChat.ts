@@ -14,6 +14,7 @@ export const useChat = ({ baseUrl, apiKey, onError }: UseChatProps) => {
   const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const chatServiceRef = useRef<ChatService | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [possibleQueries, setPossibleQueries] = useState<string[]>([]);
 
   // Initialize chat service
   useEffect(() => {
@@ -33,6 +34,14 @@ export const useChat = ({ baseUrl, apiKey, onError }: UseChatProps) => {
           const convId = await chatServiceRef.current.initializeConversation();
           setConversationId(convId);
           setConnectionState('connected');
+
+          // Get possible queries from API response
+          if (chatServiceRef.current.getPossibleQueries) {
+            const queries = chatServiceRef.current.getPossibleQueries();
+            if (queries && queries.length > 0) {
+              setPossibleQueries(queries);
+            }
+          }
         }
       } catch (error) {
         setConnectionState('disconnected');
@@ -65,6 +74,7 @@ export const useChat = ({ baseUrl, apiKey, onError }: UseChatProps) => {
     setConnectionState('connecting');
     setIsLoading(true);
     setMessages([]);
+    setPossibleQueries([]);
     
     try {
       // Reset the conversation in the chat service
@@ -74,6 +84,14 @@ export const useChat = ({ baseUrl, apiKey, onError }: UseChatProps) => {
       const convId = await chatServiceRef.current.startConversation();
       setConversationId(convId);
       setConnectionState('connected');
+
+      // Get possible queries from API response
+      if (chatServiceRef.current.getPossibleQueries) {
+        const queries = chatServiceRef.current.getPossibleQueries();
+        if (queries && queries.length > 0) {
+          setPossibleQueries(queries);
+        }
+      }
     } catch (error) {
       setConnectionState('disconnected');
       if (onError && error instanceof Error) {
@@ -124,6 +142,7 @@ export const useChat = ({ baseUrl, apiKey, onError }: UseChatProps) => {
     sendMessage,
     resetConversation,
     connectionState,
-    conversationId
+    conversationId,
+    possibleQueries
   };
 }; 
