@@ -11,6 +11,8 @@ export interface ChatMessage {
 export interface StartConversationResponse {
   message: string;
   conversation_id: string;
+  agent_welcome_message?: string;
+  agent_possible_queries?: string[];
 }
 
 // Props for the GenAgentChat component

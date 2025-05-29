@@ -9,6 +9,7 @@ export class ChatService {
   private webSocket: WebSocket | null = null;
   private messageHandler: ((message: ChatMessage) => void) | null = null;
   private storageKey = 'genassist_conversation_id';
+  private possibleQueries: string[] = [];
 
   constructor(baseUrl: string, apiKey: string) {
     this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
@@ -19,6 +20,10 @@ export class ChatService {
 
   setMessageHandler(handler: (message: ChatMessage) => void) {
     this.messageHandler = handler;
+  }
+
+  getPossibleQueries(): string[] {
+    return this.possibleQueries;
   }
 
   /**
@@ -62,6 +67,9 @@ export class ChatService {
     
     // Clear the conversation ID
     this.conversationId = null;
+
+    // Clear possible queries
+    this.possibleQueries = [];
     
     // Remove from local storage
     try {
@@ -120,6 +128,24 @@ export class ChatService {
       this.conversationId = response.data.conversation_id;
       this.saveConversation();
       this.connectWebSocket();
+
+      // Store possible queries if available
+      if (response.data.agent_possible_queries && response.data.agent_possible_queries.length > 0) {
+        this.possibleQueries = response.data.agent_possible_queries;
+      }
+      
+      // Process agent welcome message if available
+      if (response.data.agent_welcome_message && this.messageHandler) {
+        const now = Date.now();
+        const welcomeMessage: ChatMessage = {
+          create_time: now,
+          start_time: now / 1000,
+          end_time: now / 1000 + 0.01,
+          speaker: 'agent',
+          text: response.data.agent_welcome_message
+        };
+        this.messageHandler(welcomeMessage);
+      }
       return response.data.conversation_id;
     } catch (error) {
       console.error('Error starting conversation:', error);
@@ -134,7 +160,7 @@ export class ChatService {
 
     const now = Date.now();
     const chatMessage: ChatMessage = {
-      create_time: now,
+      create_time: Math.floor(now / 1000),
       start_time: now / 1000,
       end_time: now / 1000 + 0.01, // Just a small difference
       speaker: 'customer',
