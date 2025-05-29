@@ -73,6 +73,7 @@ export function UserDialog({
         populateFormWithUserData(userToEdit);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, userToEdit, dialogMode]);
   
   const populateFormWithUserData = (user: User) => {
@@ -284,7 +285,9 @@ const loadFormData = async () => {
           <div className="space-y-2">
             <Label>Roles</Label>
             <div className="grid grid-cols-2 gap-2 border rounded-lg p-4">
-              {roles.map((role) => {
+              {roles
+                .filter((role) => role.role_type !== "internal")
+                .map((role) => {
                 const isChecked = selectedRoleIds.includes(role.id);
                 return (
                   <div key={role.id} className="flex items-center space-x-2">

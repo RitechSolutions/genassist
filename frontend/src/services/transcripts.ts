@@ -1,6 +1,7 @@
 import { apiRequest, getApiUrl } from "@/config/api";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
 import { UserProfile } from "@/interfaces/user.interface";
+import { getAccessToken } from "@/services/auth";
 
 const fetchCurrentUserId = async (): Promise<string | null> => {
   try {
@@ -15,11 +16,13 @@ const fetchCurrentUserId = async (): Promise<string | null> => {
 export const fetchTranscripts = async (): Promise<BackendTranscript[]> => {
   try {
     const userId = await fetchCurrentUserId();
-    let url = "conversations/";
+    // let url = "conversations/";
+    const url = "conversations/";
 
-    if (userId) {
-      url = `conversations/?operator_id=${userId}`;
-    }
+    // if (userId) {
+    //   url = `conversations/?operator_id=${userId}`;
+    // }
+    // fix later
 
     const data = await apiRequest<unknown>(
       "GET",
@@ -55,7 +58,25 @@ export const fetchTranscript = async (
   }
 };
 
-export const getAudioUrl = async (id: string): Promise<string> => {
+export const getAudioUrl = async (recordingId: string): Promise<string> => {
   const baseURL = await getApiUrl();
-  return `${baseURL}audio/recordings/${id}`;
+  const url     = `${baseURL}audio/files/${recordingId}`;
+  const token   = getAccessToken();
+
+  if (!token) {
+    throw new Error("Not authenticated—no access token found");
+  }
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Audio fetch failed (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 };

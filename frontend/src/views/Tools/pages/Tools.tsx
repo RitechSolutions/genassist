@@ -85,7 +85,7 @@ export default function Tools() {
       <div className="min-h-screen flex w-full">
         {!isMobile && <AppSidebar />}
         <main className="flex-1 bg-zinc-100 p-8">
-          <div className="max-w-4xl mx-auto space-y-6">
+          <div className="max-w-7xl mx-auto space-y-6">
             <header className="flex justify-between items-center">
               <div>
                 <h1 className="text-3xl font-bold">Tools</h1>

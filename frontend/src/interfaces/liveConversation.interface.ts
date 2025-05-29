@@ -1,11 +1,15 @@
 export type ActiveConversation = {
     id: string;
     type: "all" | "call" | "chat";
-    status: "in-progress";
+    status: "in-progress" | "takeover";
     transcript: string;
     sentiment: "positive" | "neutral" | "negative";
     timestamp: string;
     in_progress_hostility_score: number;
+    duration?: number;
+    word_count?: number;
+    agent_ratio?: number;
+    customer_ratio?: number;
   };
   
   export type ActiveConversationsResponse = {

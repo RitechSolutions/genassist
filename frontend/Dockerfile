@@ -13,16 +13,21 @@ RUN apk add --no-cache git python3 make g++
 # Copy package.json and package-lock.json to the container
 COPY package.json package-lock.json ./
 
-# Install dependencies
+# Copy the rest of the application code
+COPY . .
+
+#Install customplugin
+RUN mkdir -p /plugins
+COPY --from=plugins . /plugins/react
+#RUN npm install /app/plugins/react
+
+RUN npm install typescript
 RUN npm install
 
 #Audit and maybe fix some packages
 #RUN npm audit
 #RUN npm audit fix --force
 #RUN npm audit fix --legacy-peer-deps
-
-# Copy the rest of the application code
-COPY . .
 
 # Build the application
 RUN npm run build

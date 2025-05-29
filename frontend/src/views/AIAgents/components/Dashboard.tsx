@@ -97,14 +97,14 @@ const Dashboard: React.FC = () => {
     navigate(`/ai-agents/integration/${agentId}`);
   };
 
-const handleChatAsCustomer = (agentId: string) => {
-  navigate(`/ai-agents/chat-as-customer/${agentId}`);
-};
+  const handleChatAsCustomer = (agentId: string) => {
+    navigate(`/ai-agents/chat-as-customer/${agentId}`);
+  };
 
   if (loading)
     return (
       <div className="flex items-center justify-center p-8">
-        Loading agent configurations...
+        Loading workflows configurations...
       </div>
     );
 
@@ -137,24 +137,26 @@ const handleChatAsCustomer = (agentId: string) => {
   }
 
   return (
-    <div className="dashboard">
-      <AgentList
-        agents={agents}
-        onDelete={handleDeleteAgent}
-        onUpdate={handleUpdateAgent}
-        onGetIntegrationCode={handleGetIntegrationCode}
-        onManageKeys={handleManageKeys}
-         onChatAsCustomer={handleChatAsCustomer}
-      />
-
-      {modalContext && (
-        <ManageApiKeysModal
-          agentId={modalContext.agentId}
-          userId={modalContext.userId}
-          isOpen={!!modalContext}
-          onClose={() => setModalContext(null)}
+    <div className="flex-1 p-8">
+      <div className="max-w-7xl mx-auto">
+        <AgentList
+          agents={agents}
+          onDelete={handleDeleteAgent}
+          onUpdate={handleUpdateAgent}
+          onGetIntegrationCode={handleGetIntegrationCode}
+          onManageKeys={handleManageKeys}
+          onChatAsCustomer={handleChatAsCustomer}
         />
-      )}
+
+        {modalContext && (
+          <ManageApiKeysModal
+            agentId={modalContext.agentId}
+            userId={modalContext.userId}
+            isOpen={!!modalContext}
+            onClose={() => setModalContext(null)}
+          />
+        )}
+      </div>
     </div>
   );
 };

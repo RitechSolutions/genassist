@@ -19,7 +19,6 @@ import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import { conversationService } from "@/services/liveConversations";
 import { useWebSocketTranscript } from "../hooks/useWebsocket";
-import { PRIVATE_WS, PUBLIC_WS, getApiUrl } from "@/config/api";
 import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmModels";
 import toast from "react-hot-toast";
 import { formatDuration, formatMessageTime } from "../helpers/format";
@@ -43,53 +42,9 @@ interface ConversationStats {
   duration?: number;
   in_progress_hostility_score?: number;
   word_count?: number;
+  topic?: string;
+  sentiment?: string;
 }
-
-const getStoredConversationStats = (
-  conversationId: string
-): ConversationStats | null => {
-  try {
-    const savedStats = localStorage.getItem(
-      `conversation_stats_${conversationId}`
-    );
-    if (!savedStats) return null;
-
-    const parsedStats = JSON.parse(savedStats);
-
-    if (parsedStats.duration !== undefined) {
-      parsedStats.duration = Number(parsedStats.duration);
-    }
-
-    return parsedStats;
-  } catch (e) {
-    console.error("Error reading conversation stats from localStorage", e);
-    return null;
-  }
-};
-
-const saveConversationStats = (
-  conversationId: string,
-  stats: ConversationStats
-): void => {
-  try {
-    const cleanedStats = {
-      ...stats,
-      duration: stats.duration !== undefined ? Number(stats.duration) : 0,
-      agent_ratio:
-        stats.agent_ratio !== undefined ? Number(stats.agent_ratio) : 0,
-      customer_ratio:
-        stats.customer_ratio !== undefined ? Number(stats.customer_ratio) : 0,
-    };
-
-    localStorage.setItem(
-      `conversation_stats_${conversationId}`,
-      JSON.stringify(cleanedStats)
-    );
-    console.log(`Saved stats for ${conversationId}:`, cleanedStats);
-  } catch (e) {
-    console.error("Error saving conversation stats to localStorage", e);
-  }
-};
 
 export function ActiveConversationDialog({
   transcript,
@@ -122,16 +77,13 @@ function TranscriptDialogContent({
   transcript,
   isOpen,
   onOpenChange,
+  onTakeOver,
   refetchConversations,
   messages = [],
 }: Props): JSX.Element {
   const hasSupervisorTakeover = useMemo(() => {
     return transcript?.transcript?.some(entry => entry.type === "takeover") || false;
   }, [transcript?.transcript]);
-  const storedStats = useMemo(() => {
-    if (!transcript?.id) return null;
-    return getStoredConversationStats(transcript.id);
-  }, [transcript?.id]);
 
   const [hasTakenOver, setHasTakenOver] = useState(hasSupervisorTakeover);
   const [userInitiatedTakeOver, setUserInitiatedTakeOver] = useState(false);
@@ -144,29 +96,19 @@ function TranscriptDialogContent({
   const [sentMessages, setSentMessages] = useState<TranscriptEntry[]>([]);
   const [isThinking, setIsThinking] = useState(false);
 
-  const [conversationStats, setConversationStats] = useState<ConversationStats>(
-    {
-      agent_ratio: storedStats?.agent_ratio ?? transcript?.agent_ratio ?? 0,
-      customer_ratio:
-        storedStats?.customer_ratio ?? transcript?.customer_ratio ?? 0,
-      duration:
-        storedStats?.duration && storedStats.duration > 0
-          ? storedStats.duration
-          : transcript?.duration && transcript.duration > 0
-          ? transcript.duration
-          : 0,
-      in_progress_hostility_score:
-        storedStats?.in_progress_hostility_score ??
-        transcript?.in_progress_hostility_score ??
-        0,
-      word_count: storedStats?.word_count ?? transcript?.word_count ?? 0,
-    }
-  );
+  const [conversationStats, setConversationStats] = useState<ConversationStats>(() => {
+    return {
+      agent_ratio: transcript?.agent_ratio ?? transcript?.metrics?.speakingRatio?.agent ?? 0,
+      customer_ratio: transcript?.customer_ratio ?? transcript?.metrics?.speakingRatio?.customer ?? 0,
+      duration: transcript?.duration ?? 0,
+      in_progress_hostility_score: transcript?.in_progress_hostility_score ?? transcript?.metrics?.in_progress_hostility_score ?? 0,
+      word_count: transcript?.word_count ?? transcript?.metrics?.wordCount ?? 0,
+      topic: transcript?.metadata?.topic,
+      sentiment: transcript?.metrics?.sentiment,
+    };
+  });
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [wsBaseUrl, setWsBaseUrl] = useState("");
-  const [wsPort, setWsPort] = useState("");
-
   const token = localStorage.getItem("access_token") || "";
 
   useEffect(() => {
@@ -181,36 +123,8 @@ function TranscriptDialogContent({
     }
   }, [userInitiatedTakeOver]);
 
-  useEffect(() => {
-    const testPrivateHost = async () => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1000); // Fail after 1s
-
-      try {
-        await fetch(
-          `https://${PRIVATE_WS.host}:${PRIVATE_WS.port}/api/health`,
-          {
-            signal: controller.signal,
-            method: "GET",
-            mode: "cors",
-          }
-        );
-        setWsBaseUrl(PRIVATE_WS.host);
-        setWsPort(PRIVATE_WS.port);
-      } catch (err) {
-        console.warn("Private WebSocket host not reachable, using public");
-        setWsBaseUrl(PUBLIC_WS.host);
-        setWsPort(PUBLIC_WS.port);
-      } finally {
-        clearTimeout(timeout);
-      }
-    };
-
-    testPrivateHost();
-  }, []);
-
   const shouldInitWebSocket =
-    transcript?.id && wsBaseUrl !== "" && wsPort !== "";
+    transcript?.id && token;
 
   const {
     messages: wsMessages,
@@ -222,128 +136,28 @@ function TranscriptDialogContent({
       ? {
           conversationId: transcript.id,
           token,
-          baseUrl: wsBaseUrl,
-          port: wsPort,
           transcriptInitial: transcript?.transcript || [],
         }
       : {
           conversationId: "",
           token: "",
-          baseUrl: "",
-          port: "",
           transcriptInitial: [],
         }
   );
 
   useEffect(() => {
-    if (isOpen && transcript?.id) {
-      const stored = getStoredConversationStats(transcript.id);
-
-      if (stored?.duration && stored.duration > 0) {
-        console.log(
-          `Using stored duration from localStorage: ${stored.duration}`
-        );
-
-        setConversationStats((prev) => ({
-          ...prev,
-          duration: Number(stored.duration),
-          agent_ratio: stored.agent_ratio ?? prev.agent_ratio,
-          customer_ratio: stored.customer_ratio ?? prev.customer_ratio,
-          in_progress_hostility_score:
-            stored.in_progress_hostility_score ??
-            prev.in_progress_hostility_score,
-          word_count: stored.word_count ?? prev.word_count,
-        }));
-      } else if (transcript.duration && transcript.duration > 0) {
-        console.log(
-          `No valid stored duration, using transcript duration: ${transcript.duration}`
-        );
-
-        const statsToSave = {
-          ...conversationStats,
-          duration: Number(transcript.duration),
-        };
-
-        saveConversationStats(transcript.id, statsToSave);
-        setConversationStats(statsToSave);
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (transcript && transcript.id) {
-      const stored = getStoredConversationStats(transcript.id);
-
-      setConversationStats((prevStats) => {
-        const newStats: ConversationStats = { ...prevStats };
-        let hasUpdates = false;
-
-        if (
-          transcript.agent_ratio !== undefined &&
-          (stored?.agent_ratio === undefined || prevStats.agent_ratio === 0)
-        ) {
-          newStats.agent_ratio = Number(transcript.agent_ratio);
-          hasUpdates = true;
-        }
-
-        if (
-          transcript.customer_ratio !== undefined &&
-          (stored?.customer_ratio === undefined ||
-            prevStats.customer_ratio === 0)
-        ) {
-          newStats.customer_ratio = Number(transcript.customer_ratio);
-          hasUpdates = true;
-        }
-
-        if (stored?.duration && stored.duration > 0) {
-          newStats.duration = Number(stored.duration);
-          hasUpdates = true;
-        } else if (
-          transcript.duration &&
-          transcript.duration > 0 &&
-          prevStats.duration === 0
-        ) {
-          newStats.duration = Number(transcript.duration);
-          hasUpdates = true;
-        }
-
-        if (
-          transcript.in_progress_hostility_score !== undefined &&
-          (stored?.in_progress_hostility_score === undefined ||
-            prevStats.in_progress_hostility_score === 0)
-        ) {
-          newStats.in_progress_hostility_score = Number(
-            transcript.in_progress_hostility_score
-          );
-          hasUpdates = true;
-        }
-
-        if (
-          transcript.word_count !== undefined &&
-          (stored?.word_count === undefined || prevStats.word_count === 0)
-        ) {
-          newStats.word_count = Number(transcript.word_count);
-          hasUpdates = true;
-        }
-
-        if (hasUpdates) {
-          saveConversationStats(transcript.id, newStats);
-          return newStats;
-        }
-
-        return prevStats;
+    if (transcript) {
+      setConversationStats({
+        agent_ratio: transcript.agent_ratio ?? transcript.metrics?.speakingRatio?.agent ?? 0,
+        customer_ratio: transcript.customer_ratio ?? transcript.metrics?.speakingRatio?.customer ?? 0,
+        duration: transcript.duration ?? 0,
+        in_progress_hostility_score: transcript.in_progress_hostility_score ?? transcript.metrics?.in_progress_hostility_score ?? 0,
+        word_count: transcript.word_count ?? transcript.metrics?.wordCount ?? 0,
+        topic: transcript.metadata?.topic,
+        sentiment: transcript.metrics?.sentiment,
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    transcript?.id,
-    transcript?.agent_ratio,
-    transcript?.customer_ratio,
-    transcript?.duration,
-    transcript?.in_progress_hostility_score,
-    transcript?.word_count,
-  ]);
+  }, [transcript]);
 
   useEffect(() => {
     if (statistics && transcript?.id) {
@@ -351,36 +165,44 @@ function TranscriptDialogContent({
         const newStats = { ...prevStats };
         let hasUpdates = false;
 
-        if (typeof statistics.agent_ratio === "number") {
+        if (typeof statistics.agent_ratio === "number" && newStats.agent_ratio !== statistics.agent_ratio) {
           newStats.agent_ratio = Number(statistics.agent_ratio);
           hasUpdates = true;
         }
 
-        if (typeof statistics.customer_ratio === "number") {
+        if (typeof statistics.customer_ratio === "number" && newStats.customer_ratio !== statistics.customer_ratio) {
           newStats.customer_ratio = Number(statistics.customer_ratio);
           hasUpdates = true;
         }
 
-        if (typeof statistics.duration === "number") {
+        if (typeof statistics.duration === "number" && newStats.duration !== statistics.duration) {
           newStats.duration = Number(statistics.duration);
           hasUpdates = true;
         }
 
-        if (typeof statistics.in_progress_hostility_score === "number") {
+        if (typeof statistics.in_progress_hostility_score === "number" && newStats.in_progress_hostility_score !== statistics.in_progress_hostility_score) {
           newStats.in_progress_hostility_score = Number(
             statistics.in_progress_hostility_score
           );
           hasUpdates = true;
         }
 
-        if (typeof statistics.word_count === "number") {
+        if (typeof statistics.word_count === "number" && newStats.word_count !== statistics.word_count) {
           newStats.word_count = Number(statistics.word_count);
+          hasUpdates = true;
+        }
+
+        if (typeof statistics.topic === "string" && newStats.topic !== statistics.topic) {
+          newStats.topic = statistics.topic;
+          hasUpdates = true;
+        }
+        if (typeof statistics.sentiment === "string" && newStats.sentiment !== statistics.sentiment) {
+          newStats.sentiment = statistics.sentiment;
           hasUpdates = true;
         }
 
         if (hasUpdates) {
           console.log("Updating stats with WebSocket data:", newStats);
-          saveConversationStats(transcript.id, newStats);
           return newStats;
         }
 
@@ -413,7 +235,6 @@ function TranscriptDialogContent({
 
       setLocalMessages(baseMessages);
 
-      // bubble animation off when supervisor has taken over
       if (hasTakenOver) {
         setIsThinking(false);
       }
@@ -474,7 +295,7 @@ function TranscriptDialogContent({
     if (!userInitiatedTakeOver) {
       setHasTakenOver(currentMsgs.some(msg => msg.type === "takeover"));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsMessages, messages, sentMessages, isOpen, userInitiatedTakeOver]);
 
   useEffect(() => {
@@ -483,18 +304,19 @@ function TranscriptDialogContent({
     }
   }, [localMessages]);
 
-  const sentiment = transcript.metrics?.sentiment || "neutral";
+  const sentiment = conversationStats.sentiment || transcript.metrics?.sentiment || "neutral";
   const in_progress_hostility_score =
     conversationStats.in_progress_hostility_score ?? 0;
-  const topicText = transcript.metadata?.topic || "Active Conversation";
+  const topicText = conversationStats.topic || transcript.metadata?.topic || "Active Conversation";
 
   const handleTakeOver = async () => {
     if (!transcript?.id) return;
     setLoading(true);
     try {
-      const success = await conversationService.takeoverConversation(
-        transcript.id
-      );
+      const success = onTakeOver 
+        ? await onTakeOver(transcript.id) 
+        : await conversationService.takeoverConversation(transcript.id);
+
       if (success) {
         setHasTakenOver(true);
         setIsThinking(false);
@@ -541,8 +363,6 @@ function TranscriptDialogContent({
       create_time: now,
     };
 
-    // setLocalMessages((prev) => [...prev, newEntry]);
-    // setSentMessages((prev) => [...prev, newEntry]);
     setChatInput("");
 
     try {
@@ -550,10 +370,6 @@ function TranscriptDialogContent({
         messages: [newEntry],
         llm_analyst_id: DEFAULT_LLM_ANALYST_ID,
       });
-
-      // if (isConnected) {
-      //   sendMessage(newEntry);
-      // }
 
       if (refetchConversations) refetchConversations();
     } catch (err) {
@@ -753,7 +569,7 @@ function TranscriptDialogContent({
             <Button
               onClick={handleTakeOver}
               className="w-full bg-black text-white mt-4"
-              disabled={loading || transcript.status === "complete"}
+              disabled={loading || transcript.status === "complete" || hasTakenOver}
             >
               {loading ? "Processing..." : "Take Over Conversation"}
             </Button>

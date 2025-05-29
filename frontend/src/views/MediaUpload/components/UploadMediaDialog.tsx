@@ -17,7 +17,7 @@ import {
 import { toast } from "react-hot-toast";
 import { uploadAudio } from "@/services/audioUpload";
 import { AudioLines, X } from "lucide-react";
-import { useAgents } from "../hooks/useAgents";
+import { useOperators} from "../hooks/useOperators";
 
 interface UploadMediaDialogProps {
   isOpen: boolean;
@@ -31,7 +31,7 @@ export function UploadMediaDialog({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { agents, imageErrors, setImageErrors } = useAgents();
+  const { operators, imageErrors, setImageErrors } = useOperators();
   const navigate = useNavigate();
 
   const checkAuthentication = (): boolean => {
@@ -173,29 +173,29 @@ export function UploadMediaDialog({
               <SelectValue placeholder="Search & Select an Operator" />
             </SelectTrigger>
             <SelectContent>
-              {agents.map((agent) => (
+              {operators.map((operator) => (
                 <SelectItem
-                  key={agent.id}
-                  value={agent.id}
+                  key={operator.id}
+                  value={operator.id}
                   className="flex items-center gap-3"
                 >
                   <div className="flex items-center gap-2">
-                  {!imageErrors.has(agent.id) && agent.avatar ? (
+                  {!imageErrors.has(operator.id) && operator.avatar ? (
                     <img
-                      src={agent.avatar}
-                      alt={`${agent.firstName} ${agent.lastName}`}
+                      src={operator.avatar}
+                      alt={`${operator.firstName} ${operator.lastName}`}
                       className="w-6 h-6 rounded-full object-cover border border-gray-300"
                       onError={() =>
-                        setImageErrors((prev) => new Set(prev).add(agent.id))
+                        setImageErrors((prev) => new Set(prev).add(operator.id))
                       }
                     />
                   ) : (
                     <div className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-700 font-bold">
-                      {getInitials(agent.firstName, agent.lastName)}
+                      {getInitials(operator.firstName, operator.lastName)}
                     </div>
                   )}
                   <span className="text-sm text-gray-800">
-                    {agent.firstName} {agent.lastName}
+                    {operator.firstName} {operator.lastName}
                   </span>
                 </div>
                 </SelectItem>

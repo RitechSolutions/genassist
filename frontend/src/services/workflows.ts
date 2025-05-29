@@ -1,6 +1,6 @@
 import { apiRequest } from "@/config/api";
 import { Workflow, WorkflowCreatePayload, WorkflowUpdatePayload } from "@/interfaces/workflow.interface";
-import { KnowledgeBaseNodeData } from "@/views/LangGraph/types/nodes";
+import { KnowledgeBaseNodeData } from "@/views/AIAgents/Workflows/types/nodes";
 
 const BASE = "genagent/workflow";
 

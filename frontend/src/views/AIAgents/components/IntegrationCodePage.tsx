@@ -56,7 +56,7 @@ const IntegrationCodePage: React.FC = () => {
   const apiKeyPlaceholder = "Enter your API key here";
   
   return (
-    <div className="mx-auto px-4 space-y-8">
+    <div className="mx-auto px-4 space-y-8 max-w-7xl ">
       <div className="flex justify-between items-center">
         <div className="flex item-center">
           <Button
@@ -112,27 +112,27 @@ const IntegrationCodePage: React.FC = () => {
               height="450px"
               className="integration-code-usage"
               value={`import React from 'react';
-import { GenAgentChat } from 'genassist-chat-react';
+                  import { GenAgentChat } from 'genassist-chat-react';
 
-function App() {
-  const userData = {
-    userId: '${SAMPLE_CUSTOMER.id}',
-    username: '${SAMPLE_CUSTOMER.name}',
-    email: '${SAMPLE_CUSTOMER.email}',
-  };
+                  function App() {
+                    const userData = {
+                      userId: '${SAMPLE_CUSTOMER.id}',
+                      username: '${SAMPLE_CUSTOMER.name}',
+                      email: '${SAMPLE_CUSTOMER.email}',
+                    };
 
-  return (
-    <div style={{ height: '600px', width: '400px' }}>
-      <GenAgentChat 
-        baseUrl="${baseUrl}" 
-        apiKey="${apiKeyPlaceholder}"
-        userData={userData}
-      />
-    </div>
-  );
-}
+                    return (
+                      <div style={{ height: '600px', width: '400px' }}>
+                        <GenAgentChat 
+                          baseUrl="${baseUrl}" 
+                          apiKey="${apiKeyPlaceholder}"
+                          userData={userData}
+                        />
+                      </div>
+                    );
+                  }
 
-export default App;`}
+                  export default App;`}
               readOnly
               width="100%"
               fontSize={14}
@@ -172,23 +172,22 @@ export default App;`}
               mode="javascript"
               theme="tomorrow_night"
               value={`import 'package:gen_agent_chat/gen_agent_chat.dart';
+                void main() => runApp(MyApp());
 
-void main() => runApp(MyApp());
-
-class MyApp extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return GenAgentChat(
-      url: '${baseUrl}',
-      apiKey='${apiKeyPlaceholder}',
-      customer: {
-        'id': '${SAMPLE_CUSTOMER.id}',
-        'name': '${SAMPLE_CUSTOMER.name}',
-        'email': '${SAMPLE_CUSTOMER.email}',
-      },
-    );
-  }
-}`}
+                class MyApp extends StatelessWidget {
+                  @override
+                  Widget build(BuildContext context) {
+                    return GenAgentChat(
+                      url: '${baseUrl}',
+                      apiKey='${apiKeyPlaceholder}',
+                      customer: {
+                        'id': '${SAMPLE_CUSTOMER.id}',
+                        'name': '${SAMPLE_CUSTOMER.name}',
+                        'email': '${SAMPLE_CUSTOMER.email}',
+                      },
+                    );
+                  }
+                }`}
               readOnly
               width="100%"
               height="370px"
@@ -230,20 +229,19 @@ class MyApp extends StatelessWidget {
               mode="javascript"
               theme="tomorrow_night"
               value={`import GenAgentChat
-
-struct ContentView: View {
-  var body: some View {
-    GenAgentChatView(
-      url: URL(string: "${baseUrl}")!,
-      apiKey="${apiKeyPlaceholder}",
-      customer: [
-        "id": "${SAMPLE_CUSTOMER.id}",
-        "name": "${SAMPLE_CUSTOMER.name}",
-        "email": "${SAMPLE_CUSTOMER.email}"
-      ]
-    )
-  }
-}`}
+                struct ContentView: View {
+                  var body: some View {
+                    GenAgentChatView(
+                      url: URL(string: "${baseUrl}")!,
+                      apiKey="${apiKeyPlaceholder}",
+                      customer: [
+                        "id": "${SAMPLE_CUSTOMER.id}",
+                        "name": "${SAMPLE_CUSTOMER.name}",
+                        "email": "${SAMPLE_CUSTOMER.email}"
+                      ]
+                    )
+                  }
+                }`}
               readOnly
               width="100%"
               height="320px"

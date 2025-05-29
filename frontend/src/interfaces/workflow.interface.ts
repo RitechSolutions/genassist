@@ -26,7 +26,7 @@ export interface WorkflowCreatePayload {
 export interface WorkflowUpdatePayload {
   name?: string;
   description?: string;
-  nodes: Node[];
-  edges: Edge[];
-  version: string;
+  nodes?: Node[];
+  edges?: Edge[];
+  version?: string;
 } 

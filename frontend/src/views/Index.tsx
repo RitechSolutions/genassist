@@ -12,7 +12,7 @@ import { useState } from "react";
 import { RecentTranscripts } from "@/views/Transcripts/components/RecentTranscripts";
 import { KPISection, PerformanceSection, TopicsReport } from "./Analytics";
 import { generateTimeData } from "./Analytics/helpers/timeDataGenerator";
-import { AgentsCard } from "./Agents/components/AgentsCard";
+import { OperatorsCard } from "./Operators/components/OperatorCard";
 import { ActiveConversations } from "./ActiveConversations/pages/ActiveConversations";
 
 const timeFilters = [
@@ -59,20 +59,22 @@ const Index = () => {
               <ActiveConversations />
 
               <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              <AgentsCard searchQuery="" />
-              <PerformanceSection timeFilter={timeFilter} />
+                <OperatorsCard searchQuery=""
+                  refreshKey={0}
+                />
+                <PerformanceSection timeFilter={timeFilter} />
               </section>
               <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
-              <RecentTranscripts />
-              <TopicsReport />
+                <RecentTranscripts />
+                <TopicsReport />
               </section>
             </div>
-    <footer>
-          <p className="text-right p-2 pr-4 text-sm text-gray-500">
-                  Version: <span>{import.meta.env.VITE_UI_VERSION || '1.0'}</span>
-          </p>
-    </footer>
+            <footer>
+              <p className="text-right p-2 pr-4 text-sm text-gray-500">
+                Version: <span>{import.meta.env.VITE_UI_VERSION || '1.0'}</span>
+              </p>
+            </footer>
           </div>
         </main>
       </div>

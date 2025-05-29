@@ -3,12 +3,18 @@ import { Badge } from "@/components/badge";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/skeleton";
 import { InfoIcon } from "lucide-react";
+import { TranscriptEntry } from "@/interfaces/transcript.interface";
 
 interface ItemWithSentiment {
   id: string;
   type?: string;
   sentiment: string;
   transcript: string;
+  agent_ratio?: number;
+  customer_ratio?: number;
+  duration?: number;
+  in_progress_hostility_score?: number;
+  word_count?: number;
 }
 
 interface ConversationListProps<T extends ItemWithSentiment> {
@@ -22,6 +28,27 @@ interface ConversationListProps<T extends ItemWithSentiment> {
   emptyMessage?: string;
   titleTooltip?: string;
 }
+
+const getTranscriptPreview = (transcriptString: string): string => {
+  try {
+    const parsed = JSON.parse(transcriptString);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed
+        .slice(0, 2)
+        .map((entry: TranscriptEntry) => {
+          const speaker = entry.speaker || "Unknown";
+          const text = entry.text || "No Transcript";
+          return `${speaker}: ${text}`;
+        })
+        .join(" ")
+        .substring(0, 150);
+    }
+  } catch (e) {
+    // return
+  }
+  // Return original string
+  return transcriptString.substring(0, 150); 
+};
 
 export function ConversationList<T extends ItemWithSentiment>({
   title,
@@ -97,7 +124,7 @@ export function ConversationList<T extends ItemWithSentiment>({
                   Call #{index + 1}
                 </div>
                 <div className="flex-grow text-sm text-muted-foreground line-clamp-1">
-                  {item.transcript}
+                  {getTranscriptPreview(item.transcript)}
                 </div>
                 <Badge
                   className={`capitalize ${

@@ -5,7 +5,7 @@ import { Register } from "@/views/Register";
 import { ChangePassword, Login } from "@/views/Login";
 import Index from "@/views/Index";
 import Transcripts from "./views/Transcripts";
-import Agents from "./views/Agents";
+import Operators from "./views/Operators";
 import Analytics from "@/views/Analytics";
 import Notifications from "@/views/Notifications";
 import Settings from "./views/Settings";
@@ -24,8 +24,6 @@ import LLMProviders from "@/views/LlmProviders/Index";
 import Tools from "@/views/Tools/Index";
 import CreateTool from "@/views/Tools/pages/CreateTool";
 import KnowledgeBase from "@/views/KnowledgeBase/Index";
-import LangGraphView from "./views/LangGraph/Index";
-
 import { FeatureFlags } from "./views/Settings/pages/FeatureFlags";
 import { useFeatureFlag } from "./context/FeatureFlagContext";
 
@@ -62,7 +60,7 @@ export const RoutesProvider = () => {
           path: "operators",
           element: (
             <ProtectedRoute requiredPermissions={["read:operator"]}>
-              <Agents />
+              <Operators />
             </ProtectedRoute>
           ),
         },
@@ -199,14 +197,6 @@ export const RoutesProvider = () => {
           element: (
             <ProtectedRoute requiredPermissions={["*"]}>
               <KnowledgeBase />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "lang-graph",
-          element: (
-            <ProtectedRoute requiredPermissions={["*"]}>
-              <LangGraphView />
             </ProtectedRoute>
           ),
         },

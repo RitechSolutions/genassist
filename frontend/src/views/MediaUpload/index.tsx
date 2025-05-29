@@ -1,7 +1,7 @@
 import { UploadMediaDialog } from './components/UploadMediaDialog';
-import { useAgents } from './hooks/useAgents';
+import { useOperators } from './hooks/useOperators';
 
 export {
   UploadMediaDialog,
-  useAgents
+  useOperators
 }; 

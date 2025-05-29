@@ -55,19 +55,27 @@ export function TranscriptDialog({
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const isCall = isCallTranscript(transcript);
 
-  useEffect(() => {
-    if (transcript && isCall) {
-      setAudioLoading(true);
-      getAudioUrl(transcript.id).then((url) => {
-        setAudioSrc(url);
-        setAudioLoading(false);
-      }).catch(() => {
-        setAudioLoading(false);
-      });
-    } else {
-      setAudioSrc("");
-    }
-  }, [transcript, isCall]);
+useEffect(() => {
+  if (!transcript || !isCall) return;
+
+  const recId = transcript.recording_id;
+  if (!recId) {
+    console.warn("Transcript has no recording_id");
+    return;
+  }
+
+  setAudioLoading(true);
+  getAudioUrl(recId)
+    .then((blobUrl) => {
+      setAudioSrc(blobUrl);
+    })
+    .catch((err) => {
+      console.error("Failed to load audio blob:", err);
+    })
+    .finally(() => {
+      setAudioLoading(false);
+    });
+}, [transcript, isCall]);
 
   useEffect(() => {
     if (chatContainerRef.current) {

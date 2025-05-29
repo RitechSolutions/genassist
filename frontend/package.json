@@ -9,7 +9,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "build:versioned": "sh -c 'cp .env.template .env && sed -i \"\" \"s/__UI_VERSION__/${UI_VERSION:-dev}/g\" .env && vite build'"
+    "build:versioned": "sh -c 'cp .env.template .env && sed -i \"\" \"s/__UI_VERSION__/${UI_VERSION:-dev}/g\" .env && vite build'",
+    "postinstall": "mkdir -p plugins/react && cp -R ../plugins/react ./plugins && npm install ./plugins/react"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -32,7 +33,6 @@
     "@radix-ui/react-scroll-area": "^1.1.0",
     "@radix-ui/react-select": "^2.2.4",
     "@radix-ui/react-separator": "^1.1.0",
-    "genassist-chat-react": "git+https://5Pa9PNVJBgStlWPudwERSyJqX7DSZJ2IyhrvbjeM9fWRFohKO5dUJQQJ99BEACAAAAAyc0H5AAASAZDO2uOa:Ritech@dev.azure.com/Ritech/GenAssist/_git/plugin-react",
     "@radix-ui/react-slider": "^1.2.0",
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-switch": "^1.1.0",
@@ -49,6 +49,7 @@
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
+    "genassist-chat-react": "file:plugins/react",
     "input-otp": "^1.2.4",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.462.0",

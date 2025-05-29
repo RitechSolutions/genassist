@@ -81,11 +81,15 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       duration: durationInSeconds,
       status: backendData.status || "unknown",
       timestamp: backendData.created_at || new Date().toISOString(),
+      agent_ratio: backendData.agent_ratio,
+      customer_ratio: backendData.customer_ratio,
+      word_count: backendData.word_count,
+      in_progress_hostility_score: backendData.in_progress_hostility_score,
       metadata: {
         isCall,
         duration: durationInSeconds,
         title: `Conversation ${backendData.id}`,
-        topic: analysis.topic || " - Unknown",
+        topic: analysis.topic || "Unknown",
       },
       transcript: transcriptArray.map(entry => ({
         speaker: entry.speaker || "Unknown",
@@ -105,6 +109,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
         },
         tone: toneArray,
         wordCount: backendData.word_count || transcriptArray.reduce((count, item) => count + (item.text?.split(/\s+/).length || 0), 0),
+        in_progress_hostility_score: backendData.in_progress_hostility_score,
       },
     };
   } catch (error) {
@@ -118,9 +123,13 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       duration: 0,
       status: "unknown",
       timestamp: new Date().toISOString(),
+      agent_ratio: 0,
+      customer_ratio: 0,
+      word_count: 0,
+      in_progress_hostility_score: 0,
       metadata: {
         isCall: false,
-        duration: "0:00",
+        duration: 0,
         title: "Error",
         topic: " - Unknown",
       },
@@ -136,6 +145,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
         },
         tone: ["neutral"],
         wordCount: 0,
+        in_progress_hostility_score: 0,
       },
     };
   }

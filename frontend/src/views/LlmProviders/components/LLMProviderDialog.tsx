@@ -43,21 +43,21 @@ export function LLMProviderDialog({
   providerToEdit = null,
   mode = "create",
 }: LLMProviderDialogProps) {
-  const [name, setName] = useState("");
-  const [llmType, setLlmType] = useState("");
-  const [llmModel, setLlmModel] = useState("");
-  const [connectionData, setConnectionData] = useState<
-    Record<string, string | number | string[]>
-  >({});
+  const [providerId, setProviderId] = useState<string>(providerToEdit?.id);
+  const [name, setName] = useState(providerToEdit?.name ?? "");
+  const [llmType, setLlmType] = useState<string>(providerToEdit?.llm_model_provider ?? "");
+  const [llmModel, setLlmModel] = useState<string>(providerToEdit?.llm_model ?? "");
+
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [providerId, setProviderId] = useState<string>();
+
+  const [connectionData, setConnectionData] = useState<
+    Record<string, string | number | string[]>
+  >(providerToEdit?.connection_data??{});
+
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const {
-    data,
-    isLoading:isLoadingConfig,
-  } = useQuery({
+  const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["supportedModels"],
     queryFn: () => getSupportedModels(),
     refetchInterval: 5000,
@@ -65,22 +65,41 @@ export function LLMProviderDialog({
     staleTime: 3000,
   });
 
-  const supportedModels = data??{};
+  const supportedModels = data ?? {};
 
   useEffect(() => {
-    if (isOpen) {
+    if (providerToEdit) {
+      setProviderId(providerToEdit.id);
+      setName(providerToEdit.name);
+      setLlmType(providerToEdit.llm_model_provider);
+      setLlmModel(providerToEdit.llm_model);
+      setConnectionData(providerToEdit.connection_data);
+      setIsActive(providerToEdit.is_active === 1);
+    } else {
       resetForm();
-      if (providerToEdit && mode === "edit") {
-        setProviderId(providerToEdit.id);
-        setName(providerToEdit.name);
-        setLlmType(providerToEdit.llm_model_provider);
-        setLlmModel(providerToEdit.llm_model);
-        setConnectionData(providerToEdit.connection_data);
-        setIsActive(providerToEdit.is_active === 1);
+    }
+  }, [providerToEdit]);
+
+  useEffect(() => {
+    if (llmType && supportedModels[llmType]) {
+      const defaultValues = supportedModels[llmType].fields.reduce((acc, field) => {
+        if (field.default !== undefined && !connectionData[field.name]) {
+          acc[field.name] = field.default;
+        }
+        return acc;
+      }, {} as Record<string, string | number | string[]>);
+
+      if (Object.keys(defaultValues).length > 0) {
+        if (defaultValues.model) {
+          setLlmModel(defaultValues.model.toString());
+        }
+        setConnectionData(prev => ({
+          ...prev,
+          ...defaultValues
+        }));
       }
     }
-  }, [isOpen, providerToEdit, mode]);
-
+  }, [llmType, supportedModels]);
 
   const resetForm = () => {
     setProviderId(undefined);
@@ -95,6 +114,9 @@ export function LLMProviderDialog({
     field: LLMProviderField,
     value: string | number | string[]
   ) => {
+    if (field.name === "model") {
+      setLlmModel(value as string);
+    }
     setConnectionData((prev) => ({
       ...prev,
       [field.name]: value,
@@ -114,7 +136,7 @@ export function LLMProviderDialog({
       toast.error("Invalid provider type");
       return;
     }
-
+    console.log(connectionData);
     // Validate required fields
     const missingFields = providerConfig.fields
       .filter((field) => field.required && !connectionData[field.name])
@@ -130,7 +152,7 @@ export function LLMProviderDialog({
       const data = {
         name,
         llm_model_provider: llmType,
-        llm_model: String(connectionData.model || ""),
+        llm_model: llmModel,
         connection_data: connectionData,
         is_active: isActive ? 1 : 0,
       };
@@ -227,8 +249,10 @@ export function LLMProviderDialog({
         );
     }
   };
-  const requiredFields = supportedModels[llmType]?.fields.filter((field) => field.required) ?? [];
-  const optionalFields = supportedModels[llmType]?.fields.filter((field) => !field.required) ?? [];
+  const requiredFields =
+    supportedModels[llmType]?.fields.filter((field) => field.required) ?? [];
+  const optionalFields =
+    supportedModels[llmType]?.fields.filter((field) => !field.required) ?? [];
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
@@ -266,11 +290,13 @@ export function LLMProviderDialog({
                   <SelectValue placeholder="Select LLM Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(supportedModels).map(([type, providerConfig]) => (
-                    <SelectItem key={type} value={type}>
-                      {providerConfig.name}
-                    </SelectItem>
-                  ))}
+                  {Object.entries(supportedModels).map(
+                    ([type, providerConfig]) => (
+                      <SelectItem key={type} value={type}>
+                        {providerConfig.name}
+                      </SelectItem>
+                    )
+                  )}
                 </SelectContent>
               </Select>
             )}
@@ -279,23 +305,22 @@ export function LLMProviderDialog({
           {llmType && supportedModels[llmType] && (
             <>
               <div className="space-y-4">
-                {requiredFields
-                  .map((field) => (
-                    <div key={field.name} className="space-y-2">
-                      <Label htmlFor={field.name}>
-                        {field.label}
-                        {field.required && (
-                          <span className="text-red-500 ml-1">*</span>
-                        )}
-                      </Label>
-                      {renderField(field)}
-                      {field.description && (
-                        <p className="text-sm text-muted-foreground">
-                          {field.description}
-                        </p>
+                {requiredFields.map((field) => (
+                  <div key={field.name} className="space-y-2">
+                    <Label htmlFor={field.name}>
+                      {field.label}
+                      {field.required && (
+                        <span className="text-red-500 ml-1">*</span>
                       )}
-                    </div>
-                  ))}
+                    </Label>
+                    {renderField(field)}
+                    {field.description && (
+                      <p className="text-sm text-muted-foreground">
+                        {field.description}
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
               <div className="flex items-center gap-2 border-t pt-4">
                 <div className="flex items-center gap-2">
@@ -312,16 +337,16 @@ export function LLMProviderDialog({
                     <Label htmlFor="show_advanced">Advanced</Label>
                     <Switch
                       id="show_advanced"
-                    checked={showAdvanced}
-                    onCheckedChange={setShowAdvanced}
-                  />
-                </div>
+                      checked={showAdvanced}
+                      onCheckedChange={setShowAdvanced}
+                    />
+                  </div>
                 )}
               </div>
 
               <div className="space-y-4">
-                {showAdvanced && optionalFields
-                  .map((field) => (
+                {showAdvanced &&
+                  optionalFields.map((field) => (
                     <div key={field.name} className="space-y-2">
                       <Label htmlFor={field.name}>
                         {field.label}

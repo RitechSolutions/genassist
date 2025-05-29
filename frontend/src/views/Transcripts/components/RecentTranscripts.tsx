@@ -6,12 +6,15 @@ import { TranscriptCard } from "./TranscriptCard";
 import { useTranscripts } from "../hooks/useTranscripts";
 import type { Transcript } from "@/interfaces/transcript.interface";
 import { CardHeader } from "@/components/CardHeader";
+import { useToast } from "@/hooks/useToast";
+import { conversationService } from "@/services/liveConversations";
 
 export function RecentTranscripts() {
   const { transcripts, loading, error, refreshTranscripts } = useTranscripts({ limit: 5, sortNewestFirst: true });
   const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLiveTranscriptSelected, setIsLiveTranscriptSelected] = useState(false);
+  const { toast } = useToast();
 
   const isLiveTranscript = (transcript: Transcript) => {
     return transcript?.status === "in_progress" || transcript?.status === "takeover";
@@ -21,6 +24,30 @@ export function RecentTranscripts() {
     setSelectedTranscript(transcript);
     setIsLiveTranscriptSelected(isLiveTranscript(transcript));
     setIsModalOpen(true);
+  };
+
+  const handleTakeOver = async (transcriptId: string): Promise<boolean> => {
+    try {
+      const success = await conversationService.takeoverConversation(transcriptId);
+      if (success) {
+        toast({
+          title: "Success",
+          description: "Successfully took over the conversation",
+        });
+        refreshTranscripts();
+        if (selectedTranscript && selectedTranscript.id === transcriptId) {
+          setSelectedTranscript(prev => prev ? { ...prev, status: "takeover" } : null);
+        }
+      }
+      return success;
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to take over conversation",
+        variant: "destructive",
+      });
+      return false;
+    }
   };
 
   return (
@@ -63,6 +90,7 @@ export function RecentTranscripts() {
           isOpen={isModalOpen} 
           onOpenChange={setIsModalOpen}
           refetchConversations={refreshTranscripts}
+          onTakeOver={handleTakeOver}
         />
       ) : (
         <TranscriptDialog 

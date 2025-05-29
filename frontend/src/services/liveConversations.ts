@@ -15,22 +15,13 @@ const parseTranscript = (transcription: string): string => {
     const parsed = JSON.parse(transcription);
     
     if (Array.isArray(parsed)) {
-      transcriptCache.set(transcription, parsed);
-      
-      return parsed
-        .map((t: { speaker: string; text: string }) => `${t.speaker}: ${t.text}`)
-        .join(" ");
+      return transcription;
     }
-    
-    return parsed
-      .map((t: { speaker: string; text: string }) => `${t.speaker}: ${t.text}`)
-      .join(" ");
   } catch {
-    return transcription || "Transcript unavailable";
+    // If JSON.parse fails, it's not a JSON string, return as is (it might be plain text).
   }
+  return transcription || "Transcript unavailable";
 };
-
-const transcriptCache = new Map<string, TranscriptEntry[]>();
 
 export const conversationService = {
   fetchTranscript: async (id: string): Promise<ConversationTranscript> => {
@@ -170,27 +161,20 @@ export const conversationService = {
       const allConversations = [...(inProgress ?? []), ...(supervisorInProgress ?? [])];
     
       const conversations: ActiveConversation[] = allConversations
-      .filter((rec) => rec.status !== "finalized")
+      .filter(rec => rec.status === "in_progress" || rec.status === "takeover")
       .map((rec) => {
-        if (rec.transcription) {
-          try {
-            const parsed = JSON.parse(rec.transcription);
-            if (Array.isArray(parsed)) {
-              transcriptCache.set(rec.id, parsed);
-            }
-          } catch (e) {
-            // ignore
-          }
-        }
-    
         return {
           id: rec.id,
           type: rec.recording ? "call" : "chat",
-          status: "in-progress",
+          status: rec.status as "in_progress" | "takeover",
           transcript: parseTranscript(rec.transcription),
           sentiment: "negative",
           timestamp: rec.created_at,
           in_progress_hostility_score: rec.in_progress_hostility_score || 0,
+          duration: rec.duration,
+          word_count: rec.word_count,
+          agent_ratio: rec.agent_ratio,
+          customer_ratio: rec.customer_ratio,
         };
       });
       
@@ -210,6 +194,6 @@ export const conversationService = {
   },
 
   getCachedTranscript: (id: string): TranscriptEntry[] | null => {
-    return transcriptCache.get(id) || null;
+    return null;
   }
 };

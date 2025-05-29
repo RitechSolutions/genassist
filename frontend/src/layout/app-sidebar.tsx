@@ -1,7 +1,5 @@
 import {
   Home,
-  MessageSquare,
-  BarChart2,
   Settings,
   User,
   Bell,
@@ -10,14 +8,9 @@ import {
   Users,
   AudioLines,
   UserCog,
-  Key,
-  Code,
-  UserCheck,
   ScrollText,
   ChevronDown,
   ChevronUp,
-  FullscreenIcon,
-  Brain,
   Settings2,
   LucideMessageCirclePlus,
 } from "lucide-react";
@@ -43,7 +36,6 @@ import { logout, getPermissions, hasAnyPermission } from "@/services/auth";
 import toast from "react-hot-toast";
 import { useEffect, useState } from "react";
 import { UploadMediaDialog } from "@/views/MediaUpload";
-import LangGraphView from "@/views/LangGraph/Index";
 import { useFeatureFlag } from "@/context/FeatureFlagContext";
 import { FeatureFlag } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
@@ -152,30 +144,21 @@ const mainMenuItems: MenuItem[] = [
     ],
   },
   {
-    title: "GenAgent",
+    title: "Agent Studio",
     icon: UserCog,
     url: "#",
     children: [
       {
-        title: "Agents",
+        title: "Workflows",
         url: "/ai-agents",
         permissionsRequired: ["read:llm_analyst"],
-      },
-      {
-        title: "Tools",
-        url: "/tools",
-        permissionsRequired: ["*"],
       },
       {
         title: "Knowledge Base",
         url: "/knowledge-base",
         permissionsRequired: ["*"],
       },
-      {
-        title: "Graph Config",
-        url: "/lang-graph",
-        permissionsRequired: ["*"],
-      },
+
     ],
   },
   {
@@ -434,7 +417,7 @@ export function AppSidebar() {
                 <SidebarMenuItem
                   key={index}
                   className={
-                    ["Conversations", "Admin Tools", "GenAgent"].includes(
+                    ["Conversations", "Admin Tools", "Agent Studio"].includes(
                       item.title
                     )
                       ? "h-fit"
@@ -486,7 +469,7 @@ export function AppSidebar() {
                         </div>
                       )}
                     </div>
-                  ) : item.title === "GenAgent" && item.children ? (
+                  ) : item.title === "Agent Studio" && item.children ? (
                     <div>
                       <div onClick={handleToggleGenAgent}>
                         <SidebarMenuButton className={parentMenuClasses}>

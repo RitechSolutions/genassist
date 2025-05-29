@@ -8,6 +8,7 @@ import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import IntegrationCodePage from '@/views/AIAgents/components/IntegrationCodePage';
 import ChatAsCustomer from "@/views/AIAgents/components/Customer/ChatAsCustomer"; 
+import LangGraphView from './Workflows/Index';
 
 const AIAgentsView: React.FC = () => {
   const isMobile = useIsMobile();
@@ -17,17 +18,17 @@ const AIAgentsView: React.FC = () => {
       <div className="min-h-screen flex w-full">
         {!isMobile && <AppSidebar />}
         <main className="flex-1 flex flex-col bg-zinc-100">
-          <div className="flex-1 p-8">
-            <div className="max-w-7xl mx-auto">
+          <div className="flex-1">
+            {/* <div className="max-w-7xl mx-auto"> */}
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="chat/:agentId/:threadId" element={<Chat />} />
-                <Route path="new" element={<AgentForm />} />
-                <Route path="edit/:agentId" element={<AgentForm />} />
+                <Route path="new" element={<LangGraphView />} />
+                <Route path="workflow/:agentId" element={<LangGraphView />} />
                 <Route path="integration/:agentId" element={<IntegrationCodePage />} />
                 <Route path="chat-as-customer/:agentId" element={<ChatAsCustomer />} />
               </Routes>
-            </div>
+            {/* </div> */}
           </div>
         </main>
       </div>

@@ -31,12 +31,15 @@ import { getSentimentStyles } from "../helpers/formatting";
 import { Badge } from "@/components/badge";
 import { Switch } from "@/components/switch";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/useToast";
+import { conversationService } from "@/services/liveConversations";
 
 const ITEMS_PER_PAGE = 10;
 
 const Transcripts = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const searchParams = new URLSearchParams(location.search);
   
   const { data, loading, error, refetch } = useTranscriptData();
@@ -165,6 +168,30 @@ const Transcripts = () => {
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
+
+  const handleTakeOver = async (transcriptId: string): Promise<boolean> => {
+    try {
+      const success = await conversationService.takeoverConversation(transcriptId);
+      if (success) {
+        toast({
+          title: "Success",
+          description: "Successfully took over the conversation",
+        });
+        refetch();
+        if (selectedTranscript && selectedTranscript.id === transcriptId) {
+          setSelectedTranscript(prev => prev ? { ...prev, status: "takeover" } : null);
+        }
+      }
+      return success;
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to take over conversation",
+        variant: "destructive",
+      });
+      return false;
+    }
+  };
 
   return (
     <SidebarProvider>
@@ -397,6 +424,7 @@ const Transcripts = () => {
           isOpen={isModalOpen} 
           onOpenChange={setIsModalOpen}
           refetchConversations={refetch}
+          onTakeOver={handleTakeOver}
         />
       ) : (
         <TranscriptDialog 
