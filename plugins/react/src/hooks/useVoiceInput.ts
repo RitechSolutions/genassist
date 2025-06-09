@@ -98,7 +98,7 @@ export const useVoiceInput = ({
     setIsLoading(true);
     try {
       // Get ephemeral API key from backend
-      const tokenResponse = await fetch(`${baseUrl}/api/voice/openai/session`, {
+      const tokenResponse = await fetch(`${baseUrl}api/voice/openai/session`, {
         headers: {
           'x-api-key': apiKey
         }

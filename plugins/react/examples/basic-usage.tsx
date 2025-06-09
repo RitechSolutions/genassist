@@ -12,7 +12,7 @@ const BasicExample: React.FC = () => {
       boxSizing: 'border-box'
     }}>
       <GenAgentChat 
-        baseUrl="https://api.example.com" 
+        baseUrl="https://api.example.com/" 
         apiKey="your-api-key-here"
         headerTitle="Customer Support"
         placeholder="Ask us anything..."

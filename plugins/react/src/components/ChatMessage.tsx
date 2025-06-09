@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChatMessage } from '../types';
+import { User } from 'lucide-react';
 
 interface ChatMessageProps {
   message: ChatMessage;
@@ -28,7 +29,8 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   isPrevSameSpeaker = false
 }) => {
   const isUser = message.speaker === 'customer';
-  const isWelcomeMessage = !isUser && isFirstMessage;
+  const isSpecial = message.speaker === 'special';
+  const isWelcomeMessage = !isUser && !isSpecial && isFirstMessage;
 
   const formatTimestamp = (timestamp: number) => {
     try {
@@ -149,7 +151,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
     color: '#000000',
   };
 
-  const speakerLabel = isUser ? 'You' : 'Agent';
+  const speakerLabel = isUser ? 'You' : isSpecial ? 'System' : 'Agent';
 
   let welcomeTitle = '';
   let welcomeContent = '';
@@ -176,6 +178,39 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
       {i < message.text.split('\n').length - 1 && <br />}
     </React.Fragment>
   )) : null;
+
+  // Handle special messages (like takeover indicators)
+  if (isSpecial) {
+    const specialMessageStyle: React.CSSProperties = {
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      margin: '16px 0',
+      width: '100%',
+    };
+
+    const specialBubbleStyle: React.CSSProperties = {
+      backgroundColor: '#E3F2FD',
+      color: '#1976D2',
+      padding: '8px 16px',
+      borderRadius: '16px',
+      fontSize: '14px',
+      fontFamily,
+      fontWeight: '500',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+    };
+
+    return (
+      <div style={specialMessageStyle}>
+        <div style={specialBubbleStyle}>
+          <User size={15} />
+          {message.text}
+        </div>
+      </div>
+    );
+  }
 
   if (isWelcomeMessage) {
     return (

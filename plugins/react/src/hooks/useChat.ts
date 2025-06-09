@@ -6,15 +6,17 @@ export interface UseChatProps {
   baseUrl: string;
   apiKey: string;
   onError?: (error: Error) => void;
+  onTakeover?: () => void;
 }
 
-export const useChat = ({ baseUrl, apiKey, onError }: UseChatProps) => {
+export const useChat = ({ baseUrl, apiKey, onError, onTakeover }: UseChatProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const chatServiceRef = useRef<ChatService | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [possibleQueries, setPossibleQueries] = useState<string[]>([]);
+  const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
 
   // Initialize chat service
   useEffect(() => {
@@ -22,6 +24,13 @@ export const useChat = ({ baseUrl, apiKey, onError }: UseChatProps) => {
     
     chatServiceRef.current.setMessageHandler((message: ChatMessage) => {
       setMessages(prevMessages => [...prevMessages, message]);
+    });
+
+    chatServiceRef.current.setTakeoverHandler(() => {
+      setIsTakenOver(true);
+      if (onTakeover) {
+        onTakeover();
+      }
     });
 
     // Initialize conversation (using existing one or starting new)
@@ -63,7 +72,7 @@ export const useChat = ({ baseUrl, apiKey, onError }: UseChatProps) => {
         chatServiceRef.current.disconnect();
       }
     };
-  }, [baseUrl, apiKey, onError]);
+  }, [baseUrl, apiKey, onError, onTakeover]);
 
   // Reset conversation
   const resetConversation = useCallback(async () => {
@@ -143,6 +152,7 @@ export const useChat = ({ baseUrl, apiKey, onError }: UseChatProps) => {
     resetConversation,
     connectionState,
     conversationId,
-    possibleQueries
+    possibleQueries,
+    isTakenOver
   };
 }; 

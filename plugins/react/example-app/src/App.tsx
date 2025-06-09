@@ -540,7 +540,7 @@ function App() {
       {/* Chat Widget Popup */}
       <div style={chatWidgetStyle}>
         <GenAgentChat 
-          baseUrl="http://localhost:8000" 
+          baseUrl="http://localhost:8000/" 
           apiKey="agent123"
           userData={userData}
           theme={theme}

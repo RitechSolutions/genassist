@@ -12,6 +12,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   apiKey,
   userData,
   onError,
+  onTakeover,
   theme,
   headerTitle = 'Genassist',
   placeholder = 'Ask a question'
@@ -28,11 +29,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     resetConversation,
     connectionState, 
     conversationId,
-    possibleQueries
+    possibleQueries,
+    isTakenOver
   } = useChat({
     baseUrl,
     apiKey,
-    onError
+    onError,
+    onTakeover
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioService = useRef<AudioService | null>(null);
