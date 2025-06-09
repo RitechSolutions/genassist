@@ -63,6 +63,7 @@ function App() {
         headerTitle="Customer Support"
         placeholder="Ask a question..."
         onError={(error) => console.error('Chat error:', error)}
+        onTakeover={handleTakeover}
       />
     </div>
   );
@@ -79,6 +80,7 @@ export default App;
 | apiKey | string | Yes | - | API key for authentication |
 | userData | object | No | - | Any user metadata to include |
 | onError | function | No | - | Error handler callback |
+| onTakeover | function | No | - | Callback triggered when a takeover event occurs |
 | theme | object | No | - | Custom theme options |
 | headerTitle | string | No | 'Chat' | Title displayed in the chat header |
 | placeholder | string | No | 'Type a message...' | Placeholder text for the input |
@@ -100,7 +102,7 @@ The component interacts with the following endpoints:
 
 1. Start Conversation: `POST /api/conversations/in-progress/start`
 2. Update Conversation: `POST /api/conversations/in-progress/update/{conversation_id}`
-3. WebSocket: `/api/conversations/ws/{conversation_id}?access_token={token}&lang=en&topics=message`
+3. WebSocket: `/api/conversations/ws/{conversation_id}?access_token={token}&lang=en&topics=message&topics=takeover`
 
 ## Run
 ./

@@ -8,6 +8,7 @@ export class ChatService {
   private conversationId: string | null = null;
   private webSocket: WebSocket | null = null;
   private messageHandler: ((message: ChatMessage) => void) | null = null;
+  private takeoverHandler: (() => void) | null = null;
   private storageKey = 'genassist_conversation_id';
   private possibleQueries: string[] = [];
 
@@ -20,6 +21,10 @@ export class ChatService {
 
   setMessageHandler(handler: (message: ChatMessage) => void) {
     this.messageHandler = handler;
+  }
+
+  setTakeoverHandler(handler: () => void) {
+    this.takeoverHandler = handler;
   }
 
   getPossibleQueries(): string[] {
@@ -191,7 +196,7 @@ export class ChatService {
       throw new Error('Conversation ID is required for WebSocket connection');
     }
 
-    const wsUrl = `${this.baseUrl.replace('http', 'ws')}/api/conversations/ws/${this.conversationId}?api_key=${this.apiKey}&lang=en&topics=message`;
+    const wsUrl = `${this.baseUrl.replace('http', 'ws')}/api/conversations/ws/${this.conversationId}?api_key=${this.apiKey}&lang=en&topics=message&topics=takeover`;
     this.webSocket = new WebSocket(wsUrl);
 
     this.webSocket.onopen = () => {
@@ -208,6 +213,27 @@ export class ChatService {
             messages.forEach(this.messageHandler);
           } else {
             this.messageHandler(data.payload as ChatMessage);
+          }
+        } else if (data.type === 'takeover') {
+          // Handle takeover event
+          console.log('Takeover event received');
+          
+          // Create special message for the takeover indicator
+          if (this.messageHandler) {
+            const now = Date.now();
+            const takeoverMessage: ChatMessage = {
+              create_time: now,
+              start_time: now / 1000,
+              end_time: now / 1000 + 0.01,
+              speaker: 'special',
+              text: 'Supervisor took over'
+            };
+            this.messageHandler(takeoverMessage);
+          }
+          
+          // Call the takeover handler if provided
+          if (this.takeoverHandler) {
+            this.takeoverHandler();
           }
         }
       } catch (error) {

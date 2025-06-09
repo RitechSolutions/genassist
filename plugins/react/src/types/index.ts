@@ -3,7 +3,7 @@ export interface ChatMessage {
   create_time: number;
   start_time: number;
   end_time: number;
-  speaker: 'customer' | 'agent';
+  speaker: 'customer' | 'agent' | 'special';
   text: string;
 }
 
@@ -21,6 +21,7 @@ export interface GenAgentChatProps {
   apiKey: string;
   userData?: Record<string, any>; // For passing user information or other metadata
   onError?: (error: Error) => void;
+  onTakeover?: () => void;
   theme?: {
     primaryColor?: string;
     secondaryColor?: string;
