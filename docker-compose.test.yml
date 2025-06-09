@@ -1,0 +1,154 @@
+services:
+  # Database
+  db:
+    image: postgres:15
+    container_name: test_genassist_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: core_db
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - test_pgdata:/var/lib/postgresql/data
+    networks:
+      - test_genassist-network
+
+  # Main application service
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: test_genassist-app
+    image: genassist-app-image
+    env_file:
+      - ./.env.backend
+    environment:
+      - RAG_VECTOR_DB_TYPE=chroma
+      - RAG_CHROMA_PERSIST_DIRECTORY=/app/data/chroma
+      - RAG_CHROMA_COLLECTION_NAME=default
+      - RAG_GRAPH_DB_TYPE=neo4j
+      - RAG_NEO4J_URL=bolt://neo4j:7687
+      - RAG_NEO4J_USERNAME=neo4j
+      - RAG_NEO4J_PASSWORD=password
+    depends_on:
+      - neo4j
+      - chroma
+      - db
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - test_genassist-network
+    restart: unless-stopped
+
+  # UI service
+  ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      additional_contexts:
+         plugins: ./plugins/react
+    container_name: test_genassist-ui
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.frontend
+    environment:
+      - VITE_PRIVATE_API_URL
+      - VITE_PUBLIC_API_URL
+      - VITE_WEBSOCKET_PUBLIC_URL
+      - VITE_WEBSOCKET_PRIVATE_URL
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - test_genassist-network
+    restart: unless-stopped
+    
+  uitests:
+    build:
+      context: ./ui_tests
+      dockerfile: Dockerfile
+    container_name: test_genassist-playwright
+    environment:
+      CUSTOM_PARAM: 'string'
+    depends_on:
+      - app
+      - ui
+    networks:
+      - test_genassist-network
+    restart: unless-stopped
+
+  # Neo4j graph database
+  neo4j:
+    image: neo4j:5.9.0
+    container_name: test_genassist-neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_dbms_memory_pagecache_size=256M
+      - NEO4J_dbms_memory_heap_initial__size=256M
+      - NEO4J_dbms_memory_heap_max__size=512M
+      - NEO4JLABS_PLUGINS=["apoc"]  # Enable APOC plugin
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    volumes:
+      - test_neo4j_data:/data
+      - test_neo4j_logs:/logs
+      - test_neo4j_import:/var/lib/neo4j/import
+      - test_neo4j_plugins:/plugins
+    networks:
+      - test_genassist-network
+    restart: unless-stopped
+
+  # Chroma vector database
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: test_genassist-chroma
+    volumes:
+      - test_chroma_data:/chroma/chroma
+    environment:
+      - CHROMA_DB_IMPL=duckdb+parquet
+      - CHROMA_PERSIST_DIRECTORY=/chroma/chroma
+    networks:
+      - test_genassist-network
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: test_genassist-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test_genassist-network
+    restart: unless-stopped
+
+
+networks:
+  test_genassist-network:
+    driver: bridge
+
+volumes:
+  test_neo4j_data:
+  test_neo4j_logs:
+  test_neo4j_import:
+  test_neo4j_plugins:
+  test_chroma_data: 
+  test_pgdata: 
