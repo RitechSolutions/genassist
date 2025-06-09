@@ -12,6 +12,12 @@ from app.modules.agents.utils import create_direct_response_prompt, create_json_
 from app.modules.agents.workflow.base_processor import NodeProcessor
 from app.modules.agents.workflow.nodes.api_tool import ApiToolNodeProcessor
 from app.modules.agents.workflow.nodes.knowledge_tool import KnowledgeToolNodeProcessor
+from app.modules.agents.workflow.nodes.python_tool import PythonFunctionNodeProcessor
+
+from app.modules.agents.workflow.nodes.slack_tool import SlackMessageNodeProcessor
+from app.modules.agents.workflow.nodes.zendesk_tool import ZendeskTicketNodeProcessor
+
+
 from app.schemas.llm import LlmProviderUpdate
 logger = logging.getLogger(__name__)
 
@@ -102,7 +108,21 @@ class AgentNodeProcessor(NodeProcessor):
                             node_id, 
                             tool_data
                         )
-                    
+                    elif node_type == "pythonCodeNode":
+                        tool_processor = PythonFunctionNodeProcessor(
+                            self.get_context(),
+                            node_id, 
+                            tool_data
+                        )
+                    elif node_type == "slackMessageNode":
+                        tool_processor = SlackMessageNodeProcessor(
+                            self.get_context(),
+                            node_id,
+                            tool_data
+                        )
+                    elif node_type == "zendeskTicketNode":
+                        tool_processor = ZendeskTicketNodeProcessor(self.context, node_id, tool_data)
+
                     if tool_processor:
                         # Update tool parameters with extracted values
                         extracted_parameters = selected_tool.get("extracted_parameters", {})

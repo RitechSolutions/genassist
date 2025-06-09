@@ -1,11 +1,9 @@
 from typing import Optional
-from sqlalchemy import Integer, PrimaryKeyConstraint, String, UniqueConstraint, ForeignKey
+from sqlalchemy import DateTime, Integer, PrimaryKeyConstraint, String, UniqueConstraint, ForeignKey, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import TYPE_CHECKING
 from uuid import UUID
 from app.db.base import Base
-from app.db.models.user_role import UserRoleModel
-from app.db.models.user_type import UserTypeModel
 
 if TYPE_CHECKING:
     from app.db.models.role import RoleModel
@@ -23,6 +21,7 @@ class UserModel(Base):
     notes: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     hashed_password: Mapped[str] = mapped_column(String(1000))
+    force_upd_pass_date = mapped_column(DateTime(timezone=True)) # date to force password update
 
     user_type_id: Mapped[UUID] = mapped_column(ForeignKey("user_types.id"), nullable=False)
 

@@ -1,4 +1,3 @@
-import json
 import logging
 from typing import Any, Dict, Optional
 from uuid import UUID
@@ -7,13 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.dependencies.agents import get_agent_registry, get_agent_datasource_service
-from app.modules.agents.data.datasource_service import AgentDataSourceService
 from app.modules.agents.registry import AgentRegistry
-from app.schemas.agent import AgentRead, QueryRequest
+from app.schemas.agent import QueryRequest
 from app.services.agent_config import AgentConfigService
-from app.services.agent_knowledge import KnowledgeBaseService
-from app.services.agent_tool import ToolService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

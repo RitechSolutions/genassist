@@ -1,27 +1,16 @@
 {
-  // Use IntelliSense to learn about possible attributes.
-  // Hover to view descriptions of existing attributes.
-  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Python Debugger: Current File",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${file}",
-      "console": "integratedTerminal"
-    },
-    {
-      "name": "Python: Run Server",
-      "type": "debugpy",
+      "name": "FastAPI Debug (run.py, genassist_env)",
+      "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/run.py",
       "console": "integratedTerminal",
-      "justMyCode": true,
-      "python": "${workspaceFolder}/venv/bin/python",
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-      }
+      "envFile": "${workspaceFolder}/.env",
+      "python": "${workspaceFolder}/genassist_env/bin/python",
+      "justMyCode": false,
+      "args": []
     }
   ]
 }

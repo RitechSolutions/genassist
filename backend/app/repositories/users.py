@@ -1,10 +1,9 @@
+from datetime import datetime
 from uuid import UUID
-
-from fastapi_cache.coder import PickleCoder
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi_cache.decorator import cache
 from app.auth.utils import get_password_hash
 from app.cache.redis_cache import make_key_builder
+from app.db.models import UserRoleModel
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.role import RoleModel
@@ -15,10 +14,9 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from fastapi import Depends
 from sqlalchemy.orm import selectinload, joinedload
-from sqlalchemy import delete, select
-from starlette_context import context
+from sqlalchemy import delete, select, update
 from app.schemas.user import UserCreate, UserUpdate
-from app.db.models.user import UserModel, UserRoleModel
+from app.db.models.user import UserModel
 import logging
 from fastapi_cache import FastAPICache
 
@@ -122,7 +120,6 @@ class UserRepository:
 
     async def update(self, user_id: UUID, data: UserUpdate) -> UserModel:
         user = await self.get(user_id)
-        user.updated_by = context["user_id"]
         if not user:
             raise AppException(error_key=ErrorKey.USER_NOT_FOUND)
 
@@ -162,3 +159,13 @@ class UserRepository:
         await FastAPICache.get_backend().clear(key=cache_key)
 
         return user
+
+
+    async def update_user_password(self, user_id: int, new_hashed: str, next_update_date: datetime):
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id)
+            .values(hashed_password=new_hashed, force_upd_pass_date=next_update_date)
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()

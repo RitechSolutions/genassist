@@ -9,6 +9,7 @@ services:
       POSTGRES_DB: core_db
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./scripts/db_init_scripts:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     networks:
@@ -33,6 +34,8 @@ services:
       - RAG_NEO4J_URL=bolt://neo4j:7687
       - RAG_NEO4J_USERNAME=neo4j
       - RAG_NEO4J_PASSWORD=password
+      - DB_HOST=genassist_db
+      - REDIS_HOST=redis
     depends_on:
       - neo4j
       - chroma
@@ -152,6 +155,25 @@ services:
     networks:
       - genassist-network
     restart: unless-stopped
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: genassist-metabase
+    volumes:
+      - ./metabase-data:/data
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: genassist_db
+      MB_DB_PORT: 5432
+      MB_DB_USER: metabase_admin
+      MB_DB_PASS: metabase_admin
+      MB_DB_DBNAME: metabase_db
+    depends_on:
+      - app
+    networks:
+      - genassist-network
 
 networks:
   genassist-network:

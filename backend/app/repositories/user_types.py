@@ -3,10 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi import Depends
 from sqlalchemy.future import select
-from starlette_context import context
 
+from app.db.models import UserTypeModel
 from app.db.session import get_db
-from app.db.models.user import UserTypeModel
 from app.schemas.user import UserTypeCreate
 
 class UserTypesRepository:

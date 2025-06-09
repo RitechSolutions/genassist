@@ -1,3 +1,4 @@
+import os
 from uuid import UUID
 import json
 from datetime import datetime, timezone
@@ -11,7 +12,7 @@ from app.core.utils.bi_utils import calculate_duration_from_transcript, calculat
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
 from app.core.utils.enums.transcript_message_type import TranscriptMessageType
-from app.db.models.conversation import ConversationModel
+from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.seed.seed_data_config import seed_test_data
 from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.conversations import ConversationRepository
@@ -24,6 +25,7 @@ from app.services.conversation_analysis import ConversationAnalysisService
 from app.services.gpt_kpi_analyzer import GptKpiAnalyzer
 from app.services.llm_analysts import LlmAnalystService
 from app.services.operator_statistics import OperatorStatisticsService
+from app.services.zendesk import ZendeskClient
 
 
 def get_messages_string_by_type(transcription: str, message_type: TranscriptMessageType):
@@ -49,6 +51,12 @@ class ConversationService:
 
     async def get_conversation_by_id(self, conversation_id: UUID):
         conversation = await self.conversation_repo.fetch_conversation_by_id(conversation_id)
+        if not conversation:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
+        return conversation
+
+    async def get_conversation_by_id_full(self, conversation_id: UUID):
+        conversation = await self.conversation_repo.fetch_conversation_by_id_full(conversation_id)
         if not conversation:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
         return conversation
@@ -138,8 +146,11 @@ class ConversationService:
         if conversation.status == ConversationStatus.TAKE_OVER.value:
             raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER)
 
-    async def finalize_in_progress_conversation(self, llm_analyst_id: UUID,
-                                                conversation_id: UUID) -> ConversationAnalysisRead:
+    async def finalize_in_progress_conversation(
+        self,
+        llm_analyst_id: UUID,
+        conversation_id: UUID
+    ) -> ConversationAnalysisRead:
         """
         Switch conversation's status to 'finalized'
         so it won't be updated further.
@@ -155,29 +166,97 @@ class ConversationService:
         conversation.status = ConversationStatus.FINALIZED.value
         saved_conversation = await self.conversation_repo.update_conversation(conversation)
 
-        #  Run GPT analysis
+        # Run GPT analysis
         if not llm_analyst_id:
             llm_analyst_id = seed_test_data.llm_analyst_kpi_analyzer_id
 
         llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
 
-        message_type_segments = get_messages_string_by_type(conversation.transcription, TranscriptMessageType.MESSAGE)
+        message_type_segments = get_messages_string_by_type(
+            conversation.transcription, TranscriptMessageType.MESSAGE
+        )
 
         if message_type_segments == "[]":
             raise ValueError(f"Transcription resulted in empty segment! Original: {conversation.transcription}")
-    
-        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(message_type_segments, llm_analyst=llm_analyst)
 
-        conversation_analysis = await self.conversation_analysis_service.create_conversation_analysis(gpt_analysis,
-                                                                                                      llm_analyst_id,
-                                                                                                      saved_conversation.id)
+        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
+            message_type_segments, llm_analyst=llm_analyst
+        )
+
+        conversation_analysis = await self.conversation_analysis_service.create_conversation_analysis(
+            gpt_analysis,
+            llm_analyst_id,
+            saved_conversation.id
+        )
 
         # Update operator statistics
-        await self.operator_statistics_service.update_from_analysis(conversation_analysis,
-                                                                                        conversation.operator_id,
-                                                                                        saved_conversation.duration)
+        await self.operator_statistics_service.update_from_analysis(
+            conversation_analysis,
+            conversation.operator_id,
+            saved_conversation.duration
+        )
+
+        store_in_zendesk = os.getenv("STORE_CONVERSATIONS_IN_ZENDESK", "false").lower() == "true"
+        if store_in_zendesk:
+            await self.store_zendesk_analysis(saved_conversation, conversation_analysis)
+
         return ConversationAnalysisRead.model_validate(conversation_analysis)
 
+    async def store_zendesk_analysis(self, saved_conversation: ConversationModel, conversation_analysis: ConversationAnalysisModel):
+        # Create or update a Zendesk ticket here
+        zendesk = ZendeskClient()
+
+        # Pull out the detailed fields for the ticket comment
+        topic = conversation_analysis.topic or ""
+        summary = conversation_analysis.summary or ""
+        resolution_rate = conversation_analysis.resolution_rate or 0
+        customer_satisfaction = conversation_analysis.customer_satisfaction or 0
+        service_quality = conversation_analysis.quality_of_service or 0
+
+        # Helper to convert 0–10 scale to percentage
+        def to_percent(value: int) -> int:
+            return int((value / 10) * 100)
+
+        if saved_conversation.zendesk_ticket_id:
+            comment_body = (
+                "Ticket Closed\n"
+                f"🔹 Topic: {topic}\n"
+                f"🔹 Summary: {summary}\n"
+                f"🔹 Resolution Rate: {resolution_rate}%\n"
+                f"🔹 Customer Satisfaction: {to_percent(customer_satisfaction)}%\n"
+                f"🔹 Service Quality: {to_percent(service_quality)}%\n\n"
+                "For any follow‐up, please contact the customer by email "
+                "and ask about any remaining concerns."
+            )
+            await zendesk.update_ticket(
+                ticket_id=saved_conversation.zendesk_ticket_id,
+                comment=comment_body
+            )
+        else:
+            subject = f"GenAssist Conversation {saved_conversation.id} – Needs review"
+            description = (
+                "GenAssist conversation was finalized. Please review metrics.\n\n"
+                f"🔹 Topic: {topic}\n"
+                f"🔹 Summary: {summary}\n"
+                f"🔹 Resolution Rate: {resolution_rate}%\n"
+                f"🔹 Customer Satisfaction: {to_percent(customer_satisfaction)}%\n"
+                f"🔹 Service Quality: {to_percent(service_quality)}%\n"
+            )
+            requester_email = "customer@example.com"
+
+            new_ticket_id = await zendesk.create_ticket(
+                subject=subject,
+                description=description,
+                requester_email=requester_email,
+                conversation_id=str(saved_conversation.id),
+                tags=["genassist"]
+            )
+
+            if new_ticket_id:
+                # Save that new ticket ID into `ConversationModel.zendesk_ticket_id`
+                saved_conversation.zendesk_ticket_id = new_ticket_id
+                await self.conversation_repo.update_conversation(saved_conversation)
+                
     async def _analyze_in_progress_tone_and_mark(
             self,
             conversation: ConversationModel,

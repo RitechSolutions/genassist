@@ -43,8 +43,9 @@ class NodeProcessor:
         logger.info(f"Input edges: {input_edges}")
         target_handlers = self.get_target_handlers().copy()
         target_handlers = [h for h in target_handlers if field_name in h.get("id")]
-
-        if not input_edges:
+        logger.info(f"Target handlers: {target_handlers}")
+        logger.info(f"Input direct_input: {direct_input}")
+        if not input_edges or len(input_edges) == 0:
             return direct_input if direct_input else {}
         
         for handler in target_handlers:
@@ -102,7 +103,7 @@ class NodeProcessor:
 
     def get_state(self):
         """Get the state for this node"""
-        return self.context.state
+        return self.context.state if self.context else None
     
     def get_context(self):
         """Get the context for this node"""

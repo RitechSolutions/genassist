@@ -252,33 +252,39 @@ class AgentDataSourceService:
         results = []
 
         doc_ids = [str(doc.id) for doc in docs_config]
-        search_vector = any(
-            doc.rag_config.vector_db.get("enabled", False) for doc in docs_config
-        )
-        search_graph = any(
-            doc.rag_config.graph_db.get("enabled", False) for doc in docs_config
-        )
-        search_light_rag = any(
-            doc.rag_config.light_rag.get("enabled", False) for doc in docs_config
-        )
+        
+        search_vector = [doc  for doc in docs_config if doc.rag_config.vector_db.get("enabled", False)]
+        search_vector_doc_ids = [str(doc.id) for doc in search_vector]
+
+        search_graph = [doc  for doc in docs_config if doc.rag_config.graph_db.get("enabled", False)]
+        search_graph_doc_ids = [str(doc.id) for doc in search_graph]
+
+        search_light_rag = [doc  for doc in docs_config if doc.rag_config.light_rag.get("enabled", False)]
+        search_light_rag_doc_ids = [str(doc.id) for doc in search_light_rag]
+        
+        no_rag = [doc  for doc in docs_config if not (doc.rag_config.light_rag.get("enabled", False) or doc.rag_config.graph_db.get("enabled", False) or doc.rag_config.vector_db.get("enabled", False))]
+        
+        
         logger.info(
             f"search_knowledge : search_vector = {search_vector}, search_graph = {search_graph}, search_light_rag = {search_light_rag} doc_ids = {doc_ids}"
         )
 
         logger.info("Entered datasource_service.search_knowledge")
+        
+        
 
         # Search vector DB if available
         vector_provider = self.get_provider("vector_db")
-        if vector_provider and search_vector:
-            vector_results = await vector_provider.search(query, limit, doc_ids)
+        if vector_provider and len(search_vector_doc_ids) > 0:
+            vector_results = await vector_provider.search(query, limit, search_vector_doc_ids)
             results.extend(vector_results)
             logger.info("search_knowledge : vector_results")
             logger.info(vector_results)
 
         # Search graph DB if available
         graph_provider = self.get_provider("graph_db")
-        if graph_provider and search_graph:
-            graph_results = await graph_provider.search(query, limit, doc_ids)
+        if graph_provider and len(search_graph_doc_ids) > 0:
+            graph_results = await graph_provider.search(query, limit, search_graph_doc_ids)
 
             logger.info("search_knowledge : graph_results")
             logger.info(graph_results)
@@ -290,20 +296,15 @@ class AgentDataSourceService:
                     results.append(result)
                     existing_ids.add(result["id"])
 
-        print("query : ", query)
-        print("limit : ", limit)
-        print("doc_ids : ", doc_ids)
-        print("provider:", self.get_provider("light_rag"))
+
         # Search LightRAG if available
         light_rag_provider = self.get_provider("light_rag")
 
-        if light_rag_provider and search_light_rag:
-            light_rag_results = await light_rag_provider.search(query, limit, doc_ids)
+        if light_rag_provider and len(search_light_rag_doc_ids) > 0:
+            light_rag_results = await light_rag_provider.search(query, limit, search_light_rag_doc_ids)
             print(" searchlight_rag_results : ", light_rag_results)
-
             logger.info("search_knowledge : light_rag_results")
             logger.info(light_rag_results)
-
             # Merge results, avoiding duplicates
             existing_ids = {r["id"] for r in results}
             for result in light_rag_results:
@@ -311,6 +312,28 @@ class AgentDataSourceService:
                     results.append(result)
                     existing_ids.add(result["id"])
 
+        if len(no_rag) > 0:
+            logger.info("search_knowledge : no_rag")
+            logger.info(no_rag)
+            for kbitem in no_rag:
+                doc_id = f"KB:{str(kbitem.id)}#content"
+                content = kbitem.content
+
+                # Handle file-based content
+                if kbitem.type == "file" and kbitem.file:
+                    file_path = kbitem.file
+                    doc_id = f"KB:{str(kbitem.id)}#{file_path}"
+                    if os.path.exists(file_path):
+                        with open(file_path, "r") as f:
+                            content = f.read()
+                results.append({
+                        "id": doc_id,
+                        "content": content,
+                        "metadata": {
+                        },
+                        "score": 1,
+                        "chunk_count": 1,
+                    })
         # Sort by score and limit results
         results.sort(key=lambda x: x.get("score", 0), reverse=True)
         if format_results:

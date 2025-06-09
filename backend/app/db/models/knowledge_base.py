@@ -31,11 +31,15 @@ class KnowledgeBaseModel(Base):
     # sync configuration
     sync_active: Mapped[Optional[int]] = mapped_column(Integer)
     sync_source_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("data_sources.id"), nullable=True)
+    llm_provider_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("llm_providers.id"), nullable=True)
+
     last_synced: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(True))
     last_sync_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_file_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(True))
     sync_schedule: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # Define the relationship to DataSourceModel
+    # Define the relationship to DataSourceModel and LlmProvidersModel
     sync_source = relationship("DataSourceModel", back_populates="knowledge_bases")
+    llm_provider = relationship("LlmProvidersModel", back_populates="knowledge_bases")
+    

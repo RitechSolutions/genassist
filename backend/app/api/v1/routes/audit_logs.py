@@ -19,6 +19,8 @@ async def search(
     table_name: str = Query(None),
     entity_id: UUID = Query(None),
     modified_by: UUID = Query(None),
+    limit:  int | None = Query(None, ge=1, le=500),
+    offset: int | None = Query(None, ge=0),
     service: AuditLogService = Depends()
 ):
     """
@@ -36,6 +38,8 @@ async def search(
         action=action,
         table_name=table_name,
         entity_id=entity_id,
-        modified_by=modified_by
+        modified_by=modified_by,
+        limit  = limit,
+        offset = offset,
     )
     return await service.search_audit_logs(search_params)

@@ -1,12 +1,15 @@
 from typing import List, Dict, Any
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, status, Request
 import logging
+from app.modules.agents.utils import generate_python_function_template
+from app.modules.agents.workflow.nodes.python_tool import PythonFunctionNodeProcessor
 from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowUpdate
 from app.auth.dependencies import auth, permissions
 from app.modules.agents.workflow.nodes.knowledge_tool import KnowledgeToolNodeProcessor
 from app.modules.agents.workflow import WorkflowRunner
-from app.services.agent_knowledge import KnowledgeBaseService
+from app.modules.agents.workflow.nodes.slack_tool import SlackMessageNodeProcessor
+from app.modules.agents.workflow.nodes.zendesk_tool import ZendeskTicketNodeProcessor
 from app.services.workflow import WorkflowService
 
 router = APIRouter()
@@ -48,22 +51,15 @@ async def create_workflow(
             ])
 async def get_workflow(
     workflow_id: UUID,
-    request: Request,
     service: WorkflowService = Depends()
 ):
     """
     Get a workflow by ID
     """
-    current_user = request.state.user
     workflow = await service.get_by_id(workflow_id)
     
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    
-    # Check if the user owns this workflow
-    # if workflow.user_id != current_user.id:
-    #     raise HTTPException(status_code=403, detail="Not authorized to access this workflow")
-    
     return workflow
 
 
@@ -74,13 +70,11 @@ async def get_workflow(
                 Depends(permissions("read:workflow"))
             ])
 async def get_workflows(
-    request: Request,
     service: WorkflowService = Depends()
 ):
     """
     Get all workflows for the current user
     """
-    # current_user = request.state.user
     workflows = await service.get_all()
     return workflows
 
@@ -93,7 +87,6 @@ async def get_workflows(
 async def update_workflow(
     workflow_id: UUID,
     workflow_data: WorkflowUpdate,
-    request: Request,
     service: WorkflowService = Depends()
 ):
     """
@@ -105,11 +98,6 @@ async def update_workflow(
     
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    
-    current_user = request.state.user
-    # Check if the user owns this workflow
-    # if workflow.user_id != current_user.id:
-    #     raise HTTPException(status_code=403, detail="Not authorized to modify this workflow")
     
     # Update the workflow
     workflow.name = workflow_data.name
@@ -156,12 +144,10 @@ async def delete_workflow(
 async def execute_workflow(
     workflow_id: UUID,
     input_data: Dict[str, Any],
-    request: Request
 ):
     """
     Execute a workflow with the given input message
     """
-    current_user = request.state.user
     
     # Get the input message from the request body
     input_message = input_data.get("message", "")
@@ -183,7 +169,6 @@ async def execute_workflow(
                 Depends(permissions("test:workflow"))
             ])
 async def test_workflow(
-    request: Request,
     test_data: Dict[str, Any]
 ):
     """
@@ -224,9 +209,7 @@ async def test_workflow(
                 Depends(permissions("test:workflow"))
             ])
 async def test_knowledge_tool(
-    request: Request,
     test_data: Dict[str, Any],
-    knowledge_service: KnowledgeBaseService = Depends(),
 ):
     """
     Test a knowledge tool node with a query
@@ -249,10 +232,7 @@ async def test_knowledge_tool(
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")
     
-    # Check if the configuration is for a knowledge tool
-    # if tool_config.get("name") != "knowledge_tool":
-    #     raise HTTPException(status_code=400, detail="Configuration is not for a knowledge tool")
-    
+
     # Process the query with the knowledge tool
     try:
         # Create a mock node ID
@@ -270,4 +250,152 @@ async def test_knowledge_tool(
         }
     except Exception as e:
         logger.error(f"Error testing knowledge tool: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e)) 
+
+
+
+@router.post("/test-python-function", 
+            dependencies=[
+                Depends(auth),
+                Depends(permissions("test:workflow"))
+            ])
+async def test_python_function(
+    test_data: Dict[str, Any],
+):
+    """
+    Test a python function node with a query
+    
+    Request body should contain:
+    - tool_config: Configuration for the python function node
+    - input_data: The input data to test with
+    """
+    # Extract the tool configuration and query from the request body
+    tool_config = test_data.get("tool_config")
+    input_parameters = test_data.get("input_params")
+    
+    logger.info(f"Tool configuration: {tool_config}")
+    logger.info(f"Input data: {input_parameters}")
+    
+    # Validate inputs
+    if not tool_config:
+        raise HTTPException(status_code=400, detail="Python function configuration is required")
+    
+    if not input_parameters:
+        raise HTTPException(status_code=400, detail="Input data is required")
+    
+
+    # Process the query with the knowledge tool
+    try:
+        # Create a mock node ID
+        node_id = "test-python-function"
+        context = None
+        # Create a processor for the knowledge tool
+        processor = PythonFunctionNodeProcessor(context, node_id, tool_config)
+        # Process the query
+        result = await processor.process(input_data=input_parameters)
+        
+        # Return the result
+        return {
+            "status": "success",
+            "result": result
+        }
+    except Exception as e:
+        logger.error(f"Error testing python function: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.post(
+    "/zendesk-output-message",
+    dependencies=[Depends(auth), Depends(permissions("test:workflow"))],
+    status_code=status.HTTP_200_OK,
+    summary="Test Zendesk ticket creation"
+)
+async def test_zendesk_ticket(test_data: Dict[str, Any]):
+    """
+    Only requires subject & description; credentials come from .env via settings.
+    """
+    missing = [f for f in ("subject", "description") if not test_data.get(f)]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing required fields: {missing}"
+        )
+
+    processor = ZendeskTicketNodeProcessor(context=None, node_id="zendesk-test", node_data={})
+    return await processor.process(input_data=test_data)
+
+
+@router.post("/generate-python-template", response_model=Dict[str, Any])
+async def generate_python_template(
+    test_data: Dict[str, Any],
+):
+    """
+    Generate a Python function template based on a tool's parameter schema.
+    
+    This endpoint generates starter code for a Python function tool based on
+    the parameters schema provided. It includes proper parameter extraction,
+    type handling, and default values.
+    """
+    try:
+        parameters_schema = test_data.get("parameters_schema", {})
+        logger.info(f"Parameters schema: {parameters_schema}")
+        
+        # Generate code template based on parameters
+        template = generate_python_function_template(parameters_schema)
+        
+        return {"template": template}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating Python template: {str(e)}")
+
+
+@router.post("/slack-output-message", 
+            dependencies=[
+                Depends(auth),
+                Depends(permissions("test:workflow"))
+            ])
+async def test_slack_data(
+    test_data: Dict[str, Any],
+):
+    """
+    Test a slack message to a channel
+    
+    """
+    # Extract the tool configuration and query from the request body
+    
+    slack_token = test_data.get("slack_token")
+    slack_channel = test_data.get("slack_channel")
+    slack_message = test_data.get("slack_message")
+
+    
+    # logger.info(f"Slack Token: {slack_token}")
+    logger.info(f"Slack Channel: {slack_channel}")
+    logger.info(f"Slack Message:  {slack_message}")
+    
+    # Validate inputs
+    if not slack_channel:
+        raise HTTPException(status_code=400, detail="Slack Channel is required")
+    
+    if not slack_message:
+        raise HTTPException(status_code=400, detail="Slack Message is required")
+    
+
+    # Process the query with the knowledge tool
+    try:
+        # Create a mock node ID
+        node_id = "slack-output-message"
+        context = None
+        # Create a processor for the knowledge tool
+        processor = SlackMessageNodeProcessor(context, node_id, {})
+        
+        result = await processor.process(input_data={"text": slack_message,"channel":slack_channel,"token":slack_token})
+
+        # Return the result
+        if not result["data"]["ok"]:
+            raise HTTPException(status_code=result["status"], detail=result)
+        
+        return {
+            "status": "success",
+            "result": result
+        }
+    except Exception as e:
+        logger.error(f"Error testing Slack Message function: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 

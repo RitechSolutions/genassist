@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from uuid import UUID
+from datetime import datetime
 
 class AppSettingsBase(BaseModel):
     key: str
@@ -21,5 +22,6 @@ class AppSettingsUpdate(AppSettingsBase):
 
 class AppSettingsRead(AppSettingsBase):
     id: UUID
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

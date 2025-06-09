@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.routes import agent_config, agent_knowledge, agent_tools, agents, api_keys, audit_logs, auth,conversations, datasources, llm_analysts, llm_providers, operators, permissions, recordings, role_permissions, roles, user_types, users, voice, app_settings, feature_flags, workflows, reports
+from app.api.v1.routes import agent_config, agent_knowledge, agent_tools, agents, api_keys, audit_logs, auth,conversations, datasources, llm_analysts, llm_providers, operators, permissions, recordings, role_permissions, roles, user_types, users, voice, app_settings, feature_flags, workflows, reports, zendesk
 
 
 router = APIRouter()
@@ -29,3 +29,4 @@ router.include_router(voice.router, prefix="/voice", tags=["Voice"])
 router.include_router(app_settings.router, prefix="/app-settings", tags=["AppSettings"])
 router.include_router(feature_flags.router, prefix="/feature-flags", tags=["FeatureFlags"])
 router.include_router(reports.router, tags=["Reports"])
+router.include_router(zendesk.router, prefix="/zendesk", tags=["Zendesk"])

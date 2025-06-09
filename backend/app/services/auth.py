@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import Depends
 from jose import ExpiredSignatureError, JWTError, jwt
@@ -55,10 +55,14 @@ class AuthService:
             if username is None or user_id is None:
                 raise AppException(status_code=401, error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
                                    error_detail="JWT error: Username is None")
-            user =  await self.user_service.get_by_id_for_auth(user_id)
+            user: UserReadAuth | None  =  await self.user_service.get_by_id_for_auth(user_id)
 
             if user is None or not user.is_active:
                 raise AppException(error_key=ErrorKey.INVALID_USER, status_code=401)
+            # I not set there is no expiry
+            if user.force_upd_pass_date and user.force_upd_pass_date < datetime.now(timezone.utc):
+                raise AppException(error_key=ErrorKey.FORCE_PASSWORD_UPDATE, status_code=401)
+
             return user
         except ExpiredSignatureError as error:
             raise AppException(status_code=401, error_key=ErrorKey.EXPIRED_TOKEN,
@@ -71,6 +75,8 @@ class AuthService:
     async def authenticate_api_key(self, api_key: str) -> ApiKeyInternal:
         """Authenticate and return API key object if valid."""
         api_key = await self.api_keys_service.validate_and_get_api_key(api_key)
+        if api_key.user.force_upd_pass_date and api_key.user.force_upd_pass_date < datetime.now(timezone.utc):
+            raise AppException(error_key=ErrorKey.FORCE_PASSWORD_UPDATE, status_code=401)
         return api_key
 
     async def check_api_key_permission(self, api_key: ApiKeyModel, permission: str):

@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
+from datetime import datetime
 from app.services.users import UserService
 from app.repositories.users import UserRepository
 from app.schemas.user import UserCreate, UserRead, UserTypeRead, UserUpdate
@@ -73,7 +74,7 @@ async def test_get_user_by_id_success(user_service, mock_repository):
             email="test@example.com",
             is_active=1,
             roles=[],
-            user_type=UserTypeRead(id=UUID("00000196-edb1-2b80-a681-167fc2a697dd"), name="interactive"),
+            user_type=UserTypeRead(id=UUID("00000196-edb1-2b80-a681-167fc2a697dd"), name="interactive", created_at=datetime.now(), updated_at=datetime.now()),
             api_keys=[]
             )
     mock_repository.get_full.return_value = mock_user
@@ -107,7 +108,7 @@ async def test_get_user_by_username_success(user_service, mock_repository):
         username=username,
         email="test@example.com",
         is_active=1,
-        user_type = UserTypeRead(id=UUID('00000196-edb1-2b80-a681-167fc2a697dd'), name="interactive")
+        user_type = UserTypeRead(id=UUID('00000196-edb1-2b80-a681-167fc2a697dd'), name="interactive", created_at=datetime.now(), updated_at=datetime.now())
     )
     mock_repository.get_by_username.return_value = mock_user
 
@@ -152,7 +153,7 @@ async def test_update_user_success(user_service, mock_repository):
         username="test",
         email="updated@example.com",
         is_active=0,
-        user_type=UserTypeRead(id=UUID('00000196-edb1-2b80-a681-167fc2a697dd'), name="interactive")
+        user_type=UserTypeRead(id=UUID('00000196-edb1-2b80-a681-167fc2a697dd'), name="interactive", created_at=datetime.now(), updated_at=datetime.now())
     )
     mock_updated_user = UserRead(
             id=user_id,
@@ -160,7 +161,7 @@ async def test_update_user_success(user_service, mock_repository):
             email="updated@example.com",
             is_active=0,
             roles=[],
-            user_type=UserTypeRead(id=UUID("00000196-edb1-2b80-a681-167fc2a697dd"), name="interactive"),
+            user_type=UserTypeRead(id=UUID("00000196-edb1-2b80-a681-167fc2a697dd"), name="interactive", created_at=datetime.now(), updated_at=datetime.now()),
             api_keys=[]
             )
     mock_repository.update.return_value = mock_updated_user

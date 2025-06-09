@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import Depends
 from app.auth.utils import generate_unique_username, get_password_hash
@@ -43,6 +44,7 @@ class OperatorService:
                 email=operator_create.user.email,
                 is_active=1,
                 user_type_id=user_type.id,
+                force_upd_pass_date=datetime.now(timezone.utc),
                 )
 
         operator_role = await self.roles_repository.get_by_name("operator")

@@ -78,6 +78,7 @@ def test_api_endpoints():
     app_dir = Path('app')
     api_files = get_python_files(str(app_dir / 'api'))
     
+    print(f"Found {len(api_files)} API files to test.")
     for file_path in api_files:
         # Skip __init__.py files
         if file_path.endswith('__init__.py'):

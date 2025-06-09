@@ -94,7 +94,6 @@ def generate_python_function_template(parameters_schema: Dict[str, Any]) -> str:
     
     return "\n".join(template_lines)
 
-
 def validate_params_against_schema(params: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
     """
     Validate and enhance parameters against a schema.

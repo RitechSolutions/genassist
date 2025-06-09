@@ -32,6 +32,7 @@ Create virtual environment and install requirements\
 
 2. Install the required dependencies:
     ```bash
+    python -m pip install --upgrade pip==24.0
     pip install -r requirements.txt
     ```
 
@@ -39,15 +40,16 @@ Create virtual environment and install requirements\
 
     If using HF model for the first time, go to https://hf.co/pyannote/segmentation to accept license agreeement
 
-3. Start db locally:
+3. Start db and redis locally:
     ```bash
-    sh scripts/startdb.sh
+    docker compose up -d db redis
     ```
 
 3. Run in debug mode:
     ```bash
     python run.py
     ```
+    
 4. Try out APIs using Swagger UI:
     API key: test123
     UserRead Auth: admin/genadmin

@@ -10,6 +10,8 @@ class AuditLogSearchParams(BaseModel):
     table_name: Optional[str] | None = None
     entity_id: Optional[UUID] | None = None
     modified_by: Optional[UUID] | None = None
+    limit:  Optional[int] = None
+    offset: Optional[int] = None
 
 class AuditLogRead(BaseModel):
     id: int

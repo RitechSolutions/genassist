@@ -204,3 +204,4 @@ fastapi-cache2==0.2.2
 boto3>=1.34.0
 croniter>=6.0.0
 loguru>=0.7.3
+opik

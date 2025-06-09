@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import io
 import os
 from fastapi import UploadFile
@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from passlib.context import CryptContext
 from uuid import UUID
 import logging
-
 from app.auth.utils import hash_api_key
+from app.core.utils.date_time_utils import shift_datetime
 from app.core.utils.encryption_utils import encrypt_key
 from app.db.models import AgentModel
 from app.db.models.api_key import ApiKeyModel
@@ -170,15 +170,23 @@ async def seed_data(session: AsyncSession):
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     admin = UserModel(username='admin', email='admin@genassist.ritech.io', is_active=1,
                       hashed_password=pwd_context.hash('genadmin'), user_type_id=interactive_user_type.id,
-                      id=seed_test_data.admin_user_id)
+                      id=seed_test_data.admin_user_id,
+                      force_upd_pass_date=shift_datetime(unit="months", amount=3)
+                      )
     supervisor = UserModel(username='supervisor1', email='supervisor1@genassist.ritech.io', is_active=1,
-                           hashed_password=pwd_context.hash('gensupervisor1'), user_type_id=interactive_user_type.id)
+                           hashed_password=pwd_context.hash('gensupervisor1'), user_type_id=interactive_user_type.id,
+                           force_upd_pass_date=shift_datetime(unit="months", amount=3)
+                           )
     operator = UserModel(id=UUID(seed_test_data.operator_user_id), username='operator1',
                          email='operator1@genassist.ritech.io',
                          is_active=1,
-                         hashed_password=pwd_context.hash('genoperator1'), user_type_id=interactive_user_type.id)
+                         hashed_password=pwd_context.hash('genoperator1'), user_type_id=interactive_user_type.id,
+                         force_upd_pass_date=shift_datetime(unit="months", amount=3)
+                         )
     apiuser = UserModel(username='apiuser1', email='apiuser1@genassist.ritech.io', is_active=1,
-                        hashed_password=pwd_context.hash('genapiuser1'), user_type_id=console_user_type.id)
+                        hashed_password=pwd_context.hash('genapiuser1'), user_type_id=console_user_type.id,
+                        force_upd_pass_date=shift_datetime(unit="months", amount=3)
+                        )
 
     # Assign roles to users
     admin.user_roles.append(UserRoleModel(role=admin_role))
@@ -213,12 +221,12 @@ async def seed_data(session: AsyncSession):
             )
     local_llm_provider = LlmProvidersModel(
             id=UUID(seed_test_data.local_llm_provider_id),
-            name='qwen local',
+            name='mistral 7b local',
             llm_model_provider="ollama",
             is_active=1,
-            llm_model="qwen2.5vl:7b",
+            llm_model="mistral:7b",
             connection_data={
-                "test": "test",
+                "url": "http://192.168.10.98:11434",
                 }
             )
     session.add_all([llm_provider, local_llm_provider])
@@ -403,7 +411,7 @@ async def seed_knowledge_base(session: AsyncSession, created_by: UUID):
     product_docs = KBCreate(
         name="Product Documentation",
         description="Technical documentation for our products",
-        type="file",
+        type="text",
         source="internal",
         content="""Product Documentation
 
@@ -446,9 +454,7 @@ async def seed_knowledge_base(session: AsyncSession, created_by: UUID):
             "vector_db": {"enabled": True},
             "graph_db": {"enabled": False},
             "light_rag": {"enabled": False}
-        },
-        extra_metadata={"category": "technical", "version": "2.1"},
-        embeddings_model="text-embedding-ada-002"
+        }
     )
 
     # Create knowledge base items

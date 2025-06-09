@@ -34,6 +34,7 @@ class KBBase(BaseModel):
     sync_schedule: Optional[str] = None
     sync_active: Optional[bool] = None
     sync_source_id: Optional[UUID] = None
+    llm_provider_id: Optional[UUID] = None
 
 class KBCreate(KBBase):
     """Body model for POST / PUT (no id)"""

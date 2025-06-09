@@ -5,6 +5,7 @@ from fastapi_cache.decorator import cache
 from app.auth.utils import get_password_hash
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.date_time_utils import shift_datetime
 from app.repositories.users import UserRepository, userid_key_builder
 from app.schemas.user import UserCreate, UserRead, UserReadAuth, UserUpdate
 
@@ -77,3 +78,9 @@ class UserService:
         updated_user =  await self.repository.update(user_id, user_data)
         user_with_full_data = await self.get_by_id(updated_user.id)
         return user_with_full_data
+
+
+    async def update_user_password(self, user_id, new_hashed):
+        updated_user =  await self.repository.update_user_password(user_id, new_hashed,
+                                                                   shift_datetime(unit="months", amount=3))
+        return updated_user

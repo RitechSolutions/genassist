@@ -40,6 +40,11 @@ class AuditLogRepository:
         # Order by modified_at descending to get most recent changes first
         query = query.order_by(AuditLogModel.modified_at.desc())
 
+        if search_params.offset is not None:
+            query = query.offset(search_params.offset)
+        if search_params.limit is not None:
+            query = query.limit(search_params.limit)
+        
         result = await self.db.execute(query)
         return result.scalars().all()
 

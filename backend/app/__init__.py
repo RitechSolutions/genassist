@@ -1,4 +1,3 @@
-from app.api.v1.routes import router
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -7,17 +6,14 @@ from app.core.config.logging import init_logging
 from app.api.v1.routes._routes import register_routers
 from app.core.config.settings import settings
 from app.core.exceptions.exception_handler import init_error_handlers
-from app.db.session import cold_start_db, get_db, run_db_init_actions
+from app.db.session import get_db, run_db_init_actions
 from app.modules.agents.llm.provider import LLMProvider
-from app.repositories.llm_providers import LlmProviderRepository
 from app.services.agent_knowledge import KnowledgeBaseService  # Import all models
-from app.db.session import cold_start_db
 from app.cache.redis_cache import init_fastapi_cache_with_redis
 from app.file_system.file_system import ensure_directories
 from app.middlewares._middleware import build_middlewares
 from app.modules.agents.registry import AgentRegistry
 from app.modules.agents.data.datasource_service import AgentDataSourceService
-from app.services.llm_providers import LlmProviderService
 
 
 init_logging()

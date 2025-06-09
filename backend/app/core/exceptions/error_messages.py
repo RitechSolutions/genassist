@@ -77,6 +77,7 @@ class ErrorKey(Enum):
     LOGIN_ERROR_CONSOLE_USER = "LOGIN_ERROR_CONSOLE_USER"
     INVALID_API_KEY_ENCRYPTION = "INVALID_API_KEY_ENCRYPTION"
     CONVERSATION_MUST_START_EMPTY = "CONVERSATION_MUST_START_EMPTY"
+    FORCE_PASSWORD_UPDATE = "FORCE_PASSWORD_UPDATE"
 
 
 ERROR_MESSAGES = {
@@ -147,7 +148,8 @@ ERROR_MESSAGES = {
         ErrorKey.CREATE_USER_TYPE_IN_MENU: "Operators and ai agents should be created in their specific menus.",
         ErrorKey.LOGIN_ERROR_CONSOLE_USER: "Failed to give access for console type user.",
         ErrorKey.INVALID_API_KEY_ENCRYPTION: "Invalid API key encryption.",
-        ErrorKey.CONVERSATION_MUST_START_EMPTY: "Conversation must start empty."
+        ErrorKey.CONVERSATION_MUST_START_EMPTY: "Conversation must start empty.",
+        ErrorKey.FORCE_PASSWORD_UPDATE: "Please update your password to continue.",
         },
     'fr': {
         ErrorKey.INTERNAL_ERROR: 'Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.',

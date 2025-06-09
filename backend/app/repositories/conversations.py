@@ -34,6 +34,14 @@ class ConversationRepository:
          result = await self.db.execute(query)
          return result.scalars().first()
 
+    async def fetch_conversation_by_id_full(self, conversation_id: UUID) -> Optional[ConversationModel]:
+         query = select(ConversationModel).where(ConversationModel.id == conversation_id).options(
+                 joinedload(ConversationModel.analysis),
+                 joinedload(ConversationModel.recording),
+                 )
+         result = await self.db.execute(query)
+         return result.scalars().first()
+
 
     async def get_latest_conversation_for_operator(self, operator_id: UUID) -> Optional[ConversationModel]:
         query = (
@@ -124,3 +132,23 @@ class ConversationRepository:
 
         result = await self.db.execute(stmt)
         return result.all()
+    
+    async def get_by_zendesk_ticket_id(self, ticket_id: int) -> Optional[ConversationModel]:
+        q = select(ConversationModel).where(ConversationModel.zendesk_ticket_id == ticket_id)
+        result = await self.db.execute(q)
+        return result.scalars().first()
+    
+    async def set_zendesk_ticket_id(self, conversation_id: UUID, zendesk_ticket_id: int):
+        conv = await self.get_by_id(conversation_id)
+        if not conv:
+            return None
+        conv.zendesk_ticket_id = zendesk_ticket_id
+        await self.db.commit()
+        await self.db.refresh(conv)
+        return conv
+    
+    async def get_by_id(self, conversation_id: UUID) -> Optional[ConversationModel]:
+        result = await self.db.execute(
+            select(ConversationModel).where(ConversationModel.id == conversation_id)
+        )
+        return result.scalar_one_or_none()

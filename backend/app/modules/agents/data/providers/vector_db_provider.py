@@ -204,7 +204,7 @@ class VectorDBProvider(DataSourceProvider):
             parts = []
             if len(kb_ids) > 1:
                 for kb_id in kb_ids:
-                    parts.append({"kb_id": {"eq": kb_id}})
+                    parts.append({"kb_id": {"$eq": kb_id}})
 
                 filter = {"$or": parts}
 

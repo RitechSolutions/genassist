@@ -22,6 +22,9 @@ class UserTypeCreate(UserTypeBase):
 
 class UserTypeRead(UserTypeBase):
     id: UUID = Field(..., description="User unique ID")
+    created_at: datetime
+    updated_at: datetime
+
     model_config = ConfigDict(
         from_attributes = True
     )
@@ -53,6 +56,8 @@ class UserRead(BaseModel):
     roles: list[RoleRead] = []
     user_type: Optional[UserTypeRead] = None
     api_keys: Optional[list[ApiKeyBase]] = []
+    force_upd_pass_date: Optional[datetime] = Field(None,
+                                                    description="Date when we force updating password date on login")
 
     model_config = ConfigDict(
         from_attributes = True

@@ -42,6 +42,8 @@ class ConversationModel(Base):
         ForeignKeyConstraint(['recording_id'], ['recordings.id'], name='recording_id_fk'),
         PrimaryKeyConstraint('id', name='conversations_pkey'),
     )
+    
+    zendesk_ticket_id: Mapped[Optional[int]] = mapped_column(Integer, unique=True, nullable=True)
 
     data_source_id: Mapped[Optional[UUID]] = mapped_column(UUID)
     operator_id: Mapped[UUID] = mapped_column(UUID)

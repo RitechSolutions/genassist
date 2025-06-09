@@ -55,10 +55,24 @@ class ProjectSettings(BaseSettings):
     LOG_LEVEL: str = "DEBUG"
     SQLALCHEMY_LOG_LEVEL: str = "ERROR"
     FASTAPI_RUN_PORT: int = 8000
-    AUTO_MIGRATE: int = True # for alembic migration on startup
-    API_VERSION: float = 1.0
+    AUTO_MIGRATE: int = True  # for alembic migration on startup
+    API_VERSION: Optional[str] = "1.0"
+    
+    ZENDESK_SUBDOMAIN:     Optional[str] = ""
+    ZENDESK_EMAIL:         Optional[str] = ""
+    ZENDESK_API_TOKEN:     Optional[str] = ""
+    ZENDESK_CUSTOM_FIELD_CONVERSATION_ID: Optional[int] = 0
 
+    @property
+    def _zendesk_base(self) -> str:
+        return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
 
+    @property
+    def _zendesk_auth(self) -> tuple[str,str]:
+        return (f"{self.ZENDESK_EMAIL}/token", self.ZENDESK_API_TOKEN)
+
+    
+    
     @computed_field
     @property
     def REDIS_URL(self) -> str:

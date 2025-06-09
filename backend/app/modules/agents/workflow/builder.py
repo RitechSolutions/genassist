@@ -11,6 +11,12 @@ from app.modules.agents.workflow.nodes.chat import ChatInputNodeProcessor, ChatO
 from app.modules.agents.workflow.nodes.knowledge_tool import KnowledgeToolNodeProcessor
 from app.modules.agents.workflow.nodes.llm_model import LLMModelNodeProcessor
 from app.modules.agents.workflow.nodes.prompt import PromptNodeProcessor
+from app.modules.agents.workflow.nodes.python_tool import PythonFunctionNodeProcessor
+
+from app.modules.agents.workflow.nodes.slack_tool import SlackMessageNodeProcessor
+from app.modules.agents.workflow.nodes.zendesk_tool import ZendeskTicketNodeProcessor
+
+
 from app.modules.agents.workflow.state import WorkflowState
 from app.schemas.workflow import Workflow
 
@@ -145,6 +151,12 @@ class WorkflowBuilder:
             processor = ApiToolNodeProcessor(self.context, node_id, node_data)
         elif node_type == "knowledgeToolNode" or node_type == "knowledgeBaseNode":
             processor = KnowledgeToolNodeProcessor(self.context, node_id, node_data)
+        elif node_type == "pythonCodeNode":
+            processor = PythonFunctionNodeProcessor(self.context, node_id, node_data)
+        elif node == "slackMessageNode":
+            processor = SlackMessageNodeProcessor(self.context, node_id, node_data)
+        elif node_type == "zendeskTicketNode":
+            processor = ZendeskTicketNodeProcessor(self.context, node_id, node_data)
         elif node_type == "agentNode":
             processor = AgentNodeProcessor(self.context, node_id, node_data)
         else:

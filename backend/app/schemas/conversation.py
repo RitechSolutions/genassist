@@ -36,6 +36,7 @@ class ConversationRead(ConversationBase):
     recording: Optional[RecordingRead] = None
     analysis: Optional[ConversationAnalysisRead] = None
     in_progress_hostility_score: Optional[int] = None
+    supervisor_id: Optional[UUID] = None
 
 
     model_config = ConfigDict(

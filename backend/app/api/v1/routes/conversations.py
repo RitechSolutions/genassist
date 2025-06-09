@@ -27,6 +27,15 @@ from app.services.conversations import ConversationService
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
+@router.get("/{conversation_id}", response_model=ConversationRead, dependencies=[
+    Depends(auth),
+    Depends(permissions("read:conversation"))
+    ])
+async def get(conversation_id: UUID, service: ConversationService = Depends()):
+    return await service.get_conversation_by_id_full(conversation_id)
+
+
 @router.post("/in-progress/start", dependencies=[
     Depends(auth),
     Depends(permissions("create:in_progress_conversation"))
@@ -148,7 +157,7 @@ async def finalize(
                                                             current_user_id=get_current_user_id(),
                                                             required_topic="finalize"))
 
-    finalized_conversation_analysis =  await service.finalize_in_progress_conversation(finalize.llm_analyst_id,
+    finalized_conversation_analysis = await service.finalize_in_progress_conversation(finalize.llm_analyst_id,
                                                                                 conversation_id)
     return finalized_conversation_analysis
 

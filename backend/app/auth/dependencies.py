@@ -8,6 +8,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.user import UserReadAuth
 from app.services.auth import AuthService
+
 logger = logging.getLogger(__name__)
 
 
