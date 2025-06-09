@@ -54,9 +54,10 @@ test('LLM Analysts › Functionality', async ({ page }) => {
   });
   await expect(updatedAnalystRow).toBeVisible();
   await page.getByRole('cell', { name: updatedPrompt }).click();
-
-  await newAnalystRow.getByRole('button', { name: /delete/i }).click();
-  await page.waitForTimeout(2000); 
+  
+ await newAnalystRow.getByRole('button', { name: /delete/i }).click();
+  await page.waitForTimeout(1000); 
+  await page.getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByText('LLM Analyst deleted')).toBeVisible();
   await page.waitForTimeout(5000);
 });

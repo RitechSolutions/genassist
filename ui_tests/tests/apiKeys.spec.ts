@@ -40,6 +40,7 @@ test('API Keys › create, edit, and revoke', async ({ page }) => {
   const keyRow = page.locator('tr', {
     has: page.getByRole('cell', { name: originalName })
   });
+    await page.waitForTimeout(1000); 
   await expect(keyRow).toBeVisible();
 
   await keyRow.getByRole('button', { name: /edit api key/i }).click();

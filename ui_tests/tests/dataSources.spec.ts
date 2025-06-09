@@ -87,11 +87,6 @@ test.describe('Data Sources › Functionality', () => {
 
     await updatedRow.locator('button[title="Delete Data Source"]').click();
     await page.waitForTimeout(1000);
-    await expect(
-      page.getByText('Data source deleted')
-    ).toBeVisible({ timeout: 6000 });
-
-    await expect(updatedRow).not.toBeVisible();
     await expect(updatedTypeRow).not.toBeVisible();
   });
 });

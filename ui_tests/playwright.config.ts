@@ -29,7 +29,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost',
+    baseURL: 'http://localhost:8080', //check and update if you have different link ex: http:localhost, http:localhost:8000 or even with dev env https://genassist-dev.ritech.io/
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
