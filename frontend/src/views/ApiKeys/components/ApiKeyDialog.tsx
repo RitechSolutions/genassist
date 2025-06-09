@@ -78,8 +78,14 @@ export function ApiKeyDialog({
               placeholder="API Key Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              required
               disabled={loading}
+            />
+
+            <ApiRoleSelection
+              availableRoles={availableRoles}
+              selectedRoles={selectedRoles}
+              toggleRole={toggleRole}
+              isLoading={loading}
             />
 
             <div className="flex items-center gap-2">
@@ -90,13 +96,6 @@ export function ApiKeyDialog({
                 onCheckedChange={setIsActive}
               />
             </div>
-
-            <ApiRoleSelection
-              availableRoles={availableRoles}
-              selectedRoles={selectedRoles}
-              toggleRole={toggleRole}
-              isLoading={loading}
-            />
 
             {hasGeneratedKey && generatedKey && (
               <div className="space-y-2 mt-4">

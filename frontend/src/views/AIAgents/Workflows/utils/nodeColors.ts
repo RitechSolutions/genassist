@@ -72,6 +72,14 @@ export const nodeColors1: Record<string, NodeColor> = {
     placeholder: "placeholder:text-gray-200",
     panelIcon: "text-gray-500",
   },
+  pythonCodeNode: {
+    icon: "text-orange-500",
+    header: "bg-orange-400",
+    hover: "hover:bg-orange-600",
+    focus: "focus:border-white focus:bg-orange-600",
+    placeholder: "placeholder:text-orange-200",
+    panelIcon: "text-orange-500",
+  },
   default: {
     icon: "text-gray-500",
     header: "bg-gray-400",
@@ -139,13 +147,21 @@ export const nodeColors2: Record<string, NodeColor> = {
     placeholder: "placeholder:text-green-200",
     panelIcon: "text-green-500",
   },
-  mapperNode: {
-    icon: "text-gray-500",
-    header: "bg-gray-400",
-    hover: "hover:bg-gray-600",
-    focus: "focus:border-white focus:bg-gray-600",
-    placeholder: "placeholder:text-gray-200",
-    panelIcon: "text-gray-500",
+    zendeskTicketNode: {
+    icon:         "text-orange-500",
+    header:       "bg-orange-500",
+    hover:        "hover:bg-orange-600",
+    focus:        "focus:border-white focus:bg-orange-600",
+    placeholder:  "placeholder:text-orange-200",
+    panelIcon:    "text-orange-500",
+  },
+  pythonCodeNode: {
+    icon: "text-orange-500",
+    header: "bg-orange-400",
+    hover: "hover:bg-orange-600",
+    focus: "focus:border-white focus:bg-orange-600",
+    placeholder: "placeholder:text-orange-200",
+    panelIcon: "text-orange-500",
   },
   default: {
     icon: "text-gray-500",

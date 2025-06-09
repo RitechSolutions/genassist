@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
+import { DataTable } from "@/components/DataTable";
+import { ActionButtons } from "@/components/ActionButtons";
+import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
+import { TableCell, TableRow } from "@/components/table";
+import { Badge } from "@/components/badge";
 import { getAllRoles, deleteRole } from "@/services/roles";
-import { DataTable, Column } from "@/components/ui/data-table";
-import { Edit, Trash2 } from "lucide-react";
 import { formatDate } from "@/helpers/utils";
 import { Role } from "@/interfaces/role.interface";
 import { toast } from "react-hot-toast";
-import { Button } from "@/components/button";
-import { Badge } from "@/components/badge";
-import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 
 interface RolesCardProps {
   searchQuery: string;
@@ -68,89 +68,54 @@ export function RolesCard({
     }
   };
 
-  const columns: Column<Role>[] = [
-    { 
-      header: "ID", 
-      key: "id",
-      cell: (_, index) => index + 1
-    },
-    { 
-      header: "Name", 
-      key: "name",
-      cell: (role) => (
-        <span className="font-medium">{role.name}</span>
-      )
-    },
-    { 
-      header: "Status", 
-      key: "is_active",
-      cell: (role) => (
+  const filteredRoles = roles.filter((role) =>
+    role.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const headers = ["ID", "Name", "Status", "Created At", "Updated At", "Actions"];
+
+  const renderRow = (role: Role, index: number) => (
+    <TableRow key={role.id}>
+      <TableCell>{index + 1}</TableCell>
+      <TableCell className="font-medium">{role.name}</TableCell>
+      <TableCell>
         <Badge variant={role.is_active === 1 ? "default" : "secondary"}>
           {role.is_active === 1 ? "Active" : "Inactive"}
         </Badge>
-      )
-    },
-    { 
-      header: "Created At", 
-      key: "created_at",
-      cell: (role) => formatDate(role.created_at)
-    },
-    { 
-      header: "Updated At", 
-      key: "updated_at",
-      cell: (role) => formatDate(role.updated_at)
-    },
-    { 
-      header: "Actions", 
-      key: "actions",
-      cell: (role) => (
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onEditRole(role)}
-            title="Edit Role"
-          >
-            <Edit className="w-4 h-4 text-black" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleDeleteClick(role)}
-            title="Delete Role"
-          >
-            <Trash2 className="w-4 h-4 text-red-500" />
-          </Button>
-        </div>
-      )
-    }
-  ];
-
-  const filteredRoles = roles.filter((role) =>
-    role.name.toLowerCase().includes(searchQuery.toLowerCase())
+      </TableCell>
+      <TableCell>{formatDate(role.created_at)}</TableCell>
+      <TableCell>{formatDate(role.updated_at)}</TableCell>
+      <TableCell>
+        <ActionButtons
+          onEdit={() => onEditRole(role)}
+          onDelete={() => handleDeleteClick(role)}
+          editTitle="Edit Role"
+          deleteTitle="Delete Role"
+        />
+      </TableCell>
+    </TableRow>
   );
 
   return (
     <>
       <DataTable
         data={filteredRoles}
-        columns={columns}
         loading={loading}
         error={error}
         searchQuery={searchQuery}
+        headers={headers}
+        renderRow={renderRow}
         emptyMessage="No roles found"
-        notFoundMessage="No roles found matching your search"
+        searchEmptyMessage="No roles found matching your search"
       />
 
-      <DeleteConfirmationDialog
-        open={isDeleteDialogOpen}
+      <DeleteConfirmDialog
+        isOpen={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={handleDeleteConfirm}
         isDeleting={isDeleting}
-        itemName={roleToDelete?.name}
-        description="This action cannot be undone."
-        confirmButtonText="Delete"
-        loadingText="Deleting..."
+        itemName={roleToDelete?.name || ""}
+        description={`This action cannot be undone. This will permanently delete the role "${roleToDelete?.name}".`}
       />
     </>
   );

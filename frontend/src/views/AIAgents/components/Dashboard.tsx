@@ -1,36 +1,29 @@
 import React, { useState, useEffect } from "react";
 import {
+  AgentConfig,
   deleteAgentConfig,
+  getAgentConfig,
   getAllAgentConfigs,
   initializeAgent,
 } from "@/services/api";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle } from "lucide-react";
+import { toast } from "react-hot-toast";
 import AgentList from "./AgentList";
 import ManageApiKeysModal from "./Keys/ManageApiKeysModal";
-
-interface Agent {
-  id: string;
-  name?: string;
-  description?: string;
-  provider: string;
-  model: string;
-  system_prompt: string;
-  knowledge_base_ids?: string[];
-  is_active?: boolean;
-  [key: string]: unknown;
-  agent_id: string;
-  user_id: string;
-}
+import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 
 const Dashboard: React.FC = () => {
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [modalContext, setModalContext] = useState<{
     agentId: string;
     userId: string;
   } | null>(null);
+  const [agentToDelete, setAgentToDelete] = useState<AgentConfig | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const navigate = useNavigate();
 
@@ -60,13 +53,28 @@ const Dashboard: React.FC = () => {
     fetchAgents();
   }, []);
 
-  const handleDeleteAgent = async (agentId: string) => {
+  const handleDeleteClick = async (agentId: string) => {
+    const agent = await getAgentConfig(agentId);
+    setAgentToDelete(agent);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteAgent = async () => {
+    if (!agentToDelete?.id || !deleteAgentConfig) return;
+
     try {
-      await deleteAgentConfig(agentId);
+      setIsDeleting(true);
+      await deleteAgentConfig(agentToDelete.id);
       await fetchAgents();
+      toast.success("Agent deleted successfully");
     } catch (err) {
+      toast.error("Failed to delete agent");
       setError("Failed to delete agent");
       console.error(err);
+    } finally {
+      setAgentToDelete(null);
+      setIsDeleteDialogOpen(false);
+      setIsDeleting(false);
     }
   };
 
@@ -141,7 +149,7 @@ const Dashboard: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <AgentList
           agents={agents}
-          onDelete={handleDeleteAgent}
+          onDelete={handleDeleteClick}
           onUpdate={handleUpdateAgent}
           onGetIntegrationCode={handleGetIntegrationCode}
           onManageKeys={handleManageKeys}
@@ -156,6 +164,15 @@ const Dashboard: React.FC = () => {
             onClose={() => setModalContext(null)}
           />
         )}
+
+        <DeleteConfirmDialog
+          isOpen={isDeleteDialogOpen}
+          onOpenChange={setIsDeleteDialogOpen}
+          onConfirm={handleDeleteAgent}
+          isDeleting={isDeleting}
+          itemName={agentToDelete?.name || ""}
+          description={`This action cannot be undone. This will permanently delete agent "${agentToDelete?.name}".`}
+        ></DeleteConfirmDialog>
       </div>
     </div>
   );

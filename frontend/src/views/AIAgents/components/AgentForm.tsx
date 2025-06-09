@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { toast } from "react-hot-toast";
 import {
   createAgentConfig,
   getAgentConfig,
@@ -8,7 +9,7 @@ import {
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { ChevronLeft, AlertCircle, CheckCircle2, Trash2 } from "lucide-react";
-import { createWorkflow, updateWorkflow } from "@/services/workflows";
+// import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import {
   Dialog,
   DialogContent,
@@ -54,7 +55,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
   });
 
   const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean>(false);
 
   const handleInputChange = (
@@ -99,6 +99,21 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const requiredFields = [
+      { label: "workflow name", isEmpty: !formData.name },
+      { label: "description", isEmpty: !formData.description },
+      { label: "welcome message", isEmpty: !formData.welcome_message },
+    ];
+
+    const missingFields = requiredFields
+      .filter((field) => field.isEmpty)
+      .map((field) => field.label);
+
+    if (missingFields.length > 0) {
+      toast.error(`Missing required fields: ${missingFields.join(", ")}`);
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -124,14 +139,25 @@ const AgentForm: React.FC<AgentFormProps> = ({
         });
         navigate(`/ai-agents/workflow/${agentConfig.id}`);
       }
-
-      setError(null);
+      toast.success(
+        `Workflow ${isEditMode ? "updated" : "created"} successfully`
+      );
     } catch (err: unknown) {
       const errorMessage =
         err instanceof Error ? err.message : "Unknown error occurred";
-      setError(
-        `Failed to ${isEditMode ? "update" : "create"} agent. ${errorMessage}`
-      );
+
+      if (
+        (errorMessage.includes("email") && errorMessage.includes("exist")) ||
+        errorMessage.includes("400")
+      ) {
+        toast.error(
+          "This agent name already exists. Please use a different agent name."
+        );
+      } else {
+        toast.error(
+          `Failed to ${isEditMode ? "update" : "create"} agent. ${errorMessage}`
+        );
+      }
       console.error(err);
     } finally {
       setLoading(false);
@@ -140,17 +166,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
 
   return (
     <>
-      {error && (
-        <div className="flex items-center gap-2 p-3 text-destructive bg-destructive/10 rounded-md">
-          <AlertCircle className="h-4 w-4" />
-          <p className="text-sm font-medium">
-          {(error.includes("email") && error.includes("exist")) || error.includes("400")
-             ? "This agent name already exists. Please use a different agent name."
-             : error}
-          </p>
-        </div>
-      )}
-
       {success && (
         <div className="flex items-center gap-2 p-3 text-green-600 bg-green-50 rounded-md">
           <CheckCircle2 className="h-4 w-4" />
@@ -165,14 +180,13 @@ const AgentForm: React.FC<AgentFormProps> = ({
           <div className={`${plain ? "" : "rounded-lg border bg-white p-6 "}`}>
             <div className="space-y-6">
               <div>
-                <div className="mb-1">Agent Name</div>
+                <div className="mb-1">Workflow Name</div>
                 <Input
                   id="name"
                   name="name"
                   value={formData.name}
                   onChange={handleInputChange}
                   placeholder="Enter agent name"
-                  required
                 />
               </div>
 
@@ -184,7 +198,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   value={formData.description}
                   onChange={handleInputChange}
                   placeholder="Enter agent description"
-                  required
                 />
               </div>
 
@@ -196,7 +209,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   value={formData.welcome_message}
                   onChange={handleInputChange}
                   placeholder="Enter welcome message"
-                  required
                 />
               </div>
 
@@ -312,7 +324,7 @@ export const AgentFormPage: React.FC = () => {
               <ChevronLeft className="h-5 w-5" />
             </Button>
             <h2 className="text-2xl font-bold tracking-tight">
-              {isEditMode ? "Edit Agent" : "Create New Agent"}
+              {isEditMode ? "Edit Workflow" : "Create New Workflow"}
             </h2>
           </div>
           <AgentForm data={formData} />

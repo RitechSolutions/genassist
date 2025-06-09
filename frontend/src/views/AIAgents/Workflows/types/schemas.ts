@@ -10,6 +10,7 @@ export interface SchemaField {
   type: SchemaType;
   description?: string;
   required?: boolean;
+  defaultValue?: string;
   properties?: Record<string, SchemaField>; // For object types
   items?: SchemaField; // For array types
 }

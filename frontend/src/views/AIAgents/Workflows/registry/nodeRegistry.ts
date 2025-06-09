@@ -1,13 +1,13 @@
 import { Node } from 'reactflow';
-import { NodeTypeDefinition, createNode } from '../types/nodes';
+import { NodeTypeDefinition, createNode, NodeData } from '../types/nodes';
 
 // Registry for all node types
 class NodeRegistry {
-  private nodeTypes: Map<string, NodeTypeDefinition> = new Map();
-  private nodeCategories: Map<string, NodeTypeDefinition[]> = new Map();
+  private nodeTypes: Map<string, NodeTypeDefinition<NodeData>> = new Map();
+  private nodeCategories: Map<string, NodeTypeDefinition<NodeData>[]> = new Map();
 
   // Register a new node type
-  register(nodeType: NodeTypeDefinition): void {
+  register(nodeType: NodeTypeDefinition<NodeData>): void {
     this.nodeTypes.set(nodeType.type, nodeType);
     
     // Add to categories
@@ -18,7 +18,7 @@ class NodeRegistry {
   }
 
   // Alias for register to match new code
-  registerNodeType(nodeType: NodeTypeDefinition): void {
+  registerNodeType(nodeType: NodeTypeDefinition<NodeData>): void {
     this.register(nodeType);
   }
 
@@ -29,17 +29,17 @@ class NodeRegistry {
   }
 
   // Get a node type by type name
-  getNodeType(type: string): NodeTypeDefinition | undefined {
+  getNodeType(type: string): NodeTypeDefinition<NodeData> | undefined {
     return this.nodeTypes.get(type);
   }
 
   // Get all node types
-  getAllNodeTypes(): NodeTypeDefinition[] {
+  getAllNodeTypes(): NodeTypeDefinition<NodeData>[] {
     return Array.from(this.nodeTypes.values());
   }
 
   // Get node types by category
-  getNodeTypesByCategory(category: string): NodeTypeDefinition[] {
+  getNodeTypesByCategory(category: string): NodeTypeDefinition<NodeData>[] {
     return this.nodeCategories.get(category) || [];
   }
 

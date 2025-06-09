@@ -1,13 +1,12 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/dialog";
 import { Button } from "@/components/button";
-import { getApiKeys, createApiKey, updateApiKey, revokeApiKey } from "@/services/apiKeys";
+import { getApiKeys, revokeApiKey } from "@/services/apiKeys";
 import ApiKeyForm from "./ApiKeyForm";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import {
@@ -29,8 +28,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/alert-dialog";
-import { PlusCircle, Edit, Trash2 } from "lucide-react";
+import { PlusCircle, Edit, Trash2, Copy, Eye, EyeOff } from "lucide-react";
+import { Input } from "@/components/input";
 import { Badge } from "@/components/badge";
+import toast from "react-hot-toast";
 
 interface Props {
   agentId: string;
@@ -39,14 +40,33 @@ interface Props {
   onClose(): void;
 }
 
-export default function ManageApiKeysModal({ agentId, userId, isOpen, onClose }: Props) {
+export default function ManageApiKeysModal({
+  agentId,
+  userId,
+  isOpen,
+  onClose,
+}: Props) {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [editing, setEditing] = useState<ApiKey | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+
+  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
+  const toggleVisibility = (id: string) =>
+    setVisibleKeys((v) => ({ ...v, [id]: !v[id] }));
+
   async function load() {
     const data = await getApiKeys(userId);
     setKeys(data);
+
+    const seeded: Record<string, string> = {};
+    data.forEach((k) => {
+      if (k.key_val) seeded[k.id] = k.key_val;
+    });
+    setSecrets(seeded);
+
+    setVisibleKeys(data.reduce((acc, k) => ({ ...acc, [k.id]: false }), {}));
   }
 
   useEffect(() => {
@@ -54,10 +74,17 @@ export default function ManageApiKeysModal({ agentId, userId, isOpen, onClose }:
   }, [isOpen, userId]);
 
   async function handleSave(saved: ApiKey) {
-    setKeys(k => editing
-      ? k.map(x => x.id===saved.id ? saved : x)
-      : [...k, saved]
+    setKeys((keysArr) =>
+      editing
+        ? keysArr.map((x) => (x.id === saved.id ? saved : x))
+        : [saved, ...keysArr]
     );
+
+    if ((saved as any).key_val) {
+      setSecrets((s) => ({ ...s, [saved.id]: (saved as any).key_val }));
+      setVisibleKeys((v) => ({ ...v, [saved.id]: false }));
+    }
+
     setFormOpen(false);
     setEditing(null);
   }
@@ -67,24 +94,35 @@ export default function ManageApiKeysModal({ agentId, userId, isOpen, onClose }:
     await load();
   }
 
+  const copyKey = (keyId: string) => {
+    const txt = secrets[keyId] ?? "";
+    navigator.clipboard.writeText(txt);
+    toast.success("API key has been copied to clipboard");
+  };
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[550px]">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="text-xl font-semibold">Manage API Keys</DialogTitle>
+            <DialogTitle className="text-xl font-semibold">
+              Manage API Keys
+            </DialogTitle>
           </DialogHeader>
-          
+
           <div className="flex justify-end mb-4">
-            <Button 
-              onClick={()=>{ setEditing(null); setFormOpen(true); }}
+            <Button
+              onClick={() => {
+                setEditing(null);
+                setFormOpen(true);
+              }}
               className="flex items-center gap-2"
             >
               <PlusCircle className="h-4 w-4" />
               Add API Key
             </Button>
           </div>
-          
+
           {keys.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
               <p>No API keys found</p>
@@ -96,60 +134,113 @@ export default function ManageApiKeysModal({ agentId, userId, isOpen, onClose }:
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
+                    <TableHead className="text-left">API Key</TableHead>
                     <TableHead className="text-left">Status</TableHead>
                     <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
+
                 <TableBody>
-                  {keys.map(k => (
-                    <TableRow key={k.id}>
-                      <TableCell className="font-medium">{k.name}</TableCell>
-                                     <TableCell>
-                  <Badge variant={k.is_active === 1 ? "default" : "secondary"}>
-                    {k.is_active === 1 ? "Active" : "Revoked"}
-                  </Badge>
-                </TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                        variant="ghost"
-                          size="sm"
-                          onClick={()=>{ setEditing(k); setFormOpen(true); }}
-                          className="h-8 px-2 inline-flex items-center"
-                        >
-                          <Edit className="h-4 w-4 mr-1" />
-                        </Button>
-                        
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                              <Button
+                  {keys.map((k) => {
+                    const secret = secrets[k.id] || "";
+                    const isVisible = visibleKeys[k.id];
+                    return (
+                      <TableRow key={k.id}>
+                        <TableCell className="font-medium">{k.name}</TableCell>
+
+                        <TableCell className="font-medium relative">
+                          <Input
+                            readOnly
+                            className="pr-24"
+                            value={
+                              isVisible ? secret : secret.replace(/./g, "•")
+                            }
+                          />
+                          <div className="absolute right-5 top-1/2 -translate-y-1/2 flex">
+                            <Button
+                              type="button"
                               variant="ghost"
                               size="sm"
-                              className="h-8 px-2 inline-flex items-center"
+                              onClick={() => toggleVisibility(k.id)}
+                              title={isVisible ? "Hide key" : "Show key"}
                             >
-                              <Trash2 className="h-4 w-4 mr-1 text-red-600" />
+                              {isVisible ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
                             </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete API Key</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to delete this API key? This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDelete(k.id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => copyKey(k.id)}
+                              title="Copy to clipboard"
+                              disabled={!secret}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+
+                        <TableCell>
+                          <Badge
+                            variant={
+                              k.is_active === 1 ? "default" : "secondary"
+                            }
+                          >
+                            {k.is_active === 1 ? "Active" : "Revoked"}
+                          </Badge>
+                        </TableCell>
+
+                        <TableCell className="text-right space-x-2 flex">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditing(k);
+                              setFormOpen(true);
+                            }}
+                            className="h-8 px-2 inline-flex items-center"
+                          >
+                            <Edit className="h-4 w-4 mr-1" />
+                          </Button>
+
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2 inline-flex items-center"
                               >
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                                <Trash2 className="h-4 w-4 mr-1 text-red-600" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  Delete API Key
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete this API key?
+                                  This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDelete(k.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -162,7 +253,7 @@ export default function ManageApiKeysModal({ agentId, userId, isOpen, onClose }:
         userId={userId}
         existingKey={editing ?? undefined}
         open={formOpen}
-        onClose={()=>setFormOpen(false)}
+        onClose={() => setFormOpen(false)}
         onSaved={handleSave}
       />
     </>

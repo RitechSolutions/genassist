@@ -1,28 +1,11 @@
 import { useEffect, useState } from "react";
-import { Card } from "@/components/card";
-import { Edit, Loader2, Trash2 } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/table";
+import { DataTable } from "@/components/DataTable";
+import { ActionButtons } from "@/components/ActionButtons";
+import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
+import { TableCell, TableRow } from "@/components/table";
 import { formatDate } from "@/helpers/utils";
 import { UserType } from "@/interfaces/userType.interface";
 import { toast } from "react-hot-toast";
-import { Button } from "@/components/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/alert-dialog";
 import { deleteUserType, getAllUserTypes } from "@/services/userTypes";
 
 interface UserTypesCardProps {
@@ -84,106 +67,46 @@ export function UserTypesCard({ searchQuery, refreshKey = 0, onEditUserType }: U
     userType.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading) {
-    return (
-      <Card className="p-8 flex justify-center items-center">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </Card>
-    );
-  }
+  const headers = ["ID", "Name", "Created At", "Updated At", "Actions"];
 
-  if (error) {
-    return (
-      <Card className="p-8">
-        <div className="text-center text-red-500">{error}</div>
-      </Card>
-    );
-  }
-
-  if (filteredUserTypes.length === 0) {
-    return (
-      <Card className="p-8">
-        <div className="text-center text-muted-foreground">
-          {searchQuery ? "No user types found matching your search" : "No user types found"}
-        </div>
-      </Card>
-    );
-  }
+  const renderRow = (userType: UserType, index: number) => (
+    <TableRow key={userType.id}>
+      <TableCell>{index + 1}</TableCell>
+      <TableCell className="font-medium">{userType.name}</TableCell>
+      <TableCell>{formatDate(userType.created_at)}</TableCell>
+      <TableCell>{formatDate(userType.updated_at)}</TableCell>
+      <TableCell>
+        <ActionButtons
+          onEdit={() => onEditUserType(userType)}
+          onDelete={() => handleDeleteClick(userType)}
+          editTitle="Edit User Type"
+          deleteTitle="Delete User Type"
+        />
+      </TableCell>
+    </TableRow>
+  );
 
   return (
     <>
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Created At</TableHead>
-              <TableHead>Updated At</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredUserTypes.map((userType, index) => (
-              <TableRow key={userType.id}>
-                <TableCell>{index + 1}</TableCell>
-                <TableCell className="font-medium">{userType.name}</TableCell>
-                <TableCell>{formatDate(userType.created_at)}</TableCell>
-                <TableCell>{formatDate(userType.updated_at)}</TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEditUserType(userType)}
-                      title="Edit User Type"
-                    >
-                      <Edit className="w-4 h-4 text-black" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteClick(userType)}
-                      title="Delete User Type"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-500" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+      <DataTable
+        data={filteredUserTypes}
+        loading={loading}
+        error={error}
+        searchQuery={searchQuery}
+        headers={headers}
+        renderRow={renderRow}
+        emptyMessage="No user types found"
+        searchEmptyMessage="No user types found matching your search"
+      />
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the user type
-              "{userTypeToDelete?.name}".
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
-            >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog
+        isOpen={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={handleDeleteConfirm}
+        isDeleting={isDeleting}
+        itemName={userTypeToDelete?.name || ""}
+        description={`This action cannot be undone. This will permanently delete the user type "${userTypeToDelete?.name}".`}
+      />
     </>
   );
 } 

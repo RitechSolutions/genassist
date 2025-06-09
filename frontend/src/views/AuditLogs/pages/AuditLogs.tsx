@@ -11,6 +11,16 @@ import { Select, SelectItem, SelectContent, SelectTrigger } from "@/components/s
 import { format, startOfDay, subDays, endOfDay } from "date-fns";
 import { Calendar } from "@/components/calendar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/popover";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationPrevious,
+  PaginationNext,
+  PaginationEllipsis,
+} from "@/components/pagination";
+import { getPageList } from "@/helpers/pagination";
 
 const getDefaultDateRange = () => {
   const today = new Date();
@@ -29,15 +39,30 @@ export default function AuditLogs() {
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
   const [users, setUsers] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 30;
+
+  const isLastPage = filteredAuditLogs.length < pageSize;
+  const totalPages = currentPage + (isLastPage ? 0 : 1);
+  const pageList = getPageList(currentPage, totalPages);
 
   const fetchFilteredAuditLogs = async () => {
     const date_from = dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : "";
     const date_to = dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : "";
     const action = selectedAction || "";
     const user = selectedUser ?? undefined;
+    const offset = (currentPage - 1) * pageSize;
+
 
     try {
-      const logs = await fetchAuditLogs(date_from, date_to, action, user);
+      const logs = await fetchAuditLogs(
+        date_from,
+        date_to,
+        action,
+        user, 
+        pageSize,
+        offset
+      );
       const filtered = logs.filter((log) => {
         const matchesSearchQuery =
           log.table_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -72,7 +97,7 @@ export default function AuditLogs() {
 
   useEffect(() => {
     fetchFilteredAuditLogs();
-  }, [dateRange, selectedUser, selectedAction]);
+  }, [dateRange, selectedUser, selectedAction, currentPage]);
 
   const handleViewDetails = (logId: string) => {
     setSelectedAuditLogId(logId);
@@ -84,6 +109,7 @@ export default function AuditLogs() {
     setDateRange(defaultRange);
     setSelectedUser(null);
     setSelectedAction(null);
+    setCurrentPage(1);
   };
 
   return (
@@ -171,6 +197,58 @@ export default function AuditLogs() {
                 selectedUser={selectedUser}
                 onViewDetails={handleViewDetails}
               />
+
+              <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                  onClick={() => {
+                    if (currentPage <= 1) return;
+                    setCurrentPage((p) => Math.max(1, p - 1));
+                    }}
+                    aria-disabled={currentPage <= 1}
+                    className={currentPage <= 1 
+                      ? "opacity-50 cursor-not-allowed"
+                      : "cursor-pointer"}
+                  />
+                </PaginationItem>
+
+                {pageList.map((pageNumber, idx) => (
+                  <PaginationItem key={idx}>
+                    {typeof pageNumber === "number" ? (
+                      <PaginationLink
+                        onClick={() => {
+                          if (pageNumber === currentPage) return;
+                          setCurrentPage(pageNumber);
+                        }}
+                        isActive={pageNumber === currentPage}
+                        href="#"
+                        className="rounded-xl"
+                      >
+                        {pageNumber}
+                      </PaginationLink>
+                    ) : (
+                      <PaginationEllipsis />
+                    )}
+                  </PaginationItem>
+                ))}
+
+                <PaginationItem>
+                  <PaginationNext
+                    onClick={() => {
+                      if (filteredAuditLogs.length < pageSize) return;
+                      setCurrentPage((p) => p + 1);
+                        }}
+                        aria-disabled={filteredAuditLogs.length < pageSize}
+                        className={filteredAuditLogs.length < pageSize 
+                          ? "opacity-50 cursor-not-allowed"
+                          : "cursor-pointer"}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+
+
             </div>
           </div>
         </main>

@@ -1,145 +1,161 @@
-import { Node, NodeProps } from 'reactflow';
-import { ComponentType } from 'react';
-import { NodeSchema } from './schemas';
-import { LocalModelConfig } from '../components/ModelConfiguration';
+import { Edge, Node, NodeProps } from "reactflow";
+import { ComponentType } from "react";
+import { NodeSchema } from "./schemas";
 
 // Define compatibility types
-export type NodeCompatibility = 'text' | 'tools' | 'llm' | 'json' | 'any';
+export type NodeCompatibility = "text" | "tools" | "llm" | "json" | "any";
 
 // Define handler types
 export interface NodeHandler {
   id: string;
-  type: 'source' | 'target';
+  type: "source" | "target";
   compatibility: NodeCompatibility;
   schema?: NodeSchema;
 }
 
 // Base node data interface
 export interface BaseNodeData {
-  label: string;
+  name: string;
   handlers: NodeHandler[];
-  updateNodeData?: <T extends BaseNodeData>(nodeId: string, data: Partial<T>) => void;
+  updateNodeData?: <T extends BaseNodeData>(
+    nodeId: string,
+    data: Partial<T>
+  ) => void;
 }
 
-// Config node data
-export interface ConfigNodeData extends BaseNodeData {
-  properties: Record<string, string | number | boolean>;
+export interface ToolBaseNodeData extends BaseNodeData {
+  description: string;
+  inputSchema?: NodeSchema;
+  outputSchema?: NodeSchema;
 }
 
 // Chat input node data
-export interface ChatInputNodeData extends BaseNodeData {
-  placeholder?: string;
-  currentMessage?: string;
-  onMessageSubmit?: (message: string) => void;
-  hadOnMessageSubmit?: boolean; // Used for serialization
-}
-
+export type ChatInputNodeData = BaseNodeData;
 // LLM Model node data
 export interface LLMModelNodeData extends BaseNodeData {
   providerId: string;
-  localConfig?: LocalModelConfig;
-  inputText?: string;
-  outputText?: string;
   jsonParsing?: boolean;
-  onInputReceived?: (text: string) => void;
-  onOutputChange?: (outputText: string) => void;
 }
 
 // Prompt Template node data
-export interface PromptNodeData extends BaseNodeData {
+export interface TemplateNodeData extends BaseNodeData {
   template: string;
   includeHistory?: boolean;
 }
 
 // Chat Output node data
-export interface ChatOutputNodeData extends BaseNodeData {
-  messages: Array<{
-    id: string;
-    text: string;
-    timestamp: string;
-    type: 'system' | 'user' | 'assistant'
-  }>;
-  onInputReceived?: (text: string) => void;
+export type ChatOutputNodeData = BaseNodeData;
+
+// Slack Output node data
+export interface SlackOutputNodeData extends BaseNodeData{
+  token: string; // authentication token
+  channel: string; // target Slack channel or user ID/email
+  message: string; // the most recent message to send to Slack
+}
+
+
+export interface ZendeskTicketNodeData extends BaseNodeData {
+  subject: string;
+  description: string;
+  requester_name?: string;
+  requester_email?: string;
+  tags?: string[];
+  custom_fields?: Array<{ id: number; value: string | number }>;
 }
 
 // API Tool Node Data
-export interface APIToolNodeData extends BaseNodeData {
-  name: string;
-  description: string;
+export interface APIToolNodeData extends ToolBaseNodeData {
   endpoint: string;
   method: string;
   headers: Record<string, string>;
   parameters: Record<string, string>;
   requestBody: string;
-  response: string;
-  inputSchema?: NodeSchema;
-  outputSchema?: NodeSchema;
 }
 
 // Agent Node Data
 export interface AgentNodeData extends BaseNodeData {
   providerId: string;
-  localConfig?: LocalModelConfig;
-  inputText?: string;
-  outputText?: string;
-  availableTools?: Array<{
-    id: string;
-    name: string;
-    description: string;
-    category: string;
-  }>;
-  outputFormat?: 'json' | 'string';
+  outputFormat?: "json" | "string";
   jsonParsing?: boolean;
-  onPromptReceived?: (text: string) => void;
-  onToolsReceived?: (tools: Array<{ id: string; name: string; description: string; category: string }>) => void;
-  onOutputChange?: (outputText: string) => void;
+  // onPromptReceived?: (text: string) => void;
+  // onToolsReceived?: (
+  //   tools: Array<{
+  //     id: string;
+  //     name: string;
+  //     description: string;
+  //     category: string;
+  //   }>
+  // ) => void;
 }
 
 // Knowledge Base Node Data
-export interface KnowledgeBaseNodeData extends BaseNodeData {
-  name: string;
-  description: string;
+export interface KnowledgeBaseNodeData extends ToolBaseNodeData {
   selectedBases: string[];
-  query: string;
-  output: string;
-  inputSchema?: NodeSchema;
-  outputSchema?: NodeSchema;
 }
 
-// Mapper Node Data
-export interface MapperNodeData extends BaseNodeData {
-  mappings: Array<{
-    inputField: string;
-    outputField: string;
-  }>;
+// Python Code Node Data
+export interface PythonCodeNodeData extends ToolBaseNodeData {
+  code: string;
 }
+
+
 
 // Union type for all node data types
-export type NodeData = ConfigNodeData | ChatInputNodeData | LLMModelNodeData | PromptNodeData | ChatOutputNodeData | APIToolNodeData | AgentNodeData | KnowledgeBaseNodeData | MapperNodeData;
+export type NodeData =
+  | ChatInputNodeData
+  | LLMModelNodeData
+  | TemplateNodeData
+  | ChatOutputNodeData
+  | APIToolNodeData
+  | AgentNodeData
+  | KnowledgeBaseNodeData
+  | PythonCodeNodeData
+  | SlackOutputNodeData;
+
 
 // Node type definition
-export interface NodeTypeDefinition {
+export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
   label: string;
   description: string;
-  category: 'input' | 'process' | 'output' | 'config' | 'tools';
+  category: "input" | "process" | "output" | "config" | "tools";
   icon: string;
-  defaultData: Record<string, unknown>;
+  defaultData: T;
   component: ComponentType<NodeProps<NodeData>>; // React component for the node
-  createNode: (id: string, position: { x: number; y: number }, data: Record<string, unknown>) => Node;
+  createNode: (
+    id: string,
+    position: { x: number; y: number },
+    data: T
+  ) => Node;
 }
 
 // Function to create a node with the given data
-export const createNode = (
+export const createNode = <T extends NodeData>(
   type: string,
-  id: string, 
-  position: { x: number; y: number }, 
-  data: Record<string, unknown>
+  id: string,
+  position: { x: number; y: number },
+  data: T
 ): Node => {
   return {
     id,
     type,
     position,
-    data: data
+    data: data,
   };
-}; 
+};
+
+export const createEdge = (
+  source: string,
+  target: string,
+  data: Record<string, unknown>
+): Edge => {
+  return {
+    id: `${source}-${target}`,
+    sourceHandle: source,
+    targetHandle: target,
+    source,
+    target,
+    data,
+  };
+};
+

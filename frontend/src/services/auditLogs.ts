@@ -6,7 +6,9 @@ export const fetchAuditLogs = async (
   date_from: string,
   date_to: string,
   action: string,
-  user: string
+  user: string,
+  limit: number,
+  offset: number
 ): Promise<AuditLog[]> => {
   try {
     const queryParams = new URLSearchParams();
@@ -15,6 +17,9 @@ export const fetchAuditLogs = async (
     if (date_to) queryParams.append("date_to", date_to);
     if (action) queryParams.append("action", action);
     if (user) queryParams.append("user", user);
+
+    queryParams.append("limit",  String(limit));
+    queryParams.append("offset", String(offset));
 
     const data = await apiRequest<AuditLog[]>(
       "GET",

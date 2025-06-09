@@ -17,11 +17,7 @@ import {
 } from "@/components/select";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
-import {
-  createUser,
-  updateUser,
-  getUser,
-} from "@/services/users";
+import { createUser, updateUser, getUser } from "@/services/users";
 import { useEffect } from "react";
 import { toast } from "react-hot-toast";
 import { Loader2 } from "lucide-react";
@@ -68,14 +64,14 @@ export function UserDialog({
     if (isOpen) {
       loadFormData();
       resetForm();
-  
+
       if (userToEdit && dialogMode === "edit") {
         populateFormWithUserData(userToEdit);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, userToEdit, dialogMode]);
-  
+
   const populateFormWithUserData = (user: User) => {
     setUserId(user.id);
     setUsername(user.username || "");
@@ -89,41 +85,55 @@ export function UserDialog({
     );
   };
 
-const loadFormData = async () => {
-  setIsLoading(true);
-  try {
-    const [rolesData, userTypesData] = await Promise.all([
-      getAllRoles().catch(error => {
-        console.error("Error fetching roles:", error);
-        toast.error("Failed to load roles");
-        return [];
-      }),
-      getAllUserTypes().catch(error => {
-        console.error("Error fetching user types:", error);
-        toast.error("Failed to load user types");
-        return [];
-      }),
-    ]);
+  const loadFormData = async () => {
+    setIsLoading(true);
+    try {
+      const [rolesData, userTypesData] = await Promise.all([
+        getAllRoles().catch((error) => {
+          console.error("Error fetching roles:", error);
+          toast.error("Failed to load roles");
+          return [];
+        }),
+        getAllUserTypes().catch((error) => {
+          console.error("Error fetching user types:", error);
+          toast.error("Failed to load user types");
+          return [];
+        }),
+      ]);
 
-    setRoles(rolesData);
-    setUserTypes(userTypesData);
-  } catch (error) {
-    toast.error("Failed to load form data");
-    console.error("Error loading form data:", error);
-  } finally {
-    setIsLoading(false);
-  }
-};
-
+      setRoles(rolesData);
+      setUserTypes(userTypesData);
+    } catch (error) {
+      toast.error("Failed to load form data");
+      console.error("Error loading form data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userTypeId) {
-      toast.error("Please select a user type");
-      return;
+
+    let requiredFields = [
+      { label: "username", isEmpty: !username },
+      { label: "email", isEmpty: !email },
+      { label: "type", isEmpty: !userTypeId },
+      { label: "password", isEmpty: !password },
+      { label: "roles", isEmpty: selectedRoleIds.length === 0 },
+    ];
+
+    if (dialogMode !== "create" || apiKey) {
+      requiredFields = requiredFields.filter(
+        (field) => field.label !== "password"
+      );
     }
-    if (selectedRoleIds.length === 0) {
-      toast.error("Please select at least one role");
+
+    const missingFields = requiredFields
+      .filter((field) => field.isEmpty)
+      .map((field) => field.label);
+
+    if (missingFields.length > 0) {
+      toast.error(`Missing required fields: ${missingFields.join(", ")}`);
       return;
     }
 
@@ -217,7 +227,6 @@ const loadFormData = async () => {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Enter username"
-                required
                 disabled={dialogMode === "edit"}
               />
             </div>
@@ -229,7 +238,6 @@ const loadFormData = async () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter email"
-                required
               />
             </div>
           </div>
@@ -237,24 +245,26 @@ const loadFormData = async () => {
             <div className="space-y-2">
               <Label htmlFor="userType">Type</Label>
               {userTypes.length === 0 ? (
-    <div className="text-sm text-muted-foreground italic">
-      No user types available
-    </div>
-  ) : (<Select
-                value={userTypeId}
-                onValueChange={(value) => setUserTypeId(value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {userTypes.map((type) => (
-                    <SelectItem key={type.id} value={type.id}>
-                      {type.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select> )}
+                <div className="text-sm text-muted-foreground italic">
+                  No user types available
+                </div>
+              ) : (
+                <Select
+                  value={userTypeId}
+                  onValueChange={(value) => setUserTypeId(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userTypes.map((type) => (
+                      <SelectItem key={type.id} value={type.id}>
+                        {type.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">
@@ -270,7 +280,6 @@ const loadFormData = async () => {
                     ? "Enter password"
                     : "Enter new password (optional)"
                 }
-                required={dialogMode === "create" && !apiKey}
               />
             </div>
           </div>
@@ -288,21 +297,21 @@ const loadFormData = async () => {
               {roles
                 .filter((role) => role.role_type !== "internal")
                 .map((role) => {
-                const isChecked = selectedRoleIds.includes(role.id);
-                return (
-                  <div key={role.id} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id={`role-${role.id}`}
-                      value={role.id}
-                      checked={isChecked}
-                      onChange={() => handleRoleToggle(role.id)}
-                      className="form-checkbox accent-primary w-4 h-4"
-                    />
-                    <Label htmlFor={`role-${role.id}`}>{role.name}</Label>
-                  </div>
-                );
-              })}
+                  const isChecked = selectedRoleIds.includes(role.id);
+                  return (
+                    <div key={role.id} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`role-${role.id}`}
+                        value={role.id}
+                        checked={isChecked}
+                        onChange={() => handleRoleToggle(role.id)}
+                        className="form-checkbox accent-primary w-4 h-4"
+                      />
+                      <Label htmlFor={`role-${role.id}`}>{role.name}</Label>
+                    </div>
+                  );
+                })}
             </div>
           </div>
 

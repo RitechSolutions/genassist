@@ -11,7 +11,7 @@ export function ApiKeyDialogLogic({
   mode = "create",
   apiKeyToEdit = null,
   onApiKeyCreated,
-  onOpenChange
+  onOpenChange,
 }: {
   isOpen: boolean;
   mode?: "create" | "edit";
@@ -43,7 +43,9 @@ export function ApiKeyDialogLogic({
           setDialogMode("edit");
           setName(apiKeyToEdit.name || "");
           setIsActive(apiKeyToEdit.is_active === 1);
-          setSelectedRoles(apiKeyToEdit.roles?.map((r) => r.id) || apiKeyToEdit.role_ids || []);
+          setSelectedRoles(
+            apiKeyToEdit.roles?.map((r) => r.id) || apiKeyToEdit.role_ids || []
+          );
           setGeneratedKey(apiKeyToEdit.key_val);
           setHasGeneratedKey(true);
         } else {
@@ -92,9 +94,14 @@ export function ApiKeyDialogLogic({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+
+    if (!name.trim()) {
+      toast.error("API key name is required");
+      return;
+    }
 
     try {
+      setLoading(true);
       if (dialogMode === "create" && userId && !hasGeneratedKey) {
         const result = await createApiKey({
           name,

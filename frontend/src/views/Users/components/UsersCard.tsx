@@ -1,20 +1,12 @@
-import { Card } from "@/components/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/table";
-import { Badge } from "@/components/badge";
 import { useEffect, useState } from "react";
-import { getAllUsers } from "@/services/users";
-import { Edit, Loader2 } from "lucide-react";
-import { toast } from "react-hot-toast";
-import { Trash2 } from "lucide-react";
-import { User } from "@/interfaces/user.interface";
+import { DataTable } from "@/components/DataTable";
+import { TableCell, TableRow } from "@/components/table";
+import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
+import { Edit } from "lucide-react";
+import { getAllUsers } from "@/services/users";
+import { toast } from "react-hot-toast";
+import { User } from "@/interfaces/user.interface";
 
 interface UsersCardProps {
   searchQuery: string;
@@ -52,85 +44,55 @@ export function UsersCard({ searchQuery, refreshKey = 0, onEditUser }: UsersCard
     user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading) {
-    return (
-      <Card className="p-8 flex justify-center items-center">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </Card>
-    );
-  }
+  const headers = ["ID", "Username", "Email", "Status", "User Type", "Roles", "Action"];
 
-  if (error) {
-    return (
-      <Card className="p-8">
-        <div className="text-center text-red-500">{error}</div>
-      </Card>
-    );
-  }
-
-  if (filteredUsers.length === 0) {
-    return (
-      <Card className="p-8">
-        <div className="text-center text-muted-foreground">
-          {searchQuery ? "No users found matching your search" : "No users found"}
+  const renderRow = (user: User, index: number) => (
+    <TableRow key={user.id}>
+      <TableCell>{index + 1}</TableCell>
+      <TableCell className="font-medium">{user.username}</TableCell>
+      <TableCell>{user.email}</TableCell>
+      <TableCell>
+        <Badge variant={user.is_active === 1 ? "default" : "secondary"}>
+          {user.is_active === 1 ? "Active" : "Inactive"}
+        </Badge>
+      </TableCell>
+      <TableCell>{user.user_type?.name || "N/A"}</TableCell>
+      <TableCell>
+        <div className="flex gap-1 flex-wrap">
+          {user.roles && user.roles.length > 0 ? (
+            user.roles.map((role, index) => (
+              <Badge key={index} variant="outline">
+                {role.name}
+              </Badge>
+            ))
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          )}
         </div>
-      </Card>
-    );
-  }
+      </TableCell>
+      <TableCell>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onEditUser(user)}
+          title="Edit User"
+        >
+          <Edit className="w-4 h-4 text-black" />
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
 
   return (
-    <Card>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>ID</TableHead>
-            <TableHead>Username</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>User Type</TableHead>
-            <TableHead>Roles</TableHead>
-            <TableHead>Action</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filteredUsers.map((user, index) => (
-            <TableRow key={user.id}>
-              <TableCell>{index + 1}</TableCell>
-              <TableCell className="font-medium">{user.username}</TableCell>
-              <TableCell>{user.email}</TableCell>
-              <TableCell>
-                <Badge variant={user.is_active === 1 ? "default" : "secondary"}>
-                  {user.is_active === 1 ? "Active" : "Inactive"}
-                </Badge>
-              </TableCell>
-              <TableCell>{user.user_type?.name || "N/A"}</TableCell>
-              <TableCell>
-                <div className="flex gap-1 flex-wrap">
-                  {user.roles && user.roles.length > 0 ? (
-                    user.roles.map((role, index) => (
-                      <Badge key={index} variant="outline">
-                        {role.name}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-muted-foreground">-</span>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onEditUser(user)}
-                  title="Edit User"
-                >
-                  <Edit className="w-4 h-4 text-black" />
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </Card>
+    <DataTable
+      data={filteredUsers}
+      loading={loading}
+      error={error}
+      searchQuery={searchQuery}
+      headers={headers}
+      renderRow={renderRow}
+      emptyMessage="No users found"
+      searchEmptyMessage="No users found matching your search"
+    />
   );
 }

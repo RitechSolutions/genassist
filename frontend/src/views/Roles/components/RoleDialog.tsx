@@ -35,7 +35,6 @@ export function RoleDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [roleId, setRoleId] = useState<string | undefined>("");
   const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
-  const [error, setError] = useState("");
   const [allPermissions, setAllPermissions] = useState<Permission[]>([]);
   const [rolePermissions, setRolePermissions] = useState<Permission[]>([]);
   const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>(
@@ -51,7 +50,6 @@ export function RoleDialog({
   useEffect(() => {
     if (isOpen) {
       resetForm();
-      setError("");
 
       setAllPermissions([]);
       setRolePermissions([]);
@@ -96,10 +94,9 @@ export function RoleDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
 
     if (!name.trim()) {
-      setError("Role name is required");
+      toast.error("Role name is required");
       return;
     }
 
@@ -117,7 +114,7 @@ export function RoleDialog({
         toast.success("Role created successfully");
       } else {
         if (!roleId) {
-          setError("Role ID is missing for update");
+          toast.error("Role ID is missing for update");
           return;
         }
         await updateRole(roleId, roleData);
@@ -163,10 +160,6 @@ export function RoleDialog({
       loadingText={loadingText}
     >
       <div className="space-y-6">
-        {error && (
-          <div className="text-sm font-medium text-red-500">{error}</div>
-        )}
-
         <div className="space-y-2">
           <Label htmlFor="name">Name</Label>
           <Input

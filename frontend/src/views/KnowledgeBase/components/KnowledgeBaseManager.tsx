@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { toast } from "react-hot-toast";
 import {
   getAllKnowledgeItems,
   createKnowledgeItem,
@@ -6,14 +7,15 @@ import {
   deleteKnowledgeItem,
   uploadFile as apiUploadFile,
 } from "@/services/api";
-import { getAllDataSources } from '@/services/dataSources';
+import { getAllDataSources } from "@/services/dataSources";
+
+import { getAllLLMProviders } from "@/services/llmAnalyst";
 
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Textarea } from "@/components/textarea";
 import { Switch } from "@/components/switch";
-
 
 import {
   Select,
@@ -37,6 +39,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { UUID } from "crypto";
+import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 
 interface VectorDB {
   enabled: boolean;
@@ -72,6 +75,7 @@ interface KnowledgeItem {
   content: string;
   type: string;
   sync_source_id: string;
+  llm_provider_id?: string | null;
   sync_schedule?: string;
   sync_active?: boolean;
   file?: string | null;
@@ -91,7 +95,14 @@ const KnowledgeBaseManager: React.FC = () => {
 
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [availableSources, setAvailableSources] = useState([]);
-  const [cronError, setCronError] = useState<string | null>(null);
+  // const [cronError, setCronError] = useState<string | null>(null);
+
+  const [knowledgeBaseToDelete, setKnowledgeBaseToDelete] =
+    useState<Partial<KnowledgeItem> | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const [llmProviders, setLlmProviders] = useState([]);
 
 
   const [editingItem, setEditingItem] = useState<KnowledgeItem | null>(null);
@@ -102,6 +113,7 @@ const KnowledgeBaseManager: React.FC = () => {
     content: "",
     type: "text", // Default to text type
     sync_source_id: null, //valid for datasource: s3, database
+    llm_provider_id: null, // valid when datasource == database
     sync_schedule: "", // valid for S3
     sync_active: false, // valid for S3
     file: null,
@@ -141,6 +153,20 @@ const KnowledgeBaseManager: React.FC = () => {
     }
   };
 
+
+  useEffect(() => {
+    const fetchLLMProviders = async () => {
+      try {
+        const result = await getAllLLMProviders();
+        setLlmProviders(result.filter((p) => p.is_active === 1));
+      } catch (err) {
+        console.error("Failed to load LLM providers", err);
+      }
+    };
+
+    fetchLLMProviders();
+  }, []);
+
   useEffect(() => {
     const fetchSources = async () => {
       if (formData.type == "s3" || formData.type == "database") {
@@ -154,7 +180,6 @@ const KnowledgeBaseManager: React.FC = () => {
 
     fetchSources();
   }, [formData.type]);
-
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -216,39 +241,57 @@ const KnowledgeBaseManager: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const requiredFields = [
+      { label: "name", isEmpty: !formData.name },
+      { label: "description", isEmpty: !formData.description },
+    ];
+
+    if (formData.type === "text") {
+      requiredFields.push({ label: "content", isEmpty: !formData.content });
+    }
+
+    if (formData.type === "file") {
+      requiredFields.push({
+        label: "file",
+        isEmpty: !selectedFile && !formData.file,
+      });
+    }
+
+    if (formData.type === "s3" || formData.type === "database") {
+      requiredFields.push({
+        label: "source",
+        isEmpty: !formData.sync_source_id,
+      });
+    }
+
+    if (formData.type === "s3" && formData.sync_active) {
+      requiredFields.push({
+        label: "sync schedule",
+        isEmpty: !formData.sync_schedule,
+      });
+    }
+
+    const missingFields = requiredFields
+      .filter((field) => field.isEmpty)
+      .map((field) => field.label);
+
+    if (missingFields.length > 0) {
+      toast.error(`Missing required fields: ${missingFields.join(", ")}`);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       setSuccess(null);
 
-      if (!formData.name || !formData.description) {
-        throw new Error("Name and description are required");
+      if (
+        formData.type === "s3" &&
+        formData.sync_active &&
+        !isValidCron(formData.sync_schedule)
+      ) {
+        throw new Error("Invalid cron expression. Expected format: * * * * *");
       }
-
-      if (formData.type === "text" && !formData.content) {
-        throw new Error("Content is required for text items");
-      }
-
-      if (formData.type === "file" && !selectedFile && !formData.file) {
-        throw new Error("Please select a file");
-      }
-
-      if (formData.type === "s3" && !formData.sync_source_id) {
-        throw new Error("Please select valid S3 datasource")
-      }
-
-      if (formData.type === "database" && !formData.sync_source_id) {
-        throw new Error("Please select valid Database datasource")
-      }
-      if (formData.type === "s3" && formData.sync_active) {
-        if (!formData.sync_schedule || !isValidCron(formData.sync_schedule)) {
-          setCronError("Invalid cron expression. Please correct it.");
-          setLoading(false);
-          return;
-        }
-      }
-
-
 
       const dataToSubmit = { ...formData };
 
@@ -299,6 +342,7 @@ const KnowledgeBaseManager: React.FC = () => {
         content: "",
         type: "text",
         sync_source_id: null,
+        llm_provider_id: null,
         file: null,
         rag_config: {
           enabled: false,
@@ -322,7 +366,7 @@ const KnowledgeBaseManager: React.FC = () => {
       setShowForm(false);
       fetchItems();
     } catch (err) {
-      setError(
+      toast.error(
         `Failed to ${editingItem ? "update" : "create"} knowledge base item: ${err instanceof Error ? err.message : String(err)
         }`
       );
@@ -340,6 +384,7 @@ const KnowledgeBaseManager: React.FC = () => {
       content: "",
       type: "text",
       sync_source_id: null,
+      llm_provider_id: null,
       file: null,
       rag_config: {
         enabled: false,
@@ -380,6 +425,7 @@ const KnowledgeBaseManager: React.FC = () => {
       content: item.content,
       type: item.type || "text",
       sync_source_id: item.sync_source_id,
+      llm_provider_id: item.llm_provider_id || null,
       sync_schedule: item.sync_schedule || "",
       sync_active: item.sync_active || false,
       file: item.file || null,
@@ -401,22 +447,40 @@ const KnowledgeBaseManager: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
-      try {
-        setLoading(true);
-        await deleteKnowledgeItem(id);
-        setSuccess(`Knowledge base item "${name}" deleted successfully`);
-        fetchItems();
-      } catch (err) {
-        setError(
-          `Failed to delete knowledge base item: ${err instanceof Error ? err.message : String(err)
-          }`
-        );
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+  const handleDeleteClick = async (id: string, name: string) => {
+    setKnowledgeBaseToDelete({ id, name });
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!knowledgeBaseToDelete?.id || !deleteKnowledgeItem) return;
+
+    try {
+      setIsDeleting(true);
+      setLoading(true);
+      await deleteKnowledgeItem(knowledgeBaseToDelete.id);
+      toast.success(
+        `Knowledge base item "${knowledgeBaseToDelete.name}" deleted successfully`
+      );
+      // setSuccess(`Knowledge base item "${name}" deleted successfully`);
+      fetchItems();
+    } catch (err) {
+      toast.error(
+        `Failed to delete knowledge base item: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+      // setError(
+      //   `Failed to delete knowledge base item: ${
+      //     err instanceof Error ? err.message : String(err)
+      //   }`
+      // );
+      console.error(err);
+    } finally {
+      setLoading(false);
+      setKnowledgeBaseToDelete(null);
+      setIsDeleteDialogOpen(false);
+      setIsDeleting(false);
     }
   };
 
@@ -431,15 +495,17 @@ const KnowledgeBaseManager: React.FC = () => {
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.description.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesQuery && (item.type.toLowerCase() === typeFilter || typeFilter==="all");
+    return (
+      matchesQuery &&
+      (item.type.toLowerCase() === typeFilter || typeFilter === "all")
+    );
   });
 
-
   const isValidCron = (cron: string): boolean => {
-    const cronRegex = /^(\*|([0-5]?\d)) (\*|([01]?\d|2[0-3])) (\*|([1-9]|[12]\d|3[01])) (\*|([1-9]|1[0-2])) (\*|([0-6]))$/;
+    const cronRegex =
+      /^(\*|([0-5]?\d)) (\*|([01]?\d|2[0-3])) (\*|([1-9]|[12]\d|3[01])) (\*|([1-9]|1[0-2])) (\*|([0-6]))$/;
     return cronRegex.test(cron.trim());
   };
-
 
   return (
     <div className="space-y-8">
@@ -480,7 +546,9 @@ const KnowledgeBaseManager: React.FC = () => {
                 <div className="p-6">
                   <div className="grid grid-cols-3 gap-6">
                     <div>
-                      <h3 className="text-lg font-semibold">Basic Information</h3>
+                      <h3 className="text-lg font-semibold">
+                        Basic Information
+                      </h3>
                       <p className="text-sm text-gray-500 mt-1">
                         Basic information about the knowledge base.
                       </p>
@@ -496,7 +564,6 @@ const KnowledgeBaseManager: React.FC = () => {
                             value={formData.name}
                             onChange={handleInputChange}
                             placeholder="Name for this knowledge base item"
-                            required
                           />
                         </div>
 
@@ -508,7 +575,6 @@ const KnowledgeBaseManager: React.FC = () => {
                             value={formData.description}
                             onChange={handleInputChange}
                             placeholder="Brief description of this knowledge base item"
-                            required
                           />
                         </div>
                       </div>
@@ -545,7 +611,6 @@ const KnowledgeBaseManager: React.FC = () => {
                             onChange={handleInputChange}
                             placeholder="The knowledge content"
                             rows={4}
-                            required
                             className="min-h-32"
                           />
                         </div>
@@ -630,9 +695,10 @@ const KnowledgeBaseManager: React.FC = () => {
                               }))
                             }
                             className="border p-2 rounded-md w-full"
-                            required
                           >
-                            <option value="" disabled>Select a data source</option>
+                            <option value="" disabled>
+                              Select a data source
+                            </option>
                             {availableSources.map((source) => (
                               <option key={source.id} value={source.id}>
                                 {source.name}
@@ -647,10 +713,16 @@ const KnowledgeBaseManager: React.FC = () => {
                                     <div className="flex items-center justify-between p-4">
                                       <div>
                                         <div>
-                                          <div className="mb-1">Sync Schedule/Enable</div>
+                                          <div className="mb-1">
+                                            Sync Schedule/Enable
+                                          </div>
                                           <Input
                                             id="sync_schedule"
                                             name="sync_schedule"
+                                            disabled={
+                                              !Boolean(formData.sync_active) &&
+                                              true
+                                            }
                                             value={formData.sync_schedule ?? ""}
                                             onChange={(e) => {
                                               const value = e.target.value;
@@ -659,26 +731,31 @@ const KnowledgeBaseManager: React.FC = () => {
                                                 sync_schedule: value,
                                               }));
 
-                                              if (!isValidCron(value)) {
-                                                setCronError("Invalid cron expression. Expected format: * * * * *");
-                                              } else {
-                                                setCronError(null);
-                                              }
+                                              // if (!isValidCron(value)) {
+                                              //   setCronError(
+                                              //     "Invalid cron expression. Expected format: * * * * *"
+                                              //   );
+                                              // } else {
+                                              //   setCronError(null);
+                                              // }
                                             }}
                                             placeholder="e.g. */15 * * * * "
-                                            required
                                           />
-                                          {cronError && (
-                                            <p className="text-sm text-red-500 mt-1">{cronError}</p>
-                                          )}
+                                          {/* {cronError && (
+                                            <p className="text-sm text-red-500 mt-1">
+                                              {cronError}
+                                            </p>
+                                          )} */}
                                         </div>
                                       </div>
 
                                       <div className="flex items-center justify-between mt-2">
-
                                         <Switch
                                           id="sync_active"
-                                          checked={Boolean(formData.sync_active) || false}
+                                          checked={
+                                            Boolean(formData.sync_active) ||
+                                            false
+                                          }
                                           onCheckedChange={(checked) =>
                                             setFormData((prev) => ({
                                               ...prev,
@@ -689,11 +766,40 @@ const KnowledgeBaseManager: React.FC = () => {
                                       </div>
                                     </div>
                                   </div>
-                                </div></div>
+                                </div>
+                              </div>
                             </>
+                          )
+                          }
+                          {/* LLM Provider dropdown if type === "database" */}
+                          {formData.type === "database" && (
+                            <div>
+                              <div className="mb-1 mt-4">LLM Provider</div>
+                              <select
+                                id="llm_provider_id"
+                                name="llm_provider_id"
+                                value={formData.llm_provider_id ?? ""}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    llm_provider_id: e.target.value || null,
+                                  }))
+                                }
+                                className="border p-2 rounded-md w-full"
+                              >
+                                <option value="" disabled>
+                                  Select an LLM provider
+                                </option>
+                                {llmProviders.map((provider) => (
+                                  <option key={provider.id} value={provider.id}>
+                                    {provider.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           )}
-
                         </div>
+
                       )}
                     </div>
                   </div>
@@ -704,160 +810,188 @@ const KnowledgeBaseManager: React.FC = () => {
                 {/* RAG Configuration */}
                 {formData.type !== "database" && (
                   //hide RAD Configuration for type "database"
-                <div className="p-6">
-                  <div className="grid grid-cols-3 gap-6">
-                    <div>
-                      <h3 className="text-lg font-semibold">RAG</h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Configure Retrieval Augmented Generation settings
-                      </p>
-                    </div>
-
-                    <div className="col-span-2 space-y-4">
-                      <div className="bg-gray-50 rounded-lg">
-                        <div className="flex items-center justify-between p-4">
-                          <div className="flex items-center gap-2">
-                            <Database className="h-5 w-5 text-gray-500" />
-                            <div>
-                              <div className="font-medium">Vector Database</div>
-                              <p className="text-sm text-gray-500">Enable vector database for this knowledge item</p>
-                            </div>
-                          </div>
-                          <Switch
-                            checked={formData.rag_config?.vector_db?.enabled || false}
-                            onCheckedChange={(checked) => {
-                              const updatedRagConfig = {
-                                ...formData.rag_config!,
-                                vector_db: {
-                                  ...formData.rag_config!.vector_db,
-                                  enabled: checked
-                                }
-                              };
-                              handleRagConfigChange(updatedRagConfig);
-                            }}
-                          />
-                        </div>
-
-                        {formData.rag_config?.vector_db?.enabled && (
-                          <div className="p-4 pt-0 space-y-4">
-                            <div>
-                              <div className="mb-1">Vector DB Type</div>
-                              <Select
-                                value={formData.rag_config?.vector_db?.type || "chroma"}
-                                onValueChange={(value) => {
-                                  const updatedRagConfig = {
-                                    ...formData.rag_config!,
-                                    vector_db: {
-                                      ...formData.rag_config!.vector_db,
-                                      type: value
-                                    }
-                                  };
-                                  handleRagConfigChange(updatedRagConfig);
-                                }}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select vector database type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="chroma">Chroma</SelectItem>
-                                  <SelectItem value="pinecone">Pinecone</SelectItem>
-                                  <SelectItem value="qdrant">Qdrant</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div>
-                              <div className="mb-1">Collection Name</div>
-                              <Input
-                                placeholder="Default: agent_id_collection"
-                                value={formData.rag_config?.vector_db?.collection_name || ""}
-                                onChange={(e) => {
-                                  const updatedRagConfig = {
-                                    ...formData.rag_config!,
-                                    vector_db: {
-                                      ...formData.rag_config!.vector_db,
-                                      collection_name: e.target.value
-                                    }
-                                  };
-                                  handleRagConfigChange(updatedRagConfig);
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
+                  <div className="p-6">
+                    <div className="grid grid-cols-3 gap-6">
+                      <div>
+                        <h3 className="text-lg font-semibold">RAG</h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Configure Retrieval Augmented Generation settings
+                        </p>
                       </div>
 
-                      <div className="bg-gray-50 rounded-lg">
-                        <div className="flex items-center justify-between p-4">
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-5 w-5 text-gray-500" />
-                            <div>
-                              <div className="font-medium">LightRAG</div>
-                              <p className="text-sm text-gray-500">Enable lightweight RAG for this knowledge item</p>
+                      <div className="col-span-2 space-y-4">
+                        <div className="bg-gray-50 rounded-lg">
+                          <div className="flex items-center justify-between p-4">
+                            <div className="flex items-center gap-2">
+                              <Database className="h-5 w-5 text-gray-500" />
+                              <div>
+                                <div className="font-medium">
+                                  Vector Database
+                                </div>
+                                <p className="text-sm text-gray-500">
+                                  Enable vector database for this knowledge item
+                                </p>
+                              </div>
                             </div>
+                            <Switch
+                              checked={
+                                formData.rag_config?.vector_db?.enabled || false
+                              }
+                              onCheckedChange={(checked) => {
+                                const updatedRagConfig = {
+                                  ...formData.rag_config!,
+                                  vector_db: {
+                                    ...formData.rag_config!.vector_db,
+                                    enabled: checked,
+                                  },
+                                };
+                                handleRagConfigChange(updatedRagConfig);
+                              }}
+                            />
                           </div>
-                          <Switch
-                            checked={formData.rag_config?.light_rag?.enabled || false}
-                            onCheckedChange={(checked) => {
-                              const updatedRagConfig = {
-                                ...formData.rag_config!,
-                                light_rag: {
-                                  ...formData.rag_config!.light_rag,
-                                  enabled: checked
-                                }
-                              };
-                              handleRagConfigChange(updatedRagConfig);
-                            }}
-                          />
+
+                          {formData.rag_config?.vector_db?.enabled && (
+                            <div className="p-4 pt-0 space-y-4">
+                              <div>
+                                <div className="mb-1">Vector DB Type</div>
+                                <Select
+                                  value={
+                                    formData.rag_config?.vector_db?.type ||
+                                    "chroma"
+                                  }
+                                  onValueChange={(value) => {
+                                    const updatedRagConfig = {
+                                      ...formData.rag_config!,
+                                      vector_db: {
+                                        ...formData.rag_config!.vector_db,
+                                        type: value,
+                                      },
+                                    };
+                                    handleRagConfigChange(updatedRagConfig);
+                                  }}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select vector database type" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="chroma">
+                                      Chroma
+                                    </SelectItem>
+                                    <SelectItem value="pinecone">
+                                      Pinecone
+                                    </SelectItem>
+                                    <SelectItem value="qdrant">
+                                      Qdrant
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div>
+                                <div className="mb-1">Collection Name</div>
+                                <Input
+                                  placeholder="Default: agent_id_collection"
+                                  value={
+                                    formData.rag_config?.vector_db
+                                      ?.collection_name || ""
+                                  }
+                                  onChange={(e) => {
+                                    const updatedRagConfig = {
+                                      ...formData.rag_config!,
+                                      vector_db: {
+                                        ...formData.rag_config!.vector_db,
+                                        collection_name: e.target.value,
+                                      },
+                                    };
+                                    handleRagConfigChange(updatedRagConfig);
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
 
-                        {formData.rag_config?.light_rag?.enabled && (
-                          <div className="p-4 pt-0 space-y-2">
-                            <div>
-                              <div className="mb-1">Search Mode</div>
-                              <Select
-                                value={formData.rag_config?.light_rag?.search_mode || "mix"}
-                                onValueChange={(value) => {
-                                  const updatedRagConfig = {
-                                    ...formData.rag_config!,
-                                    light_rag: {
-                                      ...formData.rag_config!.light_rag,
-                                      search_mode: value
-                                    }
-                                  };
-                                  handleRagConfigChange(updatedRagConfig);
-                                }}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select search mode" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="mix">Mix (Recommended)</SelectItem>
-                                  <SelectItem value="vector">Vector Only</SelectItem>
-                                  <SelectItem value="keyword">Keyword Only</SelectItem>
-                                </SelectContent>
-                              </Select>
+                        <div className="bg-gray-50 rounded-lg">
+                          <div className="flex items-center justify-between p-4">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-5 w-5 text-gray-500" />
+                              <div>
+                                <div className="font-medium">LightRAG</div>
+                                <p className="text-sm text-gray-500">
+                                  Enable lightweight RAG for this knowledge item
+                                </p>
+                              </div>
                             </div>
-
-                            <p className="text-sm text-gray-500 mt-4">
-                              Mix mode integrates knowledge graph and vector retrieval for best results.
-                            </p>
+                            <Switch
+                              checked={
+                                formData.rag_config?.light_rag?.enabled || false
+                              }
+                              onCheckedChange={(checked) => {
+                                const updatedRagConfig = {
+                                  ...formData.rag_config!,
+                                  light_rag: {
+                                    ...formData.rag_config!.light_rag,
+                                    enabled: checked,
+                                  },
+                                };
+                                handleRagConfigChange(updatedRagConfig);
+                              }}
+                            />
                           </div>
-                        )}
+
+                          {formData.rag_config?.light_rag?.enabled && (
+                            <div className="p-4 pt-0 space-y-2">
+                              <div>
+                                <div className="mb-1">Search Mode</div>
+                                <Select
+                                  value={
+                                    formData.rag_config?.light_rag
+                                      ?.search_mode || "mix"
+                                  }
+                                  onValueChange={(value) => {
+                                    const updatedRagConfig = {
+                                      ...formData.rag_config!,
+                                      light_rag: {
+                                        ...formData.rag_config!.light_rag,
+                                        search_mode: value,
+                                      },
+                                    };
+                                    handleRagConfigChange(updatedRagConfig);
+                                  }}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select search mode" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="mix">
+                                      Mix (Recommended)
+                                    </SelectItem>
+                                    <SelectItem value="vector">
+                                      Vector Only
+                                    </SelectItem>
+                                    <SelectItem value="keyword">
+                                      Keyword Only
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <p className="text-sm text-gray-500 mt-4">
+                                Mix mode integrates knowledge graph and vector
+                                retrieval for best results.
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
                 )}
               </div>
 
               {/* Submit buttons */}
               <div className="flex justify-end gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCancel}
-                >
+                <Button type="button" variant="outline" onClick={handleCancel}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={loading || isUploading}>
@@ -883,7 +1017,11 @@ const KnowledgeBaseManager: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative">
-                  <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value)} defaultValue="all">
+                  <Select
+                    value={typeFilter}
+                    onValueChange={(value) => setTypeFilter(value)}
+                    defaultValue="all"
+                  >
                     <SelectTrigger className="min-w-32">
                       <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
@@ -990,7 +1128,9 @@ const KnowledgeBaseManager: React.FC = () => {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleDelete(item.id, item.name)}
+                            onClick={() =>
+                              handleDeleteClick(item.id, item.name)
+                            }
                             className="h-8 w-8 text-red-500"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1005,6 +1145,15 @@ const KnowledgeBaseManager: React.FC = () => {
           </div>
         </>
       )}
+
+      <DeleteConfirmDialog
+        isOpen={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={handleDelete}
+        isDeleting={isDeleting}
+        itemName={knowledgeBaseToDelete?.name || ""}
+        description={`This action cannot be undone. This will permanently delete knowledge base item "${knowledgeBaseToDelete?.name}".`}
+      ></DeleteConfirmDialog>
     </div>
   );
 };

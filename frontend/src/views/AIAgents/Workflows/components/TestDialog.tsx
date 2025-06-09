@@ -5,11 +5,11 @@ import { Label } from '@/components/label';
 import { Textarea } from '@/components/textarea';
 import { Input } from '@/components/input';
 import { Play, X } from 'lucide-react';
-
+import { SchemaType } from '../types/schemas';
 export interface TestInputField {
   id: string;
   label: string;
-  type: 'text' | 'number' | 'boolean' | 'json';
+  type: SchemaType;
   placeholder?: string;
   required?: boolean;
   defaultValue?: string;

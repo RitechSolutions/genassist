@@ -18,15 +18,15 @@ import nodeRegistry from "./registry/nodeRegistry";
 import { NodeData } from "./types/nodes";
 import { Workflow } from "@/interfaces/workflow.interface";
 import WorkflowTestDialog from "./components/WorkflowTestDialog";
-import NodePanel from "./components/NodePanel";
-import BottomPanel from "./components/BottomPanel";
-import WorkflowsSavedPanel from "./components/WorkflowsSavedPanel";
+import NodePanel from "./components/panels/NodePanel";
+import BottomPanel from "./components/panels/BottomPanel";
+import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
 import { useSchemaValidation } from "./hooks/useSchemaValidation";
 import { useSidebar } from "@/components/sidebar";
 import { AgentConfig, getAgentConfig } from "@/services/api";
 import { useParams } from "react-router-dom";
 import { getWorkflowById, updateWorkflow } from "@/services/workflows";
-import AgentTopPanel from "./components/AgentTopPanel";
+import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
 
 // Get node types for React Flow
@@ -68,9 +68,10 @@ const GraphFlow: React.FC = () => {
     [loadWorkflow]
   );
   const handleAgentUpdated = useCallback(async () => {
-      const agent = await getAgentConfig(agentId);
-      setAgent(agent);
+    const agent = await getAgentConfig(agentId);
+    setAgent(agent);
   }, [agentId]);
+
   // Update node data (used for saving input values)
   const updateNodeData = useCallback(
     (nodeId: string, newData: Partial<NodeData>) => {
@@ -91,35 +92,26 @@ const GraphFlow: React.FC = () => {
     },
     [setNodes]
   );
+  // Restore functions to nodes after loading
+  const restoreNodeFunctions = (loadedNodes: Node[]): Node[] => {
+    return loadedNodes.map((node) => {
+      // Create a deep copy to avoid modifying the original
+      const nodeCopy = { ...node, data: { ...node.data } };
 
-  const initDefaultNodes = useCallback(() => {
-    const newNode = nodeRegistry.createNode("chatInputNode", "1", {
-      x: -219,
-      y: 191,
-    });
-    const newNode2 = nodeRegistry.createNode("chatOutputNode", "2", {
-      x: 808,
-      y: 191,
-    });
-    newNode.data = {
-      ...newNode.data,
-      updateNodeData,
-    };
-    newNode2.data = {
-      ...newNode2.data,
-      updateNodeData,
-    };
+      nodeCopy.data = {
+        ...nodeCopy.data,
+        updateNodeData,
+      };
 
-    setNodes((nds) => [...nds, newNode, newNode2]);
-  }, [updateNodeData, setNodes]);
+      return nodeCopy;
+    });
+  };
 
   useEffect(() => {
     if (agentId) {
       loadAgent(agentId);
-    } else {
-      initDefaultNodes();
     }
-  }, [agentId, loadAgent, initDefaultNodes]);
+  }, [agentId, loadAgent]);
 
   // Connection handler with special handling for connections
   const onConnect = useCallback(
@@ -148,28 +140,8 @@ const GraphFlow: React.FC = () => {
 
   // Add updateNodeData callback to all nodes that need it
   useEffect(() => {
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (
-          node.type === "chatInputNode" ||
-          node.type === "llmModelNode" ||
-          node.type === "promptNode" ||
-          node.type === "apiToolNode" ||
-          node.type === "agentNode" ||
-          node.type === "knowledgeBaseNode"
-        ) {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              updateNodeData,
-            },
-          };
-        }
-        return node;
-      })
-    );
-  }, [updateNodeData, setNodes]);
+    setNodes((nds) => restoreNodeFunctions(nds));
+  }, [setNodes]);
 
   // Add a new node
   const addNewNode = (
@@ -187,136 +159,12 @@ const GraphFlow: React.FC = () => {
     const newNode = nodeRegistry.createNode(nodeType, id, position);
     if (newNode) {
       // Add updateNodeData function to the node data if it's a node type that needs it
-      if (
-        nodeType === "chatInputNode" ||
-        nodeType === "llmModelNode" ||
-        nodeType === "promptNode" ||
-        nodeType === "apiToolNode" ||
-        nodeType === "agentNode" ||
-        nodeType === "knowledgeBaseNode"
-      ) {
-        newNode.data = {
-          ...newNode.data,
-          updateNodeData,
-        };
-      }
+
+      const addedNodes = restoreNodeFunctions([newNode]);
+
       console.log("New node:", newNode);
-      setNodes((nds) => [...nds, newNode]);
+      setNodes((nds) => [...nds, ...addedNodes]);
     }
-  };
-
-  // Restore functions to nodes after loading
-  const restoreNodeFunctions = (loadedNodes: Node[]): Node[] => {
-    return loadedNodes.map((node) => {
-      // Create a deep copy to avoid modifying the original
-      const nodeCopy = { ...node, data: { ...node.data } };
-
-      // Add updateNodeData to all node types that need it
-      if (
-        node.type === "chatInputNode" ||
-        node.type === "llmModelNode" ||
-        node.type === "promptNode" ||
-        node.type === "apiToolNode" ||
-        node.type === "agentNode" ||
-        node.type === "knowledgeBaseNode"
-      ) {
-        nodeCopy.data = {
-          ...nodeCopy.data,
-          updateNodeData,
-        };
-      }
-
-      // For ChatInputNodes, restore the onMessageSubmit function
-      if (node.type === "chatInputNode") {
-        nodeCopy.data = {
-          ...nodeCopy.data,
-          onMessageSubmit: (message: string) => {
-            console.log("Message submitted from restored node:", message);
-          },
-        };
-      }
-
-      // For LLMModelNodes, restore the updateNodeData function
-      if (node.type === "llmModelNode") {
-        nodeCopy.data = {
-          ...nodeCopy.data,
-          onInputReceived: (text: string) => {
-            console.log(
-              "Input received in restored LLM node:",
-              text.substring(0, 50)
-            );
-          },
-          onOutputChange: (outputText: string) => {
-            console.log(
-              "Output changed in restored LLM node:",
-              outputText.substring(0, 50)
-            );
-          },
-        };
-      }
-
-      // For PromptNodes, restore the updateNodeData and onInputReceived functions
-      if (node.type === "promptNode") {
-        nodeCopy.data = {
-          ...nodeCopy.data,
-        };
-      }
-
-      // For ChatOutputNodes, restore the updateNodeData and onInputReceived functions
-      if (node.type === "chatOutputNode") {
-        nodeCopy.data = {
-          ...nodeCopy.data,
-          onInputReceived: (text: string) => {
-            console.log(
-              "Input received in restored chat output node:",
-              text.substring(0, 50)
-            );
-          },
-        };
-      }
-
-      // For APIToolNodes, restore the updateNodeData and onInputReceived functions
-      if (node.type === "apiToolNode") {
-        nodeCopy.data = {
-          ...nodeCopy.data,
-          onInputReceived: (text: string) => {
-            console.log(
-              "Input received in restored API tool node:",
-              text.substring(0, 50)
-            );
-          },
-        };
-      }
-
-      // For AgentNodes, restore the updateNodeData and onInputReceived functions
-      if (node.type === "agentNode") {
-        nodeCopy.data = {
-          ...nodeCopy.data,
-          onInputReceived: (
-            text: string,
-            tools: Array<{
-              id: string;
-              name: string;
-              description: string;
-              category: string;
-            }>
-          ) => {
-            console.log(
-              "Input received in restored agent node:",
-              text.substring(0, 50)
-            );
-          },
-          onOutputChange: (outputText: string) => {
-            console.log(
-              "Output changed in restored agent node:",
-              outputText.substring(0, 50)
-            );
-          },
-        };
-      }
-
-      return nodeCopy;
-    });
   };
 
   // Handle graph data loaded from file
@@ -328,13 +176,6 @@ const GraphFlow: React.FC = () => {
     setNodes(nodesWithFunctions);
     setEdges(loadedWorkflow.edges);
     setWorkflow(loadedWorkflow);
-
-  };
-
-  // Handle test graph
-  const handleTestGraph = (graphData: Workflow) => {
-    setCurrentTestConfig(graphData);
-    setTestDialogOpen(true);
   };
   const handleSaveWorkflow = async () => {
     try {
@@ -345,11 +186,17 @@ const GraphFlow: React.FC = () => {
         nodes: nodes,
         edges: edges,
       });
-      await loadWorkflow(workflow.id);
     } catch (error) {
       console.error("Error saving workflow:", error);
     }
   };
+
+  // Handle test graph
+  const handleTestGraph = (graphData: Workflow) => {
+    setCurrentTestConfig(graphData);
+    setTestDialogOpen(true);
+  };
+
   return (
     <div className="h-full w-full flex flex-col">
       <Button
@@ -446,4 +293,3 @@ const GraphFlow: React.FC = () => {
 };
 
 export default GraphFlow;
-

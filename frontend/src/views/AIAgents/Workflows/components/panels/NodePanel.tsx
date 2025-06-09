@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from "@/components/button";
-import { X, MessageCircle, Brain, FileText, MessageSquare, Globe, Database } from "lucide-react";
+import { X, MessageCircle, Brain, FileText, MessageSquare, Globe, Database, Code, Tag } from "lucide-react";
 import { 
   Card, 
   CardContent, 
@@ -8,8 +8,8 @@ import {
   CardHeader, 
   CardTitle 
 } from "@/components/card";
-import nodeRegistry from "../registry/nodeRegistry";
-import { getNodeColors } from "../utils/nodeColors";
+import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
+import { getNodeColors } from "@/views/AIAgents/Workflows/utils/nodeColors";
 
 interface NodePanelProps {
   isOpen: boolean;
@@ -40,6 +40,10 @@ const NodePanel: React.FC<NodePanelProps> = ({
         return <Globe className={`h-4 w-4 ${colors.panelIcon}`} />;
       case 'Database':
         return <Database className={`h-4 w-4 ${colors.panelIcon}`} />;
+      case 'Code':
+        return <Code className={`h-4 w-4 ${colors.panelIcon}`} />;
+      case 'Tag': 
+        return <Tag className={`h-4 w-4 ${colors.panelIcon}`} />;
       default:
         return <div className="h-4 w-4 bg-gray-300 rounded" />;
     }

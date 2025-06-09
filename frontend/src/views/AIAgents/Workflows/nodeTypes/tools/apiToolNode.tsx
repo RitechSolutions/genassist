@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from "react";
-import { Handle, Position, NodeProps, useReactFlow } from "reactflow";
-import { APIToolNodeData } from "../types/nodes";
+import React, { useState, useEffect, useCallback } from "react";
+import { Position, NodeProps, useReactFlow } from "reactflow";
+import { APIToolNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/textarea";
 import {
   Select,
@@ -14,14 +13,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Save, Globe, Play, Plus, X } from "lucide-react";
-import { TestDialog, TestInputField } from "../components/TestDialog";
-import { HandleTooltip } from "../components/HandleTooltip";
+import { TestDialog } from "../../components/TestDialog";
+import { HandleTooltip } from "../../components/HandleTooltip";
 import {
   getAllDynamicVariables,
   replaceVariablesWithInputs,
-} from "../utils/apiHelpers";
-import { createSimpleSchema } from "../types/schemas";
-import { getNodeColors } from "../utils/nodeColors";
+} from "../../utils/apiHelpers";
+import { createSimpleSchema } from "../../types/schemas";
+import { getNodeColors } from "../../utils/nodeColors";
 
 // HTTP methods
 const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const;
@@ -33,7 +32,7 @@ const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
   selected,
 }) => {
   const { getEdges } = useReactFlow();
-  const colors = getNodeColors('apiToolNode');
+  const colors = getNodeColors("apiToolNode");
   const [name, setName] = useState(data.name || "API Tool");
   const [description, setDescription] = useState(
     data.description || "Makes API calls to external services"
@@ -49,15 +48,10 @@ const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
     data.parameters || {}
   );
   const [requestBody, setRequestBody] = useState(data.requestBody || "");
-  const [response, setResponse] = useState(data.response || "");
+  const [response, setResponse] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isTestDialogOpen, setIsTestDialogOpen] = useState(false);
-
-  // Save configuration whenever relevant state changes
-  useEffect(() => {
-    saveConfiguration();
-  }, [name, description, endpoint, parameters, requestBody, method, headers]);
 
   // Add new header
   const addHeader = () => {
@@ -105,7 +99,12 @@ const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
 
   // Generate input fields based on API configuration
   const generateInputFields = () => {
-    const variables = getAllDynamicVariables(endpoint, headers, parameters, requestBody);
+    const variables = getAllDynamicVariables(
+      endpoint,
+      headers,
+      parameters,
+      requestBody
+    );
     console.log(variables);
     return Array.from(variables).map((varName) => ({
       id: varName,
@@ -116,27 +115,14 @@ const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
     }));
   };
 
-  // Generate expected input structure for tooltip
-  const generateInputStructure = () => {
-    const variables = getAllDynamicVariables(endpoint, headers, parameters, requestBody);
-
-    if (variables.size === 0) {
-      return "No input required";
-    }
-
-    return `Expected input: {\n  ${Array.from(variables)
-      .map((v) => `"${v}": string`)
-      .join(",\n  ")}\n}`;
-  };
-
-  // Generate expected output structure for tooltip
-  const generateOutputStructure = () => {
-    return `Expected output: {\n  "status": number,\n  "data": any,\n  "headers": Record<string, string>\n}`;
-  };
-
   // Update the node data whenever form values change
-  const saveConfiguration = () => {
-    const variables = getAllDynamicVariables(endpoint, headers, parameters, requestBody);
+  const saveConfiguration = useCallback(() => {
+    const variables = getAllDynamicVariables(
+      endpoint,
+      headers,
+      parameters,
+      requestBody
+    );
 
     // Create input schema from variables
     const inputSchemaFields: Record<
@@ -163,18 +149,29 @@ const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
         headers,
         parameters,
         requestBody,
-        response,
         inputSchema:
           Object.keys(inputSchemaFields).length > 0
             ? createSimpleSchema(inputSchemaFields)
             : undefined,
         outputSchema,
-        label: name, // Ensure label is always set to match name
       };
 
       data.updateNodeData(id, updatedData);
     }
-  };
+  }, [name, description, endpoint, parameters, requestBody, method, headers]);
+  // Save configuration whenever relevant state changes
+  useEffect(() => {
+    saveConfiguration();
+  }, [
+    name,
+    description,
+    endpoint,
+    parameters,
+    requestBody,
+    method,
+    headers,
+    saveConfiguration,
+  ]);
 
   // Execute API call with test input
   const executeAPICall = async (inputs: Record<string, string>) => {
@@ -264,7 +261,9 @@ const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
         }`}
       >
         {/* Node header */}
-        <div className={`px-4 py-2 border-b ${colors.header} flex justify-between items-center`}>
+        <div
+          className={`px-4 py-2 border-b ${colors.header} flex justify-between items-center`}
+        >
           <div className="flex items-center">
             <Globe className={`h-4 w-4 text-white mr-2`} />
             <Input

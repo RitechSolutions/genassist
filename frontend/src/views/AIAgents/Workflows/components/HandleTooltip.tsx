@@ -1,6 +1,6 @@
 import { Badge } from "@/components/badge";
-import React, { useState, useRef, useEffect } from "react";
-import { Handle, Position, HandleProps } from "reactflow";
+import React, { useState, useRef } from "react";
+import { Handle, HandleProps } from "reactflow";
 
 interface HandleTooltipProps extends HandleProps {
   nodeId: string;

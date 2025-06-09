@@ -1,20 +1,24 @@
-import { Card } from "@/components/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/table";
+import { useState, useEffect } from "react";
+import { DataTable } from "@/components/DataTable";
+import { ActionButtons } from "@/components/ActionButtons";
+import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
+import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
-import { Button } from "@/components/button";
-import { Edit, Trash, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
 import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
+import { toast } from "react-hot-toast";
 
 interface LLMAnalystCardProps {
   analysts: LLMAnalyst[];
   searchQuery: string;
   onEdit: (analyst: LLMAnalyst) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
 }
 
 export function LLMAnalystCard({ analysts, searchQuery, onEdit, onDelete }: LLMAnalystCardProps) {
   const [loading, setLoading] = useState(true);
+  const [analystToDelete, setAnalystToDelete] = useState<LLMAnalyst | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -29,57 +33,71 @@ export function LLMAnalystCard({ analysts, searchQuery, onEdit, onDelete }: LLMA
     return name.includes(searchQuery.toLowerCase()) || provider.includes(searchQuery.toLowerCase());
   });
 
-  if (loading) {
-    return (
-      <Card className="p-8 flex justify-center items-center">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </Card>
-    );
-  }
+  const handleDeleteClick = (analyst: LLMAnalyst) => {
+    setAnalystToDelete(analyst);
+    setIsDeleteDialogOpen(true);
+  };
 
-  if (filtered.length === 0) {
-    return (
-      <Card className="p-8 text-center text-muted-foreground">
-        {searchQuery ? "No LLM Analysts found matching your search" : "No LLM Analysts found"}
-      </Card>
-    );
-  }
+  const handleDeleteConfirm = async () => {
+    if (!analystToDelete?.id) return;
+    
+    try {
+      setIsDeleting(true);
+      await onDelete(analystToDelete.id);
+      toast.success("LLM Analyst deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete LLM Analyst");
+      console.error("Error deleting LLM Analyst:", error);
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteDialogOpen(false);
+      setAnalystToDelete(null);
+    }
+  };
+
+  const headers = ["Name", "Provider", "Prompt", "Status", "Actions"];
+
+  const renderRow = (analyst: LLMAnalyst) => (
+    <TableRow key={analyst.id}>
+      <TableCell>{analyst.name}</TableCell>
+      <TableCell>{analyst.llm_provider?.name}</TableCell>
+      <TableCell className="max-w-[300px] truncate">{analyst.prompt}</TableCell>
+      <TableCell>
+        <Badge variant={analyst.is_active ? "default" : "secondary"}>
+          {analyst.is_active ? "Active" : "Inactive"}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <ActionButtons
+          onEdit={() => onEdit(analyst)}
+          onDelete={() => handleDeleteClick(analyst)}
+          editTitle="Edit"
+          deleteTitle="Delete"
+        />
+      </TableCell>
+    </TableRow>
+  );
 
   return (
-    <Card>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Provider</TableHead>
-            <TableHead>Prompt</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filtered.map(analyst => (
-            <TableRow key={analyst.id}>
-              <TableCell>{analyst.name}</TableCell>
-              <TableCell>{analyst.llm_provider?.name}</TableCell>
-              <TableCell className="max-w-[300px] truncate">{analyst.prompt}</TableCell>
-              <TableCell>
-                <Badge variant={analyst.is_active ? "default" : "secondary"}>
-                  {analyst.is_active ? "Active" : "Inactive"}
-                </Badge>
-              </TableCell>
-              <TableCell className="flex items-center">
-                <Button variant="ghost" size="sm" onClick={() => onEdit(analyst)} title="Edit">
-                  <Edit className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => onDelete(analyst.id)} title="Delete">
-                  <Trash className="w-4 h-4" />
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </Card>
+    <>
+      <DataTable
+        data={filtered}
+        loading={loading}
+        searchQuery={searchQuery}
+        headers={headers}
+        renderRow={renderRow}
+        emptyMessage="No LLM Analysts found"
+        searchEmptyMessage="No LLM Analysts found matching your search"
+      />
+
+      <DeleteConfirmDialog
+        isOpen={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={handleDeleteConfirm}
+        isDeleting={isDeleting}
+        itemName={analystToDelete?.name || ""}
+        description={`This action cannot be undone. This will permanently delete the LLM Analyst "${analystToDelete?.name}".`}
+      />
+    </>
   );
 }

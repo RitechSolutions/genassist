@@ -9,15 +9,15 @@
  */
 export const extractDynamicVariables = (text: string): Set<string> => {
   const variables = new Set<string>();
-  
+
   // Match @variable format
   const atMatches = text.match(/@\w+/g) || [];
-  atMatches.forEach(v => variables.add(v.slice(1)));
-  
+  atMatches.forEach((v) => variables.add(v.slice(1)));
+
   // Match {{variable}} format
   const curlyMatches = text.match(/{{([^}]+)}}/g) || [];
-  curlyMatches.forEach(v => variables.add(v.slice(2, -2).trim()));
-  
+  curlyMatches.forEach((v) => variables.add(v.slice(2, -2).trim()));
+
   return variables;
 };
 
@@ -36,24 +36,23 @@ export const getAllDynamicVariables = (
 ): Set<string> => {
   const variables = new Set<string>();
   console.log(endpoint, parameters, requestBody);
-  
+
   // Extract from URL
-  extractDynamicVariables(endpoint).forEach(v => variables.add(v));
-  
+  extractDynamicVariables(endpoint).forEach((v) => variables.add(v));
+
   // Extract from parameters
-  Object.values(parameters).forEach(value => {
-    extractDynamicVariables(value).forEach(v => variables.add(v));
+  Object.values(parameters).forEach((value) => {
+    extractDynamicVariables(value).forEach((v) => variables.add(v));
   });
-  Object.values(headers).forEach(value => {
-    extractDynamicVariables(value).forEach(v => variables.add(v));
+  Object.values(headers).forEach((value) => {
+    extractDynamicVariables(value).forEach((v) => variables.add(v));
   });
-  
-  
+
   // Extract from request body
   if (requestBody) {
-    extractDynamicVariables(requestBody).forEach(v => variables.add(v));
+    extractDynamicVariables(requestBody).forEach((v) => variables.add(v));
   }
-  
+
   return variables;
 };
 
@@ -70,8 +69,8 @@ export const replaceVariablesWithInputs = (
   let result = text;
   Object.entries(inputs).forEach(([key, value]) => {
     // Replace both @variable and {{variable}} formats
-    result = result.replace(new RegExp(`@${key}\\b`, 'g'), value);
-    result = result.replace(new RegExp(`{{${key}}}`, 'g'), value);
+    result = result.replace(new RegExp(`@${key}\\b`, "g"), value);
+    result = result.replace(new RegExp(`{{${key}}}`, "g"), value);
   });
   return result;
-}; 
+};

@@ -1,23 +1,18 @@
-import { Card } from "@/components/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/table";
+import { useState } from "react";
+import { DataTable } from "@/components/DataTable";
+import { ActionButtons } from "@/components/ActionButtons";
+import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
+import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
-import { Button } from "@/components/button";
-import { Edit, Loader2, Trash2 } from "lucide-react";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
+import { toast } from "react-hot-toast";
 
 interface LLMProviderCardProps {
   providers: LLMProvider[];
   searchQuery: string;
   loading: boolean;
   onEdit: (provider: LLMProvider) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
 }
 
 export function LLMProviderCard({
@@ -27,6 +22,10 @@ export function LLMProviderCard({
   onEdit,
   onDelete,
 }: LLMProviderCardProps) {
+  const [providerToDelete, setProviderToDelete] = useState<LLMProvider | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const filtered = providers.filter((p) => {
     const name = p.name.toLowerCase();
     const type = p.llm_model_provider.toLowerCase();
@@ -38,69 +37,71 @@ export function LLMProviderCard({
     );
   });
 
-  if (loading) {
-    return (
-      <Card className="p-8 flex justify-center items-center">
-        <Loader2 className="w-6 h-6 animate-spin" />
-      </Card>
-    );
-  }
+  const handleDeleteClick = (provider: LLMProvider) => {
+    setProviderToDelete(provider);
+    setIsDeleteDialogOpen(true);
+  };
 
-  if (filtered.length === 0) {
-    return (
-      <Card className="p-8 text-center text-muted-foreground">
-        {searchQuery
-          ? "No LLM Providers matching your search"
-          : "No LLM Providers found"}
-      </Card>
-    );
-  }
+  const handleDeleteConfirm = async () => {
+    if (!providerToDelete?.id) return;
+
+    try {
+      setIsDeleting(true);
+      await onDelete(providerToDelete.id);
+      toast.success("LLM Provider deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete LLM Provider");
+      console.error("Delete error:", error);
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteDialogOpen(false);
+      setProviderToDelete(null);
+    }
+  };
+
+  const headers = ["Name", "Type", "Model", "Status", "Actions"];
+
+  const renderRow = (provider: LLMProvider) => (
+    <TableRow key={provider.id}>
+      <TableCell>{provider.name}</TableCell>
+      <TableCell>{provider.llm_model_provider}</TableCell>
+      <TableCell>{provider.llm_model}</TableCell>
+      <TableCell>
+        <Badge variant={provider.is_active ? "default" : "secondary"}>
+          {provider.is_active ? "Active" : "Inactive"}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <ActionButtons
+          onEdit={() => onEdit(provider)}
+          onDelete={() => handleDeleteClick(provider)}
+          editTitle="Edit"
+          deleteTitle="Delete"
+        />
+      </TableCell>
+    </TableRow>
+  );
 
   return (
-    <Card>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>Model</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filtered.map((provider) => (
-            <TableRow key={provider.id}>
-              <TableCell>{provider.name}</TableCell>
-              <TableCell>{provider.llm_model_provider}</TableCell>
-              <TableCell>{provider.llm_model}</TableCell>
-              <TableCell>
-                <Badge variant={provider.is_active ? "default" : "secondary"}>
-                  {provider.is_active ? "Active" : "Inactive"}
-                </Badge>
-              </TableCell>
-              <TableCell className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onEdit(provider)}
-                  title="Edit"
-                >
-                  <Edit className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onDelete(provider.id)}
-                  title="Delete"
-                >
-                  <Trash2 className="w-4 h-4 text-red-600" />
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </Card>
+    <>
+      <DataTable
+        data={filtered}
+        loading={loading}
+        searchQuery={searchQuery}
+        headers={headers}
+        renderRow={renderRow}
+        emptyMessage="No LLM Providers found"
+        searchEmptyMessage="No LLM Providers matching your search"
+      />
+
+      <DeleteConfirmDialog
+        isOpen={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={handleDeleteConfirm}
+        isDeleting={isDeleting}
+        itemName={providerToDelete?.name || ""}
+        description={`This action cannot be undone. This will permanently delete the provider "${providerToDelete?.name}".`}
+      />
+    </>
   );
 }

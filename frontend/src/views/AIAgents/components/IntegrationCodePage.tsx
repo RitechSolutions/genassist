@@ -12,7 +12,7 @@ import { ChevronLeft } from "lucide-react";
 
 interface IntegrationConfig {
   url: string;
-  name?: string; 
+  name?: string;
 }
 
 const SAMPLE_CUSTOMER = {
@@ -24,7 +24,7 @@ const SAMPLE_CUSTOMER = {
 const IntegrationCodePage: React.FC = () => {
   const { agentId } = useParams<{ agentId: string }>();
   const [config, setConfig] = useState<IntegrationConfig | null>(null);
-  const [baseUrl, setBaseUrl] = useState<string>(""); 
+  const [baseUrl, setBaseUrl] = useState<string>("");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -32,7 +32,7 @@ const IntegrationCodePage: React.FC = () => {
     (async () => {
       try {
         const c = await getAgentConfig(agentId);
-        setConfig({ url: c.url, name: c.name, });
+        setConfig({ url: c.url, name: c.name });
 
         const fetchedBaseUrl = await getApiUrl();
         setBaseUrl(fetchedBaseUrl);
@@ -54,64 +54,64 @@ const IntegrationCodePage: React.FC = () => {
 
   const { url } = config;
   const apiKeyPlaceholder = "Enter your API key here";
-  
-  return (
-    <div className="mx-auto px-4 space-y-8 max-w-7xl ">
-      <div className="flex justify-between items-center">
-        <div className="flex item-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/ai-agents")}
-            className="mr-2"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-          <h1 className="text-3xl font-bold">Integration Code</h1>
 
-        </div>
-        <p className="text-muted-foreground mt-1">
+  return (
+    <div className="flex-1 p-8">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex justify-between items-center">
+          <div className="flex item-center">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/ai-agents")}
+              className="mr-2"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <h1 className="text-3xl font-bold">Integration Code</h1>
+          </div>
+          <p className="text-muted-foreground mt-1">
             <span className="font-mono bg-muted px-2 py-0.5 rounded">
-             {config.name || agentId?.slice(0, 8)}
+              {config.name || agentId?.slice(0, 8)}
             </span>
           </p>
-      </div>
+        </div>
 
-      <Tabs defaultValue="react" className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="react">React</TabsTrigger>
-          <TabsTrigger value="flutter">Flutter</TabsTrigger>
-          <TabsTrigger value="swift">iOS (Swift)</TabsTrigger>
-        </TabsList>
+        <Tabs defaultValue="react" className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="react">React</TabsTrigger>
+            <TabsTrigger value="flutter">Flutter</TabsTrigger>
+            <TabsTrigger value="swift">iOS (Swift)</TabsTrigger>
+          </TabsList>
 
-        {/* React */}
-        <TabsContent value="react" className="space-y-4">
-          <div>
-            <h2 className="font-semibold text-lg mb-1">1. Install</h2>
-            <AceEditor
-              mode="javascript"
-              theme="tomorrow_night"
-              value={`npm install genassist-chat-react\n# or\nyarn add genassist-chat-react`}
-              readOnly
-              width="100%"
-              height="80px"
-              className="integration-code"
-              fontSize={14}
-              showPrintMargin={false}
-              showGutter={false}
-              highlightActiveLine={false}
-              setOptions={{ useWorker: false }}
-            />
-          </div>
+          {/* React */}
+          <TabsContent value="react" className="space-y-4">
+            <div>
+              <h2 className="font-semibold text-lg mb-1">1. Install</h2>
+              <AceEditor
+                mode="javascript"
+                theme="tomorrow_night"
+                value={`npm install genassist-chat-react\n# or\nyarn add genassist-chat-react`}
+                readOnly
+                width="100%"
+                height="80px"
+                className="integration-code"
+                fontSize={14}
+                showPrintMargin={false}
+                showGutter={false}
+                highlightActiveLine={false}
+                setOptions={{ useWorker: false }}
+              />
+            </div>
 
-          <div className="pt-4">
-            <h2 className="font-semibold text-lg mb-1">2. Usage</h2>
-            <AceEditor
-              mode="javascript"
-              theme="tomorrow_night"
-              height="450px"
-              className="integration-code-usage"
-              value={`import React from 'react';
+            <div className="pt-4">
+              <h2 className="font-semibold text-lg mb-1">2. Usage</h2>
+              <AceEditor
+                mode="javascript"
+                theme="tomorrow_night"
+                height="450px"
+                className="integration-code-usage"
+                value={`import React from 'react';
                   import { GenAgentChat } from 'genassist-chat-react';
 
                   function App() {
@@ -133,45 +133,45 @@ const IntegrationCodePage: React.FC = () => {
                   }
 
                   export default App;`}
-              readOnly
-              width="100%"
-              fontSize={14}
-              showPrintMargin={false}
-              showGutter
-              highlightActiveLine={false}
-              setOptions={{ useWorker: false }}
-            />
-          </div>
-        </TabsContent>
+                readOnly
+                width="100%"
+                fontSize={14}
+                showPrintMargin={false}
+                showGutter
+                highlightActiveLine={false}
+                setOptions={{ useWorker: false }}
+              />
+            </div>
+          </TabsContent>
 
-        {/* Flutter */}
-        <TabsContent value="flutter" className="space-y-4">
-          <div>
-            <h2 className="font-semibold text-lg mb-1">
-              1. Add to pubspec.yaml
-            </h2>
-            <AceEditor
-              mode="javascript"
-              theme="tomorrow_night"
-              value={`dependencies:\n  gen_agent_chat: ^1.0.0`}
-              readOnly
-              width="100%"
-              height="80px"
-              className="integration-code"
-              fontSize={14}
-              showPrintMargin={false}
-              showGutter={false}
-              highlightActiveLine={false}
-              setOptions={{ useWorker: false }}
-            />
-          </div>
+          {/* Flutter */}
+          <TabsContent value="flutter" className="space-y-4">
+            <div>
+              <h2 className="font-semibold text-lg mb-1">
+                1. Add to pubspec.yaml
+              </h2>
+              <AceEditor
+                mode="javascript"
+                theme="tomorrow_night"
+                value={`dependencies:\n  gen_agent_chat: ^1.0.0`}
+                readOnly
+                width="100%"
+                height="80px"
+                className="integration-code"
+                fontSize={14}
+                showPrintMargin={false}
+                showGutter={false}
+                highlightActiveLine={false}
+                setOptions={{ useWorker: false }}
+              />
+            </div>
 
-          <div>
-            <h2 className="font-semibold text-lg mb-1">2. Usage</h2>
-            <AceEditor
-              mode="javascript"
-              theme="tomorrow_night"
-              value={`import 'package:gen_agent_chat/gen_agent_chat.dart';
+            <div>
+              <h2 className="font-semibold text-lg mb-1">2. Usage</h2>
+              <AceEditor
+                mode="javascript"
+                theme="tomorrow_night"
+                value={`import 'package:gen_agent_chat/gen_agent_chat.dart';
                 void main() => runApp(MyApp());
 
                 class MyApp extends StatelessWidget {
@@ -188,47 +188,47 @@ const IntegrationCodePage: React.FC = () => {
                     );
                   }
                 }`}
-              readOnly
-              width="100%"
-              height="370px"
-              className="integration-code-usage"
-              fontSize={14}
-              showPrintMargin={false}
-              showGutter
-              highlightActiveLine={false}
-              setOptions={{ useWorker: false }}
-            />
-          </div>
-        </TabsContent>
+                readOnly
+                width="100%"
+                height="370px"
+                className="integration-code-usage"
+                fontSize={14}
+                showPrintMargin={false}
+                showGutter
+                highlightActiveLine={false}
+                setOptions={{ useWorker: false }}
+              />
+            </div>
+          </TabsContent>
 
-        {/* Swift */}
-        <TabsContent value="swift" className="space-y-4">
-          <div>
-            <h2 className="font-semibold text-lg mb-1">
-              1. Add via Swift Package Manager
-            </h2>
-            <AceEditor
-              mode="javascript"
-              theme="tomorrow_night"
-              value={`https://dev.azure.com/Ritech/GenAssist/_git/plugin-react`}
-              readOnly
-              width="100%"
-              height="80px"
-              className="integration-code"
-              fontSize={14}
-              showPrintMargin={false}
-              showGutter={false}
-              highlightActiveLine={false}
-              setOptions={{ useWorker: false }}
-            />
-          </div>
+          {/* Swift */}
+          <TabsContent value="swift" className="space-y-4">
+            <div>
+              <h2 className="font-semibold text-lg mb-1">
+                1. Add via Swift Package Manager
+              </h2>
+              <AceEditor
+                mode="javascript"
+                theme="tomorrow_night"
+                value={`https://dev.azure.com/Ritech/GenAssist/_git/plugin-react`}
+                readOnly
+                width="100%"
+                height="80px"
+                className="integration-code"
+                fontSize={14}
+                showPrintMargin={false}
+                showGutter={false}
+                highlightActiveLine={false}
+                setOptions={{ useWorker: false }}
+              />
+            </div>
 
-          <div>
-            <h2 className="font-semibold text-lg mb-1">2. Usage</h2>
-            <AceEditor
-              mode="javascript"
-              theme="tomorrow_night"
-              value={`import GenAgentChat
+            <div>
+              <h2 className="font-semibold text-lg mb-1">2. Usage</h2>
+              <AceEditor
+                mode="javascript"
+                theme="tomorrow_night"
+                value={`import GenAgentChat
                 struct ContentView: View {
                   var body: some View {
                     GenAgentChatView(
@@ -242,19 +242,20 @@ const IntegrationCodePage: React.FC = () => {
                     )
                   }
                 }`}
-              readOnly
-              width="100%"
-              height="320px"
-              className="integration-code-usage"
-              fontSize={14}
-              showPrintMargin={false}
-              showGutter
-              highlightActiveLine={false}
-              setOptions={{ useWorker: false }}
-            />
-          </div>
-        </TabsContent>
-      </Tabs>
+                readOnly
+                width="100%"
+                height="320px"
+                className="integration-code-usage"
+                fontSize={14}
+                showPrintMargin={false}
+                showGutter
+                highlightActiveLine={false}
+                setOptions={{ useWorker: false }}
+              />
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 };

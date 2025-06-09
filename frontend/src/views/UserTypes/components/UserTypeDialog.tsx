@@ -11,7 +11,7 @@ interface UserTypeDialogProps {
   onOpenChange: (open: boolean) => void;
   onUserTypeSaved: () => void;
   userTypeToEdit?: UserType | null;
-  mode?: 'create' | 'edit';
+  mode?: "create" | "edit";
 }
 
 export function UserTypeDialog({
@@ -19,17 +19,18 @@ export function UserTypeDialog({
   onOpenChange,
   onUserTypeSaved,
   userTypeToEdit = null,
-  mode = 'create'
+  mode = "create",
 }: UserTypeDialogProps) {
   const [name, setName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userTypeId, setUserTypeId] = useState<string | undefined>(undefined);
-  const [dialogMode, setDialogMode] = useState<'create' | 'edit'>(mode);
-  const [error, setError] = useState("");
+  const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
 
-  const title = dialogMode === 'create' ? 'Create New User Type' : 'Edit User Type';
-  const submitButtonText = dialogMode === 'create' ? 'Create User Type' : 'Update User Type';
-  const loadingText = dialogMode === 'create' ? 'Creating...' : 'Updating...';
+  const title =
+    dialogMode === "create" ? "Create New User Type" : "Edit User Type";
+  const submitButtonText =
+    dialogMode === "create" ? "Create User Type" : "Update User Type";
+  const loadingText = dialogMode === "create" ? "Creating..." : "Updating...";
 
   useEffect(() => {
     setDialogMode(mode);
@@ -38,13 +39,12 @@ export function UserTypeDialog({
   useEffect(() => {
     if (isOpen) {
       resetForm();
-      setError("");
-      
-      if (userTypeToEdit && dialogMode === 'edit') {
+
+      if (userTypeToEdit && dialogMode === "edit") {
         populateFormWithUserTypeData(userTypeToEdit);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, userTypeToEdit, dialogMode]);
 
   const populateFormWithUserTypeData = (userType: UserType) => {
@@ -54,10 +54,9 @@ export function UserTypeDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    
+
     if (!name.trim()) {
-      setError("User type name is required");
+      toast.error("User type name is required");
       return;
     }
 
@@ -67,12 +66,12 @@ export function UserTypeDialog({
         name: name.trim(),
       };
 
-      if (dialogMode === 'create') {
+      if (dialogMode === "create") {
         await createUserType(userTypeData);
         toast.success("User type created successfully");
       } else {
         if (!userTypeId) {
-          setError("User type ID is missing for update");
+          toast.error("User type ID is missing for update");
           return;
         }
         await updateUserType(userTypeId, userTypeData);
@@ -83,10 +82,10 @@ export function UserTypeDialog({
       onOpenChange(false);
       resetForm();
     } catch (err) {
-      const errorMessage = err instanceof Error 
-        ? err.message 
-        : `Failed to ${dialogMode} user type`;
-      setError(errorMessage);
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : `Failed to ${dialogMode} user type`;
       toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
@@ -94,7 +93,7 @@ export function UserTypeDialog({
   };
 
   const resetForm = () => {
-    if (dialogMode === 'create') {
+    if (dialogMode === "create") {
       setUserTypeId(undefined);
       setName("");
     }
@@ -112,12 +111,6 @@ export function UserTypeDialog({
       loadingText={loadingText}
     >
       <div className="grid gap-4 py-4">
-        {error && (
-          <div className="text-sm font-medium text-red-500">
-            {error}
-          </div>
-        )}
-        
         <Label htmlFor="name">Name</Label>
         <Input
           id="name"
