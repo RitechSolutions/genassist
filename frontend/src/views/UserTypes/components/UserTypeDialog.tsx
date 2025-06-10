@@ -82,11 +82,20 @@ export function UserTypeDialog({
       onOpenChange(false);
       resetForm();
     } catch (err) {
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : `Failed to ${dialogMode} user type`;
-      toast.error(errorMessage);
+      const data = err.response.data;
+      let errorMessage = "";
+
+      if (data.error) {
+        errorMessage = data.error;
+      } else if (data.detail) {
+        errorMessage = data.detail["0"].msg;
+      }
+
+      toast.error(
+        `Failed to ${dialogMode} user type${
+          errorMessage ? `: ${errorMessage}` : "."
+        }`
+      );
     } finally {
       setIsSubmitting(false);
     }

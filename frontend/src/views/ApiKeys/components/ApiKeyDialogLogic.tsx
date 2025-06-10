@@ -127,8 +127,20 @@ export function ApiKeyDialogLogic({
         onApiKeyCreated();
       }
     } catch (error) {
-      console.error("Error creating/updating API key:", error);
-      toast.error("You are unauthorized to perform this action.");
+      const data = error.response.data;
+      let errorMessage = "";
+
+      if (data.error) {
+        errorMessage = data.error;
+      } else if (data.detail) {
+        errorMessage = data.detail["0"].msg;
+      }
+
+      toast.error(
+        `Failed to ${dialogMode} API key${
+          errorMessage ? `: ${errorMessage}` : "."
+        }`
+      );
     } finally {
       setLoading(false);
     }

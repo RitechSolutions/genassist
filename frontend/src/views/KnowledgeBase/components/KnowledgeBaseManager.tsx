@@ -104,7 +104,6 @@ const KnowledgeBaseManager: React.FC = () => {
 
   const [llmProviders, setLlmProviders] = useState([]);
 
-
   const [editingItem, setEditingItem] = useState<KnowledgeItem | null>(null);
   const [formData, setFormData] = useState<KnowledgeItem>({
     id: uuidv4(),
@@ -152,7 +151,6 @@ const KnowledgeBaseManager: React.FC = () => {
       setLoading(false);
     }
   };
-
 
   useEffect(() => {
     const fetchLLMProviders = async () => {
@@ -229,7 +227,8 @@ const KnowledgeBaseManager: React.FC = () => {
     } catch (error) {
       console.error("Error uploading file:", error);
       setError(
-        `Failed to upload file: ${error instanceof Error ? error.message : String(error)
+        `Failed to upload file: ${
+          error instanceof Error ? error.message : String(error)
         }`
       );
       return null;
@@ -366,9 +365,16 @@ const KnowledgeBaseManager: React.FC = () => {
       setShowForm(false);
       fetchItems();
     } catch (err) {
+      let errorMessage = err.message || String(err);
+
+      if (errorMessage.includes("400")) {
+        errorMessage = "Name already exists.";
+      }
+
       toast.error(
-        `Failed to ${editingItem ? "update" : "create"} knowledge base item: ${err instanceof Error ? err.message : String(err)
-        }`
+        `Failed to ${
+          editingItem ? "update" : "create"
+        } knowledge base item: ${errorMessage}`
       );
       console.error(err);
     } finally {
@@ -628,8 +634,8 @@ const KnowledgeBaseManager: React.FC = () => {
                                   {selectedFile
                                     ? selectedFile.name
                                     : formData.file
-                                      ? "Replace file"
-                                      : "Select file to upload"}
+                                    ? "Replace file"
+                                    : "Select file to upload"}
                                 </span>
                                 <input
                                   id="file-upload"
@@ -769,8 +775,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                 </div>
                               </div>
                             </>
-                          )
-                          }
+                          )}
                           {/* LLM Provider dropdown if type === "database" */}
                           {formData.type === "database" && (
                             <div>
@@ -799,7 +804,6 @@ const KnowledgeBaseManager: React.FC = () => {
                             </div>
                           )}
                         </div>
-
                       )}
                     </div>
                   </div>
@@ -998,8 +1002,8 @@ const KnowledgeBaseManager: React.FC = () => {
                   {loading || isUploading
                     ? "Saving..."
                     : editingItem
-                      ? "Update Knowledge Base"
-                      : "Create Knowledge Base"}
+                    ? "Update Knowledge Base"
+                    : "Create Knowledge Base"}
                 </Button>
               </div>
             </div>

@@ -167,8 +167,19 @@ export function UserDialog({
       onOpenChange(false);
       resetForm();
     } catch (error) {
+      const data = error.response.data;
+      let errorMessage = "";
+
+      if (data.error) {
+        errorMessage = data.error;
+      } else if (data.detail) {
+        errorMessage = data.detail["0"].ctx.reason;
+      }
+
       toast.error(
-        error instanceof Error ? error.message : `Failed to ${dialogMode} user`
+        `Failed to ${dialogMode} user${
+          errorMessage ? `: ${errorMessage}` : "."
+        }`
       );
     } finally {
       setIsSubmitting(false);
