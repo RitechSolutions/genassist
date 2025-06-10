@@ -323,11 +323,12 @@ function TranscriptDialogContent({
         setUserInitiatedTakeOver(true);
 
         const now = Date.now();
+        const conversationCreateTime = transcript.create_time ? new Date(transcript.create_time).getTime() : now;
         const takeoverEntry: TranscriptEntry = {
           speaker: "",
           text: "",
-          start_time: 0,
-          end_time: 0,
+          start_time: (now - conversationCreateTime) / 1000,
+          end_time: (now - conversationCreateTime) / 1000,
           create_time: now.toString(),
           type: "takeover"
         };
@@ -355,11 +356,12 @@ function TranscriptDialogContent({
     if (!chatInput.trim() || !transcript?.id) return;
 
     const now = Date.now();
+    const conversationCreateTime = transcript.create_time ? new Date(transcript.create_time).getTime() : now;
     const newEntry: TranscriptEntry = {
       speaker: "agent",
       text: chatInput.trim(),
-      start_time: now / 1000,
-      end_time: now / 1000 + 0.01,
+      start_time: (now - conversationCreateTime) / 1000,
+      end_time: (now - conversationCreateTime) / 1000 + 0.01,
       create_time: now,
     };
 
