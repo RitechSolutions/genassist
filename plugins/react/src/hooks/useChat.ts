@@ -7,16 +7,26 @@ export interface UseChatProps {
   apiKey: string;
   onError?: (error: Error) => void;
   onTakeover?: () => void;
+  onFinalize?: () => void;
 }
 
-export const useChat = ({ baseUrl, apiKey, onError, onTakeover }: UseChatProps) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export const useChat = ({ baseUrl, apiKey, onError, onTakeover, onFinalize }: UseChatProps) => {
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const storedMessages = localStorage.getItem('chatMessages');
+      return storedMessages ? JSON.parse(storedMessages) : [];
+    } catch (error) {
+      console.error('Error loading messages from localStorage:', error);
+      return [];
+    }
+  });
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const chatServiceRef = useRef<ChatService | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [possibleQueries, setPossibleQueries] = useState<string[]>([]);
   const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
+  const [isFinalized, setIsFinalized] = useState<boolean>(false);
 
   // Initialize chat service
   useEffect(() => {
@@ -33,38 +43,25 @@ export const useChat = ({ baseUrl, apiKey, onError, onTakeover }: UseChatProps) 
       }
     });
 
-    // Initialize conversation (using existing one or starting new)
-    const initChat = async () => {
-      try {
-        setConnectionState('connecting');
-        setIsLoading(true);
-        
-        if (chatServiceRef.current) {
-          const convId = await chatServiceRef.current.initializeConversation();
-          setConversationId(convId);
-          setConnectionState('connected');
-
-          // Get possible queries from API response
-          if (chatServiceRef.current.getPossibleQueries) {
-            const queries = chatServiceRef.current.getPossibleQueries();
-            if (queries && queries.length > 0) {
-              setPossibleQueries(queries);
-            }
-          }
-        }
-      } catch (error) {
-        setConnectionState('disconnected');
-        if (onError && error instanceof Error) {
-          onError(error);
-        } else {
-          console.error('Failed to initialize conversation:', error);
-        }
-      } finally {
-        setIsLoading(false);
+    chatServiceRef.current.setFinalizedHandler(() => {
+      setIsFinalized(true);
+      if (onFinalize) {
+        onFinalize();
       }
-    };
+    });
 
-    initChat();
+    chatServiceRef.current.setConnectionStateHandler(setConnectionState);
+
+    // Check for a saved conversation and connect to it
+    const convId = chatServiceRef.current.getConversationId();
+    if (convId) {
+        setConversationId(convId);
+        if (chatServiceRef.current.isConversationFinalized()) {
+          setIsFinalized(true);
+        } else {
+          chatServiceRef.current.connectWebSocket();
+        }
+    }
 
     // Cleanup
     return () => {
@@ -72,7 +69,15 @@ export const useChat = ({ baseUrl, apiKey, onError, onTakeover }: UseChatProps) 
         chatServiceRef.current.disconnect();
       }
     };
-  }, [baseUrl, apiKey, onError, onTakeover]);
+  }, [baseUrl, apiKey, onError, onTakeover, onFinalize]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('chatMessages', JSON.stringify(messages));
+    } catch (error) {
+      console.error('Error saving messages to localStorage:', error);
+    }
+  }, [messages]);
 
   // Reset conversation
   const resetConversation = useCallback(async () => {
@@ -84,6 +89,8 @@ export const useChat = ({ baseUrl, apiKey, onError, onTakeover }: UseChatProps) 
     setIsLoading(true);
     setMessages([]);
     setPossibleQueries([]);
+    localStorage.removeItem('chatMessages');
+    setIsFinalized(false);
     
     try {
       // Reset the conversation in the chat service
@@ -119,18 +126,6 @@ export const useChat = ({ baseUrl, apiKey, onError, onTakeover }: UseChatProps) 
       throw new Error('Chat service not initialized');
     }
 
-    const now = Date.now();
-    const userMessage: ChatMessage = {
-      create_time: now,
-      start_time: now / 1000,
-      end_time: now / 1000 + 0.01,
-      speaker: 'customer',
-      text
-    };
-
-    // Optimistically add user message to UI
-    // setMessages(prevMessages => [...prevMessages, userMessage]);
-    
     try {
       setIsLoading(true);
       await chatServiceRef.current.sendMessage(text);
@@ -145,14 +140,53 @@ export const useChat = ({ baseUrl, apiKey, onError, onTakeover }: UseChatProps) 
     }
   }, [onError]);
 
+  const startConversation = useCallback(async () => {
+    if (!chatServiceRef.current) {
+      return;
+    }
+    try {
+      setConnectionState('connecting');
+      setIsLoading(true);
+      
+      // Reset state for new conversation
+      setMessages([]);
+      setPossibleQueries([]);
+      localStorage.removeItem('chatMessages');
+      setIsFinalized(false);
+      chatServiceRef.current.resetConversation();
+
+      const convId = await chatServiceRef.current.startConversation();
+      setConversationId(convId);
+      setConnectionState('connected');
+
+      if (chatServiceRef.current.getPossibleQueries) {
+        const queries = chatServiceRef.current.getPossibleQueries();
+        if (queries && queries.length > 0) {
+          setPossibleQueries(queries);
+        }
+      }
+    } catch (error) {
+      setConnectionState('disconnected');
+      if (onError && error instanceof Error) {
+        onError(error);
+      } else {
+        console.error('Failed to start conversation:', error);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onError]);
+
   return {
     messages,
     isLoading,
     sendMessage,
     resetConversation,
+    startConversation,
     connectionState,
     conversationId,
     possibleQueries,
-    isTakenOver
+    isTakenOver,
+    isFinalized
   };
 }; 

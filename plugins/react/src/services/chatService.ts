@@ -6,10 +6,14 @@ export class ChatService {
   private baseUrl: string;
   private apiKey: string;
   private conversationId: string | null = null;
+  private conversationCreateTime: number | null = null; // Track conversation start time
+  private isFinalized: boolean = false;
   private webSocket: WebSocket | null = null;
   private messageHandler: ((message: ChatMessage) => void) | null = null;
   private takeoverHandler: (() => void) | null = null;
-  private storageKey = 'genassist_conversation_id';
+  private finalizedHandler: (() => void) | null = null;
+  private connectionStateHandler: ((state: 'connecting' | 'connected' | 'disconnected') => void) | null = null;
+  private storageKey = 'genassist_conversation';
   private possibleQueries: string[] = [];
 
   constructor(baseUrl: string, apiKey: string) {
@@ -27,6 +31,14 @@ export class ChatService {
     this.takeoverHandler = handler;
   }
 
+  setFinalizedHandler(handler: () => void) {
+    this.finalizedHandler = handler;
+  }
+
+  setConnectionStateHandler(handler: (state: 'connecting' | 'connected' | 'disconnected') => void) {
+    this.connectionStateHandler = handler;
+  }
+
   getPossibleQueries(): string[] {
     return this.possibleQueries;
   }
@@ -36,10 +48,13 @@ export class ChatService {
    */
   private loadSavedConversation(): void {
     try {
-      const savedConversationId = localStorage.getItem(this.storageKey);
-      if (savedConversationId) {
-        this.conversationId = savedConversationId;
-        console.log('Loaded saved conversation:', this.conversationId);
+      const savedConversation = localStorage.getItem(this.storageKey);
+      if (savedConversation) {
+        const { conversationId, createTime, isFinalized } = JSON.parse(savedConversation);
+        this.conversationId = conversationId;
+        this.conversationCreateTime = createTime;
+        this.isFinalized = isFinalized || false;
+        console.log('Loaded saved conversation:', this.conversationId, 'Finalized:', this.isFinalized);
       }
     } catch (error) {
       console.error('Error loading saved conversation:', error);
@@ -51,8 +66,13 @@ export class ChatService {
    */
   private saveConversation(): void {
     try {
-      if (this.conversationId) {
-        localStorage.setItem(this.storageKey, this.conversationId);
+      if (this.conversationId && this.conversationCreateTime) {
+        const conversationData = {
+          conversationId: this.conversationId,
+          createTime: this.conversationCreateTime,
+          isFinalized: this.isFinalized,
+        };
+        localStorage.setItem(this.storageKey, JSON.stringify(conversationData));
         console.log('Saved conversation:', this.conversationId);
       }
     } catch (error) {
@@ -72,6 +92,8 @@ export class ChatService {
     
     // Clear the conversation ID
     this.conversationId = null;
+    this.conversationCreateTime = null;
+    this.isFinalized = false;
 
     // Clear possible queries
     this.possibleQueries = [];
@@ -98,18 +120,8 @@ export class ChatService {
     return this.conversationId;
   }
 
-  /**
-   * Initialize conversation - either connect to existing one or start a new one
-   */
-  async initializeConversation(): Promise<string> {
-    // If we already have a conversation ID, connect to that
-    if (this.conversationId) {
-      this.connectWebSocket();
-      return this.conversationId;
-    }
-    
-    // Otherwise start a new conversation
-    return this.startConversation();
+  isConversationFinalized(): boolean {
+    return this.isFinalized;
   }
 
   async startConversation(): Promise<string> {
@@ -131,6 +143,9 @@ export class ChatService {
       );
 
       this.conversationId = response.data.conversation_id;
+      // Store conversation create time (use from response if available, otherwise current time)
+      this.conversationCreateTime = response.data.create_time ? response.data.create_time / 1000 : Date.now() / 1000;
+      this.isFinalized = false;
       this.saveConversation();
       this.connectWebSocket();
 
@@ -141,11 +156,11 @@ export class ChatService {
       
       // Process agent welcome message if available
       if (response.data.agent_welcome_message && this.messageHandler) {
-        const now = Date.now();
+        const now = Date.now() / 1000;
         const welcomeMessage: ChatMessage = {
           create_time: now,
-          start_time: now / 1000,
-          end_time: now / 1000 + 0.01,
+          start_time: now - this.conversationCreateTime, // Relative to conversation start
+          end_time: (now - this.conversationCreateTime) + 0.01, // Relative to conversation start
           speaker: 'agent',
           text: response.data.agent_welcome_message
         };
@@ -159,15 +174,15 @@ export class ChatService {
   }
 
   async sendMessage(message: string): Promise<void> {
-    if (!this.conversationId) {
+    if (!this.conversationId || !this.conversationCreateTime) {
       throw new Error('Conversation not started');
     }
 
-    const now = Date.now();
+    const now = Date.now() / 1000;
     const chatMessage: ChatMessage = {
-      create_time: Math.floor(now / 1000),
-      start_time: now / 1000,
-      end_time: now / 1000 + 0.01, // Just a small difference
+      create_time: now,
+      start_time: now - this.conversationCreateTime, // Relative to conversation start
+      end_time: (now - this.conversationCreateTime) + 0.01, // Relative to conversation start
       speaker: 'customer',
       text: message
     };
@@ -191,16 +206,22 @@ export class ChatService {
     }
   }
 
-  private connectWebSocket(): void {
+  connectWebSocket(): void {
+    if (this.webSocket) {
+      this.webSocket.close();
+    }
+    
     if (!this.conversationId) {
       throw new Error('Conversation ID is required for WebSocket connection');
     }
 
-    const wsUrl = `${this.baseUrl.replace('http', 'ws')}/api/conversations/ws/${this.conversationId}?api_key=${this.apiKey}&lang=en&topics=message&topics=takeover`;
+    if (this.connectionStateHandler) this.connectionStateHandler('connecting');
+    const wsUrl = `${this.baseUrl.replace('http', 'ws')}/api/conversations/ws/${this.conversationId}?api_key=${this.apiKey}&lang=en&topics=message&topics=takeover&topics=finalize`;
     this.webSocket = new WebSocket(wsUrl);
 
     this.webSocket.onopen = () => {
       console.log('WebSocket connected');
+      if (this.connectionStateHandler) this.connectionStateHandler('connected');
     };
 
     this.webSocket.onmessage = (event: IMessageEvent) => {
@@ -210,9 +231,12 @@ export class ChatService {
         if (data.type === 'message' && this.messageHandler) {
           if(Array.isArray(data.payload)) {
             const messages = data.payload as ChatMessage[]
-            messages.forEach(this.messageHandler);
+            // Adjust timestamps to be relative to conversation start
+            const adjustedMessages = messages.map(msg => this.adjustMessageTimestamps(msg));
+            adjustedMessages.forEach(this.messageHandler);
           } else {
-            this.messageHandler(data.payload as ChatMessage);
+            const adjustedMessage = this.adjustMessageTimestamps(data.payload as ChatMessage);
+            this.messageHandler(adjustedMessage);
           }
         } else if (data.type === 'takeover') {
           // Handle takeover event
@@ -220,11 +244,11 @@ export class ChatService {
           
           // Create special message for the takeover indicator
           if (this.messageHandler) {
-            const now = Date.now();
+            const now = Date.now() / 1000;
             const takeoverMessage: ChatMessage = {
               create_time: now,
-              start_time: now / 1000,
-              end_time: now / 1000 + 0.01,
+              start_time: this.conversationCreateTime ? now - this.conversationCreateTime : 0,
+              end_time: this.conversationCreateTime ? (now - this.conversationCreateTime) + 0.01 : 0.01,
               speaker: 'special',
               text: 'Supervisor took over'
             };
@@ -235,6 +259,29 @@ export class ChatService {
           if (this.takeoverHandler) {
             this.takeoverHandler();
           }
+        } else if (data.type === 'finalize') {
+          // Handle finalized event
+          console.log('Finalized event received');
+          
+          // Create special message for the finalized indicator
+          if (this.messageHandler) {
+            const now = Date.now() / 1000;
+            const finalizedMessage: ChatMessage = {
+              create_time: now,
+              start_time: this.conversationCreateTime ? now - this.conversationCreateTime : 0,
+              end_time: this.conversationCreateTime ? (now - this.conversationCreateTime) + 0.01 : 0.01,
+              speaker: 'special',
+              text: 'Conversation Finalized'
+            };
+            this.messageHandler(finalizedMessage);
+          }
+          
+          // Call the finalized handler if provided
+          if (this.finalizedHandler) {
+            this.finalizedHandler();
+          }
+          this.isFinalized = true;
+          this.saveConversation();
         }
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
@@ -243,10 +290,12 @@ export class ChatService {
 
     this.webSocket.onerror = (error: Error) => {
       console.error('WebSocket error:', error);
+      if (this.connectionStateHandler) this.connectionStateHandler('disconnected');
     };
 
     this.webSocket.onclose = (event: ICloseEvent) => {
       console.log('WebSocket closed:', event.code, event.reason);
+      if (this.connectionStateHandler) this.connectionStateHandler('disconnected');
     };
   }
 
@@ -255,5 +304,18 @@ export class ChatService {
       this.webSocket.close();
       this.webSocket = null;
     }
+  }
+
+  // Helper method to adjust message timestamps relative to conversation start
+  private adjustMessageTimestamps(message: ChatMessage): ChatMessage {
+    if (!this.conversationCreateTime) {
+      return message;
+    }
+
+    return {
+      ...message,
+      start_time: message.start_time - this.conversationCreateTime,
+      end_time: message.end_time - this.conversationCreateTime
+    };
   }
 } 

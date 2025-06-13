@@ -13,6 +13,7 @@ export interface StartConversationResponse {
   conversation_id: string;
   agent_welcome_message?: string;
   agent_possible_queries?: string[];
+  create_time?: number;
 }
 
 // Props for the GenAgentChat component
@@ -22,6 +23,7 @@ export interface GenAgentChatProps {
   userData?: Record<string, any>; // For passing user information or other metadata
   onError?: (error: Error) => void;
   onTakeover?: () => void;
+  onFinalize?: () => void;
   theme?: {
     primaryColor?: string;
     secondaryColor?: string;

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { ChatMessageComponent } from './ChatMessage';
 import { useChat } from '../hooks/useChat';
 import { ChatMessage, GenAgentChatProps } from '../types';
@@ -13,6 +13,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   userData,
   onError,
   onTakeover,
+  onFinalize,
   theme,
   headerTitle = 'Genassist',
   placeholder = 'Ask a question'
@@ -27,15 +28,18 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     isLoading, 
     sendMessage, 
     resetConversation,
+    startConversation,
     connectionState, 
     conversationId,
     possibleQueries,
-    isTakenOver
+    isTakenOver,
+    isFinalized
   } = useChat({
     baseUrl,
     apiKey,
     onError,
-    onTakeover
+    onTakeover,
+    onFinalize
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioService = useRef<AudioService | null>(null);
@@ -47,7 +51,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [baseUrl, apiKey]);
 
   // Auto-scroll to the latest message
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
@@ -115,6 +119,16 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       await sendMessage(query);
     } catch (error) {
       console.error('Error sending quick query:', error);
+    }
+  };
+
+  const handleStartConversation = async () => {
+    if (isLoading) return;
+
+    try {
+      await startConversation();
+    } catch (error) {
+      console.error('Error starting conversation:', error);
     }
   };
 
@@ -439,41 +453,53 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         </div>
       )}
       
-      <form onSubmit={handleSubmit} style={inputContainerStyle}>
-        <div style={inputWrapperStyle}>
-          <button 
-            type="button" 
-            style={attachButtonStyle}
-            title="Attach"
+      {!conversationId || isFinalized ? (
+        <div style={inputContainerStyle}>
+          <button
+            style={{...sendButtonStyle, width: '100%', height: '48px', borderRadius: '8px'}}
+            onClick={handleStartConversation}
+            disabled={isLoading}
           >
-            <Paperclip size={24} color="#757575" />
+            Start Conversation
           </button>
-          <input
-            style={inputStyle}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder={placeholder}
-            disabled={connectionState !== 'connected'}
-          />
         </div>
-        
-        <VoiceInput
-          onTranscription={handleVoiceTranscription}
-          onError={handleVoiceError}
-          baseUrl={baseUrl}
-          apiKey={apiKey}
-          theme={theme}
-        />
-        
-        <button 
-          type="submit" 
-          style={sendButtonStyle}
-          disabled={inputValue.trim() === '' || connectionState !== 'connected'}
-        >
-          <Send size={20} color="#ffffff" />
-        </button>
-      </form>
+      ) : (
+        <form onSubmit={handleSubmit} style={inputContainerStyle}>
+          <div style={inputWrapperStyle}>
+            <button 
+              type="button" 
+              style={attachButtonStyle}
+              title="Attach"
+            >
+              <Paperclip size={24} color="#757575" />
+            </button>
+            <input
+              style={inputStyle}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder={placeholder}
+              disabled={connectionState !== 'connected'}
+            />
+          </div>
+          
+          <VoiceInput
+            onTranscription={handleVoiceTranscription}
+            onError={handleVoiceError}
+            baseUrl={baseUrl}
+            apiKey={apiKey}
+            theme={theme}
+          />
+          
+          <button 
+            type="submit" 
+            style={sendButtonStyle}
+            disabled={inputValue.trim() === '' || connectionState !== 'connected'}
+          >
+            <Send size={20} color="#ffffff" />
+          </button>
+        </form>
+      )}
 
       <div style={confirmOverlayStyle}>
         <div style={confirmDialogStyle}>
