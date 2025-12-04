@@ -43,15 +43,15 @@ cd genassist
 
 ## Docker Containers
 ### Prepare .env files
-Create a .env.frontend environment file based on .env.frontend.example
-Create a .env.backend environment file based on .env.backend.example
+Create a ./frontend/.env environment file based on ./frontend/.env.example
+Create a /backend/.env environment file based on ./backend/.env.example
 
 ### Build containers from source
 ```bash
 #RUN
-docker compose -f docker-compose.dev.yml -p genassist_local_01 up --build -d
+docker compose -e ENV=dev -f docker-compose.dev.yml -p genassist_dev up --build -d
 #STOP
-docker compose -f docker-compose.dev.yml -p genassist_local_01 down
+docker compose -e ENV=dev -f docker-compose.dev.yml -p genassist_dev down
 ```
 
 ### Use container registry
@@ -69,6 +69,7 @@ docker compose -f docker-compose.yml -p genassist_local_01 down
 ```bash
 cd frontend
 ```
+Create a `.env` file in the root directory of frontend similar to .env.example:
 Follow Readme.md for frontend project
 
 Access the frontend app at: http://localhost
@@ -82,11 +83,11 @@ cd backend
 ```
 
 Create a `.env` file in the root directory of backend similar to .env.example:
-
 Follow Readme.md for backend project
 
 Access the backend API: http://localhost:8000/api
 Access API documentation: http://localhost:8000/docs
+
 Celery jobs: http://localhost:5555  (user:user1 password: password1)
 
 ## Integration Options
@@ -139,3 +140,5 @@ python -m pytest tests/ -v --cov=app --cov-report=html
 ## License
 
 [BSL]
+
+## Next Steps
