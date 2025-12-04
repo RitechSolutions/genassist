@@ -2,6 +2,9 @@
 
 GenAssist is an AI-powered platform for managing and leveraging various AI workflows, with a focus on conversation management, analytics, and agent-based interactions.
 
+[Documentation]: https://docs.genassist.ritech.io/docs/introduction
+[How-to Videos]: https://docs.genassist.ritech.io/docs/workflows/
+
 ## Overview
 
 GenAssist provides a comprehensive solution for building, managing, and deploying AI agents with the following key features:
