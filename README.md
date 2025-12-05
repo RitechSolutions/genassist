@@ -1,3 +1,6 @@
+
+<img width="2752" height="1536" alt="GenAssist_Infographic" src="https://github.com/user-attachments/assets/7f5b636c-ae01-4076-9480-b29ce84bf2ea" />
+
 # GenAssist
 
 GenAssist is an AI-powered platform for managing and leveraging various AI workflows, with a focus on conversation management, analytics, and agent-based interactions.
