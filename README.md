@@ -144,8 +144,4 @@ coverage run --source=app -m pytest -v tests && coverage report -m
 python -m pytest tests/ -v --cov=app --cov-report=html
 ```
 
-## License
 
-[BSL]
-
-## Next Steps
