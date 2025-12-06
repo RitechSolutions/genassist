@@ -10,11 +10,10 @@ from app.schemas.dynamic_form_schemas import DATA_SOURCE_SCHEMAS_DICT
 router = APIRouter()
 
 
-@router.post(
-    "/",
-    response_model=DataSourceRead,
-    dependencies=[Depends(auth), Depends(permissions("create:data_source"))],
-)
+@router.post("/", response_model=DataSourceRead, dependencies=[
+    Depends(auth),
+    Depends(permissions("create:data_source"))
+])
 async def create(
     datasource: DataSourceCreate,
     service: DataSourceService = Injected(DataSourceService),
@@ -28,47 +27,47 @@ async def get_schemas():
     return DATA_SOURCE_SCHEMAS_DICT
 
 
-@router.get(
-    "/{datasource_id}",
-    response_model=DataSourceRead,
-    dependencies=[Depends(auth), Depends(permissions("read:data_source"))],
-)
+@router.get("/{datasource_id}", response_model=DataSourceRead, dependencies=[
+    Depends(auth),
+    Depends(permissions("read:data_source"))
+])
 async def get(
     datasource_id: UUID,
     decrypt_sensitive: bool = False,
-    service: DataSourceService = Injected(DataSourceService),
+    service: DataSourceService = Injected(DataSourceService)
 ):
     return await service.get_by_id(datasource_id, decrypt_sensitive)
 
 
-@router.get(
-    "/",
-    response_model=list[DataSourceRead],
-    dependencies=[Depends(auth), Depends(permissions("read:data_source"))],
-)
-async def get_all(service: DataSourceService = Injected(DataSourceService)):
+@router.get("/", response_model=list[DataSourceRead], dependencies=[
+    Depends(auth),
+    Depends(permissions("read:data_source"))
+])
+async def get_all(
+    service: DataSourceService = Injected(DataSourceService)
+):
     return await service.get_all()
 
 
-@router.put(
-    "/{datasource_id}",
-    response_model=DataSourceRead,
-    dependencies=[Depends(auth), Depends(permissions("update:data_source"))],
-)
+@router.put("/{datasource_id}", response_model=DataSourceRead, dependencies=[
+    Depends(auth),
+    Depends(permissions("update:data_source"))
+])
 async def update(
     datasource_id: UUID,
     datasource_update: DataSourceUpdate,
-    service: DataSourceService = Injected(DataSourceService),
+    service: DataSourceService = Injected(DataSourceService)
 ):
     return await service.update(datasource_id, datasource_update)
 
 
-@router.delete(
-    "/{datasource_id}",
-    dependencies=[Depends(auth), Depends(permissions("delete:data_source"))],
-)
+@router.delete("/{datasource_id}", dependencies=[
+    Depends(auth),
+    Depends(permissions("delete:data_source"))
+])
 async def delete(
-    datasource_id: UUID, service: DataSourceService = Injected(DataSourceService)
+    datasource_id: UUID,
+    service: DataSourceService = Injected(DataSourceService)
 ):
     await service.delete(datasource_id)
     return {"message": "Datasource deleted successfully"}

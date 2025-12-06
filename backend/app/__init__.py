@@ -19,9 +19,6 @@ from app.db.multi_tenant_session import multi_tenant_manager
 from celery.schedules import crontab
 from celery import Celery
 
-from celery import Celery, current_app as current_celery_app
-from celery.schedules import crontab
-
 
 init_logging()
 logger = logging.getLogger(__name__)
@@ -146,6 +143,7 @@ def create_celery():
             "app.tasks.share_folder_tasks",
             "app.tasks.ml_model_pipeline_tasks",
             "app.tasks.kb_batch_tasks",
+
         ],
     )
 
@@ -217,20 +215,24 @@ def create_celery():
             },
         },
         # Sync active fine-tuning jobs every 2 minutes
-        "sync-active-fine-tuning-jobs": {
-            "task": "app.tasks.fine_tune_job_sync_tasks.sync_active_fine_tuning_jobs",
-            "schedule": 120.0,  # Every 2 minutes (120 seconds)
-        },
+        'sync-active-fine-tuning-jobs': {
+            'task': 'app.tasks.fine_tune_job_sync_tasks.sync_active_fine_tuning_jobs',
+            'schedule': 120.0,  # Every 2 minutes (120 seconds)
+            },
         # Check for scheduled ML model pipeline runs every minute
-        "check-scheduled-pipeline-runs": {
-            "task": "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs",
-            "schedule": 60.0,  # Every minute (60 seconds)
-        },
+        'check-scheduled-pipeline-runs': {
+            'task': 'app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs',
+            'schedule': 60.0,  # Every minute (60 seconds)
+            },
+        
+
+        
         # Sync active KB's jobs every 5 minutes
-        "summarize-files-from-azure": {
-            "task": "app.tasks.kb_batch_tasks.batch_process_files_kb",
-            "schedule": 300.0,  # Every 5 minutes (300 seconds)
-        },
+        'summarize-files-from-azure': {
+            'task': 'app.tasks.kb_batch_tasks.batch_process_files_kb',
+            'schedule': 300.0,  # Every 5 minutes (300 seconds)
+            },
+
     }
 
     return celery_app

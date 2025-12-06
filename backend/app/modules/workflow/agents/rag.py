@@ -10,7 +10,6 @@ ThreadScopedRAG: Per-Chat Retrieval-Augmented Generation (RAG) using AgentRAGSer
 
 Set the OPENAI_API_KEY environment variable before use.
 """
-
 import asyncio
 import logging
 from typing import List, Dict, Optional
@@ -52,7 +51,7 @@ def _create_default_config(chat_id: str) -> AgentRAGConfig:
         chunk_overlap=DEFAULT_CHUNK_OVERLAP,
         separators=["\n\n", "\n", " ", ""],
         keep_separator=True,
-        strip_whitespace=True,
+        strip_whitespace=True
     )
 
     # Configure OpenAI embeddings (matching original EMBEDDING_MODEL)
@@ -62,22 +61,28 @@ def _create_default_config(chat_id: str) -> AgentRAGConfig:
         api_key=settings.OPENAI_API_KEY,
         batch_size=32,
         normalize_embeddings=True,
-        device="cpu",
+        device="cpu"
     )
 
     # Configure ChromaDB vector database
-    vector_db_config = VectorDBConfig(type="chroma", collection_name=f"chat_{chat_id}")
+    vector_db_config = VectorDBConfig(
+        type="chroma",
+        collection_name=f"chat_{chat_id}"
+    )
 
     # Create vector config
     vector_config = VectorConfig(
         enabled=True,
         chunking=chunk_config,
         embedding=embedding_config,
-        vector_db=vector_db_config,
+        vector_db=vector_db_config
     )
 
     # Create AgentRAGConfig
-    return AgentRAGConfig(knowledge_base_id=chat_id, vector_config=vector_config)
+    return AgentRAGConfig(
+        knowledge_base_id=chat_id,
+        vector_config=vector_config
+    )
 
 
 @inject
@@ -135,9 +140,7 @@ class ThreadScopedRAG:
                 # Initialize service
                 success = await service.initialize()
                 if not success:
-                    logger.error(
-                        f"Failed to initialize AgentRAGService for chat {chat_id}"
-                    )
+                    logger.error(f"Failed to initialize AgentRAGService for chat {chat_id}")
                     return None
 
                 # Cache the service
@@ -167,11 +170,9 @@ class ThreadScopedRAG:
             metadata = {
                 "message_id": message_id,
                 "chat_id": chat_id,
-                "is_chunked": False,
+                "is_chunked": False
             }
-            result = await service.add_document(
-                message_id, message, metadata, legra_finalize=False
-            )
+            result = await service.add_document(message_id, message, metadata, legra_finalize=False)
             if not any(result.values()):
                 logger.warning(f"Failed to add message {message_id} to chat {chat_id}")
         except Exception as e:
@@ -183,7 +184,7 @@ class ThreadScopedRAG:
         message: str,
         message_id: str,
         chunk_long_messages: bool = True,
-        filename: Optional[str] = None,
+        filename: Optional[str] = None
     ):
         """
         Add a message to the chat's vector store.
@@ -206,24 +207,20 @@ class ThreadScopedRAG:
                 "message_id": message_id,
                 "chat_id": chat_id,
                 "is_chunked": chunk_long_messages,
-                "filename": filename,
+                "filename": filename
             }
-            result = await service.add_document(
-                message_id, message, metadata, legra_finalize=False
-            )
+            result = await service.add_document(message_id, message, metadata, legra_finalize=False)
             if not any(result.values()):
                 logger.warning(f"Failed to add message {message_id} to chat {chat_id}")
         except Exception as e:
-            logger.error(
-                f"Error adding long message {message_id} to chat {chat_id}: {e}"
-            )
+            logger.error(f"Error adding long message {message_id} to chat {chat_id}: {e}")
 
     async def add_file_content(
         self,
         chat_id: str,
         file_content: str,
         file_name: str,
-        file_id: Optional[str] = None,
+        file_id: Optional[str] = None
     ):
         """
         Convenience method to add file content with appropriate chunking.
@@ -245,7 +242,7 @@ class ThreadScopedRAG:
             message=file_context,
             message_id=f"file_{file_id}",
             chunk_long_messages=True,
-            filename=file_name,
+            filename=file_name
         )
 
     async def retrieve(self, chat_id: str, query: str, top_k: int = 5) -> List[Dict]:
@@ -268,9 +265,7 @@ class ThreadScopedRAG:
 
         try:
             # Search using AgentRAGService
-            search_results: List[SearchResult] = await service.search(
-                query, limit=top_k
-            )
+            search_results: List[SearchResult] = await service.search(query, limit=top_k)
 
             if not search_results:
                 return []
@@ -282,10 +277,16 @@ class ThreadScopedRAG:
                 metadata = result.metadata.copy() if result.metadata else {}
 
                 # Ensure backward compatibility with original format
-                retrieved_docs.append({"content": result.content, "metadata": metadata})
+                retrieved_docs.append({
+                    'content': result.content,
+                    'metadata': metadata
+                })
 
             return retrieved_docs
 
         except Exception as e:
             logger.error(f"Error retrieving from chat {chat_id}: {e}")
             return []
+
+
+

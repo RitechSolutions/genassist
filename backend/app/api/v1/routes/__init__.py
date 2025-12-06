@@ -35,7 +35,7 @@ from app.api.v1.routes import (
     playground,
     smb_share_router,
     tenants,
-    azure_blob_router,
+    azure_blob_router, 
 )
 
 
@@ -94,9 +94,7 @@ router.include_router(
 
 
 router.include_router(ml_models.router, prefix="/ml-models", tags=["ML Models"])
-router.include_router(
-    ml_model_pipeline.router, prefix="/ml-models", tags=["ML Model Pipelines"]
-)
+router.include_router(ml_model_pipeline.router, prefix="/ml-models", tags=["ML Model Pipelines"])
 router.include_router(playground.router, prefix="/playground", tags=["Playground"])
 
 router.include_router(
@@ -109,6 +107,5 @@ router.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])
 
 router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenAI API"])
 
-router.include_router(
-    azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"]
-)
+router.include_router(azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"])
+

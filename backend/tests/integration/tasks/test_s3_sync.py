@@ -15,12 +15,12 @@ def new_datasource_data():
         "name": "Test S3 Data Source",
         "source_type": "s3",
         "connection_data": {
-            "bucket_name": os.getenv("AWS_RECORDINGS_BUCKET"),  # AWS_S3_TEST_BUCKET"),
-            "prefix": "docs/",
-            "access_key": os.getenv("AWS_ACCESS_KEY_ID"),  # S3_ACCESS_KEY_ID"),
-            "secret_key": os.getenv("AWS_SECRET_ACCESS_KEY"),  # S3_SECRET_ACCESS_KEY"),
-            "region": os.getenv("AWS_REGION"),  # S3_REGION_NAME"),
-        },
+                "bucket_name": os.getenv("AWS_RECORDINGS_BUCKET"), # AWS_S3_TEST_BUCKET"),
+                "prefix": "docs/",
+                "access_key": os.getenv("AWS_ACCESS_KEY_ID"), # S3_ACCESS_KEY_ID"),
+                "secret_key": os.getenv("AWS_SECRET_ACCESS_KEY"), # S3_SECRET_ACCESS_KEY"),
+                "region": os.getenv("AWS_REGION"), # S3_REGION_NAME"),
+            },
         "is_active": 1,
     }
     return data
@@ -47,10 +47,10 @@ def new_kb_data():
                 "embedding_device_type": "cpu",
                 "chunk_strip_whitespace": True,
                 "vector_db_collection_name": "default",
-                "embedding_normalize_embeddings": True,
-            },
+                "embedding_normalize_embeddings": True
+                },
             "enabled": True,
-        },
+            },
         "sync_schedule": "0 0 * * *",  # every day at midnight
         "sync_active": True,
     }
@@ -70,14 +70,16 @@ async def create_kb(client, data):
     response = client.post("/api/genagent/knowledge/items/", json=data)
     kb_data = response.json()
     logger.info(f"knowledge base creation response: {kb_data}")
-
+    
     assert response.status_code == 200
 
     data["id"] = kb_data["id"]  # Store ID for later tests
 
 
 @pytest.mark.skip(reason="Skipping temporarily until new error is fixed")
-async def test_s3_sync_new_files(authorized_client, new_datasource_data, new_kb_data):
+async def test_s3_sync_new_files(
+    authorized_client, new_datasource_data, new_kb_data
+):
     logger.info(f"Creating datasource: {new_datasource_data}")
     await create_ds(authorized_client, new_datasource_data)
 
@@ -103,11 +105,11 @@ async def test_s3_sync_new_files(authorized_client, new_datasource_data, new_kb_
         logger.info(f"Connection data: {conn_data}")
 
         s3_client = S3Client(
-            bucket_name=new_datasource_data["connection_data"]["bucket_name"],
-            aws_access_key_id=new_datasource_data["connection_data"]["access_key"],
-            aws_secret_access_key=new_datasource_data["connection_data"]["secret_key"],
-            region_name=new_datasource_data["connection_data"]["region"],
-        )
+        bucket_name=new_datasource_data["connection_data"]["bucket_name"],
+        aws_access_key_id=new_datasource_data["connection_data"]["access_key"],
+        aws_secret_access_key=new_datasource_data["connection_data"]["secret_key"],
+        region_name=new_datasource_data["connection_data"]["region"]
+    )
 
         # Upload test file
         bucket = conn_data["bucket_name"]
@@ -122,10 +124,8 @@ async def test_s3_sync_new_files(authorized_client, new_datasource_data, new_kb_
 
         try:
             # Run import task
-            # res = await import_s3_files_to_kb_async(kbid)
-            res = authorized_client.get(
-                f"/api/genagent/knowledge/run-s3-file-sync/{kbid}"
-            )
+            #res = await import_s3_files_to_kb_async(kbid)
+            res = authorized_client.get(f"/api/genagent/knowledge/run-s3-file-sync/{kbid}")
 
             logger.info(f"Import task result: {res}")
             assert res.status_code == 200
@@ -150,9 +150,7 @@ async def test_s3_sync_new_files(authorized_client, new_datasource_data, new_kb_
                 return
 
             # delete 5 files randomly from the list
-            rand_indexes = random.sample(
-                range(len(existing_files)), len(existing_files) - 5
-            )
+            rand_indexes = random.sample(range(len(existing_files)), len(existing_files)-5)
             logger.info(f"Random indexes to delete: {rand_indexes}")
             for f in rand_indexes:
                 key = existing_files[f]["key"]
@@ -161,19 +159,15 @@ async def test_s3_sync_new_files(authorized_client, new_datasource_data, new_kb_
                 logger.info(f"Deleted test file from S3: {key}")
 
             # Run import task
-            # res = await import_s3_files_to_kb_async(kbid)
-            res = authorized_client.get(
-                f"/api/genagent/knowledge/run-s3-file-sync/{kbid}"
-            )
+            #res = await import_s3_files_to_kb_async(kbid)
+            res = authorized_client.get(f"/api/genagent/knowledge/run-s3-file-sync/{kbid}")
             logger.info(f"Import task result 2: {res}")
             assert res.status_code == 200
             res = res.json()
             assert res["status"] == "completed"
-            assert (
-                res["files_added"] == 0
-            )  # sync not run for second time because of schedule
+            assert res["files_added"] == 0#sync not run for second time because of schedule
 
-            # update last sync time of KB to be able to run the task again
+            #update last sync time of KB to be able to run the task again
             kb_response = authorized_client.get(f"/api/genagent/knowledge/items/{kbid}")
             assert kb_response.status_code == 200
             kb_data = kb_response.json()
@@ -181,26 +175,22 @@ async def test_s3_sync_new_files(authorized_client, new_datasource_data, new_kb_
             authorized_client.put(f"/api/genagent/knowledge/items/{kbid}", json=kb_data)
 
             # Run import task
-            # res = await import_s3_files_to_kb_async(kbid)
-            res = authorized_client.get(
-                f"/api/genagent/knowledge/run-s3-file-sync/{kbid}"
-            )
+            #res = await import_s3_files_to_kb_async(kbid)
+            res = authorized_client.get(f"/api/genagent/knowledge/run-s3-file-sync/{kbid}")
             logger.info(f"Import task result 3: {res}")
             assert res.status_code == 200
             res = res.json()
             assert res["status"] == "completed"
-            assert (
-                res["files_deleted"] == len(rand_indexes) + 1
-            )  # including 1 more file that gets added from KB content during load_knowledge_base
+            assert res["files_deleted"] == len(rand_indexes)+1 #including 1 more file that gets added from KB content during load_knowledge_base
 
         except Exception as e:
             logger.error(f"Error during import task: {e}")
             import traceback
-
-            logger.error("".join(traceback.format_exception(e)))
+            logger.error(''.join(traceback.format_exception(e)))
 
             assert False, f"Import task failed with error: {e}"
 
         finally:
             # Remove explicit session close since it's managed by the fixture
             pass
+

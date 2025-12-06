@@ -95,7 +95,8 @@ async def create_knowledge_item(
     result = await knowledge_service.create(item)
 
     # Load knowledge item using simplified manager
-    asyncio.create_task(rag_manager.load_knowledge_items([result], action="create"))
+    asyncio.create_task(rag_manager.load_knowledge_items(
+        [result], action="create"))
 
     return result
 
@@ -120,7 +121,8 @@ async def update_knowledge_item(
 
     # Ensure the ID in the path matches the ID in the body
     if "id" in item and item.id != item_id:
-        raise HTTPException(status_code=400, detail="ID in path must match ID in body")
+        raise HTTPException(
+            status_code=400, detail="ID in path must match ID in body")
 
     logger.info(f"update_knowledge_item route trigger : item = {item}")
 
@@ -131,7 +133,8 @@ async def update_knowledge_item(
     result = await knowledge_service.update(item_id, item)
 
     # Load knowledge item using simplified manager
-    _ = asyncio.create_task(rag_manager.load_knowledge_items([result], action="update"))
+    _ = asyncio.create_task(
+        rag_manager.load_knowledge_items([result], action="update"))
 
     return result
 
@@ -209,13 +212,10 @@ async def upload_file(
             )
 
             # Generate a unique filename
-            file_extension = (
-                file.filename.split(".")[-1] if "." in file.filename else ""
-            )
+            file_extension = file.filename.split(
+                ".")[-1] if "." in file.filename else ""
             unique_filename = (
-                f"{uuid.uuid4()}.{file_extension}"
-                if file_extension
-                else f"{uuid.uuid4()}"
+                f"{uuid.uuid4()}.{file_extension}" if file_extension else f"{uuid.uuid4()}"
             )
             file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
@@ -241,8 +241,7 @@ async def upload_file(
         except Exception as e:
             logger.error(f"Error uploading file: {str(e)}")
             raise HTTPException(
-                status_code=500, detail=f"Error uploading file: {str(e)}"
-            )
+                status_code=500, detail=f"Error uploading file: {str(e)}")
 
     logger.info(f"All uploads successful: {results}")
     return results
@@ -268,7 +267,8 @@ async def upload_file_to_chat(
         )
 
         # Generate a unique filename
-        file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
+        file_extension = file.filename.split(
+            ".")[-1] if "." in file.filename else ""
         if file_extension.lower() not in ["pdf", "docx", "txt", "jpg", "jpeg", "png"]:
             raise HTTPException(
                 status_code=400,
@@ -319,7 +319,8 @@ async def upload_file_to_chat(
         return result
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error uploading file: {str(e)}")
 
 
 @router.get(
@@ -375,7 +376,8 @@ async def finalize_legra_knowledgebase(
         # Update knowledge base to mark LEGRA as finalized
         knowledge_base.legra_finalize = True
         await knowledge_service.update(
-            knowledge_base.id, KBCreate(**knowledge_base.model_dump(exclude={"id"}))
+            knowledge_base.id, KBCreate(
+                **knowledge_base.model_dump(exclude={"id"}))
         )
         return {
             "status": "success",
@@ -390,7 +392,8 @@ async def finalize_legra_knowledgebase(
 
 @router.post(
     "/process-files/",
-    dependencies=[Depends(auth), Depends(permissions("update:knowledge_base"))],
+    dependencies=[Depends(auth), Depends(
+        permissions("update:knowledge_base"))],
 )
 async def process_files(files: list[UploadFile] = File(...)):
 

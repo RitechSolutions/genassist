@@ -3,7 +3,6 @@ import logging
 import pytest
 import uuid
 from pathlib import Path
-
 logger = logging.getLogger(__name__)
 
 
@@ -14,7 +13,8 @@ async def test_create_and_ask_cot_agent(authorized_client):
     # Get the directory of the current test file
     current_dir = Path(__file__).parent
 
-    json_path = current_dir.joinpath("agent_test_data").joinpath("cot_wf_data.json")
+    json_path = current_dir.joinpath(
+        "agent_test_data").joinpath("cot_wf_data.json")
     json_str = json_path.read_text()
 
     # Create agent configuration
@@ -25,15 +25,15 @@ async def test_create_and_ask_cot_agent(authorized_client):
         "welcome_message": "Welcome, I can help you about reasoning and complex queries.",
         "possible_queries": [
             "What are the usual steps in a operator-customer interaction?",
-            "",
+            ""
         ],
     }
 
     agent_response = authorized_client.post(
-        "/api/genagent/agents/configs", json=agent_data
-    )
+        "/api/genagent/agents/configs", json=agent_data)
     if agent_response.status_code != 200:
-        logger.info(f"Error response in agent creation: {agent_response.json()}")
+        logger.info(
+            f"Error response in agent creation: {agent_response.json()}")
 
     assert agent_response.status_code == 200
 
@@ -49,17 +49,21 @@ async def test_create_and_ask_cot_agent(authorized_client):
     sample_wf["id"] = workflow_id
 
     # Create wf
-    wf_response = authorized_client.post("/api/genagent/workflow", json=sample_wf)
+    wf_response = authorized_client.post(
+        "/api/genagent/workflow", json=sample_wf)
     if wf_response.status_code not in (200, 201):
-        logger.info(f"Error response in workflow creation: {wf_response.json()}")
+        logger.info(
+            f"Error response in workflow creation: {wf_response.json()}")
     assert wf_response.status_code in (200, 201)
     wf_id = wf_response.json()["id"]
     logger.info(f"Created wf with ID: {wf_id}")
 
     # Initialize agent using the /switch endpoint
-    switch_response = authorized_client.post(f"/api/genagent/agents/switch/{agent_id}")
+    switch_response = authorized_client.post(
+        f"/api/genagent/agents/switch/{agent_id}")
     if switch_response.status_code != 200:
-        logger.info(f"Error response in switch agent: {switch_response.json()}")
+        logger.info(
+            f"Error response in switch agent: {switch_response.json()}")
     assert switch_response.status_code == 200
 
     # Create a thread ID for the conversation
@@ -74,18 +78,20 @@ async def test_create_and_ask_cot_agent(authorized_client):
             "base_url": "api.restful-api.dev",
             "thread_id": thread_id,
             "user_id": "test_user_id",
-            "user_name": "test_user_name",
+            "user_name": "test_user_name"
         },
-        "workflow": wf_response.json(),
+        "workflow": wf_response.json()
     }
 
-    response = authorized_client.post("/api/genagent/workflow/test", json=test_data)
+    response = authorized_client.post(
+        "/api/genagent/workflow/test", json=test_data)
     if response.status_code != 200:
-        logger.info("Agent query failed with status code: %s", response.status_code)
+        logger.info("Agent query failed with status code: %s",
+                    response.status_code)
         logger.info("Error response: %s", response.json())
     assert response.status_code == 200
     response_data = response.json()
-    logger.info("Agent response:" + str(response_data))
+    logger.info("Agent response:"+str(response_data))
 
     # Verify response contains relevant information
     assert "customer" in response_data["output"]

@@ -254,7 +254,8 @@ async def test_workflow(
 
     # Validate input data
     if not input_data:
-        raise HTTPException(status_code=400, detail="Input message is required")
+        raise HTTPException(
+            status_code=400, detail="Input message is required")
 
     try:
         # Determine workflow source
@@ -307,7 +308,10 @@ async def test_workflow(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/dialog_schema/{node_type}", dependencies=[Depends(auth)])
+@router.get(
+    "/dialog_schema/{node_type}",
+    dependencies=[Depends(auth)]
+)
 async def get_node_dialog_schema(node_type: str):
     if node_type not in SUPPORTED_NODE_TYPES:
         raise HTTPException(
@@ -405,7 +409,8 @@ async def generate_python_template(
                 )
             default_model_id = str(
                 next(
-                    (c for c in configs if getattr(c, "is_default", 0) == 1), configs[0]
+                    (c for c in configs if getattr(
+                        c, "is_default", 0) == 1), configs[0]
                 ).id
             )
             llm = await llm_provider.get_model(default_model_id)
@@ -436,7 +441,7 @@ Return ONLY the modified Python code, nothing else.
             # Remove code block markers if present
             if modified_template.strip().startswith("```python"):
                 modified_template = modified_template.strip()[
-                    len("```python") :
+                    len("```python"):
                 ].lstrip("\n")
             if modified_template.strip().endswith("```"):
                 modified_template = modified_template.strip()

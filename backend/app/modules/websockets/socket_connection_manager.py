@@ -28,9 +28,7 @@ class SocketConnectionManager:
         self._rooms: Dict[Hashable, List[Connection]] = {}
         self._lock = asyncio.Lock()
 
-    def _get_tenant_aware_room_id(
-        self, room_id: Hashable, tenant_id: str | None
-    ) -> Hashable:
+    def _get_tenant_aware_room_id(self, room_id: Hashable, tenant_id: str | None) -> Hashable:
         """
         Create a tenant-aware room ID for proper multi-tenant isolation.
         """
@@ -68,7 +66,7 @@ class SocketConnectionManager:
         self,
         websocket: WebSocket,
         room_id: Hashable | None = None,
-        tenant_id: str | None = None,
+        tenant_id: str | None = None
     ) -> None:
         """
         Disconnect a WebSocket connection.
@@ -80,18 +78,12 @@ class SocketConnectionManager:
         async with self._lock:
             if room_id is not None:
                 # Direct disconnect from known room
-                tenant_aware_room_id = self._get_tenant_aware_room_id(
-                    room_id, tenant_id
-                )
+                tenant_aware_room_id = self._get_tenant_aware_room_id(room_id, tenant_id)
                 conns = self._rooms.get(tenant_aware_room_id, [])
-                self._rooms[tenant_aware_room_id] = [
-                    c for c in conns if c.websocket is not websocket
-                ]
+                self._rooms[tenant_aware_room_id] = [c for c in conns if c.websocket is not websocket]
                 if not self._rooms[tenant_aware_room_id]:
                     del self._rooms[tenant_aware_room_id]
-                    logger.debug(
-                        f"Room {tenant_aware_room_id} removed (no connections)"
-                    )
+                    logger.debug(f"Room {tenant_aware_room_id} removed (no connections)")
             else:
                 # Search all rooms for this websocket (for unexpected disconnects)
                 rooms_to_remove = []
@@ -99,9 +91,7 @@ class SocketConnectionManager:
                     filtered_conns = [c for c in conns if c.websocket is not websocket]
                     if len(filtered_conns) < len(conns):
                         # Found the connection in this room
-                        found_conn = next(
-                            (c for c in conns if c.websocket is websocket), None
-                        )
+                        found_conn = next((c for c in conns if c.websocket is websocket), None)
                         if found_conn:
                             logger.debug(
                                 f"Disconnecting websocket from room {room_id_key} "
@@ -135,20 +125,14 @@ class SocketConnectionManager:
                 for conn in conns:
                     total += 1
                     tenant = conn.tenant_id or "none"
-                    connections_by_tenant[tenant] = (
-                        connections_by_tenant.get(tenant, 0) + 1
-                    )
-                    connections_by_user[conn.user_id] = (
-                        connections_by_user.get(conn.user_id, 0) + 1
-                    )
+                    connections_by_tenant[tenant] = connections_by_tenant.get(tenant, 0) + 1
+                    connections_by_user[conn.user_id] = connections_by_user.get(conn.user_id, 0) + 1
 
             return {
                 "total_connections": total,
                 "rooms_count": len(self._rooms),
                 "connections_by_tenant": connections_by_tenant,
-                "connections_by_user": {
-                    str(k): v for k, v in connections_by_user.items()
-                },
+                "connections_by_user": {str(k): v for k, v in connections_by_user.items()},
             }
 
     async def broadcast(

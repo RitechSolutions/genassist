@@ -22,14 +22,12 @@ logger = logging.getLogger(__name__)
 class AgentConfigService:
     """Service for managing agent configurations"""
 
-    def __init__(
-        self,
-        repository: AgentRepository,
-        operator_service: OperatorService,
-        workflow_service: WorkflowService,
-        user_types_repository: UserTypesRepository,
-        db: AsyncSession,
-    ):
+    def __init__(self, repository: AgentRepository,
+                 operator_service: OperatorService,
+                 workflow_service: WorkflowService,
+                 user_types_repository: UserTypesRepository,
+                 db: AsyncSession,
+                 ):
         self.repository = repository
         self.operator_service = operator_service
         self.workflow_service = workflow_service
@@ -83,39 +81,29 @@ class AgentConfigService:
         agent_data["operator_id"] = operator.id
         # Store as semi-colon separated string
         agent_data["possible_queries"] = ";".join(
-            agent_data.get("possible_queries", "")
-        )
+            agent_data.get("possible_queries", ""))
         agent_data["thinking_phrases"] = ";".join(
-            agent_data.get("thinking_phrases", "")
-        )
+            agent_data.get("thinking_phrases", ""))
         # Handle image blob - if it's provided, it should already be bytes
         if "welcome_image" in agent_data and agent_data["welcome_image"] is not None:
             if isinstance(agent_data["welcome_image"], str):
                 # If it's a string, convert to bytes (assuming it's base64 encoded)
                 import base64
-
-                agent_data["welcome_image"] = base64.b64decode(
-                    agent_data["welcome_image"]
-                )
+                agent_data["welcome_image"] = base64.b64decode(agent_data["welcome_image"])
         orm_agent = AgentModel(**agent_data)
 
         created_agent = await self.repository.create(orm_agent)
         await self.db.refresh(created_agent)
 
         old_workflow = await self.workflow_service.get_by_id(created_agent.workflow_id)
-        await self.workflow_service.update(
-            created_agent.workflow_id,
-            WorkflowUpdate(
-                name=old_workflow.name,
-                description=old_workflow.description,
-                nodes=old_workflow.nodes,
-                edges=old_workflow.edges,
-                executionState=old_workflow.executionState,
-                user_id=user_id,
-                version=old_workflow.version,
-                agent_id=created_agent.id,
-            ),
-        )
+        await self.workflow_service.update(created_agent.workflow_id, WorkflowUpdate(name=old_workflow.name,
+                                                                                     description=old_workflow.description,
+                                                                                     nodes=old_workflow.nodes,
+                                                                                     edges=old_workflow.edges,
+                                                                                     executionState=old_workflow.executionState,
+                                                                                     user_id=user_id,
+                                                                                     version=old_workflow.version,
+                                                                                     agent_id=created_agent.id))
 
         # await self.db.commit()
 
@@ -125,7 +113,9 @@ class AgentConfigService:
         # small helper; cache or query UserTypesRepository as you already do
         return (await self.user_types_repository.get_by_name("console")).id
 
-    async def update(self, agent_id: UUID, agent_update: AgentUpdate) -> AgentModel:
+    async def update(
+            self, agent_id: UUID, agent_update: AgentUpdate
+    ) -> AgentModel:
         agent: AgentModel | None = await self.repository.get_by_id(agent_id)
         if not agent:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
@@ -138,31 +128,27 @@ class AgentConfigService:
         # Store as semi-colon separated string
         if "possible_queries" in scalar_changes:
             scalar_changes["possible_queries"] = ";".join(
-                scalar_changes["possible_queries"]
-            )
+                scalar_changes["possible_queries"])
         if "thinking_phrases" in scalar_changes:
             scalar_changes["thinking_phrases"] = ";".join(
-                scalar_changes["thinking_phrases"]
-            )
+                scalar_changes["thinking_phrases"])
         # Handle image blob
-        if (
-            "welcome_image" in scalar_changes
-            and scalar_changes["welcome_image"] is not None
-        ):
+        if "welcome_image" in scalar_changes and scalar_changes["welcome_image"] is not None:
             if isinstance(scalar_changes["welcome_image"], str):
                 # If it's a string, convert to bytes (assuming it's base64 encoded)
                 import base64
-
-                scalar_changes["welcome_image"] = base64.b64decode(
-                    scalar_changes["welcome_image"]
-                )
+                scalar_changes["welcome_image"] = base64.b64decode(scalar_changes["welcome_image"])
         for field, value in scalar_changes.items():
             setattr(agent, field, value)
 
-        updated = await self.repository.update(agent)
+        updated = await self.repository.update(
+            agent
+        )
         return updated
 
-    async def switch_agent(self, agent_id: UUID, switch: bool) -> AgentModel:
+    async def switch_agent(
+            self, agent_id: UUID, switch: bool
+    ) -> AgentModel:
         agent: AgentModel | None = await self.repository.get_by_id(agent_id)
         if not agent:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
@@ -185,13 +171,11 @@ class AgentConfigService:
     async def get_by_user_id(self, user_id: UUID) -> AgentModel:
         agent = await self.repository.get_by_user_id(user_id)
         if not agent:
-            logger.debug("No agent for userid:" + str(user_id))
+            logger.debug("No agent for userid:"+str(user_id))
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
         return agent
 
-    async def upload_welcome_image(
-        self, agent_id: UUID, image_data: bytes
-    ) -> AgentModel:
+    async def upload_welcome_image(self, agent_id: UUID, image_data: bytes) -> AgentModel:
         """Upload welcome image for an agent"""
         agent = await self.repository.get_by_id(agent_id)
         if not agent:

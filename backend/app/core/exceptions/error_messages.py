@@ -8,7 +8,6 @@ from app.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-
 class ErrorKey(Enum):
     INTERNAL_ERROR = "error_500"
     NOT_FOUND = "not_found"
@@ -41,12 +40,12 @@ class ErrorKey(Enum):
     FILE_SIZE_TOO_LARGE = "FILE_SIZE_TOO_LARGE"
     MISSING_OPEN_AI_API_KEY = "MISSING_OPEN_AI_API_KEY"
     GPT_RETURNED_INCOMPLETE_RESULT = "GPT_RETURNED_INCOMPLETE_RESULT"
-    GPT_FAILED_JSON_PARSING = ("GPT_FAILED_JSON_PARSING",)
-    GPT_TRANSCRIPT_QUESTION_ERROR = ("GPT_TRANSCRIPT_QUESTION_ERROR",)
+    GPT_FAILED_JSON_PARSING = "GPT_FAILED_JSON_PARSING",
+    GPT_TRANSCRIPT_QUESTION_ERROR = "GPT_TRANSCRIPT_QUESTION_ERROR",
     USER_TYPE_NOT_FOUND = "USER_TYPE_NOT_FOUND"
-    ROLE_NOT_FOUND = ("ROLE_NOT_FOUND",)
-    INVALID_USER = ("INVALID_USER",)
-    API_KEY_NOT_FOUND = ("API_KEY_NOT_FOUND",)
+    ROLE_NOT_FOUND = "ROLE_NOT_FOUND",
+    INVALID_USER = "INVALID_USER",
+    API_KEY_NOT_FOUND = "API_KEY_NOT_FOUND",
     API_KEY_NAME_EXISTS = "API_KEY_NAME_EXISTS"
     NOT_AUTHORIZED_ACCESS_RESOURCE = "NOT_AUTHORIZED_ACCESS_RESOURCE"
     PERMISSION_NOT_FOUND = "PERMISSION_NOT_FOUND"
@@ -60,14 +59,14 @@ class ErrorKey(Enum):
     CONVERSATION_TAKEN_OVER_OTHER = "CONVERSATION_TAKEN_OVER_OTHER"
     DATASOURCE_NOT_FOUND = "DATASOURCE_NOT_FOUND"
     WEBHOOK_NOT_FOUND = "WEBHOOK_NOT_FOUND"
-    LLM_PROVIDER_NOT_FOUND = ("LLM_PROVIDER_NOT_FOUND",)
+    LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND",
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
-    NOT_AUTHORIZED_TO_TAKE_OVER = ("NOT_AUTHORIZED_TO_TAKE_OVER",)
-    TOOL_NOT_FOUND = ("TOOL_NOT_FOUND",)
-    TOOL_CREATION_FAILED = ("TOOL_CREATION_FAILED",)
-    TOOL_UPDATE_FAILED = ("TOOL_UPDATE_FAILED",)
-    TOOL_DELETION_FAILED = ("TOOL_DELETION_FAILED",)
-    KB_NOT_FOUND = ("KB_NOT_FOUND",)
+    NOT_AUTHORIZED_TO_TAKE_OVER = "NOT_AUTHORIZED_TO_TAKE_OVER",
+    TOOL_NOT_FOUND = "TOOL_NOT_FOUND",
+    TOOL_CREATION_FAILED = "TOOL_CREATION_FAILED",
+    TOOL_UPDATE_FAILED = "TOOL_UPDATE_FAILED",
+    TOOL_DELETION_FAILED = "TOOL_DELETION_FAILED",
+    KB_NOT_FOUND = "KB_NOT_FOUND",
     AGENT_NOT_ACTIVE = "AGENT_NOT_ACTIVE"
     # MISSING_API_KEY_LLM_PROVIDER = "MISSING_API_KEY_LLM_PROVIDER"
     EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS"
@@ -76,14 +75,14 @@ class ErrorKey(Enum):
     APP_SETTINGS_NOT_FOUND = "APP_SETTINGS_NOT_FOUND"
     FEATURE_FLAG_NOT_FOUND = "FEATURE_FLAG_NOT_FOUND"
     WORKFLOW_NOT_FOUND = "WORKFLOW_NOT_FOUND"
-    OPERATOR_ROLE_MISSING = ("OPERATOR_ROLE_MISSING",)
+    OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING",
     CREATE_USER_TYPE_IN_MENU = "CREATE_USER_TYPE_IN_MENU"
     LOGIN_ERROR_CONSOLE_USER = "LOGIN_ERROR_CONSOLE_USER"
     INVALID_API_KEY_ENCRYPTION = "INVALID_API_KEY_ENCRYPTION"
     CONVERSATION_MUST_START_EMPTY = "CONVERSATION_MUST_START_EMPTY"
-    FORCE_PASSWORD_UPDATE = ("FORCE_PASSWORD_UPDATE",)
-    MISSING_URL = ("MISSING_URL",)
-    INVALID_USER_CONSOLE = ("INVALID_USER_CONSOLE",)
+    FORCE_PASSWORD_UPDATE = "FORCE_PASSWORD_UPDATE",
+    MISSING_URL = "MISSING_URL",
+    INVALID_USER_CONSOLE = "INVALID_USER_CONSOLE",
     FINALIZE_LEGRA_NOT_ENABLED = "FINALIZE_LEGRA_NOT_ENABLED"
     REQUIRED_INTERVAL_VALUES = "REQUIRED_INTERVAL_VALUES"
     FAIL_CREATE_EVENT_OFFICE_365 = "FAIL_EVENT_OFFICE_365"
@@ -115,7 +114,7 @@ class ErrorKey(Enum):
     ERROR_DELETE_FILE_OPEN_AI = "ERROR_DELETE_FILE_OPEN_AI"
     ERROR_CANCEL_JOB_OPEN_AI = "ERROR_CANCEL_JOB_OPEN_AI"
     ERROR_DELETE_MODEL = "ERROR_DELETE_MODEL"
-    ERROR_FETCH_FILES_OPEN_AI = ("ERROR_FETCH_FILES_OPEN_AI",)
+    ERROR_FETCH_FILES_OPEN_AI = "ERROR_FETCH_FILES_OPEN_AI",
     ERROR_JOB_OPEN_AI_EVENT = "ERROR_JOB_OPEN_AI_EVENT"
     ERROR_JOB_NOT_FOUND = "ERROR_JOB_NOT_FOUND"
     ERROR_JOB_EVENTS = "ERROR_JOB_EVENTS"
@@ -123,11 +122,10 @@ class ErrorKey(Enum):
     ERROR_JOB_EVENTS_SYNC = "ERROR_ERROR_JOB_EVENTS_SYNC"
     ERROR_JOB_EVENT_BY_ID = "ERROR_JOB_EVENT_BY_ID"
 
-
 ERROR_MESSAGES = {
-    "en": {
-        ErrorKey.INTERNAL_ERROR: "An internal server error occurred. Please try again later.",
-        ErrorKey.NOT_FOUND: "The requested resource was not found.",
+    'en': {
+        ErrorKey.INTERNAL_ERROR: 'An internal server error occurred. Please try again later.',
+        ErrorKey.NOT_FOUND: 'The requested resource was not found.',
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",
@@ -199,7 +197,7 @@ ERROR_MESSAGES = {
         ErrorKey.INVALID_USER_CONSOLE: "Invalid user console type.",
         ErrorKey.FINALIZE_LEGRA_NOT_ENABLED: "Cannot finalize knowledge base with legra disabled.",
         ErrorKey.REQUIRED_INTERVAL_VALUES: "The fields hostility_neutral_max and hostility_positive_max are required "
-        "when filtering by sentiment.",
+                                           "when filtering by sentiment.",
         ErrorKey.FAIL_CREATE_EVENT_OFFICE_365: "Failed to create event with office 365.",
         ErrorKey.MISSING_DATA_SOURCE_ID: "Missing data source ID.",
         ErrorKey.TOO_MANY_RESULTS: "Too many results requested, maximum is 100.",
@@ -236,19 +234,15 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_ACTIVE_JOB_EVENTS_SYNC: "There was an error syncing active job events.",
         ErrorKey.ERROR_JOB_EVENTS_SYNC: "There was an error syncing job events.",
         ErrorKey.ERROR_JOB_EVENT_BY_ID: "There was an error fetching job events for this job id.",
-    },
-    "fr": {
-        ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
-    },
+},
+    'fr': {
+        ErrorKey.INTERNAL_ERROR: 'Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.',
+    }
 }
 
 
-def get_error_message(
-    error_key: ErrorKey,
-    request: Request = None,
-    lang: str = "en",
-    error_variables: list[str] = immutable_list(),
-):
+def get_error_message(error_key: ErrorKey, request: Request = None, lang: str = 'en', error_variables: list[str] =
+                        immutable_list()):
     """
     Retrieves an error message dynamically based on the user's language preference.
     Falls back to DEFAULT_LANGUAGE if no valid language is found.
@@ -258,34 +252,25 @@ def get_error_message(
         raise ValueError(f"Invalid error key: {error_key}")
 
     # Fetch language from request (query param or header)
-    user_lang = (
-        (request.query_params.get("lang") or request.headers.get("Accept-Language"))
-        if request
-        else lang
-    )
+    user_lang = ((request.query_params.get("lang") or request.headers.get("Accept-Language")) if request else
+                  lang)
 
     # Use default language if unsupported
-    lang = (
-        user_lang
-        if user_lang in settings.SUPPORTED_LANGUAGES
-        else settings.DEFAULT_LANGUAGE
-    )
+    lang = user_lang if user_lang in settings.SUPPORTED_LANGUAGES else settings.DEFAULT_LANGUAGE
 
-    return (
-        ERROR_MESSAGES.get(lang, ERROR_MESSAGES[lang]).get(error_key, error_key.value)
-    ).format(*error_variables)
+    return ((ERROR_MESSAGES.get(lang, ERROR_MESSAGES[lang]).get(error_key, error_key.value))
+            .format(*error_variables))
 
 
 def validate_error_messages():
     """Logs a warning if a language is missing keys instead of failing."""
-    base_lang = "en"
+    base_lang = 'en'
     base_keys = set(ERROR_MESSAGES[base_lang].keys())
 
     for lang, messages in ERROR_MESSAGES.items():
         missing_keys = base_keys - set(messages.keys())
         if missing_keys:
             logger.warning(f"Warning: Missing keys in '{lang}': {missing_keys}")
-
 
 # TODO uncomment in case we add other languages in the future and want warnings about missing keys
 # validate_error_messages()

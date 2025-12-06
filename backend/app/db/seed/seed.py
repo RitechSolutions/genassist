@@ -46,9 +46,7 @@ from app.schemas.app_settings import AppSettingsCreate
 logger = logging.getLogger(__name__)
 
 
-def create_crud_permissions(
-    resource: str, description_template: str = "Allows {action} {resource} data"
-):
+def create_crud_permissions(resource: str, description_template: str = "Allows {action} {resource} data"):
     """Helper function to generate CRUD permissions for a resource."""
     actions = ["create", "read", "update", "delete"]
     return [
@@ -56,8 +54,7 @@ def create_crud_permissions(
             name=f"{action}:{resource}",
             is_active=True,
             description=description_template.format(
-                action=action, resource=resource.replace("_", " ")
-            ),
+                action=action, resource=resource.replace('_', ' '))
         )
         for action in actions
     ]
@@ -68,11 +65,13 @@ async def seed_data(session: AsyncSession, injector: Injector):
     from app import settings
 
     # Create roles
-    admin_role = RoleModel(name="admin", role_type="external", is_active=1)
-    supervisor_role = RoleModel(name="supervisor", role_type="external", is_active=1)
-    operator_role = RoleModel(name="operator", role_type="internal", is_active=1)
-    api_role = RoleModel(name="api", role_type="external", is_active=1)
-    agent_role = RoleModel(name="ai agent", role_type="internal", is_active=1)
+    admin_role = RoleModel(name='admin', role_type="external", is_active=1)
+    supervisor_role = RoleModel(
+        name='supervisor', role_type="external", is_active=1)
+    operator_role = RoleModel(
+        name='operator', role_type="internal", is_active=1)
+    api_role = RoleModel(name='api', role_type="external", is_active=1)
+    agent_role = RoleModel(name='ai agent', role_type="internal", is_active=1)
 
     # Create CRUD permissions
     user_permissions = create_crud_permissions("user")
@@ -91,321 +90,239 @@ async def seed_data(session: AsyncSession, injector: Injector):
 
     audit_log_permissions = create_crud_permissions("audit_log")
     conversation_in_progress_permissions = create_crud_permissions(
-        "in_progress_conversation"
-    )
+        "in_progress_conversation")
     app_settings_permissions = create_crud_permissions("app_settings")
     feature_flag_permissions = create_crud_permissions("feature_flag")
 
-    takeover_supervisor_permission = PermissionModel(
-        name="takeover_in_progress_conversation",
-        description="Allow takeover of in progress conversation.",
-        is_active=True,
-    )
+    takeover_supervisor_permission = PermissionModel(name='takeover_in_progress_conversation',
+                                                     description='Allow takeover of in progress conversation.',
+                                                     is_active=True)
 
     # Create non-CRUD permissions
     non_standard_crud_permissions = [
         takeover_supervisor_permission,
+        PermissionModel(name='create:analyze_recording',
+                        description='Allow analysis and transcription of audio record.', is_active=True),
+        PermissionModel(name='create:ask_question',
+                        description='Allow asking questions to LLM.', is_active=True),
+        PermissionModel(name='create:upload_transcript',
+                        description='Allow transcript upload.', is_active=True),
+        PermissionModel(name='read:files',
+                        description='Allow reading files.', is_active=True),
         PermissionModel(
-            name="create:analyze_recording",
-            description="Allow analysis and transcription of audio record.",
-            is_active=True,
-        ),
-        PermissionModel(
-            name="create:ask_question",
-            description="Allow asking questions to LLM.",
-            is_active=True,
-        ),
-        PermissionModel(
-            name="create:upload_transcript",
-            description="Allow transcript upload.",
-            is_active=True,
-        ),
-        PermissionModel(
-            name="read:files", description="Allow reading files.", is_active=True
-        ),
-        PermissionModel(name="*", description="Allow everything", is_active=True),
+            name='*', description='Allow everything', is_active=True),
     ]
 
     # Assign all permissions to admin
     for permission in (
-        user_permissions
-        + user_type_permissions
-        + role_prm_permissions
-        + prm_permissions
-        + apikey_permissions
-        + recording_permissions
-        + conversation_permissions
-        + llm_analyst_permissions
-        + llm_provider_permissions
-        + operator_permissions
-        + data_sources_permissions
-        + role_permissions
-        + audit_log_permissions
-        + conversation_in_progress_permissions
-        + metrics_permissions
-        + non_standard_crud_permissions
-        + app_settings_permissions
-        + feature_flag_permissions
+            user_permissions + user_type_permissions + role_prm_permissions + prm_permissions + apikey_permissions + recording_permissions +
+            conversation_permissions + llm_analyst_permissions + llm_provider_permissions + operator_permissions +
+            data_sources_permissions + role_permissions + audit_log_permissions +
+            conversation_in_progress_permissions + metrics_permissions +
+            non_standard_crud_permissions + app_settings_permissions + feature_flag_permissions
     ):
-        admin_role.role_permissions.append(RolePermissionModel(permission=permission))
+        admin_role.role_permissions.append(
+            RolePermissionModel(permission=permission))
 
     # Assign supervisor permissions
     for permission in operator_permissions:
         if permission.name in ("read:operator", "update:operator"):
             supervisor_role.role_permissions.append(
-                RolePermissionModel(permission=permission)
-            )
+                RolePermissionModel(permission=permission))
 
     supervisor_role.role_permissions.append(
-        RolePermissionModel(permission=takeover_supervisor_permission)
-    )
+        RolePermissionModel(permission=takeover_supervisor_permission))
 
     # Assign operator permissions
     for permission in operator_permissions:
         if permission.name == "read:operator":
             operator_role.role_permissions.append(
-                RolePermissionModel(permission=permission)
-            )
+                RolePermissionModel(permission=permission))
 
     for permission in conversation_permissions:
         if permission.name == "read:conversation":
             operator_role.role_permissions.append(
-                RolePermissionModel(permission=permission)
-            )
+                RolePermissionModel(permission=permission))
 
     # Assign api role permissions
     for permission in operator_permissions:
         if permission.name == "read:operator":
-            api_role.role_permissions.append(RolePermissionModel(permission=permission))
+            api_role.role_permissions.append(
+                RolePermissionModel(permission=permission))
 
     for permission in conversation_in_progress_permissions:
-        if permission.name in [
-            "create:in_progress_conversation",
-            "update:in_progress_conversation",
-            "read:in_progress_conversation",
-        ]:
+        if permission.name in ["create:in_progress_conversation", "update:in_progress_conversation", "read:in_progress_conversation"]:
             agent_role.role_permissions.append(
-                RolePermissionModel(permission=permission)
-            )
+                RolePermissionModel(permission=permission))
 
     # Add all permissions and roles
     session.add_all(
-        user_permissions
-        + llm_analyst_permissions
-        + llm_provider_permissions
-        + operator_permissions
-        + data_sources_permissions
-        + non_standard_crud_permissions
-        + app_settings_permissions
-        + feature_flag_permissions
-        + [admin_role, supervisor_role, operator_role, api_role, agent_role]
+        user_permissions + llm_analyst_permissions + llm_provider_permissions +
+        operator_permissions + data_sources_permissions + non_standard_crud_permissions +
+        app_settings_permissions + feature_flag_permissions +
+        [admin_role, supervisor_role, operator_role, api_role, agent_role]
     )
 
     # Create user types
-    console_user_type = UserTypeModel(name="console")
-    interactive_user_type = UserTypeModel(name="interactive")
+    console_user_type = UserTypeModel(name='console')
+    interactive_user_type = UserTypeModel(name='interactive')
     session.add_all([console_user_type, interactive_user_type])
     await session.commit()
 
     # Create users
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    admin = UserModel(
-        username="admin",
-        email="admin@genassist.ritech.io",
-        is_active=1,
-        hashed_password=pwd_context.hash("genadmin"),
-        user_type_id=interactive_user_type.id,
-        id=seed_test_data.admin_user_id,
-        force_upd_pass_date=shift_datetime(unit="months", amount=3),
-    )
-    supervisor = UserModel(
-        username="supervisor1",
-        email="supervisor1@genassist.ritech.io",
-        is_active=1,
-        hashed_password=pwd_context.hash("gensupervisor1"),
-        user_type_id=interactive_user_type.id,
-        force_upd_pass_date=shift_datetime(unit="months", amount=3),
-    )
-    operator = UserModel(
-        id=UUID(seed_test_data.operator_user_id),
-        username="operator1",
-        email="operator1@genassist.ritech.io",
-        is_active=1,
-        hashed_password=pwd_context.hash("genoperator1"),
-        user_type_id=interactive_user_type.id,
-        force_upd_pass_date=shift_datetime(unit="months", amount=3),
-    )
-    apiuser = UserModel(
-        username="apiuser1",
-        email="apiuser1@genassist.ritech.io",
-        is_active=1,
-        hashed_password=pwd_context.hash("genapiuser1"),
-        user_type_id=console_user_type.id,
-        force_upd_pass_date=shift_datetime(unit="months", amount=3),
-    )
+    admin = UserModel(username='admin', email='admin@genassist.ritech.io', is_active=1,
+                      hashed_password=pwd_context.hash('genadmin'), user_type_id=interactive_user_type.id,
+                      id=seed_test_data.admin_user_id,
+                      force_upd_pass_date=shift_datetime(
+                          unit="months", amount=3)
+                      )
+    supervisor = UserModel(username='supervisor1', email='supervisor1@genassist.ritech.io', is_active=1,
+                           hashed_password=pwd_context.hash('gensupervisor1'), user_type_id=interactive_user_type.id,
+                           force_upd_pass_date=shift_datetime(
+                               unit="months", amount=3)
+                           )
+    operator = UserModel(id=UUID(seed_test_data.operator_user_id), username='operator1',
+                         email='operator1@genassist.ritech.io',
+                         is_active=1,
+                         hashed_password=pwd_context.hash('genoperator1'), user_type_id=interactive_user_type.id,
+                         force_upd_pass_date=shift_datetime(
+                             unit="months", amount=3)
+                         )
+    apiuser = UserModel(username='apiuser1', email='apiuser1@genassist.ritech.io', is_active=1,
+                        hashed_password=pwd_context.hash('genapiuser1'), user_type_id=console_user_type.id,
+                        force_upd_pass_date=shift_datetime(
+                            unit="months", amount=3)
+                        )
 
-    transcribe_operator_user = UserModel(
-        id=UUID(seed_test_data.transcribe_operator_user_id),
-        username="transcribeoperator1",
-        email="transcribeoperator1@genassist.ritech.io",
-        is_active=1,
-        hashed_password=pwd_context.hash("gentranscribeoperator1"),
-        user_type_id=console_user_type.id,
-        force_upd_pass_date=shift_datetime(unit="months", amount=3),
-    )
-
-    transcribe_operator_user = UserModel(
-        id=UUID(seed_test_data.transcribe_operator_user_id),
-        username="transcribeoperator1",
-        email="transcribeoperator1@genassist.ritech.io",
-        is_active=1,
-        hashed_password=pwd_context.hash("gentranscribeoperator1"),
-        user_type_id=console_user_type.id,
-        force_upd_pass_date=shift_datetime(unit="months", amount=3),
-    )
+    transcribe_operator_user = UserModel(id=UUID(seed_test_data.transcribe_operator_user_id), username='transcribeoperator1',
+                                         email='transcribeoperator1@genassist.ritech.io',
+                                         is_active=1,
+                                         hashed_password=pwd_context.hash('gentranscribeoperator1'), user_type_id=console_user_type.id,
+                                         force_upd_pass_date=shift_datetime(
+                                             unit="months", amount=3)
+                                         )
 
     # Assign roles to users
     admin.user_roles.append(UserRoleModel(role=admin_role))
     supervisor.user_roles.append(UserRoleModel(role=supervisor_role))
     operator.user_roles.append(UserRoleModel(role=operator_role))
     apiuser.user_roles.append(UserRoleModel(role=api_role))
-    transcribe_operator_user.user_roles.append(UserRoleModel(role=operator_role))
+    transcribe_operator_user.user_roles.append(
+        UserRoleModel(role=operator_role))
 
-    session.add_all([admin, supervisor, operator, apiuser, transcribe_operator_user])
+    session.add_all([admin, supervisor, operator,
+                    apiuser, transcribe_operator_user])
     await session.commit()
 
     # Seed s3 DataSource
-    s3_data_source = DataSourceModel(
-        id=UUID(seed_test_data.data_source_id),
-        name="s3 contracts small",
-        source_type="S3",
-        connection_data={
-            "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
-            "region": os.environ.get("AWS_REGION"),
-            "access_key": encrypt_key(os.environ.get("AWS_ACCESS_KEY_ID")),
-            "secret_key": encrypt_key(os.environ.get("AWS_SECRET_ACCESS_KEY")),
-            "prefix": "contracts-small/",
-        },
-        is_active=1,
-    )
+    s3_data_source = DataSourceModel(id=UUID(seed_test_data.data_source_id), name="s3 contracts small", source_type="S3",
+                                     connection_data={
+        "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
+        "region": os.environ.get("AWS_REGION"),
+        "access_key": encrypt_key(os.environ.get("AWS_ACCESS_KEY_ID")),
+        "secret_key": encrypt_key(os.environ.get("AWS_SECRET_ACCESS_KEY")),
+        "prefix": "contracts-small/"
+    }, is_active=1)
 
     # Seed s3 AUDIO DataSource
-    s3_audio_data_source = DataSourceModel(
-        id=UUID(seed_test_data.transcribe_data_source_id),
-        name="s3 audio files to transcribe",
-        source_type="S3",
-        connection_data={
-            "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
-            "region": os.environ.get("AWS_REGION"),
-            "access_key": os.environ.get("AWS_ACCESS_KEY_ID"),
-            "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY"),
-            "prefix": "sample-recordings/",
-        },
-        is_active=1,
-    )
+    s3_audio_data_source = DataSourceModel(id=UUID(seed_test_data.transcribe_data_source_id), name="s3 audio files to transcribe", source_type="S3",
+                                           connection_data={
+        "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
+        "region": os.environ.get("AWS_REGION"),
+        "access_key": os.environ.get("AWS_ACCESS_KEY_ID"),
+        "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        "prefix": "sample-recordings/"
+    }, is_active=1)
     session.add_all([s3_data_source, s3_audio_data_source])
 
     await session.commit()
 
     # Seed default Customer
-    customer = CustomerModel(
-        source_ref="default", full_name="default", external_id="default"
-    )
+    customer = CustomerModel(source_ref="default",
+                             full_name="default", external_id="default")
     session.add(customer)
     await session.commit()
 
     # Seed LLM provider
     llm_provider = LlmProvidersModel(
         id=UUID(seed_test_data.llm_provider_id),
-        name="openai dev 1.0",
+        name='openai dev 1.0',
         llm_model_provider="openai",
         is_active=1,
         llm_model="gpt-4o",
         connection_data={
             "api_key": encrypt_key(settings.OPENAI_API_KEY),
-        },
+        }
     )
     local_llm_provider_gpt_oss = LlmProvidersModel(
         id=UUID(seed_test_data.local_llm_provider_gpt_oss_id),
-        name="gpt-oss",
+        name='gpt-oss',
         llm_model_provider="ollama",
         is_active=1,
         llm_model="gpt-oss:20b",
         connection_data={
             "base_url": "http://192.168.10.231:11434/",
-        },
+        }
     )
 
     local_llm_provider_llama = LlmProvidersModel(
         id=UUID(seed_test_data.local_llm_provider_llama_id),
-        name="Llama 3.3 70B 4Q",
+        name='Llama 3.3 70B 4Q',
         llm_model_provider="ollama",
         is_active=1,
         llm_model="llama3.3:70b-instruct-q4_K_M",
         connection_data={
             "base_url": "http://192.168.10.231:11434/",
-        },
+        }
     )
     local_llm_provider_vllm_llama = LlmProvidersModel(
         id=UUID(seed_test_data.local_llm_provider_vllm_llama),
-        name="Llama 3.1 8B custom",
+        name='Llama 3.1 8B custom',
         llm_model_provider="vllm",
         is_active=1,
         llm_model="./outputs/llama-3.1-8b-tool-calling/merged",
         connection_data={
             "base_url": "http://192.168.10.231:11434/",
-        },
+        }
     )
-    session.add_all(
-        [
-            llm_provider,
-            local_llm_provider_gpt_oss,
-            local_llm_provider_llama,
-            local_llm_provider_vllm_llama,
-        ]
-    )
+    session.add_all([llm_provider, local_llm_provider_gpt_oss,
+                    local_llm_provider_llama, local_llm_provider_vllm_llama])
     await session.commit()
 
     # Seed LLM analyst speaker separator
     gpt_speaker_separator_llm_analyst = LlmAnalystModel(
         id=UUID(seed_test_data.llm_analyst_speaker_separator_id),
-        name="gpt_speaker_separator_service prompt",
+        name='gpt_speaker_separator_service prompt',
         llm_provider_id=llm_provider.id,
         prompt=seed_test_data.speaker_separation_llm_analyst_prompt,
-        is_active=1,
+        is_active=1
     )
     # Seed LLM analyst kpi analyzer
     gpt_kpi_analyzer_llm_analyst = LlmAnalystModel(
         id=UUID(seed_test_data.llm_analyst_kpi_analyzer_id),
-        name="gpt_kpi_analyzer_service system prompt",
+        name='gpt_kpi_analyzer_service system prompt',
         llm_provider_id=llm_provider.id,
         prompt=seed_test_data.kpi_analyzer_system_prompt,
-        is_active=1,
+        is_active=1
     )
     # Seed LLM analyst hostility score
     in_progress_hostility_llm_analyst = LlmAnalystModel(
         id=UUID(seed_test_data.llm_analyst_in_progress_hostility_id),
-        name="gpt_kpi_analyzer_service in progress hostility system prompt",
+        name='gpt_kpi_analyzer_service in progress hostility system prompt',
         llm_provider_id=llm_provider.id,
         prompt=seed_test_data.in_progress_hostility_system_prompt,
-        is_active=1,
+        is_active=1
     )
-    session.add_all(
-        [
-            gpt_speaker_separator_llm_analyst,
-            gpt_kpi_analyzer_llm_analyst,
-            in_progress_hostility_llm_analyst,
-        ]
-    )
+    session.add_all([gpt_speaker_separator_llm_analyst,
+                    gpt_kpi_analyzer_llm_analyst, in_progress_hostility_llm_analyst])
 
     await session.commit()
 
     # Seed operator statistics
     op_stats = OperatorStatisticsModel(
-        avg_positive_sentiment=0,
-        call_count=0,
-        avg_negative_sentiment=0,
-        avg_neutral_sentiment=0,
+        avg_positive_sentiment=0, call_count=0,
+        avg_negative_sentiment=0, avg_neutral_sentiment=0
     )
     session.add(op_stats)
     await session.commit()
@@ -413,11 +330,11 @@ async def seed_data(session: AsyncSession, injector: Injector):
     # Seed operator
     operator = OperatorModel(
         id=UUID(seed_test_data.operator_id),
-        first_name="Operator",
-        last_name="01",
+        first_name='Operator',
+        last_name='01',
         is_active=1,
         statistics_id=op_stats.id,
-        user_id=seed_test_data.operator_user_id,
+        user_id=seed_test_data.operator_user_id
     )
     session.add(operator)
     await session.commit()
@@ -425,21 +342,19 @@ async def seed_data(session: AsyncSession, injector: Injector):
     # Seed Transcribe operator
     transcribe_operator = OperatorModel(
         id=UUID(seed_test_data.transcribe_operator_id),
-        first_name="Transcribe",
-        last_name="Operator 01",
+        first_name='Transcribe',
+        last_name='Operator 01',
         is_active=1,
         statistics_id=op_stats.id,
-        user_id=seed_test_data.transcribe_operator_user_id,
+        user_id=seed_test_data.transcribe_operator_user_id
     )
     session.add(transcribe_operator)
     await session.commit()
 
     # Seed ZEN operator statistics
     zen_op_stats = OperatorStatisticsModel(
-        avg_positive_sentiment=0,
-        call_count=0,
-        avg_negative_sentiment=0,
-        avg_neutral_sentiment=0,
+        avg_positive_sentiment=0, call_count=0,
+        avg_negative_sentiment=0, avg_neutral_sentiment=0
     )
     session.add(zen_op_stats)
     await session.commit()
@@ -447,23 +362,19 @@ async def seed_data(session: AsyncSession, injector: Injector):
     # Seed Zendesk Operator
     zen_operator = OperatorModel(
         id=UUID(seed_test_data.zen_operator_id),
-        first_name="Zendesk",
-        last_name="Operator",
+        first_name='Zendesk',
+        last_name='Operator',
         is_active=1,
         statistics_id=zen_op_stats.id,
-        user_id=seed_test_data.zen_operator_user_id,
+        user_id=seed_test_data.zen_operator_user_id
     )
     session.add(zen_operator)
     await session.commit()
 
     # Seed API key
-    api_key = ApiKeyModel(
-        key_val=encrypt_key("test123"),
-        name="test key",
-        hashed_value=hash_api_key("test123"),
-        is_active=1,
-        user_id=admin.id,
-    )
+    api_key = ApiKeyModel(key_val=encrypt_key('test123'), name='test key',
+                          hashed_value=hash_api_key('test123'),
+                          is_active=1, user_id=admin.id)
     api_key.api_key_roles.append(ApiKeyRoleModel(role=admin_role))
     session.add(api_key)
     await session.commit()
@@ -475,15 +386,11 @@ async def seed_data(session: AsyncSession, injector: Injector):
     product_docs = await seed_knowledge_base(session, admin.id, injector)
     gen_assist_kb = await seed_knowledge_base_for_gen_agent(session, admin.id, injector)
     db_kb = await seed_knowledge_base_for_sql_database(session, admin.id, injector)
-    s3_kb = await seed_knowledge_base_for_s3(
-        session, admin.id, s3_data_source, injector
-    )
+    s3_kb = await seed_knowledge_base_for_s3(session, admin.id, s3_data_source, injector)
 
     # Seed agents
     await seed_demo_agent(session, agent_role, injector, [product_docs], admin.id)
-    await seed_gen_agent(
-        session, agent_role, injector, [product_docs, gen_assist_kb, db_kb], admin.id
-    )
+    await seed_gen_agent(session, agent_role, injector, [product_docs, gen_assist_kb, db_kb], admin.id)
 
     # Seed common workflows
     # await seed_zendesk_agent(session, agent_role, injector, [product_docs, gen_assist_kb, db_kb], admin.id)
@@ -516,26 +423,30 @@ async def seed_tools(session: AsyncSession, created_by: UUID, injector: Injector
         api_config={
             "endpoint": "https://api.exchangerate-api.com/v4/latest",
             "method": "GET",
-            "headers": {"Content-Type": "application/json"},
-            "query_params": {"base": "${from_currency}"},
+            "headers": {
+                "Content-Type": "application/json"
+            },
+            "query_params": {
+                "base": "${from_currency}"
+            }
         },
         parameters_schema={
             "from_currency": {
                 "type": "string",
                 "description": "Currency code to convert from (e.g., USD)",
-                "required": True,
+                "required": True
             },
             "to_currency": {
                 "type": "string",
                 "description": "Currency code to convert to (e.g., EUR)",
-                "required": True,
+                "required": True
             },
             "amount": {
                 "type": "number",
                 "description": "Amount to convert",
-                "required": True,
-            },
-        },
+                "required": True
+            }
+        }
     )
 
     # Create tools
@@ -546,13 +457,7 @@ async def seed_tools(session: AsyncSession, created_by: UUID, injector: Injector
     return res
 
 
-async def create_conversation(
-    session: AsyncSession,
-    operator: OperatorModel,
-    data_source: DataSourceModel,
-    customer: CustomerModel,
-    injector: Injector,
-):
+async def create_conversation(session: AsyncSession, operator: OperatorModel, data_source: DataSourceModel, customer: CustomerModel, injector: Injector):
     metadata = RecordingCreate(
         operator_id=operator.id,
         transcription_model_name=settings.DEFAULT_WHISPER_MODEL,
@@ -563,19 +468,19 @@ async def create_conversation(
         customer_id=customer.id,
     )
 
-    dir_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-    filename = dir_path + "/tests/integration/audio/tech-support.mp3"
+    dir_path = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), "../../.."))
+    filename = dir_path+'/tests/integration/audio/tech-support.mp3'
     contents = open(filename, "rb").read()
 
-    headers = {"content-type": "audio/mp3"}
-    file = UploadFile(file=io.BytesIO(contents), filename="test.mp3", headers=headers)
+    headers = {'content-type': "audio/mp3"}
+    file = UploadFile(file=io.BytesIO(contents),
+                      filename="test.mp3", headers=headers)
 
     # await injector.get(AudioService).process_recording(file, metadata)
 
 
-async def seed_knowledge_base(
-    session: AsyncSession, created_by: UUID, injector: Injector
-):
+async def seed_knowledge_base(session: AsyncSession, created_by: UUID, injector: Injector):
     """Seed initial knowledge base items into the database."""
     kb_service = injector.get(KnowledgeBaseService)
 
@@ -625,8 +530,8 @@ async def seed_knowledge_base(
             "enabled": False,
             "vector_db": {"enabled": False},
             "graph_db": {"enabled": False},
-            "light_rag": {"enabled": False},
-        },
+            "light_rag": {"enabled": False}
+        }
     )
 
     # Create knowledge base items
@@ -651,13 +556,15 @@ async def seed_knowledge_base_for_gen_agent(
             "openapi.json not found. Did output_open_api() run before seeding?"
         )
 
-    raw_json: str = await asyncio.to_thread(open_api_path.read_text, encoding="utf-8")
+    raw_json: str = await asyncio.to_thread(
+        open_api_path.read_text, encoding="utf-8"
+    )
 
     # ── 2️⃣  build the KB item ──────────────────────────────────────────
     openapi_item = KBCreate(
         name="GenAssist OpenAPI Schema",
         description="Generated OpenAPI spec for every backend route",
-        type="text",  # or "text" if your column is TEXT
+        type="text",                       # or "text" if your column is TEXT
         source="internal",
         content=raw_json,
         file_path=str(open_api_path),
@@ -678,22 +585,15 @@ async def seed_knowledge_base_for_gen_agent(
     return kb
 
 
-async def seed_demo_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
+async def seed_demo_agent(session: AsyncSession, agent_role: RoleModel,  injector: Injector, kbList: List[KBRead], owner_user_id: UUID):
     """Seed initial agents into the database."""
 
     workflow_service = injector.get(WorkflowService)
 
     sample_wf = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/empty_assistant_wf_data.json"
+    filename = dir_path+'/empty_assistant_wf_data.json'
     from pathlib import Path
-
     file_path = Path(filename)
     json_str = file_path.read_text()
 
@@ -703,14 +603,12 @@ async def seed_demo_agent(
     wf_edges = sample_wf["edges"]
     wf_execution_state = sample_wf["executionState"]
 
-    workflow = WorkflowCreate(
-        name="Support Assistant",
-        description="AI assistant specialized in providing product support and answering customer queries",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        executionState=wf_execution_state,
-        version="1.0",
-    )
+    workflow = WorkflowCreate(name="Support Assistant",
+                              description="AI assistant specialized in providing product support and answering customer queries",
+                              nodes=wf_nodes,
+                              edges=wf_edges,
+                              executionState=wf_execution_state,
+                              version="1.0")
 
     workflow_model = await workflow_service.create(workflow)
 
@@ -727,30 +625,26 @@ async def seed_demo_agent(
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
+    workflow_update_data = WorkflowUpdate(name=workflow_model.name,
+                                          description=workflow_model.description,
+                                          nodes=wf_nodes,
+                                          edges=wf_edges,
+                                          user_id=owner_user_id,
+                                          version=workflow_model.version,
+                                          agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
 
     await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
+    urm = UserRoleModel(role_id=agent_role.id,
+                        user_id=full_agent.operator.user.id)
     session.add(urm)
     await session.commit()
 
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("agent123"),
-        hashed_value=hash_api_key("agent123"),
-        name="test agent key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
+    agent_key = ApiKeyModel(key_val=encrypt_key('agent123'),
+                            hashed_value=hash_api_key('agent123'),
+                            name='test agent key',
+                            is_active=1, user_id=full_agent.operator.user.id,)
     agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
     session.add(agent_key)
 
@@ -759,28 +653,20 @@ async def seed_demo_agent(
     logger.debug("Agents seeding complete.")
 
 
-async def seed_gen_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
+async def seed_gen_agent(session: AsyncSession, agent_role: RoleModel, injector: Injector, kbList: List[KBRead], owner_user_id: UUID):
     """Seed initial agents into the database."""
 
     workflow_service = injector.get(WorkflowService)
 
     sample_wf = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/genassist_wf_data.json"
+    filename = dir_path+'/genassist_wf_data.json'
     from pathlib import Path
-
     file_path = Path(filename)
     json_str = file_path.read_text()
 
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
+    json_str = json_str.replace("KB_ID_LIST", ",".join(
+        ["\""+str(kb.id)+"\"" for kb in kbList]))
     # print(f"JSON string after replacement: {json_str}")
     sample_wf = json.loads(json_str)
 
@@ -788,14 +674,12 @@ async def seed_gen_agent(
     wf_edges = sample_wf["edges"]
     wf_execution_state = sample_wf["executionState"]
 
-    workflow = WorkflowCreate(
-        name="GenAgent Assistant Workflow",
-        description="AI assistant workflow specialized to provide information about genagent",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        executionState=wf_execution_state,
-        version="1.0",
-    )
+    workflow = WorkflowCreate(name="GenAgent Assistant Workflow",
+                              description="AI assistant workflow specialized to provide information about genagent",
+                              nodes=wf_nodes,
+                              edges=wf_edges,
+                              executionState=wf_execution_state,
+                              version="1.0")
 
     workflow_model = await workflow_service.create(workflow)
 
@@ -805,10 +689,8 @@ async def seed_gen_agent(
         description="AI assistant specialized in providing information about genassist",
         is_active=True,
         welcome_message="Welcome, how may I help you?",
-        possible_queries=[
-            "What can you do?",
-            "What endpoints does genagent have about metrics",
-        ],
+        possible_queries=["What can you do?",
+                          "What endpoints does genagent have about metrics"],
         workflow_id=workflow_model.id,
     )
     config_service = injector.get(AgentConfigService)
@@ -816,30 +698,26 @@ async def seed_gen_agent(
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
+    workflow_update_data = WorkflowUpdate(name=workflow_model.name,
+                                          description=workflow_model.description,
+                                          nodes=wf_nodes,
+                                          edges=wf_edges,
+                                          user_id=owner_user_id,
+                                          version=workflow_model.version,
+                                          agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
 
     await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
+    urm = UserRoleModel(role_id=agent_role.id,
+                        user_id=full_agent.operator.user.id)
     session.add(urm)
     await session.commit()
 
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("genagent123"),
-        hashed_value=hash_api_key("genagent123"),
-        name="gen-agent default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
+    agent_key = ApiKeyModel(key_val=encrypt_key('genagent123'),
+                            hashed_value=hash_api_key('genagent123'),
+                            name='gen-agent default key',
+                            is_active=1, user_id=full_agent.operator.user.id, )
     agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
     session.add(agent_key)
 
@@ -848,364 +726,30 @@ async def seed_gen_agent(
     logger.debug("Agents seeding complete.")
 
 
-async def seed_zendesk_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
+async def seed_zendesk_agent(session: AsyncSession, agent_role: RoleModel, injector: Injector, kbList: List[KBRead], owner_user_id: UUID):
     """Seed initial Zendesk agent into the database."""
     workflow_service = injector.get(WorkflowService)
 
     sample_wf = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/zendesk_wf_data.json"
+    filename = dir_path+'/zendesk_wf_data.json'
     from pathlib import Path
-
     file_path = Path(filename)
     json_str = file_path.read_text()
 
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
+    json_str = json_str.replace("KB_ID_LIST", ",".join(
+        ["\""+str(kb.id)+"\"" for kb in kbList]))
     # print(f"JSON string after replacement: {json_str}")
     sample_wf = json.loads(json_str)
 
     wf_nodes = sample_wf["nodes"]
     wf_edges = sample_wf["edges"]
 
-    workflow = WorkflowCreate(
-        name="Zendesk Agent Workflow",
-        description="AI assistant workflow specialized to send tickets in zendesk",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        version="1.0",
-    )
-
-    workflow_model = await workflow_service.create(workflow)
-
-    support_agent = AgentCreate(
-        name="Zendesk Agent",
-        description="AI assistant specialized to send tickets in zendesk",
-        is_active=False,
-        welcome_message="Welcome, how may I help you?",
-        possible_queries=["What can you do?"],
-        workflow_id=workflow_model.id,
-    )
-    config_service = injector.get(AgentConfigService)
-    # Create the agent configuration
-    agent_model = await config_service.create(support_agent, user_id=owner_user_id)
-    full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
-
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
-
-    await workflow_service.update(workflow_model.id, workflow_update_data)
-
-    await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
-    session.add(urm)
-    await session.commit()
-
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("zendesk123"),
-        hashed_value=hash_api_key("zendesk123"),
-        name="zendesk default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
-    agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
-    session.add(agent_key)
-
-    await session.commit()
-    logger.debug("Zendesk Agent seeding complete.")
-
-
-async def seed_slack_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
-    """Seed initial Slack agent into the database."""
-    workflow_service = injector.get(WorkflowService)
-
-    sample_wf = None
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/slack_wf_data.json"
-    from pathlib import Path
-
-    file_path = Path(filename)
-    json_str = file_path.read_text()
-
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
-    # print(f"JSON string after replacement: {json_str}")
-    sample_wf = json.loads(json_str)
-
-    wf_nodes = sample_wf["nodes"]
-    wf_edges = sample_wf["edges"]
-
-    workflow = WorkflowCreate(
-        name="Slack Agent Workflow",
-        description="AI assistant workflow specialized to send messages in slack",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        version="1.0",
-    )
-
-    workflow_model = await workflow_service.create(workflow)
-
-    support_agent = AgentCreate(
-        name="Slack Agent",
-        description="AI assistant specialized to send messages in slack",
-        is_active=False,
-        welcome_message="Welcome, how may I help you?",
-        possible_queries=["What can you do?"],
-        workflow_id=workflow_model.id,
-    )
-    config_service = injector.get(AgentConfigService)
-    # Create the agent configuration
-    agent_model = await config_service.create(support_agent, user_id=owner_user_id)
-    full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
-
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
-
-    await workflow_service.update(workflow_model.id, workflow_update_data)
-
-    await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
-    session.add(urm)
-    await session.commit()
-
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("slack123"),
-        hashed_value=hash_api_key("slack123"),
-        name="slack default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
-    agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
-    session.add(agent_key)
-
-    await session.commit()
-    logger.debug("Slack Agent seeding complete.")
-
-
-async def seed_whatsapp_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
-    """Seed initial WhatsApp agent into the database."""
-    workflow_service = injector.get(WorkflowService)
-
-    sample_wf = None
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/whatsapp_wf_data.json"
-    from pathlib import Path
-
-    file_path = Path(filename)
-    json_str = file_path.read_text()
-
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
-    # print(f"JSON string after replacement: {json_str}")
-    sample_wf = json.loads(json_str)
-
-    wf_nodes = sample_wf["nodes"]
-    wf_edges = sample_wf["edges"]
-
-    workflow = WorkflowCreate(
-        name="WhatsApp Agent Workflow",
-        description="AI assistant workflow specialized to send messages in WhatsApp",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        version="1.0",
-    )
-
-    workflow_model = await workflow_service.create(workflow)
-
-    support_agent = AgentCreate(
-        name="WhatsApp Agent",
-        description="AI assistant specialized to send messages in WhatsApp",
-        is_active=False,
-        welcome_message="Welcome, how may I help you?",
-        possible_queries=["What can you do?"],
-        workflow_id=workflow_model.id,
-    )
-    config_service = injector.get(AgentConfigService)
-    # Create the agent configuration
-    agent_model = await config_service.create(support_agent, user_id=owner_user_id)
-    full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
-
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
-
-    await workflow_service.update(workflow_model.id, workflow_update_data)
-
-    await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
-    session.add(urm)
-    await session.commit()
-
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("whatsapp123"),
-        hashed_value=hash_api_key("whatsapp123"),
-        name="whatsapp default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
-    agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
-    session.add(agent_key)
-
-    await session.commit()
-    logger.debug("WhatsApp Agent seeding complete.")
-
-
-async def seed_gmail_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
-    """Seed initial Gmail agent into the database."""
-    workflow_service = injector.get(WorkflowService)
-
-    sample_wf = None
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/gmail_wf_data.json"
-    from pathlib import Path
-
-    file_path = Path(filename)
-    json_str = file_path.read_text()
-
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
-    # print(f"JSON string after replacement: {json_str}")
-    sample_wf = json.loads(json_str)
-
-    wf_nodes = sample_wf["nodes"]
-    wf_edges = sample_wf["edges"]
-
-    workflow = WorkflowCreate(
-        name="Gmail Agent Workflow",
-        description="AI assistant workflow specialized to send emails in Gmail",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        version="1.0",
-    )
-
-    workflow_model = await workflow_service.create(workflow)
-
-    support_agent = AgentCreate(
-        name="Gmail Agent",
-        description="AI assistant specialized to send emails in Gmail",
-        is_active=False,
-        welcome_message="Welcome, how may I help you?",
-        possible_queries=["What can you do?"],
-        workflow_id=workflow_model.id,
-    )
-    config_service = injector.get(AgentConfigService)
-    # Create the agent configuration
-    agent_model = await config_service.create(support_agent, user_id=owner_user_id)
-    full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
-
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
-
-    await workflow_service.update(workflow_model.id, workflow_update_data)
-
-    await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
-    session.add(urm)
-    await session.commit()
-
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("gmail123"),
-        hashed_value=hash_api_key("gmail123"),
-        name="gmail default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
-    agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
-    session.add(agent_key)
-
-    await session.commit()
-    logger.debug("Gmail Agent seeding complete.")
-
-
-async def seed_zendesk_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
-    """Seed initial Zendesk agent into the database."""
-    workflow_service = injector.get(WorkflowService)
-
-    sample_wf = None
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/zendesk_wf_data.json"
-    from pathlib import Path
-
-    file_path = Path(filename)
-    json_str = file_path.read_text()
-
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
-    # print(f"JSON string after replacement: {json_str}")
-    sample_wf = json.loads(json_str)
-
-    wf_nodes = sample_wf["nodes"]
-    wf_edges = sample_wf["edges"]
-
-    workflow = WorkflowCreate(
-        name="Zendesk Agent Workflow",
-        description="AI assistant workflow specialized to send tickets in zendesk",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        version="1.0",
-    )
+    workflow = WorkflowCreate(name="Zendesk Agent Workflow",
+                              description="AI assistant workflow specialized to send tickets in zendesk",
+                              nodes=wf_nodes,
+                              edges=wf_edges,
+                              version="1.0")
 
     workflow_model = await workflow_service.create(workflow)
 
@@ -1222,30 +766,26 @@ async def seed_zendesk_agent(
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
+    workflow_update_data = WorkflowUpdate(name=workflow_model.name,
+                                          description=workflow_model.description,
+                                          nodes=wf_nodes,
+                                          edges=wf_edges,
+                                          user_id=owner_user_id,
+                                          version=workflow_model.version,
+                                          agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
 
     await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
+    urm = UserRoleModel(role_id=agent_role.id,
+                        user_id=full_agent.operator.user.id)
     session.add(urm)
     await session.commit()
 
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("zendesk123"),
-        hashed_value=hash_api_key("zendesk123"),
-        name="zendesk default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
+    agent_key = ApiKeyModel(key_val=encrypt_key('zendesk123'),
+                            hashed_value=hash_api_key('zendesk123'),
+                            name='zendesk default key',
+                            is_active=1, user_id=full_agent.operator.user.id, )
     agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
     session.add(agent_key)
 
@@ -1253,40 +793,30 @@ async def seed_zendesk_agent(
     logger.debug("Zendesk Agent seeding complete.")
 
 
-async def seed_slack_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
+async def seed_slack_agent(session: AsyncSession, agent_role: RoleModel, injector: Injector, kbList: List[KBRead], owner_user_id: UUID):
     """Seed initial Slack agent into the database."""
     workflow_service = injector.get(WorkflowService)
 
     sample_wf = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/slack_wf_data.json"
+    filename = dir_path+'/slack_wf_data.json'
     from pathlib import Path
-
     file_path = Path(filename)
     json_str = file_path.read_text()
 
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
+    json_str = json_str.replace("KB_ID_LIST", ",".join(
+        ["\""+str(kb.id)+"\"" for kb in kbList]))
     # print(f"JSON string after replacement: {json_str}")
     sample_wf = json.loads(json_str)
 
     wf_nodes = sample_wf["nodes"]
     wf_edges = sample_wf["edges"]
 
-    workflow = WorkflowCreate(
-        name="Slack Agent Workflow",
-        description="AI assistant workflow specialized to send messages in slack",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        version="1.0",
-    )
+    workflow = WorkflowCreate(name="Slack Agent Workflow",
+                              description="AI assistant workflow specialized to send messages in slack",
+                              nodes=wf_nodes,
+                              edges=wf_edges,
+                              version="1.0")
 
     workflow_model = await workflow_service.create(workflow)
 
@@ -1303,30 +833,26 @@ async def seed_slack_agent(
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
+    workflow_update_data = WorkflowUpdate(name=workflow_model.name,
+                                          description=workflow_model.description,
+                                          nodes=wf_nodes,
+                                          edges=wf_edges,
+                                          user_id=owner_user_id,
+                                          version=workflow_model.version,
+                                          agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
 
     await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
+    urm = UserRoleModel(role_id=agent_role.id,
+                        user_id=full_agent.operator.user.id)
     session.add(urm)
     await session.commit()
 
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("slack123"),
-        hashed_value=hash_api_key("slack123"),
-        name="slack default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
+    agent_key = ApiKeyModel(key_val=encrypt_key('slack123'),
+                            hashed_value=hash_api_key('slack123'),
+                            name='slack default key',
+                            is_active=1, user_id=full_agent.operator.user.id, )
     agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
     session.add(agent_key)
 
@@ -1334,40 +860,30 @@ async def seed_slack_agent(
     logger.debug("Slack Agent seeding complete.")
 
 
-async def seed_whatsapp_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
+async def seed_whatsapp_agent(session: AsyncSession, agent_role: RoleModel, injector: Injector, kbList: List[KBRead], owner_user_id: UUID):
     """Seed initial WhatsApp agent into the database."""
     workflow_service = injector.get(WorkflowService)
 
     sample_wf = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/whatsapp_wf_data.json"
+    filename = dir_path+'/whatsapp_wf_data.json'
     from pathlib import Path
-
     file_path = Path(filename)
     json_str = file_path.read_text()
 
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
+    json_str = json_str.replace("KB_ID_LIST", ",".join(
+        ["\""+str(kb.id)+"\"" for kb in kbList]))
     # print(f"JSON string after replacement: {json_str}")
     sample_wf = json.loads(json_str)
 
     wf_nodes = sample_wf["nodes"]
     wf_edges = sample_wf["edges"]
 
-    workflow = WorkflowCreate(
-        name="WhatsApp Agent Workflow",
-        description="AI assistant workflow specialized to send messages in WhatsApp",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        version="1.0",
-    )
+    workflow = WorkflowCreate(name="WhatsApp Agent Workflow",
+                              description="AI assistant workflow specialized to send messages in WhatsApp",
+                              nodes=wf_nodes,
+                              edges=wf_edges,
+                              version="1.0")
 
     workflow_model = await workflow_service.create(workflow)
 
@@ -1384,30 +900,26 @@ async def seed_whatsapp_agent(
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
+    workflow_update_data = WorkflowUpdate(name=workflow_model.name,
+                                          description=workflow_model.description,
+                                          nodes=wf_nodes,
+                                          edges=wf_edges,
+                                          user_id=owner_user_id,
+                                          version=workflow_model.version,
+                                          agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
 
     await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
+    urm = UserRoleModel(role_id=agent_role.id,
+                        user_id=full_agent.operator.user.id)
     session.add(urm)
     await session.commit()
 
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("whatsapp123"),
-        hashed_value=hash_api_key("whatsapp123"),
-        name="whatsapp default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
+    agent_key = ApiKeyModel(key_val=encrypt_key('whatsapp123'),
+                            hashed_value=hash_api_key('whatsapp123'),
+                            name='whatsapp default key',
+                            is_active=1, user_id=full_agent.operator.user.id, )
     agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
     session.add(agent_key)
 
@@ -1415,40 +927,30 @@ async def seed_whatsapp_agent(
     logger.debug("WhatsApp Agent seeding complete.")
 
 
-async def seed_gmail_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
+async def seed_gmail_agent(session: AsyncSession, agent_role: RoleModel, injector: Injector, kbList: List[KBRead], owner_user_id: UUID):
     """Seed initial Gmail agent into the database."""
     workflow_service = injector.get(WorkflowService)
 
     sample_wf = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/gmail_wf_data.json"
+    filename = dir_path+'/gmail_wf_data.json'
     from pathlib import Path
-
     file_path = Path(filename)
     json_str = file_path.read_text()
 
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
+    json_str = json_str.replace("KB_ID_LIST", ",".join(
+        ["\""+str(kb.id)+"\"" for kb in kbList]))
     # print(f"JSON string after replacement: {json_str}")
     sample_wf = json.loads(json_str)
 
     wf_nodes = sample_wf["nodes"]
     wf_edges = sample_wf["edges"]
 
-    workflow = WorkflowCreate(
-        name="Gmail Agent Workflow",
-        description="AI assistant workflow specialized to send emails in Gmail",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        version="1.0",
-    )
+    workflow = WorkflowCreate(name="Gmail Agent Workflow",
+                              description="AI assistant workflow specialized to send emails in Gmail",
+                              nodes=wf_nodes,
+                              edges=wf_edges,
+                              version="1.0")
 
     workflow_model = await workflow_service.create(workflow)
 
@@ -1465,30 +967,26 @@ async def seed_gmail_agent(
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
+    workflow_update_data = WorkflowUpdate(name=workflow_model.name,
+                                          description=workflow_model.description,
+                                          nodes=wf_nodes,
+                                          edges=wf_edges,
+                                          user_id=owner_user_id,
+                                          version=workflow_model.version,
+                                          agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
 
     await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
+    urm = UserRoleModel(role_id=agent_role.id,
+                        user_id=full_agent.operator.user.id)
     session.add(urm)
     await session.commit()
 
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("gmail123"),
-        hashed_value=hash_api_key("gmail123"),
-        name="gmail default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
+    agent_key = ApiKeyModel(key_val=encrypt_key('gmail123'),
+                            hashed_value=hash_api_key('gmail123'),
+                            name='gmail default key',
+                            is_active=1, user_id=full_agent.operator.user.id, )
     agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
     session.add(agent_key)
 
@@ -1496,37 +994,27 @@ async def seed_gmail_agent(
     logger.debug("Gmail Agent seeding complete.")
 
 
-async def seed_hr_cv_agent(
-    session: AsyncSession,
-    agent_role: RoleModel,
-    injector: Injector,
-    kbList: List[KBRead],
-    owner_user_id: UUID,
-):
+async def seed_hr_cv_agent(session: AsyncSession, agent_role: RoleModel, injector: Injector, kbList: List[KBRead], owner_user_id: UUID):
     """Seed initial HR CV agent into the database."""
     workflow_service = injector.get(WorkflowService)
     sample_wf = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    filename = dir_path + "/hr_cv_analyzer_wf_data.json"
+    filename = dir_path+'/hr_cv_analyzer_wf_data.json'
     from pathlib import Path
-
     file_path = Path(filename)
     json_str = file_path.read_text()
 
-    json_str = json_str.replace(
-        "KB_ID_LIST", ",".join(['"' + str(kb.id) + '"' for kb in kbList])
-    )
+    json_str = json_str.replace("KB_ID_LIST", ",".join(
+        ["\""+str(kb.id)+"\"" for kb in kbList]))
     # print(f"JSON string after replacement: {json_str}")
     sample_wf = json.loads(json_str)
     wf_nodes = sample_wf["nodes"]
     wf_edges = sample_wf["edges"]
-    workflow = WorkflowCreate(
-        name="HR CV Agent Workflow",
-        description="AI assistant workflow specialized to analyze CVs",
-        nodes=wf_nodes,
-        edges=wf_edges,
-        version="1.0",
-    )
+    workflow = WorkflowCreate(name="HR CV Agent Workflow",
+                              description="AI assistant workflow specialized to analyze CVs",
+                              nodes=wf_nodes,
+                              edges=wf_edges,
+                              version="1.0")
 
     workflow_model = await workflow_service.create(workflow)
 
@@ -1543,30 +1031,26 @@ async def seed_hr_cv_agent(
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
-    workflow_update_data = WorkflowUpdate(
-        name=workflow_model.name,
-        description=workflow_model.description,
-        nodes=wf_nodes,
-        edges=wf_edges,
-        user_id=owner_user_id,
-        version=workflow_model.version,
-        agent_id=full_agent.id,
-    )
+    workflow_update_data = WorkflowUpdate(name=workflow_model.name,
+                                          description=workflow_model.description,
+                                          nodes=wf_nodes,
+                                          edges=wf_edges,
+                                          user_id=owner_user_id,
+                                          version=workflow_model.version,
+                                          agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
 
     await session.refresh(agent_role)
-    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
+    urm = UserRoleModel(role_id=agent_role.id,
+                        user_id=full_agent.operator.user.id)
     session.add(urm)
     await session.commit()
 
-    agent_key = ApiKeyModel(
-        key_val=encrypt_key("hr_cv123"),
-        hashed_value=hash_api_key("hr_cv123"),
-        name="hr-cv default key",
-        is_active=1,
-        user_id=full_agent.operator.user.id,
-    )
+    agent_key = ApiKeyModel(key_val=encrypt_key('hr_cv123'),
+                            hashed_value=hash_api_key('hr_cv123'),
+                            name='hr-cv default key',
+                            is_active=1, user_id=full_agent.operator.user.id, )
     agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
     session.add(agent_key)
 
@@ -1595,8 +1079,7 @@ async def seed_knowledge_base_for_sql_database(
             "database_user": settings.DB_USER,
             "database_password": settings.DB_PASS,
             # "connection_string": f"postgresql://{settings.DB_USER}:{settings.DB_PASS}@{settings.DB_HOST}/{settings.DB_NAME}",
-            "allowed_tables": ["conversations", "operators"],
-        },
+            "allowed_tables": ['conversations', 'operators']},
         is_active=1,
     )
 
@@ -1671,7 +1154,7 @@ async def seed_connection_data_for_zendesk(
     zendesk_settings = {
         "zendesk_subdomain": settings.ZENDESK_SUBDOMAIN,
         "zendesk_email": settings.ZENDESK_EMAIL,
-        "zendesk_api_token": settings.ZENDESK_API_TOKEN,
+        "zendesk_api_token": settings.ZENDESK_API_TOKEN
     }
 
     try:
@@ -1679,8 +1162,7 @@ async def seed_connection_data_for_zendesk(
         missing_values = {k: v for k, v in zendesk_settings.items() if not v}
         if missing_values:
             raise ValueError(
-                f"Missing required Zendesk settings: {list(missing_values.keys())}"
-            )
+                f"Missing required Zendesk settings: {list(missing_values.keys())}")
 
         # Create one Zendesk setting with all values in a JSONB object
         item = AppSettingsCreate(
@@ -1688,7 +1170,7 @@ async def seed_connection_data_for_zendesk(
             type="Zendesk",
             values=zendesk_settings,
             description="Zendesk integration settings",
-            is_active=1,
+            is_active=1
         )
 
         await app_settings_service.create(item)
@@ -1709,15 +1191,16 @@ async def seed_connection_data_for_whatsapp(
     app_settings_service: AppSettingsService = injector.get(AppSettingsService)
     logger.info("Seeding WhatsApp connection data...")
 
-    whatsapp_settings = {"whatsapp_token": settings.WHATSAPP_TOKEN}
+    whatsapp_settings = {
+        "whatsapp_token": settings.WHATSAPP_TOKEN
+    }
 
     try:
         # Check if all required values are present
         missing_values = {k: v for k, v in whatsapp_settings.items() if not v}
         if missing_values:
             raise ValueError(
-                f"Missing required WhatsApp settings: {list(missing_values.keys())}"
-            )
+                f"Missing required WhatsApp settings: {list(missing_values.keys())}")
 
         # Create one WhatsApp setting with all values in a JSONB object
         item = AppSettingsCreate(
@@ -1725,7 +1208,7 @@ async def seed_connection_data_for_whatsapp(
             type="WhatsApp",
             values=whatsapp_settings,
             description="WhatsApp integration settings",
-            is_active=1,
+            is_active=1
         )
 
         whatsapp_item = await app_settings_service.create(item)
@@ -1757,8 +1240,7 @@ async def seed_connection_data_for_gmail(
         missing_values = {k: v for k, v in gmail_settings.items() if not v}
         if missing_values:
             raise ValueError(
-                f"Missing required Gmail settings: {list(missing_values.keys())}"
-            )
+                f"Missing required Gmail settings: {list(missing_values.keys())}")
 
         # Create one Gmail setting with all values in a JSONB object
         item = AppSettingsCreate(
@@ -1766,7 +1248,7 @@ async def seed_connection_data_for_gmail(
             type="Gmail",
             values=gmail_settings,
             description="Gmail integration settings",
-            is_active=1,
+            is_active=1
         )
 
         gmail_item = await app_settings_service.create(item)
@@ -1790,7 +1272,7 @@ async def seed_connection_data_for_microsoft(
     microsoft_settings = {
         "microsoft_client_id": settings.MICROSOFT_CLIENT_ID,
         "microsoft_client_secret": settings.MICROSOFT_CLIENT_SECRET,
-        "microsoft_tenant_id": settings.MICROSOFT_TENANT_ID,
+        "microsoft_tenant_id": settings.MICROSOFT_TENANT_ID
     }
 
     try:
@@ -1798,8 +1280,7 @@ async def seed_connection_data_for_microsoft(
         missing_values = {k: v for k, v in microsoft_settings.items() if not v}
         if missing_values:
             raise ValueError(
-                f"Missing required Microsoft settings: {list(missing_values.keys())}"
-            )
+                f"Missing required Microsoft settings: {list(missing_values.keys())}")
 
         # Create one Microsoft setting with all values in a JSONB object
         item = AppSettingsCreate(
@@ -1807,7 +1288,7 @@ async def seed_connection_data_for_microsoft(
             type="Microsoft",
             values=microsoft_settings,
             description="Microsoft integration settings",
-            is_active=1,
+            is_active=1
         )
 
         microsoft_item = await app_settings_service.create(item)
@@ -1830,7 +1311,7 @@ async def seed_connection_data_for_slack(
 
     slack_settings = {
         "slack_bot_token": settings.SLACK_TOKEN,
-        "slack_signing_secret": settings.SLACK_SIGNING_SECRET,
+        "slack_signing_secret": settings.SLACK_SIGNING_SECRET
     }
 
     try:
@@ -1838,8 +1319,7 @@ async def seed_connection_data_for_slack(
         missing_values = {k: v for k, v in slack_settings.items() if not v}
         if missing_values:
             raise ValueError(
-                f"Missing required Slack settings: {list(missing_values.keys())}"
-            )
+                f"Missing required Slack settings: {list(missing_values.keys())}")
 
         # Create one Slack setting with all values in a JSONB object
         item = AppSettingsCreate(
@@ -1847,7 +1327,7 @@ async def seed_connection_data_for_slack(
             type="Slack",
             values=slack_settings,
             description="Slack integration settings",
-            is_active=1,
+            is_active=1
         )
 
         await app_settings_service.create(item)

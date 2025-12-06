@@ -58,7 +58,8 @@ class GmailConnector:
             ds_service = injector.get(DataSourceService)
             ds = await ds_service.get_by_id(self.ds_id, decrypt_sensitive=True)
             if not ds:
-                logger.error(f"Cant find gmail datasource with id: {self.ds_id}")
+                logger.error(
+                    f"Cant find gmail datasource with id: {self.ds_id}")
                 return
             logger.info(f"Connection data: {ds}")
 
@@ -80,9 +81,8 @@ class GmailConnector:
             app_settings = await settings_service.get_by_id(UUID(app_settings_id))
 
             # Extract values from the values field
-            values = (
-                app_settings.values if isinstance(app_settings.values, dict) else {}
-            )
+            values = app_settings.values if isinstance(
+                app_settings.values, dict) else {}
             client_id = values.get("gmail_client_id")
             client_secret = values.get("gmail_client_secret")
 
@@ -94,7 +94,8 @@ class GmailConnector:
                 raise Exception("gmail_client_id not found in app settings!")
 
             if not client_secret:
-                raise Exception("gmail_client_secret not found in app settings!")
+                raise Exception(
+                    "gmail_client_secret not found in app settings!")
 
             self.client_id = client_id
             self.client_secret = client_secret
@@ -124,6 +125,7 @@ class GmailConnector:
             if not self.current_access_token and not self.refresh_token:
                 logger.warning("Gmail tokens not found in app settings")
                 return None
+
             if self.current_access_token and self.expires_at:
                 # Check if current token is still valid
                 if datetime.now() < self.expires_at:
@@ -150,7 +152,8 @@ class GmailConnector:
                         logger.info(
                             "Gmail access token expired or expiring soon, refreshing..."
                         )
-                        refreshed_tokens = self._refresh_gmail_token(self.refresh_token)
+                        refreshed_tokens = self._refresh_gmail_token(
+                            self.refresh_token)
 
                         if refreshed_tokens:
                             from app.dependencies.injector import injector
@@ -184,7 +187,8 @@ class GmailConnector:
                         f"Invalid token expiration format: {e}, attempting refresh"
                     )
                     # If we can't parse expiration, try to refresh anyway
-                    refreshed_tokens = self._refresh_gmail_token(self.refresh_token)
+                    refreshed_tokens = self._refresh_gmail_token(
+                        self.refresh_token)
 
                     if refreshed_tokens:
                         await self._save_refreshed_tokens(refreshed_tokens)
@@ -203,7 +207,8 @@ class GmailConnector:
                 )
                 if not self._validate_gmail_token(self.refresh_token):
                     logger.info("Gmail access token is invalid, refreshing...")
-                    refreshed_tokens = self._refresh_gmail_token(self.refresh_token)
+                    refreshed_tokens = self._refresh_gmail_token(
+                        self.refresh_token)
 
                     if refreshed_tokens:
                         self._save_refreshed_tokens(refreshed_tokens)
@@ -408,7 +413,8 @@ class GmailConnector:
                         base64_content = file_data.get("content")
                         if base64_content:
                             try:
-                                logger.info(f"Processing attachment: {filename}")
+                                logger.info(
+                                    f"Processing attachment: {filename}")
                                 logger.info(
                                     f"Base64 content length: {len(base64_content)}"
                                 )
@@ -508,6 +514,7 @@ class GmailConnector:
             max_results: Maximum number of messages to retrieve
             include_spam_trash: Include spam and trash messages
             access_token: Optional access token for this operation
+
         Returns:
             List of message dictionaries
         """
@@ -620,7 +627,8 @@ class GmailConnector:
                         break
         elif payload["mimeType"] == "text/plain":
             if "data" in payload["body"]:
-                body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")
+                body = base64.urlsafe_b64decode(
+                    payload["body"]["data"]).decode("utf-8")
 
         return body
 
@@ -684,6 +692,7 @@ class GmailConnector:
                 - older_than: time period
                 - custom_query: raw Gmail query
                 - max_results: number of results
+
         Returns:
             List of matching messages
         """

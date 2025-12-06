@@ -55,21 +55,19 @@ def build_middlewares() -> list[Middleware]:
         # Add tenant scope middleware after tenant middleware
         middlewares.append(Middleware(TenantScopeMiddleware))
 
-    middlewares.extend(
-        [
-            # 3️⃣  Fills Loguru context vars, measures duration, etc.
-            Middleware(RequestContextMiddleware),
-            # 4️⃣  CORS
-            Middleware(
-                CORSMiddleware,
-                allow_origins=ALLOWED_ORIGINS,
-                allow_credentials=True,
-                allow_methods=["*"],
-                allow_headers=["*"],
-            ),
-            Middleware(VersionHeaderMiddleware),
-        ]
-    )
+    middlewares.extend([
+        # 3️⃣  Fills Loguru context vars, measures duration, etc.
+        Middleware(RequestContextMiddleware),
+        # 4️⃣  CORS
+        Middleware(
+            CORSMiddleware,
+            allow_origins=ALLOWED_ORIGINS,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        ),
+        Middleware(VersionHeaderMiddleware),
+    ])
 
     return middlewares
 
@@ -172,12 +170,8 @@ class VersionHeaderMiddleware(BaseHTTPMiddleware):
 
         # If behind a proxy that terminates TLS, ensure redirects use https
         # this might not be the right place for this logic, but it's convenient
-        if (
-            response.status_code == 307
-            and request.headers.get("x-forwarded-proto") == "https"
-        ):
+        if response.status_code == 307 and request.headers.get("x-forwarded-proto") == "https":
             response.headers["Location"] = response.headers["Location"].replace(
-                "http://", "https://"
-            )
+                'http://', 'https://')
 
         return response

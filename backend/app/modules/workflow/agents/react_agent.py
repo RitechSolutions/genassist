@@ -11,13 +11,13 @@ from app.modules.workflow.agents.agent_utils import (
     create_success_response,
     extract_final_answer,
     extract_thought,
-    parse_react_action,
+    parse_react_action
 )
 from app.modules.workflow.agents.agent_prompts import (
     create_react_tools_available_prompt,
     create_react_no_tools_prompt,
     create_react_query_prompt,
-    create_conversation_context as build_conversation_context,
+    create_conversation_context as build_conversation_context
 )
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ class ReActAgent(BaseToolAgent):
         system_prompt: str,
         tools: List[BaseTool],
         verbose: bool = False,
-        max_iterations: int = 5,
+        max_iterations: int = 5
     ):
         """Initialize a ReAct agent
 
@@ -51,9 +51,7 @@ class ReActAgent(BaseToolAgent):
         """Create an enhanced system prompt using centralized prompt templates"""
         if self.tools:
             tool_descriptions = create_tool_descriptions(self.tools)
-            return create_react_tools_available_prompt(
-                self.system_prompt, tool_descriptions
-            )
+            return create_react_tools_available_prompt(self.system_prompt, tool_descriptions)
         else:
             return create_react_no_tools_prompt(self.system_prompt)
 
@@ -68,15 +66,15 @@ class ReActAgent(BaseToolAgent):
         return await execute_tool_safely(tool, tool_input, tool_name)
 
     # ==================== WORKFLOW EXECUTION ====================
-    async def _run_react_cycle(
-        self, query: str, chat_history: List[Dict[str, str]], thread_id: str = "default"
-    ) -> Dict[str, Any]:
+
+    async def _run_react_cycle(self, query: str, chat_history: List[Dict[str, str]], thread_id: str = "default") -> Dict[str, Any]:
         """Run the ReAct reasoning cycle with enhanced workflow and RAG context"""
         enhanced_prompt = self._create_enhanced_system_prompt()
         # Retrieve RAG context for this chat
         context = build_conversation_context(chat_history)
 
-        current_prompt = create_react_query_prompt(enhanced_prompt, context, query)
+        current_prompt = create_react_query_prompt(
+            enhanced_prompt, context, query)
 
         reasoning_steps = []
         tools_used = []
@@ -84,24 +82,21 @@ class ReActAgent(BaseToolAgent):
         for iteration in range(self.max_iterations):
             try:
                 response = await self.llm_model.ainvoke(
-                    [{"role": "user", "content": current_prompt}]
-                )
-                response_content = (
-                    response.content if hasattr(response, "content") else str(response)
-                )
+                    [{"role": "user", "content": current_prompt}])
+                response_content = response.content if hasattr(
+                    response, 'content') else str(response)
 
                 if self.verbose:
-                    logger.info(f"ReAct iteration {iteration + 1}: {response_content}")
+                    logger.info(
+                        f"ReAct iteration {iteration + 1}: {response_content}")
 
                 # Record reasoning step
                 thought = extract_thought(response_content)
-                reasoning_steps.append(
-                    {
-                        "iteration": iteration + 1,
-                        "thought": thought,
-                        "full_response": response_content,
-                    }
-                )
+                reasoning_steps.append({
+                    "iteration": iteration + 1,
+                    "thought": thought,
+                    "full_response": response_content
+                })
 
                 # Check for Final Answer
                 final_answer = extract_final_answer(response_content)
@@ -111,7 +106,7 @@ class ReActAgent(BaseToolAgent):
                         self._get_agent_name(),
                         iterations=iteration + 1,
                         reasoning_steps=reasoning_steps,
-                        tools_used=tools_used,
+                        tools_used=tools_used
                     )
 
                 # Parse action
@@ -136,7 +131,7 @@ class ReActAgent(BaseToolAgent):
                 # Check if the tool has return_direct=True
                 if action in self.tool_map:
                     tool = self.tool_map[action]
-                    if hasattr(tool, "return_direct") and tool.return_direct:
+                    if hasattr(tool, 'return_direct') and tool.return_direct:
                         # Return tool result directly, ending the ReAct cycle
                         return create_success_response(
                             str(observation),
@@ -145,21 +140,20 @@ class ReActAgent(BaseToolAgent):
                             reasoning_steps=reasoning_steps,
                             tools_used=tools_used,
                             return_direct=True,
-                            tool=action,
+                            tool=action
                         )
 
                 # Update prompt with observation
-                current_prompt += (
-                    f"\n\n{response_content}\nObservation: {observation}\n"
-                )
+                current_prompt += f"\n\n{response_content}\nObservation: {observation}\n"
 
             except Exception as e:
-                logger.error(f"Error in ReAct cycle iteration {iteration}: {str(e)}")
+                logger.error(
+                    f"Error in ReAct cycle iteration {iteration}: {str(e)}")
                 return create_error_response(
                     f"Error in iteration {iteration}: {str(e)}",
                     self._get_agent_name(),
                     reasoning_steps=reasoning_steps,
-                    tools_used=tools_used,
+                    tools_used=tools_used
                 )
 
         # Max iterations reached
@@ -167,14 +161,12 @@ class ReActAgent(BaseToolAgent):
             f"Max iterations ({self.max_iterations}) reached without final answer",
             self._get_agent_name(),
             reasoning_steps=reasoning_steps,
-            tools_used=tools_used,
+            tools_used=tools_used
         )
 
     # ==================== PUBLIC API ====================
 
-    async def invoke(
-        self, query: str, chat_history: Optional[List] = None, **kwargs
-    ) -> Dict[str, Any]:
+    async def invoke(self, query: str, chat_history: Optional[List] = None, **kwargs) -> Dict[str, Any]:
         """Execute a query using the ReAct pattern"""
         chat_history = chat_history or []
         thread_id = kwargs.get("thread_id", "default")
@@ -184,9 +176,7 @@ class ReActAgent(BaseToolAgent):
             return result
         except Exception as e:
             logger.error(f"Error executing ReActAgent query: {str(e)}")
-            return create_error_response(
-                str(e), self._get_agent_name(), thread_id=thread_id
-            )
+            return create_error_response(str(e), self._get_agent_name(), thread_id=thread_id)
 
     async def stream(self, query: str, chat_history: Optional[List] = None, **kwargs):
         """Stream the agent's reasoning and action process"""
@@ -198,6 +188,4 @@ class ReActAgent(BaseToolAgent):
         except Exception as e:
             logger.error(f"Error streaming ReActAgent query: {str(e)}")
             thread_id = kwargs.get("thread_id", "default")
-            yield create_error_response(
-                str(e), self._get_agent_name(), thread_id=thread_id
-            )
+            yield create_error_response(str(e), self._get_agent_name(), thread_id=thread_id)

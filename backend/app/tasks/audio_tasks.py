@@ -108,6 +108,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
         if not audio_files:
             logger.info(f"No audio files found for S3 Datasource: {ds_item.name}")
             continue
+
         transcribed = []
 
         for file_info in audio_files:

@@ -25,9 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 # ------------------------------ Helpers --------------------------------- #
-def _compute_next_run(
-    cron_expr: Optional[str], last_synced: Optional[datetime]
-) -> Optional[datetime]:
+def _compute_next_run(cron_expr: Optional[str], last_synced: Optional[datetime]) -> Optional[datetime]:
     """
     Validate cron expression and compute the next run as a datetime.
     Returns None if invalid.
@@ -46,7 +44,6 @@ def _compute_next_run(
     except Exception as e:
         logger.error(f"Cron invalid -> {expr!r}: {e}")
         return None
-
 
 # ------------------------------ Task entrypoints --------------------------------- #
 
@@ -69,7 +66,8 @@ async def import_sharepoint_files_to_kb_async_with_scope():
 
         results = await run_task_for_all_tenants(run_with_scope)
 
-        logger.info(f"SharePoint import completed for {len(results)} tenant(s)")
+        logger.info(
+            f"SharePoint import completed for {len(results)} tenant(s)")
         return {"status": "success", "results": results}
     except Exception as e:
         logger.error(f"Error in SharePoint file import task: {str(e)}")
@@ -86,9 +84,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
     rag_manager = injector.get(AgentRAGServiceManager)
     app_settings_service = injector.get(AppSettingsService)
 
-    kb_list = (
-        [await kb_service.get_by_id(kb_id)] if kb_id else await kb_service.get_all()
-    )
+    kb_list = [await kb_service.get_by_id(kb_id)] if kb_id else await kb_service.get_all()
 
     processed_ds = 0
     files_added_tot = 0
@@ -100,9 +96,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
             if not kb.sync_active or not kb.sync_source_id:
                 continue
 
-            ds = await injector.get(DataSourceService).get_by_id(
-                kb.sync_source_id, True
-            )
+            ds = await injector.get(DataSourceService).get_by_id(kb.sync_source_id, True)
             if not ds or ds.source_type.lower() != "o365":
                 continue
 
@@ -117,12 +111,9 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
 
             # Get Microsoft credentials from app settings by ID
             try:
-                app_settings = await app_settings_service.get_by_id(
-                    UUID(app_settings_id)
-                )
-                values = (
-                    app_settings.values if isinstance(app_settings.values, dict) else {}
-                )
+                app_settings = await app_settings_service.get_by_id(UUID(app_settings_id))
+                values = app_settings.values if isinstance(
+                    app_settings.values, dict) else {}
                 o365_client_id = values.get("microsoft_client_id")
                 o365_client_secret = values.get("microsoft_client_secret")
                 o365_tenant_id = values.get("microsoft_tenant_id")
@@ -185,19 +176,13 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
             new_files = [
                 f
                 for f in result.get("files", [])
-                if not any(
-                    existing.startswith(f"KB:{kb.id}#{f['path']}")
-                    for existing in existing_files
-                )
+                if not any(existing.startswith(f"KB:{kb.id}#{f['path']}") for existing in existing_files)
             ]
 
             deleted_files = [
                 existing
                 for existing in existing_files
-                if not any(
-                    existing.startswith(f"KB:{kb.id}#{f['path']}")
-                    for f in result.get("files", [])
-                )
+                if not any(existing.startswith(f"KB:{kb.id}#{f['path']}") for f in result.get("files", []))
             ]
 
             # ---- delete removed files ----
@@ -212,11 +197,11 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
             # ---- add new files ----
             for file_info in new_files:
                 try:
-                    file_content = sp_client.get_file_content(file_info["download_url"])
+                    file_content = sp_client.get_file_content(
+                        file_info["download_url"])
                     if len(file_content) == 0:
                         logger.warning(
-                            f"File {file_info.get('name', '')} has no content, skipping..."
-                        )
+                            f"File {file_info.get('name', '')} has no content, skipping...")
                         continue
 
                     # Use the filename's suffix so textract identifies the type (e.g., .docx)
@@ -239,11 +224,9 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
 
                 except Exception as e:
                     logger.error(
-                        f"Error processing {file_info.get('path', '<unknown>')}: {e}"
-                    )
+                        f"Error processing {file_info.get('path', '<unknown>')}: {e}")
                     errors.append(
-                        f"Error processing {file_info.get('path', '<unknown>')}: {str(e)}"
-                    )
+                        f"Error processing {file_info.get('path', '<unknown>')}: {str(e)}")
 
             # ---- update KB sync timestamps ----
             kb_update = json.loads(kb.model_dump_json())
@@ -256,9 +239,9 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
         except Exception as e:
             # don't let one KB kill the whole batch
             logger.error(
-                f"Unhandled error for KB {getattr(kb, 'id', '<unknown>')}: {e}"
-            )
-            errors.append(f"{getattr(kb, 'id', '<unknown>')} unhandled error: {str(e)}")
+                f"Unhandled error for KB {getattr(kb, 'id', '<unknown>')}: {e}")
+            errors.append(
+                f"{getattr(kb, 'id', '<unknown>')} unhandled error: {str(e)}")
             continue
 
     return {

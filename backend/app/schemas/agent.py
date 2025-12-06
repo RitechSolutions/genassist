@@ -9,32 +9,20 @@ class AgentBase(BaseModel):
     name: str
     description: str
     is_active: bool = False
-    welcome_message: str = Field(
-        ...,
-        max_length=500,
-        description="Welcome message returned when starting a conversation with an agent.",
-    )
-    welcome_image: Optional[bytes] = Field(
-        None,
-        description="Welcome image blob displayed when starting a conversation with an agent.",
-    )
-    welcome_title: Optional[str] = Field(
-        None,
-        max_length=200,
-        description="Welcome title displayed when starting a conversation with an agent.",
-    )
-    possible_queries: list[str] = Field(
-        ...,
-        description="Possible queries, suggested when starting a conversation with an agent.",
-    )
+    welcome_message: str = Field(..., max_length=500,
+                                 description="Welcome message returned when starting a conversation with an agent.")
+    welcome_image: Optional[bytes] = Field(None,
+                                           description="Welcome image blob displayed when starting a conversation with an agent.")
+    welcome_title: Optional[str] = Field(None, max_length=200,
+                                         description="Welcome title displayed when starting a conversation with an agent.")
+    possible_queries: list[str] = Field(...,
+                                        description="Possible queries, suggested when starting a conversation with an agent.")
     thinking_phrases: Optional[list[str]] = Field(
-        description="Thinking phrases, suggested when starting a conversation with an agent.",
-        default=[],
-    )
-    thinking_phrase_delay: Optional[int] = Field(
-        None, ge=0, description="Delay in seconds before showing thinking phrases."
-    )
-    model_config = ConfigDict(extra="forbid", from_attributes=True)  # shared rules
+        description="Thinking phrases, suggested when starting a conversation with an agent.", default=[])
+    thinking_phrase_delay: Optional[int] = Field(None, ge=0,
+                                                 description="Delay in seconds before showing thinking phrases.")
+    model_config = ConfigDict(
+        extra='forbid', from_attributes=True)  # shared rules
     workflow_id: Optional[UUID] = None
 
 
@@ -53,12 +41,12 @@ class AgentUpdate(BaseModel):
     thinking_phrases: Optional[list[str]] = None
     thinking_phrase_delay: Optional[int] = None
     workflow_id: Optional[UUID] = None
-    model_config = ConfigDict(extra="forbid", from_attributes=True)
+    model_config = ConfigDict(extra='forbid', from_attributes=True)
 
 
 class AgentRead(AgentBase):
     id: UUID
-    model_config = ConfigDict(extra="ignore")  # shared rules
+    model_config = ConfigDict(extra='ignore')  # shared rules
     user_id: Optional[UUID] = None
     operator_id: UUID
     workflow_id: UUID
@@ -97,7 +85,6 @@ class AgentRead(AgentBase):
 
 class AgentImageUpload(BaseModel):
     """Schema for agent image upload"""
-
     image: UploadFile
 
 

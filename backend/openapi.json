@@ -7101,6 +7101,11 @@
                 "schema": {}
               }
             }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
           },
           {
             "OAuth2PasswordBearer": []
@@ -13774,47 +13779,6 @@
           "folderpath"
         ],
         "title": "FolderRequest"
-      },
-      "GmailAuthRequest": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code"
-          },
-          "state": {
-            "type": "string",
-            "title": "State"
-          },
-          "redirect_uri": {
-            "type": "string",
-            "title": "Redirect Uri"
-          }
-        },
-        "type": "object",
-        "required": [
-          "code",
-          "state",
-          "redirect_uri"
-        ],
-        "title": "GmailAuthRequest"
-      },
-      "GmailAuthResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          }
-        },
-        "type": "object",
-        "required": [
-          "status",
-          "message"
-        ],
-        "title": "GmailAuthResponse"
       },
       "GmailAuthRequest": {
         "properties": {

@@ -1,6 +1,7 @@
 from typing import Optional, Tuple
 from pydantic import computed_field, ConfigDict
 from pydantic_settings import BaseSettings
+
 from app.core.project_path import DATA_VOLUME
 
 

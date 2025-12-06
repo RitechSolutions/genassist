@@ -122,6 +122,7 @@ class ChainOfThoughtAgent:
                     "ChainOfThoughtAgent",
                     reasoning_steps=reasoning_steps,
                 )
+
         # Max iterations reached
         return create_error_response(
             f"Max iterations ({self.max_iterations}) reached without final answer",

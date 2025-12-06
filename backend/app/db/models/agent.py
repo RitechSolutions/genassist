@@ -12,20 +12,12 @@ class AgentModel(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(String(200), nullable=True)
     is_active: Mapped[Integer] = mapped_column(Integer, nullable=False)
-    operator_id: Mapped[UUID] = mapped_column(
-        ForeignKey("operators.id"), unique=True, nullable=False
-    )
-    welcome_message: Mapped[str] = mapped_column(
-        String(500), nullable=False, server_default="Welcome"
-    )
+    operator_id: Mapped[UUID] = mapped_column(ForeignKey("operators.id"), unique=True, nullable=False)
+    welcome_message: Mapped[str] = mapped_column(String(500), nullable=False, server_default="Welcome")
     welcome_image: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)
     welcome_title: Mapped[str] = mapped_column(String(200), nullable=True)
-    possible_queries: Mapped[str] = mapped_column(
-        String(500), server_default="What can you do?"
-    )
-    thinking_phrases: Mapped[str] = mapped_column(
-        String(500), server_default="Thinking..."
-    )
+    possible_queries: Mapped[str] = mapped_column(String(500), server_default="What can you do?")
+    thinking_phrases: Mapped[str] = mapped_column(String(500), server_default="Thinking...")
     thinking_phrase_delay: Mapped[Integer] = mapped_column(Integer, nullable=True)
     workflow_id: Mapped[UUID] = mapped_column(ForeignKey("workflows.id"), nullable=True)
 

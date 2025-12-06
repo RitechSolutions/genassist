@@ -79,15 +79,11 @@ async def process_with_agent(
                 "message": "I received an empty response from the agent.",
             }
 
-        logger.debug(
-            f"AGENT: Received response from AgentRegistry: '{agent_response_text}'"
-        )
+        logger.debug(f"AGENT: Received response from AgentRegistry: '{agent_response_text}'")
         return {"success": True, "message": agent_response_text}
 
     except Exception as e:
-        logger.error(
-            f"AGENT ERROR: An unexpected error occurred during agent execution: {e}"
-        )
+        logger.error(f"AGENT ERROR: An unexpected error occurred during agent execution: {e}")
         return {
             "success": False,
             "message": "An unexpected error has occurred with the agent. Please try again later.",
@@ -178,7 +174,7 @@ async def handle_incoming_call(request: Request, agent_id: str):
 
     protocol = request.url.scheme
     ws_protocol = "wss"
-    # if protocol == "http":
+    #if protocol == "http":
     #    ws_protocol = "ws"
 
     port = request.url.port
@@ -275,9 +271,7 @@ async def handle_media_stream(
                             agent_id, session_id, final_transcript, agent_registry
                         )
                         if not agent_response.get("success"):
-                            logger.error(
-                                f"AGENT ERROR: {agent_response.get('message')}"
-                            )
+                            logger.error(f"AGENT ERROR: {agent_response.get('message')}")
                             agent_response_text = "I'm sorry, I could not process your request at this time. Please try again later. Bye!"
                         else:
                             agent_response_text = str(agent_response.get("message"))
@@ -310,9 +304,7 @@ async def handle_media_stream(
                             logger.debug("Finished streaming TTS audio.")
 
                         if not agent_response.get("success"):
-                            logger.error(
-                                f"AGENT ERROR: {agent_response.get('message')}"
-                            )
+                            logger.error(f"AGENT ERROR: {agent_response.get('message')}")
                             raise Exception(agent_response.get("message"))
 
             except Exception as e:

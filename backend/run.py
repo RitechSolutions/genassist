@@ -11,9 +11,6 @@ from app import create_app
 from app.core.config.settings import settings
 from migrations import run_migrations  # Import after logging is set up
 
-from app.core.project_path import PROJECT_PATH, DATA_VOLUME
-
-
 logger = logging.getLogger(__name__)
 
 # Create the FastAPI app (after logging is ready)
