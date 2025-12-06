@@ -6,13 +6,13 @@ export const useSettings = () => {
     "Email Notifications": true,
     "Desktop Notifications": false,
     "Daily Summary": true,
-    "Two-Factor Authentication": false
+    "Two-Factor Authentication": false,
   });
 
   const handleToggle = useCallback((label: string) => {
-    setToggleStates(prev => ({
+    setToggleStates((prev) => ({
       ...prev,
-      [label]: !prev[label]
+      [label]: !prev[label],
     }));
   }, []);
 
@@ -20,7 +20,7 @@ export const useSettings = () => {
     // Simulate API call
     return new Promise<void>((resolve) => {
       setTimeout(() => {
-        toast.success("Settings saved successfully");
+        toast.success("Settings saved successfully.");
         resolve();
       }, 1000);
     });
@@ -29,6 +29,6 @@ export const useSettings = () => {
   return {
     toggleStates,
     handleToggle,
-    saveSettings
+    saveSettings,
   };
-}; 
+};

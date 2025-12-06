@@ -8,7 +8,15 @@ import { useState } from "react";
 import { Button } from "@/components/button";
 import { Operator } from "@/interfaces/operator.interface";
 import { CreateOperator } from "../components/CreateOperator";
+import { OperatorCredentialsDialog } from "../components/OperatorCredentialsDialog";
 
+type NewOperatorResponse = Operator & {
+  user: {
+    username: string;
+    email: string;
+    password: string;
+  };
+};
 
 export default function Operators() {
   const isMobile = useIsMobile();
@@ -16,31 +24,45 @@ export default function Operators() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const [refreshKey, setRefreshKey] = useState(0);
+  const [newOperatorCredentials, setNewOperatorCredentials] = useState<{
+    username: string;
+    email: string;
+    password: string;
+  } | null>(null);
+  const [isCredentialsDialogOpen, setIsCredentialsDialogOpen] = useState(false);
 
   const handleCreateOperator = () => {
     setIsDialogOpen(true);
   };
 
-  const handleOperatorSaved = () => {
+  const handleOperatorSaved = (newOperator: NewOperatorResponse) => {
     setRefreshKey((prev) => prev + 1);
     setIsDialogOpen(false);
+    if (newOperator && newOperator.user && newOperator.user.password) {
+      setNewOperatorCredentials({
+        username: newOperator.user.username,
+        email: newOperator.user.email,
+        password: newOperator.user.password,
+      });
+      setIsCredentialsDialogOpen(true);
+    }
   };
 
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100">
-          <div className="flex-1 p-8">
-            <div className="max-w-7xl mx-auto space-y-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h1 className="text-3xl font-bold mb-2 animate-fade-down">Operators</h1>
-                  <p className="text-muted-foreground animate-fade-up">View and manage your team of customer service operators</p>
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0">
+          <div className="flex-1 p-4 sm:p-6 lg:p-8">
+            <div className="max-w-7xl mx-auto space-y-6 w-full">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
+                <div className="min-w-0">
+                  <h1 className="text-2xl md:text-3xl font-bold mb-1 animate-fade-down">Operators</h1>
+                  <p className="text-sm md:text-base text-muted-foreground animate-fade-up">View and manage your team of customer service operators</p>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="relative">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+                  <div className="relative w-full sm:w-[260px]">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
                       type="text"
@@ -51,7 +73,7 @@ export default function Operators() {
                     />
                   </div>
                   <Button
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 w-full sm:w-auto justify-center"
                     onClick={handleCreateOperator}
                   >
                     <Plus className="w-4 h-4" />
@@ -72,6 +94,12 @@ export default function Operators() {
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         onOperatorCreated={handleOperatorSaved}
+      />
+
+      <OperatorCredentialsDialog
+        isOpen={isCredentialsDialogOpen}
+        onOpenChange={setIsCredentialsDialogOpen}
+        credentials={newOperatorCredentials}
       />
 
     </SidebarProvider>

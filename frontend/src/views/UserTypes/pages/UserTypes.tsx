@@ -11,9 +11,14 @@ export default function UserTypes() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [userTypeToEdit, setUserTypeToEdit] = useState<UserType | null>(null);
+  const [updatedUserType, setUpdatedUserType] = useState<UserType | null>(null);
 
   const handleUserTypeSaved = () => {
     setRefreshKey(prevKey => prevKey + 1);
+  };
+
+  const handleUserTypeUpdated = (userType: UserType) => {
+    setUpdatedUserType(userType);
   };
 
   const handleCreateUserType = () => {
@@ -40,16 +45,18 @@ export default function UserTypes() {
         onActionClick={handleCreateUserType}
       />
       
-      <UserTypesCard 
-        searchQuery={searchQuery} 
+      <UserTypesCard
+        searchQuery={searchQuery}
         refreshKey={refreshKey}
         onEditUserType={handleEditUserType}
+        updatedUserType={updatedUserType}
       />
 
-      <UserTypeDialog 
+      <UserTypeDialog
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         onUserTypeSaved={handleUserTypeSaved}
+        onUserTypeUpdated={handleUserTypeUpdated}
         userTypeToEdit={userTypeToEdit}
         mode={dialogMode}
       />

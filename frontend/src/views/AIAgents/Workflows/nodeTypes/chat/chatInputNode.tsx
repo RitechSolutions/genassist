@@ -1,80 +1,85 @@
-import React, { useEffect } from "react";
-import { Position, NodeProps } from "reactflow";
-import { MessageCircle } from "lucide-react";
-import {
-  ChatInputNodeData,
-} from "../../types/nodes";
-import { HandleTooltip } from "../../components/HandleTooltip";
-import { getNodeColors } from "../../utils/nodeColors";
+import React, { useEffect, useState } from "react";
+import { NodeProps } from "reactflow";
+import { ChatInputNodeData } from "../../types/nodes";
+import { getNodeColor } from "../../utils/nodeColors";
+import { ParameterSection } from "../../components/custom/ParameterSection";
+import { NodeSchema, SchemaField } from "../../types/schemas";
+import BaseNodeContainer from "../BaseNodeContainer";
+import nodeRegistry from "../../registry/nodeRegistry";
 
-// Component for the Chat Input Node
+export const CHAT_INPUT_NODE_TYPE = "chatInputNode";
 
 const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
   id,
   data,
   selected,
 }) => {
-  const colors = getNodeColors("chatInputNode");
+  const nodeDefinition = nodeRegistry.getNodeType(CHAT_INPUT_NODE_TYPE);
+  const color = getNodeColor(nodeDefinition.category);
+  const [dynamicParams, setDynamicParams] = useState<NodeSchema>(
+    data.inputSchema
+  );
 
+  // Update local state when the input schema changes (e.g., when loading from JSON)
   useEffect(() => {
-    // Initialize handlers if they don't exist
-    if (!data.handlers) {
-      data.updateNodeData?.(id, {
-        ...data,
-        handlers: [
-          {
-            id: "output",
-            type: "source",
-            compatibility: "text",
-          },
-        ],
-      });
+    if (data.inputSchema) {
+      setDynamicParams(data.inputSchema);
     }
-  }, []);
+  }, [data.inputSchema]);
+
+  // Update node data when schema changes
+  useEffect(() => {
+    data.updateNodeData?.(id, {
+      ...data,
+      inputSchema: dynamicParams,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dynamicParams]);
+
+  const addItem = (
+    setter: React.Dispatch<React.SetStateAction<NodeSchema>>,
+    template: SchemaField
+  ) => {
+    const newName = `param_${Date.now()}`;
+    setter((prev) => ({
+      ...prev,
+      [newName]: template,
+    }));
+  };
+
+  const removeItem = (
+    setter: React.Dispatch<React.SetStateAction<NodeSchema>>,
+    name: string
+  ) => {
+    setter((prev) => {
+      const newParams = { ...prev };
+      delete newParams[name];
+      return newParams;
+    });
+  };
 
   return (
-    <>
-      <div
-        className={`border-2 rounded-md bg-white shadow-md w-[300px] ${
-          selected ? "border-blue-500" : "border-gray-200"
-        }`}
-      >
-        {/* Node header */}
-        <div
-          className={`px-4 py-2 border-b ${colors.header} flex justify-between items-center`}
-        >
-          <div className="flex items-center">
-            <MessageCircle className={`h-4 w-4 text-white mr-2`} />
-            <div className="text-sm font-medium text-white">Chat Input</div>
-          </div>
-        </div>
-
-        {/* Node content */}
-        <div className="p-4">
-          <div className="space-y-4">
-            <div className="text-sm text-gray-500">
-              Chat input as entry point for workflow.
-            </div>
-          </div>
-        </div>
-
-        {data.handlers?.map((handler, index) => (
-          <HandleTooltip
-            key={handler.id}
-            type={handler.type}
-            position={
-              handler.type === "source" ? Position.Right : Position.Left
-            }
-            id={handler.id}
-            nodeId={id}
-            compatibility={handler.compatibility}
-            style={{ top: "50%" }}
-          />
-        ))}
+    <BaseNodeContainer
+      id={id}
+      data={data}
+      selected={selected}
+      iconName={nodeDefinition.icon}
+      title={data.name || nodeDefinition.label}
+      subtitle={nodeDefinition.shortDescription}
+      color={color}
+      nodeType={CHAT_INPUT_NODE_TYPE}
+    >
+      {/* Node content */}
+      <div className="p-4 mx-1 mb-1 bg-white rounded-md">
+        <ParameterSection
+          dynamicParams={dynamicParams}
+          setDynamicParams={setDynamicParams}
+          addItem={addItem}
+          removeItem={removeItem}
+        />
       </div>
-    </>
+    </BaseNodeContainer>
   );
 };
 
 export default ChatInputNode;
-

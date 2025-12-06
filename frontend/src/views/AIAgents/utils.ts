@@ -10,7 +10,6 @@ export function pairsToObject(pairs: Array<{key: string, value: unknown}>): Reco
       } else {
         obj[pair.key] = pair.value;
       }
-      console.log(`Key: ${pair.key}, Value: ${obj[pair.key]}`);
       return obj;
     }, {} as Record<string, unknown>);
   }

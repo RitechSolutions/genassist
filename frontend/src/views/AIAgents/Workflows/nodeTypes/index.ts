@@ -4,46 +4,110 @@ import LLMModelNode from "./llm/modelNode";
 import APIToolNode from "./tools/apiToolNode";
 import AgentNode from "./llm/agentNode";
 import PythonCodeNode from "./tools/pythonCodeNode";
-import { CHAT_INPUT_NODE_DEFINITION, CHAT_OUTPUT_NODE_DEFINITION, SLACK_OUTPUT_NODE_DEFINITION } from "./chat/definitions";
-import { API_TOOL_NODE_DEFINITION, KNOWLEDGE_BASE_NODE_DEFINITION, PYTHON_CODE_NODE_DEFINITION } from "./tools/definitions";
+import {
+  CHAT_INPUT_NODE_DEFINITION,
+  CHAT_OUTPUT_NODE_DEFINITION,
+} from "./chat/definitions";
+import {
+  API_TOOL_NODE_DEFINITION,
+  KNOWLEDGE_BASE_NODE_DEFINITION,
+  PYTHON_CODE_NODE_DEFINITION,
+  SQL_NODE_DEFINITION,
+  ML_MODEL_INFERENCE_NODE_DEFINITION,
+  THREAD_RAG_NODE_DEFINITION,
+} from "./tools/definitions";
 import KnowledgeBaseNode from "./tools/knowledgeBaseNode";
+import SQLNode from "./tools/sqlNode";
+import MLModelInferenceNode from "./tools/mlModelInferenceNode";
+import ThreadRAGNode from "./tools/threadRAGNode";
+import ReadMailsNode from "./integrations/readMailsNode";
+import ToolBuilderNode from "./llm/toolBuilderNode";
 import ChatOutputNode from "./chat/chatOutputNode";
-import { AGENT_NODE_DEFINITION, MODEL_NODE_DEFINITION } from "./llm/definitions";
-import { TEMPLATE_NODE_DEFINITION } from "./utils/definitions";
+import {
+  AGENT_NODE_DEFINITION,
+  MODEL_NODE_DEFINITION,
+  TOOL_BUILDER_NODE_DEFINITION,
+} from "./llm/definitions";
+import {
+  DATA_MAPPER_NODE_DEFINITION,
+  TEMPLATE_NODE_DEFINITION,
+} from "./utils/definitions";
 import TemplateNode from "./utils/templateNode";
-import SlackOutputNode from "./chat/slackOutputNode";
-import ZendeskTicketNode from "./zendesk/zendeskTicketNode";
-import { ZENDESK_TICKET_NODE_DEFINITION } from "@/views/AIAgents/Workflows/nodeTypes/zendesk/definitions";
-
+import DataMapperNode from "./utils/dataMapperNode";
+import SlackOutputNode from "./integrations/slackOutputNode";
+import ZendeskTicketNode from "./integrations/zendeskTicketNode";
+import GmailNode from "./integrations/gmailNode";
+import {
+  GMAIL_NODE_DEFINITION,
+  ZENDESK_TICKET_NODE_DEFINITION,
+  SLACK_OUTPUT_NODE_DEFINITION,
+  CALENDAR_EVENT_NODE_DEFINITION,
+  READ_MAILS_NODE_DEFINITION,
+  WHATSAPP_NODE_DEFINITION,
+  JIRA_NODE_DEFINITION,
+} from "@/views/AIAgents/Workflows/nodeTypes/integrations/definition";
+import WhatsAppNode from "./integrations/whatsappNode";
+import {
+  ROUTER_NODE_DEFINITION,
+  AGGREGATOR_NODE_DEFINITION,
+} from "./router/definitions";
+import RouterNode from "./router/routerNode";
+import AggregatorNode from "./router/aggregatorNode";
+import CalendarEventNode from "./integrations/calendarEventNode";
+import {
+  TRAIN_DATA_SOURCE_NODE_DEFINITION,
+  PREPROCESSING_NODE_DEFINITION,
+  TRAIN_MODEL_NODE_DEFINITION,
+} from "./training/definitions";
+import TrainDataSourceNode from "./training/trainDataSourceNode";
+import PreprocessingNode from "./training/preprocessingNode";
+import TrainModelNode from "./training/trainModelNode";
+import JiraNode from "./integrations/jiraNode";
 
 // A function to re-register if needed
 export const registerAllNodeTypes = () => {
   // Clear existing registry to prevent duplicates
   nodeRegistry.clearRegistry();
+  nodeRegistry.registerNodeType(TEMPLATE_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(MODEL_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(API_TOOL_NODE_DEFINITION);
 
-  // Register ChatInput node
+  nodeRegistry.registerNodeType(WHATSAPP_NODE_DEFINITION);
+
   nodeRegistry.registerNodeType(CHAT_INPUT_NODE_DEFINITION);
 
-
-    // Register Slack Message Output node
   nodeRegistry.registerNodeType(SLACK_OUTPUT_NODE_DEFINITION);
 
+  // Register Whatsapp Message Output node
+  nodeRegistry.registerNodeType(WHATSAPP_OUTPUT_NODE_DEFINITION);
+
   nodeRegistry.registerNodeType(CHAT_OUTPUT_NODE_DEFINITION);
-  // Register API Tool node
-  nodeRegistry.registerNodeType(API_TOOL_NODE_DEFINITION);
-      // Register Zendesk node
+
   nodeRegistry.registerNodeType(ZENDESK_TICKET_NODE_DEFINITION);
-  // Register Knowledge Base node
+  nodeRegistry.registerNodeType(GMAIL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(KNOWLEDGE_BASE_NODE_DEFINITION);
-  // Register Python Code node
+  nodeRegistry.registerNodeType(SQL_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(ML_MODEL_INFERENCE_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(READ_MAILS_NODE_DEFINITION);
   nodeRegistry.registerNodeType(PYTHON_CODE_NODE_DEFINITION);
-  // Register LLM Model node
-  nodeRegistry.registerNodeType(MODEL_NODE_DEFINITION);
-  // Register Prompt Template node
-  nodeRegistry.registerNodeType(TEMPLATE_NODE_DEFINITION);
-  // Register Agent node
+  nodeRegistry.registerNodeType(THREAD_RAG_NODE_DEFINITION);
   nodeRegistry.registerNodeType(AGENT_NODE_DEFINITION);
 
+  nodeRegistry.registerNodeType(TOOL_BUILDER_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(DATA_MAPPER_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(ROUTER_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(AGGREGATOR_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(CALENDAR_EVENT_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(JIRA_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(TRAIN_DATA_SOURCE_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(PREPROCESSING_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(TRAIN_MODEL_NODE_DEFINITION);
 };
 
 // Get node types for React Flow
@@ -51,14 +115,29 @@ export const getNodeTypes = () => {
   return {
     chatInputNode: ChatInputNode,
     llmModelNode: LLMModelNode,
-    promptNode: TemplateNode,
+    templateNode: TemplateNode,
     chatOutputNode: ChatOutputNode,
     apiToolNode: APIToolNode,
     agentNode: AgentNode,
     knowledgeBaseNode: KnowledgeBaseNode,
+    sqlNode: SQLNode,
+    mlModelInferenceNode: MLModelInferenceNode,
+    threadRAGNode: ThreadRAGNode,
 
-    slackMessageNode: SlackOutputNode, 
+    slackMessageNode: SlackOutputNode,
+    whatsappToolNode: WhatsAppNode,
     zendeskTicketNode: ZendeskTicketNode,
+    gmailNode: GmailNode,
+    readMailsNode: ReadMailsNode,
     pythonCodeNode: PythonCodeNode,
+    toolBuilderNode: ToolBuilderNode,
+    routerNode: RouterNode,
+    aggregatorNode: AggregatorNode,
+    dataMapperNode: DataMapperNode,
+    calendarEventNode: CalendarEventNode,
+    jiraNode: JiraNode,
+    trainDataSourceNode: TrainDataSourceNode,
+    preprocessingNode: PreprocessingNode,
+    trainModelNode: TrainModelNode,
   };
 };

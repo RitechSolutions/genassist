@@ -7,6 +7,9 @@ export interface SettingFieldType {
   type: FieldType;
   placeholder?: string;
   options?: string[];
+  valueKey?: string;
+  value?: string | number | boolean;
+  readOnly?: boolean;
 }
 
 export interface SettingSectionType {
@@ -14,4 +17,4 @@ export interface SettingSectionType {
   icon: ElementType;
   description: string;
   fields: SettingFieldType[];
-} 
+}

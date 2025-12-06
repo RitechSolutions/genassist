@@ -6,7 +6,7 @@ const API_ENDPOINT = "feature-flags";
 export const getFeatureFlags = async (): Promise<FeatureFlag[]> => {
   const response = await apiRequest<FeatureFlag[]>(
     "GET",
-    API_ENDPOINT
+    `${API_ENDPOINT}/`
   );
   return response || [];
 };

@@ -38,7 +38,6 @@ export const useOperators = () => {
         setOperators(mappedAgents);
         setError(null);
       } catch (err) {
-        console.error("Error fetching agents:", err);
         setError(err instanceof Error ? err : new Error("Failed to fetch agents"));
         setOperators([]);
       } finally {

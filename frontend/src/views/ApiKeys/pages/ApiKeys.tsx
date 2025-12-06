@@ -9,21 +9,26 @@ export default function ApiKeys() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
+  const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [apiKeyToEdit, setApiKeyToEdit] = useState<ApiKey | null>(null);
+  const [updatedApiKey, setUpdatedApiKey] = useState<ApiKey | null>(null);
 
   const handleApiKeySaved = () => {
-    setRefreshKey(prevKey => prevKey + 1);
+    setRefreshKey((prevKey) => prevKey + 1);
+  };
+
+  const handleApiKeyUpdated = (apiKey: ApiKey) => {
+    setUpdatedApiKey(apiKey);
   };
 
   const handleCreateApiKey = () => {
-    setDialogMode('create');
+    setDialogMode("create");
     setApiKeyToEdit(null);
     setIsDialogOpen(true);
   };
-  
+
   const handleEditApiKey = (apiKey: ApiKey) => {
-    setDialogMode('edit');
+    setDialogMode("edit");
     setApiKeyToEdit(apiKey);
     setIsDialogOpen(true);
   };
@@ -39,20 +44,22 @@ export default function ApiKeys() {
         actionButtonText="Generate New API Key"
         onActionClick={handleCreateApiKey}
       />
-      
-      <ApiKeysCard 
+
+      <ApiKeysCard
         searchQuery={searchQuery}
         refreshKey={refreshKey}
         onEditApiKey={handleEditApiKey}
+        updatedApiKey={updatedApiKey}
       />
 
       <ApiKeyDialog
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         onApiKeyCreated={handleApiKeySaved}
+        onApiKeyUpdated={handleApiKeyUpdated}
         apiKeyToEdit={apiKeyToEdit}
         mode={dialogMode}
       />
     </PageLayout>
   );
-} 
+}

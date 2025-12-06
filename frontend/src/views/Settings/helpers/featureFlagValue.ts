@@ -6,7 +6,6 @@ export const isFeatureEnabled = async (key: string): Promise<boolean> => {
       const flag = flags.find(f => f.key === key && f.is_active === 1);
       return flag?.val === "true";
     } catch (error) {
-      console.error("Error checking feature flag:", error);
       return false;
     }
   };
@@ -17,7 +16,6 @@ export const isFeatureEnabled = async (key: string): Promise<boolean> => {
       const flag = flags.find(f => f.key === key && f.is_active === 1);
       return flag ? flag.val : null;
     } catch (error) {
-      console.error("Error getting feature flag value:", error);
       return null;
     }
   }; 

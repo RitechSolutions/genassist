@@ -32,6 +32,7 @@ import { PlusCircle, Edit, Trash2, Copy, Eye, EyeOff } from "lucide-react";
 import { Input } from "@/components/input";
 import { Badge } from "@/components/badge";
 import toast from "react-hot-toast";
+import { SecretInput } from "@/components/SecretInput";
 
 interface Props {
   agentId: string;
@@ -73,16 +74,15 @@ export default function ManageApiKeysModal({
     if (isOpen) load();
   }, [isOpen, userId]);
 
-  async function handleSave(saved: ApiKey) {
+  async function handleSave(saved: ApiKey & { key_val?: string }) {
     setKeys((keysArr) =>
       editing
         ? keysArr.map((x) => (x.id === saved.id ? saved : x))
         : [saved, ...keysArr]
     );
 
-    if ((saved as any).key_val) {
-      setSecrets((s) => ({ ...s, [saved.id]: (saved as any).key_val }));
-      setVisibleKeys((v) => ({ ...v, [saved.id]: false }));
+    if (saved.key_val) {
+      setSecrets((s) => ({ ...s, [saved.id]: saved.key_val }));
     }
 
     setFormOpen(false);
@@ -97,20 +97,17 @@ export default function ManageApiKeysModal({
   const copyKey = (keyId: string) => {
     const txt = secrets[keyId] ?? "";
     navigator.clipboard.writeText(txt);
-    toast.success("API key has been copied to clipboard");
+    toast.success("API key copied to clipboard.");
   };
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-3xl overflow-hidden">
+          <DialogHeader className="flex flex-row items-center justify-between">
             <DialogTitle className="text-xl font-semibold">
               Manage API Keys
             </DialogTitle>
-          </DialogHeader>
-
-          <div className="flex justify-end mb-4">
             <Button
               onClick={() => {
                 setEditing(null);
@@ -121,7 +118,7 @@ export default function ManageApiKeysModal({
               <PlusCircle className="h-4 w-4" />
               Add API Key
             </Button>
-          </div>
+          </DialogHeader>
 
           {keys.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
@@ -148,39 +145,8 @@ export default function ManageApiKeysModal({
                       <TableRow key={k.id}>
                         <TableCell className="font-medium">{k.name}</TableCell>
 
-                        <TableCell className="font-medium relative">
-                          <Input
-                            readOnly
-                            className="pr-24"
-                            value={
-                              isVisible ? secret : secret.replace(/./g, "•")
-                            }
-                          />
-                          <div className="absolute right-5 top-1/2 -translate-y-1/2 flex">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => toggleVisibility(k.id)}
-                              title={isVisible ? "Hide key" : "Show key"}
-                            >
-                              {isVisible ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => copyKey(k.id)}
-                              title="Copy to clipboard"
-                              disabled={!secret}
-                            >
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                          </div>
+                        <TableCell className="font-medium">
+                          <SecretInput value={secret} className="w-full" />
                         </TableCell>
 
                         <TableCell>

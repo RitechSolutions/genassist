@@ -45,7 +45,7 @@ export function DeleteConfirmationDialog({
     try {
       await onConfirm();
     } catch (error) {
-      console.error("Error in delete operation:", error);
+      // ignore
     }
   };
 

@@ -79,7 +79,7 @@ export default function AuditLogs() {
       });
       setFilteredAuditLogs(filtered);
     } catch (error) {
-      console.error("Error fetching filtered audit logs:", error);
+      // ignore
     }
   };
 
@@ -89,7 +89,7 @@ export default function AuditLogs() {
         const fetchedUsers = await fetchUsers();
         setUsers(fetchedUsers);
       } catch (error) {
-        console.error("Error fetching users:", error);
+        // ignore
       }
     };
     fetchUsersData();

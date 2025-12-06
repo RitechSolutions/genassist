@@ -3,28 +3,37 @@ import {
   ChatOutputNodeData,
   NodeData,
   NodeTypeDefinition,
-  SlackOutputNodeData,
 } from "../../types/nodes";
 import ChatInputNode from "./chatInputNode";
 
 import { NodeProps } from "reactflow";
 import ChatOutputNode from "./chatOutputNode";
-import SlackOutputNode from "./slackOutputNode";
+import { createSimpleSchema } from "../../types/schemas";
 
 export const CHAT_INPUT_NODE_DEFINITION: NodeTypeDefinition<ChatInputNodeData> =
   {
     type: "chatInputNode",
-    label: "Chat Input",
-    description: "A node for handling chat messages and user inputs",
-    category: "input",
-    icon: "MessageCircle",
+    label: "Start",
+    description:
+      "Defines the entry point of the workflow where inputs are received.",
+    shortDescription: "Start workflow execution",
+    category: "io",
+    icon: "ArrowRightFromLine",
     defaultData: {
-      name: "Chat Input",
+      name: "Start",
+      inputSchema: createSimpleSchema({
+        message: {
+          type: "string",
+          description: "The message received from the user",
+          required: true,
+        },
+      }),
       handlers: [
         {
           id: "output",
           type: "source",
-          compatibility: "text",
+          compatibility: "any",
+          position: "right",
         },
       ],
     },
@@ -35,14 +44,6 @@ export const CHAT_INPUT_NODE_DEFINITION: NodeTypeDefinition<ChatInputNodeData> =
       position,
       data: {
         ...data,
-        handlers: [
-          {
-            id: "output",
-            type: "source",
-            compatibility: "text",
-          },
-          ...data.handlers,
-        ],
       },
     }),
   };
@@ -50,17 +51,20 @@ export const CHAT_INPUT_NODE_DEFINITION: NodeTypeDefinition<ChatInputNodeData> =
 export const CHAT_OUTPUT_NODE_DEFINITION: NodeTypeDefinition<ChatOutputNodeData> =
   {
     type: "chatOutputNode",
-    label: "Chat Output",
-    description: "Display chat messages from the LLM",
-    category: "output",
-    icon: "MessageSquare",
+    label: "Finish",
+    description:
+      "Defines the endpoint of the workflow where final outputs are delivered.",
+    shortDescription: "Finish workflow execution",
+    category: "io",
+    icon: "ArrowRightToLine",
     defaultData: {
-      name: "Chat Output",
+      name: "Finish",
       handlers: [
         {
           id: "input",
           type: "target",
-          compatibility: "text",
+          compatibility: "any",
+          position: "left",
         },
       ],
     },
@@ -71,53 +75,6 @@ export const CHAT_OUTPUT_NODE_DEFINITION: NodeTypeDefinition<ChatOutputNodeData>
       position,
       data: {
         ...data,
-        handlers: [
-          {
-            id: "input",
-            type: "target",
-            compatibility: "text",
-          },
-          ...data.handlers,
-        ],
       },
     }),
   };
-
-
-  export const SLACK_OUTPUT_NODE_DEFINITION: NodeTypeDefinition<SlackOutputNodeData> =
-  {
-    type: "slackMessageNode",
-    label: "Slack Message",
-    description: "Send a message to a Slack user or channel",
-    category: "output",
-    icon: "Slack", 
-    defaultData: {
-      name: "Slack Message",
-      message: "",
-      channel: "",
-      token: "",
-      handlers: [
-        {
-          id: "input",
-          type: "target",
-          compatibility: "text",
-        },
-      ],
-    },
-    component: SlackOutputNode as React.ComponentType<NodeProps<NodeData>>,
-    createNode: (id, position, data) => ({
-      id,
-      type: "slackMessageNode",
-      position,
-      data: {
-        ...data,
-        handlers: [
-          {
-            id: "input",
-            type: "target",
-            compatibility: "text",
-          },
-        ],
-      },
-    }),
-  }

@@ -7,17 +7,27 @@ import { Edit } from "lucide-react";
 import { getAllUsers } from "@/services/users";
 import { toast } from "react-hot-toast";
 import { User } from "@/interfaces/user.interface";
+import { getPaginationMeta } from "@/helpers/pagination";
+import { PaginationBar } from "@/components/PaginationBar";
 
 interface UsersCardProps {
   searchQuery: string;
   refreshKey?: number;
   onEditUser: (user: User) => void;
+  updatedUser?: User | null;
 }
 
-export function UsersCard({ searchQuery, refreshKey = 0, onEditUser }: UsersCardProps) {
+export function UsersCard({
+  searchQuery,
+  refreshKey = 0,
+  onEditUser,
+  updatedUser = null,
+}: UsersCardProps) {
+  const PAGE_SIZE = 10;
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -27,10 +37,10 @@ export function UsersCard({ searchQuery, refreshKey = 0, onEditUser }: UsersCard
         setUsers(userData);
         setError(null);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to fetch users";
+        const message =
+          err instanceof Error ? err.message : "Failed to fetch users";
         setError(message);
         toast.error(message);
-        console.error("Error fetching data:", err);
       } finally {
         setLoading(false);
       }
@@ -39,25 +49,54 @@ export function UsersCard({ searchQuery, refreshKey = 0, onEditUser }: UsersCard
     fetchUsers();
   }, [refreshKey]);
 
-  const filteredUsers = users.filter((user) =>
-    user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  useEffect(() => {
+    if (updatedUser) {
+      setUsers((prevUsers) =>
+        prevUsers.map((user) =>
+          user.id === updatedUser.id ? updatedUser : user
+        )
+      );
+    }
+  }, [updatedUser]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  const filteredUsers = users.filter(
+    (user) =>
+      user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const headers = ["ID", "Username", "Email", "Status", "User Type", "Roles", "Action"];
+  const pagination = getPaginationMeta(filteredUsers.length, PAGE_SIZE, currentPage);
+  const paginatedUsers = filteredUsers.slice(pagination.startIndex, pagination.endIndex);
+  const pageItemCount = paginatedUsers.length;
+
+  const headers = [
+    "ID",
+    "Username",
+    "Email",
+    "Status",
+    "User Type",
+    "Roles",
+    "Action",
+  ];
 
   const renderRow = (user: User, index: number) => (
     <TableRow key={user.id}>
-      <TableCell>{index + 1}</TableCell>
-      <TableCell className="font-medium">{user.username}</TableCell>
-      <TableCell>{user.email}</TableCell>
-      <TableCell>
+      <TableCell>{pagination.startIndex + index + 1}</TableCell>
+      <TableCell className="font-medium break-all">{user.username}</TableCell>
+      <TableCell className="truncate">{user.email}</TableCell>
+      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
         <Badge variant={user.is_active === 1 ? "default" : "secondary"}>
           {user.is_active === 1 ? "Active" : "Inactive"}
         </Badge>
       </TableCell>
-      <TableCell>{user.user_type?.name || "N/A"}</TableCell>
-      <TableCell>
+      <TableCell className="truncate">
+        {user.user_type?.name || "N/A"}
+      </TableCell>
+      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
         <div className="flex gap-1 flex-wrap">
           {user.roles && user.roles.length > 0 ? (
             user.roles.map((role, index) => (
@@ -66,7 +105,7 @@ export function UsersCard({ searchQuery, refreshKey = 0, onEditUser }: UsersCard
               </Badge>
             ))
           ) : (
-            <span className="text-muted-foreground">-</span>
+            <span className="text-gray-400">—</span>
           )}
         </div>
       </TableCell>
@@ -84,15 +123,25 @@ export function UsersCard({ searchQuery, refreshKey = 0, onEditUser }: UsersCard
   );
 
   return (
-    <DataTable
-      data={filteredUsers}
-      loading={loading}
-      error={error}
-      searchQuery={searchQuery}
-      headers={headers}
-      renderRow={renderRow}
-      emptyMessage="No users found"
-      searchEmptyMessage="No users found matching your search"
-    />
+    <>
+      <DataTable
+        data={paginatedUsers}
+        loading={loading}
+        error={error}
+        searchQuery={searchQuery}
+        headers={headers}
+        renderRow={renderRow}
+        emptyMessage="No users found"
+        searchEmptyMessage="No users found matching your search"
+      />
+
+      <PaginationBar
+        total={pagination.total}
+        pageSize={PAGE_SIZE}
+        currentPage={pagination.safePage}
+        pageItemCount={pageItemCount}
+        onPageChange={setCurrentPage}
+      />
+    </>
   );
 }

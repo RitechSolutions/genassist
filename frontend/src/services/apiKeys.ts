@@ -5,53 +5,60 @@ export const getAllApiKeys = async (): Promise<ApiKey[]> => {
   try {
     const data = await apiRequest<ApiKey[]>("GET", "api-keys/");
     if (!data) {
-      console.warn("No API keys data returned from server");
       return [];
     }
     
     if (!Array.isArray(data)) {
-      console.error("API keys data is not an array:", data);
       return [];
     }
     
     return data;
   } catch (error) {
-    console.error("Error fetching API keys:", error);
     throw error;
   }
 };
 
 export const getApiKey = async (id: string): Promise<ApiKey | null> => {
   try {
-    const data = await apiRequest<ApiKey>("GET", `api-keys/${id}`);
+    const data = await apiRequest<ApiKey>("GET", `api-keys/${id}/`);
     if (!data) {
-      console.warn("API key not found");
       return null;
     }
     return data;
   } catch (error) {
-    console.error("Error fetching API key:", error);
     throw error;
   }
 };
 
 
 export const createApiKey = async (apiKeyData: Partial<ApiKey> & { role_ids?: string[] }): Promise<ApiKey> => {
+  type RequestData = {
+    name?: string;
+    is_active?: number;
+    role_ids: string[];
+    assigned_user_id?: string;
+    user_id?: string;
+    agent_id?: string;
+  };
+
   try {
-    const requestData = {
+    const requestData: RequestData = {
       name: apiKeyData.name,
       is_active: apiKeyData.is_active,
       role_ids: apiKeyData.role_ids || [],
       assigned_user_id: apiKeyData.user_id,
       user_id: apiKeyData.user_id,
     };
+
+    if (apiKeyData.agent_id) {
+      requestData.agent_id = apiKeyData.agent_id;
+    }
     
-    const response = await apiRequest<ApiKey>("POST", "api-keys", requestData);
+    const response = await apiRequest<ApiKey>("POST", "api-keys/", requestData);
     if (!response) throw new Error("Failed to create API key");
 
     return response;
   } catch (error) {
-    console.error("Error creating API key:", error);
     throw error;
   }
 };
@@ -68,7 +75,11 @@ export const updateApiKey = async (id: string, apiKeyData: Partial<ApiKey>): Pro
       requestData.role_ids = apiKeyData.role_ids;
     }
 
-    const response = await apiRequest<ApiKey>("PATCH", `api-keys/${id}`, requestData);
+    if (apiKeyData.agent_id) {
+      requestData.agent_id = apiKeyData.agent_id;
+    }
+
+    const response = await apiRequest<ApiKey>("PATCH", `api-keys/${id}/`, requestData);
 
     if (!response) {
       throw new Error("Failed to update API key");
@@ -76,16 +87,14 @@ export const updateApiKey = async (id: string, apiKeyData: Partial<ApiKey>): Pro
 
     return response;
   } catch (error) {
-    console.error("Error occurred while updating API key:", error);
     throw error;
   }
 };
 
 export const revokeApiKey = async (id: string): Promise<void> => {
   try {
-    await apiRequest("DELETE", `api-keys/${id}`);
+    await apiRequest("DELETE", `api-keys/${id}/`);
   } catch (error) {
-    console.error("Error revoking API key:", error);
     throw error;
   }
 }; 
@@ -98,16 +107,13 @@ export const getApiKeys = async (userId?: string): Promise<ApiKey[]> => {
   try {
     const data = await apiRequest<ApiKey[]>("GET", url);
     if (!data) {
-      console.warn("No API keys data returned from server");
       return [];
     }
     if (!Array.isArray(data)) {
-      console.error("API keys data is not an array:", data);
       return [];
     }
     return data;
   } catch (error) {
-    console.error("Error fetching API keys:", error);
     throw error;
   }
 };

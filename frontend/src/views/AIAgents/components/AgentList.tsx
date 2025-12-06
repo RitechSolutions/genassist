@@ -67,16 +67,15 @@ const AgentList: React.FC<AgentListProps> = ({
         const items = await getAllKnowledgeItems();
         setKnowledgeItems(items);
       } catch (err) {
-        console.error("Failed to load knowledge base items:", err);
+        // ignore
       }
     };
 
     fetchKnowledgeItems();
   }, []);
 
-  const handleChatWithAgent = (agentId: string) => {
-    const sessionId = Math.random().toString(36).substring(2, 15);
-    navigate(`/ai-agents/chat/${agentId}/${sessionId}`);
+  const handleOpenWorkflow = (agentId: string) => {
+    navigate(`/ai-agents/workflow/${agentId}`);
   };
 
   if (!agents || agents.length === 0) {
@@ -88,11 +87,12 @@ const AgentList: React.FC<AgentListProps> = ({
             You haven't created any workflows yet. Get started by creating your
             first agent.
           </p>
-          <Button asChild onClick={() => setOpenAgentForm(true)}>
-            <div className="flex items-center gap-2">
-              <Plus className="mr-2 h-4 w-4" />
-              New Workflow
-            </div>
+          <Button
+            className="flex items-center gap-2"
+            onClick={() => setOpenAgentForm(true)}
+          >
+            <Plus className="h-4 w-4" />
+            New Workflow
           </Button>
         </div>
         <AgentFormDialog
@@ -108,19 +108,14 @@ const AgentList: React.FC<AgentListProps> = ({
     const agentName = agent.name || `${agent.provider}-${agent.model}`;
     const isActive = !!agent.is_active;
     // Truncate system prompt for display
-    const truncatedPrompt = agent.possible_queries?.join(" ")??""
-    
+    const truncatedPrompt = agent.possible_queries?.join(" ") ?? "";
 
     return (
       <div
         key={agent.id}
-        className={`px-6 py-4 ${
-          isActive ? "hover:bg-muted/50 cursor-pointer" : ""
-        }`}
+        className={`px-6 py-4 hover:bg-muted/50 cursor-pointer`}
         onClick={() => {
-          if (isActive) {
-            handleChatWithAgent(agent.id);
-          }
+          handleOpenWorkflow(agent.id);
         }}
       >
         <div className="flex items-center justify-between">
@@ -142,10 +137,9 @@ const AgentList: React.FC<AgentListProps> = ({
                 <span className="font-medium">Workflow ID:</span>{" "}
                 {agent.workflow_id}
               </div>
-   
+
               <div>
-                <span className="font-medium">FAQ:</span>{" "}
-                {truncatedPrompt}
+                <span className="font-medium">FAQ:</span> {truncatedPrompt}
               </div>
             </div>
           </div>
@@ -250,11 +244,12 @@ const AgentList: React.FC<AgentListProps> = ({
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <Button asChild onClick={() => setOpenAgentForm(true)}>
-            <div className="flex items-center gap-2">
-              <Plus className="mr-2 h-4 w-4" />
-              New Workflow
-            </div>
+          <Button
+            className="flex items-center gap-2"
+            onClick={() => setOpenAgentForm(true)}
+          >
+            <Plus className="h-4 w-4" />
+            New Workflow
           </Button>
         </div>
       </div>

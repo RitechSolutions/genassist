@@ -14,15 +14,21 @@ import { usePermissions } from "@/context/PermissionContext";
 interface UseTranscriptDataOptions {
   id?: string;
   limit?: number;
+  skip?: number;
+  sentiment?: string;
+  hostility_neutral_max?: number;
+  hostility_positive_max?: number;
+  include_feedback?: boolean;
   sortNewestFirst?: boolean;
 }
 
 export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
-  const { id, limit, sortNewestFirst = true } = options;
+  const { id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst = true } = options;
 
   const [data, setData] = useState<Transcript | Transcript[]>(id ? null : []);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
+  const [total, setTotal] = useState<number>(0);
 
   const fetchAndTransformTranscripts = useCallback(async () => {
     if (id) {
@@ -40,9 +46,9 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
         }
 
         setData(transformedData);
+        setTotal(transformedData ? 1 : 0);
         setError(null);
       } catch (err) {
-        console.error(`Error fetching transcript ${id}:`, err);
         setError(
           err instanceof Error
             ? err
@@ -55,10 +61,9 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
     } else {
       try {
         setLoading(true);
-        const backendData = await fetchTranscripts();
+        const { items: backendData, total: backendTotal } = await fetchTranscripts(limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback);
 
         if (!backendData || !Array.isArray(backendData)) {
-          console.error("Invalid backend data format:", backendData);
           throw new Error("Invalid backend data format");
         }
 
@@ -68,24 +73,17 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
             try {
               return transformTranscript(recording as BackendTranscript);
             } catch (err) {
-              console.error("Error transforming recording:", err);
               return null;
             }
           })
           .filter(Boolean) as Transcript[];
 
-        let finalData = [...transformedData];
-
-        if (sortNewestFirst) {
-          finalData.sort(
-            (a, b) =>
-              new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-          );
-        }
-
-        if (limit && limit > 0) {
-          finalData = finalData.slice(0, limit);
-        }
+        const finalData = sortNewestFirst
+          ? [...transformedData].sort(
+              (a, b) =>
+                new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            )
+          : [...transformedData];
 
         const validData = finalData.map((transcript) => ({
           ...transcript,
@@ -93,34 +91,33 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
             ...(transcript.metadata || {}),
             customer_speaker:
               transcript.metadata?.customer_speaker ?? "Customer",
-            duration: typeof transcript.duration === 'number' 
-              ? `${Math.floor(transcript.duration / 60)}:${String(Math.floor(transcript.duration % 60)).padStart(2, '0')}`
-              : transcript.duration || "0:00",
+            duration: transcript.duration || 0,
             title: transcript.id || "Unknown",
             topic: transcript.metadata?.topic || " - Unknown",
+            isCall: Boolean(transcript?.recording_id) || Boolean(transcript?.metadata?.isCall),
           },
           status: transcript.status || "unknown",
         }));
 
         setData(validData);
+        setTotal(typeof backendTotal === "number" ? backendTotal : validData.length);
         setError(null);
       } catch (err) {
-        console.error("Error fetching transcripts:", err);
         setError(
           err instanceof Error ? err : new Error("Failed to fetch transcripts")
         );
         setData([]);
+        setTotal(0);
       } finally {
         setLoading(false);
       }
     }
-  }, [id, limit, sortNewestFirst]);
+  }, [id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst]);
 
   const permissions = usePermissions();
 
   useEffect(() => {
     if (!permissions.includes("*") && !permissions.includes("read:conversation")) {
-      console.log("You don't have transcript permission");
       return;
     }
     fetchAndTransformTranscripts();
@@ -129,6 +126,7 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
 
   return {
     data,
+    total,
     loading,
     error,
     refetch: fetchAndTransformTranscripts,

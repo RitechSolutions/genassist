@@ -19,6 +19,7 @@ interface ApiKeyDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   onApiKeyCreated?: () => void;
+  onApiKeyUpdated?: (apiKey: ApiKey) => void;
   mode?: "create" | "edit";
   apiKeyToEdit?: ApiKey | null;
 }
@@ -27,6 +28,7 @@ export function ApiKeyDialog({
   isOpen,
   onOpenChange,
   onApiKeyCreated,
+  onApiKeyUpdated,
   mode = "create",
   apiKeyToEdit = null,
 }: ApiKeyDialogProps) {
@@ -52,24 +54,23 @@ export function ApiKeyDialog({
     mode,
     apiKeyToEdit,
     onApiKeyCreated,
+    onApiKeyUpdated,
     onOpenChange,
   });
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>
-            {mode === "create" ? "Generate New API Key" : "Edit API Key"}
-          </DialogTitle>
-          <DialogDescription>
-            {mode === "create"
-              ? "Fill in the details below to generate a new API key for your account."
-              : "Update the API key details below."}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <div className="grid gap-4 py-4">
+      <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
+        <form
+          onSubmit={handleSubmit}
+          className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col"
+        >
+          <DialogHeader className="p-6 pb-4">
+            <DialogTitle>
+              {mode === "create" ? "Generate New API Key" : "Edit API Key"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 px-6 pb-6">
             <div className="flex justify-between items-center">
               <Label htmlFor="name">Name</Label>
             </div>
@@ -144,25 +145,27 @@ export function ApiKeyDialog({
             )}
           </div>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            {dialogMode === "create" && (
-              <Button type="submit" disabled={loading || hasGeneratedKey}>
-                {loading ? "Generating..." : "Generate Key"}
+          <DialogFooter className="px-6 py-4 border-t">
+            <div className="flex justify-end gap-3 w-full">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
               </Button>
-            )}
+              {dialogMode === "create" && (
+                <Button type="submit" disabled={loading || hasGeneratedKey}>
+                  {loading ? "Generating..." : "Generate Key"}
+                </Button>
+              )}
 
-            {dialogMode === "edit" && (
-              <Button type="submit" disabled={loading || !hasGeneratedKey}>
-                {loading ? "Updating..." : "Update Key"}
-              </Button>
-            )}
+              {dialogMode === "edit" && (
+                <Button type="submit" disabled={loading || !hasGeneratedKey}>
+                  {loading ? "Updating..." : "Update Key"}
+                </Button>
+              )}
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

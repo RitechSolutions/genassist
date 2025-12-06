@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ActionButtons } from "@/components/ActionButtons";
-import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
@@ -14,9 +14,16 @@ interface LLMAnalystCardProps {
   onDelete: (id: string) => Promise<void>;
 }
 
-export function LLMAnalystCard({ analysts, searchQuery, onEdit, onDelete }: LLMAnalystCardProps) {
+export function LLMAnalystCard({
+  analysts,
+  searchQuery,
+  onEdit,
+  onDelete,
+}: LLMAnalystCardProps) {
   const [loading, setLoading] = useState(true);
-  const [analystToDelete, setAnalystToDelete] = useState<LLMAnalyst | null>(null);
+  const [analystToDelete, setAnalystToDelete] = useState<LLMAnalyst | null>(
+    null
+  );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -27,10 +34,13 @@ export function LLMAnalystCard({ analysts, searchQuery, onEdit, onDelete }: LLMA
     return () => clearTimeout(timeout);
   }, [analysts]);
 
-  const filtered = analysts.filter(a => {
+  const filtered = analysts.filter((a) => {
     const name = a.name?.toLowerCase() || "";
     const provider = a.llm_provider?.name?.toLowerCase() || "";
-    return name.includes(searchQuery.toLowerCase()) || provider.includes(searchQuery.toLowerCase());
+    return (
+      name.includes(searchQuery.toLowerCase()) ||
+      provider.includes(searchQuery.toLowerCase())
+    );
   });
 
   const handleDeleteClick = (analyst: LLMAnalyst) => {
@@ -40,14 +50,13 @@ export function LLMAnalystCard({ analysts, searchQuery, onEdit, onDelete }: LLMA
 
   const handleDeleteConfirm = async () => {
     if (!analystToDelete?.id) return;
-    
+
     try {
       setIsDeleting(true);
       await onDelete(analystToDelete.id);
-      toast.success("LLM Analyst deleted successfully");
+      toast.success("LLM analyst deleted successfully.");
     } catch (error) {
-      toast.error("Failed to delete LLM Analyst");
-      console.error("Error deleting LLM Analyst:", error);
+      toast.error("Failed to delete LLM analyst.");
     } finally {
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);
@@ -59,10 +68,12 @@ export function LLMAnalystCard({ analysts, searchQuery, onEdit, onDelete }: LLMA
 
   const renderRow = (analyst: LLMAnalyst) => (
     <TableRow key={analyst.id}>
-      <TableCell>{analyst.name}</TableCell>
-      <TableCell>{analyst.llm_provider?.name}</TableCell>
-      <TableCell className="max-w-[300px] truncate">{analyst.prompt}</TableCell>
+      <TableCell className="font-medium break-all">{analyst.name}</TableCell>
+      <TableCell className="truncate">{analyst.llm_provider?.name}</TableCell>
       <TableCell>
+        <span className="line-clamp-2">{analyst.prompt}</span>
+      </TableCell>
+      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
         <Badge variant={analyst.is_active ? "default" : "secondary"}>
           {analyst.is_active ? "Active" : "Inactive"}
         </Badge>
@@ -90,11 +101,11 @@ export function LLMAnalystCard({ analysts, searchQuery, onEdit, onDelete }: LLMA
         searchEmptyMessage="No LLM Analysts found matching your search"
       />
 
-      <DeleteConfirmDialog
+      <ConfirmDialog
         isOpen={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={handleDeleteConfirm}
-        isDeleting={isDeleting}
+        isInProgress={isDeleting}
         itemName={analystToDelete?.name || ""}
         description={`This action cannot be undone. This will permanently delete the LLM Analyst "${analystToDelete?.name}".`}
       />

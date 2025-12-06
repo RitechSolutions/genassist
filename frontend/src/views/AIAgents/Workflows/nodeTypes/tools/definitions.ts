@@ -1,25 +1,34 @@
 import { NodeProps } from "reactflow";
 import {
+  APIToolNodeData,
   KnowledgeBaseNodeData,
   NodeData,
   NodeTypeDefinition,
   PythonCodeNodeData,
+  SQLNodeData,
+  MLModelInferenceNodeData,
+  ThreadRAGNodeData,
 } from "../../types/nodes";
 
-import { APIToolNodeData } from "../../types/nodes";
 import APIToolNode from "./apiToolNode";
 import KnowledgeBaseNode from "./knowledgeBaseNode";
 import PythonCodeNode from "./pythonCodeNode";
+import SQLNode from "./sqlNode";
+import MLModelInferenceNode from "./mlModelInferenceNode";
+import ThreadRAGNode from "./threadRAGNode";
 
 export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
   type: "apiToolNode",
-  label: "API Tool",
-  description: "Make real-time API calls to external services",
+  label: "API Connector",
+  description:
+    "Makes HTTP requests to external APIs using configurable methods, headers, and bodies.",
+  shortDescription: "Call an external API",
+  configSubtitle:
+    "Configure API request settings, including endpoint, method, headers, and body.",
   category: "tools",
   icon: "Globe",
   defaultData: {
-    name: "API Tool",
-    description: "Makes API calls to external services",
+    name: "API Connector",
     endpoint: "https://",
     method: "GET",
     headers: {},
@@ -29,18 +38,14 @@ export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
       {
         id: "input",
         type: "target",
-        compatibility: "json",
-      },
-
-      {
-        id: "output_reference",
-        type: "source",
-        compatibility: "tools",
+        compatibility: "any",
+        position: "left",
       },
       {
         id: "output",
         type: "source",
-        compatibility: "json",
+        compatibility: "any",
+        position: "right",
       },
     ],
   },
@@ -51,24 +56,6 @@ export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
     position,
     data: {
       ...data,
-      handlers: [
-        {
-          id: "input",
-          type: "target",
-          compatibility: "json",
-        },
-
-        {
-          id: "output_reference",
-          type: "source",
-          compatibility: "tools",
-        },
-        {
-          id: "output",
-          type: "source",
-          compatibility: "json",
-        },
-      ],
     },
   }),
 };
@@ -76,30 +63,32 @@ export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
 export const KNOWLEDGE_BASE_NODE_DEFINITION: NodeTypeDefinition<KnowledgeBaseNodeData> =
   {
     type: "knowledgeBaseNode",
-    label: "Knowledge Base",
-    description: "Query multiple knowledge bases for information",
+    label: "Knowledge Query",
+    description:
+      "Queries connected knowledge bases to retrieve relevant information.",
+    shortDescription: "Query knowledge bases",
+    configSubtitle:
+      "Configure knowledge base query settings, including selected sources and limits.",
     category: "tools",
     icon: "Database",
     defaultData: {
-      name: "Knowledge Base",
-      description: "Query multiple knowledge bases",
+      name: "Knowledge Query",
       selectedBases: [],
+      query: "",
+      limit: 5,
+      force: false,
       handlers: [
         {
           id: "input",
           type: "target",
-          compatibility: "json",
-        },
-
-        {
-          id: "output_reference",
-          type: "source",
-          compatibility: "tools",
+          compatibility: "any",
+          position: "left",
         },
         {
           id: "output",
           type: "source",
-          compatibility: "json",
+          compatibility: "any",
+          position: "right",
         },
       ],
     } as KnowledgeBaseNodeData,
@@ -110,24 +99,6 @@ export const KNOWLEDGE_BASE_NODE_DEFINITION: NodeTypeDefinition<KnowledgeBaseNod
       position,
       data: {
         ...data,
-        handlers: [
-          {
-            id: "input",
-            type: "target",
-            compatibility: "json",
-          },
-
-          {
-            id: "output_reference",
-            type: "source",
-            compatibility: "tools",
-          },
-          {
-            id: "output",
-            type: "source",
-            compatibility: "json",
-          },
-        ],
       },
     }),
   };
@@ -135,30 +106,43 @@ export const KNOWLEDGE_BASE_NODE_DEFINITION: NodeTypeDefinition<KnowledgeBaseNod
 export const PYTHON_CODE_NODE_DEFINITION: NodeTypeDefinition<PythonCodeNodeData> =
   {
     type: "pythonCodeNode",
-    label: "Python Code",
-    description: "Execute Python code in a sandboxed environment",
+    label: "Python Executor",
+    description:
+      "Executes Python code to transform data or perform custom logic.",
+    shortDescription: "Execute Python code",
+    configSubtitle:
+      "Configure the Python execution environment, including script and parameters.",
     category: "tools",
     icon: "Code",
     defaultData: {
-      name: "Python Code",
-      description: "Execute Python code in a sandboxed environment",
-      code: "",
+      name: "Python Executor",
+      code: `# Generated Python function template
+from typing import Optional
+
+# Store your result in the 'result' variable
+# Import any additional libraries you need
+# import json
+# import requests
+# import datetime
+
+def executable_function(params):
+    
+    # Your code logic here - example using the parameters:
+    result = 'Successfully executed {{parameter1}} function with no parameters'
+
+    return result`,
       handlers: [
         {
           id: "input",
           type: "target",
-          compatibility: "json",
-        },
-
-        {
-          id: "output_reference",
-          type: "source",
-          compatibility: "tools",
+          compatibility: "any",
+          position: "left",
         },
         {
           id: "output",
           type: "source",
-          compatibility: "json",
+          compatibility: "any",
+          position: "right",
         },
       ],
     },
@@ -169,23 +153,124 @@ export const PYTHON_CODE_NODE_DEFINITION: NodeTypeDefinition<PythonCodeNodeData>
       position,
       data: {
         ...data,
-        handlers: [
-          {
-            id: "input",
-            type: "target",
-            compatibility: "json",
-          },
-          {
-            id: "output_reference",
-            type: "source",
-            compatibility: "tools",
-          },
-          {
-            id: "output",
-            type: "source",
-            compatibility: "json",
-          },
-        ],
       },
     }),
   };
+
+export const SQL_NODE_DEFINITION: NodeTypeDefinition<SQLNodeData> = {
+  type: "sqlNode",
+  label: "SQL Generator",
+  description:
+    "Generates SQL queries using an AI model to retrieve structured data.",
+  shortDescription: "Generate SQL queries",
+  configSubtitle:
+    "Configure SQL generation settings, including model provider, data source, and prompts.",
+  category: "tools",
+  icon: "Database",
+  defaultData: {
+    name: "SQL Generator",
+    providerId: "",
+    dataSourceId: "",
+    query: "",
+    systemPrompt: "",
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  } as SQLNodeData,
+  component: SQLNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "sqlNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const ML_MODEL_INFERENCE_NODE_DEFINITION: NodeTypeDefinition<MLModelInferenceNodeData> =
+  {
+    type: "mlModelInferenceNode",
+    label: "ML Model Inference",
+    description: "Run inference using a trained ML model",
+    category: "tools",
+    icon: "Brain",
+    defaultData: {
+      name: "ML Model",
+      modelId: "",
+      modelName: "",
+      inferenceInputs: {},
+      features: {},
+      handlers: [
+        {
+          id: "input",
+          type: "target",
+          compatibility: "any",
+          position: "left",
+        },
+        {
+          id: "output",
+          type: "source",
+          compatibility: "any",
+          position: "right",
+        },
+      ],
+    } as MLModelInferenceNodeData,
+    component: MLModelInferenceNode as React.ComponentType<NodeProps<NodeData>>,
+    createNode: (id, position, data) => ({
+      id,
+      type: "mlModelInferenceNode",
+      position,
+      data: {
+        ...data,
+      },
+    }),
+  };
+
+export const THREAD_RAG_NODE_DEFINITION: NodeTypeDefinition<ThreadRAGNodeData> = {
+  type: "threadRAGNode",
+  label: "Thread RAG",
+  description: "Retrieve context from or add messages to thread RAG",
+  category: "tools",
+  icon: "Database",
+  defaultData: {
+    name: "Thread RAG",
+    action: "retrieve",
+    query: "{{query}}",
+    top_k: 5,
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  } as ThreadRAGNodeData,
+  component: ThreadRAGNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "threadRAGNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};

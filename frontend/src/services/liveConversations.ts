@@ -10,35 +10,88 @@ import {
 } from "@/interfaces/transcript.interface";
 import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmModels";
 
-const parseTranscript = (transcription: string): string => {
-  try {
-    const parsed = JSON.parse(transcription);
-    
-    if (Array.isArray(parsed)) {
-      return transcription;
-    }
-  } catch {
-    // If JSON.parse fails, it's not a JSON string, return as is (it might be plain text).
+const parseEntriesFromBackend = (rec: BackendTranscript): TranscriptEntry[] => {
+  if (Array.isArray(rec.messages)) {
+    return rec.messages.map((entry: Partial<TranscriptEntry> & { id?: string }) => ({
+      text: entry.text ?? "",
+      speaker: entry.speaker ?? "Unknown",
+      start_time: entry.start_time ?? 0,
+      end_time: entry.end_time ?? (entry.start_time ?? 0) + 0.01,
+      create_time: entry.create_time ?? new Date().toISOString(),
+      type: entry.type ?? "message",
+      message_id: (entry as { id?: string }).id,
+      feedback: entry.feedback ?? [],
+    }));
   }
-  return transcription || "Transcript unavailable";
+
+  const transcription = rec.transcription as unknown;
+  if (typeof transcription === "string" && transcription.trim() !== "") {
+    try {
+      const parsed = JSON.parse(transcription);
+      if (Array.isArray(parsed)) {
+        return (parsed as Partial<TranscriptEntry>[]).map((entry) => ({
+          text: entry.text ?? "",
+          speaker: entry.speaker ?? "Unknown",
+          start_time: entry.start_time ?? 0,
+          end_time: entry.end_time ?? (entry.start_time ?? 0) + 0.01,
+          create_time: entry.create_time ?? new Date().toISOString(),
+          type: (entry as { type?: string }).type ?? "message",
+          message_id: (entry as { message_id?: string }).message_id,
+          feedback: entry.feedback ?? [],
+        }));
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return [];
 };
 
 export const conversationService = {
+  getCachedTopic: (id: string): string | null => {
+    try {
+      const v = localStorage.getItem(`conversation_topic:${id}`);
+      return v && v !== "" ? v : null;
+    } catch {
+      return null;
+    }
+  },
+  setCachedTopic: (id: string, topic: string | undefined | null): void => {
+    try {
+      if (typeof topic === "string" && topic.trim() !== "" && topic !== "Unknown") {
+        localStorage.setItem(`conversation_topic:${id}`, topic);
+      }
+    } catch {
+      // ignore
+    }
+  },
+  removeCachedTopic: (id: string): void => {
+    try {
+      localStorage.removeItem(`conversation_topic:${id}`);
+    } catch {
+      // ignore
+    }
+  },
+  fetchInProgressCount: async (): Promise<number> => {
+    try {
+      const response = await apiRequest<{ count: number } | number | null>(
+        "get",
+        "/conversations/filter/count?conversation_status=takeover&conversation_status=in_progress"
+      );
+      if (response === null || response === undefined) return 0;
+      if (typeof response === "number") return response;
+      if (typeof (response).count === "number") return (response).count;
+      return 0;
+    } catch (error) {
+      return 0;
+    }
+  },
   fetchTranscript: async (id: string): Promise<ConversationTranscript> => {
     const response = await apiRequest<BackendTranscript>(
       "get",
       `/conversations/${id}`
     );
-
-    const rawEntries = JSON.parse(response.transcription || "[]");
-
-    const entries: TranscriptEntry[] = rawEntries.map((entry: Partial<TranscriptEntry>): TranscriptEntry => ({
-      text: entry.text ?? "",
-      speaker: entry.speaker ?? "Unknown",
-      start_time: entry.start_time ?? 0,
-      end_time: entry.end_time ?? (entry.start_time ?? 0) + 1,
-      create_time: entry.create_time ?? new Date().toISOString(),
-    }));
+    const entries: TranscriptEntry[] = parseEntriesFromBackend(response);
     
 
     const analysis = response.analysis || {
@@ -52,6 +105,11 @@ export const conversationService = {
     };
 
     const topic = response.analysis?.topic ?? "Unknown";
+    try {
+      conversationService.setCachedTopic(response.id, topic);
+    } catch {
+      // ignore
+    }
 
     let dominantSentiment: "positive" | "neutral" | "negative" = "neutral";
     const { neutral_sentiment, positive_sentiment, negative_sentiment } =
@@ -104,7 +162,6 @@ export const conversationService = {
       await apiRequest("patch", `conversations/in-progress/takeover-super/${id}`);
       return true;
     } catch (error) {
-      console.error("Supervisor takeover failed:", error);
       return false;
     }
   },
@@ -122,52 +179,52 @@ export const conversationService = {
     });
   },    
 
-  fetchActive: async (options?: { fromDate?: string; toDate?: string }): Promise<ActiveConversationsResponse> => {
-    const fetchByStatus = async (status: string) => {
-      const params = new URLSearchParams({
-        skip: "0",
-        limit: "50",
-        conversation_status: status,
-        minimum_hostility_score: "10",
-      });
-      
-      if (options?.fromDate) {
-        params.append("from_date", options.fromDate);
-        console.log(`Using from_date: ${options.fromDate}`);
-      }
-      
-      if (options?.toDate) {
-        params.append("to_date", options.toDate);
-        console.log(`Using to_date: ${options.toDate}`);
-      }
-      
-      const url = `/conversations/?${params.toString()}`;
-      console.log(`Fetching conversations with URL: ${url}`);
-  
-      return await apiRequest<BackendTranscript[]>("get", url);
-    };
-  
+  fetchActive: async (options?: { fromDate?: string; toDate?: string; sentiment?: string; category?: string; hostility_neutral_max?: number | string; hostility_positive_max?: number | string; include_feedback?: boolean }): Promise<ActiveConversationsResponse> => {
     try {
-      const [inProgress, supervisorInProgress] = await Promise.all([
-        fetchByStatus("in_progress"),
-        fetchByStatus("takeover"),
-      ]);
-      
-      console.log("Received conversations:", { 
-        inProgress: inProgress?.length ?? 0,
-        supervisorInProgress: supervisorInProgress?.length ?? 0
-      });
-    
-      const allConversations = [...(inProgress ?? []), ...(supervisorInProgress ?? [])];
-    
+      const params = new URLSearchParams();
+      params.set("skip", "0");
+      params.set("limit", "100");
+      params.append("conversation_status", "in_progress");
+      params.append("conversation_status", "takeover");
+
+      if (options?.fromDate) params.append("from_date", options.fromDate);
+      if (options?.toDate) params.append("to_date", options.toDate);
+      const s = (options?.sentiment || "").toLowerCase();
+      const c = options?.category || ""; // keep server enum casing
+      if (s && s !== "all") {
+        params.append("sentiment", s);
+        if (options?.hostility_neutral_max !== undefined) {
+          params.append("hostility_neutral_max", String(options.hostility_neutral_max));
+        }
+        if (options?.hostility_positive_max !== undefined) {
+          params.append("hostility_positive_max", String(options.hostility_positive_max));
+        }
+      }
+      if (c && c !== "all") params.append("conversation_topics", c);
+      if (typeof options?.include_feedback === "boolean") params.append("include_feedback", String(options.include_feedback));
+
+      const url = `/conversations/?${params.toString()}`;
+      const raw = await apiRequest<unknown>("get", url);
+
+      const normalizeApiList = (payload: unknown): BackendTranscript[] => {
+        if (!payload) return [] as BackendTranscript[];
+        if (Array.isArray(payload)) return payload as BackendTranscript[];
+        const asObj = payload as Record<string, unknown>;
+        if (Array.isArray(asObj.items)) return asObj.items as BackendTranscript[];
+        if (Array.isArray(asObj.data)) return asObj.data as BackendTranscript[];
+        if (Array.isArray((asObj as { conversations?: unknown[] }).conversations)) return (asObj as { conversations: unknown[] }).conversations as BackendTranscript[];
+        return [] as BackendTranscript[];
+      };
+
+      const allConversations = normalizeApiList(raw);
+
       const conversations: ActiveConversation[] = allConversations
-      .filter(rec => rec.status === "in_progress" || rec.status === "takeover")
-      .map((rec) => {
-        return {
+        .filter((rec) => rec.status === "in_progress" || rec.status === "takeover")
+        .map((rec) => ({
           id: rec.id,
           type: rec.recording ? "call" : "chat",
-          status: rec.status as "in_progress" | "takeover",
-          transcript: parseTranscript(rec.transcription),
+          status: rec.status === "in_progress" ? "in-progress" : "takeover",
+          transcript: parseEntriesFromBackend(rec),
           sentiment: "negative",
           timestamp: rec.created_at,
           in_progress_hostility_score: rec.in_progress_hostility_score || 0,
@@ -175,21 +232,27 @@ export const conversationService = {
           word_count: rec.word_count,
           agent_ratio: rec.agent_ratio,
           customer_ratio: rec.customer_ratio,
-        };
+          supervisor_id: rec.supervisor_id,
+          topic: rec.analysis?.topic || undefined,
+          negative_reason:
+            (rec as unknown as { negative_reason?: string }).negative_reason ||
+            ((rec as unknown as { analysis?: { negative_reason?: string } })?.analysis?.negative_reason) ||
+            undefined,
+        }));
+
+      // Apply cached topics and persist any provided topics
+      const withTopics = conversations.map((conv) => {
+        if (conv.topic && conv.topic !== "Unknown") {
+          conversationService.setCachedTopic(conv.id, conv.topic);
+          return conv;
+        }
+        const cached = conversationService.getCachedTopic(conv.id);
+        return cached ? { ...conv, topic: cached } : conv;
       });
-      
-      console.log(`Returning ${conversations.length} conversations after filtering`);
-    
-      return {
-        total: conversations.length,
-        conversations,
-      };
+
+      return { total: withTopics.length, conversations: withTopics };
     } catch (error) {
-      console.error("Error fetching active conversations:", error);
-      return {
-        total: 0,
-        conversations: [],
-      };
+      return { total: 0, conversations: [] };
     }
   },
 

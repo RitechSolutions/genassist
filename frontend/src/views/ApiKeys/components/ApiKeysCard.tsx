@@ -15,9 +15,15 @@ interface ApiKeysCardProps {
   searchQuery: string;
   refreshKey?: number;
   onEditApiKey: (apiKey: ApiKey) => void;
+  updatedApiKey?: ApiKey | null;
 }
 
-export function ApiKeysCard({ searchQuery, refreshKey = 0, onEditApiKey }: ApiKeysCardProps) {
+export function ApiKeysCard({
+  searchQuery,
+  refreshKey = 0,
+  onEditApiKey,
+  updatedApiKey = null,
+}: ApiKeysCardProps) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,19 +33,29 @@ export function ApiKeysCard({ searchQuery, refreshKey = 0, onEditApiKey }: ApiKe
     fetchData();
   }, [refreshKey]);
 
+  useEffect(() => {
+    if (updatedApiKey) {
+      setApiKeys((prevKeys) =>
+        prevKeys.map((key) =>
+          key.id === updatedApiKey.id ? updatedApiKey : key
+        )
+      );
+    }
+  }, [updatedApiKey]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
       const [keysData, usersData] = await Promise.all([
         getAllApiKeys(),
-        getAllUsers()
+        getAllUsers(),
       ]);
       setApiKeys(keysData);
       setUsers(usersData);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch data");
-      toast.error("Failed to fetch data");
+      toast.error("Failed to fetch data.");
     } finally {
       setLoading(false);
     }
@@ -53,16 +69,16 @@ export function ApiKeysCard({ searchQuery, refreshKey = 0, onEditApiKey }: ApiKe
 
   const renderRow = (apiKey: ApiKey) => (
     <TableRow key={apiKey.id}>
-      <TableCell className="font-medium">{apiKey.name}</TableCell>
-      <TableCell>
+      <TableCell className="font-medium break-all">{apiKey.name}</TableCell>
+      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
         <Badge variant={apiKey.is_active === 1 ? "default" : "secondary"}>
           {apiKey.is_active === 1 ? "Active" : "Revoked"}
         </Badge>
       </TableCell>
-      <TableCell>
+      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
         <div className="flex flex-wrap gap-1">
           {apiKey.roles && apiKey.roles.length > 0 ? (
-            apiKey.roles.map(role => (
+            apiKey.roles.map((role) => (
               <Badge key={role.id} variant="outline" className="text-xs">
                 {role.name}
               </Badge>
@@ -72,7 +88,9 @@ export function ApiKeysCard({ searchQuery, refreshKey = 0, onEditApiKey }: ApiKe
           )}
         </div>
       </TableCell>
-      <TableCell>{apiKey.created_at ? formatDate(apiKey.created_at) : 'No date'}</TableCell>
+      <TableCell className="truncate">
+        {apiKey.created_at ? formatDate(apiKey.created_at) : "No date"}
+      </TableCell>
       <TableCell>
         <Button
           variant="ghost"
@@ -98,4 +116,4 @@ export function ApiKeysCard({ searchQuery, refreshKey = 0, onEditApiKey }: ApiKe
       searchEmptyMessage="No API keys found matching your search"
     />
   );
-} 
+}

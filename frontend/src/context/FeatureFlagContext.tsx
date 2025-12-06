@@ -32,7 +32,6 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
       setFlags(fetchedFlags);
       setError(null);
     } catch (err) {
-      console.error('Error fetching feature flags:', err);
       setError('Failed to load feature flags');
     } finally {
       setLoading(false);

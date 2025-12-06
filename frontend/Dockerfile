@@ -16,6 +16,8 @@ COPY package.json package-lock.json ./
 # Copy the rest of the application code
 COPY . .
 
+RUN npm run clean
+
 #Install customplugin
 RUN mkdir -p /plugins
 COPY --from=plugins . /plugins/react
@@ -30,6 +32,7 @@ RUN npm install
 #RUN npm audit fix --legacy-peer-deps
 
 # Build the application
+
 RUN npm run build
 
 # Use a lightweight web server to serve the built files
@@ -45,6 +48,5 @@ COPY --from=builder /app/dist .
 COPY container/nginx/nginx.conf  /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080
-EXPOSE 80
 
 ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]

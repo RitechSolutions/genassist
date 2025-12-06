@@ -1,5 +1,5 @@
 import { getApiUrl } from "@/config/api";
-import { BackendTranscript, Transcript, TranscriptEntry } from "@/interfaces/transcript.interface";
+import { BackendTranscript, Transcript, TranscriptEntry, ConversationFeedbackEntry } from "@/interfaces/transcript.interface";
 
 export function processApiResponse(data: unknown): BackendTranscript[] {
   if (!data) return [];
@@ -49,13 +49,62 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
     }
 
     let transcriptArray: TranscriptEntry[] = [];
-    try {
-      transcriptArray = typeof backendData.transcription === "string"
-        ? JSON.parse(backendData.transcription)
-        : (Array.isArray(backendData.transcription) ? backendData.transcription : []);
-    } catch (e) {
-      console.error("Failed to parse transcription:", e);
-      transcriptArray = [];
+    if (Array.isArray(backendData.messages)) {
+      transcriptArray = backendData.messages.map((entry) => {
+        let perMessageFeedback: ConversationFeedbackEntry[] | undefined = undefined;
+        try {
+          const f = (entry as unknown as { feedback?: unknown }).feedback;
+          if (typeof f === "string") {
+            const parsed = JSON.parse(f);
+            if (Array.isArray(parsed)) perMessageFeedback = parsed as ConversationFeedbackEntry[];
+          } else if (Array.isArray(f)) {
+            perMessageFeedback = f as ConversationFeedbackEntry[];
+          }
+        } catch {}
+
+        return {
+          speaker: entry.speaker || "Unknown",
+          start_time: entry.start_time || 0,
+          end_time: entry.end_time || (entry.start_time || 0) + 0.01,
+          text: entry.text || "",
+          create_time: entry.create_time || new Date().toISOString(),
+          message_id: (entry as { id?: string }).id,
+          feedback: perMessageFeedback,
+          type: (entry as { type?: string }).type || "message",
+        } as TranscriptEntry;
+      });
+    } else {
+      try {
+        const t = backendData.transcription as unknown;
+        if (typeof t === "string" && t.trim() !== "") {
+          const parsed = JSON.parse(t);
+          if (Array.isArray(parsed)) {
+            transcriptArray = (parsed as Partial<TranscriptEntry>[]).map((entry) => ({
+              speaker: entry.speaker || "Unknown",
+              start_time: entry.start_time || 0,
+              end_time: entry.end_time || (entry.start_time || 0) + 0.01,
+              text: entry.text || "",
+              create_time: entry.create_time || new Date().toISOString(),
+              message_id: (entry as { message_id?: string }).message_id,
+              feedback: entry.feedback,
+              type: (entry as { type?: string }).type || "message",
+            }));
+          }
+        } else if (Array.isArray(backendData.transcription)) {
+          transcriptArray = (backendData.transcription as Partial<TranscriptEntry>[]).map((entry) => ({
+            speaker: entry.speaker || "Unknown",
+            start_time: entry.start_time || 0,
+            end_time: entry.end_time || (entry.start_time || 0) + 0.01,
+            text: entry.text || "",
+            create_time: entry.create_time || new Date().toISOString(),
+            message_id: (entry as { message_id?: string }).message_id,
+            feedback: entry.feedback,
+            type: (entry as { type?: string }).type || "message",
+          }));
+        }
+      } catch (e) {
+        transcriptArray = [];
+      }
     }
 
     const lastEntry = transcriptArray.length > 0 ? transcriptArray[transcriptArray.length - 1] : null;
@@ -72,6 +121,21 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
 
     const audioUrl = isCall ? `${baseApiUrl}${backendData.recording?.file_path}` : "";
 
+    // Parse feedback from backend as stringified JSON or array
+    let feedbackArray: ConversationFeedbackEntry[] | undefined = undefined;
+    try {
+      if (backendData.feedback) {
+        if (typeof backendData.feedback === "string") {
+          const parsed = JSON.parse(backendData.feedback);
+          if (Array.isArray(parsed)) feedbackArray = parsed as ConversationFeedbackEntry[];
+        } else if (Array.isArray(backendData.feedback)) {
+          feedbackArray = backendData.feedback as ConversationFeedbackEntry[];
+        }
+      }
+    } catch (e) {
+      feedbackArray = undefined;
+    }
+
     return {
       id: backendData.id.toString(),
       audio: audioUrl,
@@ -85,19 +149,14 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       customer_ratio: backendData.customer_ratio,
       word_count: backendData.word_count,
       in_progress_hostility_score: backendData.in_progress_hostility_score,
+      supervisor_id: backendData.supervisor_id,
       metadata: {
         isCall,
         duration: durationInSeconds,
         title: `Conversation ${backendData.id}`,
         topic: analysis.topic || "Unknown",
       },
-      transcript: transcriptArray.map(entry => ({
-        speaker: entry.speaker || "Unknown",
-        start_time: entry.start_time || 0,
-        end_time: entry.end_time || (entry.start_time || 0) + 1,
-        text: entry.text || "",
-        create_time: entry.create_time || new Date().toISOString(),
-      })),
+      messages: transcriptArray,
       metrics: {
         sentiment: dominantSentiment,
         customerSatisfaction: analysis.customer_satisfaction || 0,
@@ -111,9 +170,9 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
         wordCount: backendData.word_count || transcriptArray.reduce((count, item) => count + (item.text?.split(/\s+/).length || 0), 0),
         in_progress_hostility_score: backendData.in_progress_hostility_score,
       },
+      feedback: feedbackArray,
     };
   } catch (error) {
-    console.error("Error in transformTranscript:", error);
     return {
       id: "error",
       audio: "",
@@ -127,13 +186,14 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       customer_ratio: 0,
       word_count: 0,
       in_progress_hostility_score: 0,
+      supervisor_id: null,
       metadata: {
         isCall: false,
         duration: 0,
         title: "Error",
         topic: " - Unknown",
       },
-      transcript: [],
+      messages: [],
       metrics: {
         sentiment: "neutral",
         customerSatisfaction: 0,

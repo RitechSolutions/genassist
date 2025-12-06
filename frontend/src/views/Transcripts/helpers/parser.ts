@@ -50,7 +50,6 @@ export const parseTranscription = (transcript: Transcript): ParsedTranscriptEntr
     
     return [];
   } catch (error) {
-    console.error("Error parsing transcription:", error);
     return [];
   }
 };

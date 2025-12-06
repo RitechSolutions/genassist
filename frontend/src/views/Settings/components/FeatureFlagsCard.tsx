@@ -24,10 +24,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/alert-dialog";
-import { 
-  getFeatureFlags, 
+import {
+  getFeatureFlags,
   deleteFeatureFlag,
-  updateFeatureFlag
+  updateFeatureFlag,
 } from "@/services/featureFlags";
 import { Badge } from "@/components/badge";
 
@@ -37,15 +37,16 @@ interface FeatureFlagsCardProps {
   onEditFeatureFlag: (featureFlag: FeatureFlag) => void;
 }
 
-export function FeatureFlagsCard({ 
-  searchQuery, 
-  refreshKey = 0, 
-  onEditFeatureFlag 
+export function FeatureFlagsCard({
+  searchQuery,
+  refreshKey = 0,
+  onEditFeatureFlag,
 }: FeatureFlagsCardProps) {
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [featureFlagToDelete, setFeatureFlagToDelete] = useState<FeatureFlag | null>(null);
+  const [featureFlagToDelete, setFeatureFlagToDelete] =
+    useState<FeatureFlag | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -60,8 +61,10 @@ export function FeatureFlagsCard({
       setFeatureFlags(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch feature flags");
-      toast.error("Failed to fetch feature flags");
+      setError(
+        err instanceof Error ? err.message : "Failed to fetch feature flags"
+      );
+      toast.error("Failed to fetch feature flags.");
     } finally {
       setLoading(false);
     }
@@ -74,15 +77,14 @@ export function FeatureFlagsCard({
 
   const handleDeleteConfirm = async () => {
     if (!featureFlagToDelete?.id) return;
-    
+
     try {
       setIsDeleting(true);
       await deleteFeatureFlag(featureFlagToDelete.id);
-      toast.success("Feature flag deleted successfully");
+      toast.success("Feature flag deleted successfully.");
       fetchFeatureFlags();
     } catch (error) {
-      toast.error("Failed to delete feature flag");
-      console.error("Error deleting feature flag:", error);
+      toast.error("Failed to delete feature flag.");
     } finally {
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);
@@ -92,24 +94,28 @@ export function FeatureFlagsCard({
 
   const handleToggleActive = async (flag: FeatureFlag) => {
     if (!flag.id) return;
-    
+
     try {
       await updateFeatureFlag(flag.id, {
         ...flag,
         is_active: flag.is_active === 1 ? 0 : 1,
       });
-      toast.success(`Feature flag ${flag.is_active === 1 ? 'deactivated' : 'activated'}`);
+      toast.success(
+        `Feature flag ${
+          flag.is_active === 1 ? "deactivated" : "activated"
+        } successfully.`
+      );
       fetchFeatureFlags();
     } catch (error) {
-      toast.error("Failed to update feature flag status");
-      console.error("Error updating feature flag:", error);
+      toast.error("Failed to update feature flag status.");
     }
   };
 
-  const filteredFeatureFlags = featureFlags.filter((flag) =>
-    flag.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    flag.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    flag.val.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFeatureFlags = featureFlags.filter(
+    (flag) =>
+      flag.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      flag.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      flag.val.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (loading) {
@@ -132,7 +138,9 @@ export function FeatureFlagsCard({
     return (
       <Card className="p-8">
         <div className="text-center text-muted-foreground">
-          {searchQuery ? "No feature flags found matching your search" : "No feature flags found"}
+          {searchQuery
+            ? "No feature flags found matching your search"
+            : "No feature flags found"}
         </div>
       </Card>
     );
@@ -156,11 +164,13 @@ export function FeatureFlagsCard({
               <TableRow key={flag.id}>
                 <TableCell className="font-medium">{flag.key}</TableCell>
                 <TableCell>{flag.val}</TableCell>
-                <TableCell className="max-w-md truncate">
+                <TableCell className="truncate">
                   {flag.description || "-"}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={flag.is_active === 1 ? "default" : "secondary"}>
+                  <Badge
+                    variant={flag.is_active === 1 ? "default" : "secondary"}
+                  >
                     {flag.is_active === 1 ? "Active" : "Inactive"}
                   </Badge>
                 </TableCell>
@@ -190,13 +200,16 @@ export function FeatureFlagsCard({
         </Table>
       </Card>
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the feature flag
-              "{featureFlagToDelete?.key}".
+              This action cannot be undone. This will permanently delete the
+              feature flag "{featureFlagToDelete?.key}".
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -220,4 +233,4 @@ export function FeatureFlagsCard({
       </AlertDialog>
     </>
   );
-} 
+}

@@ -64,15 +64,15 @@ export function TopicsReport() {
           <p className="text-red-500">{error}</p>
         </div>
       ) : data.length > 0 ? (
-        <ResponsiveContainer width="100%" height={320}>
+        <ResponsiveContainer width="100%" height={370}>
           <PieChart>
             <Pie
               data={data}
               cx="50%"
               cy="50%"
               labelLine={false}
-              outerRadius={125}
-              innerRadius={80}
+              outerRadius={150}
+              innerRadius={100}
               fill="#8884d8"
               dataKey="value"
               strokeWidth={0}
@@ -85,10 +85,10 @@ export function TopicsReport() {
               })}
             </Pie>
             <Tooltip formatter={(value: number, name: string) => [value, name.charAt(0).toUpperCase() + name.slice(1)]} />
-            <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" className="text-2xl font-semibold">
+            <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" className="text-3xl font-semibold">
               {totalConversations}
             </text>
-            <text x="50%" y="50%" dy={22} textAnchor="middle" dominantBaseline="central" className="text-xs text-muted-foreground">
+            <text x="50%" y="50%" dy={22} textAnchor="middle" dominantBaseline="central" className="text-sm text-muted-foreground">
               Conversations
             </text>
           </PieChart>

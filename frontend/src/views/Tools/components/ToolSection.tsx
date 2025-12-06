@@ -116,7 +116,7 @@ export function ToolSection({
                     setItems(updated);
                   }
                 } catch (error) {
-                  console.error("Invalid JSON", error);
+                  // ignore
                 }
               }}              
               className="h-60 w-full font-mono text-sm"

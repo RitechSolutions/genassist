@@ -6,6 +6,7 @@ import React, {
   useEffect,
 } from "react";
 import { apiRequest } from "@/config/api";
+import { isServerDown } from "@/config/serverStatus";
 import { isAuthenticated } from "@/services/auth";
 
 interface PermissionContextType {
@@ -34,6 +35,12 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({
       return;
     }
 
+    // If server is down avoid requests
+    if (isServerDown() || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const response = await apiRequest("GET", "/auth/me");
@@ -41,7 +48,10 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({
         (response as { permissions: string[] })?.permissions || [];
       setPermissions(userPermissions);
     } catch (error) {
-      console.error("Error fetching user permissions:", error);
+      // Quiet known down-state errors
+      if ((error as Error)?.message !== 'SERVER_DOWN') {
+        // ignore
+      }
     }
     setIsLoading(false);
   };

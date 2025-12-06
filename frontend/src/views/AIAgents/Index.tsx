@@ -15,9 +15,9 @@ const AIAgentsView: React.FC = () => {
   
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0">
           <div className="flex-1">
               <Routes>
                 <Route path="/" element={<Dashboard />} />

@@ -11,9 +11,14 @@ export default function Roles() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [roleToEdit, setRoleToEdit] = useState<Role | null>(null);
+  const [updatedRole, setUpdatedRole] = useState<Role | null>(null);
 
   const handleRoleSaved = () => {
     setRefreshKey(prevKey => prevKey + 1);
+  };
+
+  const handleRoleUpdated = (role: Role) => {
+    setUpdatedRole(role);
   };
 
   const handleCreateRole = () => {
@@ -40,16 +45,18 @@ export default function Roles() {
         onActionClick={handleCreateRole}
       />
       
-      <RolesCard 
-        searchQuery={searchQuery} 
+      <RolesCard
+        searchQuery={searchQuery}
         refreshKey={refreshKey}
         onEditRole={handleEditRole}
+        updatedRole={updatedRole}
       />
 
-      <RoleDialog 
+      <RoleDialog
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         onRoleSaved={handleRoleSaved}
+        onRoleUpdated={handleRoleUpdated}
         roleToEdit={roleToEdit}
         mode={dialogMode}
       />

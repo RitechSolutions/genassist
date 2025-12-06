@@ -8,7 +8,6 @@ export const getAllUsers = async (): Promise<User[]> => {
     const data = await apiRequest<User[]>("GET", "user/");
     return data || [];
   } catch (error) {
-    console.error("Error fetching users:", error);
     throw error;
   }
 };
@@ -17,7 +16,6 @@ export const getUser = async (id: string): Promise<User | null> => {
   try {
     return await apiRequest<User>("GET", `user/${id}`);
   } catch (error) {
-    console.error("Error fetching user:", error);
     throw error;
   }
 };
@@ -37,7 +35,6 @@ export const createUser = async (userData: User): Promise<User> => {
     if (!response) throw new Error("Failed to create user");
     return response;
   } catch (error) {
-    console.error("Error creating user:", error);
     throw error;
   }
 };
@@ -48,7 +45,6 @@ export const updateUser = async (id: string, userData: Partial<User>): Promise<U
     if (!response) throw new Error("Failed to update user");
     return response;
   } catch (error) {
-    console.error("Error updating user:", error);
     throw error;
   }
 };

@@ -1,90 +1,83 @@
-import React, { useState } from 'react';
-import { Position, NodeProps } from 'reactflow';
-import { Button } from '@/components/button';
-import { Label } from '@/components/label';
-import { getHandlerPosition, HandleTooltip } from '../../components/HandleTooltip';
-import { LLMModelNodeData } from '../../types/nodes';
-import { ModelConfig, ModelConfiguration } from '../../components/ModelConfiguration';
+import React, { useEffect, useState } from "react";
+import { NodeProps } from "reactflow";
+import { LLMModelNodeData } from "../../types/nodes";
+import { getNodeColor } from "../../utils/nodeColors";
+import BaseNodeContainer from "../BaseNodeContainer";
+import NodeContent from "../nodeContent";
+import { getLLMProvider } from "@/services/llmProviders";
+import { LLModelDialog } from "../../nodeDialogs/LLModelDialog";
+import nodeRegistry from "../../registry/nodeRegistry";
 
-const LLMModelNode: React.FC<NodeProps<LLMModelNodeData>> = ({ id, data, selected }) => {
-  const [config, setConfig] = useState<ModelConfig>({
-    providerId: data.providerId || 'openai',
-  });
-  const [mode, setMode] = useState<'normal' | 'json-parsing'>(data.jsonParsing ? 'json-parsing' : 'normal');
+export const LL_MODEL_NODE_TYPE = "llmModelNode";
 
+const LLModelNode: React.FC<NodeProps<LLMModelNodeData>> = ({
+  id,
+  data,
+  selected,
+}) => {
+  const nodeDefinition = nodeRegistry.getNodeType(LL_MODEL_NODE_TYPE);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [providerName, setProviderName] = useState("");
+  const color = getNodeColor(nodeDefinition.category);
 
-  const sourceHandlers = data.handlers?.filter(
-    (handler) => handler.type === "source"
-  );
-  const targetHandlers = data.handlers?.filter(
-    (handler) => handler.type === "target"
-  );
+  useEffect(() => {
+    if (data.providerId) {
+      getLLMProvider(data.providerId).then((provider) => {
+        if (provider) {
+          setProviderName(
+            `${provider.name} (${provider.llm_model_provider} - ${provider.llm_model})`
+          );
+        }
+      });
+    }
+  }, [data.providerId]);
+
+  // Handle updates from the dialog
+  const onUpdate = (updatedData: LLMModelNodeData) => {
+    if (data.updateNodeData) {
+      data.updateNodeData(id, {
+        ...data,
+        ...updatedData,
+      });
+    }
+  };
+
   return (
     <>
-      <div className={`bg-white border-2 rounded-md p-4 w-80 ${selected ? 'border-blue-500' : 'border-gray-200'}`}>
-        <div className="flex justify-between items-center mb-3">
-          <div className="font-semibold">LLM Model Configuration</div>
-         
-        </div>
-        
-        <div className="space-y-4">
-          {/* Model Configuration */}
-          <ModelConfiguration
-            id={id}
-            config={config}
-            onConfigChange={setConfig}
-          />
+      <BaseNodeContainer
+        id={id}
+        data={data}
+        selected={selected}
+        iconName={nodeDefinition.icon}
+        title={data.name || nodeDefinition.label}
+        subtitle={nodeDefinition.shortDescription}
+        color={color}
+        nodeType="llmModelNode"
+        onSettings={() => setIsEditDialogOpen(true)}
+      >
+        {/* Node content */}
+        <NodeContent
+          data={[
+            { label: "LLM Provider", value: providerName },
+            { label: "System Prompt", value: data.systemPrompt },
+            { label: "User Prompt", value: data.userPrompt },
+            { label: "Type", value: data.type },
+            { label: "Memory", value: data.memory ? "On" : "Off" },
+          ]}
+        />
+      </BaseNodeContainer>
 
-          {/* Mode Selection */}
-          <div className="flex justify-between items-center">
-            <Label className="font-medium text-sm">Mode</Label>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant={mode === 'normal' ? 'default' : 'outline'}
-                className="h-7 px-2 text-xs"
-                onClick={() => setMode('normal')}
-              >
-                Normal
-              </Button>
-              <Button
-                size="sm"
-                variant={mode === 'json-parsing' ? 'default' : 'outline'}
-                className="h-7 px-2 text-xs"
-                onClick={() => setMode('json-parsing')}
-              >
-                JSON Parsing
-              </Button>
-            </div>
-          </div>
-        </div>
-        
-        {/* Render all handlers */}
-        {sourceHandlers?.map((handler, index) => (
-          <HandleTooltip
-            key={handler.id}
-            type={handler.type}
-            position={handler.type === 'source' ? Position.Right : Position.Left}
-            id={handler.id}
-            nodeId={id}
-            compatibility={handler.compatibility}
-            style={{ top: getHandlerPosition(index, sourceHandlers.length) }}
-          />
-        ))}
-        {targetHandlers?.map((handler, index) => (
-          <HandleTooltip
-            key={handler.id}
-            type={handler.type}
-            position={handler.type === 'source' ? Position.Right : Position.Left}
-            id={handler.id}
-            nodeId={id}
-            compatibility={handler.compatibility}
-            style={{ top: getHandlerPosition(index, targetHandlers.length) }}
-          />
-        ))}
-      </div>
+      {/* Edit Dialog */}
+      <LLModelDialog
+        isOpen={isEditDialogOpen}
+        onClose={() => setIsEditDialogOpen(false)}
+        data={data}
+        onUpdate={onUpdate}
+        nodeId={id}
+        nodeType={LL_MODEL_NODE_TYPE}
+      />
     </>
   );
 };
 
-export default LLMModelNode; 
+export default LLModelNode;

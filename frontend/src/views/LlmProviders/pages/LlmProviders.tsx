@@ -18,6 +18,7 @@ export default function LLMProviders() {
   const [providerToEdit, setProviderToEdit] = useState<LLMProvider | null>(
     null
   );
+  const [updatedProvider, setUpdatedProvider] = useState<LLMProvider | null>(null);
 
   // Fetch all providers
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function LLMProviders() {
         const data = await getAllLLMProviders();
         setProviders(data);
       } catch (error) {
-        console.error("Failed to fetch providers:", error);
+        // ignore
       } finally {
         setIsLoading(false);
       }
@@ -37,6 +38,10 @@ export default function LLMProviders() {
 
   const handleProviderSaved = () => {
     setRefreshKey((k) => k + 1);
+  };
+
+  const handleProviderUpdated = (provider: LLMProvider) => {
+    setUpdatedProvider(provider);
   };
 
   const handleCreate = () => {
@@ -54,12 +59,11 @@ export default function LLMProviders() {
   const handleDelete = async (id: string) => {
     try {
       await deleteLLMProvider(id);
-      //toast.success("Provider deleted");
+      //toast.success("LLM provider deleted successfully.");
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
-      console.error("Failed to delete provider:", error);
       toast.error(
-        "This provider is in use. First delete LLM Analyst(s) using it."
+        "Failed to delete LLM provider: LLM provider is in use by at least one LLM analyst."
       );
     }
   };
@@ -75,19 +79,19 @@ export default function LLMProviders() {
         actionButtonText="Add New Provider"
         onActionClick={handleCreate}
       />
-      
+
       <LLMProviderCard
-        providers={providers}
         searchQuery={searchQuery}
-        loading={isLoading}
+        refreshKey={refreshKey}
         onEdit={handleEdit}
-        onDelete={handleDelete}
+        updatedProvider={updatedProvider}
       />
 
       <LLMProviderDialog
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         onProviderSaved={handleProviderSaved}
+        onProviderUpdated={handleProviderUpdated}
         providerToEdit={providerToEdit}
         mode={dialogMode}
       />

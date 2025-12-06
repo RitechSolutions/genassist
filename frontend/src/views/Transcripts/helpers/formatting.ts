@@ -1,5 +1,34 @@
 import { Transcript } from "@/interfaces/transcript.interface";
 
+// Hostility constants for live conversations
+export const HOSTILITY_POSITIVE_MAX = 20;
+export const HOSTILITY_NEUTRAL_MAX = 49;
+
+// Derives sentiment from hostility score for live conversations
+export const getSentimentFromHostility = (hostilityScore: number): string => {
+  if (hostilityScore <= HOSTILITY_POSITIVE_MAX) {
+    return 'positive';
+  } else if (hostilityScore <= HOSTILITY_NEUTRAL_MAX) {
+    return 'neutral';
+  } else {
+    return 'negative';
+  }
+};
+
+// Gets the effective sentiment for a transcript
+export const getEffectiveSentiment = (transcript: Transcript): string => {
+  const isLive = transcript?.status === "in_progress" || transcript?.status === "takeover";
+  
+  if (isLive) {
+    // Sentiment from hostility score
+    const hostilityScore = transcript.in_progress_hostility_score ?? transcript.metrics?.in_progress_hostility_score ?? 0;
+    return getSentimentFromHostility(hostilityScore);
+  }
+  
+  // Existing sentiment for finalized conversations
+  return transcript.metrics?.sentiment || "neutral";
+};
+
 export const getSentimentStyles = (sentiment: string = ""): string => {
   switch ((sentiment || "").toLowerCase()) {
     case 'positive':
@@ -15,10 +44,10 @@ export const getSentimentStyles = (sentiment: string = ""): string => {
   }
 };
 
+import { formatDuration as sharedFormatDuration } from "@/helpers/duration";
+
 export const formatDuration = (durationInSeconds: number = 0): string => {
-  const minutes = Math.floor(durationInSeconds / 60);
-  const seconds = Math.floor(durationInSeconds % 60);
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  return sharedFormatDuration(durationInSeconds);
 };
 
 export const formatCallTimestamp = (startTimeSeconds: number = 0): string => {
@@ -46,7 +75,6 @@ export const formatDateTime = (dateString: string = ""): string => {
       minute: '2-digit'
     });
   } catch (error) {
-    console.error("Error formatting date:", error);
     return dateString || "N/A";
   }
 };
@@ -93,7 +121,6 @@ export const formatMessageTime = (createTime: string | number | undefined): stri
     
     return date.toTimeString().split(' ')[0];
   } catch (error) {
-    console.error("Error formatting message time:", error);
     return "";
   }
 };

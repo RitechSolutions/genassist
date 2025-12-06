@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/dialog";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -31,6 +31,7 @@ interface UserDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onUserCreated: () => void;
+  onUserUpdated?: (user: User) => void;
   userToEdit?: User | null;
   mode?: "create" | "edit";
 }
@@ -39,6 +40,7 @@ export function UserDialog({
   isOpen,
   onOpenChange,
   onUserCreated,
+  onUserUpdated,
   userToEdit = null,
   mode = "create",
 }: UserDialogProps) {
@@ -90,13 +92,11 @@ export function UserDialog({
     try {
       const [rolesData, userTypesData] = await Promise.all([
         getAllRoles().catch((error) => {
-          console.error("Error fetching roles:", error);
-          toast.error("Failed to load roles");
+          toast.error("Failed to fetch roles.");
           return [];
         }),
         getAllUserTypes().catch((error) => {
-          console.error("Error fetching user types:", error);
-          toast.error("Failed to load user types");
+          toast.error("Failed to fetch user types.");
           return [];
         }),
       ]);
@@ -104,8 +104,7 @@ export function UserDialog({
       setRoles(rolesData);
       setUserTypes(userTypesData);
     } catch (error) {
-      toast.error("Failed to load form data");
-      console.error("Error loading form data:", error);
+      toast.error("Failed to fetch data.");
     } finally {
       setIsLoading(false);
     }
@@ -115,16 +114,16 @@ export function UserDialog({
     e.preventDefault();
 
     let requiredFields = [
-      { label: "username", isEmpty: !username },
-      { label: "email", isEmpty: !email },
-      { label: "type", isEmpty: !userTypeId },
-      { label: "password", isEmpty: !password },
-      { label: "roles", isEmpty: selectedRoleIds.length === 0 },
+      { label: "Username", isEmpty: !username },
+      { label: "Email", isEmpty: !email },
+      { label: "Type", isEmpty: !userTypeId },
+      { label: "Password", isEmpty: !password },
+      { label: "Roles", isEmpty: selectedRoleIds.length === 0 },
     ];
 
-    if (dialogMode !== "create" || apiKey) {
+    if (dialogMode !== "create" || apiKey || isConsoleUserType) {
       requiredFields = requiredFields.filter(
-        (field) => field.label !== "password"
+        (field) => field.label !== "Password"
       );
     }
 
@@ -133,7 +132,11 @@ export function UserDialog({
       .map((field) => field.label);
 
     if (missingFields.length > 0) {
-      toast.error(`Missing required fields: ${missingFields.join(", ")}`);
+      if (missingFields.length === 1) {
+        toast.error(`${missingFields[0]} is required.`);
+      } else {
+        toast.error(`Please provide: ${missingFields.join(", ")}.`);
+      }
       return;
     }
 
@@ -153,24 +156,39 @@ export function UserDialog({
 
       if (dialogMode === "create") {
         await createUser(userData as User);
-        toast.success("User created successfully");
+        toast.success("User created successfully.");
+        onUserCreated();
       } else {
         if (!userId) {
-          toast.error("User ID is missing for update");
+          toast.error("User ID is required.");
           return;
         }
         await updateUser(userId, userData);
-        toast.success("User updated successfully");
+        toast.success("User updated successfully.");
+
+        // Call onUserUpdated for edit mode with userData
+        if (onUserUpdated && userToEdit) {
+          const updatedUser: User = {
+            ...userToEdit,
+            ...userData,
+            user_type:
+              userTypes.find((type) => type.id === userTypeId) ||
+              userToEdit.user_type,
+            roles: roles.filter((role) => selectedRoleIds.includes(role.id)),
+          };
+          onUserUpdated(updatedUser);
+        }
       }
 
-      onUserCreated();
       onOpenChange(false);
       resetForm();
     } catch (error) {
       const data = error.response.data;
       let errorMessage = "";
 
-      if (data.error) {
+      if (error.status === 400) {
+        errorMessage = "A user with this username already exists.";
+      } else if (data.error) {
         errorMessage = data.error;
       } else if (data.detail) {
         errorMessage = data.detail["0"].ctx.reason;
@@ -207,6 +225,11 @@ export function UserDialog({
     );
   };
 
+  const isConsoleUserType = useMemo(() => {
+    const selectedUserType = userTypes.find((type) => type.id === userTypeId);
+    return selectedUserType?.name?.toLowerCase() === "console";
+  }, [userTypes, userTypeId]);
+
   if (isLoading) {
     return (
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -221,124 +244,150 @@ export function UserDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
-        <DialogHeader>
-          <div className="flex justify-between items-center">
-            <DialogTitle>
-              {dialogMode === "create" ? "Create New User" : "Edit User"}
-            </DialogTitle>
-          </div>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter username"
-                disabled={dialogMode === "edit"}
-              />
+      <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden">
+        <form
+          onSubmit={handleSubmit}
+          className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col"
+        >
+          <DialogHeader className="p-6 pb-4">
+            <div className="flex justify-between items-center">
+              <DialogTitle>
+                {dialogMode === "create" ? "Create New User" : "Edit User"}
+              </DialogTitle>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter email"
-              />
+          </DialogHeader>
+          <div className="px-6 pb-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter username"
+                  disabled={dialogMode === "edit"}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter email"
+                />
+              </div>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="userType">Type</Label>
-              {userTypes.length === 0 ? (
-                <div className="text-sm text-muted-foreground italic">
-                  No user types available
+            <div
+              className={`grid gap-4 ${
+                isConsoleUserType ? "grid-cols-1" : "grid-cols-2"
+              }`}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="userType">Type</Label>
+                {userTypes.length === 0 ? (
+                  <div className="text-sm text-muted-foreground italic">
+                    No user types available
+                  </div>
+                ) : (
+                  <Select
+                    value={userTypeId}
+                    onValueChange={(value) => setUserTypeId(value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {userTypes.map((type) => (
+                        <SelectItem key={type.id} value={type.id}>
+                          {type.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              {!isConsoleUserType && (
+                <div className="space-y-2">
+                  <Label htmlFor="password">
+                    {dialogMode === "create" ? "Password" : "New Password"}
+                  </Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={
+                      dialogMode === "create"
+                        ? "Enter password"
+                        : "Enter new password (optional)"
+                    }
+                  />
                 </div>
-              ) : (
-                <Select
-                  value={userTypeId}
-                  onValueChange={(value) => setUserTypeId(value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {userTypes.map((type) => (
-                      <SelectItem key={type.id} value={type.id}>
-                        {type.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">
-                {dialogMode === "create" ? "Password" : "New Password"}
-              </Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={
-                  dialogMode === "create"
-                    ? "Enter password"
-                    : "Enter new password (optional)"
-                }
+            <div className="flex items-center gap-2">
+              <Label htmlFor="is-active">Active</Label>
+              <Switch
+                id="is-active"
+                checked={isActive}
+                onCheckedChange={setIsActive}
               />
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="is-active">Active</Label>
-            <Switch
-              id="is-active"
-              checked={isActive}
-              onCheckedChange={setIsActive}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Roles</Label>
-            <div className="grid grid-cols-2 gap-2 border rounded-lg p-4">
-              {roles
-                .filter((role) => role.role_type !== "internal")
-                .map((role) => {
-                  const isChecked = selectedRoleIds.includes(role.id);
-                  return (
-                    <div key={role.id} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`role-${role.id}`}
-                        value={role.id}
-                        checked={isChecked}
-                        onChange={() => handleRoleToggle(role.id)}
-                        className="form-checkbox accent-primary w-4 h-4"
-                      />
-                      <Label htmlFor={`role-${role.id}`}>{role.name}</Label>
-                    </div>
-                  );
-                })}
+            <div className="space-y-2">
+              <Label>Roles</Label>
+              <div className="grid grid-cols-2 gap-2 border rounded-lg p-4">
+                {roles
+                  .filter((role) => role.role_type !== "internal")
+                  .map((role) => {
+                    const isChecked = selectedRoleIds.includes(role.id);
+                    return (
+                      <div key={role.id} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={`role-${role.id}`}
+                          value={role.id}
+                          checked={isChecked}
+                          onChange={() => handleRoleToggle(role.id)}
+                          className="form-checkbox accent-primary w-4 h-4"
+                        />
+                        <Label
+                          htmlFor={`role-${role.id}`}
+                          className="cursor-pointer"
+                        >
+                          {role.name}
+                        </Label>
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
           </div>
 
-          <DialogFooter>
-            <Button type="submit" disabled={isSubmitting} className="w-full">
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {dialogMode === "create" ? "Creating..." : "Updating..."}
-                </>
-              ) : dialogMode === "create" ? (
-                "Create User"
-              ) : (
-                "Update User"
-              )}
-            </Button>
+          <DialogFooter className="px-6 py-4 border-t">
+            <div className="flex justify-end gap-3 w-full">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {dialogMode === "create" ? "Creating..." : "Updating..."}
+                  </>
+                ) : dialogMode === "create" ? (
+                  "Create User"
+                ) : (
+                  "Update User"
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

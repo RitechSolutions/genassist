@@ -1,9 +1,11 @@
-import { getApiUrl } from "@/config/api";
+import { getApiUrl, api } from "@/config/api";
+import { AudioAnalysisResponse } from "@/interfaces/audio-upload.interface";
 
 type UploadResponse = {
   success: boolean;
   message?: string;
   transcriptId?: string;
+  analysisData?: AudioAnalysisResponse;
 };
 
 export async function uploadAudio(
@@ -22,38 +24,44 @@ export async function uploadAudio(
   try {
     const baseURL = await getApiUrl();
     
-    const token = localStorage.getItem('access_token');
-    const tokenType = localStorage.getItem('token_type') || 'Bearer';
-    
-    if (!token) {
-      throw new Error('Authentication token not found. Please log in again.');
-    }
-
-    const response = await fetch(`${baseURL}audio/analyze_recording`, {
-      method: "POST",
-      body: formData,
+    const response = await api.post(`${baseURL}audio/analyze_recording`, formData, {
       headers: {
+        "Content-Type": "multipart/form-data",
         Accept: "application/json",
-        Authorization: `${tokenType} ${token}`,
       },
-      credentials: 'include',
     });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      let errorMessage;
-      try {
-        const parsedError = JSON.parse(errorData);
-        errorMessage = parsedError.error || parsedError.message || 'Unknown error occurred';
-      } catch {
-        errorMessage = errorData || `HTTP error ${response.status}`;
-      }
-      throw new Error(`Upload failed: ${errorMessage}`);
+    const responseData = response.data as AudioAnalysisResponse;
+    
+    if (responseData && responseData.id && responseData.conversation_id) {
+      return {
+        success: true,
+        message: "Audio analyzed successfully",
+        transcriptId: responseData.conversation_id,
+        analysisData: responseData,
+      };
+    } else {
+      throw new Error("Invalid response structure from server");
     }
 
-    return (await response.json()) as UploadResponse;
   } catch (error) {
-    console.error("Upload error:", error);
-    throw error;
+    if (error.response) {
+      const errorData = error.response.data;
+      let errorMessage;
+      
+      if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      } else if (errorData && (errorData.error || errorData.message || errorData.detail)) {
+        errorMessage = errorData.error || errorData.message || errorData.detail;
+      } else {
+        errorMessage = `HTTP error ${error.response.status}`;
+      }
+      
+      throw new Error(`Upload failed: ${errorMessage}`);
+    } else if (error.request) {
+      throw new Error('Network error: Unable to reach the server');
+    } else {
+      throw new Error(error.message || 'Unknown error occurred');
+    }
   }
 }

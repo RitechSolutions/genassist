@@ -1,90 +1,54 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/button";
 import { Save, Upload, PlayCircle } from "lucide-react";
+import { useBlocker } from "react-router-dom";
 import { Workflow } from "@/interfaces/workflow.interface";
-
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import {
+  useWorkflowExecution,
+  WorkflowExecutionState,
+} from "../../context/WorkflowExecutionContext";
 
 interface BottomPanelProps {
   workflow: Workflow;
+  hasUnsavedChanges: boolean;
   onWorkflowLoaded: (workflow: Workflow) => void;
   onTestWorkflow: (workflow: Workflow) => void;
   onSaveWorkflow?: (workflow: Workflow) => Promise<void>;
+  onExecutionStateChange?: (executionState: WorkflowExecutionState) => void;
 }
 
 const BottomPanel: React.FC<BottomPanelProps> = ({
   workflow,
+  hasUnsavedChanges,
   onWorkflowLoaded,
   onTestWorkflow,
   onSaveWorkflow,
+  onExecutionStateChange,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [workflowManagerOpen, setWorkflowManagerOpen] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [lastSavedWorkflow, setLastSavedWorkflow] = useState<Workflow | null>(
-    null
-  );
   const [agentFormOpen, setAgentFormOpen] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Compare workflows ignoring UI state fields
-  const compareWorkflows = useCallback((
-    workflow1: Workflow,
-    workflow2: Workflow
-  ): boolean => {
-    delete workflow1.created_at;
-    delete workflow1.updated_at;
+  const {
+    state: executionState,
+    loadExecutionState,
+    setWorkflowStructure,
+  } = useWorkflowExecution();
 
-    delete workflow2.created_at;
-    delete workflow2.updated_at;
-
-    const cleanWorkflow1 = {
-      ...workflow1,
-      nodes: workflow1.nodes?.map((node) => {
-        const { selected, dragging, ...rest } = node;
-        return rest;
-      }),
-      edges: workflow1.edges?.map((edge) => {
-        const { selected, ...rest } = edge;
-        return rest;
-      }),
-    };
-    console.log("cleanWorkflow1", cleanWorkflow1);
-
-    const cleanWorkflow2 = {
-      ...workflow2,
-      nodes: workflow2.nodes?.map((node) => {
-        const { selected, dragging, ...rest } = node;
-        return rest;
-      }),
-      edges: workflow2.edges?.map((edge) => {
-        const { selected, ...rest } = edge;
-        return rest;
-      }),
-    };
-    console.log("cleanWorkflow2", cleanWorkflow2);
-    return JSON.stringify(cleanWorkflow1) !== JSON.stringify(cleanWorkflow2);
-  }, []);
-
-  // Track changes to workflow
   useEffect(() => {
-    if (!workflow) return;
-
-    // Initialize lastSavedWorkflow if it's null
-    if (!lastSavedWorkflow || !workflow || workflow.id !== lastSavedWorkflow.id) {
-      setLastSavedWorkflow(workflow);
-      setHasChanges(false);
-      return;
+    if (onExecutionStateChange) {
+      onExecutionStateChange(executionState);
     }
-    console.log("lastSavedWorkflow", lastSavedWorkflow);
-    console.log("workflow", workflow);
+  }, [executionState, onExecutionStateChange]);
 
-    // Compare current workflow with last saved version
-    const hasWorkflowChanged = compareWorkflows(lastSavedWorkflow, workflow);
-    console.log("hasWorkflowChanged", hasWorkflowChanged);
-    setHasChanges(hasWorkflowChanged);
-  }, [workflow]);
-
-  
+  useEffect(() => {
+    if (workflow.executionState && workflow.nodes && workflow.edges) {
+      setWorkflowStructure(workflow.nodes, workflow.edges);
+      loadExecutionState(workflow.executionState);
+    }
+  }, [workflow.executionState, workflow.nodes, workflow.edges]);
 
   // Handle save to server
   const handleSaveToServer = async () => {
@@ -98,15 +62,36 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
     try {
       setIsSaving(true);
-      onSaveWorkflow(workflow);
-      setLastSavedWorkflow(workflow);
-      setHasChanges(false);
+      await onSaveWorkflow(workflow);
     } catch (error) {
-      console.error("Error saving workflow:", error);
+      // ignore
     } finally {
       setIsSaving(false);
     }
   };
+
+  const handleNavigation = async () => {
+    await handleSaveToServer();
+    blocker.proceed();
+  };
+
+  const handleDiscard = () => {
+    blocker.proceed();
+  };
+
+  const blocker = useBlocker(
+    useCallback(
+      ({ currentLocation, nextLocation }) =>
+        hasUnsavedChanges && currentLocation.pathname !== nextLocation.pathname,
+      [hasUnsavedChanges]
+    )
+  );
+
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      setIsDialogOpen(true);
+    }
+  }, [blocker]);
 
   // Save graph to local file
   const handleSaveToFile = () => {
@@ -140,20 +125,19 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     reader.onload = (e) => {
       try {
         const content = e.target?.result as string;
-        const gd = JSON.parse(content) as Workflow;
+        const importedWorkflow = JSON.parse(content) as Workflow;
 
+        const gd: Workflow = {
+          ...workflow,
+          nodes: importedWorkflow.nodes,
+          edges: importedWorkflow.edges,
+          executionState: importedWorkflow.executionState,
+          testInput: importedWorkflow.testInput,
+        };
         // Load nodes and edges
         onWorkflowLoaded(gd);
-        setLastSavedWorkflow(gd);
-        setHasChanges(false);
 
-        console.log(
-          `Loaded graph configuration (version: ${workflow.version}, saved: ${
-            workflow.created_at || "unknown"
-          })`
-        );
       } catch (error) {
-        console.error("Error loading graph configuration:", error);
         alert("Failed to load graph configuration. Invalid file format.");
       }
     };
@@ -190,12 +174,12 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
             size="sm"
             variant="outline"
             className={`flex items-center gap-1 ${
-              hasChanges
+              hasUnsavedChanges
                 ? "text-blue-600 border-blue-200 hover:bg-blue-50"
                 : "opacity-50 cursor-not-allowed"
             }`}
-            title={hasChanges ? "Save changes" : "No changes to save"}
-            disabled={!hasChanges || isSaving}
+            title={hasUnsavedChanges ? "Save changes" : "No changes to save"}
+            disabled={!hasUnsavedChanges || isSaving}
           >
             <Save className={`h-4 w-4 ${isSaving ? "animate-spin" : ""}`} />
             {isSaving ? "Saving..." : "Save"}
@@ -227,7 +211,9 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           variant="outline"
           className="flex items-center gap-1 text-green-600 border-green-200 hover:bg-green-50"
           title="Test current graph"
-          disabled={workflow?.nodes?.length === 0}
+          disabled={
+            !workflow?.nodes?.some((node) => node.type === "chatInputNode")
+          }
         >
           <PlayCircle className="h-4 w-4" />
           Test
@@ -240,6 +226,18 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           className="hidden"
         />
       </div>
+
+      <ConfirmDialog
+        isOpen={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        onConfirm={handleNavigation}
+        isInProgress={isSaving}
+        primaryButtonText="Save"
+        secondaryButtonText="Discard"
+        onCancel={handleDiscard}
+        title="You have unsaved changes!"
+        description="Would you like to save or discard them?"
+      />
     </>
   );
 };

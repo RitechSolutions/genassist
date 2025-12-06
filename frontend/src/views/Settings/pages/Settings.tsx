@@ -3,16 +3,59 @@ import { AppSidebar } from "@/layout/app-sidebar";
 import { Card } from "@/components/card";
 import { Button } from "@/components/button";
 import { useIsMobile } from "@/hooks/useMobile";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SettingSection } from "../components/SettingSection";
 import { useSettings } from "../hooks/useSettings";
 import { settingSections } from "../helpers/settingsData";
 import { Link } from "react-router-dom";
+import { getAuthMe } from "@/services/auth";
+import type { User } from "@/interfaces/user.interface";
 
 const SettingsPage = () => {
   const { toggleStates, handleToggle, saveSettings } = useSettings();
   const [isSaving, setIsSaving] = useState(false);
+  const [userProfile, setUserProfile] = useState<User | null>(null);
   const isMobile = useIsMobile();
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const me = await getAuthMe();
+        setUserProfile(me);
+      } catch {
+        setUserProfile(null);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  const sectionsWithData = useMemo(() => {
+    const tenant = localStorage.getItem("tenant_id") || "-";
+    const profileValues = {
+      fullName: userProfile?.username || userProfile?.email || "",
+      username: userProfile?.username || "",
+      email: userProfile?.email || "",
+      tenant,
+    };
+
+    return settingSections.map((section) =>
+      section.title === "Profile Settings"
+        ? {
+            ...section,
+            fields: section.fields.map((field) => ({
+              ...field,
+              readOnly: true,
+              value:
+                (field.valueKey &&
+                  profileValues[
+                    field.valueKey as keyof typeof profileValues
+                  ]) ||
+                "",
+            })),
+          }
+        : section
+    );
+  }, [userProfile]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -34,8 +77,8 @@ const SettingsPage = () => {
                 </p>
               </header>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                {settingSections.map((section) => (
+              <div className="grid grid-cols-1">
+                {sectionsWithData.map((section) => (
                   <SettingSection 
                     key={section.title} 
                     section={section} 
@@ -44,7 +87,7 @@ const SettingsPage = () => {
                   />
                 ))}
 
-                <Card className="md:col-span-2">
+                <Card className="md:col-span-2 mt-6">
                   <div className="p-6">
                     <h2 className="text-xl font-semibold mb-4 animate-fade-up">Advanced Configuration</h2>
                     <div className="space-y-4">
@@ -63,12 +106,12 @@ const SettingsPage = () => {
                   </div>
                 </Card>
 
-                <div className="md:col-span-2 flex justify-end gap-4 pt-4">
+                {/* <div className="md:col-span-2 flex justify-end gap-4 pt-4">
                   <Button variant="outline">Cancel</Button>
                   <Button onClick={handleSave} disabled={isSaving}>
                     {isSaving ? "Saving..." : "Save Changes"}
                   </Button>
-                </div>
+                </div> */}
               </div>
             </div>
           </div>

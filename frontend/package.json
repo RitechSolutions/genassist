@@ -8,9 +8,9 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
+    "clean": "rm -rf ./node_modules package-lock.json .cache dist plugins/react",
     "preview": "vite preview",
-    "build:versioned": "sh -c 'cp .env.template .env && sed -i \"\" \"s/__UI_VERSION__/${UI_VERSION:-dev}/g\" .env && vite build'",
-    "postinstall": "mkdir -p plugins/react && cp -R ../plugins/react ./plugins && npm install ./plugins/react"
+    "build:versioned": "sh -c 'cp .env.template .env && sed -i \"\" \"s/__UI_VERSION__/${UI_VERSION:-dev}/g\" .env && vite build'"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -43,15 +43,17 @@
     "@radix-ui/react-tooltip": "^1.1.4",
     "@tanstack/react-query": "^5.56.2",
     "ace-builds": "^1.40.1",
+    "antd": "^5.26.3",
     "axios": "^1.7.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
-    "genassist-chat-react": "file:plugins/react",
+    "genassist-chat-react": "^1.0.13",
     "input-otp": "^1.2.4",
     "jwt-decode": "^4.0.0",
+    "lodash": "^4.17.21",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
     "react": "^18.3.1",
@@ -70,7 +72,8 @@
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^11.1.0",
     "vaul": "^0.9.3",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "lodash": "^4.17.21"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",

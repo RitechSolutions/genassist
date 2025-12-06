@@ -24,7 +24,7 @@ export function OperatorDetailsDialog({ operator, isOpen, onOpenChange }: Operat
       }
       
       try {
-        const transcripts = await fetchTranscripts();
+        const { items: transcripts } = await fetchTranscripts();
         const latestTranscript = getLatestTranscript(transcripts);
         
         if (!latestTranscript) {

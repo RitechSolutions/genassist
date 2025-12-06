@@ -2,17 +2,18 @@ import {
   Home,
   Settings,
   User,
-  Bell,
   Lock,
   LogOut,
   Users,
-  AudioLines,
-  UserCog,
   ScrollText,
   ChevronDown,
   ChevronUp,
   Settings2,
-  LucideMessageCirclePlus,
+  LineChart,
+  MessageSquare,
+  UserRoundCog,
+  Network,
+  Waypoints,
 } from "lucide-react";
 import {
   Sidebar,
@@ -32,10 +33,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
-import { logout, getPermissions, hasAnyPermission } from "@/services/auth";
+import { logout, getPermissions, hasAnyPermission, getAuthMe } from "@/services/auth";
 import toast from "react-hot-toast";
 import { useEffect, useState } from "react";
-import { UploadMediaDialog } from "@/views/MediaUpload";
 import { useFeatureFlag } from "@/context/FeatureFlagContext";
 import { FeatureFlag } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
@@ -79,24 +79,91 @@ const mainMenuItems: MenuItem[] = [
     url: "/dashboard",
   },
   {
+    title: "Analytics",
+    icon: LineChart,
+    url: "/analytics",
+    permissionsRequired: ["read:metrics"],
+  },
+  {
     title: "Conversations",
-    icon: LucideMessageCirclePlus,
+    icon: MessageSquare,
+    url: "/transcripts",
+    permissionsRequired: ["read:conversation"],
+  },
+  {
+    title: "Operators",
+    icon: Users,
+    url: "/operators",
+    permissionsRequired: ["read:operator"],
+  },
+  {
+    title: "Agent Studio",
+    icon: UserRoundCog,
+    url: "/ai-agents",
+    permissionsRequired: ["read:llm_analyst"],
+  },
+  {
+    title: "Integrations",
+    icon: Network,
     url: "#",
     children: [
       {
-        title: "Transcripts",
-        url: "/transcripts",
-        permissionsRequired: ["read:conversation"],
+        title: "Knowledge Base",
+        url: "/knowledge-base",
+        permissionsRequired: ["*"],
       },
       {
-        title: "Analytics",
-        url: "/analytics",
-        permissionsRequired: ["read:metrics"],
+        title: "ML Models",
+        url: "/ml-models",
+        permissionsRequired: ["*"],
+      },
+      {
+        title: "Data Sources",
+        url: "/data-sources",
+        permissionsRequired: ["read:data_source"],
+      },
+      {
+        title: "API Keys",
+        url: "/api-keys",
+        permissionsRequired: ["read:api_key"],
+      },
+      {
+        title: "Webhooks",
+        url: "/webhooks",
+        permissionsRequired: ["read:webhook"],
+      },
+      {
+        title: "Configuration Vars",
+        url: "/app-settings",
+        permissionsRequired: ["read:app_setting"],
+        feature_flag: FeatureFlags.ADMIN_TOOLS.APP_SETTINGS,
       },
     ],
   },
   {
-    title: "Admin Tools",
+    title: "LLM Settings",
+    icon: Waypoints,
+    url: "#",
+    children: [
+      {
+        title: "LLM Providers",
+        url: "/llm-providers",
+        permissionsRequired: ["read:llm_provider"],
+      },
+      {
+        title: "LLM Analyst",
+        url: "/llm-analyst",
+        permissionsRequired: ["read:llm_analyst"],
+      },
+      {
+        title: "Fine-Tune",
+        url: "/fine-tune",
+        permissionsRequired: ["*"],
+      },
+    ],
+  },
+  {
+    title: "Admin",
     icon: Settings2,
     url: "#",
     children: [
@@ -115,57 +182,7 @@ const mainMenuItems: MenuItem[] = [
         url: "/user-types",
         permissionsRequired: ["read:user_type"],
       },
-      {
-        title: "LLM Analyst",
-        url: "/llm-analyst",
-        permissionsRequired: ["read:llm_analyst"],
-      },
-      {
-        title: "LLM Providers",
-        url: "/llm-providers",
-        permissionsRequired: ["read:llm_provider"],
-      },
-      {
-        title: "API Keys",
-        url: "/api-keys",
-        permissionsRequired: ["read:api_key"],
-      },
-      {
-        title: "Data Sources",
-        url: "/data-sources",
-        permissionsRequired: ["read:data_source"],
-      },
-      {
-        title: "App Settings",
-        url: "/app-settings",
-        permissionsRequired: ["read:app_setting"],
-        feature_flag: FeatureFlags.ADMIN_TOOLS.APP_SETTINGS,
-      },
     ],
-  },
-  {
-    title: "Agent Studio",
-    icon: UserCog,
-    url: "#",
-    children: [
-      {
-        title: "Workflows",
-        url: "/ai-agents",
-        permissionsRequired: ["read:llm_analyst"],
-      },
-      {
-        title: "Knowledge Base",
-        url: "/knowledge-base",
-        permissionsRequired: ["*"],
-      },
-
-    ],
-  },
-  {
-    title: "Operators",
-    icon: Users,
-    url: "/operators",
-    permissionsRequired: ["read:operator"],
   },
 ];
 
@@ -184,23 +201,23 @@ const settingsMenuItems: MenuItem[] = [
 ];
 
 const getInitialAdminToolsState = () => {
-  const savedState = localStorage.getItem("isAdminToolsOpen");
+  const savedState = localStorage.getItem("isLLMSettingsOpen");
   return savedState ? JSON.parse(savedState) : false;
 };
 
 const getInitialConversationsState = () => {
-  const savedState = localStorage.getItem("isConversationsOpen");
+  const savedState = localStorage.getItem("isIntegrationOpen");
   return savedState ? JSON.parse(savedState) : false;
 };
 
 const getInitialGenAgentState = () => {
-  const saved = localStorage.getItem("isGenAgentOpen");
+  const saved = localStorage.getItem("isAdminOpen");
   return saved ? JSON.parse(saved) : false;
 };
 
 export function AppSidebar() {
   const [permissions, setPermissions] = useState<string[]>([]);
-  const [isUploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [username, setUsername] = useState<string>("");
   const [isAdminToolsOpen, setIsAdminToolsOpen] = useState(
     getInitialAdminToolsState
   );
@@ -220,12 +237,44 @@ export function AppSidebar() {
   }, []);
 
   useEffect(() => {
-    const isOnConversationsPage = mainMenuItems
-      .find((item) => item.title === "Conversations")
-      ?.children?.some((child) => child.url === currentPath);
+    const cached = localStorage.getItem("auth_username");
+    if (cached) {
+      setUsername(cached);
+      return;
+    }
+    const loadUser = async () => {
+      try {
+        const me = await getAuthMe();
+        if (me?.username) {
+          setUsername(me.username);
+          localStorage.setItem("auth_username", me.username);
+        }
+      } catch {
+        setUsername("");
+      }
+    };
+    loadUser();
+  }, []);
 
-    if (isOnConversationsPage) {
+  useEffect(() => {
+    const integrationsChildren =
+      mainMenuItems.find((item) => item.title === "Integrations")?.children ??
+      [];
+    if (integrationsChildren.some((child) => child.url === currentPath)) {
       setIsConversationsOpen(true);
+    }
+
+    const adminChildren =
+      mainMenuItems.find((item) => item.title === "Admin")?.children ?? [];
+    if (adminChildren.some((child) => child.url === currentPath)) {
+      setIsGenAgentOpen(true);
+    }
+
+    const llmChildren =
+      mainMenuItems.find((item) => item.title === "LLM Settings")?.children ??
+      [];
+    if (llmChildren.some((child) => child.url === currentPath)) {
+      setIsAdminToolsOpen(true);
     }
   }, [currentPath]);
 
@@ -262,37 +311,39 @@ export function AppSidebar() {
   const filteredMainMenuItems = filterMenuItems(mainMenuItems);
   const filteredSettingsMenuItems = filterMenuItems(settingsMenuItems);
 
-  const handleToggleAdminTools = () => {
+  const handleToggleLLMSettings = () => {
     setIsAdminToolsOpen((prev) => {
       const newAdminState = !prev;
-      localStorage.setItem("isAdminToolsOpen", JSON.stringify(newAdminState));
+      localStorage.setItem("isLLMSettingsOpen", JSON.stringify(newAdminState));
       return newAdminState;
     });
   };
 
-  const handleToggleConversations = () => {
+  const handleToggleIntegration = () => {
     setIsConversationsOpen((prev) => {
       const newConversationsState = !prev;
       localStorage.setItem(
-        "isConversationsOpen",
+        "isIntegrationOpen",
         JSON.stringify(newConversationsState)
       );
       return newConversationsState;
     });
   };
 
-  const handleToggleGenAgent = () => {
+  const handleToggleAdmin = () => {
     setIsGenAgentOpen((prev) => {
       const next = !prev;
-      localStorage.setItem("isGenAgentOpen", JSON.stringify(next));
+      localStorage.setItem("isAdminOpen", JSON.stringify(next));
       return next;
     });
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("isAdminToolsOpen");
+    localStorage.removeItem("isLLMSettingsOpen");
+    localStorage.removeItem("isIntegrationOpen");
+    localStorage.removeItem("isAdminOpen");
     logout();
-    toast.success("Successfully logged out");
+    toast.success("Logged out successfully.");
     window.location.href = "/login";
   };
 
@@ -353,7 +404,7 @@ export function AppSidebar() {
               fill="#231F20"
             />
           </svg>
-          <FeatureFlag flagKey={FeatureFlags.UI.NOTIFICATIONS}>
+          {/* <FeatureFlag flagKey={FeatureFlags.UI.NOTIFICATIONS}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
@@ -394,21 +445,7 @@ export function AppSidebar() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </FeatureFlag>
-        </div>
-        <div className="p-2">
-          <button
-            onClick={() => setUploadDialogOpen(true)}
-            className="w-full flex items-center justify-center gap-1 bg-black text-white font-semibold py-3 px-5 rounded-md hover:opacity-90 transition"
-          >
-            <AudioLines className="w-6 h-5" />
-            Upload
-          </button>
-
-          <UploadMediaDialog
-            isOpen={isUploadDialogOpen}
-            onOpenChange={setUploadDialogOpen}
-          />
+          </FeatureFlag> */}
         </div>
         <SidebarGroup>
           <SidebarGroupContent>
@@ -417,16 +454,16 @@ export function AppSidebar() {
                 <SidebarMenuItem
                   key={index}
                   className={
-                    ["Conversations", "Admin Tools", "Agent Studio"].includes(
+                    ["Integrations", "Admin", "LLM Settings"].includes(
                       item.title
                     )
                       ? "h-fit"
                       : menuItemClasses
                   }
                 >
-                  {item.title === "Conversations" && item.children ? (
+                  {item.title === "Integrations" && item.children ? (
                     <div>
-                      <div onClick={handleToggleConversations}>
+                      <div onClick={handleToggleIntegration}>
                         <SidebarMenuButton className={parentMenuClasses}>
                           {item.icon && <item.icon className="w-4 h-4" />}
                           <span>{item.title}</span>
@@ -469,9 +506,9 @@ export function AppSidebar() {
                         </div>
                       )}
                     </div>
-                  ) : item.title === "Agent Studio" && item.children ? (
+                  ) : item.title === "Admin" && item.children ? (
                     <div>
-                      <div onClick={handleToggleGenAgent}>
+                      <div onClick={handleToggleAdmin}>
                         <SidebarMenuButton className={parentMenuClasses}>
                           {item.icon && <item.icon className="w-4 h-4" />}
                           <span>{item.title}</span>
@@ -516,7 +553,7 @@ export function AppSidebar() {
                     </div>
                   ) : item.children ? (
                     <div>
-                      <div onClick={handleToggleAdminTools}>
+                      <div onClick={handleToggleLLMSettings}>
                         <SidebarMenuButton className={parentMenuClasses}>
                           {item.icon && <item.icon className="w-4 h-4" />}
                           <span>{item.title}</span>
@@ -580,6 +617,15 @@ export function AppSidebar() {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
+                {username && (
+                  <SidebarMenuItem className={menuItemClasses}>
+                    <div
+                      className="flex w-full h-full items-center gap-2 px-3 rounded-md text-sm font-semibold text-zinc-400 cursor-default"
+                    >
+                      <span>{username}</span>
+                    </div>
+                  </SidebarMenuItem>
+                )}
                 {filteredSettingsMenuItems.map((item, index) => (
                   <SidebarMenuItem key={index} className={menuItemClasses}>
                     <SidebarMenuButton asChild className="h-full">

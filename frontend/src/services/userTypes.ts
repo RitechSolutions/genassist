@@ -6,7 +6,6 @@ export const getAllUserTypes = async (): Promise<UserType[]> => {
       const data = await apiRequest<UserType[]>("GET", "user-type/");
       return data || [];
     } catch (error) {
-      console.error("Error fetching user types:", error);
       throw error;
     }
   };
@@ -15,7 +14,6 @@ export const getAllUserTypes = async (): Promise<UserType[]> => {
     try {
       return await apiRequest<UserType>("GET", `user-type/${id}`);
     } catch (error) {
-      console.error("Error fetching user type:", error);
       throw error;
     }
   };
@@ -26,7 +24,6 @@ export const getAllUserTypes = async (): Promise<UserType[]> => {
       if (!response) throw new Error("Failed to create user type");
       return response;
     } catch (error) {
-      console.error("Error creating user type:", error);
       throw error;
     }
   };
@@ -35,7 +32,6 @@ export const getAllUserTypes = async (): Promise<UserType[]> => {
     try {
       await apiRequest("DELETE", `user-type/${id}`);
     } catch (error) {
-      console.error("Error deleting user type:", error);
       throw error;
     }
   };
@@ -46,7 +42,6 @@ export const getAllUserTypes = async (): Promise<UserType[]> => {
       if (!response) throw new Error("Failed to update user type");
       return response;
     } catch (error) {
-      console.error("Error updating user type:", error);
       throw error;
     }
   };

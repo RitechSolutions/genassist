@@ -1,4 +1,3 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -39,9 +38,9 @@
 
 /* Mobile-specific styles */
 @media (max-width: 768px) {
-  .container, 
-  main, 
-  section, 
+  .container,
+  main,
+  section,
   .content-wrapper {
     padding-left: 16px !important;
     padding-right: 16px !important;
@@ -64,16 +63,14 @@
   @apply transition-all duration-300 hover:shadow-lg hover:scale-[1.02];
 }
 
-
 .inner-ace .ace_scroller,
 .inner-ace .ace_content {
-  background-color: #1C1C1C !important;
+  background-color: #1c1c1c !important;
 }
 
 .inner-ace .ace_gutter {
-  background-color: #1C1C1C !important;
+  background-color: #1c1c1c !important;
 }
-
 
 .inner-ace {
   border-radius: 8px;
@@ -84,11 +81,11 @@
 }
 
 .inner-aces .ace_gutter {
-  background-color: #F7F9FB !important;
+  background-color: #f7f9fb !important;
 }
 .inner-aces .ace_scroller,
 .inner-aces .ace_content {
-  background-color: #F7F9FB !important;
+  background-color: #f7f9fb !important;
 }
 
 .integration-code .ace_content {
@@ -98,7 +95,7 @@
 .integration-code {
   border-radius: 8px;
 }
-.integration-code-usage{
+.integration-code-usage {
   border-radius: 8px;
 }
 .integration-code-usage .ace_content {
@@ -106,4 +103,9 @@
 }
 .integration-code-usage .ace_gutter-layer {
   margin-top: 11px;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button,
+input[type="checkbox"]:hover {
+  cursor: pointer;
 }

@@ -11,12 +11,14 @@ export function ApiKeyDialogLogic({
   mode = "create",
   apiKeyToEdit = null,
   onApiKeyCreated,
+  onApiKeyUpdated,
   onOpenChange,
 }: {
   isOpen: boolean;
   mode?: "create" | "edit";
   apiKeyToEdit?: ApiKey | null;
   onApiKeyCreated?: () => void;
+  onApiKeyUpdated?: (apiKey: ApiKey) => void;
   onOpenChange: (isOpen: boolean) => void;
 }) {
   const [name, setName] = useState("");
@@ -57,8 +59,7 @@ export function ApiKeyDialogLogic({
           setGeneratedKey(null);
         }
       } catch (error) {
-        console.error("Failed to load user data:", error);
-        toast.error("Failed to load user information.");
+        toast.error("Failed to fetch user information.");
       } finally {
         setLoading(false);
       }
@@ -96,7 +97,7 @@ export function ApiKeyDialogLogic({
     e.preventDefault();
 
     if (!name.trim()) {
-      toast.error("API key name is required");
+      toast.error("Name is required.");
       return;
     }
 
@@ -111,20 +112,38 @@ export function ApiKeyDialogLogic({
         });
         setGeneratedKey(result.key_val);
         setHasGeneratedKey(true);
-        toast.success("API Key created successfully");
+        toast.success("API key created successfully.");
+
+        if (onApiKeyCreated) {
+          onApiKeyCreated();
+        }
       } else if (dialogMode === "edit" && apiKeyToEdit && userId) {
-        const updateData: Partial<ApiKey> & { role_ids?: string[] } = {
+        const commonFields = {
           name,
           user_id: userId,
           is_active: isActive ? 1 : 0,
+        };
+
+        const updateData: Partial<ApiKey> & { role_ids?: string[] } = {
+          ...commonFields,
           role_ids: selectedRoles,
         };
+
         await updateApiKey(apiKeyToEdit.id, updateData);
-        toast.success("API Key updated successfully");
+        toast.success("API key updated successfully.");
+
+        if (onApiKeyUpdated) {
+          const updatedKey: ApiKey = {
+            ...apiKeyToEdit,
+            ...commonFields,
+            roles: availableRoles.filter((role) =>
+              selectedRoles.includes(role.id)
+            ),
+          };
+          onApiKeyUpdated(updatedKey);
+        }
+
         onOpenChange(false);
-      }
-      if (onApiKeyCreated) {
-        onApiKeyCreated();
       }
     } catch (error) {
       const data = error.response.data;
@@ -149,7 +168,7 @@ export function ApiKeyDialogLogic({
   const copyToClipboard = () => {
     if (generatedKey) {
       navigator.clipboard.writeText(generatedKey);
-      toast.success("API key has been copied to clipboard");
+      toast.success("API key copied to clipboard.");
     }
   };
 

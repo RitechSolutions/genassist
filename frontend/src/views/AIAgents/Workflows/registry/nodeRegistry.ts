@@ -9,6 +9,7 @@ class NodeRegistry {
   // Register a new node type
   register(nodeType: NodeTypeDefinition<NodeData>): void {
     this.nodeTypes.set(nodeType.type, nodeType);
+
     
     // Add to categories
     if (!this.nodeCategories.has(nodeType.category)) {
@@ -46,6 +47,12 @@ class NodeRegistry {
   // Get all categories
   getAllCategories(): string[] {
     return Array.from(this.nodeCategories.keys());
+  }
+  getAllToolTypes(): string[] {
+    const toolTypes = [
+      "toolBuilderNode", 
+    ];
+    return Array.from(this.nodeTypes.keys()).filter(type => toolTypes.includes(type));
   }
 
   // Create a new node instance

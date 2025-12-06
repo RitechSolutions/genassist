@@ -38,7 +38,6 @@ export const PerformanceChart = ({ timeFilter }: PerformanceChartProps) => {
           setData(sampleData);
         }
       } catch (error) {
-        console.error("Error fetching metrics:", error);
         setData(sampleData);
       }
     };

@@ -18,7 +18,7 @@ export default function DataSources() {
 
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -26,12 +26,12 @@ export default function DataSources() {
         const data = await getAllDataSources();
         setDataSources(data);
       } catch (error) {
-        console.error("Failed to fetch data sources:", error);
+        // ignore
       } finally {
         setIsLoading(false);
       }
     };
-  
+
     fetchData();
   }, [refreshKey]);
 
@@ -54,13 +54,13 @@ export default function DataSources() {
   const handleDeleteDataSource = async (id: string) => {
     try {
       await deleteDataSource(id);
-      //toast.success("Data source deleted");
+      //toast.success("Data source deleted successfully.");
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
-      toast.error("Failed to delete data source");
+      toast.error("Failed to delete data source.");
     }
   };
-  
+
   return (
     <PageLayout>
       <PageHeader
@@ -72,13 +72,13 @@ export default function DataSources() {
         actionButtonText="Add New Data Source"
         onActionClick={handleCreateDataSource}
       />
-      
+
       <DataSourceCard
         searchQuery={searchQuery}
         refreshKey={refreshKey}
         dataSources={dataSources}
         onEditDataSource={handleEditDataSource}
-        onDeleteDataSource={handleDeleteDataSource} 
+        onDeleteDataSource={handleDeleteDataSource}
       />
 
       <DataSourceDialog

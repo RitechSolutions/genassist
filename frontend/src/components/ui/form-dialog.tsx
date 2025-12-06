@@ -1,5 +1,5 @@
 import React, { ReactNode } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/dialog";
 import { Button } from "@/components/button";
 import { Loader2 } from "lucide-react";
 
@@ -32,17 +32,20 @@ export function FormDialog({
 }: FormDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className={`sm:max-w-[${maxWidth}] p-0`}>
+      <DialogContent className={`sm:max-w-[${maxWidth}] p-0 overflow-hidden`}>
         <form onSubmit={onSubmit}>
-          <DialogHeader className="p-6 pt-6 pb-0">
+          <DialogHeader className="p-6">
             <DialogTitle className="text-xl">{title}</DialogTitle>
+            {description ? (
+              <DialogDescription>{description}</DialogDescription>
+            ) : null}
           </DialogHeader>
           
-          <div className="p-6 space-y-5">
+          <div className="px-6 pb-6 space-y-5 max-h-[calc(90vh-160px)] overflow-y-auto">
             {children}
           </div>
           
-          <DialogFooter className="p-4">
+          <DialogFooter className="px-6 py-4 border-t">
             <div className="flex justify-end gap-3 w-full">
               <Button 
                 type="button" 

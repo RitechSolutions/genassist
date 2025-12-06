@@ -23,7 +23,7 @@ import { ParameterSection, Param } from "../components/ParameterSection";
 import { ApiConfigSection } from "../components/ApiConfigSection";
 import { FunctionConfigSection } from "../components/FunctionConfigSection";
 import { SubmitButtons } from "../components/SubmitButtons";
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 
 export default function CreateTool() {
   const isMobile = useIsMobile();
@@ -52,7 +52,13 @@ export default function CreateTool() {
   const [bodyTab, setBodyTab] = useState("form");
 
   const [dynamicParams, setDynamicParams] = useState<Param[]>([
-    { id: uuidv4(), name: "", type: "String", defaultValue: "", description: "" },
+    {
+      id: uuidv4(),
+      name: "",
+      type: "String",
+      defaultValue: "",
+      description: "",
+    },
   ]);
 
   const [code, setCode] = useState<string>(
@@ -65,7 +71,7 @@ export default function CreateTool() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const addItem = (setter, template) =>
-    setter(prev => [...prev, { ...template, id: uuidv4() }]);
+    setter((prev) => [...prev, { ...template, id: uuidv4() }]);
   const removeItem = (setter, id: string) =>
     setter((prev) => prev.filter((item) => item.id !== id));
 
@@ -139,7 +145,7 @@ export default function CreateTool() {
                 ]
           );
         })
-        .catch(() => toast.error("Failed to load tool"))
+        .catch(() => toast.error("Failed to fetch tool."))
         .finally(() => setLoading(false));
     }
   }, [isEditMode, id]);
@@ -180,7 +186,6 @@ export default function CreateTool() {
           err instanceof Error ? err.message : String(err)
         }`
       );
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -239,7 +244,7 @@ export default function CreateTool() {
 
   const handleSubmit = async () => {
     if (!name) {
-      toast.error("Please enter a name for the tool");
+      toast.error("Name is required.");
       return;
     }
     setSubmitting(true);
@@ -286,16 +291,15 @@ export default function CreateTool() {
 
       if (isEditMode && id) {
         await updateTool(id, payload);
-        toast.success("Tool updated successfully");
+        toast.success("Tool updated successfully.");
       } else {
         await createTool(payload);
-        toast.success("Tool created successfully");
+        toast.success("Tool created successfully.");
       }
       navigate("/tools");
     } catch (err: any) {
-      console.error("Submit error:", err);
       setError(err.message || "Failed to save tool");
-      toast.error("Failed to save tool");
+      toast.error("Failed to save tool.");
     } finally {
       setSubmitting(false);
     }
@@ -333,10 +337,10 @@ export default function CreateTool() {
                   description={description}
                   onDescriptionChange={(val: string) => {
                     if (val.length > 255) {
-                      toast.error("Description cannot exceed 255 characters");
+                      toast.error("Description cannot exceed 255 characters.");
                     }
                     setDescription(val.slice(0, 255));
-                  }}                  
+                  }}
                   toolType={toolType}
                   onToolTypeChange={setToolType}
                 />

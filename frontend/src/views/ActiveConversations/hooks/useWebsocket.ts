@@ -1,19 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { TranscriptEntry } from "@/interfaces/transcript.interface";
 import { getWsUrl } from "@/config/api";
-
-interface UseWebSocketTranscriptOptions {
-  conversationId: string;
-  token: string;
-  transcriptInitial?: TranscriptEntry[];
-}
-
-interface StatisticsPayload {
-  in_progress_hostility_score?: number;
-  topic?: string;
-  sentiment?: string;
-  [key: string]: number | string | undefined;
-}
+import { UseWebSocketTranscriptOptions, StatisticsPayload, TakeoverPayload } from "@/interfaces/websocket.interface";
+import { getTenantId } from "@/services/auth";
 
 export function useWebSocketTranscript({
   conversationId,
@@ -23,6 +12,7 @@ export function useWebSocketTranscript({
   const [messages, setMessages] = useState<TranscriptEntry[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [statistics, setStatistics] = useState<StatisticsPayload>({});
+  const [takeoverInfo, setTakeoverInfo] = useState<TakeoverPayload>({});
   const socketRef = useRef<WebSocket | null>(null);
   const lastConversationIdRef = useRef<string | null>(null);
 
@@ -35,16 +25,16 @@ export function useWebSocketTranscript({
 
     const topics = ["message", "statistics", "finalize", "takeover"];
     const queryString = topics.map((t) => `topics=${t}`).join("&");
+    const tenant = getTenantId();
+    const tenantParam = tenant ? `&X-Tenant-Id=${tenant}` : "";
     
     getWsUrl().then(wsBaseUrl => {
-      const wsUrl = `${wsBaseUrl}/conversations/ws/${conversationId}?access_token=${token}&lang=en&${queryString}`;
-      console.log("Connecting to WebSocket:", wsUrl);
+      const wsUrl = `${wsBaseUrl}/conversations/ws/${conversationId}?access_token=${token}&lang=en&${queryString}${tenantParam}`;
 
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 
       socket.onopen = () => {
-        console.log("WebSocket connected");
         setIsConnected(true);
         setMessages(transcriptInitial);
       };
@@ -52,7 +42,6 @@ export function useWebSocketTranscript({
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log("Incoming WebSocket message:", data);
     
           if ((data.topic === "message" || data.type === "message") && data.payload) {
             const newEntries = Array.isArray(data.payload)
@@ -76,23 +65,29 @@ export function useWebSocketTranscript({
           }
           
           if ((data.topic === "statistics" || data.type === "statistics") && data.payload) {
-            console.log("Received statistics:", data.payload);
             setStatistics(prev => ({
               ...prev,
               ...data.payload
             }));
           }
+
+          if (data.topic === "takeover" || data.type === "takeover") {
+            setTakeoverInfo({
+              supervisor_id: data.payload?.supervisor_id,
+              user_id: data.payload?.user_id,
+              timestamp: new Date().toISOString(),
+            });
+          }
         } catch (e) {
-          console.error("JSON parse error", e);
+          // ignore
         }
       };
 
       socket.onerror = (err) => {
-        console.error("WebSocket error", err);
+        // ignore
       };
 
       socket.onclose = () => {
-        console.log("WebSocket disconnected");
         setIsConnected(false);
         lastConversationIdRef.current = null;
       };
@@ -107,7 +102,7 @@ export function useWebSocketTranscript({
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify(entry));
     } else {
-      console.warn("⚠️ Cannot send message: WebSocket not open");
+      // ignore
     }
   };
 
@@ -115,6 +110,7 @@ export function useWebSocketTranscript({
     messages,
     isConnected,
     sendMessage,
-    statistics
+    statistics,
+    takeoverInfo
   };
 }

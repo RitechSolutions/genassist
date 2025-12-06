@@ -15,7 +15,6 @@ export const askAIQuestion = async (
     );
     return response ?? { answer: "Sorry, I couldn't process your request." };
   } catch (error) {
-    console.error("Error in AI Chat request:", error);
     return { answer: "Sorry, I couldn't process your request." };
   }
 };

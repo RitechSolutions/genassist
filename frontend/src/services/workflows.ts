@@ -1,16 +1,12 @@
 import { apiRequest } from "@/config/api";
+import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
 
 import {
   Workflow,
   WorkflowCreatePayload,
   WorkflowUpdatePayload,
 } from "@/interfaces/workflow.interface";
-import {
-  KnowledgeBaseNodeData,
-  PythonCodeNodeData,
-  SlackOutputNodeData,
-  ZendeskTicketNodeData,
-} from "@/views/AIAgents/Workflows/types/nodes";
+import { NodeData } from "@/views/AIAgents/Workflows/types/nodes";
 
 const BASE = "genagent/workflow";
 
@@ -43,8 +39,7 @@ export const deleteWorkflow = (id: string) =>
 
 // Test a workflow configuration with a test message
 export interface WorkflowTestPayload {
-  message: string;
-  session: any;
+  input_data: Record<string, any>;
   workflow: Workflow;
 }
 
@@ -52,27 +47,35 @@ export interface WorkflowTestResponse {
   status: string;
   input: string;
   output: string;
-  workflow_id: string | null;
-  execution_summary: {
-    execution_id: string;
-    thread_id: string;
-    timestamp: string;
-    execution_path: string[];
-    input: string;
-    node_outputs: {
-      [key: string]:
-        | string
-        | {
-            status: number;
-            data: Array<{
-              id: string;
-              name: string;
-              data: Record<string, any> | null;
-            }>;
-          };
-    };
-  };
+  [key: string]: any;
 }
+
+export interface NodeTestPayload {
+  input_data: Record<string, any>;
+  node_type: string;
+  node_config: NodeData;
+}
+
+export const getNodeDialogSchema = async (
+  nodeType: string
+): Promise<FieldSchema[]> => {
+  try {
+    return await apiRequest<FieldSchema[]>(
+      "GET",
+      `${BASE}/dialog_schema/${nodeType}`
+    );
+  } catch (error) {
+    console.error("Error fetching node dialog schema", error);
+    throw error;
+  }
+};
+
+export const testNode = (testData: NodeTestPayload) =>
+  apiRequest<WorkflowTestResponse>(
+    "POST",
+    `${BASE}/test-node`,
+    testData as unknown as Record<string, unknown>
+  );
 
 export const testWorkflow = (testData: WorkflowTestPayload) =>
   apiRequest<WorkflowTestResponse>(
@@ -81,54 +84,8 @@ export const testWorkflow = (testData: WorkflowTestPayload) =>
     testData as unknown as Record<string, unknown>
   );
 
-export const slackMessageOutput = (
-  message: string,
-  slackNodeData: Pick<
-    SlackOutputNodeData,
-    "name" | "token" | "channel" | "handlers"
-  >
-) =>
-  apiRequest<SlackOutputNodeData>("POST", `${BASE}/slack-output-message`, {
-    slack_token: slackNodeData.token,
-    slack_channel: slackNodeData.channel,
-    slack_message: message,
-  } as Record<string, unknown>);
-
-export const zendeskTicketOutput = (
-  data: Pick<
-    ZendeskTicketNodeData,
-    "subject" | "description" | "requester_name" | "requester_email" | "tags"
-  >
-) =>
-  apiRequest<{ status: number; data: any }>(
-    "POST",
-    `${BASE}/zendesk-output-message`,
-    data as Record<string, unknown>
-  );
-  
-export const testKnowledgeBase = (
-  query: string,
-  knowledgeNodeData: KnowledgeBaseNodeData
-) =>
-  apiRequest<WorkflowTestResponse>("POST", `${BASE}/test-knowledge-tool`, {
-    tool_config: knowledgeNodeData,
-    query,
-  } as unknown as Record<string, unknown>);
-
-export const testPythonCode = (
-  pythonCodeNodeData: PythonCodeNodeData,
-  input_params: Record<string, any>
-) =>
-  apiRequest<{
-    result: any;
-    original_params: any;
-    validated_params: any;
-  }>("POST", `${BASE}/test-python-function`, {
-    tool_config: pythonCodeNodeData,
-    input_params,
-  } as unknown as Record<string, unknown>);
-
-export const generatePythonTemplate = (schema: any) =>
+export const generatePythonTemplate = (schema: any, prompt?: string) =>
   apiRequest<{ template: string }>("POST", `${BASE}/generate-python-template`, {
     parameters_schema: schema,
+    prompt,
   } as unknown as Record<string, unknown>);

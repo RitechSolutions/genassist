@@ -15,7 +15,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Tool } from "@/interfaces/tool.interface";
 import { getAllTools, deleteTool } from "@/services/tools";
-import {  toast } from "react-hot-toast";
+import { toast } from "react-hot-toast";
 
 export default function Tools() {
   const isMobile = useIsMobile();
@@ -40,7 +40,7 @@ export default function Tools() {
         const data = await getAllTools();
         setTools(data);
       } catch {
-        toast.error("Could not fetch tools");
+        toast.error("Failed to fetch tools.");
       } finally {
         setLoading(false);
       }
@@ -56,10 +56,10 @@ export default function Tools() {
   const handleDelete = async (id: string) => {
     try {
       await deleteTool(id);
-      toast.success("Tool deleted");
+      toast.success("Tool deleted successfully.");
       setRefreshKey((v) => v + 1);
     } catch {
-      toast.error("Delete failed");
+      toast.error("Failed to delete tool.");
     }
   };
 

@@ -59,7 +59,6 @@ const Chat: React.FC = () => {
           },
         ]);
       } catch (error) {
-        console.error("Error fetching agent info:", error);
         setMessages([
           {
             role: "system",
@@ -104,7 +103,6 @@ const Chat: React.FC = () => {
         },
       ]);
     } catch (error) {
-      console.error("Error sending message:", error);
       setMessages((prev) => [
         ...prev,
         {

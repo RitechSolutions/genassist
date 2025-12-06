@@ -7,7 +7,6 @@ export const getAllPermissions = async (): Promise<Permission[]> => {
     const data = await apiRequest<Permission[]>("GET", "/permissions/");
     return data || [];
   } catch (error) {
-    console.error("Error fetching permissions:", error);
     throw error;
   }
 };
@@ -20,7 +19,6 @@ export const getRolePermissions = async (roleId: string): Promise<string[]> => {
     );
     return permissionsData.permissions || [];
   } catch (error) {
-    console.error("Error fetching role permissions:", error);
     return [];
   }
 };
@@ -39,7 +37,6 @@ export const getPermissionsByRoleId = async (
 
     return permissionIds;
   } catch (error) {
-    console.error("Error fetching role-permissions:", error);
     return [];
   }
 };
@@ -54,7 +51,6 @@ export const getRolePermissionLinksByRoleId = async (
 
     return rolePermissions.filter((rp) => rp.role_id === roleId);
   } catch (error) {
-    console.error("Error fetching role-permission links:", error);
     return [];
   }
 };
@@ -90,7 +86,6 @@ export const saveRolePermissions = async (
     await Promise.all([...addPromises, ...deletePromises]);
     
   } catch (error) {
-    console.error("Error saving role permissions:", error);
     toast.error("Failed to update role permissions.");
   }
 };

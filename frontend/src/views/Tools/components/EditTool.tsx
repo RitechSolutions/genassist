@@ -24,12 +24,12 @@ export default function EditTool() {
     if (!id) return;
     async function fetchTool() {
       try {
-        const tool = await getToolById(id); 
+        const tool = await getToolById(id);
         setName(tool.name || "");
         setDescription(tool.description || "");
         setParameters(tool.parameters || []);
       } catch (error) {
-        console.error("Failed to fetch tool", error);
+        // ignore
       } finally {
         setLoading(false);
       }
@@ -39,7 +39,7 @@ export default function EditTool() {
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      toast.error("Name is required");
+      toast.error("Name is required.");
       return;
     }
     setSubmitting(true);
@@ -51,7 +51,7 @@ export default function EditTool() {
       });
       navigate("/tools");
     } catch (error) {
-      console.error("Failed to update tool", error);
+      // ignore
     } finally {
       setSubmitting(false);
     }
@@ -84,18 +84,16 @@ export default function EditTool() {
           tab={tab}
           setTab={setTab}
           addItem={(setter, sample) => {
-            setter(prev => [...prev, { id: uuidv4(), ...sample }]);
+            setter((prev) => [...prev, { id: uuidv4(), ...sample }]);
           }}
           removeItem={(setter, id) => {
-            setter(prev => prev.filter((item) => item.id !== id));
+            setter((prev) => prev.filter((item) => item.id !== id));
           }}
           sample={{ name: "", value: "" }}
         />
 
         <div className="flex justify-end gap-2">
-          <Button onClick={() => navigate("/tools")}>
-            Cancel
-          </Button>
+          <Button onClick={() => navigate("/tools")}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={submitting}>
             {submitting ? "Updating..." : "Update Tool"}
           </Button>

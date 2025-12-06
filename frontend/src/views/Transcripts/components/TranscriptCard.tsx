@@ -1,6 +1,6 @@
 import { Badge } from "@/components/badge";
 import { Transcript } from "@/interfaces/transcript.interface";
-import { getSentimentStyles } from "../helpers/formatting";
+import { getSentimentStyles, getEffectiveSentiment } from "../helpers/formatting";
 import { getTranscriptPreview } from "../helpers/parser";
 import { Radio } from "lucide-react";
 
@@ -39,9 +39,9 @@ export function TranscriptCard({ transcript, onClick, className = "" }: Transcri
             </Badge>
           )}
         </div>
-        <Badge variant="secondary" className={getSentimentStyles(transcript.metrics.sentiment)}>
-          {(transcript.metrics.sentiment || "Unknown").charAt(0).toUpperCase() +
-            (transcript.metrics.sentiment || "Unknown").slice(1)}
+        <Badge variant="secondary" className={getSentimentStyles(getEffectiveSentiment(transcript))}>
+          {getEffectiveSentiment(transcript).charAt(0).toUpperCase() +
+            getEffectiveSentiment(transcript).slice(1)}
         </Badge>
       </div>
       <p className="text-sm text-muted-foreground">{getTranscriptPreview(transcript)}</p>

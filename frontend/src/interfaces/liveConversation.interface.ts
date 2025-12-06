@@ -2,7 +2,7 @@ export type ActiveConversation = {
     id: string;
     type: "all" | "call" | "chat";
     status: "in-progress" | "takeover";
-    transcript: string;
+    transcript: string | import("./transcript.interface").TranscriptEntry[];
     sentiment: "positive" | "neutral" | "negative";
     timestamp: string;
     in_progress_hostility_score: number;
@@ -10,6 +10,9 @@ export type ActiveConversation = {
     word_count?: number;
     agent_ratio?: number;
     customer_ratio?: number;
+    supervisor_id?: string | null;
+    topic?: string;
+    negative_reason?: string;
   };
   
   export type ActiveConversationsResponse = {
@@ -45,5 +48,4 @@ export type ActiveConversation = {
       wordCount: number;
     };
   };
-
   

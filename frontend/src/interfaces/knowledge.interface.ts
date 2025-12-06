@@ -3,6 +3,7 @@ export interface KnowledgeItem {
   name: string;
   description?: string;
   type?: string;
+  files?: string[];
   rag_config?: {
     enabled: boolean;
     graph_db?: {
@@ -11,4 +12,4 @@ export interface KnowledgeItem {
     };
   };
   [key: string]: unknown;
-} 
+}

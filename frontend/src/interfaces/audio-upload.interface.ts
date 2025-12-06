@@ -1,0 +1,22 @@
+export type AudioAnalysisResponse = {
+    id: string;
+    conversation_id: string;
+    llm_analyst_id: string;
+    tone: string;
+    topic: string;
+    summary: string;
+    neutral_sentiment: number;
+    positive_sentiment: number;
+    negative_sentiment: number;
+    customer_satisfaction: number;
+    quality_of_service: number;
+    operator_knowledge: number;
+    efficiency: number;
+    response_time: number;
+    resolution_rate: number;
+    created_at: string;
+    updated_at: string;
+    created_by: string;
+    updated_by: string | null;
+    is_deleted: number;
+  };

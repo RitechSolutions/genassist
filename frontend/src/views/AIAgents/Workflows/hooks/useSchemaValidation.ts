@@ -33,7 +33,6 @@ export const useSchemaValidation = () => {
 
     const sourceNode = getNode(connection.source);
     const targetNode = getNode(connection.target);
-
     if (!sourceNode || !targetNode) return false;
 
     const sourceData = sourceNode.data as BaseNodeData;
@@ -47,10 +46,6 @@ export const useSchemaValidation = () => {
 
     // Check compatibility types
     if (!areCompatible(sourceHandler.compatibility, targetHandler.compatibility)) {
-      console.warn('Compatibility validation failed:', {
-        source: sourceHandler.compatibility,
-        target: targetHandler.compatibility
-      });
       return false;
     }
 
@@ -64,7 +59,6 @@ export const useSchemaValidation = () => {
     );
 
     if (!validation.isValid) {
-      console.warn('Schema validation failed:', validation.errors);
       return false;
     }
 

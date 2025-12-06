@@ -11,7 +11,7 @@ import { AlertCircle } from "lucide-react";
 import { toast } from "react-hot-toast";
 import AgentList from "./AgentList";
 import ManageApiKeysModal from "./Keys/ManageApiKeysModal";
-import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const Dashboard: React.FC = () => {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
@@ -43,7 +43,6 @@ const Dashboard: React.FC = () => {
       setError(null);
     } catch (err) {
       setError("Failed to load agent configurations");
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -65,12 +64,11 @@ const Dashboard: React.FC = () => {
     try {
       setIsDeleting(true);
       await deleteAgentConfig(agentToDelete.id);
-      await fetchAgents();
-      toast.success("Agent deleted successfully");
+      toast.success("Agent deleted successfully.");
+      setAgents((prev) => prev.filter((s) => s.id !== agentToDelete.id));
     } catch (err) {
-      toast.error("Failed to delete agent");
+      toast.error("Failed to delete agent.");
       setError("Failed to delete agent");
-      console.error(err);
     } finally {
       setAgentToDelete(null);
       setIsDeleteDialogOpen(false);
@@ -82,22 +80,18 @@ const Dashboard: React.FC = () => {
     try {
       const agent = agents.find((a) => a.id === agentId);
       if (agent) {
-        const newState = !agent.is_active;
-        // if (newState) {
-        //   await initializeAgent(agentId);
-        // } else {
-        //   const updatedAgents = agents.map(a =>
-        //     a.id === agentId ? { ...a, is_active: false } : a
-        //   );
-        //   setAgents(updatedAgents);
-        //   return;
-        // }
         await initializeAgent(agentId);
-        await fetchAgents();
+
+        // Update the local state
+        const updatedAgents = agents.map((a) =>
+          a.id === agentId ? { ...a, is_active: !a.is_active } : a
+        );
+        setAgents(updatedAgents);
       }
     } catch (err) {
       setError("Failed to update agent status");
-      console.error(err);
+      // Refetch to ensure UI is in sync with backend
+      await fetchAgents();
     }
   };
 
@@ -165,14 +159,14 @@ const Dashboard: React.FC = () => {
           />
         )}
 
-        <DeleteConfirmDialog
+        <ConfirmDialog
           isOpen={isDeleteDialogOpen}
           onOpenChange={setIsDeleteDialogOpen}
           onConfirm={handleDeleteAgent}
-          isDeleting={isDeleting}
+          isInProgress={isDeleting}
           itemName={agentToDelete?.name || ""}
           description={`This action cannot be undone. This will permanently delete agent "${agentToDelete?.name}".`}
-        ></DeleteConfirmDialog>
+        ></ConfirmDialog>
       </div>
     </div>
   );

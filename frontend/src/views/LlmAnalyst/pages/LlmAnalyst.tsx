@@ -12,11 +12,13 @@ export default function LLMAnalysts() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
-  const [llmAnalystToEdit, setLlmAnalystToEdit] = useState<LLMAnalyst | null>(null);
+  const [llmAnalystToEdit, setLlmAnalystToEdit] = useState<LLMAnalyst | null>(
+    null
+  );
 
   const [llmAnalysts, setLlmAnalysts] = useState<LLMAnalyst[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   useEffect(() => {
     const fetchLLMAnalysts = async () => {
       try {
@@ -24,12 +26,12 @@ export default function LLMAnalysts() {
         const data = await getAllLLMAnalysts();
         setLlmAnalysts(data);
       } catch (error) {
-        console.error("Failed to fetch LLM analysts:", error);
+        // ignore
       } finally {
         setIsLoading(false);
       }
     };
-  
+
     fetchLLMAnalysts();
   }, [refreshKey]);
 
@@ -52,13 +54,13 @@ export default function LLMAnalysts() {
   const handleDeleteLLMAnalyst = async (id: string) => {
     try {
       await deleteLLMAnalyst(id);
-      //toast.success("LLM Analyst deleted");
+      //toast.success("LLM analyst deleted successfully.");
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
-      toast.error("Failed to delete LLM Analyst");
+      toast.error("Failed to delete LLM analyst.");
     }
   };
-  
+
   return (
     <PageLayout>
       <PageHeader
@@ -70,7 +72,7 @@ export default function LLMAnalysts() {
         actionButtonText="Add New LLM Analyst"
         onActionClick={handleCreateLLMAnalyst}
       />
-      
+
       <LLMAnalystCard
         searchQuery={searchQuery}
         analysts={llmAnalysts}
@@ -79,11 +81,11 @@ export default function LLMAnalysts() {
       />
 
       <LLMAnalystDialog
-            isOpen={isDialogOpen}
-            onOpenChange={setIsDialogOpen}
-            onAnalystSaved={handleLLMAnalystSaved}
-            analystToEdit={llmAnalystToEdit}
-            mode={dialogMode}
+        isOpen={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        onAnalystSaved={handleLLMAnalystSaved}
+        analystToEdit={llmAnalystToEdit}
+        mode={dialogMode}
       />
     </PageLayout>
   );

@@ -1,35 +1,144 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { LoginForm } from "../components/LoginForm";
 import { useAuth } from "../hooks/useAuth";
+import { ForcePasswordUpdateDialog } from "../components/ForcePasswordUpdateDialog";
+import { fetchUserPermissions } from "@/services/auth";
+import { TermsAndPolicyNotice } from "@/components/TermsAndPolicyNotice";
+import { useFeatureFlag } from "@/context/FeatureFlagContext";
+
+interface ForceUpdateInfo {
+  username: string;
+  oldPassword: string;
+  token: string;
+}
 
 const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
+  const { refreshFlags } = useFeatureFlag();
   const navigate = useNavigate();
   const location = useLocation();
+  const [forceUpdateInfo, setForceUpdateInfo] =
+    useState<ForceUpdateInfo | null>(null);
+  const [isForceUpdateDialogOpen, setIsForceUpdateDialogOpen] = useState(false);
+  const [key, setKey] = useState(Date.now());
 
-  const handleLogin = async (username: string, password: string, keepSignedIn: boolean) => {
-    setIsLoading(true);
-    
+  // Show success message if redirected from password change
+  useEffect(() => {
+    if (location.state?.message) {
+      toast.success(location.state.message);
+      // Clear the state to prevent showing the message again on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state?.message]);
+
+  // Helper function to check if password update is required based on force_upd_pass_date
+  const isPasswordUpdateRequired = (forceUpdPassDate: string): boolean => {
+    if (!forceUpdPassDate) return false;
+
     try {
-      const success = await login(username, password);
-      
-      if (success) {
-        localStorage.setItem("isAuthenticated", "true");
-        toast.success("Successfully logged in!");
+      const forceUpdateDate = new Date(forceUpdPassDate);
+      const now = new Date();
 
+      // If force_upd_pass_date is now or in the past, password update is required
+      return forceUpdateDate <= now;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const handleLogin = async (
+    username: string,
+    password: string,
+    tenant: string,
+    keepSignedIn: boolean
+  ) => {
+    setIsLoading(true);
+
+    try {
+      // Store tenant in localStorage
+      localStorage.setItem("tenant_id", tenant);
+      
+      const response = await login(username, password, tenant);
+
+      if (response?.access_token) {
+        // Login was successful, store tokens
+        localStorage.setItem("access_token", response.access_token);
+        localStorage.setItem("refresh_token", response.refresh_token ?? "");
+        const tokenType = response.token_type || "bearer";
+        localStorage.setItem(
+          "token_type",
+          tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType
+        );
+        localStorage.setItem("isAuthenticated", "true");
+
+        // Store force_upd_pass_date if provided
+        if (response.force_upd_pass_date) {
+          localStorage.setItem(
+            "force_upd_pass_date",
+            response.force_upd_pass_date
+          );
+        }
+
+        // Check if password update is required
+        const needsUpdate =
+          response.force_upd_pass_date &&
+          isPasswordUpdateRequired(response.force_upd_pass_date);
+
+        if (needsUpdate) {
+          // Password update is required - show the dialog
+          setForceUpdateInfo({
+            username,
+            oldPassword: password,
+            token: response.access_token,
+          });
+          setIsForceUpdateDialogOpen(true);
+          return;
+        }
+
+        // No password update required - proceed with normal login flow
+        // Execute post-login actions sequentially to avoid race conditions
+        try {
+          await refreshFlags();
+        } catch (error) {
+          // ignore
+        }
+
+        try {
+          await fetchUserPermissions();
+        } catch (error) {
+          // ignore
+        }
+
+        toast.success("Logged in successfully.");
         const from = location.state?.from?.pathname || "/dashboard";
-        navigate(from);
+        window.location.href = from;
       } else {
-        toast.error("Invalid credentials");
+        toast.error("Failed to log in.");
       }
     } catch (error) {
-      toast.error("An error occurred during login");
+      toast.error("Failed to log in.");
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePasswordUpdated = () => {
+    setForceUpdateInfo(null);
+    setIsForceUpdateDialogOpen(false);
+    // Clear the stored force_upd_pass_date since password was updated
+    localStorage.removeItem("force_upd_pass_date");
+    const from = location.state?.from;
+    navigate("/login", {
+      replace: true,
+      state: {
+        message:
+          "Password updated successfully. Please log in with your new password.",
+        from,
+      },
+    });
   };
 
   return (
@@ -93,12 +202,9 @@ const LoginPage = () => {
             </p>
           </div>
 
-          <LoginForm 
-            onSubmit={handleLogin} 
-            isLoading={isLoading} 
-          />
+          <LoginForm key={key} onSubmit={handleLogin} isLoading={isLoading} />
 
-          <div className="text-center text-sm">
+          <div className="text-center text-sm mt-8">
             <span className="text-zinc-500">Don't have an account? </span>
             <Link
               to="/register"
@@ -107,16 +213,29 @@ const LoginPage = () => {
               Sign up
             </Link>
           </div>
+
+          <TermsAndPolicyNotice mode="signin" className="mt-2" />
         </div>
       </div>
       <div
         style={{
-          backgroundImage: `url('/lovable-uploads/ceb21d21-7eb3-41f5-8d85-7e755d9d10a5.png')`,
+          backgroundImage: `url('/login-image.jpg')`,
         }}
         className="hidden md:block bg-cover bg-center bg-no-repeat bg-violet-100"
       />
+
+      {forceUpdateInfo && (
+        <ForcePasswordUpdateDialog
+          isOpen={isForceUpdateDialogOpen}
+          onOpenChange={setIsForceUpdateDialogOpen}
+          username={forceUpdateInfo.username}
+          oldPassword={forceUpdateInfo.oldPassword}
+          token={forceUpdateInfo.token}
+          onPasswordUpdated={handlePasswordUpdated}
+        />
+      )}
     </div>
   );
 };
 
-export default LoginPage; 
+export default LoginPage;

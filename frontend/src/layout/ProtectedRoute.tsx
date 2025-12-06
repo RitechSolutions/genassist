@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from "react-router-dom";
-import { isAuthenticated } from "@/services/auth";
+import { isAuthenticated, isPasswordUpdateRequired } from "@/services/auth";
 import {
   usePermissions,
   useIsLoadingPermissions,
@@ -7,6 +7,7 @@ import {
 } from "@/context/PermissionContext";
 import { Skeleton } from "@/components/skeleton";
 import { useEffect } from "react";
+import { useServerStatus } from "@/context/ServerStatusContext";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -21,15 +22,27 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const permissions = usePermissions();
   const isLoading = useIsLoadingPermissions();
   const refreshPermissions = useRefreshPermissions();
+  const { status, isOffline } = useServerStatus();
+  // Removed proactive refresh to avoid duplicate API calls when server is down
 
   useEffect(() => {
-    if (isAuthenticated() && permissions.length === 0 && !isLoading) {
+    if (
+      isAuthenticated() &&
+      permissions.length === 0 &&
+      !isLoading &&
+      !(status.down || isOffline)
+    ) {
       refreshPermissions();
     }
-  }, [permissions, isLoading, refreshPermissions]);
+  }, [permissions, isLoading, refreshPermissions, status.down, isOffline]);
 
   if (!isAuthenticated()) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Allow access to change-password route even if password update is required
+  if (isPasswordUpdateRequired() && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" state={{ from: location }} replace />;
   }
 
   if (isLoading) {

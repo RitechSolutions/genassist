@@ -38,7 +38,10 @@ export const SettingSection = ({ section, toggleStates, onToggle }: SettingSecti
           <input
             type={field.type}
             placeholder={field.placeholder}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+            value={typeof field.value === "string" || typeof field.value === "number" ? field.value : undefined}
+            readOnly={field.readOnly}
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-75"
+            disabled={field.readOnly}
           />
         );
     }

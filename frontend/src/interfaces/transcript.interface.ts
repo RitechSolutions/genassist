@@ -5,6 +5,8 @@ export interface TranscriptEntry {
   end_time: number;
   create_time: string | number;
   type?: "message" | "takeover" | string;
+  message_id?: string;
+  feedback?: string | ConversationFeedbackEntry[] | null;
 }
 
 export interface Recording {
@@ -43,17 +45,28 @@ export interface BackendTranscript {
   created_at: string;
   updated_at: string;
   conversation_date: string;
-  transcription: string;
-  customer_id: number | null;
+  transcription: string | TranscriptEntry[] | null;
+  customer_id: number | string | null;
+  thread_id?: string | null;
   word_count: number;
   customer_ratio: number;
   agent_ratio: number;
   duration: number;
-  status: "finalized" | "in_progress" | "takeover";
-  requires_supervisor: boolean;
+  status: "finalized" | "in_progress" | "takeover" | string;
+  conversation_type?: string;
+  requires_supervisor?: boolean;
   in_progress_hostility_score: number;
+  supervisor_id?: string | null;
   recording: Recording | null;
   analysis?: Analysis | null;
+  topic?: string;
+  negative_reason?: string;
+  messages?: Array<
+    Partial<TranscriptEntry> & {
+      id?: string;
+    }
+  > | null;
+  feedback?: string | ConversationFeedbackEntry[] | null;
 }
 
 export interface TranscriptMetrics {
@@ -79,6 +92,13 @@ export interface TranscriptMetadata {
   customer_speaker?: string;
 }
 
+export interface ConversationFeedbackEntry {
+  feedback: "good" | "bad";
+  feedback_timestamp: string;
+  feedback_user_id: string;
+  feedback_message: string;
+}
+
 export interface Transcript {
   id: string;
   audio: string;
@@ -87,12 +107,14 @@ export interface Transcript {
   timestamp: string;
   create_time: string;
   status?: string;
-  transcription: TranscriptEntry[] | string;
-  transcript: TranscriptEntry[];
+  transcription: TranscriptEntry[] | string | null;
+  messages?: TranscriptEntry[];
   metadata: TranscriptMetadata;
   metrics: TranscriptMetrics;
   agent_ratio?: number;
   customer_ratio?: number;
   word_count?: number;
   in_progress_hostility_score?: number;
+  supervisor_id?: string | null;
+  feedback?: ConversationFeedbackEntry[];
 }

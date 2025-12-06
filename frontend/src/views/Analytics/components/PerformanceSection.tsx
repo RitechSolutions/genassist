@@ -38,7 +38,6 @@ export function PerformanceSection({ timeFilter }: PerformanceSectionProps) {
   useEffect(() => {
     const getMetrics = async () => {
       if (!permissions.includes("read:metrics") && !permissions.includes("*")) {
-        console.log("You dont have permission fo metrics")
         return;
       }
       try {
@@ -50,7 +49,6 @@ export function PerformanceSection({ timeFilter }: PerformanceSectionProps) {
           setData(sampleData);
         }
       } catch (error) {
-        console.error("Error fetching metrics:", error);
         setData(sampleData);
       }
     };

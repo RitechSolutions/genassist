@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/useToast";
 import { conversationService } from "@/services/liveConversations";
 
 export function RecentTranscripts() {
-  const { transcripts, loading, error, refreshTranscripts } = useTranscripts({ limit: 5, sortNewestFirst: true });
+  const { transcripts, loading, error, refreshTranscripts } = useTranscripts({ limit: 4, sortNewestFirst: true });
   const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLiveTranscriptSelected, setIsLiveTranscriptSelected] = useState(false);

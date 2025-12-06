@@ -6,7 +6,6 @@ export const getAllRoles = async (): Promise<Role[]> => {
       const data = await apiRequest<Role[]>("GET", "roles/");
       return data || [];
     } catch (error) {
-      console.error("Error fetching roles:", error);
       throw error;
     }
   };
@@ -15,7 +14,6 @@ export const getAllRoles = async (): Promise<Role[]> => {
     try {
       return await apiRequest<Role>("GET", `roles/${id}`);
     } catch (error) {
-      console.error("Error fetching role:", error);
       throw error;
     }
   };
@@ -26,7 +24,6 @@ export const getAllRoles = async (): Promise<Role[]> => {
       if (!response) throw new Error("Failed to create role");
       return response;
     } catch (error) {
-      console.error("Error creating role:", error);
       throw error;
     }
   };
@@ -35,7 +32,6 @@ export const getAllRoles = async (): Promise<Role[]> => {
     try {
       await apiRequest("DELETE", `roles/${id}`);
     } catch (error) {
-      console.error("Error deleting role:", error);
       throw error;
     }
   };
@@ -46,7 +42,6 @@ export const getAllRoles = async (): Promise<Role[]> => {
       if (!response) throw new Error("Failed to update role");
       return response;
     } catch (error) {
-      console.error("Error updating role:", error);
       throw error;
     }
   };

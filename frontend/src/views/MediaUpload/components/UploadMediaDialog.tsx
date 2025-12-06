@@ -17,7 +17,7 @@ import {
 import { toast } from "react-hot-toast";
 import { uploadAudio } from "@/services/audioUpload";
 import { AudioLines, X } from "lucide-react";
-import { useOperators} from "../hooks/useOperators";
+import { useOperators } from "../hooks/useOperators";
 
 interface UploadMediaDialogProps {
   isOpen: boolean;
@@ -35,13 +35,13 @@ export function UploadMediaDialog({
   const navigate = useNavigate();
 
   const checkAuthentication = (): boolean => {
-    const token = localStorage.getItem('access_token');
-    const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-    
+    const token = localStorage.getItem("access_token");
+    const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
+
     if (!token || !isAuthenticated) {
       return false;
     }
-    
+
     return true;
   };
 
@@ -54,7 +54,7 @@ export function UploadMediaDialog({
     const files = event.dataTransfer.files;
     if (files.length > 0) {
       setSelectedFile(files[0]);
-      toast.success(`File selected: ${files[0].name}`);
+      toast.success(`File ${files[0].name} selected.`);
     }
   };
 
@@ -73,7 +73,7 @@ export function UploadMediaDialog({
       toast.error("Please select a file to upload.");
       return;
     }
-  
+
     if (!selectedAgent) {
       toast.error("Please select an operator.");
       return;
@@ -84,30 +84,37 @@ export function UploadMediaDialog({
       navigate("/login");
       return;
     }
-  
+
     const processingToast = toast.loading("Processing audio file...");
     setLoading(true);
-  
+
     try {
       const response = await uploadAudio(selectedFile, selectedAgent);
-  
+
       toast.dismiss(processingToast);
-      
-      if (response.success) {
-        toast.success("Audio processed successfully!");
+
+      if (response && response.success) {
+        toast.success(response.message || "Audio analyzed successfully.");
         onOpenChange(false);
         setSelectedFile(null);
         setSelectedAgent(null);
+      } else if (response) {
+        toast.error(response.message || "An error occurred during processing.");
       } else {
-        toast.error(response.message || "An error occurred during processing");
+        toast.error("An error occurred.");
       }
-  
     } catch (error) {
       toast.dismiss(processingToast);
-      console.error("Upload error:", error);
-      
-      const errorMsg = error instanceof Error ? error.message : "Upload failed. Please try again.";
-      if (errorMsg.includes("401") || errorMsg.includes("Unauthorized") || errorMsg.includes("Not authenticated")) {
+
+      const errorMsg =
+        error instanceof Error
+          ? error.message
+          : "Upload failed. Please try again.";
+      if (
+        errorMsg.includes("401") ||
+        errorMsg.includes("Unauthorized") ||
+        errorMsg.includes("Not authenticated")
+      ) {
         toast.error("Your session has expired. Please log in again.");
         localStorage.removeItem("isAuthenticated");
         navigate("/login");
@@ -180,24 +187,26 @@ export function UploadMediaDialog({
                   className="flex items-center gap-3"
                 >
                   <div className="flex items-center gap-2">
-                  {!imageErrors.has(operator.id) && operator.avatar ? (
-                    <img
-                      src={operator.avatar}
-                      alt={`${operator.firstName} ${operator.lastName}`}
-                      className="w-6 h-6 rounded-full object-cover border border-gray-300"
-                      onError={() =>
-                        setImageErrors((prev) => new Set(prev).add(operator.id))
-                      }
-                    />
-                  ) : (
-                    <div className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-700 font-bold">
-                      {getInitials(operator.firstName, operator.lastName)}
-                    </div>
-                  )}
-                  <span className="text-sm text-gray-800">
-                    {operator.firstName} {operator.lastName}
-                  </span>
-                </div>
+                    {!imageErrors.has(operator.id) && operator.avatar ? (
+                      <img
+                        src={operator.avatar}
+                        alt={`${operator.firstName} ${operator.lastName}`}
+                        className="w-6 h-6 rounded-full object-cover border border-gray-300"
+                        onError={() =>
+                          setImageErrors((prev) =>
+                            new Set(prev).add(operator.id)
+                          )
+                        }
+                      />
+                    ) : (
+                      <div className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-300 text-gray-700 font-bold">
+                        {getInitials(operator.firstName, operator.lastName)}
+                      </div>
+                    )}
+                    <span className="text-sm text-gray-800">
+                      {operator.firstName} {operator.lastName}
+                    </span>
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -211,15 +220,33 @@ export function UploadMediaDialog({
         >
           {loading ? (
             <span className="flex items-center gap-2">
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <svg
+                className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                ></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
               </svg>
               Processing...
             </span>
-          ) : "Upload"}
+          ) : (
+            "Upload"
+          )}
         </Button>
       </DialogContent>
     </Dialog>
   );
-} 
+}

@@ -15,23 +15,13 @@ export function ActionButtons({
   deleteTitle = "Delete",
 }: ActionButtonsProps) {
   return (
-    <div className="flex gap-2">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onEdit}
-        title={editTitle}
-      >
+    <div className="flex flex-wrap gap-2">
+      <Button variant="ghost" size="sm" onClick={onEdit} title={editTitle}>
         <Edit className="w-4 h-4 text-black" />
       </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onDelete}
-        title={deleteTitle}
-      >
+      <Button variant="ghost" size="sm" onClick={onDelete} title={deleteTitle}>
         <Trash2 className="w-4 h-4 text-red-500" />
       </Button>
     </div>
   );
-} 
+}

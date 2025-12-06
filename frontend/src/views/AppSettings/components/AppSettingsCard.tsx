@@ -1,45 +1,44 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ActionButtons } from "@/components/ActionButtons";
-import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { AppSetting } from "@/interfaces/app-setting.interface";
-import { getAllAppSettings, deleteAppSetting } from "@/services/appSettings";
 import { toast } from "react-hot-toast";
 import { formatDate } from "@/helpers/utils";
 
 interface AppSettingsCardProps {
+  appSettings: AppSetting[];
   searchQuery: string;
-  refreshKey?: number;
-  onEditSetting: (setting: AppSetting) => void;
+  refreshKey: number;
+  onEditSetting?: (setting: AppSetting) => void;
+  onDeleteSetting?: (id: string) => Promise<void>;
 }
 
-export function AppSettingsCard({ searchQuery, refreshKey = 0, onEditSetting }: AppSettingsCardProps) {
-  const [settings, setSettings] = useState<AppSetting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [settingToDelete, setSettingToDelete] = useState<AppSetting | null>(null);
+export function AppSettingsCard({
+  searchQuery,
+  appSettings,
+  onEditSetting,
+  onDeleteSetting,
+}: AppSettingsCardProps) {
+  const [settingToDelete, setSettingToDelete] = useState<AppSetting | null>(
+    null
+  );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-  }, [refreshKey]);
+  const filteredSettings = appSettings.filter((setting) => {
+    const name = setting.name?.toLowerCase() || "";
+    const type = setting.type?.toLowerCase() || "";
+    const description = setting.description?.toLowerCase() || "";
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const settingsData = await getAllAppSettings();
-      setSettings(settingsData);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch data");
-      toast.error("Failed to fetch data");
-    } finally {
-      setLoading(false);
-    }
-  };
+    return (
+      name.includes(searchQuery.toLowerCase()) ||
+      type.includes(searchQuery.toLowerCase()) ||
+      description.includes(searchQuery.toLowerCase())
+    );
+  });
 
   const handleDeleteClick = (setting: AppSetting) => {
     setSettingToDelete(setting);
@@ -47,15 +46,14 @@ export function AppSettingsCard({ searchQuery, refreshKey = 0, onEditSetting }: 
   };
 
   const handleDeleteConfirm = async () => {
-    if (!settingToDelete) return;
-    
+    if (!settingToDelete?.id || !onDeleteSetting) return;
+
     try {
       setIsDeleting(true);
-      await deleteAppSetting(settingToDelete.id);
-      toast.success("Setting deleted successfully");
-      fetchData();
-    } catch (err) {
-      toast.error("Failed to delete setting");
+      await onDeleteSetting(settingToDelete.id);
+      toast.success("App setting deleted successfully.");
+    } catch (error) {
+      toast.error("Failed to delete app setting.");
     } finally {
       setIsDeleting(false);
       setSettingToDelete(null);
@@ -63,46 +61,41 @@ export function AppSettingsCard({ searchQuery, refreshKey = 0, onEditSetting }: 
     }
   };
 
-  const filteredSettings = settings.filter((setting) =>
-    setting.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    setting.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    setting.value.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const headers = ["Key", "Value", "Description", "Status", "Encrypted", "Created", "Actions"];
+  const headers = ["Name", "Type", "Values", "Status", "Created", "Actions"];
 
   const renderRow = (setting: AppSetting) => (
     <TableRow key={setting.id}>
-      <TableCell className="font-medium">{setting.key}</TableCell>
+      <TableCell className="font-medium break-all">{setting.name}</TableCell>
+      <TableCell className="truncate">{setting.type}</TableCell>
       <TableCell>
-        <div className="flex items-center">
-          <span className="font-mono text-sm max-w-[200px] truncate">
-            {setting.encrypted === 1 ? "••••••••" : setting.value}
-          </span>
+        <div className="flex flex-col gap-1 max-w-md">
+          {Object.entries(setting.values || {}).map(([key, value]) => (
+            <div key={key} className="text-sm">
+              <span className="font-medium text-gray-600">{key}:</span>{" "}
+              <span className="font-mono text-xs">
+                {value && value.length > 0 ? "••••••••" : "—"}
+              </span>
+            </div>
+          ))}
+          {Object.keys(setting.values || {}).length === 0 && (
+            <span className="text-gray-400">—</span>
+          )}
         </div>
       </TableCell>
-      <TableCell className="max-w-[300px]">
-        <span className="line-clamp-2">{setting.description}</span>
-      </TableCell>
-      <TableCell>
+      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
         <Badge variant={setting.is_active === 1 ? "default" : "secondary"}>
           {setting.is_active === 1 ? "Active" : "Inactive"}
         </Badge>
       </TableCell>
-      <TableCell>
-        {setting.encrypted === 1 ? (
-          <span className="w-4 h-4 text-gray-500">Yes</span>
-        ) : (
-          <span className="w-4 h-4 text-gray-500">No</span>
-        )}
+      <TableCell className="truncate">
+        {setting.created_at ? formatDate(setting.created_at) : "No date"}
       </TableCell>
-      <TableCell>{setting.created_at ? formatDate(setting.created_at) : 'No date'}</TableCell>
       <TableCell>
         <ActionButtons
-          onEdit={() => onEditSetting(setting)}
+          onEdit={() => onEditSetting?.(setting)}
           onDelete={() => handleDeleteClick(setting)}
-          editTitle="Edit Setting"
-          deleteTitle="Delete Setting"
+          editTitle="Edit App Setting"
+          deleteTitle="Delete App Setting"
         />
       </TableCell>
     </TableRow>
@@ -112,23 +105,23 @@ export function AppSettingsCard({ searchQuery, refreshKey = 0, onEditSetting }: 
     <>
       <DataTable
         data={filteredSettings}
-        loading={loading}
-        error={error}
+        loading={false}
+        error={null}
         searchQuery={searchQuery}
         headers={headers}
         renderRow={renderRow}
-        emptyMessage="No settings found"
-        searchEmptyMessage="No settings found matching your search"
+        emptyMessage="No app settings found"
+        searchEmptyMessage="No app settings found matching your search"
       />
 
-      <DeleteConfirmDialog
+      <ConfirmDialog
         isOpen={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={handleDeleteConfirm}
-        isDeleting={isDeleting}
-        itemName={settingToDelete?.key || ""}
-        description={`This will permanently delete the setting "${settingToDelete?.key}". This action cannot be undone.`}
+        isInProgress={isDeleting}
+        itemName={settingToDelete?.name || ""}
+        description={`This action cannot be undone. This will permanently delete the app setting "${settingToDelete?.name}".`}
       />
     </>
   );
-} 
+}

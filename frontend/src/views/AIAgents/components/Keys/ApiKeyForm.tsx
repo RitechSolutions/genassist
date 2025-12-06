@@ -4,6 +4,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/dialog";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
@@ -57,19 +59,29 @@ export default function ApiKeyForm({
           name,
           is_active: isActive ? 1 : 0,
           user_id: userId,
+          agent_id: agentId,
         });
-        toast.success("API key updated.");
+        toast.success("API key updated successfully.");
       } else {
         saved = await createApiKey({
           name,
           is_active: isActive ? 1 : 0,
           user_id: userId,
           role_ids: [],
+          agent_id: agentId,
         });
-        toast.success("API key generated! Copy it below.");
+        toast.success("API key generated successfully.");
       }
       onSaved(saved);
       onClose();
+    } catch (error) {
+      toast.error(
+        `Failed to ${existingKey ? "update" : "create"} API key${
+          error.status === 400
+            ? ": An API key with this name already exists"
+            : ""
+        }.`
+      );
     } finally {
       setSaving(false);
     }
@@ -78,65 +90,95 @@ export default function ApiKeyForm({
   const copyToClipboard = () => {
     if (!existingKey?.key_val) return;
     navigator.clipboard.writeText(existingKey.key_val);
-    toast.success("API key has been copied to clipboard");
+    toast.success("API key copied to clipboard.");
   };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{existingKey ? "Edit" : "New"} API Key</DialogTitle>
-        </DialogHeader>
-        <Label>Name</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} />
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{existingKey ? "Edit" : "New"} API Key</DialogTitle>
+            <DialogDescription>
+              {existingKey
+                ? "Update the API key details"
+                : "Create a new API key"}
+            </DialogDescription>
+          </DialogHeader>
 
-        {existingKey?.key_val && (
-          <div className="space-y-1">
-            <Label htmlFor="api_key">API Key</Label>
-            <div className="relative">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
               <Input
-                id="api_key"
-                readOnly
-                className="pr-20"
-                value={
-                  isKeyVisible
-                    ? existingKey.key_val
-                    : existingKey.key_val.replace(/./g, "•")
-                }
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleKeyVisibility}
-                  title={isKeyVisible ? "Hide key" : "Show key"}
-                >
-                  {isKeyVisible ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={copyToClipboard}
-                  title="Copy to clipboard"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
+            </div>
+
+            {existingKey?.key_val && (
+              <div className="space-y-2">
+                <Label htmlFor="api_key">API Key</Label>
+                <div className="relative">
+                  <Input
+                    id="api_key"
+                    readOnly
+                    className="pr-20"
+                    value={
+                      isKeyVisible
+                        ? existingKey.key_val
+                        : existingKey.key_val.replace(/./g, "•")
+                    }
+                  />
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleKeyVisibility}
+                      title={isKeyVisible ? "Hide key" : "Show key"}
+                    >
+                      {isKeyVisible ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={copyToClipboard}
+                      title="Copy to clipboard"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Label htmlFor="is_active">Active</Label>
+              <Switch
+                id="is_active"
+                checked={isActive}
+                onCheckedChange={setIsActive}
+              />
             </div>
           </div>
-        )}
 
-        <Label>Active</Label>
-        <Switch checked={isActive} onCheckedChange={setIsActive} />
-        <Button onClick={handleSubmit} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
+          <DialogFooter>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

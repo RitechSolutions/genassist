@@ -4,12 +4,7 @@ import "ace-builds/src-noconflict/mode-python";
 import "ace-builds/src-noconflict/theme-twilight";
 import "ace-builds/src-noconflict/mode-json";
 import { Button } from "@/components/button";
-import {
-  ClipboardList,
-  Maximize2,
-  CodeXml,
-  CirclePlay,
-} from "lucide-react";
+import { ClipboardList, Maximize2, CodeXml, CirclePlay } from "lucide-react";
 import { toast } from "react-hot-toast";
 
 interface FunctionConfigSectionProps {
@@ -53,7 +48,7 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
             className="editor-button flex justify-center items-center p-1 w-[28px] h-[28px] rounded-[8px] hover:bg-white/10"
             onClick={() => {
               navigator.clipboard.writeText(code);
-              toast.success("Code copied");
+              toast.success("Code copied.");
             }}
           >
             <ClipboardList className="w-5 h-5 text-white" />
@@ -93,10 +88,9 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
       <div className="flex py-2 px-3 border-b border-gray-200 pb-8">
         <Button
           variant="outline"
-        //   onClick={handleGenerateTemplate}
+          //   onClick={handleGenerateTemplate}
           disabled={
-            dynamicParams.length === 0 ||
-            dynamicParams.every((p) => !p.name)
+            dynamicParams.length === 0 || dynamicParams.every((p) => !p.name)
           }
         >
           <CodeXml className="w-4 h-4 mr-2" /> Generate Template from Schema
@@ -115,7 +109,7 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
             <button
               onClick={() => {
                 navigator.clipboard.writeText(testParameters);
-                toast.success("Params copied");
+                toast.success("Params copied.");
               }}
             >
               <ClipboardList className="w-5 h-5 text-white" />
@@ -129,8 +123,8 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
               mode="json"
               theme="twilight"
               name="params-editor"
-            //   value={testParameters}
-            //   onChange={onTestParametersChange}
+              //   value={testParameters}
+              //   onChange={onTestParametersChange}
               width="100%"
               height="240px"
               setOptions={{
@@ -153,37 +147,37 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
         </div>
       </div>
       <div className="relative p-6 h-[303px] bg-[#F7F9FB] rounded-[16px] overflow-hidden">
-          <div className="absolute top-4 right-4 flex gap-2 z-10">
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(testParameters);
-                toast.success("Params copied");
-              }}
-            >
-              <ClipboardList className="w-5 h-5 text-black" />
-            </button>
-            <button>
-              <Maximize2 className="w-5 h-5 text-black" />
-            </button>
-          </div>
+        <div className="absolute top-4 right-4 flex gap-2 z-10">
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(testParameters);
+              toast.success("Params copied.");
+            }}
+          >
+            <ClipboardList className="w-5 h-5 text-black" />
+          </button>
+          <button>
+            <Maximize2 className="w-5 h-5 text-black" />
+          </button>
+        </div>
 
-          <div className="inner-aces w-full h-full bg-[#F7F9FB] rounded-[8px] overflow-hidden">
-            <AceEditor
-              mode="json"
-              theme=""
-              name="params-editor"
+        <div className="inner-aces w-full h-full bg-[#F7F9FB] rounded-[8px] overflow-hidden">
+          <AceEditor
+            mode="json"
+            theme=""
+            name="params-editor"
             //   value={testParameters}
             //   onChange={onTestParametersChange}
-              width="100%"
-              height="240px"
-              setOptions={{
-                tabSize: 2,
-                showLineNumbers: true,
-                useWorker: false,
-              }}
-            />
-          </div>
+            width="100%"
+            height="240px"
+            setOptions={{
+              tabSize: 2,
+              showLineNumbers: true,
+              useWorker: false,
+            }}
+          />
         </div>
+      </div>
 
       {error && (
         <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</p>

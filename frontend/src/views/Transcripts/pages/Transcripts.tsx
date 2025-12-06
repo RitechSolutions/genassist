@@ -7,10 +7,10 @@ import {
   CheckCircle,
   MinusCircle,
   AlertCircle,
-  XCircle,
-  ChevronLeft,
-  ChevronRight,
-  Radio
+  Radio,
+  ThumbsUp,
+  ThumbsDown,
+  Upload,
 } from "lucide-react";
 import { Card } from "@/components/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
@@ -27,14 +27,21 @@ import { Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
 import { useTranscriptData } from "../hooks/useTranscriptData";
-import { getSentimentStyles } from "../helpers/formatting";
+import { formatDuration, getSentimentStyles, getEffectiveSentiment, HOSTILITY_POSITIVE_MAX, HOSTILITY_NEUTRAL_MAX } from "../helpers/formatting";
 import { Badge } from "@/components/badge";
 import { Switch } from "@/components/switch";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/useToast";
 import { conversationService } from "@/services/liveConversations";
+import { UploadMediaDialog } from "@/views/MediaUpload";
+import { getPaginationMeta } from "@/helpers/pagination";
+import { PaginationBar } from "@/components/PaginationBar";
 
 const ITEMS_PER_PAGE = 10;
+
+// Hostility constants
+const HOSTILITY_POSITIVE_MAX = 20;
+const HOSTILITY_NEUTRAL_MAX = 49;
 
 const Transcripts = () => {
   const location = useLocation();
@@ -42,14 +49,55 @@ const Transcripts = () => {
   const { toast } = useToast();
   const searchParams = new URLSearchParams(location.search);
   
-  const { data, loading, error, refetch } = useTranscriptData();
   const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLiveTranscriptSelected, setIsLiveTranscriptSelected] = useState(false);
   const [activeTab, setActiveTab] = useState(searchParams.get("sentiment") || "all");
   const [supportType, setSupportType] = useState(searchParams.get("type") || "all");
   const [searchQuery, setSearchQuery] = useState(searchParams.get("query") || "");
-  const [currentPage, setCurrentPage] = useState(parseInt(searchParams.get("page") || "1", 10));
+  const [currentPage, setCurrentPage] = useState(
+    Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1)
+  );
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  
+  // Calculate hostility parameters based on sentiment
+  const getHostilityParams = (sentiment: string) => {
+    return { 
+      hostility_positive_max: HOSTILITY_POSITIVE_MAX, 
+      hostility_neutral_max: HOSTILITY_NEUTRAL_MAX 
+    };
+  };
+  
+  const hostilityParams = getHostilityParams(activeTab);
+  
+  const { data, total, loading, error, refetch } = useTranscriptData({ 
+    limit: ITEMS_PER_PAGE,
+    skip: (currentPage - 1) * ITEMS_PER_PAGE,
+    sentiment: activeTab,
+    hostility_positive_max: hostilityParams.hostility_positive_max,
+    hostility_neutral_max: hostilityParams.hostility_neutral_max
+  });
+  
+  // Calculate skip for pagination
+  const skip = (currentPage - 1) * ITEMS_PER_PAGE;
+  
+  // Calculate hostility parameters based on sentiment
+  const getHostilityParams = (sentiment: string) => {
+    return { 
+      hostility_positive_max: HOSTILITY_POSITIVE_MAX, 
+      hostility_neutral_max: HOSTILITY_NEUTRAL_MAX 
+    };
+  };
+  
+  const hostilityParams = getHostilityParams(activeTab);
+  
+  const { data, loading, error, refetch } = useTranscriptData({ 
+    limit: ITEMS_PER_PAGE,
+    skip: skip,
+    sentiment: activeTab,
+    hostility_positive_max: hostilityParams.hostility_positive_max,
+    hostility_neutral_max: hostilityParams.hostility_neutral_max
+  });
   
   // Initialize showLiveOnly based on URL parameters
   const statusParams = searchParams.getAll("status");
@@ -59,6 +107,7 @@ const Transcripts = () => {
   
   const isMobile = useIsMobile();
   const transcripts = Array.isArray(data) ? data : [];
+  const totalCount = typeof total === "number" ? total : transcripts.length;
 
   const updateUrlParams = (params: Record<string, string | number | string[] | null>) => {
     const newSearchParams = new URLSearchParams(location.search);
@@ -100,18 +149,15 @@ const Transcripts = () => {
   };
 
   useEffect(() => {
-    refetch?.();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search]);
-
-  useEffect(() => {
     const params = new URLSearchParams(location.search);
     
     // Update filter states based on URL
     setActiveTab(params.get("sentiment") || "all");
     setSupportType(params.get("type") || "all");
     setSearchQuery(params.get("query") || "");
-    setCurrentPage(parseInt(params.get("page") || "1", 10));
+    setCurrentPage(
+      Math.max(1, parseInt(params.get("page") || "1", 10) || 1)
+    );
     
     const statusValues = params.getAll("status");
     setShowLiveOnly(
@@ -122,7 +168,15 @@ const Transcripts = () => {
   // Handle filter changes
   const handleSentimentChange = (value: string) => {
     setActiveTab(value);
-    updateUrlParams({ sentiment: value === "all" ? null : value, page: 1 });
+    setCurrentPage(1);
+    
+    const hostilityParams = getHostilityParams(value);
+    updateUrlParams({ 
+      sentiment: value === "all" ? null : value, 
+      page: 1,
+      hostility_positive_max: hostilityParams.hostility_positive_max,
+      hostility_neutral_max: hostilityParams.hostility_neutral_max
+    });
   };
 
   const handleSupportTypeChange = (value: string) => {
@@ -136,8 +190,9 @@ const Transcripts = () => {
   };
 
   const handlePageChange = (newPage: number) => {
-    setCurrentPage(newPage);
-    updateUrlParams({ page: newPage === 1 ? null : newPage });
+    const nextPage = Math.max(1, newPage);
+    setCurrentPage(nextPage);
+    updateUrlParams({ page: nextPage === 1 ? null : nextPage });
   };
 
   const filteredTranscripts = transcripts.filter((transcript) => {
@@ -147,7 +202,6 @@ const Transcripts = () => {
     
     const title = transcript?.metadata?.title?.toLowerCase() || "";
     const topic = transcript?.metadata?.topic?.toLowerCase() || "";
-    const sentiment = transcript?.metrics?.sentiment?.toLowerCase() || "";
     const searchLower = searchQuery.toLowerCase().trim();
     
     const matchesSearch =
@@ -155,19 +209,19 @@ const Transcripts = () => {
       title.includes(searchLower) ||
       topic.includes(searchLower);
   
-    const matchesSentiment = activeTab === "all" || sentiment === activeTab;
-  
     const matchesSupportType =
       supportType === "all" || topic.includes(supportType.toLowerCase());
   
-    return matchesSearch && matchesSentiment && matchesSupportType;
+    return matchesSearch && matchesSupportType;
   });
 
-  const totalPages = Math.ceil(filteredTranscripts.length / ITEMS_PER_PAGE);
-  const paginatedTranscripts = filteredTranscripts.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
+  const pagination = getPaginationMeta(
+    totalCount,
+    ITEMS_PER_PAGE,
+    currentPage
   );
+  const paginatedTranscripts = filteredTranscripts;
+  const pageItemCount = paginatedTranscripts.length;
 
   const handleTakeOver = async (transcriptId: string): Promise<boolean> => {
     try {
@@ -195,22 +249,31 @@ const Transcripts = () => {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100">
-          <div className="flex-1 p-8">
-            <div className="max-w-7xl mx-auto space-y-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h1 className="text-3xl font-bold mb-2 animate-fade-down">
-                    Transcripts
-                  </h1>
-                  <p className="text-muted-foreground animate-fade-up">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0">
+          <div className="flex-1 p-4 sm:p-6 lg:p-8">
+            <div className="max-w-7xl mx-auto space-y-6 w-full">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3">
+                    <h1 className="text-2xl md:text-3xl font-bold mb-1 animate-fade-down">
+                      Conversations
+                    </h1>
+                    <button
+                      onClick={() => setIsUploadDialogOpen(true)}
+                      className="inline-flex items-center gap-2 bg-white border rounded-md px-3 py-1.5 shadow-sm text-sm font-medium text-gray-800 hover:bg-gray-50"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Upload
+                    </button>
+                  </div>
+                  <p className="text-sm md:text-base text-muted-foreground animate-fade-up">
                     Review and analyze your conversation transcripts
                   </p>
                 </div>
-                <div className="flex gap-4">
-                  <div className="flex items-center gap-2 bg-white border rounded-lg px-3 py-2 shadow-sm">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto">
+                  <div className="flex items-center gap-2 bg-white border rounded-lg px-3 py-2 shadow-sm w-full sm:w-auto">
                     <Radio className="w-4 h-4 text-green-500" />
                     <span className="text-sm font-medium">Live Only</span>
                     <Switch 
@@ -219,7 +282,7 @@ const Transcripts = () => {
                     />
                   </div>
                   <Select value={supportType} onValueChange={handleSupportTypeChange}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-full sm:w-[180px]">
                       <SelectValue placeholder="Support Type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -236,11 +299,11 @@ const Transcripts = () => {
                       <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
-                  <div className="relative">
+                  <div className="relative w-full sm:w-[260px]">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
                       type="text"
-                      placeholder="Search transcripts..."
+                      placeholder="Search conversations..."
                       value={searchQuery}
                       onChange={(e) => handleSearchChange(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
@@ -254,7 +317,7 @@ const Transcripts = () => {
                 className="w-full"
                 onValueChange={handleSentimentChange}
               >
-                <TabsList className="grid w-full grid-cols-5 lg:w-[500px]">
+                <TabsList className="w-full flex-wrap justify-start gap-2">
                   <TabsTrigger value="all" className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
                     All
@@ -279,12 +342,12 @@ const Transcripts = () => {
                     <AlertCircle className="w-4 h-4 text-orange-400" />
                     Bad
                   </TabsTrigger>
-                  <TabsTrigger
+                  {/* <TabsTrigger
                   value="very-bad"
                   className="flex items-center gap-2">
                     <XCircle className="w-4 h-4 text-red-500" />
                     Very Bad
-                  </TabsTrigger>
+                  </TabsTrigger> */}
                 </TabsList>
               </Tabs>
 
@@ -297,8 +360,8 @@ const Transcripts = () => {
                   <p className="text-center text-red-500 p-6">
                     Error loading transcripts. Please try again.
                   </p>
-                ) : paginatedTranscripts.length > 0 ? (
-                  paginatedTranscripts.map((transcript) => (
+                ) : filteredTranscripts.length > 0 ? (
+                  filteredTranscripts.map((transcript) => (
                     <div
                       key={transcript.id}
                       onClick={() => {
@@ -308,15 +371,15 @@ const Transcripts = () => {
                       }}
                       className="p-6 cursor-pointer transition-colors hover:bg-gray-50"
                     >
-                      <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-4">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div className="flex items-start space-x-4 min-w-0">
                         {isCallTranscript(transcript) ? (
                           <PlayCircle className="w-6 h-6 text-primary mt-1" />
                         ) : (
                           <MessageSquare className="w-6 h-6 text-primary mt-1" />
                         )}
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-semibold">
                               {isCallTranscript(transcript) ? "Call" : "Chat"} #
                               {(transcript?.metadata?.title ?? "----").slice(0, 4)|| "Untitled"}{" - "} 
@@ -330,7 +393,7 @@ const Transcripts = () => {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground mt-1">
-                            Duration: {transcript?.metadata?.duration ?? "N/A"}
+                            Duration: {formatDuration(transcript?.metadata?.duration ?? 0)}
                           </p>
                           <p className="text-sm text-muted-foreground">
                             Date:{" "}
@@ -340,13 +403,31 @@ const Transcripts = () => {
                           </p>
                         </div>
                       </div>
-                        <div className="text-right">
+                        <div className="text-right flex items-center gap-2 sm:justify-end flex-wrap mt-2 sm:mt-0">
+                          {/* Display conversation feedback */}
+                          {transcript?.feedback && transcript.feedback.length > 0 && (() => {
+                            const latestFeedback = transcript.feedback[transcript.feedback.length - 1];
+                            const isGoodFeedback = latestFeedback.feedback === 'good';
+                            return (
+                              <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full">
+                                {isGoodFeedback ? (
+                                  <ThumbsUp className="w-3 h-3 text-green-600" />
+                                ) : (
+                                  <ThumbsDown className="w-3 h-3 text-red-600" />
+                                )}
+                                <span className="text-xs text-gray-700">
+                                  {latestFeedback.feedback_message?.slice(0, 30) || 'Feedback provided'}
+                                  {latestFeedback.feedback_message && latestFeedback.feedback_message.length > 30 ? '...' : ''}
+                                </span>
+                              </div>
+                            );
+                          })()}
                           <span
                             className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getSentimentStyles(
-                              transcript && transcript.metrics ? transcript.metrics.sentiment : ""
+                              transcript ? getEffectiveSentiment(transcript) : ""
                             )}`}
                           >
-                            {transcript && transcript.metrics ? transcript.metrics.sentiment : "Unknown"}
+                            {transcript ? getEffectiveSentiment(transcript) : "Unknown"}
                           </span>
                         </div>
                       </div>
@@ -359,65 +440,21 @@ const Transcripts = () => {
                 )}
               </Card>
 
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between pt-4">
-                  <div className="text-sm text-muted-foreground">
-                    Showing {filteredTranscripts.length > 0 ? (currentPage - 1) * ITEMS_PER_PAGE + 1 : 0} to{" "}
-                    {Math.min(
-                      currentPage * ITEMS_PER_PAGE,
-                      filteredTranscripts.length
-                    )}{" "}
-                    of {filteredTranscripts.length} results
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                      disabled={currentPage === 1}
-                      className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNumber;
-                      
-                      if (totalPages <= 5) {
-                        pageNumber = i + 1;
-                      } else if (currentPage <= 3) {
-                        pageNumber = i + 1;
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNumber = totalPages - 4 + i;
-                      } else {
-                        pageNumber = currentPage - 2 + i;
-                      }
-                      
-                      return (
-                        <button
-                          key={i}
-                          onClick={() => handlePageChange(pageNumber)}
-                          className={`w-8 h-8 rounded-full ${
-                            currentPage === pageNumber
-                              ? "bg-primary text-white"
-                              : "hover:bg-gray-100"
-                          }`}
-                        >
-                          {pageNumber}
-                        </button>
-                      );
-                    })}
-                    <button
-                      onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                      disabled={currentPage === totalPages}
-                      className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-              )}
+              <PaginationBar
+                total={totalCount}
+                pageSize={ITEMS_PER_PAGE}
+                currentPage={pagination.safePage}
+                pageItemCount={pageItemCount}
+                onPageChange={handlePageChange}
+              />
             </div>
           </div>
         </main>
       </div>
+      <UploadMediaDialog
+        isOpen={isUploadDialogOpen}
+        onOpenChange={setIsUploadDialogOpen}
+      />
       {isLiveTranscriptSelected ? (
         <ActiveConversationDialog 
           transcript={selectedTranscript} 

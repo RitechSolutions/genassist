@@ -6,6 +6,7 @@ import { getApiUrl } from "@/config/api";
 
 export default function ChatAsCustomer() {
   const { agentId } = useParams<{ agentId: string }>();
+  const tenant = localStorage.getItem("tenant_id");
   const navigate = useNavigate();
 
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
@@ -27,7 +28,6 @@ export default function ChatAsCustomer() {
         const key = await getAgentIntegrationKey(agentId);
         setApiKey(key);
       } catch (err: any) {
-        console.error("Chat init error:", err);
         setError(err.message || "Failed to initialize chat");
         setTimeout(() => navigate("/ai-agents"), 2000);
       }
@@ -66,12 +66,12 @@ export default function ChatAsCustomer() {
       <GenAgentChat
         baseUrl={baseUrl}
         apiKey={apiKey}
-        userData={{ role: "ai agent" }}
+        tenant={tenant}
+        metadata={{}}
         headerTitle="Chat as Customer"
         placeholder="Ask a question..."
         onError={(error) => {
-          console.error("Chat error:", error);
-          console.error("Chat error:", error);
+          // ignore
         }}
       />
     </div>

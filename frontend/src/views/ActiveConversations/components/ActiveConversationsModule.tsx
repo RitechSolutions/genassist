@@ -1,0 +1,244 @@
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Card } from "@/components/card";
+import { ActiveConversation } from "@/interfaces/liveConversation.interface";
+import {
+  getSentimentFromHostility,
+  HOSTILITY_POSITIVE_MAX,
+  HOSTILITY_NEUTRAL_MAX,
+} from "@/views/Transcripts/helpers/formatting";
+import type { TranscriptEntry } from "@/interfaces/transcript.interface";
+import { fetchTopicsReport } from "@/services/metrics";
+import { PaginationBar } from "@/components/PaginationBar";
+import ActiveConversationsHeader from "./ActiveConversationsHeader";
+import ActiveConversationsSummary from "./ActiveConversationsSummary";
+import ActiveConversationsList from "./ActiveConversationsList";
+import type {
+  NormalizedConversation,
+  SentimentFilter,
+} from "../helpers/activeConversations.types";
+
+const isHighHostility = (score: number): boolean =>
+  getSentimentFromHostility(score) === "negative";
+
+const parseTimestampMs = (value: string | undefined): number => {
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+type Props = {
+  title?: string;
+  items: ActiveConversation[];
+  isLoading: boolean;
+  error: Error | null;
+  onRetry?: () => void;
+  onItemClick?: (item: ActiveConversation) => void;
+  totalCount?: number;
+};
+
+const PAGE_SIZE = 10;
+
+export function ActiveConversationsModule({
+  title = "Active Conversations",
+  items,
+  isLoading,
+  error,
+  onRetry,
+  onItemClick,
+  totalCount,
+}: Props) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [categories, setCategories] = useState<string[]>([]);
+
+  const rawSentiment = (searchParams.get("sentiment") || "all").toLowerCase();
+  const sentimentParam = (rawSentiment === "positive"
+    ? "good"
+    : rawSentiment === "negative"
+    ? "bad"
+    : rawSentiment) as SentimentFilter;
+  const categoryParam = (searchParams.get("category") || "all");
+  const includeFeedbackParam = (searchParams.get("include_feedback") || "false").toLowerCase() === "true";
+  const pageParam = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchTopicsReport()
+      .then((report) => {
+        if (!mounted || !report) return;
+        const topics = Object.keys(report.details || {});
+        if (topics.length > 0) setCategories(["all", ...topics]);
+        else setCategories(["all", "booking", "billing", "tech support"]);
+      })
+      .catch(() => setCategories(["all", "booking", "billing", "tech support"]));
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const setParam = (key: string, value: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (key === "sentiment") {
+      if (value === "" || value === "all") {
+        next.delete("sentiment");
+        next.delete("hostility_positive_max");
+        next.delete("hostility_neutral_max");
+      } else {
+        const apiSentiment = value === "good" ? "positive" : value === "bad" ? "negative" : value;
+        next.set("sentiment", apiSentiment);
+        next.set("hostility_positive_max", String(HOSTILITY_POSITIVE_MAX));
+        next.set("hostility_neutral_max", String(HOSTILITY_NEUTRAL_MAX));
+      }
+    } else if (key === "include_feedback") {
+      if (value === "true" || value === "false") {
+        next.set("include_feedback", value);
+      } else {
+        next.delete("include_feedback");
+      }
+    } else {
+      if (value === "" || value === "all") next.delete(key);
+      else next.set(key, value);
+    }
+    if (key !== "page") next.set("page", "1");
+    setSearchParams(next, { replace: true });
+  };
+
+  const normalized: NormalizedConversation[] = useMemo(() => {
+    return (items || []).map((item, index) => {
+      const hostility = Number(item.in_progress_hostility_score || 0);
+      const eff = getSentimentFromHostility(hostility);
+      return {
+        ...item,
+        idx: index + 1,
+        effectiveSentiment: eff as "positive" | "neutral" | "negative",
+      };
+    });
+  }, [items]);
+
+  const globalTotal = typeof totalCount === "number" ? totalCount : normalized.length;
+  const globalCounts = useMemo(() => {
+    let good = 0, neutral = 0, bad = 0;
+    for (const i of normalized) {
+      if (i.effectiveSentiment === "positive") good++;
+      else if (i.effectiveSentiment === "neutral") neutral++;
+      else bad++;
+    }
+    return { bad, neutral, good };
+  }, [normalized]);
+
+  const filtered = useMemo(() => {
+    if (sentimentParam === "all") return normalized;
+    const wanted = sentimentParam === "good" ? "positive" : sentimentParam === "bad" ? "negative" : "neutral";
+    return normalized.filter((i) => i.effectiveSentiment === wanted);
+  }, [normalized, sentimentParam]);
+
+  const total = filtered.length;
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(pageParam, totalPages);
+  // Order: highest hostility first, then newest to oldest for everything else (and within buckets)
+  const ordered = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const aHostility = a.in_progress_hostility_score || 0;
+      const bHostility = b.in_progress_hostility_score || 0;
+      const aHigh = isHighHostility(aHostility);
+      const bHigh = isHighHostility(bHostility);
+
+      if (aHigh !== bHigh) {
+        return bHigh ? 1 : -1; // keep high hostility first
+      }
+
+      // If both high, keep the higher hostility first, then newest
+      if (aHigh && bHigh) {
+        const hostilityDiff = bHostility - aHostility;
+        if (hostilityDiff !== 0) return hostilityDiff;
+      }
+
+      const timeDiff = parseTimestampMs(b.timestamp) - parseTimestampMs(a.timestamp);
+      if (timeDiff !== 0) return timeDiff;
+
+      // Fallback: higher hostility wins
+      const hostilityDiff = bHostility - aHostility;
+      if (hostilityDiff !== 0) return hostilityDiff;
+
+      return (b.id || "").localeCompare(a.id || "");
+    });
+  }, [filtered]);
+  const pageItems = ordered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
+  const handlePageChange = (page: number) => setParam("page", String(page));
+
+  return (
+    <Card className="p-6 mb-8 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
+      <ActiveConversationsHeader
+        title={title}
+        sentiment={sentimentParam}
+        category={categoryParam}
+        categories={categories}
+        includeFeedback={includeFeedbackParam}
+        onChange={(key, value) => setParam(key, value)}
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
+        <div className="md:col-span-1">
+          <ActiveConversationsSummary total={globalTotal} counts={globalCounts} loading={isLoading} />
+        </div>
+
+        <div className="md:col-span-3">
+          <div className="rounded-lg hover:rounded-lg bg-muted/40">
+            <ActiveConversationsList
+              items={pageItems.map((i) => ({ ...i, transcript: getLatestMessagePreview(i.transcript) }))}
+              isLoading={isLoading}
+              error={error}
+              onRetry={onRetry}
+              onClickRow={(row) => onItemClick?.(row as unknown as ActiveConversation)}
+            />
+          </div>
+          <PaginationBar
+            total={total}
+            pageSize={PAGE_SIZE}
+            currentPage={currentPage}
+            pageItemCount={pageItems.length}
+            onPageChange={handlePageChange}
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export default ActiveConversationsModule;
+
+function getLatestMessagePreview(transcript: string | TranscriptEntry[] | unknown): string {
+  if (!transcript) return "";
+  if (Array.isArray(transcript)) {
+    if (transcript.length === 0) return "";
+    const last = transcript[transcript.length - 1] as Partial<TranscriptEntry>;
+    const speaker = (last && (last as Partial<TranscriptEntry>).speaker) ? String((last as Partial<TranscriptEntry>).speaker) : "";
+    const text = (last && (last as Partial<TranscriptEntry>).text) ? String((last as Partial<TranscriptEntry>).text) : "";
+    return speaker ? `${capitalize(speaker)}: ${text}` : text;
+  }
+  if (typeof transcript === "string") {
+    try {
+      const parsed = JSON.parse(transcript);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const last: TranscriptEntry = parsed[parsed.length - 1] as TranscriptEntry;
+        const speaker = (last.speaker || "").toString();
+        const text = (last.text || "").toString();
+        return speaker ? `${capitalize(speaker)}: ${text}` : text;
+      }
+    } catch {
+      // ignore
+    }
+    return transcript;
+  }
+  return "";
+}
+
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}

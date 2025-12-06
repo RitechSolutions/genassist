@@ -1,516 +1,68 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Position, NodeProps, useReactFlow } from "reactflow";
+import React, { useState } from "react";
+import { NodeProps } from "reactflow";
 import { APIToolNodeData } from "../../types/nodes";
-import { Button } from "@/components/button";
-import { Input } from "@/components/input";
-import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Save, Globe, Play, Plus, X } from "lucide-react";
-import { TestDialog } from "../../components/TestDialog";
-import { HandleTooltip } from "../../components/HandleTooltip";
-import {
-  getAllDynamicVariables,
-  replaceVariablesWithInputs,
-} from "../../utils/apiHelpers";
-import { createSimpleSchema } from "../../types/schemas";
-import { getNodeColors } from "../../utils/nodeColors";
+import { getNodeColor } from "../../utils/nodeColors";
+import { APIToolDialog } from "../../nodeDialogs/APIToolDialog";
+import BaseNodeContainer from "../BaseNodeContainer";
+import NodeContent from "../nodeContent";
+import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
+import nodeRegistry from "../../registry/nodeRegistry";
 
-// HTTP methods
-const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const;
-type HttpMethod = (typeof HTTP_METHODS)[number];
-
+export const API_TOOL_NODE_TYPE = "apiToolNode";
 const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
   id,
   data,
   selected,
 }) => {
-  const { getEdges } = useReactFlow();
-  const colors = getNodeColors("apiToolNode");
-  const [name, setName] = useState(data.name || "API Tool");
-  const [description, setDescription] = useState(
-    data.description || "Makes API calls to external services"
-  );
-  const [endpoint, setEndpoint] = useState(data.endpoint || "https://");
-  const [method, setMethod] = useState<HttpMethod>(
-    (data.method as HttpMethod) || "GET"
-  );
-  const [headers, setHeaders] = useState<Record<string, string>>(
-    data.headers || {}
-  );
-  const [parameters, setParameters] = useState<Record<string, string>>(
-    data.parameters || {}
-  );
-  const [requestBody, setRequestBody] = useState(data.requestBody || "");
-  const [response, setResponse] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isTestDialogOpen, setIsTestDialogOpen] = useState(false);
+  const nodeDefinition = nodeRegistry.getNodeType(API_TOOL_NODE_TYPE);
+  const color = getNodeColor(nodeDefinition.category);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // Add new header
-  const addHeader = () => {
-    setHeaders({ ...headers, "": "" });
-  };
-
-  // Update header key/value
-  const updateHeader = (oldKey: string, newKey: string, value: string) => {
-    const newHeaders = { ...headers };
-    if (oldKey !== newKey) {
-      delete newHeaders[oldKey];
-    }
-    newHeaders[newKey] = value;
-    setHeaders(newHeaders);
-  };
-
-  // Remove header
-  const removeHeader = (key: string) => {
-    const newHeaders = { ...headers };
-    delete newHeaders[key];
-    setHeaders(newHeaders);
-  };
-
-  // Add new parameter
-  const addParameter = () => {
-    setParameters({ ...parameters, "": "" });
-  };
-
-  // Update parameter key/value
-  const updateParameter = (oldKey: string, newKey: string, value: string) => {
-    const newParameters = { ...parameters };
-    if (oldKey !== newKey) {
-      delete newParameters[oldKey];
-    }
-    newParameters[newKey] = value;
-    setParameters(newParameters);
-  };
-
-  // Remove parameter
-  const removeParameter = (key: string) => {
-    const newParameters = { ...parameters };
-    delete newParameters[key];
-    setParameters(newParameters);
-  };
-
-  // Generate input fields based on API configuration
-  const generateInputFields = () => {
-    const variables = getAllDynamicVariables(
-      endpoint,
-      headers,
-      parameters,
-      requestBody
-    );
-    console.log(variables);
-    return Array.from(variables).map((varName) => ({
-      id: varName,
-      label: `Parameter: ${varName}`,
-      type: "text" as const,
-      required: true,
-      placeholder: `Value for ${varName}`,
-    }));
-  };
-
-  // Update the node data whenever form values change
-  const saveConfiguration = useCallback(() => {
-    const variables = getAllDynamicVariables(
-      endpoint,
-      headers,
-      parameters,
-      requestBody
-    );
-
-    // Create input schema from variables
-    const inputSchemaFields: Record<
-      string,
-      { type: "string"; required: boolean }
-    > = {};
-    variables.forEach((variable) => {
-      inputSchemaFields[variable] = { type: "string", required: true };
-    });
-
-    // Create output schema
-    const outputSchema = createSimpleSchema({
-      status: { type: "number", required: true },
-      data: { type: "any", required: true },
-      headers: { type: "object", required: true },
-    });
+  const onUpdate = (updatedData: APIToolNodeData) => {
     if (data.updateNodeData) {
-      const updatedData: Partial<APIToolNodeData> = {
+      const dataToUpdate: Partial<APIToolNodeData> = {
         ...data,
-        name,
-        description,
-        endpoint,
-        method,
-        headers,
-        parameters,
-        requestBody,
-        inputSchema:
-          Object.keys(inputSchemaFields).length > 0
-            ? createSimpleSchema(inputSchemaFields)
-            : undefined,
-        outputSchema,
+        ...updatedData,
       };
 
-      data.updateNodeData(id, updatedData);
-    }
-  }, [name, description, endpoint, parameters, requestBody, method, headers]);
-  // Save configuration whenever relevant state changes
-  useEffect(() => {
-    saveConfiguration();
-  }, [
-    name,
-    description,
-    endpoint,
-    parameters,
-    requestBody,
-    method,
-    headers,
-    saveConfiguration,
-  ]);
-
-  // Execute API call with test input
-  const executeAPICall = async (inputs: Record<string, string>) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Prepare URL with parameters
-      let url = replaceVariablesWithInputs(endpoint, inputs);
-      const queryParams = new URLSearchParams();
-
-      // Add parameters
-      for (const [key, value] of Object.entries(parameters)) {
-        if (key && value) {
-          // Replace any @variable placeholders in parameter values
-          const paramValue = replaceVariablesWithInputs(value, inputs);
-          queryParams.append(key, paramValue);
-        }
-      }
-
-      // Add query parameters for GET requests
-      if (method === "GET" && queryParams.toString()) {
-        url = `${url}${url.includes("?") ? "&" : "?"}${queryParams.toString()}`;
-      }
-
-      // Prepare request headers
-      const requestHeaders: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...headers,
-      };
-
-      // Prepare request body
-      let body = undefined;
-      if (method !== "GET") {
-        if (requestBody) {
-          // Replace any @variable placeholders in the body with test input
-          const processedBody = replaceVariablesWithInputs(requestBody, inputs);
-          body = processedBody;
-        } else if (
-          method === "POST" ||
-          method === "PUT" ||
-          method === "PATCH"
-        ) {
-          // Use parameters as body for non-GET requests if no body is provided
-          body = JSON.stringify(parameters);
-        }
-      }
-
-      // Execute the request
-      const response = await fetch(url, {
-        method,
-        headers: requestHeaders,
-        body: body ? JSON.stringify(JSON.parse(body)) : undefined,
-      });
-
-      if (!response.ok) {
-        throw new Error(`API call failed with status: ${response.status}`);
-      }
-
-      const responseData = await response.text();
-
-      // Try to parse and format JSON responses
-      try {
-        const jsonData = JSON.parse(responseData);
-        const formattedJson = JSON.stringify(jsonData, null, 2);
-        setResponse(formattedJson);
-      } catch (e) {
-        // Not JSON, use as plain text
-        setResponse(responseData);
-      }
-    } catch (err) {
-      console.error("API call failed:", err);
-      const errorMessage =
-        err instanceof Error ? err.message : "Unknown error occurred";
-      setError(errorMessage);
-      setResponse(`Error: ${errorMessage}`);
-    } finally {
-      setIsLoading(false);
+      data.updateNodeData(id, dataToUpdate);
     }
   };
 
   return (
     <>
-      <div
-        className={`border-2 rounded-md bg-white shadow-md w-[400px] ${
-          selected ? "border-blue-500" : "border-gray-200"
-        }`}
+      <BaseNodeContainer
+        id={id}
+        data={data}
+        selected={selected}
+        iconName={nodeDefinition.icon}
+        title={data.name || nodeDefinition.label}
+        subtitle={nodeDefinition.shortDescription}
+        color={color}
+        nodeType="apiToolNode"
+        onSettings={() => setIsEditDialogOpen(true)}
       >
-        {/* Node header */}
-        <div
-          className={`px-4 py-2 border-b ${colors.header} flex justify-between items-center`}
-        >
-          <div className="flex items-center">
-            <Globe className={`h-4 w-4 text-white mr-2`} />
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className={`text-sm font-medium h-6 py-0 bg-transparent border-transparent ${colors.focus} text-white ${colors.placeholder}`}
-              maxLength={40}
-            />
-          </div>
-          <div className="flex space-x-1">
-            <Button
-              size="icon"
-              variant="ghost"
-              className={`h-6 w-6 text-white ${colors.hover}`}
-              title="Test API call"
-              onClick={() => setIsTestDialogOpen(true)}
-            >
-              <Play className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className={`h-6 w-6 text-white ${colors.hover}`}
-              title="Save configuration"
-              onClick={saveConfiguration}
-            >
-              <Save className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-
         {/* Node content */}
-        <div className="p-4">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Input
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe what this API tool does"
-              />
-            </div>
+        <NodeContent
+          data={[
+            { label: "Endpoint URL", value: data.endpoint, isMono: true },
+            { label: "HTTP Method", value: data.method },
+            {
+              label: "Variables",
+              value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
+            },
+          ]}
+        />
+      </BaseNodeContainer>
 
-            <div className="space-y-2">
-              <Label htmlFor="endpoint">Endpoint URL</Label>
-              <Input
-                id="endpoint"
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-                placeholder="https://api.example.com/data"
-              />
-              <div className="text-xs text-gray-500">
-                Use @variable to define dynamic parameters
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="method">HTTP Method</Label>
-              <Select
-                value={method}
-                onValueChange={(value) =>
-                  setMethod(value as (typeof HTTP_METHODS)[number])
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select HTTP method" />
-                </SelectTrigger>
-                <SelectContent>
-                  {HTTP_METHODS.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label>Headers</Label>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 text-xs"
-                  onClick={addHeader}
-                >
-                  <Plus className="h-3 w-3 mr-1" /> Add Header
-                </Button>
-              </div>
-
-              <div className="space-y-2 max-h-[150px] overflow-y-auto">
-                {Object.entries(headers).map(([key, value], idx) => (
-                  <div
-                    key={`header-${idx}`}
-                    className="flex items-center gap-2"
-                  >
-                    <Input
-                      placeholder="Header name"
-                      value={key}
-                      onChange={(e) => updateHeader(key, e.target.value, value)}
-                      className="flex-1 text-xs"
-                    />
-                    <Input
-                      placeholder="Value"
-                      value={value}
-                      onChange={(e) => updateHeader(key, key, e.target.value)}
-                      className="flex-1 text-xs"
-                    />
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      onClick={() => removeHeader(key)}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label>Parameters</Label>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 text-xs"
-                  onClick={addParameter}
-                >
-                  <Plus className="h-3 w-3 mr-1" /> Add Parameter
-                </Button>
-              </div>
-
-              <div className="space-y-2 max-h-[150px] overflow-y-auto">
-                {Object.entries(parameters).map(([key, value], idx) => (
-                  <div key={`param-${idx}`} className="flex items-center gap-2">
-                    <Input
-                      placeholder="Parameter name"
-                      value={key}
-                      onChange={(e) =>
-                        updateParameter(key, e.target.value, value)
-                      }
-                      className="flex-1 text-xs"
-                    />
-                    <Input
-                      placeholder="Value"
-                      value={value}
-                      onChange={(e) =>
-                        updateParameter(key, key, e.target.value)
-                      }
-                      className="flex-1 text-xs"
-                    />
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      onClick={() => removeParameter(key)}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {(method === "POST" || method === "PUT" || method === "PATCH") && (
-              <div className="space-y-2">
-                <Label htmlFor="requestBody">Request Body (JSON)</Label>
-                <Textarea
-                  id="requestBody"
-                  value={requestBody}
-                  onChange={(e) => setRequestBody(e.target.value)}
-                  placeholder='{"key": "value"}'
-                  className="font-mono text-xs h-24"
-                />
-                <div className="text-xs text-gray-500">
-                  Use @variable to define dynamic parameters
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Input handle */}
-        {/* <HandleTooltip
-          nodeId={id}
-          id="input"
-          type="target"
-          position={Position.Left}
-          text={generateInputStructure()}
-          style={{ background: '#4f46e5' }}
-        /> */}
-
-        {/* Output handle */}
-        {/* <HandleTooltip
-          nodeId={id}
-          id="output"
-          type="source"
-          position={Position.Right}
-          compatibility='tools'
-          style={{ top: '20%' }}
-        /> */}
-
-        {data.handlers
-          ?.filter((handler) => handler.type === "source")
-          .map((handler, index) => (
-            <HandleTooltip
-              key={handler.id}
-              type={handler.type}
-              position={
-                handler.type === "source" ? Position.Right : Position.Left
-              }
-              id={handler.id}
-              nodeId={id}
-              compatibility={handler.compatibility}
-              style={{ top: `${(index + 1) * (100 / data.handlers.length)}%` }}
-            />
-          ))}
-        {data.handlers
-          ?.filter((handler) => handler.type === "target")
-          .map((handler, index) => (
-            <HandleTooltip
-              key={handler.id}
-              type={handler.type}
-              position={
-                handler.type === "source" ? Position.Right : Position.Left
-              }
-              id={handler.id}
-              nodeId={id}
-              compatibility={handler.compatibility}
-              style={{ top: `${(index + 1) * (100 / data.handlers.length)}%` }}
-            />
-          ))}
-      </div>
-
-      <TestDialog
-        isOpen={isTestDialogOpen}
-        onClose={() => setIsTestDialogOpen(false)}
-        title={`Test ${name}`}
-        description="Fill in the required values for testing the API configuration"
-        inputFields={generateInputFields()}
-        onRun={executeAPICall}
-        output={response}
-        isLoading={isLoading}
-        error={error}
+      {/* Edit Dialog */}
+      <APIToolDialog
+        isOpen={isEditDialogOpen}
+        onClose={() => setIsEditDialogOpen(false)}
+        data={data}
+        onUpdate={onUpdate}
+        nodeId={id}
+        nodeType={API_TOOL_NODE_TYPE}
       />
     </>
   );

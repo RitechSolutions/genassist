@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { cn } from "@/helpers/utils";
 import { Card } from "@/components/card";
 import { Loader2 } from "lucide-react";
 import {
@@ -14,7 +15,7 @@ interface DataTableProps<T> {
   loading: boolean;
   error?: string | null;
   searchQuery: string;
-  headers: string[];
+  headers: (string | { label: string; className?: string })[];
   renderRow: (item: T, index: number) => ReactNode;
   emptyMessage?: string;
   searchEmptyMessage?: string;
@@ -58,11 +59,19 @@ export function DataTable<T>({
 
   return (
     <Card>
-      <Table>
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             {headers.map((header, index) => (
-              <TableHead key={index}>{header}</TableHead>
+              <TableHead
+                className={cn(
+                  "break-all",
+                  typeof header === "string" ? undefined : header.className
+                )}
+                key={index}
+              >
+                {typeof header === "string" ? header : header.label}
+              </TableHead>
             ))}
           </TableRow>
         </TableHeader>
@@ -72,4 +81,4 @@ export function DataTable<T>({
       </Table>
     </Card>
   );
-} 
+}

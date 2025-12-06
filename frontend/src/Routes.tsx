@@ -21,17 +21,40 @@ import AuditLogs from "@/views/AuditLogs";
 import Unauthorized from "@/views/Unauthorized";
 import LlmAnalyst from "@/views/LlmAnalyst/Index";
 import LLMProviders from "@/views/LlmProviders/Index";
+import FineTune from "@/views/FineTune/Index";
+import FineTuneJobDetail from "@/views/FineTune/pages/FineTuneJobDetail";
 import Tools from "@/views/Tools/Index";
 import CreateTool from "@/views/Tools/pages/CreateTool";
 import KnowledgeBase from "@/views/KnowledgeBase/Index";
+import MLModels from "@/views/MLModels/Index";
+import MLModelDetail from "@/views/MLModels/components/MLModelDetail";
 import { FeatureFlags } from "./views/Settings/pages/FeatureFlags";
 import { useFeatureFlag } from "./context/FeatureFlagContext";
+import { GlobalChat } from "./components/GlobalChat";
+import ServerDownPage from "@/components/ServerDownPage";
+import { useServerStatus } from "@/context/ServerStatusContext";
+import { GmailOAuthCallback } from "./views/DataSources/components/GmailOAuthCallback";
+import { Office365OAuthCallback  } from "./views/DataSources/components/Office365OAuthCallback";
+import WebhookListPage from "@/views/Webhooks/pages/Webhooks"
+import Privacy from "@/views/Privacy";
+import ServerStatusBanner from "@/components/ServerStatusBanner";
 
-const ProtectedLayout = () => (
-  <ProtectedRoute>
-    <Outlet />
-  </ProtectedRoute>
-);
+const ProtectedLayout = () => {
+  const { status, isOffline } = useServerStatus();
+  const isDown = isOffline || status.down;
+  return (
+    <ProtectedRoute>
+      {isDown ? (
+        <ServerDownPage />
+      ) : (
+        <>
+          <Outlet />
+          <GlobalChat />
+        </>
+      )}
+    </ProtectedRoute>
+  );
+};
 
 export const RoutesProvider = () => {
   const { isEnabled } = useFeatureFlag();
@@ -121,6 +144,22 @@ export const RoutesProvider = () => {
           ),
         },
         {
+          path: "fine-tune",
+          element: (
+            <ProtectedRoute requiredPermissions={["*"]}>
+              <FineTune />
+            </ProtectedRoute>
+          ),
+        },
+        {
+          path: "fine-tune/:id",
+          element: (
+            <ProtectedRoute requiredPermissions={["*"]}>
+              <FineTuneJobDetail />
+            </ProtectedRoute>
+          ),
+        },
+        {
           path: "user-types",
           element: (
             <ProtectedRoute requiredPermissions={["read:user_type"]}>
@@ -201,6 +240,22 @@ export const RoutesProvider = () => {
           ),
         },
         {
+          path: "ml-models",
+          element: (
+            <ProtectedRoute requiredPermissions={["*"]}>
+              <MLModels />
+            </ProtectedRoute>
+          ),
+        },
+        {
+          path: "ml-models/:id",
+          element: (
+            <ProtectedRoute requiredPermissions={["*"]}>
+              <MLModelDetail />
+            </ProtectedRoute>
+          ),
+        },
+        {
           path: "app-settings",
           element: (
             <ProtectedRoute requiredPermissions={["read:app_setting"]}>
@@ -208,13 +263,28 @@ export const RoutesProvider = () => {
             </ProtectedRoute>
           ),
         },
+        {
+          path: "webhooks",
+          element: (
+            <ProtectedRoute requiredPermissions={["read:webhook"]}>
+              <WebhookListPage />
+            </ProtectedRoute>
+          ),
+        },
+
         { path: "change-password", element: <ChangePassword /> },
+        {
+          path: "gauth/callback",
+          element: <GmailOAuthCallback />,
+        },
       ],
     },
-    { path: "login", element: <Login /> },
+    { path: "login", element: (<><ServerStatusBanner /><Login /></>) },
     { path: "register", element: <Register /> },
+    { path: "privacy", element: <Privacy /> },
     { path: "*", element: <NotFound /> },
     { path: "unauthorized", element: <Unauthorized /> },
+    { path: "office365/oauth/callback", element: <Office365OAuthCallback />}
   ]);
 
   return <RouterProvider router={routes} />;
