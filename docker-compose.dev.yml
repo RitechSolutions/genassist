@@ -183,6 +183,8 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
+      app:
+        condition: service_healthy
     networks:
       - genassist-network-dev
     restart: unless-stopped
@@ -206,6 +208,8 @@ services:
       redis:
         condition: service_healthy
       db:
+        condition: service_healthy
+      app:
         condition: service_healthy
     networks:
       - genassist-network-dev
@@ -234,6 +238,8 @@ services:
       celery_worker:
         condition: service_started
       db:
+        condition: service_healthy
+      app:
         condition: service_healthy
     networks:
       - genassist-network-dev
