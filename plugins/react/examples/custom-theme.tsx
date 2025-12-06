@@ -11,7 +11,7 @@ const CustomThemeExample: React.FC = () => {
     fontSize: '15px',
   });
 
-  const userData = {
+  const metadata = {
     userId: 'user-123',
     name: 'John Doe',
     email: 'john@example.com',
@@ -96,11 +96,12 @@ const CustomThemeExample: React.FC = () => {
         <GenAgentChat 
           baseUrl="https://api.example.com" 
           apiKey="your-api-key-here"
-          userData={userData}
+          tenant='your-tenant-id-here'
+          metadata={metadata}
           theme={theme}
           headerTitle="Themed Chat"
           placeholder="Ask a question..."
-          onError={(error) => console.error('Chat error:', error)}
+          onError={() => {}}
         />
       </div>
     </div>
