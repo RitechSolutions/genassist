@@ -44,7 +44,7 @@ class MockChatService: ChatService {
         return "mock-conversation-id"
     }
     
-    override func sendMessage(_ message: String) async throws {
+    override func sendMessage(_ message: String, extraMetadata: [String: Any]? = nil) async throws {
         // Simulate network delay
         try await Task.sleep(nanoseconds: 500_000_000)
         
@@ -88,19 +88,7 @@ struct GenassistChatPreview: PreviewProvider {
                         "version": "1.0.0"
                     ]
                 ),
-                configuration: ChatConfiguration(
-                    backgroundColor: .white,
-                    bubbleColor: Color.gray.opacity(0.1),
-                    userBubbleColor: .blue,
-                    textColor: .primary,
-                    userTextColor: .white,
-                    inputBackgroundColor: Color.gray.opacity(0.1),
-                    inputTextColor: .primary,
-                    sendButtonColor: .blue,
-                    cornerRadius: 12,
-                    bubblePadding: 12,
-                    spacing: 8
-                )
+
             )
             .previewDisplayName("Light Mode")
             
@@ -118,22 +106,27 @@ struct GenassistChatPreview: PreviewProvider {
                         "version": "1.0.0"
                     ]
                 ),
-                configuration: ChatConfiguration(
-                    backgroundColor: .black,
-                    bubbleColor: Color.gray.opacity(0.1),
-                    userBubbleColor: .purple,
-                    textColor: .white,
-                    userTextColor: .white,
-                    inputBackgroundColor: Color.gray.opacity(0.1),
-                    inputTextColor: .white,
-                    sendButtonColor: .purple,
-                    cornerRadius: 16,
-                    bubblePadding: 12,
-                    spacing: 8
-                )
             )
             .preferredColorScheme(.dark)
             .previewDisplayName("Dark Mode")
+            
+            // Voice disabled preview
+            GenassistChat(
+                baseURL: "http://localhost:8000",
+                apiKey: "5SggcmHBYXTEFVQD3yL6TxEJRQYl_Gtv9YkEXq_V9xzZK57AbiDZrQ",
+                metadata: ChatMetadata(
+                    userInfo: [
+                        "name": "Preview User",
+                        "email": "preview@example.com"
+                    ],
+                    additionalData: [
+                        "environment": "preview",
+                        "version": "1.0.0"
+                    ]
+                ),
+
+            )
+            .previewDisplayName("Voice Disabled")
         }
     }
 }
