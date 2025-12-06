@@ -1,15 +1,12 @@
 from uuid import UUID
-from fastapi import Depends
-from fastapi_cache.coder import PickleCoder
-from fastapi_cache.decorator import cache
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.orm import selectinload
 from app.auth.utils import get_current_user_id
 from app.cache.redis_cache import make_key_builder
 from app.db.models import UserModel
 from app.db.models.api_key_role import ApiKeyRoleModel
-from app.db.session import get_db
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 
@@ -22,10 +19,11 @@ from app.schemas.filter import ApiKeysFilter
 
 api_key_key_builder  = make_key_builder("api_key")
 
-class APiKeysRepository:
+@inject
+class ApiKeysRepository:
     """Repository for user-related database operations."""
 
-    def __init__(self, db: AsyncSession = Depends(get_db)):  # Auto-inject db
+    def __init__(self, db: AsyncSession):  # Auto-inject db
         self.db = db
 
 
@@ -85,10 +83,11 @@ class APiKeysRepository:
 
 
     async def get_all(self, api_keys_filter: ApiKeysFilter) -> list[ApiKeyModel]:
-        query = (select(ApiKeyModel)
-                 .options(selectinload(ApiKeyModel.api_key_roles)
-                          .selectinload(ApiKeyRoleModel.role))
-                 )
+        query = (
+            select(ApiKeyModel)
+            .options(selectinload(ApiKeyModel.api_key_roles).selectinload(ApiKeyRoleModel.role))
+            .order_by(ApiKeyModel.created_at.asc())
+        )
         # Pagination
         query = query.offset(api_keys_filter.skip).limit(api_keys_filter.limit)
 
@@ -136,3 +135,11 @@ class APiKeysRepository:
         await self.db.refresh(api_key)
         return api_key
 
+    async def soft_delete(self, obj: ApiKeyModel) -> None:
+        await self.db.execute(
+                update(obj.__class__)
+                .where(ApiKeyModel.id == obj.id)
+                .values(is_deleted=True)
+                .execution_options(synchronize_session="fetch")  # keep session in sync
+                )
+        await self.db.commit()

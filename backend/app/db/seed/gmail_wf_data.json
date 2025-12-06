@@ -1,0 +1,269 @@
+{
+  "name": "Gmail Assistant Workflow",
+  "description": "Default workflow for Gmail Assistant",
+  "nodes": [
+    {
+      "id": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "data": {
+        "name": "Chat Input",
+        "label": "Chat Input",
+        "handlers": [
+          {
+            "id": "output_message",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "inputSchema": {
+          "message": {
+            "type": "string",
+            "required": false,
+            "description": "The message to send to the LLM"
+          }
+        }
+      },
+      "type": "chatInputNode",
+      "width": 300,
+      "height": 163,
+      "position": {
+        "x": 55.808905643090156,
+        "y": 132.7615046794119
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 55.808905643090156,
+        "y": 132.7615046794119
+      },
+      "dragging": false
+    },
+    {
+      "id": "b73f8249-5811-40d8-b448-240b86c6c288",
+      "data": {
+        "name": "Chat Output",
+        "label": "Chat Output",
+        "handlers": [
+          {
+            "id": "input_message",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          }
+        ]
+      },
+      "type": "chatOutputNode",
+      "width": 300,
+      "height": 93,
+      "dragging": false,
+      "position": {
+        "x": 1421.283752237165,
+        "y": 253.39783185667665
+      },
+      "selected": false
+    },
+    {
+      "id": "d37c1a91-8475-4338-a921-a999bd333f6b",
+      "type": "templateNode",
+      "position": {
+        "x": 86.72829042288868,
+        "y": -75.2322399981228
+      },
+      "data": {
+        "name": "Prompt Template",
+        "template": "You are my AI assistent!",
+        "handlers": [
+          {
+            "id": "output_prompt",
+            "type": "source",
+            "compatibility": "text",
+            "position": "right"
+          }
+        ],
+        "label": "Prompt Template"
+      },
+      "width": 400,
+      "height": 159,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 86.72829042288868,
+        "y": -75.2322399981228
+      },
+      "dragging": false
+    },
+    {
+      "id": "90935fb9-a6bb-42cf-8a5a-3758ff667612",
+      "type": "knowledgeBaseNode",
+      "position": {
+        "x": 152.00026368015085,
+        "y": 358.91231029683325
+      },
+      "data": {
+        "name": "Knowledge Base",
+        "description": "Query multiple knowledge bases",
+        "selectedBases": [KB_ID_LIST],
+        "handlers": [
+          {
+            "id": "input_parameters",
+            "type": "target",
+            "compatibility": "json",
+            "position": "left"
+          },
+          {
+            "id": "output_tool_reference",
+            "type": "source",
+            "compatibility": "tools",
+            "position": "top"
+          },
+          {
+            "id": "output_result",
+            "type": "source",
+            "compatibility": "json",
+            "position": "right"
+          }
+        ],
+        "label": "Knowledge Base",
+        "inputSchema": {
+          "query": {
+            "type": "string",
+            "description": "User query to search in knowledge bases exactly as it is",
+            "required": true
+          }
+        },
+        "outputSchema": {
+          "output": {
+            "type": "string",
+            "description": "Search results from knowledge bases",
+            "required": true
+          }
+        }
+      },
+      "width": 400,
+      "height": 501,
+      "selected": false,
+      "dragging": false,
+      "positionAbsolute": {
+        "x": 152.00026368015085,
+        "y": 358.91231029683325
+      }
+    },
+    {
+      "id": "1372686b-9545-4b40-a5b6-9517274038fb",
+      "type": "agentNode",
+      "position": {
+        "x": 600.2239288736378,
+        "y": -41.001579232859356
+      },
+      "data": {
+        "name": "Agent",
+        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
+        "outputFormat": "string",
+        "agentType": "ToolSelector",
+        "memory": false,
+        "handlers": [
+          {
+            "id": "input_system_prompt",
+            "type": "target",
+            "compatibility": "text",
+            "position": "left"
+          },
+          {
+            "id": "input_prompt",
+            "type": "target",
+            "compatibility": "text",
+            "position": "left"
+          },
+          {
+            "id": "input_tools_reference",
+            "type": "target",
+            "compatibility": "tools",
+            "position": "bottom"
+          },
+          {
+            "id": "output_message",
+            "type": "source",
+            "compatibility": "text",
+            "position": "right"
+          }
+        ],
+        "label": "Agent"
+      },
+      "width": 320,
+      "height": 466,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 600.2239288736378,
+        "y": -41.001579232859356
+      },
+      "dragging": false
+    },
+    {
+      "id": "3ce66d0d-1083-4437-a105-b2cc90455a9d",
+      "type": "gmailNode",
+      "position": {
+        "x": 970.3334775983624,
+        "y": -44.458253549632225
+      },
+      "data": {
+        "name": "Gmail Output",
+        "subject": "test_subject",
+        "body": "test_body",
+        "to": "test",
+        "cc": "",
+        "bcc": "",
+        "attachments": [],
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "compatibility": "text"
+          }
+        ],
+        "label": "Gmail Output"
+      },
+      "width": 420,
+      "height": 786,
+      "selected": true,
+      "positionAbsolute": {
+        "x": 970.3334775983624,
+        "y": -44.458253549632225
+      },
+      "dragging": false
+    }
+  ],
+  "edges": [
+    {
+      "source": "90935fb9-a6bb-42cf-8a5a-3758ff667612",
+      "sourceHandle": "output_tool_reference",
+      "target": "1372686b-9545-4b40-a5b6-9517274038fb",
+      "targetHandle": "input_tools_reference",
+      "id": "reactflow__edge-90935fb9-a6bb-42cf-8a5a-3758ff667612output_tool_reference-1372686b-9545-4b40-a5b6-9517274038fbinput_tools_reference"
+    },
+    {
+      "source": "d37c1a91-8475-4338-a921-a999bd333f6b",
+      "sourceHandle": "output_prompt",
+      "target": "1372686b-9545-4b40-a5b6-9517274038fb",
+      "targetHandle": "input_system_prompt",
+      "id": "reactflow__edge-d37c1a91-8475-4338-a921-a999bd333f6boutput_prompt-1372686b-9545-4b40-a5b6-9517274038fbinput_system_prompt"
+    },
+    {
+      "source": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "sourceHandle": "output_message",
+      "target": "1372686b-9545-4b40-a5b6-9517274038fb",
+      "targetHandle": "input_prompt",
+      "id": "reactflow__edge-47393298-ecd5-496c-9bd4-d4dc963e23d6output_message-1372686b-9545-4b40-a5b6-9517274038fbinput_prompt"
+    },
+    {
+      "source": "1372686b-9545-4b40-a5b6-9517274038fb",
+      "sourceHandle": "output_message",
+      "target": "3ce66d0d-1083-4437-a105-b2cc90455a9d",
+      "targetHandle": "input",
+      "id": "reactflow__edge-1372686b-9545-4b40-a5b6-9517274038fboutput_message-3ce66d0d-1083-4437-a105-b2cc90455a9dinput"
+    }
+  ],
+  "user_id": "00000196-1b89-8e8e-905c-0eefdb9008f1",
+  "version": "1.0",
+  "agent_id": "0197c056-f18d-7364-a2c0-90be7c9eb56e",
+  "id": "0197c056-f186-788a-9d1b-0d72ca9cbd50",
+  "created_at": "2025-06-30T10:16:52.870644Z",
+  "updated_at": "2025-06-30T10:16:52.888723Z"
+}

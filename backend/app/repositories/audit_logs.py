@@ -1,15 +1,15 @@
 from uuid import UUID
-from fastapi import Depends
+from injector import inject
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.audit_log import AuditLogModel
-from app.db.session import get_db
 from app.schemas.audit_log import AuditLogSearchParams
 
+@inject
 class AuditLogRepository:
     """Repository for audit log-related database operations."""
 
-    def __init__(self, db: AsyncSession = Depends(get_db)):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
     async def search_logs(self, search_params: AuditLogSearchParams) -> list[AuditLogModel]:

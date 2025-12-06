@@ -1,3 +1,5 @@
+from torch.fx.immutable_collections import immutable_list
+
 from app.core.exceptions.error_messages import ErrorKey
 
 
@@ -25,10 +27,12 @@ class AppException(Exception):
         Raises:
             AppException: When an application-specific error occurs.
         """
-    def __init__(self, error_key: ErrorKey, status_code=400, error_detail="", error_obj= None):
+    def __init__(self, error_key: ErrorKey, status_code=400, error_detail="", error_obj= None,
+                 error_variables: list[str] = immutable_list()):
         self.error_key: ErrorKey = error_key
         self.status_code = status_code
         self.error_detail = error_detail
         self.error_obj = error_obj
+        self.error_variables = error_variables
         super().__init__(error_key.value)
 

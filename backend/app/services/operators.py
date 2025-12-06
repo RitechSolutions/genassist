@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import Depends
+from fastapi_injector import Injected
+from injector import inject
+
 from app.auth.utils import generate_unique_username, get_password_hash
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -13,15 +16,15 @@ from app.repositories.users import UserRepository
 from app.schemas.operator import OperatorCreate, OperatorRead
 
 
-
+@inject
 class OperatorService:
 
     def __init__(self,
-                 operator_repository: OperatorRepository = Depends(),
-                 conversation_repository: ConversationRepository = Depends(),
-                 user_repository: UserRepository = Depends(),
-                 user_types_repository: UserTypesRepository = Depends(),
-                 roles_repository: RolesRepository = Depends(),
+                 operator_repository: OperatorRepository,
+                 user_repository: UserRepository,
+                 user_types_repository: UserTypesRepository,
+                 roles_repository: RolesRepository,
+                 conversation_repository: ConversationRepository
                  ):  # Auto-inject repository
         self.operator_repo = operator_repository
         self.conversation_repo = conversation_repository

@@ -1,0 +1,286 @@
+{
+  "name": "Whatsapp Assistant Workflow",
+  "description": "Default workflow for Whatsapp Assistant",
+  "nodes": [
+    {
+      "id": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "data": {
+        "name": "Chat Input",
+        "label": "Chat Input",
+        "handlers": [
+          {
+            "id": "output_message",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "inputSchema": {
+          "message": {
+            "type": "string",
+            "required": false,
+            "description": "The message to send to the LLM"
+          }
+        }
+      },
+      "type": "chatInputNode",
+      "width": 300,
+      "height": 163,
+      "position": {
+        "x": 50.064988630224434,
+        "y": 22.19110218174915
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 50.064988630224434,
+        "y": 22.19110218174915
+      },
+      "dragging": false
+    },
+    {
+      "id": "b73f8249-5811-40d8-b448-240b86c6c288",
+      "data": {
+        "name": "Chat Output",
+        "label": "Chat Output",
+        "handlers": [
+          {
+            "id": "input_message",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          }
+        ]
+      },
+      "type": "chatOutputNode",
+      "width": 300,
+      "height": 93,
+      "dragging": false,
+      "position": {
+        "x": 1421.283752237165,
+        "y": 253.39783185667665
+      },
+      "selected": false
+    },
+    {
+      "id": "b8f90f23-acab-45f7-8021-470cb918183d",
+      "type": "templateNode",
+      "position": {
+        "x": 41.057968103245,
+        "y": -192.33524177154942
+      },
+      "data": {
+        "name": "Prompt Template",
+        "template": "You are my AI assistent!",
+        "handlers": [
+          {
+            "id": "output_prompt",
+            "type": "source",
+            "compatibility": "text",
+            "position": "right"
+          }
+        ],
+        "label": "Prompt Template"
+      },
+      "width": 400,
+      "height": 159,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 41.057968103245,
+        "y": -192.33524177154942
+      },
+      "dragging": false
+    },
+    {
+      "id": "fff32087-f2ba-4b4d-9d30-0a3f951504da",
+      "type": "agentNode",
+      "position": {
+        "x": 520.9968018899126,
+        "y": -26.338931191416044
+      },
+      "data": {
+        "name": "Agent",
+        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
+        "outputFormat": "string",
+        "agentType": "ToolSelector",
+        "memory": false,
+        "handlers": [
+          {
+            "id": "input_system_prompt",
+            "type": "target",
+            "compatibility": "text",
+            "position": "left"
+          },
+          {
+            "id": "input_prompt",
+            "type": "target",
+            "compatibility": "text",
+            "position": "left"
+          },
+          {
+            "id": "input_tools_reference",
+            "type": "target",
+            "compatibility": "tools",
+            "position": "bottom"
+          },
+          {
+            "id": "output_message",
+            "type": "source",
+            "compatibility": "text",
+            "position": "right"
+          }
+        ],
+        "label": "Agent"
+      },
+      "width": 320,
+      "height": 466,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 520.9968018899126,
+        "y": -26.338931191416044
+      },
+      "dragging": false
+    },
+    {
+      "id": "9d9c9931-87b4-4f34-8be2-7093ec9648e4",
+      "type": "knowledgeBaseNode",
+      "position": {
+        "x": 81.48163039481017,
+        "y": 336.02661111133233
+      },
+      "data": {
+        "name": "Knowledge Base",
+        "description": "Query multiple knowledge bases",
+        "selectedBases": [
+          KB_ID_LIST
+        ],
+        "handlers": [
+          {
+            "id": "input_parameters",
+            "type": "target",
+            "compatibility": "json",
+            "position": "left"
+          },
+          {
+            "id": "output_tool_reference",
+            "type": "source",
+            "compatibility": "tools",
+            "position": "top"
+          },
+          {
+            "id": "output_result",
+            "type": "source",
+            "compatibility": "json",
+            "position": "right"
+          }
+        ],
+        "label": "Knowledge Base",
+        "inputSchema": {
+          "query": {
+            "type": "string",
+            "description": "User query to search in knowledge bases exactly as it is",
+            "required": true
+          }
+        },
+        "outputSchema": {
+          "output": {
+            "type": "string",
+            "description": "Search results from knowledge bases",
+            "required": true
+          }
+        }
+      },
+      "width": 400,
+      "height": 501,
+      "selected": false,
+      "dragging": false,
+      "positionAbsolute": {
+        "x": 81.48163039481017,
+        "y": 336.02661111133233
+      }
+    },
+    {
+      "id": "c5ce9609-a80a-4a86-82a4-d81b3c26c98a",
+      "type": "whatsappMessageNode",
+      "position": {
+        "x": 911.4440533610124,
+        "y": 127.66054801806666
+      },
+      "data": {
+        "name": "Whatsapp Message",
+        "text_msg": "test",
+        "business_number": "test",
+        "to_number": "test",
+        "token": "",
+        "handlers": [
+          {
+            "id": "input_message",
+            "type": "target",
+            "compatibility": "text",
+            "position": "left"
+          }
+        ],
+        "label": "Whatsapp Message",
+        "inputSchema": {
+          "text_msg": {
+            "type": "string",
+            "required": true
+          }
+        },
+        "outputSchema": {
+          "status": {
+            "type": "number",
+            "required": true
+          },
+          "data": {
+            "type": "any",
+            "required": true
+          }
+        }
+      },
+      "width": 400,
+      "height": 325,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 911.4440533610124,
+        "y": 127.66054801806666
+      },
+      "dragging": false
+    }
+  ],
+  "edges": [
+    {
+      "source": "b8f90f23-acab-45f7-8021-470cb918183d",
+      "sourceHandle": "output_prompt",
+      "target": "fff32087-f2ba-4b4d-9d30-0a3f951504da",
+      "targetHandle": "input_system_prompt",
+      "id": "reactflow__edge-b8f90f23-acab-45f7-8021-470cb918183doutput_prompt-fff32087-f2ba-4b4d-9d30-0a3f951504dainput_system_prompt"
+    },
+    {
+      "source": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "sourceHandle": "output_message",
+      "target": "fff32087-f2ba-4b4d-9d30-0a3f951504da",
+      "targetHandle": "input_prompt",
+      "id": "reactflow__edge-47393298-ecd5-496c-9bd4-d4dc963e23d6output_message-fff32087-f2ba-4b4d-9d30-0a3f951504dainput_prompt"
+    },
+    {
+      "source": "9d9c9931-87b4-4f34-8be2-7093ec9648e4",
+      "sourceHandle": "output_tool_reference",
+      "target": "fff32087-f2ba-4b4d-9d30-0a3f951504da",
+      "targetHandle": "input_tools_reference",
+      "id": "reactflow__edge-9d9c9931-87b4-4f34-8be2-7093ec9648e4output_tool_reference-fff32087-f2ba-4b4d-9d30-0a3f951504dainput_tools_reference"
+    },
+    {
+      "source": "fff32087-f2ba-4b4d-9d30-0a3f951504da",
+      "sourceHandle": "output_message",
+      "target": "c5ce9609-a80a-4a86-82a4-d81b3c26c98a",
+      "targetHandle": "input_message",
+      "id": "reactflow__edge-fff32087-f2ba-4b4d-9d30-0a3f951504daoutput_message-c5ce9609-a80a-4a86-82a4-d81b3c26c98ainput_message"
+    }
+  ],
+  "user_id": null,
+  "version": "1.0",
+  "agent_id": null,
+  "id": "0197a218-2077-7009-8f06-f99eeefc7243",
+  "created_at": "2025-06-24T13:19:39.639632Z",
+  "updated_at": "2025-06-24T13:19:39.639633Z"
+}

@@ -1,0 +1,174 @@
+{
+  "name": "chain-of-though Workflow",
+  "description": "Default workflow for chain-of-though",
+  "nodes": [
+    {
+      "id": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "data": {
+        "name": "Chat Input",
+        "label": "Chat Input",
+        "handlers": [
+          {
+            "id": "output_message",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "inputSchema": {
+          "message": {
+            "type": "string",
+            "required": false,
+            "description": "The message to send to the LLM"
+          }
+        }
+      },
+      "type": "chatInputNode",
+      "width": 300,
+      "height": 174,
+      "position": {
+        "x": 81.65653220098523,
+        "y": 253.38376194958948
+      }
+    },
+    {
+      "id": "b73f8249-5811-40d8-b448-240b86c6c288",
+      "data": {
+        "name": "Chat Output",
+        "label": "Chat Output",
+        "handlers": [
+          {
+            "id": "input_message",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          }
+        ]
+      },
+      "type": "chatOutputNode",
+      "width": 300,
+      "height": 136,
+      "dragging": false,
+      "position": {
+        "x": 1144.1397563664,
+        "y": 277.80947916135545
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 1144.1397563664,
+        "y": 277.80947916135545
+      }
+    },
+    {
+      "id": "d6d12971-9287-4e45-a960-b670c362de08",
+      "data": {
+        "name": "Agent",
+        "label": "Agent",
+        "memory": false,
+        "handlers": [
+          {
+            "id": "input_system_prompt",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          },
+          {
+            "id": "input_prompt",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          },
+          {
+            "id": "input_tools_reference",
+            "type": "target",
+            "position": "bottom",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output_message",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "agentType": "Chain-of-Thought",
+        "outputFormat": "string"
+      },
+      "type": "agentNode",
+      "width": 320,
+      "height": 445,
+      "dragging": false,
+      "position": {
+        "x": 568.0485291572944,
+        "y": 106.53606631972411
+      },
+      "selected": true,
+      "positionAbsolute": {
+        "x": 568.0485291572944,
+        "y": 106.53606631972411
+      }
+    },
+    {
+      "id": "54a82a09-64a0-4a13-a06b-e805d4b41dc0",
+      "type": "templateNode",
+      "position": {
+        "x": 47.887081400317754,
+        "y": -22.967460812264015
+      },
+      "data": {
+        "name": "Prompt Template",
+        "template": "You are my AI assistent!",
+        "handlers": [
+          {
+            "id": "output",
+            "type": "source",
+            "compatibility": "text",
+            "position": "right"
+          }
+        ],
+        "label": "Prompt Template",
+        "inputSchema": {}
+      },
+      "width": 400,
+      "height": 224,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 47.887081400317754,
+        "y": -22.967460812264015
+      },
+      "dragging": false
+    }
+  ],
+  "edges": [
+    {
+      "id": "reactflow__edge-d6d12971-9287-4e45-a960-b670c362de08output_message-b73f8249-5811-40d8-b448-240b86c6c288input_message",
+      "source": "d6d12971-9287-4e45-a960-b670c362de08",
+      "target": "b73f8249-5811-40d8-b448-240b86c6c288",
+      "sourceHandle": "output_message",
+      "targetHandle": "input_message"
+    },
+    {
+      "id": "reactflow__edge-47393298-ecd5-496c-9bd4-d4dc963e23d6output_message-d6d12971-9287-4e45-a960-b670c362de08input_prompt",
+      "source": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "target": "d6d12971-9287-4e45-a960-b670c362de08",
+      "sourceHandle": "output_message",
+      "targetHandle": "input_prompt"
+    },
+    {
+      "source": "54a82a09-64a0-4a13-a06b-e805d4b41dc0",
+      "sourceHandle": "output",
+      "target": "d6d12971-9287-4e45-a960-b670c362de08",
+      "targetHandle": "input_system_prompt",
+      "id": "reactflow__edge-54a82a09-64a0-4a13-a06b-e805d4b41dc0output-d6d12971-9287-4e45-a960-b670c362de08input_system_prompt"
+    }
+  ],
+  "testInput": {
+    "message": "What is the value of x for which x^2 +11. equals 60 ?"
+  },
+  "user_id": "00000196-1b89-8e8e-905c-0eefdb9008f1",
+  "version": "1.0",
+  "agent_id": "01981cfa-e21a-7fda-b0bc-168991243e89",
+  "id": "01981cfa-e212-7d76-bc6c-0778d76eb8b8",
+  "created_at": "2025-07-18T10:01:00.690843Z",
+  "updated_at": "2025-07-18T10:03:16.097102Z"
+}

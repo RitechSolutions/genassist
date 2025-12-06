@@ -1,5 +1,6 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends
+from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.schemas.user import UserTypeRead, UserTypeCreate, UserTypeUpdate
@@ -13,7 +14,7 @@ router = APIRouter()
     Depends(auth),
     Depends(permissions("read:user_type"))
     ])
-async def get(user_type_id: UUID, service: UserTypesService = Depends()):
+async def get(user_type_id: UUID, service: UserTypesService = Injected(UserTypesService)):
     return await service.get_by_id(user_type_id)
 
 
@@ -21,7 +22,7 @@ async def get(user_type_id: UUID, service: UserTypesService = Depends()):
     Depends(auth),
     Depends(permissions("read:user_type"))
     ])
-async def get_all(service: UserTypesService = Depends()):
+async def get_all(service: UserTypesService = Injected(UserTypesService)):
     return await service.get_all()
 
 
@@ -31,7 +32,7 @@ async def get_all(service: UserTypesService = Depends()):
     ])
 async def create(
         user_type: UserTypeCreate,
-        service: UserTypesService = Depends()
+        service: UserTypesService = Injected(UserTypesService)
         ):
     return await service.create(user_type)
 
@@ -42,7 +43,7 @@ async def create(
     ])
 async def delete(
         user_type_id: UUID,
-        service: UserTypesService = Depends()
+        service: UserTypesService = Injected(UserTypesService)
         ):
     return await service.delete(user_type_id)
 
@@ -54,6 +55,6 @@ async def delete(
 async def update(
         user_type_id: UUID,
         user_type: UserTypeUpdate,
-        service: UserTypesService = Depends()
+        service: UserTypesService = Injected(UserTypesService)
         ):
     return await service.update(user_type_id, user_type)

@@ -60,6 +60,13 @@ def current_user_is_admin() -> bool:
         return "admin" in [role.name for role in roles]
     return False
 
+def is_current_user_internal():
+    roles = context.get("user_roles") if context.exists() else None
+    if roles:
+        internal_roles = ["admin", "operator", "supervisor"]
+        return any(role.name in internal_roles for role in roles)
+    return False
+
 # def has_permission(user_or_api_key, required: str) -> bool:
 #     return required in user_or_api_key.permissions or "*" in user_or_api_key.permissions
 

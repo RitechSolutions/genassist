@@ -1,37 +1,26 @@
 # app/services/knowledge_base_service.py
-import asyncio
 from typing import List, Optional
 from uuid import UUID
-from fastapi import Depends, logger
+from fastapi import logger
+from injector import inject
 from neo4j import AsyncSession
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.knowledge_base import KnowledgeBaseModel
-from app.db.session import get_db
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.schemas.agent_knowledge import KBCreate, KBRead
 
 import logging
 logger = logging.getLogger(__name__)
 
+@inject
 class KnowledgeBaseService:
     """
     – Accepts / returns Pydantic models.
     – Converts to / from the ORM entity.
     """
-    _instance = None
 
-    @staticmethod
-    def get_instance(db: Optional[AsyncSession] = None) -> 'KnowledgeBaseService':
-
-        if KnowledgeBaseService._instance is None and db is not None:
-            knowledge_repository = KnowledgeBaseRepository(db)
-            KnowledgeBaseService._instance = KnowledgeBaseService(knowledge_repository)
-            logger.info("KnowledgeBaseService instance created")
-        return KnowledgeBaseService._instance
-
-
-    def __init__(self, repository: KnowledgeBaseRepository = Depends()):
+    def __init__(self, repository: KnowledgeBaseRepository):
         self.repository = repository
 
     # ─────────────── READ ───────────────

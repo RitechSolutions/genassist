@@ -1,41 +1,18 @@
 import json
 import logging
 import asyncio
-
 from langchain.schema import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
-
-from fastapi import Depends
-
-from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.encryption_utils import decrypt_key
-
 from app.schemas.llm import LlmAnalyst
-from app.services.llm_analysts import LlmAnalystService
 from app.core.utils.bi_utils import clean_gpt_json_response
+from app.services.llm_model_factory import LlmModelFactory
+
 
 logger = logging.getLogger(__name__)
 
 
 class SpeakerSeparator:
-
-    def _switch_model(self, llm_analyst: LlmAnalyst):
-        """Switch the active LLM model and library based on provider."""
-        logger.info(f"Using LLM {llm_analyst.llm_provider.llm_model_provider} model: {llm_analyst.llm_provider.llm_model}")
-
-        api_key = decrypt_key(llm_analyst.llm_provider.connection_data.get("api_key"))
-
-        if llm_analyst.llm_provider.llm_model_provider.lower() == "anthropic":
-            self.llm = ChatAnthropic(model_name=llm_analyst.llm_provider.llm_model,
-                                     temperature=llm_analyst.llm_provider.connection_data.get("temperature", 0),
-                                     api_key=api_key)
-        else:
-            self.llm = ChatOpenAI(model=llm_analyst.llm_provider.llm_model,
-                                  temperature=llm_analyst.llm_provider.connection_data.get("temperature", 0),
-                                  api_key=api_key)
 
     def _build_user_prompt(self, transcribed_text: str, attempt: int = 1, error_hint: str = "") -> str:
         """Create a user prompt with retry explanation included on subsequent attempts."""
@@ -65,7 +42,7 @@ class SpeakerSeparator:
         Gets the system prompt and model name/type from the analyst config.
         Retries on JSON parsing errors.
         """
-        self._switch_model(llm_analyst)
+        self.llm = LlmModelFactory.switch_model(llm_analyst)
 
         last_error_msg = ""
 

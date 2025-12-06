@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import Depends
+from injector import inject
 from jose import ExpiredSignatureError, JWTError, jwt
 from app.auth.utils import verify_password
 from app.core.exceptions.error_messages import ErrorKey
@@ -17,9 +17,9 @@ from app.services.users import UserService
 
 logger = logging.getLogger(__name__)
 
-
+@inject
 class AuthService:
-    def __init__(self, user_service: UserService = Depends(), api_keys_service: ApiKeysService = Depends()):
+    def __init__(self, user_service: UserService, api_keys_service: ApiKeysService):
         self.user_service = user_service
         self.api_keys_service = api_keys_service
         self.secret_key = os.environ.get("JWT_SECRET_KEY")
@@ -79,21 +79,6 @@ class AuthService:
             raise AppException(error_key=ErrorKey.FORCE_PASSWORD_UPDATE, status_code=401)
         return api_key
 
-    async def check_api_key_permission(self, api_key: ApiKeyModel, permission: str):
-        """Check if API key has the required permission."""
-        if not api_key:
-            raise AppException(error_key=ErrorKey.API_KEY_MISSING, status_code=401)
-        
-        #if len(api_key.user.user_roles) == 0:  
-        #    raise AppException(status_code=401, error_key=ErrorKey.INVALID_API_KEY)
-        
-        #perm = [ur.permissions for ur in keyObj.user.roles]
-
-        #if len(perm) == 0:
-        #    raise AppException(error_key=ErrorKey.INSUFFICIENT_PERMISSIONS, status_code=403)
-        
-        return True
-
 
     async def authenticate_user(self, username_or_email: str, password: str):
         """Authenticate user by username or email and password."""
@@ -108,6 +93,9 @@ class AuthService:
 
         if not user.is_active:
             raise AppException(error_key=ErrorKey.INVALID_USER, status_code=401)
+
+        if user.user_type.name == "console":
+            raise AppException(error_key=ErrorKey.INVALID_USER_CONSOLE, status_code=401)
 
         if not verify_password(password, user.hashed_password):
             raise AppException(error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD, status_code=401,

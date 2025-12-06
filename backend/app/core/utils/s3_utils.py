@@ -59,6 +59,8 @@ class S3Client:
             if continuation_token:
                 params['ContinuationToken'] = continuation_token
 
+            logger.info(f"Listing files from S3: {params}")
+
             # Make the API call
             response = self.s3_client.list_objects_v2(**params)
 
@@ -158,6 +160,27 @@ class S3Client:
         except ClientError as e:
             logger.error(f"Error reading file content from S3: {str(e)}")
             raise
+
+    def upload_file(self, file_name: str, bucket: str, key: str) -> bool:
+        """
+        Upload file to S3.
+        
+        Args:
+            content: Content to upload
+            bucket: Bucket name
+            key: Key (path) in the bucket
+            
+        Returns:
+            Boolean indicating success
+        """
+        try:
+            self.s3_client.upload_file(file_name, bucket, key)
+
+            return True
+        except ClientError as e:
+            logger.error(f"Error uploading content to S3: {str(e)}")
+            return False
+          
 
     def upload_content(self, content: str, bucket: str, key: str) -> bool:
         """

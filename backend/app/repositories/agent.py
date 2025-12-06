@@ -1,23 +1,17 @@
-from typing import Optional
 from uuid import UUID
-
-from fastapi import Depends
-from sqlalchemy import delete, select
-from sqlalchemy.exc import SQLAlchemyError
+from injector import inject
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
-
 from app.db.models import AgentModel, OperatorModel
-from app.db.session import get_db
 from app.repositories.db_repository import DbRepository
 
 
+@inject
 class AgentRepository(DbRepository[AgentModel]):
 
-    def __init__(self, db: AsyncSession = Depends(get_db)):
+    def __init__(self, db: AsyncSession):
         super().__init__(AgentModel, db)
-
-
 
     async def get_by_id_full(self, agent_id: UUID) -> AgentModel | None:
         """
@@ -25,15 +19,14 @@ class AgentRepository(DbRepository[AgentModel]):
         eagerly loaded in a single round‑trip.
         """
         result = await self.db.execute(
-                select(AgentModel)
-                .options(
-                        joinedload(AgentModel.operator).joinedload(OperatorModel.user),
-                        joinedload(AgentModel.workflow)
-                        )
-                .where(AgentModel.id == agent_id)
-                )
+            select(AgentModel)
+            .options(
+                joinedload(AgentModel.operator).joinedload(OperatorModel.user),
+                joinedload(AgentModel.workflow),
+            )
+            .where(AgentModel.id == agent_id)
+        )
         return result.scalars().first()
-
 
     async def get_all_full(self) -> list[AgentModel]:
         """
@@ -41,18 +34,19 @@ class AgentRepository(DbRepository[AgentModel]):
         eagerly loaded in a single round‑trip.
         """
         result = await self.db.execute(
-                select(AgentModel)
-                .options(
-                        joinedload(AgentModel.operator).joinedload(OperatorModel.user),
-                        joinedload(AgentModel.workflow)
-                        )
-                )
+            select(AgentModel)
+            .options(
+                joinedload(AgentModel.operator).joinedload(OperatorModel.user),
+                joinedload(AgentModel.workflow),
+            )
+            .order_by(AgentModel.created_at.asc())
+        )
         return result.scalars().all()
 
-
-    async def get_by_user_id(self,
-                             user_id: UUID,
-                             ) -> AgentModel:
+    async def get_by_user_id(
+        self,
+        user_id: UUID,
+    ) -> AgentModel:
         stmt = (
             select(AgentModel)
             .join(OperatorModel)

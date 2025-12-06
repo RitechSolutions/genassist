@@ -33,17 +33,20 @@ Create virtual environment and install requirements\
 2. Install the required dependencies:
     ```bash
     python -m pip install --upgrade pip==24.0
-    pip install -r requirements.txt
+    pip install -r requirements-main.txt
+    pip install -r requirements-rag.txt
+    pip install -r requirements-app.txt
     ```
 
     create .env file from example and put config values
 
     If using HF model for the first time, go to https://hf.co/pyannote/segmentation to accept license agreeement
 
-3. Start db and redis locally:
+3. Start db and redis and whisper and chroma locally:
     ```bash
-    docker compose up -d db redis
+    docker compose up -d db redis whisper chroma
     ```
+   **in development with backend running in IDE you need CHROMA_HOST and CHROMA_PORT in .env (check .env.example)
 
 3. Run in debug mode:
     ```bash
@@ -78,6 +81,33 @@ Create virtual environment and install requirements\
 
 9. Buid and run docker image:
     ```bash
-    docker build -f './Dockerfile' -t ritech/genassist-dev .
-    docker run ritech/genassist-$(echo "$(Build.BuildNumber)" | sed 's/\+/-/g') --expose $(APIPORT)
+    docker build -f './Dockerfile' -t ritech/genassist-dev-local .
+    docker run ritech/genassist-dev-local
+    ```
+
+10. Start Monitoring Tools and Dashboard (CPU, Mmemory, ...) for Docker and Host:
+    ```bash
+    cd monitoring
+    docker compose up -d
+    ```
+    Prometeus, cAdvisor and node-exporter will run in background to collect the metrics, while
+    Grafana can be accessed 
+    ```
+    http://localhost:9000/
+    ```
+
+11. Start Centralized Log Collection - ELK Stack
+    ```bash
+    cd elk-logs
+    docker composer up -d
+    ```
+    This will start services:
+    - elasticsearch
+    - logstash
+    - filebeat
+    - kibana
+
+    **Kibana** - Open Search Logs UI: 
+    ```bash
+    http://localhost:5601
     ```

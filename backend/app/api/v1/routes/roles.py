@@ -3,7 +3,10 @@ from fastapi import APIRouter, Depends
 
 from typing import List
 
+from fastapi_injector import Injected
+
 from app.auth.dependencies import auth, permissions
+from app.schemas.filter import BaseFilterModel
 from app.schemas.role import RoleCreate, RoleUpdate, RoleRead
 from app.services.roles import RolesService
 
@@ -15,15 +18,15 @@ router = APIRouter()
     Depends(auth),
     Depends(permissions("read:role"))
     ])
-async def get_all(service: RolesService = Depends()):
-    return await service.get_all()
+async def get_all(filter: BaseFilterModel = Depends(), service: RolesService = Injected(RolesService)):
+    return await service.get_all(filter)
 
 
 @router.get("/{role_id}", response_model=RoleRead, dependencies=[
     Depends(auth),
     Depends(permissions("read:role"))
     ])
-async def get(role_id: UUID, service: RolesService = Depends()):
+async def get(role_id: UUID, service: RolesService = Injected(RolesService)):
     return await service.get_by_id(role_id)
 
 
@@ -31,14 +34,14 @@ async def get(role_id: UUID, service: RolesService = Depends()):
     Depends(auth),
     Depends(permissions("create:role"))
     ])
-async def create(role: RoleCreate, service: RolesService = Depends()):
+async def create(role: RoleCreate, service: RolesService = Injected(RolesService)):
     return await service.create(role)
 
 @router.patch("/{role_id}", response_model=RoleRead, dependencies=[
     Depends(auth),
     Depends(permissions("update:role"))
     ])
-async def update(role_id: UUID, role: RoleUpdate, service: RolesService = Depends()):
+async def update(role_id: UUID, role: RoleUpdate, service: RolesService = Injected(RolesService)):
     return await service.update_partial(role_id, role)
 
 
@@ -46,5 +49,5 @@ async def update(role_id: UUID, role: RoleUpdate, service: RolesService = Depend
     Depends(auth),
     Depends(permissions("delete:role"))
     ])
-async def delete(role_id: UUID, service: RolesService = Depends()):
+async def delete(role_id: UUID, service: RolesService = Injected(RolesService)):
     return await service.delete(role_id)

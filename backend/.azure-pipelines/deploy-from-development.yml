@@ -1,0 +1,197 @@
+# .azure-pipelines/deploy-from-development.yml
+
+trigger:
+  branches:
+    include:
+      - genassist/virgin
+      - genassist/test
+
+pr:
+  branches:
+    include:
+      - genassist/virgin
+      - genassist/test
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - group: aws-genassist-test
+  - name: awsRegion
+    value: us-east-1
+  - name: ecrRepoApp
+    value: genassist-api
+  - name: ecrRepoWhisper
+    value: genassist-whisper
+  - name: imageTag
+    value: $(Build.SourceVersion)
+
+# ----------------------------
+# Stage 0: PR guard (policy)
+# ----------------------------
+stages:
+# - stage: pr_guard
+#   displayName: "PR Guard - only allow development -> {virgin,test}"
+#   condition: eq(variables['Build.Reason'], 'PullRequest')
+#   jobs:
+#   - job: validate_pr
+#     displayName: Validate PR source/target
+#     steps:
+#       - bash: |
+#           set -euo pipefail
+#           echo "Source: $(System.PullRequest.SourceBranch)"
+#           echo "Target: $(System.PullRequest.TargetBranch)"
+
+#           TARGET="$(System.PullRequest.TargetBranch)"
+#           SRC="$(System.PullRequest.SourceBranch)"
+
+#           # Only guard these targets; allow other PRs to pass this stage
+#           case "$TARGET" in
+#             refs/heads/genassist/virgin|refs/heads/genassist/client)
+#               if [ "$SRC" != "refs/heads/development" ]; then
+#                 echo "❌ Only merges from 'development' into 'genassist/virgin' or 'genassist/test' are allowed."
+#                 exit 2
+#               fi
+#               echo "✅ Policy OK: $SRC -> $TARGET"
+#               ;;
+#             *)
+#               echo "Target '$TARGET' is not a protected branch for this rule; skipping."
+#               ;;
+#           esac
+#         displayName: "Enforce PR policy"
+
+# ---------------------------------
+# Stage 1: Build & Push to ECR (CI)
+# ---------------------------------
+- stage: build_push
+  displayName: Build & Push to ECR
+  # Only on non-PR runs and only when branch is virgin or client
+  condition: and(
+              ne(variables['Build.Reason'], 'PullRequest'),
+              or(
+                eq(variables['Build.SourceBranch'], 'refs/heads/genassist/virgin'),
+                eq(variables['Build.SourceBranch'], 'refs/heads/genassist/test')
+              )
+            )
+  jobs:
+  - job: docker_ci
+    steps:
+    - checkout: self
+      clean: true
+
+    - bash: |
+        sudo apt-get update -y
+        sudo apt-get install -y unzip
+        curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+        unzip -q awscliv2.zip
+        sudo ./aws/install
+        aws --version
+      displayName: Install AWS CLI
+
+    - bash: |
+        test -n "$AWS_ACCESS_KEY_ID" && test -n "$AWS_SECRET_ACCESS_KEY"
+        aws configure set region $(awsRegion)
+      displayName: Configure AWS credentials
+      env:
+        AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
+        AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
+
+    - bash: |
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        echo "##vso[task.setvariable variable=awsAccountId]$ACCOUNT_ID"
+        echo "##vso[task.setvariable variable=ecrUri]${ACCOUNT_ID}.dkr.ecr.$(awsRegion).amazonaws.com"
+        echo "ECR URI: $(ecrUri)"
+      displayName: Resolve AWS account & ECR URI
+
+    - bash: |
+        set -e
+        for NAME in "$(ecrRepoApp)" "$(ecrRepoWhisper)"; do
+          if ! aws ecr describe-repositories --repository-names "$NAME" >/dev/null 2>&1; then
+            aws ecr create-repository --repository-name "$NAME" >/dev/null
+            echo "Created ECR repo: $NAME"
+          else
+            echo "ECR repo exists: $NAME"
+          fi
+        done
+      displayName: Ensure ECR repositories
+
+    - bash: |
+        aws ecr get-login-password --region $(awsRegion) | docker login -u AWS --password-stdin "$(ecrUri)"
+      displayName: Docker login to ECR
+
+    - bash: |
+        set -eux
+        docker build -f Dockerfile \
+          -t $(ecrUri)/$(ecrRepoApp):$(imageTag) \
+          -t $(ecrUri)/$(ecrRepoApp):latest \
+          .
+        docker build -f whisper_ext/Dockerfile.whisper \
+          -t $(ecrUri)/$(ecrRepoWhisper):$(imageTag) \
+          -t $(ecrUri)/$(ecrRepoWhisper):latest \
+          .
+      displayName: Build Docker images
+
+    - bash: |
+        set -eux
+        docker push $(ecrUri)/$(ecrRepoApp):$(imageTag)
+        docker push $(ecrUri)/$(ecrRepoApp):latest
+        docker push $(ecrUri)/$(ecrRepoWhisper):$(imageTag)
+        docker push $(ecrUri)/$(ecrRepoWhisper):latest
+      displayName: Push images to ECR
+
+# -----------------------------------------
+# Stage 2: Deploy to EC2 via SSM (post-CI)
+# -----------------------------------------
+- stage: deploy_via_ssm
+  displayName: Deploy - restart containers on EC2 (SSM)
+  dependsOn: build_push
+  condition: and(
+              succeeded(),
+              ne(variables['Build.Reason'], 'PullRequest'),
+              or(
+                eq(variables['Build.SourceBranch'], 'refs/heads/genassist/virgin'),
+                eq(variables['Build.SourceBranch'], 'refs/heads/genassist/test')
+              )
+            )
+  jobs:
+  - job: ssm_deploy
+    steps:
+    - bash: |
+        set -euxo pipefail
+        sudo apt-get update -y
+        sudo apt-get install -y jq
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        ECR_URI="${ACCOUNT_ID}.dkr.ecr.$(awsRegion).amazonaws.com"
+        SERVICES=("app" "whisper")
+        CMDS=(
+          "set -euxo pipefail"
+          "aws ecr get-login-password --region $(awsRegion) | docker login -u AWS --password-stdin ${ECR_URI}"
+          "cd /opt/genassist"
+          "docker compose pull ${SERVICES[*]}"
+          "docker compose up -d --no-deps --force-recreate ${SERVICES[*]}"
+          "docker image prune -f"
+        )
+        printf '%s\n' "${CMDS[@]}" | jq -R . | jq -s '{commands: .}' > params.json
+        aws ssm send-command \
+          --document-name "AWS-RunShellScript" \
+          --comment "GenAssist deploy $(Build.BuildNumber)" \
+          --targets "Key=tag:app,Values=genassist-core" \
+          --parameters file://params.json \
+          --region "$(awsRegion)" \
+          --output json
+      displayName: SSM - pull new images & restart (app, whisper)
+
+    - bash: |
+        set -euo pipefail
+        CMD_ID=$(aws ssm list-commands --max-items 1 --query 'Commands[0].CommandId' --output text --region "$(awsRegion)")
+        echo "CommandId: $CMD_ID"
+        while true; do
+          STATUS=$(aws ssm list-commands --command-id "$CMD_ID" --query 'Commands[0].Status' --output text --region "$(awsRegion)")
+          echo "SSM status: $STATUS"
+          if [ "$STATUS" = "Success" ]; then exit 0; fi
+          if [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ] || [ "$STATUS" = "Failed" ]; then exit 1; fi
+          sleep 5
+        done
+      displayName: Wait for SSM command to succeed
+
+# end of pipeline

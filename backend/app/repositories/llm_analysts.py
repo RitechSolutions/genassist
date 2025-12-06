@@ -1,15 +1,15 @@
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
-from fastapi import Depends
 from sqlalchemy.orm import joinedload
 from starlette_context import context
 from app.db.models.llm import LlmAnalystModel
-from app.db.session import get_db
 from app.schemas.llm import LlmAnalystCreate
 
+@inject
 class LlmAnalystRepository:
-    def __init__(self, db: AsyncSession = Depends(get_db)):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(self, data: LlmAnalystCreate) -> LlmAnalystModel:
@@ -44,7 +44,9 @@ class LlmAnalystRepository:
         await self.db.commit()
 
     async def get_all(self):
-        result = await self.db.execute(select(LlmAnalystModel).options(
-                joinedload(LlmAnalystModel.llm_provider)
-                ))
+        result = await self.db.execute(
+            select(LlmAnalystModel)
+            .options(joinedload(LlmAnalystModel.llm_provider))
+            .order_by(LlmAnalystModel.created_at.asc())
+        )
         return result.scalars().all()

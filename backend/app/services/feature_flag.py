@@ -1,6 +1,6 @@
 from typing import List
 from uuid import UUID
-from fastapi import Depends
+from injector import inject
 
 from app.repositories.feature_flag import FeatureFlagRepository
 from app.schemas.feature_flag import (
@@ -11,8 +11,9 @@ from app.schemas.feature_flag import (
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
 
+@inject
 class FeatureFlagService:
-    def __init__(self, repo: FeatureFlagRepository = Depends()):
+    def __init__(self, repo: FeatureFlagRepository):
         self.repo = repo
 
     async def get_all(self) -> List[FeatureFlagRead]:

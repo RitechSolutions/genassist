@@ -1,15 +1,15 @@
 from uuid import UUID
-from fastapi import Depends
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 from app.db.models.conversation import ConversationAnalysisModel
-from app.db.session import get_db
 from app.schemas.conversation_analysis import ConversationAnalysisCreate
 
+@inject
 class ConversationAnalysisRepository:
 
-    def __init__(self, db: AsyncSession = Depends(get_db)):  # Auto-inject db
+    def __init__(self, db: AsyncSession):  # Auto-inject db
         self.db = db
 
     async def save_conversation_analysis(self, analysis_data: ConversationAnalysisCreate) -> ConversationAnalysisModel:

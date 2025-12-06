@@ -1,18 +1,20 @@
 from uuid import UUID
-from fastapi import Depends
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
+from injector import inject
 from app.auth.utils import get_password_hash
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.date_time_utils import shift_datetime
 from app.repositories.users import UserRepository, userid_key_builder
+from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserCreate, UserRead, UserReadAuth, UserUpdate
 
+@inject
 class UserService:
     """Handles user-related business logic."""
 
-    def __init__(self, repository: UserRepository = Depends()):  # Auto-inject
+    def __init__(self, repository: UserRepository):
         # repository
         self.repository = repository
 
@@ -69,9 +71,9 @@ class UserService:
             return None
         return user
 
-    async def get_all(self):
+    async def get_all(self, filter: BaseFilterModel):
         """Fetch all users"""
-        users = await self.repository.get_all()
+        users = await self.repository.get_all(filter)
         return users
 
     async def update(self, user_id: UUID, user_data: UserUpdate):

@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
+
+from app.schemas.filter import BaseFilterModel
 from app.services.roles import RolesService
 from app.repositories.roles import RolesRepository
 from app.schemas.role import RoleCreate, RoleUpdate
@@ -28,13 +30,13 @@ async def test_create_success(role_service, mock_repository, sample_role_data):
     # Setup
     role_create = RoleCreate(**sample_role_data)
     mock_role = RoleModel(**sample_role_data)
-    mock_repository.create.return_value = mock_role
+    mock_repository.create_role.return_value = mock_role
 
     # Execute
     result = await role_service.create(role_create)
 
     # Assert
-    mock_repository.create.assert_called_once_with(role_create)
+    mock_repository.create_role.assert_called_once_with(role_create)
     assert result.name == sample_role_data["name"]
     assert result.is_active == sample_role_data["is_active"]
 
@@ -77,7 +79,8 @@ async def test_get_all_success(role_service, mock_repository, sample_role_data):
     mock_repository.get_all.return_value = mock_roles
 
     # Execute
-    result = await role_service.get_all()
+    filter_model = BaseFilterModel(skip=0, limit=10)
+    result = await role_service.get_all(filter_model)
 
     # Assert
     mock_repository.get_all.assert_called_once()

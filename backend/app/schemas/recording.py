@@ -12,6 +12,7 @@ class RecordingBase(BaseModel):
     customer_id: Optional[UUID] | None = None
     llm_analyst_kpi_analyzer_id: Optional[UUID] = None
     llm_analyst_speaker_separator_id: Optional[UUID] = None
+    original_filename: Optional[str] = None
 
 class RecordingCreate(RecordingBase):
     pass

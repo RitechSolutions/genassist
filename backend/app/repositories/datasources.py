@@ -1,19 +1,19 @@
 from uuid import UUID
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List, Optional
-from app.db.session import get_db
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.datasource import DataSourceModel
 from app.schemas.datasource import DataSourceCreate
-from fastapi import Depends
 from starlette_context import context
 
+@inject
 class DataSourcesRepository:
     """Repository for datasource-related database operations."""
 
-    def __init__(self, db: AsyncSession = Depends(get_db)):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(self, datasource_data: DataSourceCreate) -> DataSourceModel:
@@ -23,7 +23,6 @@ class DataSourcesRepository:
             source_type=datasource_data.source_type,
             connection_data=datasource_data.connection_data,
             is_active=datasource_data.is_active,
-            created_by=context.get("user_id")
         )
         self.db.add(new_datasource)
         await self.db.commit()
@@ -43,7 +42,10 @@ class DataSourcesRepository:
 
     async def get_all(self) -> List[DataSourceModel]:
         """Fetch all datasources."""
-        query = select(DataSourceModel)
+        query = (
+            select(DataSourceModel)
+            .order_by(DataSourceModel.created_at.asc())
+        )
         result = await self.db.execute(query)
         return result.scalars().all()
 

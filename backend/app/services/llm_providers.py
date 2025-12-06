@@ -1,16 +1,15 @@
+from injector import inject
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from fastapi import Depends
 from uuid import UUID
-
 from app.core.utils.bi_utils import get_masked_api_key
 from app.core.utils.encryption_utils import encrypt_key
 from app.repositories.llm_providers import LlmProviderRepository
 from app.schemas.llm import LlmProviderCreate, LlmProviderUpdate
 
-
+@inject
 class LlmProviderService:
-    def __init__(self, repository: LlmProviderRepository = Depends()):
+    def __init__(self, repository: LlmProviderRepository):
         self.repository = repository
 
 

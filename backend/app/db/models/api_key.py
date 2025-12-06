@@ -17,7 +17,8 @@ class ApiKeyModel(Base):
     user_id: Mapped[UUID] = mapped_column(UUID, ForeignKey("users.id"), nullable=False)
 
     user = relationship("UserModel", back_populates="api_keys", foreign_keys=[user_id])
-    api_key_roles = relationship("ApiKeyRoleModel", back_populates="api_key", foreign_keys="[ApiKeyRoleModel.api_key_id]")
+    api_key_roles = relationship("ApiKeyRoleModel", back_populates="api_key",
+                                 foreign_keys="[ApiKeyRoleModel.api_key_id]")
 
 
     @property

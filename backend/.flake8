@@ -1,4 +1,4 @@
 [flake8]
 per-file-ignores =
     # line too long
-    *: E501,E302
+    *: E501,E302,W1203,W1201

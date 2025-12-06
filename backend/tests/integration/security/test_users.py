@@ -1,5 +1,7 @@
 import pytest
 import logging
+
+from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserRead, UserCreate, UserUpdate
 
 logger = logging.getLogger(__name__)

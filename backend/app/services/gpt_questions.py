@@ -1,8 +1,6 @@
 import logging
-
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.config.settings import settings

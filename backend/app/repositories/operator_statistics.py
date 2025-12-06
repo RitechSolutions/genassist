@@ -1,15 +1,13 @@
 from uuid import UUID
-from fastapi import Depends
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-
-from app.db.session import get_db
 from app.db.models.operator import OperatorStatisticsModel,OperatorModel
 
 
-
+@inject
 class OperatorStatisticsRepository:
-    def __init__(self, db: AsyncSession = Depends(get_db)):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
 

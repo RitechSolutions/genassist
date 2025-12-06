@@ -5,6 +5,7 @@ from app.db.seed.seed_data_config import seed_test_data
 
 logger = logging.getLogger(__name__)
 
+
 @pytest.fixture(scope="module")
 def new_agent_data():
     return {
@@ -13,7 +14,9 @@ def new_agent_data():
         "is_active": True,
         "welcome_message": "Welcome to the test agent!",
         "possible_queries": ["What can you do?", "What can you not do?"],
+        "thinking_phrases": ["Thinking...", "Thinking about it..."],
     }
+
 
 @pytest.mark.asyncio
 async def test_get_agents(authorized_client, new_agent_data):
@@ -30,7 +33,9 @@ async def test_get_agents(authorized_client, new_agent_data):
 
 @pytest.mark.asyncio
 async def test_create_agent(authorized_client, new_agent_data):
-    response = authorized_client.post("/api/genagent/agents/configs", json=new_agent_data)
+    response = authorized_client.post(
+        "/api/genagent/agents/configs", json=new_agent_data
+    )
 
     data = response.json()
     logger.info(f" test create agent response:{data}")
@@ -62,7 +67,7 @@ async def test_update_agent(authorized_client, new_agent_data):
     del update["id"]
 
     response = authorized_client.put(f"/api/genagent/agents/configs/{id}", json=update)
-    
+
     data = response.json()
     print(f" test update agent response:{data}")
     logger.info(f" test update agent response:{data}")

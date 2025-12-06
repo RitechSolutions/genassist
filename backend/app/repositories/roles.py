@@ -1,31 +1,22 @@
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+
+from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination
 from app.db.models.role import RoleModel
 from app.repositories.db_repository import DbRepository
+from app.schemas.filter import BaseFilterModel
 from app.schemas.role import RoleCreate
-from fastapi import Depends
-from app.db.session import get_db
-from starlette_context import context
 
 
+@inject
 class RolesRepository(DbRepository[RoleModel]):
-    def __init__(self, db: AsyncSession = Depends(get_db)):
+    def __init__(self, db: AsyncSession):
         super().__init__(RoleModel, db)
 
-
-    async def create(self, role: RoleCreate):
+    async def create_role(self, role: RoleCreate):
         new_role = RoleModel(**role.model_dump())
-        self.db.add(new_role)
-        await self.db.commit()
-        await self.db.refresh(new_role)
-        return new_role
-
-
-    async def update(self, role: RoleModel):
-        self.db.add(role)
-        await self.db.commit()
-        await self.db.refresh(role)
-        return role
+        return await self.create(new_role)
 
     async def get_all_by_ids(self, ids: list[int]) -> list[RoleModel]:
         result = await self.db.execute(select(RoleModel).where(RoleModel.id.in_(ids)))

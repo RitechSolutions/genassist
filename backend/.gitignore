@@ -2,8 +2,11 @@ __pycache__
 .DS_Store
 *.log
 *.tmp
+*.pem
+.mypy_cache/
 env/
 node_modules/
+/playground*
 dist/
 build/
 /uploads
@@ -21,6 +24,7 @@ infra/setup/.terraform.lock.hcl
 models/whisper/
 infra/terraform.tfstate.backup
 venv/
+/datavolume
 agents_config/
 chroma_db/
 lightrag_data/
@@ -29,3 +33,5 @@ infra/.terraform/
 /certs/*.crt
 /certs/*.pem
 /logs/
+env.*
+legra_data/

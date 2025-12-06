@@ -1,15 +1,12 @@
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from uuid import UUID
-from fastapi import Depends
-from starlette_context import context
-
 from app.db.models.llm import LlmProvidersModel
-from app.db.session import get_db
 
-
+@inject
 class LlmProviderRepository:
-    def __init__(self, db: AsyncSession = Depends(get_db)):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(self, data):
@@ -33,5 +30,8 @@ class LlmProviderRepository:
         await self.db.commit()
 
     async def get_all(self):
-        result = await self.db.execute(select(LlmProvidersModel))
+        result = await self.db.execute(
+            select(LlmProvidersModel)
+            .order_by(LlmProvidersModel.created_at.asc())
+        )
         return result.scalars().all()

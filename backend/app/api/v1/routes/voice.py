@@ -2,13 +2,16 @@ import json
 import logging
 import os
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, WebSocket
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 import httpx
 from app.auth.dependencies import auth, permissions
 from app.services.auth import AuthService
 from app.auth.utils import has_permission, socket_user_id
 
 import openai
+
+from app.tasks.audio_tasks import transcribe_audio_files_async
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +22,7 @@ router = APIRouter()
                 Depends(auth),
                 Depends(permissions("create:in_progress_conversation"))
             ])
-async def get_openai_session_key():
+async def get_openai_session_key(lang_code: str = Query(default=""), input_audio_format: str = Query(default="pcm16")) -> str:
     """
     Get a temporary session key for OpenAI API.
     This endpoint is used to create a session key for the OpenAI API."""
@@ -30,12 +33,23 @@ async def get_openai_session_key():
         "Content-Type": "application/json",
     }
 
+    #"model": "whisper-1" | "gpt-4o-transcribe" | "gpt-4o-mini-transcribe",
+    # "gpt-4o-transcribe" for multilingual transcription
+    # whisper-1 for single language transcription
+
+    #input_audio_format: pcm16 | g711_ulaw
+    model = "gpt-4o-transcribe"  # Default model for multilingual transcription
+    if lang_code:
+        model = "whisper-1"  # Use whisper-1 for single language transcription
+    else:
+        lang_code = "en"  # Default to English if no language code is provided
+          
     payload = {
-                "input_audio_format": "pcm16",
+                "input_audio_format": input_audio_format,
                 "input_audio_transcription": {
-                    "model": "gpt-4o-transcribe",
+                    "model": model,
                     "prompt": "",
-                    "language": "en"
+                    "language": lang_code
                 },
                 "turn_detection": {
                     "type": "server_vad",
@@ -85,3 +99,14 @@ async def ws_tts(
     #await websocket.send_text('|AUDIO_END|')
     await websocket.close()
     return {"message": "WebSocket connection closed"}
+
+
+@router.get("/run-s3-audio-sync/{item_id}", status_code=200, summary="Trabscribe the content of S3 Bucket  defined Datasource", dependencies=[Depends(auth)])
+async def s3_audio_transcribe(
+    item_id: Optional[str] = None,
+):
+    try:
+        return await transcribe_audio_files_async(item_id)
+    except Exception as e:
+        logger.error(f"Error in handler: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")

@@ -9,4 +9,8 @@
 
   "python.formatting.provider": "black",
   "editor.formatOnSave": false,
+  "cursorpyright.analysis.autoImportCompletions": false,
+  "cursorpyright.analysis.autoSearchPaths": false,
+  "cursorpyright.analysis.diagnosticMode": "workspace",
+  "python.REPL.enableREPLSmartSend": false
 }

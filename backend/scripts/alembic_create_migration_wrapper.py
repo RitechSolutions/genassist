@@ -34,6 +34,8 @@ def get_latest_generated_file(before_files):
 
 
 def create_migration(message: str):
+    os.environ["MY_PROJECT_RUN_ALEMBIC"] = "1" # set to allow alembic migration because of condition in alembic/env.py
+
     before_files = set(os.listdir(VERSIONS_DIR))
 
     subprocess.run(["alembic", "revision", "--autogenerate", "-m", message], check=True)
@@ -51,6 +53,7 @@ def create_migration(message: str):
             )
 
     logger.info(f"Renamed {latest_file} → {new_filename}")
+    os.environ["MY_PROJECT_RUN_ALEMBIC"] = "0"
 
 
 if __name__ == "__main__":

@@ -16,6 +16,9 @@ class ApiKeyBase(BaseModel):
 
 class ApiKeyCreate(ApiKeyBase):
     role_ids: list[UUID] = Field(..., description="List of role IDs associated with the API key")
+    agent_id: Optional[UUID] = Field(None,
+                                     description="Filed used to determine if api key is being created for agent to"
+                                                 " assign agent permission.")
 
 class ApiKeyUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=4, max_length=255)

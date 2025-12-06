@@ -1,6 +1,6 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from unittest.mock import AsyncMock
+from uuid import uuid4
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.schemas.agent_knowledge import KBCreate, KBRead
@@ -8,13 +8,16 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.knowledge_base import KnowledgeBaseModel
 
+
 @pytest.fixture
 def mock_repository():
     return AsyncMock(spec=KnowledgeBaseRepository)
 
+
 @pytest.fixture
 def knowledge_base_service(mock_repository):
     return KnowledgeBaseService(repository=mock_repository)
+
 
 @pytest.fixture
 def sample_kb_data():
@@ -26,7 +29,7 @@ def sample_kb_data():
         "content": "Test content",
         "file_path": "/path/to/file",
         "file_type": "text",
-        "file": "/path/to/file.txt",
+        "files": ["/path/to/file.txt"],
         "vector_store": {"config": "test"},
         "rag_config": {
             "enabled": True,
@@ -37,6 +40,7 @@ def sample_kb_data():
         "extra_metadata": {},
         "embeddings_model": "test-model"
     }
+
 
 @pytest.mark.asyncio
 async def test_get_all_success(knowledge_base_service, mock_repository, sample_kb_data):
@@ -59,6 +63,7 @@ async def test_get_all_success(knowledge_base_service, mock_repository, sample_k
     for kb_read in result:
         assert isinstance(kb_read, KBRead)
 
+
 @pytest.mark.asyncio
 async def test_get_by_id_success(knowledge_base_service, mock_repository, sample_kb_data):
     # Setup
@@ -78,6 +83,7 @@ async def test_get_by_id_success(knowledge_base_service, mock_repository, sample
     assert result.id == kb_id
     assert result.name == sample_kb_data["name"]
 
+
 @pytest.mark.asyncio
 async def test_get_by_id_not_found(knowledge_base_service, mock_repository):
     # Setup
@@ -87,9 +93,10 @@ async def test_get_by_id_not_found(knowledge_base_service, mock_repository):
     # Execute and Assert
     with pytest.raises(AppException) as exc_info:
         await knowledge_base_service.get_by_id(kb_id)
-    
+
     assert exc_info.value.error_key == ErrorKey.KB_NOT_FOUND
     mock_repository.get_by_id.assert_called_once_with(kb_id)
+
 
 @pytest.mark.asyncio
 async def test_get_by_ids_success(knowledge_base_service, mock_repository, sample_kb_data):
@@ -113,6 +120,7 @@ async def test_get_by_ids_success(knowledge_base_service, mock_repository, sampl
     for kb_read in result:
         assert isinstance(kb_read, KBRead)
 
+
 @pytest.mark.asyncio
 async def test_create_success(knowledge_base_service, mock_repository, sample_kb_data):
     # Setup
@@ -130,6 +138,7 @@ async def test_create_success(knowledge_base_service, mock_repository, sample_kb
     mock_repository.create.assert_called_once()
     assert isinstance(result, KBRead)
     assert result.name == sample_kb_data["name"]
+
 
 @pytest.mark.asyncio
 async def test_update_success(knowledge_base_service, mock_repository, sample_kb_data):
@@ -160,6 +169,7 @@ async def test_update_success(knowledge_base_service, mock_repository, sample_kb
     assert result.name == update_data.name
     assert result.description == update_data.description
 
+
 @pytest.mark.asyncio
 async def test_update_not_found(knowledge_base_service, mock_repository, sample_kb_data):
     # Setup
@@ -170,10 +180,11 @@ async def test_update_not_found(knowledge_base_service, mock_repository, sample_
     # Execute and Assert
     with pytest.raises(AppException) as exc_info:
         await knowledge_base_service.update(kb_id, update_data)
-    
+
     assert exc_info.value.error_key == ErrorKey.KB_NOT_FOUND
     mock_repository.get_by_id.assert_called_once_with(kb_id)
     mock_repository.update.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_delete_success(knowledge_base_service, mock_repository, sample_kb_data):
@@ -192,6 +203,7 @@ async def test_delete_success(knowledge_base_service, mock_repository, sample_kb
     mock_repository.get_by_id.assert_called_once_with(kb_id)
     mock_repository.delete.assert_called_once_with(mock_kb)
 
+
 @pytest.mark.asyncio
 async def test_delete_not_found(knowledge_base_service, mock_repository):
     # Setup
@@ -201,7 +213,7 @@ async def test_delete_not_found(knowledge_base_service, mock_repository):
     # Execute and Assert
     with pytest.raises(AppException) as exc_info:
         await knowledge_base_service.delete(kb_id)
-    
+
     assert exc_info.value.error_key == ErrorKey.KB_NOT_FOUND
     mock_repository.get_by_id.assert_called_once_with(kb_id)
-    mock_repository.delete.assert_not_called() 
+    mock_repository.delete.assert_not_called()

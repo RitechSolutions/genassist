@@ -5,15 +5,17 @@ from typing import Optional
 
 from app.schemas.conversation_analysis import ConversationAnalysisRead
 from app.schemas.recording import RecordingRead
+from app.schemas.transcript_message import TranscriptMessageRead
 
 
 class ConversationBase(BaseModel):
     operator_id: UUID
     data_source_id: UUID | None = None
     recording_id: Optional[UUID]
-    transcription: str
+    transcription: Optional[str] = None
     conversation_date: Optional[datetime]
     customer_id: Optional[UUID] | None = None
+    thread_id: Optional[UUID] = None
     word_count: Optional[int] = None
     customer_ratio: Optional[int] = None
     agent_ratio: Optional[int] = None
@@ -21,13 +23,12 @@ class ConversationBase(BaseModel):
     status: Optional[str] = None
     conversation_type: Optional[str] = None
 
-    model_config = ConfigDict(
-        from_attributes = True
-    )
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationCreate(ConversationBase):
-    pass
+    id: Optional[UUID] = None
+
 
 class ConversationRead(ConversationBase):
     id: UUID
@@ -37,8 +38,9 @@ class ConversationRead(ConversationBase):
     analysis: Optional[ConversationAnalysisRead] = None
     in_progress_hostility_score: Optional[int] = None
     supervisor_id: Optional[UUID] = None
+    topic: Optional[str] = None
+    negative_reason: Optional[str] = None
+    feedback: Optional[str] = None
+    messages: Optional[list[TranscriptMessageRead]] = None
 
-
-    model_config = ConfigDict(
-        from_attributes = True
-    )
+    model_config = ConfigDict(from_attributes=True)

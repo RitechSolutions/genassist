@@ -1,11 +1,15 @@
 from fastapi import Depends
 from uuid import UUID
 
+from fastapi_injector import Injected
+from injector import inject
+
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
 from app.schemas.conversation_analysis import AnalysisResult, ConversationAnalysisCreate
 
+@inject
 class ConversationAnalysisService:
-    def __init__(self, repository: ConversationAnalysisRepository = Depends()):
+    def __init__(self, repository: ConversationAnalysisRepository):
         self.repository = repository
 
     async def save_conversation_analysis(self, conversation: ConversationAnalysisCreate):

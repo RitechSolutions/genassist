@@ -1,18 +1,19 @@
 from fastapi import Depends
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.models.role_permission import RolePermissionModel
-from app.db.session import get_db
 from uuid import UUID
 
 from app.schemas.role_permission import RolePermissionCreate
 
+@inject
 class RolePermissionsRepository:
     """
     Repository for RolePermission join-table operations.
     """
 
-    def __init__(self, db: AsyncSession = Depends(get_db)):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(self, data: RolePermissionCreate) -> RolePermissionModel:

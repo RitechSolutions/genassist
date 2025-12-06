@@ -1,14 +1,13 @@
 from typing import List
 from uuid import UUID
-from fastapi import Depends
-
+from injector import inject
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models import ToolModel
 from app.repositories.tool import ToolRepository
 from app.schemas.agent_tool import ToolConfigBase, ToolConfigRead
 
-
+@inject
 class ToolService:
     """
     Business-logic layer.
@@ -16,7 +15,7 @@ class ToolService:
     – Uses ToolRepository (ORM) under the hood.
     """
 
-    def __init__(self, repository: ToolRepository = Depends()):
+    def __init__(self, repository: ToolRepository):
         self.repository = repository
 
     # ---------- READ ----------

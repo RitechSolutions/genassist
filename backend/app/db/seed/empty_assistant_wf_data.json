@@ -1,0 +1,182 @@
+{
+  "name": "Support Assistant",
+  "description": "AI assistant specialized in providing product support and answering customer queries",
+  "nodes": [
+    {
+      "id": "fd3ad9db-ebbc-4152-8b17-a80d46aae203",
+      "type": "chatInputNode",
+      "position": {
+        "x": 307.9475066534751,
+        "y": 401.9469964062359
+      },
+      "data": {
+        "name": "Chat Input",
+        "inputSchema": {
+          "message": {
+            "type": "string",
+            "description": "The message received from the user",
+            "required": true
+          }
+        },
+        "handlers": [
+          {
+            "id": "output",
+            "type": "source",
+            "compatibility": "any",
+            "position": "right"
+          }
+        ],
+        "label": "Chat Input"
+      },
+      "width": 400,
+      "height": 174,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 307.9475066534751,
+        "y": 401.9469964062359
+      },
+      "dragging": false
+    },
+    {
+      "id": "12edd83e-5e29-4e13-9acb-d27c65a79608",
+      "type": "chatOutputNode",
+      "position": {
+        "x": 1457.5660813023642,
+        "y": 419.78110146643235
+      },
+      "data": {
+        "name": "Chat Output",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "compatibility": "any",
+            "position": "left"
+          }
+        ],
+        "label": "Chat Output"
+      },
+      "width": 400,
+      "height": 120,
+      "selected": true,
+      "positionAbsolute": {
+        "x": 1457.5660813023642,
+        "y": 419.78110146643235
+      },
+      "dragging": false
+    },
+    {
+      "id": "4e0e4a8d-9cfc-4647-b98c-93f23597e970",
+      "type": "templateNode",
+      "position": {
+        "x": 892.7070254959785,
+        "y": 380.0022947195037
+      },
+      "data": {
+        "name": "Prompt Template",
+        "template": "Please configure Agent Workflow before using it! Your query: {{source.message}}",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "compatibility": "any",
+            "position": "left"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "compatibility": "any",
+            "position": "right"
+          }
+        ],
+        "label": "Template"
+      },
+      "width": 400,
+      "height": 226,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 892.7070254959785,
+        "y": 380.0022947195037
+      },
+      "dragging": false
+    }
+  ],
+  "edges": [
+    {
+      "source": "fd3ad9db-ebbc-4152-8b17-a80d46aae203",
+      "sourceHandle": "output",
+      "target": "4e0e4a8d-9cfc-4647-b98c-93f23597e970",
+      "targetHandle": "input",
+      "type": "default",
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 20,
+        "height": 20,
+        "color": "#64748b"
+      },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "#64748b"
+      },
+      "id": "reactflow__edge-fd3ad9db-ebbc-4152-8b17-a80d46aae203output-4e0e4a8d-9cfc-4647-b98c-93f23597e970input"
+    },
+    {
+      "source": "4e0e4a8d-9cfc-4647-b98c-93f23597e970",
+      "sourceHandle": "output",
+      "target": "12edd83e-5e29-4e13-9acb-d27c65a79608",
+      "targetHandle": "input",
+      "type": "default",
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 20,
+        "height": 20,
+        "color": "#64748b"
+      },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "#64748b"
+      },
+      "id": "reactflow__edge-4e0e4a8d-9cfc-4647-b98c-93f23597e970output-12edd83e-5e29-4e13-9acb-d27c65a79608input"
+    }
+  ],
+  "testInput": {
+    "message": "Hello"
+  },
+  "executionState": {
+    "session": {
+      "message": "How are you"
+    },
+    "source": null,
+    "nodeOutputs": {
+      "fd3ad9db-ebbc-4152-8b17-a80d46aae203": {
+        "status": "success",
+        "output": {
+          "message": "How are you"
+        },
+        "timestamp": 1756113071412,
+        "nodeType": "chatInputNode",
+        "nodeName": "Chat Input"
+      },
+      "4e0e4a8d-9cfc-4647-b98c-93f23597e970": {
+        "status": "success",
+        "output": "Please configure Agent Workflow before using it! Your query: Hey",
+        "timestamp": 1756113127631,
+        "nodeType": "templateNode",
+        "nodeName": "Prompt Template"
+      },
+      "12edd83e-5e29-4e13-9acb-d27c65a79608": {
+        "status": "success",
+        "output": null,
+        "timestamp": 1756113136821,
+        "nodeType": "chatOutputNode",
+        "nodeName": "Chat Output"
+      }
+    }
+  },
+  "user_id": "00000196-1b89-8e8e-905c-0eefdb9008f1",
+  "version": "1.0",
+  "agent_id": "0198315b-f23d-7f52-9ab0-1db720b3cae5",
+  "id": "019764c7-047e-7d55-b26e-4d4f4c6629d4",
+  "created_at": "2025-07-22T08:59:25.856963Z",
+  "updated_at": "2025-07-22T08:59:26.157912Z"
+}

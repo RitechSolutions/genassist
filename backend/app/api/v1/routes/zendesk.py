@@ -4,14 +4,19 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi_injector import Injected
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.auth.dependencies import auth, permissions
 
 from app.core.config.settings import settings
-from app.db.session import get_db
 from app.repositories.conversations import ConversationRepository
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
 from app.services.zendesk import analyze_ticket_for_db
+from app.tasks.zendesk_tasks import (
+    get_zendesk_unrated_closed_tickets,
+    analyze_zendesk_tickets_async,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,7 +34,8 @@ class ZendeskClosedPayload(BaseModel):
     requester: Optional[ZendeskRequester] = None
     status: Optional[str] = None
     custom_fields: Optional[list[dict]] = None
-    tags: Optional[list[str]]  = None
+    tags: Optional[list[str]] = None
+
 
 BASE_URL = f"https://{settings.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
 AUTH = (f"{settings.ZENDESK_EMAIL}/token", settings.ZENDESK_API_TOKEN)
@@ -51,20 +57,15 @@ async def fetch_ticket_details(ticket_id: int) -> Dict[str, Any]:
 
 async def post_private_comment(ticket_id: int, body: str):
     url = f"{BASE_URL}/tickets/{ticket_id}.json"
-    payload = {
-        "ticket": {
-            "comment": {
-                "body": body,
-                "public": False
-            }
-        }
-    }
+    payload = {"ticket": {"comment": {"body": body, "public": False}}}
 
     async with httpx.AsyncClient(auth=AUTH, timeout=10.0) as client:
         resp = await client.put(url, json=payload)
 
     if resp.status_code != 200:
-        logger.error(f"Failed to post comment to ticket {ticket_id}: {resp.status_code} {resp.text}")
+        logger.error(
+            f"Failed to post comment to ticket {ticket_id}: {resp.status_code} {resp.text}"
+        )
     else:
         logger.info(f"Posted analysis comment to ticket #{ticket_id}")
 
@@ -72,25 +73,31 @@ async def post_private_comment(ticket_id: int, body: str):
 @router.post("/closed", status_code=200, summary="Zendesk webhook: ticket closed")
 async def zendesk_ticket_closed(
     payload: ZendeskClosedPayload,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Injected(AsyncSession),
 ):
     logger.info(f"→ Received Zendesk webhook payload: {payload.json()}")
 
     ticket = await fetch_ticket_details(payload.ticket_id)
-    logger.debug(f"Fetched ticket #{ticket['id']} from Zendesk: subject={ticket.get('subject')}")
+    logger.debug(
+        f"Fetched ticket #{ticket['id']} from Zendesk: subject={ticket.get('subject')}"
+    )
 
     conv_repo = ConversationRepository(db)
     conversation = await conv_repo.get_by_zendesk_ticket_id(ticket["id"])
 
     if not conversation:
-        logger.warning(f"No conversation found by zendesk_ticket_id={ticket['id']}, trying custom_fields...")
+        logger.warning(
+            f"No conversation found by zendesk_ticket_id={ticket['id']}, trying custom_fields..."
+        )
         custom_fields = ticket.get("custom_fields", [])
         conversation_id_str = None
 
         for field in custom_fields:
             if field.get("id") == settings.ZENDESK_CUSTOM_FIELD_CONVERSATION_ID:
                 conversation_id_str = field.get("value")
-                logger.debug(f"Found custom field conversation_id: {conversation_id_str!r}")
+                logger.debug(
+                    f"Found custom field conversation_id: {conversation_id_str!r}"
+                )
                 break
 
         if conversation_id_str:
@@ -98,18 +105,28 @@ async def zendesk_ticket_closed(
                 conversation_id = UUID(str(conversation_id_str).strip())
                 conversation = await conv_repo.get_by_id(conversation_id)
             except Exception as e:
-                logger.error(f"Invalid UUID in custom field: {conversation_id_str} ({e})")
-                raise HTTPException(status_code=400, detail="Invalid conversation ID in custom field")
+                logger.error(
+                    f"Invalid UUID in custom field: {conversation_id_str} ({e})"
+                )
+                raise HTTPException(
+                    status_code=400, detail="Invalid conversation ID in custom field"
+                )
 
     if not conversation:
         logger.error("❌ Conversation not found (even via custom_fields)")
-        raise HTTPException(status_code=404, detail="No conversation found (even via custom_fields)")
+        raise HTTPException(
+            status_code=404, detail="No conversation found (even via custom_fields)"
+        )
 
-    logger.info(f"✔ Found ConversationModel id={conversation.id} for ticket_id={ticket['id']}")
+    logger.info(
+        f"✔ Found ConversationModel id={conversation.id} for ticket_id={ticket['id']}"
+    )
 
     if conversation.zendesk_ticket_id is None:
         await conv_repo.set_zendesk_ticket_id(conversation.id, ticket["id"])
-        logger.info(f"Linked Zendesk ticket ID {ticket['id']} to conversation {conversation.id}")
+        logger.info(
+            f"Linked Zendesk ticket ID {ticket['id']} to conversation {conversation.id}"
+        )
 
     try:
         analysis_dict = analyze_ticket_for_db(ticket, conversation.id)
@@ -119,12 +136,15 @@ async def zendesk_ticket_closed(
         raise HTTPException(status_code=500, detail="Ticket analysis failed")
 
     from app.schemas.conversation_analysis import ConversationAnalysisCreate
+
     analysis_payload = ConversationAnalysisCreate(**analysis_dict)
 
     conv_anal_repo = ConversationAnalysisRepository(db)
     new_analysis = await conv_anal_repo.save_conversation_analysis(analysis_payload)
 
-    logger.info(f"✔ Saved ConversationAnalysis id={new_analysis.id} for conversation={conversation.id}")
+    logger.info(
+        f"✔ Saved ConversationAnalysis id={new_analysis.id} for conversation={conversation.id}"
+    )
 
     try:
         comment_text = (
@@ -138,3 +158,31 @@ async def zendesk_ticket_closed(
         logger.warning("Failed to post comment to Zendesk ticket.")
 
     return {"status": "ok", "analysis_id": str(new_analysis.id)}
+
+
+@router.get(
+    "/zendesk-unrated-closed-tickets",
+    status_code=200,
+    summary="Get unrated closed Zendesk tickets",
+    dependencies=[Depends(auth)],
+)
+async def zendesk_unrated_closed_tickets():
+    try:
+        return await get_zendesk_unrated_closed_tickets()
+    except Exception as e:
+        logger.error(f"Error in handler: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+@router.get(
+    "/zendesk-analyze-update-closed-tickets",
+    status_code=200,
+    summary="Analyze closed Zendesk tickets",
+    dependencies=[Depends(auth)],
+)
+async def zendesk_analyze_closed_tickets():
+    try:
+        return await analyze_zendesk_tickets_async()
+    except Exception as e:
+        logger.error(f"Error in handler: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")

@@ -1,13 +1,15 @@
-from fastapi import Depends
+from injector import inject
+
 from app.repositories.audit_logs import AuditLogRepository
 from app.schemas.audit_log import AuditLogSearchParams
 
+@inject
 class AuditLogService:
     """
     Handles audit log-related business logic.
     """
 
-    def __init__(self, audit_log_repo: AuditLogRepository = Depends()):
+    def __init__(self, audit_log_repo: AuditLogRepository):
         self.audit_log_repo = audit_log_repo
 
     async def search_audit_logs(self, search_params: AuditLogSearchParams) :

@@ -1,0 +1,246 @@
+{
+  "name": "Zendesk Assistant Workflow",
+  "description": "Default workflow for Zendesk Assistant",
+  "nodes": [
+    {
+      "id": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "data": {
+        "name": "Chat Input",
+        "label": "Chat Input",
+        "handlers": [
+          {
+            "id": "output_message",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "inputSchema": {
+          "message": {
+            "type": "string",
+            "required": false,
+            "description": "The message to send to the LLM"
+          }
+        }
+      },
+      "type": "chatInputNode",
+      "width": 300,
+      "height": 163,
+      "dragging": false,
+      "position": {
+        "x": 53.04712139834271,
+        "y": 203.69373266078946
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 53.04712139834271,
+        "y": 203.69373266078946
+      }
+    },
+    {
+      "id": "46356d39-468f-4af3-ba9d-63ee0efa713d",
+      "data": {
+        "name": "Agent",
+        "label": "Agent",
+        "memory": false,
+        "handlers": [
+          {
+            "id": "input_system_prompt",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          },
+          {
+            "id": "input_prompt",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          },
+          {
+            "id": "input_tools_reference",
+            "type": "target",
+            "position": "bottom",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output_message",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "agentType": "ToolSelector",
+        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
+        "outputFormat": "string"
+      },
+      "type": "agentNode",
+      "width": 320,
+      "height": 466,
+      "dragging": false,
+      "position": {
+        "x": 536.6361916354357,
+        "y": 18.21866822375738
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 536.6361916354357,
+        "y": 18.21866822375738
+      }
+    },
+    {
+      "id": "daf76c09-9c6c-480b-9452-b9ab8a4c7e16",
+      "data": {
+        "name": "Prompt Template",
+        "label": "Prompt Template",
+        "handlers": [
+          {
+            "id": "output_prompt",
+            "type": "source",
+            "compatibility": "text",
+            "position": "right"
+          }
+        ],
+        "template": "You are my AI assistent!"
+      },
+      "type": "templateNode",
+      "width": 400,
+      "height": 159,
+      "dragging": false,
+      "position": {
+        "x": 9.195816317390722,
+        "y": -47.63625093375096
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 9.195816317390722,
+        "y": -47.63625093375096
+      }
+    },
+    {
+      "id": "f9a2eb7a-1e5a-471a-bdf8-c1edf7f47b2f",
+      "data": {
+        "name": "Knowledge Base",
+        "label": "Knowledge Base",
+        "handlers": [
+          {
+            "id": "input_parameters",
+            "type": "target",
+            "position": "left",
+            "compatibility": "json"
+          },
+          {
+            "id": "output_tool_reference",
+            "type": "source",
+            "position": "top",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output_result",
+            "type": "source",
+            "position": "right",
+            "compatibility": "json"
+          }
+        ],
+        "description": "Query multiple knowledge bases",
+        "inputSchema": {
+          "query": {
+            "type": "string",
+            "description": "User query to search in knowledge bases exactly as it is",
+            "required": true
+          }
+        },
+        "outputSchema": {
+          "output": {
+            "type": "string",
+            "description": "Search results from knowledge bases",
+            "required": true
+          }
+        },
+        "selectedBases": [
+          KB_ID_LIST
+        ]
+      },
+      "type": "knowledgeBaseNode",
+      "width": 400,
+      "height": 501,
+      "dragging": false,
+      "position": {
+        "x": 98.10881125459093,
+        "y": 433.11001036087737
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 98.10881125459093,
+        "y": 433.11001036087737
+      }
+    },
+    {
+      "id": "a439a960-5a84-45d2-af5f-15d3f46872a2",
+      "data": {
+        "name": "Zendesk Ticket",
+        "tags": [],
+        "label": "Zendesk Ticket",
+        "subject": "test_subject",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "compatibility": "text"
+          }
+        ],
+        "description": "test_description",
+        "requester_name": "test",
+        "requester_email": "test"
+      },
+      "type": "zendeskTicketNode",
+      "width": 420,
+      "height": 732,
+      "dragging": false,
+      "position": {
+        "x": 950.9926276474057,
+        "y": -86.1630989965496
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 950.9926276474057,
+        "y": -86.1630989965496
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "reactflow__edge-47393298-ecd5-496c-9bd4-d4dc963e23d6output_message-46356d39-468f-4af3-ba9d-63ee0efa713dinput_prompt",
+      "source": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "target": "46356d39-468f-4af3-ba9d-63ee0efa713d",
+      "sourceHandle": "output_message",
+      "targetHandle": "input_prompt"
+    },
+    {
+      "id": "reactflow__edge-daf76c09-9c6c-480b-9452-b9ab8a4c7e16output_prompt-46356d39-468f-4af3-ba9d-63ee0efa713dinput_system_prompt",
+      "source": "daf76c09-9c6c-480b-9452-b9ab8a4c7e16",
+      "target": "46356d39-468f-4af3-ba9d-63ee0efa713d",
+      "sourceHandle": "output_prompt",
+      "targetHandle": "input_system_prompt"
+    },
+    {
+      "id": "reactflow__edge-f9a2eb7a-1e5a-471a-bdf8-c1edf7f47b2foutput_tool_reference-46356d39-468f-4af3-ba9d-63ee0efa713dinput_tools_reference",
+      "source": "f9a2eb7a-1e5a-471a-bdf8-c1edf7f47b2f",
+      "target": "46356d39-468f-4af3-ba9d-63ee0efa713d",
+      "sourceHandle": "output_tool_reference",
+      "targetHandle": "input_tools_reference"
+    },
+    {
+      "id": "reactflow__edge-46356d39-468f-4af3-ba9d-63ee0efa713doutput_message-a439a960-5a84-45d2-af5f-15d3f46872a2input",
+      "source": "46356d39-468f-4af3-ba9d-63ee0efa713d",
+      "target": "a439a960-5a84-45d2-af5f-15d3f46872a2",
+      "sourceHandle": "output_message",
+      "targetHandle": "input"
+    }
+  ],
+  "user_id": null,
+  "version": "1.0",
+  "agent_id": null,
+  "id": "0197a1f5-0f33-77de-99df-27326fa41e94",
+  "created_at": "2025-06-24T12:41:21.459057Z",
+  "updated_at": "2025-06-24T13:17:29.808629Z"
+}

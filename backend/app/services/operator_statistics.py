@@ -1,6 +1,6 @@
 from uuid import UUID
 from fastapi import Depends
-
+from injector import inject
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -9,10 +9,10 @@ from app.schemas.conversation_analysis import ConversationAnalysisRead
 from app.schemas.operator_statistics import OperatorStatisticsRead
 from app.core.utils.bi_utils import calculate_rating_score
 
-
+@inject
 class OperatorStatisticsService:
 
-    def __init__(self, repository: OperatorStatisticsRepository = Depends()):  # Auto-inject repository
+    def __init__(self, repository: OperatorStatisticsRepository):  # Auto-inject repository
         self.repository = repository
 
     async def get_by_operator_id(self, operator_id: UUID):

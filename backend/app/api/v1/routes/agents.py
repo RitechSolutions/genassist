@@ -2,11 +2,12 @@ import logging
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
+from fastapi_injector import Injected
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.modules.agents.registry import AgentRegistry
+from app.modules.workflow.registry import AgentRegistry
 from app.schemas.agent import QueryRequest
 from app.services.agent_config import AgentConfigService
 
@@ -16,9 +17,10 @@ router = APIRouter()
 
 @router.post("/switch/{agent_id}", response_model=Dict[str, Any])
 async def switch_agent(
-        agent_id: UUID,
-        config_service: AgentConfigService = Depends(),
-        ):
+    agent_id: UUID,
+    config_service: AgentConfigService = Injected(AgentConfigService),
+    agent_registry: AgentRegistry = Injected(AgentRegistry),
+):
     """Switch to an agent with the specified ID"""
     # Get the agent configuration
     agent_registry = AgentRegistry.get_instance()
@@ -36,42 +38,47 @@ async def switch_agent(
         return {"status": "success", "message": "Agent switched to active"}
 
 
-
 @router.post("/{agent_id}/query/{thread_id}", response_model=Dict[str, Any])
 async def query_agent(
-        agent_id: UUID,
-        thread_id: str,
-        request: QueryRequest,
+    agent_id: UUID,
+    thread_id: str,
+    request: QueryRequest,
+    agent_registry: AgentRegistry = Injected(AgentRegistry),
 ):
-    return await run_query_agent_logic(str(agent_id), request.query, {**(request.metadata if request.metadata else {}), "thread_id": thread_id})
+    return await run_query_agent_logic(
+        agent_registry,
+        str(agent_id),
+        request.query,
+        {**(request.metadata if request.metadata else {}), "thread_id": thread_id},
+    )
 
 
 async def run_query_agent_logic(
-        agent_id: str,
-        user_query: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        ):
+    agent_registry: AgentRegistry,
+    agent_id: str,
+    session_message: str,
+    metadata: Optional[Dict[str, Any]] = None,
+):
     """Run a query against an initialized agent"""
     # If agent is not initialized, get config info
-    agent_registry = AgentRegistry.get_instance()
+    if not agent_registry.is_agent_initialized(agent_id):
+        await agent_registry.initialize()
 
     if not agent_registry.is_agent_initialized(agent_id):
         raise AppException(ErrorKey.AGENT_INACTIVE, status_code=400)
 
     agent = agent_registry.get_agent(agent_id)
+    logger.info(f"Workflow Metadata: {metadata}")
+
     # Agent.run_query is not an async method, so don't use await
-    result = await agent.get_executor().execute(
-            user_query=user_query,
-            metadata=metadata
-            )
+    result = await agent.execute(session_message=session_message, metadata=metadata)
+    logger.info(f"Workflow Final Result: {result}")
     backward_compatibility_result = {
-        
-                "status": result.get("status"),
-                "response": result.get("output"),
-                "agent_id": agent_id,
-                "thread_id": metadata.get("thread_id"),
-                "rag_used": False
-            
+        "status": result.get("status"),
+        "response": result.get("output"),
+        "agent_id": agent_id,
+        "thread_id": metadata.get("thread_id"),
+        "rag_used": False,
     }
     logger.info(f"Result: {result}")
     logger.info(f"Backward compatibility result: {backward_compatibility_result}")

@@ -1,6 +1,7 @@
 from typing import List
 from uuid import UUID
 from fastapi import Depends
+from injector import inject
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -9,6 +10,7 @@ from app.repositories.workflow import WorkflowRepository
 from app.schemas.workflow import WorkflowCreate, WorkflowInDB, WorkflowUpdate
 
 
+@inject
 class WorkflowService:
     """
     Business-logic layer.
@@ -16,7 +18,7 @@ class WorkflowService:
     – Uses WorkflowRepository (ORM) under the hood.
     """
 
-    def __init__(self, repository: WorkflowRepository = Depends()):
+    def __init__(self, repository: WorkflowRepository):
         self.repository = repository
 
     # ---------- READ ----------

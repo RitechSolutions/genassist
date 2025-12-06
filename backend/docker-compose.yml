@@ -1,7 +1,7 @@
 services:
   # Database
   db:
-    image: postgres:15
+    image: postgres:17
     container_name: genassist_db
     environment:
       POSTGRES_USER: postgres
@@ -12,8 +12,18 @@ services:
       - ./scripts/db_init_scripts:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
     networks:
       - genassist-network
+    labels:
+      - "app=genassist"
+      - "service=db"
 
   # Main application service
   app:
@@ -27,9 +37,10 @@ services:
     env_file:
       - .env
     environment:
-      - RAG_VECTOR_DB_TYPE=chroma
-      - RAG_CHROMA_PERSIST_DIRECTORY=/app/data/chroma
-      - RAG_CHROMA_COLLECTION_NAME=default
+      - VECTOR_DB_TYPE=chroma
+      - CHROMA_COLLECTION_NAME=default
+      - CHROMA_HOST=chroma          # connect to Chroma service over the compose network
+      - CHROMA_PORT=8000            # Chroma server listens on 8000 inside its container
       - RAG_GRAPH_DB_TYPE=neo4j
       - RAG_NEO4J_URL=bolt://neo4j:7687
       - RAG_NEO4J_USERNAME=neo4j
@@ -37,28 +48,39 @@ services:
       - DB_HOST=genassist_db
       - REDIS_HOST=redis
     depends_on:
-      - neo4j
-      - chroma
-      - db
-      - redis
+      chroma:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      whisper:
+        condition: service_started
+    volumes:
+      - app_data_volume:/src/datavolume
     networks:
       - genassist-network
     restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=app"
 
   # Neo4j graph database
   neo4j:
-    image: neo4j:5.9.0
+    image: neo4j:5.23.0
     container_name: genassist-neo4j
     ports:
       - "7474:7474"  # HTTP
       - "7687:7687"  # Bolt
     environment:
       - NEO4J_AUTH=neo4j/password
-      - NEO4J_dbms_memory_pagecache_size=1G
-      - NEO4J_dbms_memory_heap_initial__size=1G
-      - NEO4J_dbms_memory_heap_max__size=2G
+      - NEO4J_dbms_memory_pagecache_size=256M
+      - NEO4J_dbms_memory_heap_initial__size=256M
+      - NEO4J_dbms_memory_heap_max__size=512M
       - NEO4JLABS_PLUGINS=["apoc"]  # Enable APOC plugin
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_logs_http_enabled=true
+      - NEO4J_server_logs_debug_enabled=true
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
@@ -67,21 +89,27 @@ services:
     networks:
       - genassist-network
     restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=neo4j"
 
   # Chroma vector database
   chroma:
-    image: ghcr.io/chroma-core/chroma:latest
+    image: ghcr.io/chroma-core/chroma:0.6.3
     container_name: genassist-chroma
     ports:
-      - "8005:8005"  # API
+      - "8005:8000"
     volumes:
       - chroma_data:/chroma/chroma
     environment:
-      - CHROMA_DB_IMPL=duckdb+parquet
-      - CHROMA_PERSIST_DIRECTORY=/chroma/chroma
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
     networks:
       - genassist-network
     restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=chroma"
 
   # Optional: Pinecone proxy (if you want to use Pinecone locally for development)
   # pinecone-proxy:
@@ -101,60 +129,150 @@ services:
     container_name: genassist-redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - genassist-network
     restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=redis"
 
   # Celery worker
   celery_worker:
     image: genassist-app-image
     container_name: genassist-celery-worker
-    command: celery -A app.tasks.celery_app worker --loglevel=info
+    command: python /src/run_celery.py worker --loglevel=info
     env_file:
       - .env
     environment:
+      - DB_HOST=genassist_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_TRACE_APP=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - VECTOR_DB_TYPE=chroma
+      - CHROMA_COLLECTION_NAME=default
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
     depends_on:
-      - redis
-      - db
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
     networks:
       - genassist-network
     restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=celery-worker"
 
   # Celery beat for periodic tasks
   celery_beat:
     image: genassist-app-image
     container_name: genassist-celery-beat
-    command: celery -A app.tasks.celery_app beat --loglevel=info
+    command: python /src/run_celery.py beat --loglevel=info
     env_file:
       - .env
     environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_TRACE_APP=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - VECTOR_DB_TYPE=chroma
+      - CHROMA_COLLECTION_NAME=default
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
     depends_on:
-      - redis
-      - db
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
     networks:
       - genassist-network
     restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=celery-beat"
 
   # Flower for monitoring
   flower:
     image: genassist-app-image
     container_name: genassist-flower
-    command: celery -A app.tasks.celery_app flower --port=5555 --persistent=True --db="flower_db" --basic-auth="user1:password1"
+    command: python /src/run_celery.py flower --port=5555 --persistent=True --db="flower_db" --basic-auth="user1:password1"
     ports:
       - "5555:5555"
     env_file:
       - .env
     environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_TRACE_APP=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
-      - redis
-      - celery_worker
-      - db
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+      db:
+        condition: service_healthy
     networks:
       - genassist-network
     restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=flower"
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: genassist-metabase
+    volumes:
+      - ./metabase-data:/data
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: genassist_db
+      MB_DB_PORT: 5432
+      MB_DB_USER: metabase_admin
+      MB_DB_PASS: metabase_admin
+      MB_DB_DBNAME: metabase_db
+    networks:
+      - genassist-network
+    labels:
+      - "app=genassist"
+      - "service=metabase"
+
+  whisper:
+    build:
+      context: .
+      dockerfile: ./whisper_ext/Dockerfile.whisper
+    container_name: genassist-whisper
+    environment:
+      - DEFAULT_WHISPER_MODEL=base # Or 'tiny', 'small', 'medium', 'large', 'large-v1', 'large-v2'
+#    volumes:
+#      - ./recordings:/recordings  # Mount audio/input/output directory RECORDINGS_DIR
+    ports:           # Not-required to expose port - uncoment to test trenscribe with swagger or debug from PC
+      - "8001:8001"
+    networks:
+      - genassist-network
+    restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=whisper"
+
 
   metabase:
     image: metabase/metabase:latest
@@ -184,5 +302,6 @@ volumes:
   neo4j_logs:
   neo4j_import:
   neo4j_plugins:
-  chroma_data: 
-  pgdata: 
+  chroma_data:
+  pgdata:
+  app_data_volume:

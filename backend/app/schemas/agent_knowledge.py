@@ -1,29 +1,34 @@
 from uuid import UUID
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Dict, Optional, Literal, List
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
-
-
-class RagConfigRead(BaseModel):
-    enabled: bool = True
-    vector_db: Dict[str, Any] = Field(default_factory=dict)
-    graph_db: Dict[str, Any] = Field(default_factory=dict)
-    light_rag: Dict[str, Any] = Field(default_factory=dict)
 
 
 class KBBase(BaseModel):
     name: str
     description: Optional[str] = None
-    type: Literal["file", "url", "text", "datasource","s3","database"]
+    type: Literal[
+        "file",
+        "url",
+        "text",
+        "datasource",
+        "s3",
+        "database",
+        "sharepoint",
+        "smb_share_folder",
+        "azure_blob",
+        "google_bucket",
+    ] = "file"
     source: Optional[str] = None
     content: Optional[str] = None
     file_path: Optional[str] = None
     file_type: Optional[str] = None
-    file: Optional[str] = None
+    files: Optional[List[str]] = None
     vector_store: Optional[Dict[str, Any]] = None
-    rag_config: RagConfigRead = RagConfigRead()
+    rag_config: Optional[Dict[str, Any]] = None
     extra_metadata: Dict[str, Any] = Field(default_factory=dict)
     embeddings_model: Optional[str] = None
+    legra_finalize: Optional[bool] = False
 
     model_config = ConfigDict(from_attributes=True, extra="allow")
 
@@ -35,6 +40,8 @@ class KBBase(BaseModel):
     sync_active: Optional[bool] = None
     sync_source_id: Optional[UUID] = None
     llm_provider_id: Optional[UUID] = None
+    url: Optional[str] = None
+
 
 class KBCreate(KBBase):
     """Body model for POST / PUT (no id)"""
@@ -42,4 +49,5 @@ class KBCreate(KBBase):
 
 class KBRead(KBBase):
     """Response model"""
+
     id: UUID

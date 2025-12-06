@@ -1,15 +1,14 @@
 from uuid import UUID
 from typing import List, Optional
-from fastapi import Depends
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-
-from app.db.session import get_db
 from app.db.models.feature_flag import FeatureFlagModel
 from app.schemas.feature_flag import FeatureFlagCreate, FeatureFlagUpdate
 
+@inject
 class FeatureFlagRepository:
-    def __init__(self, db: AsyncSession = Depends(get_db)):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(self, dto: FeatureFlagCreate) -> FeatureFlagModel:

@@ -1,0 +1,256 @@
+{
+  "name": "Slack Assistant Workflow",
+  "description": "Default workflow for Slack Assistant",
+  "nodes": [
+    {
+      "id": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "data": {
+        "name": "Chat Input",
+        "label": "Chat Input",
+        "handlers": [
+          {
+            "id": "output_message",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "inputSchema": {
+          "message": {
+            "type": "string",
+            "required": false,
+            "description": "The message to send to the LLM"
+          }
+        }
+      },
+      "type": "chatInputNode",
+      "width": 300,
+      "height": 163,
+      "position": {
+        "x": 83.0925114542016,
+        "y": 115.52975364081516
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 83.0925114542016,
+        "y": 115.52975364081516
+      },
+      "dragging": false
+    },
+    {
+      "id": "9d071b61-168a-4adf-9979-08f370e4ac26",
+      "type": "knowledgeBaseNode",
+      "position": {
+        "x": 155.82607545415817,
+        "y": 374.7839566870696
+      },
+      "data": {
+        "name": "Knowledge Base",
+        "description": "Query multiple knowledge bases",
+        "selectedBases": [],
+        "handlers": [
+          {
+            "id": "input_parameters",
+            "type": "target",
+            "compatibility": "json",
+            "position": "left"
+          },
+          {
+            "id": "output_tool_reference",
+            "type": "source",
+            "compatibility": "tools",
+            "position": "top"
+          },
+          {
+            "id": "output_result",
+            "type": "source",
+            "compatibility": "json",
+            "position": "right"
+          }
+        ],
+        "label": "Knowledge Base",
+        "inputSchema": {
+          "query": {
+            "type": "string",
+            "description": "User query to search in knowledge bases exactly as it is",
+            "required": true
+          }
+        },
+        "outputSchema": {
+          "output": {
+            "type": "string",
+            "description": "Search results from knowledge bases",
+            "required": true
+          }
+        }
+      },
+      "width": 400,
+      "height": 501,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 155.82607545415817,
+        "y": 374.7839566870696
+      },
+      "dragging": false
+    },
+    {
+      "id": "6d7b8ccf-81f7-437f-94a3-7ec4f1aff371",
+      "type": "templateNode",
+      "position": {
+        "x": 101.6380757703962,
+        "y": -145.76836243493756
+      },
+      "data": {
+        "name": "Prompt Template",
+        "template": "You are my AI assistent!",
+        "handlers": [
+          {
+            "id": "output_prompt",
+            "type": "source",
+            "compatibility": "text",
+            "position": "right"
+          }
+        ],
+        "label": "Prompt Template"
+      },
+      "width": 400,
+      "height": 159,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 101.6380757703962,
+        "y": -145.76836243493756
+      },
+      "dragging": false
+    },
+    {
+      "id": "ae3cd164-88fe-4841-a2a5-59466bf1a207",
+      "type": "agentNode",
+      "position": {
+        "x": 619.207716916475,
+        "y": -27.044153804873517
+      },
+      "data": {
+        "name": "Agent",
+        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
+        "outputFormat": "string",
+        "agentType": "ToolSelector",
+        "memory": false,
+        "handlers": [
+          {
+            "id": "input_system_prompt",
+            "type": "target",
+            "compatibility": "text",
+            "position": "left"
+          },
+          {
+            "id": "input_prompt",
+            "type": "target",
+            "compatibility": "text",
+            "position": "left"
+          },
+          {
+            "id": "input_tools_reference",
+            "type": "target",
+            "compatibility": "tools",
+            "position": "bottom"
+          },
+          {
+            "id": "output_message",
+            "type": "source",
+            "compatibility": "text",
+            "position": "right"
+          }
+        ],
+        "label": "Agent"
+      },
+      "width": 320,
+      "height": 466,
+      "selected": false,
+      "positionAbsolute": {
+        "x": 619.207716916475,
+        "y": -27.044153804873517
+      },
+      "dragging": false
+    },
+    {
+      "id": "46a5bbb5-b1eb-444e-977c-bcca7cb2f34c",
+      "type": "slackMessageNode",
+      "position": {
+        "x": 1015.1010999399423,
+        "y": 101.25068399562038
+      },
+      "data": {
+        "name": "Slack Message",
+        "message": "",
+        "channel": "",
+        "token": "",
+        "handlers": [
+          {
+            "id": "input_message",
+            "type": "target",
+            "compatibility": "text",
+            "position": "left"
+          }
+        ],
+        "label": "Slack Message",
+        "inputSchema": {
+          "text": {
+            "type": "string",
+            "required": true
+          }
+        },
+        "outputSchema": {
+          "status": {
+            "type": "number",
+            "required": true
+          },
+          "data": {
+            "type": "any",
+            "required": true
+          }
+        }
+      },
+      "width": 400,
+      "height": 237,
+      "selected": true,
+      "positionAbsolute": {
+        "x": 1015.1010999399423,
+        "y": 101.25068399562038
+      },
+      "dragging": false
+    }
+  ],
+  "edges": [
+    {
+      "source": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "sourceHandle": "output_message",
+      "target": "ae3cd164-88fe-4841-a2a5-59466bf1a207",
+      "targetHandle": "input_prompt",
+      "id": "reactflow__edge-47393298-ecd5-496c-9bd4-d4dc963e23d6output_message-ae3cd164-88fe-4841-a2a5-59466bf1a207input_prompt"
+    },
+    {
+      "source": "6d7b8ccf-81f7-437f-94a3-7ec4f1aff371",
+      "sourceHandle": "output_prompt",
+      "target": "ae3cd164-88fe-4841-a2a5-59466bf1a207",
+      "targetHandle": "input_system_prompt",
+      "id": "reactflow__edge-6d7b8ccf-81f7-437f-94a3-7ec4f1aff371output_prompt-ae3cd164-88fe-4841-a2a5-59466bf1a207input_system_prompt"
+    },
+    {
+      "source": "9d071b61-168a-4adf-9979-08f370e4ac26",
+      "sourceHandle": "output_tool_reference",
+      "target": "ae3cd164-88fe-4841-a2a5-59466bf1a207",
+      "targetHandle": "input_tools_reference",
+      "id": "reactflow__edge-9d071b61-168a-4adf-9979-08f370e4ac26output_tool_reference-ae3cd164-88fe-4841-a2a5-59466bf1a207input_tools_reference"
+    },
+    {
+      "source": "ae3cd164-88fe-4841-a2a5-59466bf1a207",
+      "sourceHandle": "output_message",
+      "target": "46a5bbb5-b1eb-444e-977c-bcca7cb2f34c",
+      "targetHandle": "input_message",
+      "id": "reactflow__edge-ae3cd164-88fe-4841-a2a5-59466bf1a207output_message-46a5bbb5-b1eb-444e-977c-bcca7cb2f34cinput_message"
+    }
+  ],
+  "user_id": null,
+  "version": "1.0",
+  "id": "0197a216-88ad-7c8c-9bf4-ec89ccc0daf0"
+}

@@ -1,3 +1,5 @@
+import os
+import sys
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -8,12 +10,25 @@ from app.core.config.settings import settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
+
+if "revision" in sys.argv and os.getenv("MY_PROJECT_RUN_ALEMBIC") != "1":
+    sys.exit(
+        "ERROR: Do not run Alembic directly to generate a migration file with the revision command. "
+        "Use the project's migration script instead inside scripts folder. (for more info read alembic/readme)"
+    )
+
+
 config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+if (
+    config.config_file_name
+    and context.config.attributes.get("configure_logger", True)
+    and os.getenv("ALEMBIC_SKIP_FILECONFIG") != "1"
+):
+    # don't blow away your Loguru/stdlib handlers
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -26,8 +41,10 @@ target_metadata = Base.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
-# Load DB URL from environment variable
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)
+# Load DB URL from environment variable if not already set
+# This allows run_migrations_for_database to set a custom URL for tenant databases
+if not config.get_main_option("sqlalchemy.url") or config.get_main_option("sqlalchemy.url") == "driver://user:pass@localhost/dbname":
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)
 
 
 def run_migrations_offline() -> None:
@@ -44,12 +61,12 @@ def run_migrations_offline() -> None:
     """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
-            url=url,
-            target_metadata=target_metadata,
-            literal_binds=True,
-            dialect_opts={"paramstyle": "named"},
-            compare_type=True
-            )
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+        compare_type=True
+    )
 
     with context.begin_transaction():
         context.run_migrations()
@@ -63,16 +80,16 @@ def run_migrations_online() -> None:
 
     """
     connectable = engine_from_config(
-            config.get_section(config.config_ini_section, {}),
-            prefix="sqlalchemy.",
-            poolclass=pool.NullPool,
-            )
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
 
     with connectable.connect() as connection:
         context.configure(
-                connection=connection, target_metadata=target_metadata,
-                compare_type=True
-                )
+            connection=connection, target_metadata=target_metadata,
+            compare_type=True
+        )
 
         with context.begin_transaction():
             context.run_migrations()

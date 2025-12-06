@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.schemas.llm import LlmAnalyst, LlmAnalystCreate, LlmAnalystUpdate
@@ -14,7 +15,7 @@ router = APIRouter()
     Depends(auth),
     Depends(permissions("read:llm_analyst"))
 ])
-async def get_all(service: LlmAnalystService = Depends()):
+async def get_all(service: LlmAnalystService = Injected(LlmAnalystService)):
     return await service.get_all()
 
 
@@ -22,7 +23,7 @@ async def get_all(service: LlmAnalystService = Depends()):
     Depends(auth),
     Depends(permissions("read:llm_analyst"))
 ])
-async def get(llm_analyst_id: UUID, service: LlmAnalystService = Depends()):
+async def get(llm_analyst_id: UUID, service: LlmAnalystService = Injected(LlmAnalystService)):
     return await service.get_by_id(llm_analyst_id)
 
 
@@ -30,7 +31,7 @@ async def get(llm_analyst_id: UUID, service: LlmAnalystService = Depends()):
     Depends(auth),
     Depends(permissions("create:llm_analyst"))
 ])
-async def create(data: LlmAnalystCreate, service: LlmAnalystService = Depends()):
+async def create(data: LlmAnalystCreate, service: LlmAnalystService = Injected(LlmAnalystService)):
     return await service.create(data)
 
 
@@ -38,7 +39,7 @@ async def create(data: LlmAnalystCreate, service: LlmAnalystService = Depends())
     Depends(auth),
     Depends(permissions("update:llm_analyst"))
 ])
-async def update(llm_analyst_id: UUID, data: LlmAnalystUpdate, service: LlmAnalystService = Depends()):
+async def update(llm_analyst_id: UUID, data: LlmAnalystUpdate, service: LlmAnalystService = Injected(LlmAnalystService)):
     return await service.update(llm_analyst_id, data)
 
 
@@ -46,5 +47,5 @@ async def update(llm_analyst_id: UUID, data: LlmAnalystUpdate, service: LlmAnaly
     Depends(auth),
     Depends(permissions("delete:llm_analyst"))
 ])
-async def delete(llm_analyst_id: UUID, service: LlmAnalystService = Depends()):
+async def delete(llm_analyst_id: UUID, service: LlmAnalystService = Injected(LlmAnalystService)):
     return await service.delete(llm_analyst_id)

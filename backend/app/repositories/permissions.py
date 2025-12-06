@@ -1,62 +1,49 @@
-from fastapi import Depends
+from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.db.session import get_db
-from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.exception_classes import AppException
-
+from typing import Optional
 from uuid import UUID
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
+from app.repositories.db_repository import DbRepository
 from app.schemas.permission import PermissionCreate, PermissionUpdate
 from app.db.models.permission import PermissionModel
-class PermissionsRepository:
+
+
+@inject
+class PermissionsRepository(DbRepository[PermissionModel]):
     """
     Repository for Permission-related database operations.
     """
 
-    def __init__(self, db: AsyncSession = Depends(get_db)):
-        self.db = db
+    def __init__(self, db: AsyncSession):
+        super().__init__(PermissionModel, db)
 
-    async def create(self, data: PermissionCreate) -> PermissionModel:
+    async def create_permission(self, data: PermissionCreate) -> PermissionModel:
         """
         Creates a new Permission in the database.
-        Raises an exception if a duplicate name is detected, or handle it as you see fit.
+        Raises an exception if a duplicate name is detected.
         """
-        # (Optional) check if permission name already exists
+        # Check if permission name already exists
         existing_perm = await self._get_by_name(data.name)
         if existing_perm:
-           raise AppException(ErrorKey.PERMISSION_ALREADY_EXISTS)
+            raise AppException(ErrorKey.PERMISSION_ALREADY_EXISTS)
 
         new_permission = PermissionModel(
             name=data.name,
             is_active=data.is_active,
-
             description=data.description,
         )
-        self.db.add(new_permission)
-        await self.db.flush()
-        await self.db.commit()
-        await self.db.refresh(new_permission)
-        return new_permission
+        # Use the base class create method
+        return await self.create(new_permission)
 
-    async def get_by_id(self, permission_id: UUID) -> PermissionModel:
-        result = await self.db.execute(
-            select(PermissionModel)
-            .where(PermissionModel.id == permission_id)
-        )
-        return result.scalars().first()
-
-    async def get_all(self) -> list[PermissionModel]:
-        result = await self.db.execute(select(PermissionModel))
-        return result.scalars().all()
-
-    async def delete(self, permission: PermissionModel):
-        await self.db.delete(permission)
-        await self.db.commit()
-
-    async def update(
+    async def update_permission(
         self, permission_id: UUID, data: PermissionUpdate
-    ) -> PermissionModel:
+    ) -> Optional[PermissionModel]:
+        """
+        Updates an existing permission.
+        """
         permission = await self.get_by_id(permission_id)
         if not permission:
             return None
@@ -68,12 +55,13 @@ class PermissionsRepository:
         if data.description is not None:
             permission.description = data.description
 
-        self.db.add(permission)
-        await self.db.commit()
-        await self.db.refresh(permission)
-        return permission
+        # Use the base class update method
+        return await self.update(permission)
 
-    async def _get_by_name(self, name: str) -> PermissionModel:
+    async def _get_by_name(self, name: str) -> Optional[PermissionModel]:
+        """
+        Internal helper to find a permission by name.
+        """
         result = await self.db.execute(
             select(PermissionModel).where(PermissionModel.name == name)
         )

@@ -1,6 +1,8 @@
 from typing import List
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
+from fastapi_injector import Injected
+
 from app.auth.dependencies import auth, permissions
 from app.schemas.audit_log import AuditLogRead, AuditLogSearchParams
 from app.services.audit_logs import AuditLogService
@@ -8,10 +10,12 @@ from datetime import datetime
 
 router = APIRouter()
 
-@router.get("/search", response_model=List[AuditLogRead], dependencies=[
-    Depends(auth),
-    Depends(permissions("read:audit_log"))
-])
+
+@router.get(
+    "/search",
+    response_model=List[AuditLogRead],
+    dependencies=[Depends(auth), Depends(permissions("read:audit_log"))],
+)
 async def search(
     start_date: datetime = Query(None),
     end_date: datetime = Query(None),
@@ -19,9 +23,9 @@ async def search(
     table_name: str = Query(None),
     entity_id: UUID = Query(None),
     modified_by: UUID = Query(None),
-    limit:  int | None = Query(None, ge=1, le=500),
+    limit: int | None = Query(None, ge=1, le=500),
     offset: int | None = Query(None, ge=0),
-    service: AuditLogService = Depends()
+    service: AuditLogService = Injected(AuditLogService),
 ):
     """
     Search audit logs with optional filters:
@@ -39,7 +43,7 @@ async def search(
         table_name=table_name,
         entity_id=entity_id,
         modified_by=modified_by,
-        limit  = limit,
-        offset = offset,
+        limit=limit,
+        offset=offset,
     )
     return await service.search_audit_logs(search_params)

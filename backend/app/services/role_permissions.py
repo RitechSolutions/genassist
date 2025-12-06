@@ -1,4 +1,5 @@
 from fastapi import Depends
+from injector import inject
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -7,6 +8,7 @@ from app.schemas.role_permission import RolePermissionCreate, RolePermissionUpda
 from app.repositories.role_permissions import RolePermissionsRepository
 from uuid import UUID
 
+@inject
 class RolePermissionsService:
     """
     Handles RolePermission-related business logic.
@@ -14,7 +16,7 @@ class RolePermissionsService:
 
     def __init__(
         self,
-        repository: RolePermissionsRepository = Depends()
+        repository: RolePermissionsRepository
     ):
         self.repository = repository
 

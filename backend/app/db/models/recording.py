@@ -11,6 +11,8 @@ class RecordingModel(Base):
     )
 
     file_path: Mapped[str] = mapped_column(String(1024))
+    original_filename: Mapped[str] = mapped_column(String(1024))
+
 
     data_source_id: Mapped[Optional[UUID]]  = mapped_column(UUID)
     operator_id: Mapped[UUID] = mapped_column(UUID)

@@ -21,8 +21,18 @@ from .agent import AgentModel
 from .tool import ToolModel
 from .knowledge_base import KnowledgeBaseModel
 from .workflow import WorkflowModel
-
-
+from .ml_model import MLModel
+from .ml_model_pipeline import (
+    MLModelPipelineConfig,
+    MLModelPipelineRun,
+    MLModelPipelineArtifact,
+    PipelineRunStatus,
+    ArtifactType
+)
+from .tenant import TenantModel
+from .fine_tuning import FineTuningJobModel, OpenAIFileModel, FineTuningEventModel
+from .app_settings import AppSettingsModel
+from .webhook import WebhookModel
 __all__ = [
     # Primary model class names
     "OperatorModel",
@@ -50,7 +60,19 @@ __all__ = [
     "KnowledgeBaseModel",
     "AgentModel",
     "WorkflowModel",
-    ]
+    "MLModel",
+    "MLModelPipelineConfig",
+    "MLModelPipelineRun",
+    "MLModelPipelineArtifact",
+    "PipelineRunStatus",
+    "ArtifactType",
+    "TenantModel",
+    "OpenAIFileModel",
+    "FineTuningJobModel",
+    "AppSettingsModel",
+    "WebhookModel",
+    "FineTuningEventModel"
+]
 
 models = [
     ConversationModel,
@@ -76,6 +98,13 @@ models = [
     KnowledgeBaseModel,
     AgentModel,
     WorkflowModel,
-    ]
+    MLModel,
+    MLModelPipelineConfig,
+    MLModelPipelineRun,
+    MLModelPipelineArtifact,
+    TenantModel,
+    AppSettingsModel,
+    FineTuningEventModel
+]
 
 auto_register_updated_by(models)

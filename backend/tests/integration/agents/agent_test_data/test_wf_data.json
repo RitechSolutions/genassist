@@ -1,0 +1,196 @@
+{
+    "name": "Contract agent Workflow",
+    "description": "Default workflow for Contract agent",
+    "nodes": [
+        {
+            "id": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+            "data": {
+                "name": "Chat Input",
+                "label": "Chat Input",
+                "handlers": [
+                    {
+                        "id": "output_message",
+                        "type": "source",
+                        "position": "right",
+                        "compatibility": "text"
+                    }
+                ],
+                "inputSchema": {
+                    "message": {
+                        "type": "string",
+                        "required": false,
+                        "description": "The message to send to the LLM"
+                    }
+                }
+            },
+            "type": "chatInputNode",
+            "width": 300,
+            "height": 209,
+            "position": {
+                "x": 81.65653220098523,
+                "y": 253.38376194958948
+            }
+        },
+        {
+            "id": "b73f8249-5811-40d8-b448-240b86c6c288",
+            "data": {
+                "name": "Chat Output",
+                "label": "Chat Output",
+                "handlers": [
+                    {
+                        "id": "input_message",
+                        "type": "target",
+                        "position": "left",
+                        "compatibility": "text"
+                    }
+                ]
+            },
+            "type": "chatOutputNode",
+            "width": 300,
+            "height": 155,
+            "dragging": false,
+            "position": {
+                "x": 1421.283752237165,
+                "y": 253.39783185667665
+            },
+            "selected": false
+        },
+        {
+            "id": "7d4a70d6-c217-4110-8201-fa65fa91ccae",
+            "data": {
+                "name": "Agent",
+                "label": "Agent",
+                "memory": false,
+                "handlers": [
+                    {
+                        "id": "input_system_prompt",
+                        "type": "target",
+                        "position": "left",
+                        "compatibility": "text"
+                    },
+                    {
+                        "id": "input_prompt",
+                        "type": "target",
+                        "position": "left",
+                        "compatibility": "text"
+                    },
+                    {
+                        "id": "input_tools_reference",
+                        "type": "target",
+                        "position": "bottom",
+                        "compatibility": "tools"
+                    },
+                    {
+                        "id": "output_message",
+                        "type": "source",
+                        "position": "right",
+                        "compatibility": "text"
+                    }
+                ],
+                "agentType": "ToolSelector",
+                "outputFormat": "string"
+            },
+            "type": "agentNode",
+            "width": 320,
+            "height": 512,
+            "dragging": false,
+            "position": {
+                "x": 673.9420914939574,
+                "y": 83.33005734636892
+            },
+            "selected": false,
+            "positionAbsolute": {
+                "x": 673.9420914939574,
+                "y": 83.33005734636892
+            }
+        },
+        {
+            "id": "9378a942-049a-4d51-a239-871d2a7820b9",
+            "data": {
+                "name": "Knowledge Base",
+                "label": "Knowledge Base",
+                "handlers": [
+                    {
+                        "id": "input_parameters",
+                        "type": "target",
+                        "position": "left",
+                        "compatibility": "json"
+                    },
+                    {
+                        "id": "output_tool_reference",
+                        "type": "source",
+                        "position": "top",
+                        "compatibility": "tools"
+                    },
+                    {
+                        "id": "output_result",
+                        "type": "source",
+                        "position": "right",
+                        "compatibility": "json"
+                    }
+                ],
+                "description": "Information about contracts",
+                "inputSchema": {
+                    "query": {
+                        "type": "string",
+                        "required": true,
+                        "description": "User query to search in knowledge bases exactly as it is"
+                    }
+                },
+                "outputSchema": {
+                    "output": {
+                        "type": "string",
+                        "required": true,
+                        "description": "Search results from knowledge bases"
+                    }
+                },
+                "selectedBases": [
+                    "f7a0fe33-100a-4fdf-a836-8d1dbbc42370"
+                ]
+            },
+            "type": "knowledgeBaseNode",
+            "width": 400,
+            "height": 543,
+            "dragging": false,
+            "position": {
+                "x": 205.11351339790542,
+                "y": 678.563708692148
+            },
+            "selected": true,
+            "positionAbsolute": {
+                "x": 205.11351339790542,
+                "y": 678.563708692148
+            }
+        }
+    ],
+    "edges": [
+        {
+            "id": "reactflow__edge-47393298-ecd5-496c-9bd4-d4dc963e23d6output_message-7d4a70d6-c217-4110-8201-fa65fa91ccaeinput_system_prompt",
+            "source": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+            "target": "7d4a70d6-c217-4110-8201-fa65fa91ccae",
+            "sourceHandle": "output_message",
+            "targetHandle": "input_system_prompt"
+        },
+        {
+            "id": "reactflow__edge-7d4a70d6-c217-4110-8201-fa65fa91ccaeoutput_message-b73f8249-5811-40d8-b448-240b86c6c288input_message",
+            "source": "7d4a70d6-c217-4110-8201-fa65fa91ccae",
+            "target": "b73f8249-5811-40d8-b448-240b86c6c288",
+            "sourceHandle": "output_message",
+            "targetHandle": "input_message"
+        },
+        {
+            "id": "reactflow__edge-9378a942-049a-4d51-a239-871d2a7820b9output_tool_reference-7d4a70d6-c217-4110-8201-fa65fa91ccaeinput_tools_reference",
+            "source": "9378a942-049a-4d51-a239-871d2a7820b9",
+            "target": "7d4a70d6-c217-4110-8201-fa65fa91ccae",
+            "sourceHandle": "output_tool_reference",
+            "targetHandle": "input_tools_reference"
+        }
+    ],
+    "testInput": null,
+    "user_id": "00000196-1b89-8e8e-905c-0eefdb9008f1",
+    "version": "1.0",
+    "agent_id": "0197f3a0-0bc1-79cb-8616-4d3229881421",
+    "id": "0197f3a0-0bbc-77b7-ad21-99495ee9d03e",
+    "created_at": "2025-07-10T09:17:21.724150Z",
+    "updated_at": "2025-07-10T09:19:44.504844Z"
+}
