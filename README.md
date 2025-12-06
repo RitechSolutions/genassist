@@ -5,9 +5,9 @@
 
 GenAssist is an AI-powered platform for managing and leveraging various AI workflows, with a focus on conversation management, analytics, and agent-based interactions.
 
-Documentation: https://docs.genassist.ritech.io/docs/introduction
+Documentation: https://docs.genassist.ai/docs/introduction/
 
-How-to Videos: https://docs.genassist.ritech.io/docs/workflows/
+How-to Videos: https://docs.genassist.ai/docs/workflows/
 
 ## Overview
 
@@ -54,8 +54,6 @@ Create a ./frontend/.env environment file based on ./frontend/.env.example
 Create a ./backend/.env environment file based on ./backend/.env.example
 
 ### Build containers from source
-```bash
-#BUILD Docker Image
 docker compose -f docker-compose.dev.yml -p genassist_dev build app
 
 #RUN
