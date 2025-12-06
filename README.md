@@ -51,14 +51,17 @@ cd genassist
 ## Docker Containers
 ### Prepare .env files
 Create a ./frontend/.env environment file based on ./frontend/.env.example
-Create a /backend/.env environment file based on ./backend/.env.example
+Create a ./backend/.env environment file based on ./backend/.env.example
 
 ### Build containers from source
 ```bash
+#BUILD Docker Image
+docker compose -f docker-compose.dev.yml -p genassist_dev build app
+
 #RUN
-docker compose -e ENV=dev -f docker-compose.dev.yml -p genassist_dev up --build -d
+docker compose -f docker-compose.dev.yml -p genassist_dev up --build -d
 #STOP
-docker compose -e ENV=dev -f docker-compose.dev.yml -p genassist_dev down
+docker compose -f docker-compose.dev.yml -p genassist_dev down
 ```
 
 ### Use container registry
