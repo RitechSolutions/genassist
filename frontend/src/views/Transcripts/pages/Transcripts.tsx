@@ -39,10 +39,6 @@ import { PaginationBar } from "@/components/PaginationBar";
 
 const ITEMS_PER_PAGE = 10;
 
-// Hostility constants
-const HOSTILITY_POSITIVE_MAX = 20;
-const HOSTILITY_NEUTRAL_MAX = 49;
-
 const Transcripts = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -73,27 +69,6 @@ const Transcripts = () => {
   const { data, total, loading, error, refetch } = useTranscriptData({ 
     limit: ITEMS_PER_PAGE,
     skip: (currentPage - 1) * ITEMS_PER_PAGE,
-    sentiment: activeTab,
-    hostility_positive_max: hostilityParams.hostility_positive_max,
-    hostility_neutral_max: hostilityParams.hostility_neutral_max
-  });
-  
-  // Calculate skip for pagination
-  const skip = (currentPage - 1) * ITEMS_PER_PAGE;
-  
-  // Calculate hostility parameters based on sentiment
-  const getHostilityParams = (sentiment: string) => {
-    return { 
-      hostility_positive_max: HOSTILITY_POSITIVE_MAX, 
-      hostility_neutral_max: HOSTILITY_NEUTRAL_MAX 
-    };
-  };
-  
-  const hostilityParams = getHostilityParams(activeTab);
-  
-  const { data, loading, error, refetch } = useTranscriptData({ 
-    limit: ITEMS_PER_PAGE,
-    skip: skip,
     sentiment: activeTab,
     hostility_positive_max: hostilityParams.hostility_positive_max,
     hostility_neutral_max: hostilityParams.hostility_neutral_max
@@ -360,8 +335,8 @@ const Transcripts = () => {
                   <p className="text-center text-red-500 p-6">
                     Error loading transcripts. Please try again.
                   </p>
-                ) : filteredTranscripts.length > 0 ? (
-                  filteredTranscripts.map((transcript) => (
+                ) : paginatedTranscripts.length > 0 ? (
+                  paginatedTranscripts.map((transcript) => (
                     <div
                       key={transcript.id}
                       onClick={() => {

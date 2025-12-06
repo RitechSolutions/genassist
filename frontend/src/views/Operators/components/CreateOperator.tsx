@@ -18,10 +18,6 @@ type NewOperatorResponse = Operator & {
   user: { password?: string };
 };
 
-type NewOperatorResponse = Operator & {
-  user: { password?: string };
-};
-
 interface CreateOperatorProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;

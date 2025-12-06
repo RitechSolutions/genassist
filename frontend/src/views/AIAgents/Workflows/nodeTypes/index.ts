@@ -78,9 +78,6 @@ export const registerAllNodeTypes = () => {
 
   nodeRegistry.registerNodeType(SLACK_OUTPUT_NODE_DEFINITION);
 
-  // Register Whatsapp Message Output node
-  nodeRegistry.registerNodeType(WHATSAPP_OUTPUT_NODE_DEFINITION);
-
   nodeRegistry.registerNodeType(CHAT_OUTPUT_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(ZENDESK_TICKET_NODE_DEFINITION);

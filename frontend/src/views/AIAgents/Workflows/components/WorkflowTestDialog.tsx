@@ -105,6 +105,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       const missingRequired = Object.entries(inputSchema)
         .filter(([_, field]) => field.required)
         .some(([key]) => !testInput[key]?.trim());
+
       if (missingRequired) {
         setError("Please fill in all required fields");
         return;

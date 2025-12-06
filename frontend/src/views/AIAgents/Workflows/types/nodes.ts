@@ -130,34 +130,6 @@ export interface ReadMailsNodeData extends BaseNodeData {
   dataSourceId?: string; // ID of the data source to use for this node
 }
 
-export interface GmailNodeData extends BaseNodeData {
-  to: string; // recipient email address
-  cc?: string; // optional CC email addresses
-  bcc?: string; // optional BCC email addresses
-  body: string; // email body content
-  subject: string; // email subject line
-  attachments?: string[]; // optional list of attachment file paths or URLs
-  tags?: string[];
-  custom_fields?: Array<{ id: number; value: string | number }>;
-  dataSourceId: string; // ID of the data source to use for this node
-}
-
-export interface ReadMailsNodeData extends ToolBaseNodeData {
-  searchCriteria?: {
-    from?: string;
-    to?: string;
-    subject?: string;
-    has_attachment?: boolean;
-    is_unread?: boolean;
-    label?: string;
-    newer_than?: string;
-    older_than?: string;
-    custom_query?: string;
-    max_results?: number;
-  };
-  dataSourceId?: string; // ID of the data source to use for this node
-}
-
 // API Tool Node Data
 export interface APIToolNodeData extends BaseNodeData {
   endpoint: string;
@@ -289,8 +261,6 @@ export interface ThreadRAGNodeData extends BaseNodeData {
   // For add action
   message?: string;
 }
-
-
 
 // Union type for all node data types
 export type NodeData =

@@ -33,7 +33,6 @@ const DataMapperNode: React.FC<NodeProps<DataMapperNodeData>> = ({
       };
       data.updateNodeData(id, dataToUpdate);
     }
-    console.log("Data", data);
   };
 
   const getMappingPreview = () => {

@@ -43,15 +43,7 @@ const KnowledgeBaseNode: React.FC<NodeProps<KnowledgeBaseNodeData>> = ({
       };
       data.updateNodeData(id, dataToUpdate);
     }
-  }, [data.inputSchema, data.outputSchema]);
-
-  // Find the names of selected bases using the fetched list
-  const selectedBasesNames = availableBases
-    .filter((base) => data.selectedBases?.includes(base.id))
-    .map((base) => base.name)
-    .join(", ");
-
-  const displayValue = selectedBasesNames;
+  };
 
   // Find the names of selected bases using the fetched list
   const selectedBasesNames = availableBases

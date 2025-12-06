@@ -72,8 +72,7 @@
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^11.1.0",
     "vaul": "^0.9.3",
-    "zod": "^3.23.8",
-    "lodash": "^4.17.21"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",

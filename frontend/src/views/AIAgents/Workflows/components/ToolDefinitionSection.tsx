@@ -71,7 +71,7 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
   return (
     <div className="space-y-4 w-full min-w-0">
       <div className="space-y-2">
-        <Label htmlFor="name">Node Name</Label>
+        <Label htmlFor="name">Name</Label>
         <Input
           id="name"
           value={name}
@@ -82,7 +82,7 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="description">Node Description</Label>
+        <Label htmlFor="description">Description</Label>
         <Input
           id="description"
           value={description}

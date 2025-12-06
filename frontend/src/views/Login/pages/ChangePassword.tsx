@@ -80,6 +80,7 @@ export default function ChangePassword() {
 
     try {
       const token = getAccessToken();
+
       if (!token) {
         toast.error("Authentication token not found. Please log in again.");
         navigate("/login");

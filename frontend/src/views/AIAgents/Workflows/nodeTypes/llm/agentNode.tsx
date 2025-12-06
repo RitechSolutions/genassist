@@ -74,18 +74,6 @@ const AgentNode: React.FC<NodeProps<AgentNodeData>> = ({
     setAvailableTools(tools);
   }, [nodes, edges, id]);
 
-  useEffect(() => {
-    if (data.providerId) {
-      getLLMProvider(data.providerId).then((provider) => {
-        if (provider) {
-          setProviderName(
-            `${provider.name} (${provider.llm_model_provider} - ${provider.llm_model})`
-          );
-        }
-      });
-    }
-  }, [data.providerId]);
-
   // Get available tools from connected nodes
   const getAvailableTools = useCallback(() => {
     return availableTools;
