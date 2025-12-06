@@ -1,4 +1,4 @@
-FROM python:3.10-slim AS builder
+FROM python:3.10-slim-bookworm AS builder
 WORKDIR /src
 
 COPY packages.txt /src/packages.txt
@@ -13,7 +13,7 @@ RUN apt-get update && \
 COPY ./requirements-main.txt /src/requirements-main.txt
 RUN pip install --no-cache-dir -r /src/requirements-main.txt
 
-FROM python:3.10-slim
+FROM python:3.10-slim-bookworm
 WORKDIR /src
 
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
