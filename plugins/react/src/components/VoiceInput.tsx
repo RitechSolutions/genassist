@@ -1,5 +1,6 @@
 import React from 'react';
-import { Mic, Loader2 } from 'lucide-react';
+import { Mic } from 'lucide-react';
+import { Spinner } from './Spinner';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 
 interface VoiceInputProps {
@@ -35,18 +36,8 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
   };
 
   const getButtonContent = () => {
-    if (isLoading) {
-      return (
-        <Loader2 
-          size={20} 
-          color="#757575" 
-          style={{
-            animation: 'spin 1s linear infinite',
-          }}
-        />
-      );
-    }
-    return <Mic size={20} color={isRecording ? '#ff0000' : '#757575'} />;
+    if (isLoading) return <Spinner size={18} color="#ffffff" />;
+    return <Mic size={18} color="#ffffff" />;
   };
 
   const getTitle = () => {
@@ -54,13 +45,15 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
     return isRecording ? 'Stop Recording' : 'Start Recording';
   };
 
+  const idleBg = theme?.primaryColor || '#2962FF';
+  const activeBg = '#FF3B30'; // red when recording
   const buttonStyle: React.CSSProperties = {
-    backgroundColor: '#ffffff',
-    color: isRecording ? '#ff0000' : '#757575',
+    backgroundColor: isRecording ? activeBg : idleBg,
+    color: '#ffffff',
     border: 'none',
-    borderRadius: '8px',
-    width: '48px',
-    height: '48px',
+    borderRadius: '50%',
+    width: '36px',
+    height: '36px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -68,8 +61,8 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
     outline: 'none',
     transition: 'all 0.2s ease',
     flexShrink: 0,
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-    opacity: isLoading ? 0.7 : 1,
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
+    opacity: isLoading ? 0.9 : 1,
   };
 
   // Keyframe animation for the spinner
@@ -86,7 +79,6 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
 
   return (
     <>
-      <style>{spinKeyframes}</style>
       <button
         type="button"
         style={buttonStyle}
@@ -98,4 +90,4 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
       </button>
     </>
   );
-}; 
+};

@@ -1,48 +1,109 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { ChatMessageComponent } from './ChatMessage';
+import { ChatMessageComponent, AttachmentPreview } from './ChatMessage';
 import { useChat } from '../hooks/useChat';
 import { ChatMessage, GenAgentChatProps } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
 import { Send, Paperclip, MoreVertical, RefreshCw } from 'lucide-react';
-import chatLogo from '../../assets/chat-logo.png';
+import { ChatBubble } from './ChatBubble';
+import chatLogo from '../assets/chat-logo.png';
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
   apiKey,
-  userData,
+  tenant,
+  metadata,
   onError,
   onTakeover,
   onFinalize,
   theme,
   headerTitle = 'Genassist',
-  placeholder = 'Ask a question'
-}) => {
+  placeholder = 'Ask a question',
+  mode = 'embedded',
+  floatingConfig = {}
+}): React.ReactElement => {
   const [inputValue, setInputValue] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [isFloatingOpen, setIsFloatingOpen] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
   const menuRef = useRef<HTMLDivElement>(null);
-  const { 
-    messages, 
-    isLoading, 
-    sendMessage, 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(56);
+  const [showBacklight, setShowBacklight] = useState(false);
+
+  // default thinking messages if none provided by workflow
+  const DEFAULT_THINKING_MESSAGES = [
+    "Thinking…",
+    "Analyzing your question…",
+    "Searching knowledge…",
+    "Pulling relevant info…",
+    "Drafting the answer…",
+    "Double‑checking details…",
+    "Tying it together…",
+    "Almost there…",
+  ];
+  const [currentThinkingParts, setCurrentThinkingParts] = useState<string[]>([]);
+  const [currentThinkingPartIndex, setCurrentThinkingPartIndex] = useState(0);
+  const {
+    messages,
+    isLoading,
+    sendMessage,
+    uploadFile,
     resetConversation,
     startConversation,
-    connectionState, 
+    connectionState,
     conversationId,
     possibleQueries,
-    isTakenOver,
-    isFinalized
+    isFinalized,
+    isAgentTyping,
+    addFeedback,
+    welcomeTitle,
+    welcomeImageUrl,
+    welcomeMessage,
+    thinkingPhrases,
+    thinkingDelayMs,
   } = useChat({
     baseUrl,
     apiKey,
+    tenant,
+    metadata,
     onError,
     onTakeover,
     onFinalize
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioService = useRef<AudioService | null>(null);
+  const hasAnchoredHistory = useRef(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  const anchorHistory = () => {
+    const el = chatContainerRef.current;
+    if (!el || !messages.length || hasAnchoredHistory.current) return;
+    if (el.clientHeight === 0) return; // hidden, wait for visibility/size
+    el.scrollTop = el.scrollHeight;
+    hasAnchoredHistory.current = true;
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    const container = chatContainerRef.current;
+    const el = messagesEndRef.current;
+    if (!container || !el) return;
+    const doScroll = () => {
+      container.scrollTo({ top: container.scrollHeight, behavior });
+    };
+    if (behavior === 'auto') {
+      doScroll();
+    } else {
+      requestAnimationFrame(doScroll);
+    }
+  };
+
+  const hasUserMessages = messages.some(message => message.speaker === 'customer');
 
   const hasUserMessages = messages.some(message => message.speaker === 'customer');
 
@@ -50,46 +111,154 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     audioService.current = new AudioService({ baseUrl, apiKey });
   }, [baseUrl, apiKey]);
 
-  // Auto-scroll to the latest message
   useLayoutEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (!messages.length) return;
+    if (hasAnchoredHistory.current) {
+      scrollToBottom('smooth');
+    } else {
+      anchorHistory();
     }
   }, [messages]);
 
-  // Close menu when clicking outside
-  // useEffect(() => {
-  //   const handleClickOutside = (event: MouseEvent) => {
-  //     if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-  //       setShowMenu(false);
-  //     }
-  //   };
+  useLayoutEffect(() => {
+    if (!isAgentTyping) return;
+    scrollToBottom('auto');
+  }, [isAgentTyping, currentThinkingPartIndex, currentThinkingParts.length]);
 
-  //   document.addEventListener('mousedown', handleClickOutside);
-  //   return () => {
-  //     document.removeEventListener('mousedown', handleClickOutside);
-  //   };
-  // }, []);
+  useEffect(() => {
+    hasAnchoredHistory.current = false;
+  }, [conversationId]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (inputValue.trim() === '' || isLoading) return;
+  useEffect(() => {
+    if (!messages.length) return;
+    const el = chatContainerRef.current;
+    if (!el) return;
 
+    // Observe size/visibility changes to anchor chat view.
+    const resizeObserver = new ResizeObserver(() => {
+      anchorHistory();
+    });
+    resizeObserver.observe(el);
+
+    anchorHistory();
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [messages]);
+
+  useLayoutEffect(() => {
+    const updateHeaderHeight = () => {
+      setHeaderHeight(headerRef.current?.offsetHeight || 56);
+    };
+    updateHeaderHeight();
+    const resizeObserver = new ResizeObserver(() => updateHeaderHeight());
+    if (headerRef.current) {
+      resizeObserver.observe(headerRef.current);
+    }
+    window.addEventListener('resize', updateHeaderHeight);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateHeaderHeight);
+    };
+  }, []);
+
+  // Smoothly show/hide the backlight while the agent is typing
+  useEffect(() => {
+    if (isAgentTyping) {
+      setShowBacklight(true);
+      return;
+    }
+    const t = setTimeout(() => setShowBacklight(false), 420); // allow fade-out
+    return () => clearTimeout(t);
+  }, [isAgentTyping]);
+
+  // Show "thinking" phrases while agent is typing
+  useEffect(() => {
+    if (!isAgentTyping) {
+      setCurrentThinkingParts([]);
+      setCurrentThinkingPartIndex(0);
+      return;
+    }
+
+    // Randomly select a phrase from the list
+    const list = (thinkingPhrases && thinkingPhrases.length > 0) ? thinkingPhrases : DEFAULT_THINKING_MESSAGES;
+    const randomIndex = Math.floor(Math.random() * list.length);
+    const selectedPhrase = list[randomIndex];
+
+    // Split by | to get parts, or use the phrase as a single part if no | found
+    const parts = selectedPhrase.includes('|') 
+      ? selectedPhrase.split('|').map(part => part.trim()).filter(part => part.length > 0)
+      : [selectedPhrase.trim()];
+
+    // Initialize with first part
+    setCurrentThinkingParts(parts);
+    setCurrentThinkingPartIndex(0);
+
+    // If there's only one part, no need to progress
+    if (parts.length <= 1) return;
+
+    // Progress through parts with delay, but stop at the last one
+    const rotDelay = Math.max(250, thinkingDelayMs || 1000);
+    const timeoutIds: ReturnType<typeof setTimeout>[] = [];
+
+    // Set up timeouts for each part transition
+    for (let i = 1; i < parts.length; i++) {
+      const timeoutId = setTimeout(() => {
+        setCurrentThinkingPartIndex(i);
+      }, rotDelay * i);
+      timeoutIds.push(timeoutId);
+    }
+
+    return () => {
+      timeoutIds.forEach(id => clearTimeout(id));
+    };
+  }, [isAgentTyping, thinkingPhrases, thinkingDelayMs]);
+
+  const submitMessage = async () => {
+    if (inputValue.trim() === '' && attachments.length === 0) return;
+    const textToSend = inputValue;
+    const filesToUpload = [...attachments];
+    setInputValue('');
+    setAttachments([]);
     try {
-      setInputValue('');
-      await sendMessage(inputValue);
+      await sendMessage(textToSend, filesToUpload);
     } catch (error) {
-      console.error('Error sending message:', error);
+      // ignore
     }
   };
 
-  const handleVoiceTranscription = async (text: string) => {
-    if (text.trim() === '') return;
-    setInputValue(text);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitMessage();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      setAttachments(prev => [...prev, ...newFiles]);
+
+      const newUploadingFiles = new Set(uploadingFiles);
+      newFiles.forEach(file => newUploadingFiles.add(file.name));
+      setUploadingFiles(newUploadingFiles);
+
+      try {
+        await Promise.all(newFiles.map(file => uploadFile(file)));
+      } catch (error) {
+        // ignore
+      } finally {
+        const finalUploadingFiles = new Set(uploadingFiles);
+        newFiles.forEach(file => finalUploadingFiles.delete(file.name));
+        setUploadingFiles(finalUploadingFiles);
+      }
+    }
+  };
+
+  const handleRemoveAttachment = (fileName: string) => {
+    setAttachments(prev => prev.filter(f => f.name !== fileName));
   };
 
   const handleVoiceError = (error: Error) => {
-    console.error('Voice input error:', error);
     if (onError) {
       onError(error);
     }
@@ -103,7 +272,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       const audioBlob = await audioService.current.textToSpeech(text);
       await audioService.current.playAudio(audioBlob);
     } catch (error) {
-      console.error('Error playing audio:', error);
       if (onError) {
         onError(error as Error);
       }
@@ -118,7 +286,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     try {
       await sendMessage(query);
     } catch (error) {
-      console.error('Error sending quick query:', error);
+      // ignore
     }
   };
 
@@ -128,7 +296,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     try {
       await startConversation();
     } catch (error) {
-      console.error('Error starting conversation:', error);
+      // ignore
     }
   };
 
@@ -150,12 +318,19 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     setShowResetConfirm(false);
   };
 
-  // Extract theme colors or use defaults
   const primaryColor = theme?.primaryColor || '#2962FF';
   const backgroundColor = theme?.backgroundColor || '#ffffff';
   const textColor = theme?.textColor || '#000000';
   const fontFamily = theme?.fontFamily || 'Roboto, Arial, sans-serif';
   const fontSize = theme?.fontSize || '14px';
+  const fontSizeNumber = typeof fontSize === 'string' ? parseInt(fontSize, 10) : (typeof fontSize === 'number' ? fontSize : 14);
+  const lineHeightPx = Math.round(fontSizeNumber * 1.5);
+  const textAreaMaxHeight = lineHeightPx * 3; // up to 3 lines
+
+  const position = floatingConfig.position || 'bottom-right';
+  const offset = floatingConfig.offset || { x: 20, y: 20 };
+  const offsetX = offset.x || 20;
+  const offsetY = offset.y || 20;
 
   const containerStyle: React.CSSProperties = {
     display: 'flex',
@@ -165,29 +340,31 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     width: '100%',
     maxWidth: '400px',
     border: '1px solid #e0e0e0',
-    borderRadius: '8px',
+    borderRadius: '32px',
     overflow: 'hidden',
-    backgroundColor,
+    backgroundColor: theme?.secondaryColor || '#f5f5f5',
     fontFamily,
-    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
+    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
     position: 'relative'
   };
 
   const headerStyle: React.CSSProperties = {
     padding: '15px',
-    backgroundColor: primaryColor,
-    color: '#ffffff',
+    backgroundColor: theme?.secondaryColor || '#f5f5f5',
+    color: '#111111',
     fontWeight: 'bold',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    position: 'relative'
+    position: 'relative',
   };
 
   const logoContainerStyle: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px'
+    gap: '10px',
+    position: 'relative',
+    zIndex: 1,
   };
 
   const logoStyle: React.CSSProperties = {
@@ -216,7 +393,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const menuButtonStyle: React.CSSProperties = {
     backgroundColor: 'transparent',
-    color: '#ffffff',
+    color: '#111111',
     border: 'none',
     borderRadius: '50%',
     width: '32px',
@@ -226,6 +403,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     justifyContent: 'center',
     cursor: 'pointer',
     outline: 'none',
+    position: 'relative',
+    zIndex: 1,
   };
 
   const menuPopupStyle: React.CSSProperties = {
@@ -235,8 +414,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     backgroundColor: backgroundColor,
     borderRadius: '8px',
     boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
-    zIndex: 10,
-    display: showMenu ? 'block' : 'none',
+    zIndex: 5,
     minWidth: '150px',
     overflow: 'hidden',
   };
@@ -257,18 +435,17 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     flex: 1,
     overflowY: 'auto',
     padding: '15px',
-    backgroundColor,
+    backgroundColor: 'transparent',
     display: 'flex',
     flexDirection: 'column',
   };
 
   const inputContainerStyle: React.CSSProperties = {
     display: 'flex',
-    padding: '15px',
-    backgroundColor: '#f5f5f5',
+    padding: '12px 15px',
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     gap: '8px',
-    borderTop: '1px solid #e0e0e0',
   };
 
   const inputWrapperStyle: React.CSSProperties = {
@@ -276,21 +453,28 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     flex: 1,
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderRadius: '8px',
-    padding: '0 15px',
-    height: '48px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+    borderRadius: '24px',
+    border: '1px solid #e5e7eb',
+    padding: '0 12px',
+    minHeight: '50px',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
+    position: 'relative'
   };
 
-  const inputStyle: React.CSSProperties = {
+  const textAreaStyle: React.CSSProperties = {
     flex: 1,
     border: 'none',
     outline: 'none',
     background: 'transparent',
     fontSize,
     fontFamily,
-    padding: '0 10px',
+    padding: '10px',
+    paddingRight: '46px',
     color: textColor,
+    resize: 'none',
+    lineHeight: `${lineHeightPx}px`,
+    maxHeight: `${textAreaMaxHeight}px`,
+    overflowY: 'hidden',
   };
 
   const attachButtonStyle: React.CSSProperties = {
@@ -309,17 +493,40 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     backgroundColor: primaryColor,
     color: '#ffffff',
     border: 'none',
-    borderRadius: '8px',
-    width: '48px',
-    height: '48px',
+    borderRadius: '50%',
+    width: '36px',
+    height: '36px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     cursor: 'pointer',
     outline: 'none',
     flexShrink: 0,
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
   };
+
+  const rightActionContainerStyle: React.CSSProperties = {
+    position: 'absolute',
+    right: '4px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+
+  const autoResizeTextArea = () => {
+    const el = textAreaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const newHeight = Math.min(el.scrollHeight, textAreaMaxHeight);
+    el.style.height = `${newHeight}px`;
+    el.style.overflowY = el.scrollHeight > textAreaMaxHeight ? 'auto' : 'hidden';
+  };
+
+  useEffect(() => {
+    autoResizeTextArea();
+  }, [inputValue, fontSizeNumber]);
 
   const possibleQueriesContainerStyle: React.CSSProperties = {
     display: 'flex',
@@ -333,7 +540,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     width: '100%',
     fontFamily,
   };
-  
   const queryButtonStyle: React.CSSProperties = {
     padding: '12px 15px',
     backgroundColor: theme?.secondaryColor || '#f5f5f5',
@@ -391,9 +597,111 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     fontSize,
   });
 
-  return (
-    <div style={containerStyle}>
-      <div style={headerStyle}>
+  const contentCardStyle: React.CSSProperties = {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    backgroundColor,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    boxShadow: '0 -2px 6px rgba(0,0,0,0.03)',
+    position: 'relative',
+    zIndex: 2,
+    overflow: 'hidden'
+  };
+
+  // Floating mode styles
+  const getPositionStyles = (): React.CSSProperties => {
+    const base: React.CSSProperties = {
+      position: 'fixed',
+      zIndex: 1000,
+    };
+
+    switch (position) {
+      case 'bottom-right':
+        return { ...base, bottom: offsetY, right: offsetX };
+      case 'bottom-left':
+        return { ...base, bottom: offsetY, left: offsetX };
+      case 'top-right':
+        return { ...base, top: offsetY, right: offsetX };
+      case 'top-left':
+        return { ...base, top: offsetY, left: offsetX };
+      default:
+        return { ...base, bottom: offsetY, right: offsetX };
+    }
+  };
+
+  const getChatPositionStyles = (): React.CSSProperties => {
+    const base: React.CSSProperties = {
+      position: 'fixed',
+      borderRadius: '32px',
+      zIndex: 999,
+    };
+
+    switch (position) {
+      case 'bottom-right':
+        return { 
+          ...base, 
+          bottom: offsetY + 80,
+          right: offsetX 
+        };
+      case 'bottom-left':
+        return { 
+          ...base, 
+          bottom: offsetY + 80,
+          left: offsetX 
+        };
+      case 'top-right':
+        return { 
+          ...base, 
+          top: offsetY + 80,
+          right: offsetX 
+        };
+      case 'top-left':
+        return { 
+          ...base, 
+          top: offsetY + 80,
+          left: offsetX 
+        };
+      default:
+        return { 
+          ...base, 
+          bottom: offsetY + 80,
+          right: offsetX 
+        };
+    }
+  };
+
+  const getResponsiveDimensions = () => {
+    const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    if (screenWidth <= 480) {
+      return { width: 'calc(100vw - 40px)', height: '450px' };
+    } else if (screenWidth <= 768) {
+      return { width: '350px', height: '500px' };
+    } else {
+      return { width: '380px', height: '600px' };
+    }
+  };
+
+  const floatingContainerStyle: React.CSSProperties = {
+    ...getChatPositionStyles(),
+    ...getResponsiveDimensions(),
+  };
+
+  const renderChatComponent = () => (
+    <div style={containerStyle} data-genassist-root="true">
+      <style>{`
+        @keyframes blink { 0% { opacity: 0.2; } 20% { opacity: 1; } 100% { opacity: 0.2; } }
+        /* Hide scrollbars for the expanding textarea but keep scrolling */
+        .ga-textarea-nosb { scrollbar-width: none; -ms-overflow-style: none; }
+        .ga-textarea-nosb::-webkit-scrollbar { width: 0; height: 0; }
+        /* Backlight sweep under content edge (GPU-friendly).
+           Wider travel to fully reach both corners. */
+        @keyframes ga-backlight-sweep2 { 0% { transform: translateX(-35%); } 100% { transform: translateX(105%); } }
+        @keyframes ga-backlight-pulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
+        @keyframes ga-think-change { 0% { opacity: 0; transform: translateY(4px); } 100% { opacity: 1; transform: translateY(0); } }
+      `}</style>
+      <div style={headerStyle} ref={headerRef}>
         <div style={logoContainerStyle}>
           <img src={chatLogo} alt="Logo" style={logoStyle} />
           <div style={headerTitleContainerStyle}>
@@ -401,116 +709,286 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             <div style={headerSubtitleStyle}>Support</div>
           </div>
         </div>
-        <button 
-          style={menuButtonStyle} 
+        <button
+          style={menuButtonStyle}
           onClick={handleMenuClick}
           title="Menu"
         >
-          <MoreVertical size={24} color="#ffffff" />
+          <MoreVertical size={24} color="#111111" />
         </button>
 
+      </div>
+      {showBacklight && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: Math.max(0, headerHeight - 14),
+            height: 42,
+            pointerEvents: 'none',
+            zIndex: 1,
+            opacity: isAgentTyping ? 1 : 0,
+            transition: 'opacity 420ms ease-in-out',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 6,
+              height: 32,
+              width: '78%',
+              filter: 'blur(22px)',
+              background:
+                'linear-gradient(90deg, rgba(99,102,241,0.0) 0%, rgba(99,102,241,0.35) 15%, rgba(99,102,241,0.55) 50%, rgba(99,102,241,0.35) 85%, rgba(99,102,241,0.0) 100%)',
+              willChange: 'transform, opacity',
+              animation: 'ga-backlight-sweep2 1.2s cubic-bezier(0.4,0.0,0.2,1) infinite alternate, ga-backlight-pulse 2.4s ease-in-out infinite',
+              borderRadius: 18,
+            }}
+          />
+        </div>
+      )}
+
+      {showMenu && (
         <div ref={menuRef} style={menuPopupStyle}>
           <div style={menuItemStyle} onClick={handleResetClick}>
             <RefreshCw size={16} />
             Reset conversation
           </div>
         </div>
-      </div>
+      )}
       
-      <div style={chatContainerStyle}>
-        {messages.map((message, index) => {
-          const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
-          const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
-          
-          return (
-            <ChatMessageComponent 
-              key={index} 
-              message={message} 
-              theme={theme}
-              onPlayAudio={message.speaker === 'agent' ? playResponseAudio : undefined}
-              isPlayingAudio={isPlayingAudio}
-              isFirstMessage={index === 0 && message.speaker === 'agent' && !hasUserMessages}
-              isNextSameSpeaker={isNextSameSpeaker}
-              isPrevSameSpeaker={isPrevSameSpeaker}
-            />
-          );
-        })}
-        <div ref={messagesEndRef} />
-      </div>
+      <div style={contentCardStyle}>
+        <div style={chatContainerStyle} ref={chatContainerRef}>
+          {(() => {
+            return null;
+          })()}
+          {(() => {
+            // show welcome card
+            const shouldShowSyntheticWelcome =
+              !hasUserMessages &&
+              (messages.length === 0 || messages[0].speaker !== 'agent') &&
+              (Boolean(welcomeTitle) || Boolean(welcomeImageUrl) || Boolean(welcomeMessage));
 
-      {possibleQueries.length > 0 && !hasUserMessages && (
-        <div style={possibleQueriesContainerStyle}>
-          {possibleQueries.map((query, index) => (
-            <button 
-              key={index}
-              style={queryButtonStyle}
-              onClick={() => handleQueryClick(query)}
+            if (!shouldShowSyntheticWelcome) return null;
+
+            const now = Math.floor(Date.now() / 1000);
+            const syntheticWelcome: ChatMessage = {
+              create_time: now,
+              start_time: 0,
+              end_time: 0.01,
+              speaker: 'agent',
+              text: welcomeMessage || '',
+            };
+
+            return (
+              <ChatMessageComponent
+                key="__synthetic_welcome__"
+                message={syntheticWelcome}
+                theme={theme}
+                isFirstMessage={true}
+                isNextSameSpeaker={false}
+                isPrevSameSpeaker={false}
+                enableTypewriter={false}
+                welcomeImageUrl={welcomeImageUrl || undefined}
+                welcomeTitle={welcomeTitle || undefined}
+                possibleQueries={possibleQueries}
+                onQuickQuery={handleQueryClick}
+              />
+            );
+          })()}
+          {(() => {
+            const firstAgentIndex = messages.findIndex(m => m.speaker === 'agent');
+            return messages.map((message, index) => {
+              const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
+              const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
+              const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
+              return (
+                <ChatMessageComponent 
+                  key={index} 
+                  message={message} 
+                  theme={theme}
+                  onPlayAudio={message.speaker === 'agent' ? playResponseAudio : undefined}
+                  isPlayingAudio={isPlayingAudio}
+                  isFirstMessage={isFirstAgentMessage}
+                  isNextSameSpeaker={isNextSameSpeaker}
+                  isPrevSameSpeaker={isPrevSameSpeaker}
+                  onFeedback={(messageId, value) => addFeedback(messageId, value)}
+                  enableTypewriter={index === messages.length - 1 && message.speaker === 'agent'}
+                  welcomeImageUrl={isFirstAgentMessage ? (welcomeImageUrl || undefined) : undefined}
+                  welcomeTitle={isFirstAgentMessage ? (welcomeTitle || undefined) : undefined}
+                  possibleQueries={isFirstAgentMessage ? possibleQueries : undefined}
+                  onQuickQuery={handleQueryClick}
+                />
+              );
+            });
+          })()}
+          {isAgentTyping && currentThinkingParts.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '80%' }}>
+              <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>Agent</div>
+              <div style={{
+                backgroundColor: 'transparent',
+                padding: 0,
+                borderRadius: 0,
+                maxWidth: '100%',
+              }}>
+                <div
+                  key={`${currentThinkingPartIndex}-${currentThinkingParts.join('|')}`}
+                  style={{
+                    animation: 'ga-think-change 220ms ease',
+                    willChange: 'transform, opacity',
+                    color: '#6b7280',
+                    fontSize: '13px',
+                  }}
+                >
+                  {currentThinkingParts[currentThinkingPartIndex] || currentThinkingParts[currentThinkingParts.length - 1]}
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+        {(() => {
+          const showingSyntheticWelcome =
+            !hasUserMessages &&
+            (messages.length === 0 || messages[0].speaker !== 'agent') &&
+            (Boolean(welcomeTitle) || Boolean(welcomeImageUrl) || Boolean(welcomeMessage));
+          return (
+            possibleQueries.length > 0 &&
+            !hasUserMessages &&
+            (messages.length === 0 || messages[0].speaker !== 'agent') &&
+            !showingSyntheticWelcome
+          );
+        })() && (
+          <div style={possibleQueriesContainerStyle}>
+            {possibleQueries.map((query, index) => (
+              <button 
+                key={index}
+                style={queryButtonStyle}
+                onClick={() => handleQueryClick(query)}
+                disabled={isLoading}
+              >
+                {query}
+              </button>
+            ))}
+          </div>
+        )}
+        
+        {attachments.length > 0 && (
+          <div style={{ padding: '0 16px', marginBottom: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {attachments.map((file, index) => (
+              <AttachmentPreview 
+                key={index} 
+                file={file} 
+                onRemove={() => handleRemoveAttachment(file.name)}
+                uploading={uploadingFiles.has(file.name)}
+              />
+            ))}
+          </div>
+        )}
+
+        {!conversationId || isFinalized ? (
+          <div style={inputContainerStyle}>
+            <button
+              style={{...sendButtonStyle, width: '100%', height: '48px', borderRadius: '16px'}}
+              onClick={handleStartConversation}
               disabled={isLoading}
             >
-              {query}
+              Start Conversation
             </button>
-          ))}
-        </div>
-      )}
-      
-      {!conversationId || isFinalized ? (
-        <div style={inputContainerStyle}>
-          <button
-            style={{...sendButtonStyle, width: '100%', height: '48px', borderRadius: '8px'}}
-            onClick={handleStartConversation}
-            disabled={isLoading}
-          >
-            Start Conversation
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit} style={inputContainerStyle}>
-          <div style={inputWrapperStyle}>
-            <button 
-              type="button" 
-              style={attachButtonStyle}
-              title="Attach"
-            >
-              <Paperclip size={24} color="#757575" />
-            </button>
-            <input
-              style={inputStyle}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder={placeholder}
-              disabled={connectionState !== 'connected'}
-            />
           </div>
-          
-          <VoiceInput
-            onTranscription={handleVoiceTranscription}
-            onError={handleVoiceError}
-            baseUrl={baseUrl}
-            apiKey={apiKey}
-            theme={theme}
-          />
-          
-          <button 
-            type="submit" 
-            style={sendButtonStyle}
-            disabled={inputValue.trim() === '' || connectionState !== 'connected'}
-          >
-            <Send size={20} color="#ffffff" />
-          </button>
-        </form>
-      )}
+        ) : (
+          <form onSubmit={handleSubmit} style={inputContainerStyle}>
+            <div style={inputWrapperStyle}>
+              <button 
+                type="button" 
+                style={attachButtonStyle}
+                title="Attach"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip size={22} color="#757575" />
+              </button>
+              <input
+                type="file"
+                multiple
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+              />
+              <textarea
+                ref={textAreaRef}
+                style={textAreaStyle}
+                className="ga-textarea-nosb"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if ((inputValue.trim() !== '' || attachments.length > 0) && connectionState === 'connected') {
+                      submitMessage();
+                    }
+                  }
+                }}
+                placeholder={placeholder}
+                disabled={!conversationId || isFinalized}
+                rows={1}
+              />
+              <div style={rightActionContainerStyle}>
+                {inputValue.trim() === '' && attachments.length === 0 ? (
+                  <VoiceInput
+                    onTranscription={(text: string) => setInputValue(text)}
+                    onError={handleVoiceError}
+                    baseUrl={baseUrl}
+                    apiKey={apiKey}
+                    theme={theme}
+                  />
+                ) : (
+                  <button 
+                    type="submit" 
+                    style={sendButtonStyle}
+                    disabled={(inputValue.trim() === '' && attachments.length === 0) || connectionState !== 'connected'}
+                  >
+                    <Send size={18} color="#ffffff" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </form>
+        )}
+      </div>
 
       <div style={confirmOverlayStyle}>
         <div style={confirmDialogStyle}>
           <h3 style={{fontFamily, marginTop: 0}}>Reset Conversation</h3>
           <p style={{fontFamily, fontSize}}>This will clear the current conversation history and start a new conversation. Are you sure?</p>
           <div style={confirmButtonsStyle}>
-            <button style={confirmButtonStyle(false)} onClick={handleCancelReset}>Cancel</button>
+            <button style={{...confirmButtonStyle(false), color: textColor}} onClick={handleCancelReset}>Cancel</button>
             <button style={confirmButtonStyle(true)} onClick={handleConfirmReset}>Reset</button>
           </div>
         </div>
       </div>
     </div>
   );
-}; 
+
+  if (mode === 'floating') {
+    return (
+      <>
+        <ChatBubble
+          showChat={isFloatingOpen}
+          onClick={() => setIsFloatingOpen(prev => !prev)}
+          primaryColor={primaryColor}
+          style={getPositionStyles()}
+        />
+        
+        {isFloatingOpen && (
+          <div style={floatingContainerStyle} data-genassist-container="floating">
+            {renderChatComponent()}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return renderChatComponent();
+};

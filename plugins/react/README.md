@@ -22,6 +22,7 @@ function App() {
       <GenAgentChat 
         baseUrl="https://your-api-base-url.com" 
         apiKey="your-api-key"
+        tenant="your-tenant-id"
       />
     </div>
   );
@@ -58,11 +59,12 @@ function App() {
       <GenAgentChat 
         baseUrl="https://your-api-base-url.com" 
         apiKey="your-api-key"
+        tenant="your-tenant-id"
         userData={userData}
         theme={theme}
         headerTitle="Customer Support"
         placeholder="Ask a question..."
-        onError={(error) => console.error('Chat error:', error)}
+        onError={() => {}}
         onTakeover={handleTakeover}
       />
     </div>
