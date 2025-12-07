@@ -75,17 +75,17 @@ services:
     container_name: genassist-ui-dev
     ports:
       - "8080:8080"
-      - "80:80"
+      - "80:8080"
     env_file:
       - ./frontend/.env
     environment:
       CUSTOM_PARAM: 'string'
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/login"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 10s
     depends_on:
       app:
         condition: service_started
@@ -183,6 +183,8 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
+      app:
+        condition: service_healthy
     networks:
       - genassist-network-dev
     restart: unless-stopped
@@ -206,6 +208,8 @@ services:
       redis:
         condition: service_healthy
       db:
+        condition: service_healthy
+      app:
         condition: service_healthy
     networks:
       - genassist-network-dev
@@ -234,6 +238,8 @@ services:
       celery_worker:
         condition: service_started
       db:
+        condition: service_healthy
+      app:
         condition: service_healthy
     networks:
       - genassist-network-dev
