@@ -75,7 +75,7 @@ services:
     container_name: genassist-ui-dev
     ports:
       - "8080:8080"
-      - "80:8080"
+      - "80:80"
     env_file:
       - ./frontend/.env
     environment:
@@ -183,8 +183,6 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
-      app:
-        condition: service_started
     networks:
       - genassist-network-dev
     restart: unless-stopped
@@ -209,8 +207,6 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
-      app:
-        condition: service_started
     networks:
       - genassist-network-dev
     restart: unless-stopped
@@ -239,8 +235,6 @@ services:
         condition: service_started
       db:
         condition: service_healthy
-      app:
-        condition: service_started
     networks:
       - genassist-network-dev
     restart: unless-stopped
