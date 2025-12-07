@@ -93,6 +93,7 @@ async def get_workflow(
     Get a workflow by ID
     """
     workflow = await service.get_by_id(workflow_id)
+
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return workflow
@@ -141,6 +142,7 @@ async def update_workflow(
     if workflow_data.executionState:
         workflow.executionState = workflow_data.executionState
     workflow.version = workflow_data.version
+
     updated_workflow = await service.update(workflow_id, workflow)
     return updated_workflow
 
@@ -160,6 +162,7 @@ async def delete_workflow(
     """
     current_user = request.state.user
     workflow = await service.get_by_id(workflow_id)
+
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 

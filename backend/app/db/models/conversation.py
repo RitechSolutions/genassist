@@ -58,8 +58,6 @@ class ConversationModel(Base):
     zendesk_ticket_id: Mapped[Optional[int]] = mapped_column(
         Integer, unique=True, nullable=True
     )
-    
-    zendesk_ticket_id: Mapped[Optional[int]] = mapped_column(Integer, unique=True, nullable=True)
 
     data_source_id: Mapped[Optional[UUID]] = mapped_column(UUID)
     operator_id: Mapped[UUID] = mapped_column(UUID)

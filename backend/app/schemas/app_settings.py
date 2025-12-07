@@ -3,9 +3,8 @@ from typing import Optional, Dict, Any, Literal
 from uuid import UUID
 from datetime import datetime
 
-AppSettingsType = Literal[
-    "Zendesk", "WhatsApp", "Gmail", "Microsoft", "Slack", "Jira", "Other"
-]
+AppSettingsType = Literal["Zendesk", "WhatsApp",
+                          "Gmail", "Microsoft", "Slack", "Jira", "Other"]
 
 
 class AppSettingsBase(BaseModel):

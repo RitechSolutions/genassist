@@ -23,12 +23,13 @@ class ConversationBase(BaseModel):
     status: Optional[str] = None
     conversation_type: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes = True
+    )
 
 
 class ConversationCreate(ConversationBase):
     id: Optional[UUID] = None
-
 
 class ConversationRead(ConversationBase):
     id: UUID
@@ -43,4 +44,7 @@ class ConversationRead(ConversationBase):
     feedback: Optional[str] = None
     messages: Optional[list[TranscriptMessageRead]] = None
 
-    model_config = ConfigDict(from_attributes=True)
+
+    model_config = ConfigDict(
+        from_attributes = True
+    )

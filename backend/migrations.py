@@ -132,9 +132,7 @@ def run_migrations_for_all_tenants() -> bool:
         Session = sessionmaker(bind=engine)
         session = Session()
 
-        result = session.execute(
-            text("SELECT slug FROM tenants WHERE is_active is True")
-        ).fetchall()
+        result = session.execute(text("SELECT slug FROM tenants WHERE is_active is True")).fetchall()
         tenants = [r[0] for r in result]
 
         if not tenants:
@@ -149,7 +147,9 @@ def run_migrations_for_all_tenants() -> bool:
         # Run migrations for each tenant
         for tenant in tenants:
             try:
-                logger.info(f"Starting migrations for tenant:({tenant})")
+                logger.info(
+                    f"Starting migrations for tenant:({tenant})"
+                )
 
                 # Get tenant database URL (sync version for Alembic)
                 tenant_url = settings.get_tenant_database_url_sync(tenant)
@@ -157,13 +157,19 @@ def run_migrations_for_all_tenants() -> bool:
                 # Run migrations for this tenant
                 success = run_migrations(tenant_url)
                 if success:
-                    logger.info(f"✓ Migrations completed for tenant: ({tenant})")
+                    logger.info(
+                        f"✓ Migrations completed for tenant: ({tenant})"
+                    )
                     success_count += 1
                 else:
-                    logger.warning(f"✗ Migrations failed for tenant: ({tenant})")
+                    logger.warning(
+                        f"✗ Migrations failed for tenant: ({tenant})"
+                    )
                     failed_count += 1
             except Exception as e:
-                logger.error(f"Failed to run migrations for tenant ({tenant}): {e}")
+                logger.error(
+                    f"Failed to run migrations for tenant ({tenant}): {e}"
+                )
                 failed_count += 1
 
         logger.info(
@@ -175,3 +181,4 @@ def run_migrations_for_all_tenants() -> bool:
     except Exception as e:
         logger.error(f"Error running migrations for all tenants: {e}")
         return False
+

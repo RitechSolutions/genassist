@@ -23,7 +23,8 @@ class RolesService:
     async def get_by_id(self, role_id: UUID):
         model = await self.repository.get_by_id(role_id)
         if not model:
-            raise AppException(error_key=ErrorKey.ROLE_NOT_FOUND, status_code=404)
+            raise AppException(
+                error_key=ErrorKey.ROLE_NOT_FOUND, status_code=404)
         return model
 
     async def update_partial(self, role_id: UUID, update_data: RoleUpdate):

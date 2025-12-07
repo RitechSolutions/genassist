@@ -9,7 +9,6 @@ from app.db.models.workflow import WorkflowModel
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.workflow import WorkflowCreate, WorkflowInDB, WorkflowUpdate
 
-
 @inject
 class WorkflowService:
     """

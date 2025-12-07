@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-
 @dataclass
 class SeedTestData:
     # Credentials
@@ -28,11 +27,12 @@ class SeedTestData:
     local_llm_provider_vllm_llama: str = "00000196-19d2-9c28-a2dd-565fff608fa0"
     default_agent_id: str = "00000196-a688-fd6f-af6d-8dc6c281d697"
 
-    transcribe_operator_id: str = "90f1e6dd-fde0-4970-a83a-31ca7f84ab45"
-    transcribe_operator_user_id: str = "31a1e5ed-2f1d-485d-bb45-b6c9f4282b4f"
-    transcribe_data_source_id: str = "5223b67f-4e86-494d-8ae5-f709d05c3e27"
+    transcribe_operator_id: str= "90f1e6dd-fde0-4970-a83a-31ca7f84ab45"
+    transcribe_operator_user_id: str= "31a1e5ed-2f1d-485d-bb45-b6c9f4282b4f"
+    transcribe_data_source_id: str= "5223b67f-4e86-494d-8ae5-f709d05c3e27"
 
     genassist_agent_id: str = "00000195-10bb-37d7-8cba-1712b4990001"
+
 
     # Prompts
     speaker_separation_llm_analyst_prompt = """You are an AI assistant that processes transcribed customer service conversations that 
@@ -72,9 +72,7 @@ class SeedTestData:
                             ]
                             """
     kpi_analyzer_system_prompt = """You are a helpful customer experience expert."""
-    in_progress_hostility_system_prompt = (
-        """"You are a helpful but critical call center conversation analyst."""
-    )
+    in_progress_hostility_system_prompt = """"You are a helpful but critical call center conversation analyst."""
     default_agent_prompt = """You are a helpful support assistant for our product. Your role is to:
  1. Answer customer questions about our product features and capabilities
  2. Provide technical support and troubleshooting guidance
@@ -83,6 +81,5 @@ class SeedTestData:
  5. Use available tools to assist with tasks like currency conversion when needed
 
  Always be professional, clear, and concise in your responses. If you don't know something, say so and offer to help find the information."""
-
 
 seed_test_data = SeedTestData()

@@ -39,6 +39,7 @@ COPY ./run.py /src/run.py
 COPY ./run_celery.py /src/run_celery.py
 COPY ./certs /src/certs
 COPY ./app /src/app
+
 COPY ./.pylintrc /src/.pylintrc
 COPY ./tests /src/tests
 COPY ./pytest.ini /src/pytest.ini

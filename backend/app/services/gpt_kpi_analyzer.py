@@ -32,16 +32,6 @@ class GptKpiAnalyzer:
         else:
             logger.debug(f"analyzing transcript: {transcript}")
 
-        if (
-            transcript is None
-            or transcript.strip() == ""
-            or len(transcript) == 0
-            or transcript == "[]"
-        ):
-            raise ValueError("Transcript is empty! Nothing to analyze!")
-        else:
-            logger.debug(f"analyzing transcript: {transcript}")
-
         last_error_msg = ""
         last_response = ""
         user_prompt = ""

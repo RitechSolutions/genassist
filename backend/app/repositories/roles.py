@@ -8,11 +8,11 @@ from app.repositories.db_repository import DbRepository
 from app.schemas.filter import BaseFilterModel
 from app.schemas.role import RoleCreate
 
-
 @inject
 class RolesRepository(DbRepository[RoleModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(RoleModel, db)
+
 
     async def create_role(self, role: RoleCreate):
         new_role = RoleModel(**role.model_dump())

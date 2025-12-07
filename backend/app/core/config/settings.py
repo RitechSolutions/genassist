@@ -78,7 +78,7 @@ class ProjectSettings(BaseSettings):
     TENANT_SUBDOMAIN_ENABLED: bool = False
 
     DEBUG: bool = True
-    DEV: bool = True
+    DEV: bool = False
     FASTAPI_DEBUG: bool = True
     LOG_LEVEL: str = "DEBUG"
     SQLALCHEMY_LOG_LEVEL: str = "ERROR"
@@ -119,14 +119,6 @@ class ProjectSettings(BaseSettings):
 
     # Check if inside celery container
     BACKGROUND_TASK: bool = False
-
-    @property
-    def _zendesk_base(self) -> str:
-        return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
-
-    @property
-    def _zendesk_auth(self) -> tuple[str, str]:
-        return (f"{self.ZENDESK_EMAIL}/token", self.ZENDESK_API_TOKEN)
 
     @property
     def _zendesk_base(self) -> str:
