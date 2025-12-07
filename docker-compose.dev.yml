@@ -184,7 +184,7 @@ services:
       db:
         condition: service_healthy
       app:
-        condition: service_healthy
+        condition: service_started
     networks:
       - genassist-network-dev
     restart: unless-stopped
@@ -210,7 +210,7 @@ services:
       db:
         condition: service_healthy
       app:
-        condition: service_healthy
+        condition: service_started
     networks:
       - genassist-network-dev
     restart: unless-stopped
@@ -240,7 +240,7 @@ services:
       db:
         condition: service_healthy
       app:
-        condition: service_healthy
+        condition: service_started
     networks:
       - genassist-network-dev
     restart: unless-stopped
