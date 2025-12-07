@@ -32,6 +32,8 @@ services:
       - RAG_NEO4J_URL=bolt://neo4j:7687
       - RAG_NEO4J_USERNAME=neo4j
       - RAG_NEO4J_PASSWORD=password
+      - DB_HOST=db
+      - DB_PORT=5432
     depends_on:
       - chroma
       - db
