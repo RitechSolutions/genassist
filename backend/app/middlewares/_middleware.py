@@ -26,7 +26,14 @@ from app.core.config.logging import (
 
 
 ALLOWED_ORIGINS = [
-    "*",
+    "https://app.test.genassist.ritech.io",
+    "https://app.dev.genassist.ritech.io",
+    "http://localhost",
+    "http://localhost",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "http://127.0.0.1:8080",
+    "http://127.0.0.1:3000",
 ]
 
 

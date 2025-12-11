@@ -36,6 +36,7 @@ from app.api.v1.routes import (
     smb_share_router,
     tenants,
     azure_blob_router, 
+    public_registration,
 )
 
 
@@ -109,3 +110,4 @@ router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenA
 
 router.include_router(azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"])
 
+router.include_router(public_registration.router, prefix="/public-registration", tags=["Public Registration"])  

@@ -2152,7 +2152,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Get Schemas Api App Settings Form Schemas Get"
                 }
@@ -5443,7 +5442,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Switch Agent Api Genagent Agents Switch  Agent Id  Post"
                 }
               }
@@ -5508,7 +5506,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Query Agent Api Genagent Agents  Agent Id  Query  Thread Id  Post"
                 }
               }
@@ -6889,7 +6886,6 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "additionalProperties": true,
                 "title": "Input Data"
               }
             }
@@ -6959,12 +6955,60 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "additionalProperties": true,
                 "title": "Test Data"
               }
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/workflow/dialog_schema/{node_type}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflows"
+        ],
+        "summary": "Get Node Dialog Schema",
+        "operationId": "get_node_dialog_schema_api_genagent_workflow_dialog_schema__node_type__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "node_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Type"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7000,7 +7044,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Test Data"
               }
@@ -7051,7 +7094,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Test Data"
               }
@@ -7065,7 +7107,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Generate Python Template Api Genagent Workflow Generate Python Template Post"
                 }
@@ -9449,7 +9490,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Data"
               }
@@ -11658,6 +11698,26 @@
           }
         }
       }
+    },
+    "/api/public-registration/registration-id": {
+      "get": {
+        "tags": [
+          "v1",
+          "Public Registration"
+        ],
+        "summary": "Get Registration Id",
+        "operationId": "get_registration_id_api_public_registration_registration_id_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -11882,7 +11942,6 @@
           "test_input": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -12280,7 +12339,6 @@
             "title": "Type"
           },
           "values": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Values"
           },
@@ -12329,7 +12387,6 @@
             "title": "Type"
           },
           "values": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Values"
           },
@@ -12412,7 +12469,6 @@
           "values": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13340,7 +13396,6 @@
           "hyperparameters": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13391,7 +13446,6 @@
             "title": "Source Type"
           },
           "connection_data": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Connection Data"
           },
@@ -13440,7 +13494,6 @@
           "connection_data": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13503,7 +13556,6 @@
           "connection_data": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13846,7 +13898,6 @@
           "metadata": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14000,7 +14051,6 @@
           "vector_store": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14012,7 +14062,6 @@
           "rag_config": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14022,7 +14071,6 @@
             "title": "Rag Config"
           },
           "extra_metadata": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Extra Metadata"
           },
@@ -14255,7 +14303,6 @@
           "vector_store": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14267,7 +14314,6 @@
           "rag_config": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14277,7 +14323,6 @@
             "title": "Rag Config"
           },
           "extra_metadata": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Extra Metadata"
           },
@@ -14602,7 +14647,6 @@
             "title": "Llm Model"
           },
           "connection_data": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Connection Data",
             "description": "Connection parameters like api key."
@@ -14656,7 +14700,6 @@
             "title": "Llm Model"
           },
           "connection_data": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Connection Data",
             "description": "Connection parameters like api key."
@@ -14739,7 +14782,6 @@
           "connection_data": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14822,7 +14864,6 @@
           "inference_params": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -15166,7 +15207,6 @@
           "execution_output": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -15302,7 +15342,6 @@
           "inference_params": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -15418,7 +15457,6 @@
           "inference_params": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16215,7 +16253,6 @@
           "metadata": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -17712,7 +17749,6 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -17727,7 +17763,6 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -17741,7 +17776,6 @@
           "testInput": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -17753,7 +17787,6 @@
           "executionState": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -17837,7 +17870,6 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -17852,7 +17884,6 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -17866,7 +17897,6 @@
           "testInput": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -17878,7 +17908,6 @@
           "executionState": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -17951,7 +17980,6 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -17966,7 +17994,6 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -17980,7 +18007,6 @@
           "testInput": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -17992,7 +18018,6 @@
           "executionState": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -18093,7 +18118,6 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
