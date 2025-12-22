@@ -6,9 +6,10 @@ import { getAllDataSources } from "@/services/dataSources";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { useQuery } from "@tanstack/react-query";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { GmailDialog } from "../../nodeDialogs/GmailDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
+import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
 
 export const GMAIL_NODE_TYPE = "gmailNode";
 
@@ -46,8 +47,15 @@ const GmailNode: React.FC<NodeProps<GmailNodeData>> = ({
     }
   };
 
-  const selectedConnectorName =
-    connectors.find((c) => c.id === data.dataSourceId)?.name || "Not Selected";
+  const nodeContent: NodeContentRow[] = [
+    { label: "Recipient", value: data.to },
+    { label: "Subject", value: data.subject },
+    {
+      label: "Variables",
+      value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
+      areDynamicVars: true,
+    },
+  ];
 
   return (
     <>
@@ -60,23 +68,9 @@ const GmailNode: React.FC<NodeProps<GmailNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={GMAIL_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content */}
-        <NodeContent
-          data={[
-            { label: "To", value: data.to },
-            { label: "CC", value: data.cc },
-            { label: "BCC", value: data.bcc },
-            { label: "Subject", value: data.subject },
-            { label: "Message Body", value: data.body },
-            {
-              label: "File Attachments",
-              value: data.attachments.map((a) => a.name).join(", "),
-            },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       <GmailDialog
         isOpen={isEditDialogOpen}

@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { NodeProps } from "reactflow";
 import { getNodeColor } from "../../utils/nodeColors";
 import { ZendeskTicketNodeData } from "../../types/nodes";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { ZendeskTicketDialog } from "../../nodeDialogs/ZendeskTicketDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
+import { AppSetting } from "@/interfaces/app-setting.interface";
+import { getAllAppSettings } from "@/services/appSettings";
 
 export const ZENDESK_TICKET_NODE_TYPE = "zendeskTicketNode";
 const ZendeskTicketNode: React.FC<NodeProps<ZendeskTicketNodeData>> = ({
@@ -16,13 +18,41 @@ const ZendeskTicketNode: React.FC<NodeProps<ZendeskTicketNodeData>> = ({
   const nodeDefinition = nodeRegistry.getNodeType(ZENDESK_TICKET_NODE_TYPE);
   const color = getNodeColor(nodeDefinition.category);
 
+  const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchAppSettings = async () => {
+      try {
+        const settings = await getAllAppSettings();
+        setAppSettings(settings);
+      } catch (error) {
+        // ignore
+      }
+    };
+
+    fetchAppSettings();
+  }, []);
 
   const onUpdate = (updatedData: Partial<ZendeskTicketNodeData>) => {
     if (data.updateNodeData) {
       data.updateNodeData(id, { ...data, ...updatedData });
     }
   };
+
+  const selectedAppSettingName = appSettings.find(
+    (setting) => setting.id === data.app_settings_id
+  )?.name;
+
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Configuration",
+      value: selectedAppSettingName,
+      placeholder: "None selected",
+    },
+    { label: "Subject", value: data.subject },
+    { label: "Requester", value: data.requester_name },
+  ];
 
   return (
     <>
@@ -35,19 +65,9 @@ const ZendeskTicketNode: React.FC<NodeProps<ZendeskTicketNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={ZENDESK_TICKET_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        <NodeContent
-          data={[
-            { label: "Configuration Vars", value: data.app_settings_id },
-            { label: "Subject", value: data.subject },
-            { label: "Description", value: data.description },
-            { label: "Requester Name", value: data.requester_name },
-            { label: "Requester Email", value: data.requester_email },
-            { label: "Tags", value: data.tags?.join(", ") },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       <ZendeskTicketDialog
         isOpen={isEditDialogOpen}

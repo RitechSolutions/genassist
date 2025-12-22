@@ -33,10 +33,7 @@ import { getWorkflowById, updateWorkflow } from "@/services/workflows";
 import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
 import { WorkflowProvider } from "./context/WorkflowContext";
-import {
-  WorkflowExecutionProvider,
-  WorkflowExecutionState,
-} from "./context/WorkflowExecutionContext";
+import { WorkflowExecutionProvider } from "./context/WorkflowExecutionContext";
 import {
   handleDragOver,
   handleDrop,
@@ -68,8 +65,6 @@ const GraphFlowContent: React.FC = () => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const lastSavedWorkflowRef = useRef<Workflow | null>(null);
   const [isSettling, setIsSettling] = useState(true);
-  const [executionState, setExecutionState] =
-    useState<WorkflowExecutionState | null>(null);
 
   const { toggleSidebar } = useSidebar();
   const { validateConnection } = useSchemaValidation();
@@ -218,13 +213,14 @@ const GraphFlowContent: React.FC = () => {
         type: "default",
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          width: 20,
-          height: 20,
-          color: "#64748b",
+          width: 16,
+          height: 16,
+          color: "hsl(var(--brand-600))",
         },
         style: {
           strokeWidth: 2,
-          stroke: "#64748b",
+          stroke: "hsl(var(--brand-600))",
+          strokeDasharray: "7,7",
         },
       }));
 
@@ -272,13 +268,14 @@ const GraphFlowContent: React.FC = () => {
         type: "default",
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          width: 20,
-          height: 20,
-          color: "#64748b",
+          width: 16,
+          height: 16,
+          color: "hsl(var(--brand-600))",
         },
         style: {
           strokeWidth: 2,
-          stroke: "#64748b",
+          stroke: "hsl(var(--brand-600))",
+          strokeDasharray: "7,7",
         },
       };
 
@@ -323,12 +320,6 @@ const GraphFlowContent: React.FC = () => {
       setNodes((nds) => [...nds, ...addedNodes]);
     }
   };
-
-  useEffect(() => {
-    if (executionState) {
-      setWorkflow({ ...workflow, executionState });
-    }
-  }, [executionState]);
 
   const handleSaveWorkflow = async () => {
     if (!workflow) return;
@@ -474,7 +465,6 @@ const GraphFlowContent: React.FC = () => {
                   }
                   onTestWorkflow={handleTestGraph}
                   onSaveWorkflow={handleSaveWorkflow}
-                  onExecutionStateChange={setExecutionState}
                 />
               </Panel>
               <Panel

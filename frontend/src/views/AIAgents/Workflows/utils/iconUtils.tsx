@@ -21,6 +21,8 @@ import {
   ArrowRightFromLine,
   ArrowRightToLine,
   Bot,
+  CircleAlert,
+  Search,
 } from "lucide-react";
 import SlackLogo from "@/assets/slack-logo.png";
 import WhatsAppLogo from "@/assets/whatsapp-logo.png";
@@ -38,10 +40,12 @@ export interface IconConfig {
 // Icon mapping configuration
 export const ICON_MAPPING: Record<string, IconConfig> = {
   // Lucide icons
+  CircleAlert: { type: "lucide", source: CircleAlert },
   MessageCircle: { type: "lucide", source: MessageCircle },
   MessageSquare: { type: "lucide", source: MessageSquare },
   Tag: { type: "lucide", source: Tag },
   Globe: { type: "lucide", source: Globe },
+  Search: { type: "lucide", source: Search },
   Mail: { type: "lucide", source: Mail },
   Code: { type: "lucide", source: Code },
   ArrowLeftRight: { type: "lucide", source: ArrowLeftRight },

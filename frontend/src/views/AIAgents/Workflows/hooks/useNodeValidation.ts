@@ -1,42 +1,41 @@
 import { useState, useEffect, useMemo } from "react";
 import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
-import { getNodeDialogSchema } from "@/services/workflows";
 import { getEmptyRequiredFields } from "../utils/nodeValidation";
 import { NodeData } from "../types/nodes";
+import { useNodeSchema } from "@/context/NodeSchemaContext";
 
 export function useNodeValidation(nodeType: string, nodeData: NodeData) {
+  const { getSchema, loading } = useNodeSchema();
   const [schema, setSchema] = useState<FieldSchema[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch schema on mount or when nodeType changes
   useEffect(() => {
-    let isMounted = true;
+    async function loadSchema() {
+      if (loading) {
+        setIsLoading(true);
+        return;
+      }
 
-    async function fetchSchema() {
-      setIsLoading(true);
       try {
-        const fetchedSchema = await getNodeDialogSchema(nodeType);
-        if (isMounted) {
-          setSchema(fetchedSchema);
-        }
-      } catch (error) {
-        console.error("Error fetching node dialog schema", error);
-        if (isMounted) {
+        const cachedSchema = getSchema(nodeType);
+
+        if (cachedSchema) {
+          setSchema(cachedSchema);
+          setIsLoading(false);
+        } else {
+          console.error(`Schema not found for node type: ${nodeType}`);
           setSchema(null);
-        }
-      } finally {
-        if (isMounted) {
           setIsLoading(false);
         }
+      } catch (err) {
+        console.error("Error loading node schema", err);
+        setSchema(null);
+        setIsLoading(false);
       }
     }
 
-    fetchSchema();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [nodeType]);
+    loadSchema();
+  }, [nodeType, loading, getSchema]);
 
   // Compute missing fields when data or schema changes
   const missingFields = useMemo(() => {

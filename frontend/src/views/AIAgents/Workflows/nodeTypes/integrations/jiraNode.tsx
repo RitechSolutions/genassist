@@ -1,11 +1,13 @@
 import { NodeProps } from "reactflow";
 import { JiraNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { JiraDialog } from "../../nodeDialogs/JiraDialog";
+import { NodeContentRow } from "../nodeContent";
+import { AppSetting } from "@/interfaces/app-setting.interface";
+import { getAllAppSettings } from "@/services/appSettings";
 
 export const JIRA_NODE_TYPE = "jiraNode";
 
@@ -15,9 +17,23 @@ const JiraNode: React.FC<NodeProps<JiraNodeData>> = ({
   selected,
 }) => {
   const nodeDefinition = nodeRegistry.getNodeType(JIRA_NODE_TYPE);
+  const color = getNodeColor(nodeDefinition.category);
+
+  const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  const color = getNodeColor(nodeDefinition.category);
+  useEffect(() => {
+    const fetchAppSettings = async () => {
+      try {
+        const settings = await getAllAppSettings();
+        setAppSettings(settings);
+      } catch (error) {
+        // ignore
+      }
+    };
+
+    fetchAppSettings();
+  }, []);
 
   const onUpdate = (updatedData: JiraNodeData) => {
     if (data.updateNodeData) {
@@ -30,6 +46,20 @@ const JiraNode: React.FC<NodeProps<JiraNodeData>> = ({
     }
   };
 
+  const selectedAppSettingName = appSettings.find(
+    (setting) => setting.id === data.app_settings_id
+  )?.name;
+
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Configuration",
+      value: selectedAppSettingName,
+      placeholder: "None selected",
+    },
+    { label: "Space Key", value: data.spaceKey },
+    { label: "Task Name", value: data.taskName },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -41,17 +71,9 @@ const JiraNode: React.FC<NodeProps<JiraNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={JIRA_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        <NodeContent
-          data={[
-            { label: "Configuration Vars", value: data.app_settings_id },
-            { label: "Space Key", value: data.spaceKey },
-            { label: "Task Name", value: data.taskName },
-            { label: "Task Description", value: data.taskDescription },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       <JiraDialog
         isOpen={isEditDialogOpen}

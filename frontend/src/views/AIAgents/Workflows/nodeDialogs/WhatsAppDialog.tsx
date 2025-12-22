@@ -17,6 +17,7 @@ import { getAllAppSettings } from "@/services/appSettings";
 import { AppSetting } from "@/interfaces/app-setting.interface";
 import { AppSettingDialog } from "@/views/AppSettings/components/AppSettingDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { DraggableInput } from "../components/custom/DraggableInput";
 
 type WhatsAppDialogProps = BaseNodeDialogProps<
   WhatsappNodeData,
@@ -137,7 +138,7 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
         </div>
         <div className="space-y-2">
           <Label htmlFor="toNumber">Recipient Number</Label>
-          <Input
+          <DraggableInput
             id="toNumber"
             value={toNumber}
             onChange={(e) => setToNumber(e.target.value)}
@@ -152,7 +153,7 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
 
         <div className="space-y-2">
           <Label htmlFor="textMsg">Message</Label>
-          <Input
+          <DraggableInput
             id="textMsg"
             value={textMsg}
             onChange={(e) => setMessage(e.target.value)}

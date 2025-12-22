@@ -3,6 +3,7 @@ import { RoutesProvider } from "./Routes";
 import { PermissionProvider } from "@/context/PermissionContext";
 import { FeatureFlagProvider } from "@/context/FeatureFlagContext";
 import { ServerStatusProvider } from "@/context/ServerStatusContext";
+import { NodeSchemaProvider } from "@/context/NodeSchemaContext";
 
 export default function App() {
   return (
@@ -10,7 +11,9 @@ export default function App() {
       <Toaster position="top-right" reverseOrder={false} />
       <PermissionProvider>
         <FeatureFlagProvider>
-          <RoutesProvider />
+          <NodeSchemaProvider>
+            <RoutesProvider />
+          </NodeSchemaProvider>
         </FeatureFlagProvider>
       </PermissionProvider>
     </ServerStatusProvider>

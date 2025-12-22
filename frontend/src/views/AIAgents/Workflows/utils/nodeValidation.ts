@@ -19,7 +19,7 @@ export function getEmptyRequiredFields(
     if (field.required) {
       const value = data[field.name];
       if (isEmptyValue(value)) {
-        missingFields.push(field.name);
+        missingFields.push(field.label);
       }
     }
   }

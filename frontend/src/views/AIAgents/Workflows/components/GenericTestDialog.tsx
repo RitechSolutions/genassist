@@ -62,7 +62,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
   // Extract variables from node config when dialog opens
   useEffect(() => {
     if (isOpen && nodeData) {
-      const variables = extractVariablesFromNodeConfig(nodeData);
+      let variables = extractVariablesFromNodeConfig(nodeData);
+      variables = variables.filter((v) => v !== "direct_input");
       const schemaFields = extractInputSchemaFields(nodeData);
       // Create a set of schema field names to avoid duplicates
       const schemaFieldNames = new Set(schemaFields.map((field) => field.id));

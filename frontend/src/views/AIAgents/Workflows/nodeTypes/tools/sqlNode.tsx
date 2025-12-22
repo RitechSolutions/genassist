@@ -3,13 +3,13 @@ import { NodeProps } from "reactflow";
 import { SQLNodeData } from "@/views/AIAgents/Workflows/types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { SQLDialog } from "../../nodeDialogs/SQLDialog";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { getAllDataSources } from "@/services/dataSources";
 import { getAllLLMProviders } from "@/services/llmProviders";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const SQL_NODE_TYPE = "sqlNode";
 
@@ -60,21 +60,31 @@ const SQLNode: React.FC<NodeProps<SQLNodeData>> = ({ id, data, selected }) => {
     (ds) => ds.id === data.dataSourceId
   );
 
-  const providerName = selectedProvider?.name || "Not selected";
-  const dataSourceName = selectedDataSource
-    ? `${selectedDataSource.name} (${selectedDataSource.source_type})`
-    : "Not selected";
+  const numberOfParameters = data.parameters
+    ? Object.keys(data.parameters).length
+    : 0;
 
-  const queryPreview = data.query
-    ? data.query.length > 50
-      ? `${data.query.substring(0, 50)}...`
-      : data.query
-    : "No query set";
-
-  const parametersPreview =
-    data.parameters && Object.keys(data.parameters).length > 0
-      ? `${Object.keys(data.parameters).length} parameter(s)`
-      : "No parameters";
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "LLM Provider",
+      value: selectedProvider?.name,
+      placeholder: "None selected",
+    },
+    {
+      label: "Data Source",
+      value: selectedDataSource?.name,
+      placeholder: "None selected",
+    },
+    {
+      label: "Parameters",
+      value:
+        numberOfParameters === 1
+          ? "1 parameter"
+          : numberOfParameters > 1
+          ? `${numberOfParameters} parameters`
+          : "",
+    },
+  ];
 
   return (
     <>
@@ -87,18 +97,9 @@ const SQLNode: React.FC<NodeProps<SQLNodeData>> = ({ id, data, selected }) => {
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={SQL_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        <NodeContent
-          data={[
-            { label: "LLM Provider", value: providerName },
-            { label: "Data Source", value: dataSourceName },
-            { label: "System Prompt", value: data.systemPrompt },
-            { label: "Human Query", value: queryPreview },
-            { label: "Parameters", value: parametersPreview },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <SQLDialog

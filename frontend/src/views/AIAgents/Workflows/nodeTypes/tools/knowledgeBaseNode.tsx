@@ -3,11 +3,11 @@ import { NodeProps } from "reactflow";
 import { KnowledgeBaseNodeData } from "@/views/AIAgents/Workflows/types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { KnowledgeBaseDialog } from "../../nodeDialogs/KnowledgeBaseDialog";
 import { KnowledgeItem } from "@/interfaces/knowledge.interface";
 import { getAllKnowledgeItems } from "@/services/api";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const KNOWLEDGE_BASE_NODE_TYPE = "knowledgeBaseNode";
 
@@ -46,12 +46,25 @@ const KnowledgeBaseNode: React.FC<NodeProps<KnowledgeBaseNodeData>> = ({
   };
 
   // Find the names of selected bases using the fetched list
-  const selectedBasesNames = availableBases
+  const selectedBaseNames = availableBases
     .filter((base) => data.selectedBases?.includes(base.id))
     .map((base) => base.name)
     .join(", ");
 
-  const displayValue = selectedBasesNames;
+  const limit = data.limit ? data.limit : 0;
+
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Knowledge Bases",
+      value: selectedBaseNames,
+      placeholder: "None selected",
+    },
+    { label: "Query", value: data.query },
+    {
+      label: "Limit",
+      value: limit === 0 ? "" : limit === 1 ? "1 result" : `${limit} results`,
+    },
+  ];
 
   return (
     <>
@@ -64,18 +77,9 @@ const KnowledgeBaseNode: React.FC<NodeProps<KnowledgeBaseNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={KNOWLEDGE_BASE_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content now displays names instead of count */}
-        <NodeContent
-          data={[
-            { label: "Query", value: data.query },
-            { label: "Limit", value: data.limit.toString() },
-            { label: "Force Limit", value: data.force ? "On" : "Off" },
-            { label: "Knowledge Bases", value: displayValue },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <KnowledgeBaseDialog

@@ -17,7 +17,7 @@ import {
   formatStatusLabel,
   normalizePercent,
   normalizeSeconds,
-  getAccuracyFromEvents,
+  getAccuracyFromMetrics,
   inProgressStatuses,
 } from "@/views/FineTune/utils/utils";
 import type { FineTuneJobsCardProps, JobProgress } from "@/views/FineTune/types";
@@ -171,12 +171,13 @@ export function FineTuneJobsCard({ searchQuery, refreshKey = 0 }: FineTuneJobsCa
     const isTerminalStatus = ["succeeded", "failed", "cancelled"].includes(normalizedStatus);
     const isInProgress =
       !isTerminalStatus && (inProgressStatuses.has(normalizedStatus) || progress?.is_running);
+    const latestMetricsAccuracy = getAccuracyFromMetrics(progress?.latest_metrics, isInProgress);
     const accuracy =
       normalizePercent((job as Record<string, unknown>).accuracy) ??
       normalizePercent((job as Record<string, unknown>).validation_accuracy) ??
       normalizePercent((job as Record<string, unknown>).full_valid_mean_token_accuracy) ??
       normalizePercent(progress?.accuracy) ??
-      getAccuracyFromEvents(job, isInProgress);
+      latestMetricsAccuracy;
 
     if (accuracy === null) {
       if (isInProgress) {

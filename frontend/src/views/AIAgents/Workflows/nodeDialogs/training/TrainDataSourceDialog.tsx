@@ -13,11 +13,11 @@ import {
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { getAllDataSources } from "@/services/dataSources";
 import { useToast } from "@/components/use-toast";
-import { Save, Upload, X, FileText } from "lucide-react";
+import { Save } from "lucide-react";
 import { NodeConfigDialog } from "../../components/NodeConfigDialog";
 import { BaseNodeDialogProps } from "../base";
 import { DraggableTextArea } from "../../components/custom/DraggableTextArea";
-import { uploadFiles } from "@/services/api";
+import { FileUploader } from "@/components/FileUploader";
 
 type TrainDataSourceDialogProps = BaseNodeDialogProps<
   TrainDataSourceNodeData,
@@ -47,10 +47,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   });
   const [dataSourceId, setDataSourceId] = useState(data.dataSourceId ?? null);
   const [query, setQuery] = useState(data.query ?? null);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvFileName, setCsvFileName] = useState(data.csvFileName ?? null);
   const [csvFilePath, setCsvFilePath] = useState(data.csvFilePath ?? null);
-  const [isUploading, setIsUploading] = useState(false);
   const [availableDataSources, setAvailableDataSources] = useState<
     DataSource[]
   >([]);
@@ -79,7 +77,6 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       setQuery(data.query ?? null);
       setCsvFileName(data.csvFileName ?? null);
       setCsvFilePath(data.csvFilePath ?? null);
-      setCsvFile(null);
 
       const loadDataSources = async () => {
         try {
@@ -102,61 +99,6 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       loadDataSources();
     }
   }, [isOpen, data, toast]);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Validate that it's a CSV file
-      if (!file.name.endsWith(".csv")) {
-        toast({
-          title: "Invalid File",
-          description: "Please upload a CSV file",
-          variant: "destructive",
-        });
-        return;
-      }
-      setCsvFile(file);
-      setCsvFileName(file.name);
-    }
-  };
-
-  const uploadCsvFile = async (): Promise<{
-    file_path: string;
-    original_filename: string;
-  } | null> => {
-    if (!csvFile) return null;
-
-    setIsUploading(true);
-
-    try {
-      const result = (await uploadFiles([csvFile])) as {
-        file_path: string;
-        original_filename: string;
-      };
-      console.log("CSV upload successful:", result);
-      return {
-        file_path: result[0].file_path,
-        original_filename: result[0].original_filename,
-      };
-    } catch (error) {
-      toast({
-        title: "Upload Error",
-        description: `Failed to upload file: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        variant: "destructive",
-      });
-      return null;
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleRemoveFile = () => {
-    setCsvFile(null);
-    setCsvFileName(null);
-    setCsvFilePath(null);
-  };
 
   const handleSourceChange = (value: string) => {
     setSelectedSource(value);
@@ -192,7 +134,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         return;
       }
     } else if (sourceType === "csv") {
-      if (!csvFile && !csvFileName && !csvFilePath) {
+      if (!csvFileName && !csvFilePath) {
         toast({
           title: "Validation Error",
           description: "Please upload a CSV file",
@@ -202,22 +144,6 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       }
     }
 
-    let finalCsvFilePath = csvFilePath;
-
-    // If a new file was selected, upload it
-    if (csvFile) {
-      const uploadResult = await uploadCsvFile();
-      if (!uploadResult) {
-        toast({
-          title: "Upload Error",
-          description: "Failed to upload CSV file",
-          variant: "destructive",
-        });
-        return;
-      }
-      finalCsvFilePath = uploadResult.file_path;
-    }
-
     onUpdate({
       ...data,
       name,
@@ -225,7 +151,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       dataSourceId: dataSourceId ?? undefined,
       query: query ?? undefined,
       csvFileName: csvFileName ?? undefined,
-      csvFilePath: finalCsvFilePath ?? undefined,
+      csvFilePath: csvFilePath ?? undefined,
     });
     onClose();
   };
@@ -310,83 +236,21 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
 
         {/* CSV Upload Configuration */}
         {sourceType === "csv" && (
-          <div className="space-y-2">
-            <Label htmlFor="csvFile">Upload CSV File *</Label>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md p-6">
-                <label
-                  htmlFor="csvFile"
-                  className="flex flex-col items-center gap-2 cursor-pointer"
-                >
-                  <Upload className="h-10 w-10 text-muted-foreground" />
-                  <span className="text-sm font-medium text-muted-foreground">
-                    {csvFile
-                      ? csvFile.name
-                      : csvFilePath
-                      ? "Replace file"
-                      : "Select .csv file to upload"}
-                  </span>
-                  <input
-                    id="csvFile"
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileChange}
-                    disabled={isUploading}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-
-              {csvFile && (
-                <div className="flex items-center justify-between p-2 bg-muted rounded-md">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    <span className="text-sm">
-                      {csvFile.name} ({(csvFile.size / 1024).toFixed(1)} KB)
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleRemoveFile}
-                    className="h-8 w-8"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              {csvFilePath && !csvFile && (
-                <div className="flex items-center justify-between p-2 bg-muted rounded-md">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    <span className="text-sm">
-                      File: {csvFileName || "CSV file uploaded"}
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleRemoveFile}
-                    className="h-8 w-8"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              {isUploading && (
-                <div className="p-2 text-sm text-muted-foreground">
-                  Uploading file... Please wait.
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-gray-500">
-              Upload a CSV file containing your training data
-            </p>
-          </div>
+          <FileUploader
+            label="Training File"
+            acceptedFileTypes={[".csv"]}
+            initialServerFilePath={csvFilePath ?? ""}
+            initialOriginalFileName={csvFileName ?? ""}
+            onUploadComplete={(result) => {
+              setCsvFileName(result.original_filename);
+              setCsvFilePath(result.file_path);
+            }}
+            onRemove={() => {
+              setCsvFileName(null);
+              setCsvFilePath(null);
+            }}
+            placeholder="Select a CSV file to upload"
+          />
         )}
       </div>
     </NodeConfigDialog>

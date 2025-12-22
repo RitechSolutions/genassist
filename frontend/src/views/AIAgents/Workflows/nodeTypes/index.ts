@@ -2,6 +2,7 @@ import nodeRegistry from "../registry/nodeRegistry";
 import ChatInputNode from "./chat/chatInputNode";
 import LLMModelNode from "./llm/modelNode";
 import APIToolNode from "./tools/apiToolNode";
+import OpenApiNode from "./tools/openApiNode";
 import AgentNode from "./llm/agentNode";
 import PythonCodeNode from "./tools/pythonCodeNode";
 import {
@@ -10,6 +11,7 @@ import {
 } from "./chat/definitions";
 import {
   API_TOOL_NODE_DEFINITION,
+  OPEN_API_NODE_DEFINITION,
   KNOWLEDGE_BASE_NODE_DEFINITION,
   PYTHON_CODE_NODE_DEFINITION,
   SQL_NODE_DEFINITION,
@@ -71,6 +73,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(TEMPLATE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(MODEL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(API_TOOL_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(OPEN_API_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(WHATSAPP_NODE_DEFINITION);
 
@@ -115,6 +118,7 @@ export const getNodeTypes = () => {
     templateNode: TemplateNode,
     chatOutputNode: ChatOutputNode,
     apiToolNode: APIToolNode,
+    openApiNode: OpenApiNode,
     agentNode: AgentNode,
     knowledgeBaseNode: KnowledgeBaseNode,
     sqlNode: SQLNode,

@@ -56,16 +56,15 @@ export interface NodeTestPayload {
   node_config: NodeData;
 }
 
-export const getNodeDialogSchema = async (
-  nodeType: string
-): Promise<FieldSchema[]> => {
+export interface NodeSchemas {
+  [nodeType: string]: FieldSchema[];
+}
+
+export const getAllNodeSchemas = async (): Promise<NodeSchemas> => {
   try {
-    return await apiRequest<FieldSchema[]>(
-      "GET",
-      `${BASE}/dialog_schema/${nodeType}`
-    );
+    return await apiRequest<NodeSchemas>("GET", `${BASE}/node_schemas`);
   } catch (error) {
-    console.error("Error fetching node dialog schema", error);
+    console.error("Error fetching all node schemas", error);
     throw error;
   }
 };

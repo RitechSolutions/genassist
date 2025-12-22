@@ -1,0 +1,73 @@
+networks:
+  monitoring_net:
+    driver: bridge
+
+services:
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    networks:
+      - monitoring_net
+    # ports:
+    #   - "9080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: always
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    networks:
+      - monitoring_net
+    # ports:
+    #   - "9100:9100" 
+    # network_mode: host 
+    # pid: host
+    restart: always
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    networks:
+      - monitoring_net
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    # ports:
+    #   - "9090:9090"
+    restart: always
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    networks:
+      - monitoring_net
+    ports:
+      - "9000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./grafana/provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/19792_rev6.json
+    depends_on:
+      - prometheus
+    restart: always
+
+
+volumes:
+  grafana-storage:

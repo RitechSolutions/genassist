@@ -23,7 +23,10 @@
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
     --ring: 240 5.9% 10%;
+    --brand-600: 243 75% 59%;
+    --brand-50: 243 75% 98%;
     --radius: 0.75rem;
+    --handler-diameter: 14;
   }
 }
 
@@ -108,4 +111,20 @@ input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button,
 input[type="checkbox"]:hover {
   cursor: pointer;
+}
+
+.react-flow__handle-left {
+  left: calc(var(--handler-diameter) / -2 * 1px) !important;
+}
+
+.react-flow__handle-right {
+  right: calc(var(--handler-diameter) / -2 * 1px) !important;
+}
+
+.react-flow__handle-top {
+  top: calc(var(--handler-diameter) / -2 * 1px) !important;
+}
+
+.react-flow__handle-bottom {
+  bottom: calc(var(--handler-diameter) / -2 * 1px) !important;
 }

@@ -2,9 +2,10 @@ import logging
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi_injector import Injected
 
+from app.auth.dependencies import auth, permissions
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.registry import AgentRegistry
@@ -15,7 +16,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/switch/{agent_id}", response_model=Dict[str, Any])
+@router.post("/switch/{agent_id}", response_model=Dict[str, Any], dependencies=[
+        Depends(auth),
+        Depends(permissions("switch:agent"))
+    ])
 async def switch_agent(
         agent_id: UUID,
         config_service: AgentConfigService = Injected(AgentConfigService),
@@ -38,7 +42,9 @@ async def switch_agent(
 
 
 
-@router.post("/{agent_id}/query/{thread_id}", response_model=Dict[str, Any])
+@router.post("/{agent_id}/query/{thread_id}", response_model=Dict[str, Any], dependencies=[
+        Depends(auth),
+    ])
 async def query_agent(
         agent_id: UUID,
         thread_id: str,

@@ -177,6 +177,14 @@ export interface SQLNodeData extends BaseNodeData {
   parameters?: Record<string, string>;
 }
 
+// OpenAPI Node Data
+export interface OpenApiNodeData extends BaseNodeData {
+  providerId: string;
+  query: string;
+  originalFileName: string;
+  serverFilePath?: string;
+}
+
 // Python Code Node Data
 export interface PythonCodeNodeData extends BaseNodeData {
   code: string;
@@ -222,7 +230,6 @@ export interface TrainDataSourceNodeData extends BaseNodeData {
   dataSourceId?: string; // ID of the datasource (for timedb/snowflake)
   dataSourceType?: string; // Type of datasource (timedb/snowflake)
   query?: string; // SQL query to fetch data
-  csvFile?: File | null; // Uploaded CSV file
   csvFileName?: string; // Name of the uploaded CSV file
   csvFilePath?: string; // Server path to the uploaded CSV file
 }

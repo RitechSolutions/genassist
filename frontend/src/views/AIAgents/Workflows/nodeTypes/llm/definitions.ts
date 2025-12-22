@@ -117,7 +117,7 @@ export const TOOL_BUILDER_NODE_DEFINITION: NodeTypeDefinition<ToolBuilderNodeDat
       name: "Tool Builder",
       description: "Custom tool for parameter forwarding",
       inputSchema: undefined,
-      forwardTemplate: "{{direct_input}}",
+      forwardTemplate: "{}",
       handlers: [
         {
           id: "output_tool",

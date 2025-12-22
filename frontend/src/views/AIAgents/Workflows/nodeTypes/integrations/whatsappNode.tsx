@@ -1,12 +1,14 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { NodeProps } from "reactflow";
 import { createSimpleSchema } from "../../types/schemas";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { WhatsappNodeData } from "../../types/nodes";
 import { WhatsAppDialog } from "../../nodeDialogs/WhatsAppDialog";
+import { NodeContentRow } from "../nodeContent";
+import { AppSetting } from "@/interfaces/app-setting.interface";
+import { getAllAppSettings } from "@/services/appSettings";
 
 export const WHATSAPP_NODE_TYPE = "whatsappToolNode";
 const WhatsAppNode: React.FC<NodeProps<WhatsappNodeData>> = ({
@@ -17,7 +19,21 @@ const WhatsAppNode: React.FC<NodeProps<WhatsappNodeData>> = ({
   const nodeDefinition = nodeRegistry.getNodeType(WHATSAPP_NODE_TYPE);
   const color = getNodeColor(nodeDefinition.category);
 
+  const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchAppSettings = async () => {
+      try {
+        const settings = await getAllAppSettings();
+        setAppSettings(settings);
+      } catch (error) {
+        // ignore
+      }
+    };
+
+    fetchAppSettings();
+  }, []);
 
   const onUpdate = (updatedData: Partial<WhatsappNodeData>) => {
     const inputSchema = createSimpleSchema({
@@ -39,6 +55,20 @@ const WhatsAppNode: React.FC<NodeProps<WhatsappNodeData>> = ({
     }
   };
 
+  const selectedAppSettingName = appSettings.find(
+    (setting) => setting.id === data.app_settings_id
+  )?.name;
+
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Configuration",
+      value: selectedAppSettingName,
+      placeholder: "None selected",
+    },
+    { label: "Recipient Number", value: data.recipient_number },
+    { label: "Message", value: data.message },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -50,26 +80,9 @@ const WhatsAppNode: React.FC<NodeProps<WhatsappNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={WHATSAPP_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Body */}
-        <NodeContent
-          data={[
-            {
-              label: "Configuration Vars",
-              value: data.app_settings_id,
-            },
-            {
-              label: "Recipient Number",
-              value: data.recipient_number,
-            },
-            {
-              label: "Message",
-              value: data.message,
-            },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <WhatsAppDialog

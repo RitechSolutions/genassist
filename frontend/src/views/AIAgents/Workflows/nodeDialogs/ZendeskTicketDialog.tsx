@@ -18,6 +18,8 @@ import { getAllAppSettings } from "@/services/appSettings";
 import { AppSetting } from "@/interfaces/app-setting.interface";
 import { AppSettingDialog } from "@/views/AppSettings/components/AppSettingDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { DraggableInput } from "../components/custom/DraggableInput";
+import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 
 type ZendeskTicketDialogProps = BaseNodeDialogProps<
   ZendeskTicketNodeData,
@@ -170,7 +172,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
           <div className="space-y-2">
             <div className="space-y-2">
               <Label htmlFor="subject">Subject</Label>
-              <Input
+              <DraggableInput
                 id="subject"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
@@ -180,7 +182,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
-              <Textarea
+              <DraggableTextArea
                 id="description"
                 rows={4}
                 value={description}
@@ -197,7 +199,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
           <div className="space-y-2">
             <div className="space-y-2">
               <Label htmlFor="requester_name">Requester Name</Label>
-              <Input
+              <DraggableInput
                 id="requester_name"
                 value={requesterName}
                 onChange={(e) => setRequesterName(e.target.value)}
@@ -207,7 +209,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
             </div>
             <div className="space-y-2">
               <Label htmlFor="requester_email">Requester Email</Label>
-              <Input
+              <DraggableInput
                 id="requester_email"
                 type="email"
                 value={requesterEmail}

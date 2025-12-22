@@ -6,9 +6,9 @@ import { getAllDataSources } from "@/services/dataSources";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { useQuery } from "@tanstack/react-query";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { ReadMailsDialog } from "../../nodeDialogs/readMailsDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const READ_MAILS_NODE_TYPE = "readMailsNode";
 
@@ -58,6 +58,23 @@ const ReadMailsNode: React.FC<NodeProps<ReadMailsNodeData>> = ({
     }
   };
 
+  const limit = data.searchCriteria.max_results
+    ? data.searchCriteria.max_results
+    : 0;
+
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Account",
+      value: selectedConnector?.name,
+      placeholder: "None selected",
+    },
+    { label: "Sender", value: data.searchCriteria?.from },
+    {
+      label: "Limit",
+      value: limit === 0 ? "" : limit === 1 ? "1 email" : `${limit} emails`,
+    },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -69,21 +86,9 @@ const ReadMailsNode: React.FC<NodeProps<ReadMailsNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={READ_MAILS_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content */}
-        <NodeContent
-          data={[
-            {
-              label: "Gmail Data Source",
-              value: selectedConnector?.name || "",
-            },
-            { label: "From Email", value: data.searchCriteria?.from },
-            { label: "To Email", value: data.searchCriteria?.to },
-            { label: "Subject Contains", value: data.searchCriteria?.subject },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <ReadMailsDialog

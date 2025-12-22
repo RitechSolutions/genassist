@@ -6,9 +6,9 @@ import { getAllDataSources } from "@/services/dataSources.ts";
 import { DataSource } from "@/interfaces/dataSource.interface.ts";
 import { useQuery } from "@tanstack/react-query";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { CalendarEventDialog } from "@/views/AIAgents/Workflows/nodeDialogs/CalendarEventDialog.tsx";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent.tsx";
 
 export const CALENDAR_EVENT_NODE_TYPE = "calendarEventNode";
 
@@ -50,6 +50,21 @@ const CalendarEventNode: React.FC<NodeProps<CalendarEventToolNodeData>> = ({
     }
   };
 
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Connector",
+      value: data.dataSourceId,
+      placeholder: "None selected",
+    },
+    {
+      label: "Operation",
+      value: data.operation,
+      placeholder: "None selected",
+      isSelection: true,
+    },
+    { label: "Summary", value: data.summary },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -61,25 +76,9 @@ const CalendarEventNode: React.FC<NodeProps<CalendarEventToolNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={CALENDAR_EVENT_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        <NodeContent
-          data={[
-            {
-              label: "Summary",
-              value: data.summary,
-            },
-            {
-              label: "Operation",
-              value: data.operation,
-            },
-            {
-              label: "Subject Contains",
-              value: data.subjectContains,
-            },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       <CalendarEventDialog
         isOpen={isEditDialogOpen}

@@ -3,10 +3,10 @@ import { NodeProps } from "reactflow";
 import { ToolBuilderNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { ToolBuilderDialog } from "../../nodeDialogs/ToolBuilderDialog";
-import { convertSchemaToParams } from "../../utils/helpers";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
+import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
 
 export const TOOL_BUILDER_NODE_TYPE = "toolBuilderNode";
 const ToolBuilderNode: React.FC<NodeProps<ToolBuilderNodeData>> = ({
@@ -29,6 +29,19 @@ const ToolBuilderNode: React.FC<NodeProps<ToolBuilderNodeData>> = ({
     }
   };
 
+  const nodeContent: NodeContentRow[] = [
+    { label: "Description", value: data.description },
+    {
+      label: "Return data as agent output",
+      value: data.returnDirect ? "Yes" : "No",
+    },
+    {
+      label: "Variables",
+      value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
+      areDynamicVars: true,
+    },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -40,19 +53,9 @@ const ToolBuilderNode: React.FC<NodeProps<ToolBuilderNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType="toolBuilderNode"
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content */}
-        <NodeContent
-          data={[
-            { label: "Description", value: data.description },
-            {
-              label: "Return data directly as agent output",
-              value: data.returnDirect ? "Yes" : "No",
-            },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <ToolBuilderDialog

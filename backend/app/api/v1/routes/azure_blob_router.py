@@ -54,7 +54,9 @@ def get_service(req: AzureConnection) -> AzureStorageService:
 # API Endpoints
 # -----------------------------------------------------------------------------
 
-@router.get("/list", response_model=List[str])
+@router.get("/list", response_model=List[str], dependencies=[
+        Depends(auth),
+    ])
 async def list_files(
     connectionstring: str,
     container: str,
@@ -69,12 +71,15 @@ async def list_files(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/exists")
+@router.get("/exists", dependencies=[
+        Depends(auth),
+    ])
 async def file_exists(
     connectionstring: str,
     container: str,
     filename: str,
-    prefix: Optional[str] = None
+    prefix: Optional[str] = None,
+
 ):
     """Check if a blob exists"""
     try:
@@ -84,7 +89,9 @@ async def file_exists(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/upload")
+@router.post("/upload", dependencies=[
+        Depends(auth),
+    ])
 async def upload_file(
     connectionstring: str,
     container: str,
@@ -111,7 +118,9 @@ async def upload_file(
             os.remove(tmp_path)
 
 
-@router.post("/upload-content")
+@router.post("/upload-content", dependencies=[
+        Depends(auth),
+    ])
 async def upload_file_content(req: FileRequest):
     """Upload provided text/bytes content directly"""
     try:
@@ -128,7 +137,9 @@ async def upload_file_content(req: FileRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/file")
+@router.delete("/file", dependencies=[
+        Depends(auth),
+    ])
 async def delete_file(req: FileRequest):
     """Delete a blob"""
     try:
@@ -139,7 +150,9 @@ async def delete_file(req: FileRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/move")
+@router.post("/move", dependencies=[
+        Depends(auth),
+    ])
 async def move_file(req: MoveRequest):
     """Move a blob (copy then delete original)"""
     try:
@@ -155,7 +168,9 @@ async def move_file(req: MoveRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/bucket-exists")
+@router.get("/bucket-exists", dependencies=[
+        Depends(auth),
+    ])
 async def bucket_exists(connectionstring: str, container: str):
     """Check if container exists"""
     try:

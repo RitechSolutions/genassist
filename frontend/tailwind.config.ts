@@ -11,7 +11,7 @@ export default {
   safelist: [
     {
       pattern:
-        /(text|bg|hover:bg|focus:bg|placeholder:text)-(blue|indigo|green|orange|purple|teal|cyan|pink)-(200|400|500|600)/,
+        /(text|bg|hover:bg|focus:bg|placeholder:text)-(blue|indigo|green|orange|purple|teal|cyan|pink|rose|sky|brand|red)-(50|100|200|300|400|500|600)/,
     },
   ],
   prefix: "",
@@ -57,6 +57,10 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        brand: {
+          50: "hsl(var(--brand-50))",
+          600: "hsl(var(--brand-600))",
         },
       },
       keyframes: {

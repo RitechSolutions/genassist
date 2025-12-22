@@ -3,9 +3,9 @@ import { NodeProps } from "reactflow";
 import { TrainModelNodeData } from "@/views/AIAgents/Workflows/types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { TrainModelDialog } from "../../nodeDialogs/training/TrainModelDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const TRAIN_MODEL_NODE_TYPE = "trainModelNode";
 
@@ -42,21 +42,24 @@ const TrainModelNode: React.FC<NodeProps<TrainModelNodeData>> = ({
     return labels[type] || type;
   };
 
-  const modelTypeInfo = data.modelType
-    ? getModelTypeLabel(data.modelType)
-    : "Not selected";
-  const targetColumnInfo = data.targetColumn || "Not specified";
-  const featureColumnsInfo =
-    data.featureColumns && data.featureColumns.length > 0
-      ? `${data.featureColumns.length} feature(s)`
-      : "No features selected";
-  const validationSplitInfo = data.validationSplit
-    ? `${Math.round(data.validationSplit * 100)}% validation`
-    : "No split defined";
-  const parametersInfo =
-    data.modelParameters && Object.keys(data.modelParameters).length > 0
-      ? `${Object.keys(data.modelParameters).length} parameter(s)`
-      : "No parameters";
+  const modelTypeInfo = data.modelType ? getModelTypeLabel(data.modelType) : "";
+
+  const numberOfFeatures = data.featureColumns ? data.featureColumns.length : 0;
+
+  const nodeContent: NodeContentRow[] = [
+    { label: "Model Type", value: modelTypeInfo },
+    { label: "Target", value: data.targetColumn },
+    {
+      label: "Features",
+      value:
+        numberOfFeatures === 1
+          ? "1 feature selected"
+          : numberOfFeatures > 1
+          ? `${numberOfFeatures} features selected`
+          : "",
+      placeholder: "None selected",
+    },
+  ];
 
   return (
     <>
@@ -69,19 +72,9 @@ const TrainModelNode: React.FC<NodeProps<TrainModelNodeData>> = ({
         subtitle="Train machine learning model"
         color={color}
         nodeType={TRAIN_MODEL_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        <NodeContent
-          data={[
-            { label: "File URL", value: data.fileUrl },
-            { label: "Model Type", value: modelTypeInfo },
-            { label: "Target Column", value: targetColumnInfo },
-            { label: "Features", value: featureColumnsInfo },
-            { label: "Validation Split", value: validationSplitInfo },
-            { label: "Parameters", value: parametersInfo },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <TrainModelDialog

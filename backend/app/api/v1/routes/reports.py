@@ -3,17 +3,22 @@ from typing import Dict
 
 from fastapi_injector import Injected
 
+from app.auth.dependencies import auth
 from app.services.conversations import ConversationService
 from app.schemas.report import TopicsReport
 
 router = APIRouter()
 
+
 @router.get(
-    "/topics-report",
-    response_model=TopicsReport,
-    summary="Counts per topics report",
-    description="Returns a map of topic→count across all conversation analyses.",
-)
+        "/topics-report",
+        response_model=TopicsReport,
+        summary="Counts per topics report",
+        description="Returns a map of topic→count across all conversation analyses.",
+        dependencies=[
+            Depends(auth),
+            ]
+        )
 async def topics_report(
     service: ConversationService = Injected(ConversationService),
     ) -> TopicsReport:

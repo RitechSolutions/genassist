@@ -3,9 +3,9 @@ import { NodeProps } from "reactflow";
 import { AggregatorNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { AggregatorDialog } from "../../nodeDialogs/AggregatorDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const AGGREGATOR_NODE_TYPE = "aggregatorNode";
 
@@ -27,8 +27,21 @@ const AggregatorNode: React.FC<NodeProps<AggregatorNodeData>> = ({
     }
   };
 
-  const strategyText = data.aggregationStrategy?.replace(/_/g, " ");
-  const timeoutText = data.timeoutSeconds ? `${data.timeoutSeconds}s` : "";
+  const timeout = data.timeoutSeconds ? data.timeoutSeconds : 0;
+
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Strategy",
+      value: data.aggregationStrategy,
+      isSelection: true,
+    },
+    {
+      label: "Timeout",
+      value:
+        timeout === 0 ? "" : timeout === 1 ? "1 second" : `${timeout} seconds`,
+    },
+    { label: "Forward Template", value: data.forwardTemplate },
+  ];
 
   return (
     <>
@@ -41,16 +54,9 @@ const AggregatorNode: React.FC<NodeProps<AggregatorNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={AGGREGATOR_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        <NodeContent
-          data={[
-            { label: "Aggregation Strategy", value: strategyText },
-            { label: "Timeout", value: timeoutText },
-            { label: "Forward Template", value: data.forwardTemplate },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       <AggregatorDialog
         isOpen={isEditDialogOpen}

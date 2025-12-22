@@ -1,6 +1,7 @@
 import { NodeProps } from "reactflow";
 import {
   APIToolNodeData,
+  OpenApiNodeData,
   KnowledgeBaseNodeData,
   NodeData,
   NodeTypeDefinition,
@@ -11,6 +12,7 @@ import {
 } from "../../types/nodes";
 
 import APIToolNode from "./apiToolNode";
+import OpenApiNode from "./openApiNode";
 import KnowledgeBaseNode from "./knowledgeBaseNode";
 import PythonCodeNode from "./pythonCodeNode";
 import SQLNode from "./sqlNode";
@@ -53,6 +55,47 @@ export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
   createNode: (id, position, data) => ({
     id,
     type: "apiToolNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const OPEN_API_NODE_DEFINITION: NodeTypeDefinition<OpenApiNodeData> = {
+  type: "openApiNode",
+  label: "OpenAPI Explorer",
+  description:
+    "Uses an OpenAPI specification and an LLM to answer questions about an API.",
+  shortDescription: "Explore an API specification",
+  configSubtitle:
+    "Select an LLM provider, upload an OpenAPI spec, and define the query.",
+  category: "tools",
+  icon: "Search",
+  defaultData: {
+    name: "OpenAPI Explorer",
+    providerId: "",
+    originalFileName: "",
+    query: "",
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  },
+  component: OpenApiNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "openApiNode",
     position,
     data: {
       ...data,
@@ -238,39 +281,40 @@ export const ML_MODEL_INFERENCE_NODE_DEFINITION: NodeTypeDefinition<MLModelInfer
     }),
   };
 
-export const THREAD_RAG_NODE_DEFINITION: NodeTypeDefinition<ThreadRAGNodeData> = {
-  type: "threadRAGNode",
-  label: "Thread RAG",
-  description: "Retrieve context from or add messages to thread RAG",
-  category: "tools",
-  icon: "Database",
-  defaultData: {
-    name: "Thread RAG",
-    action: "retrieve",
-    query: "{{query}}",
-    top_k: 5,
-    handlers: [
-      {
-        id: "input",
-        type: "target",
-        compatibility: "any",
-        position: "left",
-      },
-      {
-        id: "output",
-        type: "source",
-        compatibility: "any",
-        position: "right",
-      },
-    ],
-  } as ThreadRAGNodeData,
-  component: ThreadRAGNode as React.ComponentType<NodeProps<NodeData>>,
-  createNode: (id, position, data) => ({
-    id,
+export const THREAD_RAG_NODE_DEFINITION: NodeTypeDefinition<ThreadRAGNodeData> =
+  {
     type: "threadRAGNode",
-    position,
-    data: {
-      ...data,
-    },
-  }),
-};
+    label: "Thread RAG",
+    description: "Retrieve context from or add messages to thread RAG",
+    category: "tools",
+    icon: "Database",
+    defaultData: {
+      name: "Thread RAG",
+      action: "retrieve",
+      query: "{{query}}",
+      top_k: 5,
+      handlers: [
+        {
+          id: "input",
+          type: "target",
+          compatibility: "any",
+          position: "left",
+        },
+        {
+          id: "output",
+          type: "source",
+          compatibility: "any",
+          position: "right",
+        },
+      ],
+    } as ThreadRAGNodeData,
+    component: ThreadRAGNode as React.ComponentType<NodeProps<NodeData>>,
+    createNode: (id, position, data) => ({
+      id,
+      type: "threadRAGNode",
+      position,
+      data: {
+        ...data,
+      },
+    }),
+  };

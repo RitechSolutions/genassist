@@ -3,9 +3,9 @@ import { NodeProps } from "reactflow";
 import { RouterNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { RouterDialog } from "../../nodeDialogs/RouterDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const ROUTER_NODE_TYPE = "routerNode";
 
@@ -27,7 +27,15 @@ const RouterNode: React.FC<NodeProps<RouterNodeData>> = ({
     }
   };
 
-  const conditionText = data.compare_condition?.replace(/_/g, " ");
+  const nodeContent: NodeContentRow[] = [
+    { label: "First Value", value: data.first_value },
+    {
+      label: "Compare Condition",
+      value: data.compare_condition,
+      isSelection: true,
+    },
+    { label: "Second Value", value: data.second_value },
+  ];
 
   return (
     <>
@@ -40,16 +48,9 @@ const RouterNode: React.FC<NodeProps<RouterNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={ROUTER_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        <NodeContent
-          data={[
-            { label: "First Value", value: data.first_value },
-            { label: "Compare Condition", value: conditionText },
-            { label: "Second Value", value: data.second_value },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       <RouterDialog
         isOpen={isEditDialogOpen}

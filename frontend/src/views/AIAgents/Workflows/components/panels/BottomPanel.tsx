@@ -4,10 +4,7 @@ import { Save, Upload, PlayCircle } from "lucide-react";
 import { useBlocker } from "react-router-dom";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import {
-  useWorkflowExecution,
-  WorkflowExecutionState,
-} from "../../context/WorkflowExecutionContext";
+import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 
 interface BottomPanelProps {
   workflow: Workflow;
@@ -15,7 +12,6 @@ interface BottomPanelProps {
   onWorkflowLoaded: (workflow: Workflow) => void;
   onTestWorkflow: (workflow: Workflow) => void;
   onSaveWorkflow?: (workflow: Workflow) => Promise<void>;
-  onExecutionStateChange?: (executionState: WorkflowExecutionState) => void;
 }
 
 const BottomPanel: React.FC<BottomPanelProps> = ({
@@ -24,31 +20,26 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   onWorkflowLoaded,
   onTestWorkflow,
   onSaveWorkflow,
-  onExecutionStateChange,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [agentFormOpen, setAgentFormOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const {
-    state: executionState,
-    loadExecutionState,
-    setWorkflowStructure,
-  } = useWorkflowExecution();
-
-  useEffect(() => {
-    if (onExecutionStateChange) {
-      onExecutionStateChange(executionState);
-    }
-  }, [executionState, onExecutionStateChange]);
+  const { loadExecutionState, setWorkflowStructure } = useWorkflowExecution();
 
   useEffect(() => {
     if (workflow.executionState && workflow.nodes && workflow.edges) {
       setWorkflowStructure(workflow.nodes, workflow.edges);
       loadExecutionState(workflow.executionState);
     }
-  }, [workflow.executionState, workflow.nodes, workflow.edges]);
+  }, [
+    workflow.executionState,
+    workflow.nodes,
+    workflow.edges,
+    setWorkflowStructure,
+    loadExecutionState,
+  ]);
 
   // Handle save to server
   const handleSaveToServer = async () => {
@@ -136,7 +127,6 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         };
         // Load nodes and edges
         onWorkflowLoaded(gd);
-
       } catch (error) {
         alert("Failed to load graph configuration. Invalid file format.");
       }

@@ -4,9 +4,9 @@ import { MLModelInferenceNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import { MLModelInferenceDialog } from "../../nodeDialogs/MLModelInferenceDialog";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const ML_MODEL_INFERENCE_NODE_TYPE = "mlModelInferenceNode";
 
@@ -34,6 +34,22 @@ const MLModelInferenceNode: React.FC<NodeProps<MLModelInferenceNodeData>> = ({
   // Count only inference parameters as draggable inputs
   const totalInputs = Object.keys(data.inferenceInputs || {}).length;
 
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Model",
+      value: data.modelName,
+      placeholder: "None selected",
+    },
+    {
+      label: "Target",
+      value: "",
+    },
+    {
+      label: "Features",
+      value: "",
+    },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -45,26 +61,9 @@ const MLModelInferenceNode: React.FC<NodeProps<MLModelInferenceNodeData>> = ({
         subtitle="Run ML model inference"
         color={color}
         nodeType="mlModelInferenceNode"
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content */}
-        <NodeContent
-          data={[
-            {
-              label: "Model Name",
-              value: data.modelName,
-            },
-            {
-              label: "Inference Params",
-              value: `${totalInputs} configured`,
-            },
-            {
-              label: "Variables",
-              value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
-            },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <MLModelInferenceDialog

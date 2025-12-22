@@ -17,7 +17,7 @@ const chartConfig: ChartConfig = {
 };
 
 export function FineTuneAccuracyChart({
-  title = "Accuracy over time",
+  title = "Accuracy over steps",
   data,
   emptyLabel = "Data N/A",
   className,

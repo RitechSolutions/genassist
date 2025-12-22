@@ -1,14 +1,12 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { NodeProps, useNodes, useEdges } from "reactflow";
-import { Label } from "@/components/label";
-import { ScrollArea } from "@/components/scroll-area";
 import { AgentNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { AgentDialog } from "../../nodeDialogs/AgentDialog";
 import { getLLMProvider } from "@/services/llmProviders";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 interface ToolNodeData {
   name?: string;
@@ -89,6 +87,24 @@ const AgentNode: React.FC<NodeProps<AgentNodeData>> = ({
     }
   };
 
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "LLM Provider",
+      value: providerName,
+      placeholder: "None selected",
+    },
+    {
+      label: "Agent Type",
+      value: `${data.type} (${data.memory ? "with" : "without"} memory)`,
+    },
+    {
+      label: "Tools",
+      value:
+        availableTools.length === 0 ? "" : `${availableTools.length} connected`,
+      placeholder: "None connected",
+    },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -100,49 +116,9 @@ const AgentNode: React.FC<NodeProps<AgentNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType="agentNode"
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content */}
-        <NodeContent
-          data={[
-            { label: "LLM Provider", value: providerName },
-            { label: "System Prompt", value: data.systemPrompt },
-            { label: "User Prompt", value: data.userPrompt },
-            { label: "Agent Type", value: data.type },
-            { label: "Max Iterations", value: data.maxIterations.toString() },
-            { label: "Memory", value: data.memory ? "On" : "Off" },
-            {
-              label: "Tools",
-              value:
-                availableTools.length === 0
-                  ? ""
-                  : `${availableTools.length} connected`,
-            },
-          ]}
-        />
-
-        {/* Available Tools */}
-        {/* <div className="p-4 border-t border-gray-200 nodrag">
-          <Label>Available Tools</Label>
-          <ScrollArea className="h-24 border rounded-md p-2 bg-gray-50 mt-2">
-            {availableTools.length > 0 ? (
-              availableTools.map((tool) => (
-                <div
-                  key={tool.id}
-                  className="p-2 rounded-md mb-2 bg-white text-xs"
-                >
-                  <div className="font-medium">{tool.name}</div>
-                  <div className="text-gray-600">{tool.description}</div>
-                </div>
-              ))
-            ) : (
-              <div className="text-xs text-gray-500 text-center py-4">
-                No tools connected
-              </div>
-            )}
-          </ScrollArea>
-        </div> */}
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <AgentDialog

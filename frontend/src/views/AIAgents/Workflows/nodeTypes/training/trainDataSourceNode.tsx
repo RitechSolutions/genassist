@@ -3,11 +3,12 @@ import { NodeProps } from "reactflow";
 import { TrainDataSourceNodeData } from "@/views/AIAgents/Workflows/types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { TrainDataSourceDialog } from "../../nodeDialogs/training/TrainDataSourceDialog";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { getAllDataSources } from "@/services/dataSources";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { get } from "http";
+import { NodeContentRow } from "../nodeContent";
 
 export const TRAIN_DATA_SOURCE_NODE_TYPE = "trainDataSourceNode";
 
@@ -62,21 +63,18 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
 
   const getSourceTypeLabel = () => {
     if (data.sourceType === "csv") {
-      return "CSV Upload";
+      return "CSV upload";
     }
-    return "Datasource";
+    return "Data source";
   };
 
   const getDataSourceInfo = () => {
     if (data.sourceType === "csv") {
-      return (
-        data.csvFileName ||
-        (data.csvFilePath ? "CSV file uploaded" : "No file uploaded")
-      );
+      return data.csvFileName || (data.csvFilePath ? "CSV file" : "");
     }
     return selectedDataSource
       ? `${selectedDataSource.name} (${selectedDataSource.source_type})`
-      : "Not selected";
+      : "";
   };
 
   const queryPreview =
@@ -87,6 +85,12 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
       : data.sourceType === "datasource"
       ? "No query set"
       : "N/A";
+
+  const nodeContent: NodeContentRow[] = [
+    { label: "Source Type", value: data.sourceType, isSelection: true },
+    { label: "Data Source", value: getDataSourceInfo() },
+    { label: "Query", value: data.query },
+  ];
 
   return (
     <>
@@ -99,16 +103,9 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
         subtitle="Fetch training data"
         color={color}
         nodeType={TRAIN_DATA_SOURCE_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        <NodeContent
-          data={[
-            { label: "Source Type", value: getSourceTypeLabel() },
-            { label: "Data Source", value: getDataSourceInfo() },
-            { label: "Query", value: queryPreview },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <TrainDataSourceDialog

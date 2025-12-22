@@ -3,9 +3,9 @@ import { NodeProps } from "reactflow";
 import { ThreadRAGNodeData } from "@/views/AIAgents/Workflows/types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { ThreadRAGDialog } from "../../nodeDialogs/ThreadRAGDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const THREAD_RAG_NODE_TYPE = "threadRAGNode";
 
@@ -29,36 +29,30 @@ const ThreadRAGNode: React.FC<NodeProps<ThreadRAGNodeData>> = ({
     }
   };
 
+  const limit = data.top_k ? data.top_k : 0;
+
   // Prepare display content based on action
-  const getDisplayContent = () => {
+  const getNodeContent = () => {
+    const nodeContent: NodeContentRow[] = [
+      { label: "Action", value: data.action, isSelection: true },
+    ];
     if (data.action === "retrieve") {
-      return [
+      nodeContent.push(
+        { label: "Query", value: data.query },
         {
-          label: "Action",
-          value: data.action,
-        },
-        {
-          label: "Query",
-          value: data.query,
-        },
-        {
-          label: "Top K",
-          value: data.top_k?.toString(),
-        },
-      ];
+          label: "Limit",
+          value:
+            limit === 0
+              ? ""
+              : limit === 1
+              ? `Top result`
+              : `Top ${limit} results`,
+        }
+      );
     } else {
-      return [
-        {
-          label: "Action",
-          value: "Add Message to RAG",
-        },
-        {
-          label: "Message",
-          value: data.message || "",
-          placeholder: "No message provided",
-        },
-      ];
+      nodeContent.push({ label: "Message", value: data.message });
     }
+    return nodeContent;
   };
 
   return (
@@ -76,16 +70,9 @@ const ThreadRAGNode: React.FC<NodeProps<ThreadRAGNodeData>> = ({
         }
         color={color}
         nodeType={THREAD_RAG_NODE_TYPE}
+        nodeContent={getNodeContent()}
         onSettings={() => setIsEditDialogOpen(true)}
-        testTitle={`Test ${data.name || "Thread RAG"}`}
-        testDescription={
-          data.action === "retrieve"
-            ? "Test retrieving context from the thread RAG"
-            : "Test adding a message to the thread RAG"
-        }
-      >
-        <NodeContent data={getDisplayContent()} />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <ThreadRAGDialog

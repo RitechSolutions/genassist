@@ -3,9 +3,10 @@ import { NodeProps } from "reactflow";
 import { PreprocessingNodeData } from "@/views/AIAgents/Workflows/types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { PreprocessingDialog } from "../../nodeDialogs/training/PreprocessingDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
+import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
 
 export const PREPROCESSING_NODE_TYPE = "preprocessingNode";
 
@@ -29,11 +30,14 @@ const PreprocessingNode: React.FC<NodeProps<PreprocessingNodeData>> = ({
     }
   };
 
-  const codePreview = data.pythonCode
-    ? data.pythonCode.length > 100
-      ? `${data.pythonCode.substring(0, 100)}...`
-      : data.pythonCode
-    : "No preprocessing code set";
+  const nodeContent: NodeContentRow[] = [
+    { label: "Python Script", value: data.pythonCode, isCode: true },
+    {
+      label: "Variables",
+      value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
+      areDynamicVars: true,
+    },
+  ];
 
   return (
     <>
@@ -46,15 +50,9 @@ const PreprocessingNode: React.FC<NodeProps<PreprocessingNodeData>> = ({
         subtitle="Transform and clean training data"
         color={color}
         nodeType={PREPROCESSING_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        <NodeContent
-          data={[
-            { label: "File URL", value: data.fileUrl },
-            { label: "Python Code", value: codePreview },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <PreprocessingDialog

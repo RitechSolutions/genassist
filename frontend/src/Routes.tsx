@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
 import { Register } from "@/views/Register";
 import { ChangePassword, Login } from "@/views/Login";
@@ -38,6 +39,8 @@ import { Office365OAuthCallback  } from "./views/DataSources/components/Office36
 import WebhookListPage from "@/views/Webhooks/pages/Webhooks"
 import Privacy from "@/views/Privacy";
 import ServerStatusBanner from "@/components/ServerStatusBanner";
+import Onboarding from "@/views/Onboarding/pages/Onboarding";
+import { getRegistrationStatus } from "@/services/registration";
 
 const ProtectedLayout = () => {
   const { status, isOffline } = useServerStatus();
@@ -59,233 +62,298 @@ const ProtectedLayout = () => {
 export const RoutesProvider = () => {
   const { isEnabled } = useFeatureFlag();
 
-  const routes = createBrowserRouter([
-    {
-      path: "/",
-      element: <ProtectedLayout />,
-      children: [
-        { path: "", element: <Navigate to="/dashboard" replace /> },
-        {
-          path: "dashboard",
-          element: <Index />,
-        },
-        {
-          path: "transcripts",
-          element: (
-            <ProtectedRoute
-              requiredPermissions={["read:conversation"]}
-            >
-              <Transcripts />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "operators",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:operator"]}>
-              <Operators />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "analytics",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
-              <Analytics />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "notifications",
-          element: <Notifications />,
-        },
-        {
-          path: "settings",
-          element: <Settings />,
-        },
-        {
-          path: "settings/feature-flags",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:feature_flag"]}>
-              <FeatureFlags />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "users",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:user"]}>
-              <Users />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "roles",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:role"]}>
-              <Roles />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "llm-analyst",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
-              <LlmAnalyst />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "llm-providers",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
-              <LLMProviders />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "fine-tune",
-          element: (
-            <ProtectedRoute requiredPermissions={["*"]}>
-              <FineTune />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "fine-tune/:id",
-          element: (
-            <ProtectedRoute requiredPermissions={["*"]}>
-              <FineTuneJobDetail />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "user-types",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:user_type"]}>
-              <UserTypes />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "api-keys",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:api_key"]}>
-              <ApiKeys />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "ai-agents",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
-              <AIAgents />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "ai-agents/*",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
-              <AIAgents />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "tools",
-          element: (
-            <ProtectedRoute requiredPermissions={["*"]}>
-              <Tools />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "tools/create",
-          element: (
-            <ProtectedRoute requiredPermissions={["*"]}>
-              <CreateTool />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "tools/edit/:id",
-          element: (
-            <ProtectedRoute requiredPermissions={["*"]}>
-              <CreateTool />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "data-sources",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:data_source"]}>
-              <DataSources />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "audit-logs",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:audit_log"]}>
-              <AuditLogs />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "knowledge-base",
-          element: (
-            <ProtectedRoute requiredPermissions={["*"]}>
-              <KnowledgeBase />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "ml-models",
-          element: (
-            <ProtectedRoute requiredPermissions={["*"]}>
-              <MLModels />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "ml-models/:id",
-          element: (
-            <ProtectedRoute requiredPermissions={["*"]}>
-              <MLModelDetail />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "app-settings",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:app_setting"]}>
-              <AppSettings />
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: "webhooks",
-          element: (
-            <ProtectedRoute requiredPermissions={["read:webhook"]}>
-              <WebhookListPage />
-            </ProtectedRoute>
-          ),
-        },
+  const [registrationStatus, setRegistrationStatus] = useState<"loading" | "new" | "existing">("loading");
 
-        { path: "change-password", element: <ChangePassword /> },
-        {
-          path: "gauth/callback",
-          element: <GmailOAuthCallback />,
-        },
-      ],
-    },
-    { path: "login", element: (<><ServerStatusBanner /><Login /></>) },
-    { path: "register", element: <Register /> },
-    { path: "privacy", element: <Privacy /> },
-    { path: "*", element: <NotFound /> },
-    { path: "unauthorized", element: <Unauthorized /> },
-    { path: "office365/oauth/callback", element: <Office365OAuthCallback />}
-  ]);
+  useEffect(() => {
+    let cancelled = false;
 
-  return <RouterProvider router={routes} />;
+    // temporary skip handler
+    const skipFlag = localStorage.getItem("skip_onboarding") === "true";
+    if (skipFlag) {
+      setRegistrationStatus("existing");
+      return;
+    }
+    const checkRegistration = async () => {
+      try {
+        const response = await getRegistrationStatus();
+        if (cancelled) return;
+        const isNew = Boolean(response?.is_new);
+        setRegistrationStatus(isNew ? "new" : "existing");
+      } catch (error) {
+        if (!cancelled) {
+          setRegistrationStatus("existing");
+        }
+      }
+    };
+
+    checkRegistration();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // temporary skip handler
+  useEffect(() => {
+    const handleSkip = () => setRegistrationStatus("existing");
+    window.addEventListener("skip-onboarding", handleSkip);
+    return () => window.removeEventListener("skip-onboarding", handleSkip);
+  }, []);
+
+  const mainRouter = useMemo(
+    () =>
+      createBrowserRouter([
+        {
+          path: "/",
+          element: <ProtectedLayout />,
+          children: [
+            { path: "", element: <Navigate to="/dashboard" replace /> },
+            {
+              path: "dashboard",
+              element: <Index />,
+            },
+            
+            {
+              path: "transcripts",
+              element: (
+                <ProtectedRoute
+                  requiredPermissions={["read:conversation"]}
+                >
+                  <Transcripts />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "operators",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:operator"]}>
+                  <Operators />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "analytics",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
+                  <Analytics />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "notifications",
+              element: <Notifications />,
+            },
+            {
+              path: "settings",
+              element: <Settings />,
+            },
+            {
+              path: "settings/feature-flags",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:feature_flag"]}>
+                  <FeatureFlags />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "users",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:user"]}>
+                  <Users />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "roles",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:role"]}>
+                  <Roles />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "llm-analyst",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
+                  <LlmAnalyst />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "llm-providers",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:llm_provider"]}>
+                  <LLMProviders />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "fine-tune",
+              element: (
+                <ProtectedRoute requiredPermissions={["*"]}>
+                  <FineTune />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "fine-tune/:id",
+              element: (
+                <ProtectedRoute requiredPermissions={["*"]}>
+                  <FineTuneJobDetail />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "user-types",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:user_type"]}>
+                  <UserTypes />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "api-keys",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:api_key"]}>
+                  <ApiKeys />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "ai-agents",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
+                  <AIAgents />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "ai-agents/*",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
+                  <AIAgents />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tools",
+              element: (
+                <ProtectedRoute requiredPermissions={["*"]}>
+                  <Tools />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tools/create",
+              element: (
+                <ProtectedRoute requiredPermissions={["*"]}>
+                  <CreateTool />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tools/edit/:id",
+              element: (
+                <ProtectedRoute requiredPermissions={["*"]}>
+                  <CreateTool />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "data-sources",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:data_source"]}>
+                  <DataSources />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "audit-logs",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:audit_log"]}>
+                  <AuditLogs />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "knowledge-base",
+              element: (
+                <ProtectedRoute requiredPermissions={["*"]}>
+                  <KnowledgeBase />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "ml-models",
+              element: (
+                <ProtectedRoute requiredPermissions={["*"]}>
+                  <MLModels />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "ml-models/:id",
+              element: (
+                <ProtectedRoute requiredPermissions={["*"]}>
+                  <MLModelDetail />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "app-settings",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                  <AppSettings />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "webhooks",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:webhook"]}>
+                  <WebhookListPage />
+                </ProtectedRoute>
+              ),
+            },
+
+            { path: "change-password", element: <ChangePassword /> },
+            {
+              path: "gauth/callback",
+              element: <GmailOAuthCallback />,
+            },
+          ],
+        },
+        { path: "login", element: (<><ServerStatusBanner /><Login /></>) },
+        { path: "register", element: <Register /> },
+        { path: "privacy", element: <Privacy /> },
+        {
+              path: "onboarding",
+              element: <Onboarding />,
+            },
+        { path: "unauthorized", element: <Unauthorized /> },
+        { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
+        { path: "*", element: <NotFound /> }
+      ]),
+    [isEnabled],
+  );
+
+  const organizationRouter = useMemo(
+    () =>
+      createBrowserRouter([
+        { path: "onboarding", element: <Onboarding /> },
+        { path: "*", element: <Navigate to="/onboarding" replace /> },
+      ]),
+    [],
+  );
+
+  if (registrationStatus === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-[#6b7280]">
+        Loading...
+      </div>
+    );
+  }
+
+  const router = registrationStatus === "new" ? organizationRouter : mainRouter;
+
+  return <RouterProvider router={router} />;
 };

@@ -9,6 +9,8 @@ interface NodeHeaderProps {
   title: string;
   subtitle: string;
   color: string;
+  hasError?: boolean;
+  isSpecialNode?: boolean;
   onSettings?: () => void;
   onTest?: () => void;
   onDeleteClick: () => void;
@@ -19,28 +21,39 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
   title,
   subtitle,
   color,
+  hasError,
+  isSpecialNode,
   onSettings,
   onTest,
   onDeleteClick: onDeleteClick,
 }) => {
-  const titleColor = "#18181B";
-  const subtitleColor = "#71717A";
+  const isSpecialNoError = isSpecialNode && !hasError;
 
   return (
     <CardHeader className="relative overflow-hidden">
       <div className="flex items-center justify-between relative z-10">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 flex-1 min-w-0">
           <div
-            className="p-2 rounded-lg backdrop-blur-sm"
-            style={{ backgroundColor: color }}
+            className={`p-2 rounded-lg backdrop-blur-sm bg-${color} flex-shrink-0`}
           >
-            {renderIcon(iconName, "h-4 w-4 text-white")}
+            {renderIcon(
+              iconName,
+              `h-4 w-4 text-${isSpecialNoError ? "brand-600" : "white"}`
+            )}
           </div>
-          <div>
-            <h3 className="text-sm font-semibold" style={{ color: titleColor }}>
+          <div className="min-w-0">
+            <h3
+              className={`text-sm font-semibold text-${
+                isSpecialNoError ? "white" : "accent-foreground"
+              } truncate`}
+            >
               {title}
             </h3>
-            <p className="text-xs" style={{ color: subtitleColor }}>
+            <p
+              className={`text-xs text-${
+                isSpecialNoError ? "white" : "muted-foreground"
+              } truncate`}
+            >
               {subtitle}
             </p>
           </div>
@@ -50,7 +63,7 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
             <Button
               size="icon"
               variant="ghost"
-              className={`h-8 w-8 ${titleColor} hover:bg-white`}
+              className="h-8 w-8 text-accent-foreground hover:bg-white"
               onClick={onSettings}
             >
               <Settings className="h-4 w-4" />
@@ -60,7 +73,9 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
             <Button
               size="icon"
               variant="ghost"
-              className={`h-8 w-8 ${titleColor} hover:bg-white`}
+              className={`h-8 w-8 text-${
+                isSpecialNoError ? "white" : "accent-foreground"
+              } hover:bg-white`}
               onClick={onTest}
             >
               <Play className="h-4 w-4" />
@@ -69,17 +84,14 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
           <Button
             size="icon"
             variant="ghost"
-            className={`h-8 w-8 ${titleColor} hover:bg-white`}
+            className={`h-8 w-8 text-${
+              isSpecialNoError ? "white" : "accent-foreground"
+            } hover:bg-white`}
             onClick={onDeleteClick}
           >
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
-      </div>
-
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/20"></div>
-        <div className="absolute -left-2 -bottom-2 w-16 h-16 rounded-full bg-white/10"></div>
       </div>
     </CardHeader>
   );

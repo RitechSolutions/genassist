@@ -15,7 +15,8 @@ from app.dependencies.injector import injector
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
-from app.schemas.dynamic_form_schemas.nodes import get_node_dialog_schema as get_schema
+from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
+
 
 
 router = APIRouter()
@@ -28,6 +29,7 @@ SUPPORTED_NODE_TYPES = [
     "routerNode",
     "agentNode",
     "apiToolNode",
+    "openApiNode",
     "templateNode",
     "llmModelNode",
     "knowledgeBaseNode",
@@ -82,21 +84,11 @@ async def create_workflow(
 
 
 @router.get(
-    "/{workflow_id}",
-    response_model=Workflow,
-    dependencies=[Depends(auth), Depends(permissions("read:workflow"))],
+    "/node_schemas",
+    dependencies=[Depends(auth)]
 )
-async def get_workflow(
-    workflow_id: UUID, service: WorkflowService = Injected(WorkflowService)
-):
-    """
-    Get a workflow by ID
-    """
-    workflow = await service.get_by_id(workflow_id)
-
-    if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-    return workflow
+async def get_node_dialog_schemas():
+    return NODE_DIALOG_SCHEMAS
 
 
 @router.get(
@@ -311,6 +303,7 @@ async def test_workflow(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
 @router.get(
     "/dialog_schema/{node_type}",
     dependencies=[Depends(auth)]
@@ -322,7 +315,7 @@ async def get_node_dialog_schema(node_type: str):
             detail=f"Unsupported node type: {node_type}. Supported types: {SUPPORTED_NODE_TYPES}",
         )
 
-    return get_schema(node_type)
+    return NODE_DIALOG_SCHEMAS[node_type]
 
 
 @router.post(
@@ -473,3 +466,21 @@ async def debug_logging_probe():
         "root_level": logging.getLevelName(root.getEffectiveLevel()),
         "root_handlers": [type(h).__name__ for h in root.handlers],
     }
+
+# moved to the end to avoid catching other routes like /node_schemas
+@router.get(
+    "/{workflow_id}",
+    response_model=Workflow,
+    dependencies=[Depends(auth), Depends(permissions("read:workflow"))],
+)
+async def get_workflow(
+    workflow_id: UUID, service: WorkflowService = Injected(WorkflowService)
+):
+    """
+    Get a workflow by ID
+    """
+    workflow = await service.get_by_id(workflow_id)
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow

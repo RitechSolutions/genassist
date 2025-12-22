@@ -328,7 +328,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-4 py-4 w-full min-w-0">
+    <div className="flex flex-col gap-1 py-1 w-full min-w-0">
       {label && <Label htmlFor="parameters">{label}</Label>}
 
       <div className="flex flex-wrap gap-2 items-center min-w-0">

@@ -18,6 +18,7 @@ from fastapi.websockets import WebSocketDisconnect, WebSocketState
 from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
 from dotenv import load_dotenv
 from app.api.v1.routes.voice import get_openai_session_key
+from app.auth.dependencies import auth
 from app.modules.workflow.registry import AgentRegistry
 
 router = APIRouter()
@@ -153,7 +154,9 @@ async def text_to_speech_openai(text: str) -> bytes:
             return None
 
 
-@router.get("/", summary="Twilio Voice API Root Endpoint")
+@router.get("/", summary="Twilio Voice API Root Endpoint", dependencies=[
+    Depends(auth),
+    ])
 async def sample():
     return JSONResponse(
         content={
@@ -163,7 +166,9 @@ async def sample():
     )
 
 
-@router.get("/incoming-call/{agent_id}", summary="Handle Incoming Call")
+@router.get("/incoming-call/{agent_id}", summary="Handle Incoming Call", dependencies=[
+    Depends(auth),
+    ])
 async def handle_incoming_call(request: Request, agent_id: str):
     response = VoiceResponse()
     response.say("Welcome to the Genassist!")
@@ -192,7 +197,9 @@ async def handle_incoming_call(request: Request, agent_id: str):
     return HTMLResponse(content=str(response), media_type="application/xml")
 
 
-@router.websocket("/media-stream/{agent_id}")
+@router.websocket("/media-stream/{agent_id}", dependencies=[
+    Depends(auth),
+    ])
 async def handle_media_stream(
     twilio_inbound_socket: WebSocket,
     agent_id: str,

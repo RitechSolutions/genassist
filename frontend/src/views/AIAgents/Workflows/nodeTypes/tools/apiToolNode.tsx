@@ -4,9 +4,9 @@ import { APIToolNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import { APIToolDialog } from "../../nodeDialogs/APIToolDialog";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const API_TOOL_NODE_TYPE = "apiToolNode";
 const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
@@ -29,6 +29,16 @@ const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
     }
   };
 
+  const nodeContent: NodeContentRow[] = [
+    { label: "Endpoint", value: data.endpoint },
+    { label: "Method", value: data.method },
+    {
+      label: "Variables",
+      value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
+      areDynamicVars: true,
+    },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -40,20 +50,9 @@ const APIToolNode: React.FC<NodeProps<APIToolNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType="apiToolNode"
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content */}
-        <NodeContent
-          data={[
-            { label: "Endpoint URL", value: data.endpoint, isMono: true },
-            { label: "HTTP Method", value: data.method },
-            {
-              label: "Variables",
-              value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
-            },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <APIToolDialog

@@ -4,9 +4,9 @@ import { PythonCodeNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import { PythonCodeDialog } from "../../nodeDialogs/PythonCodeDialog";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const PYTHON_CODE_NODE_TYPE = "pythonCodeNode";
 
@@ -38,6 +38,19 @@ const PythonCodeNode: React.FC<NodeProps<PythonCodeNodeData>> = ({
     }
   };
 
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Python Script",
+      value: data.code,
+      isCode: true,
+    },
+    {
+      label: "Variables",
+      value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
+      areDynamicVars: true,
+    },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -49,24 +62,9 @@ const PythonCodeNode: React.FC<NodeProps<PythonCodeNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType="pythonCodeNode"
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content */}
-        <NodeContent
-          data={[
-            {
-              label: "Python Script",
-              value: getCodePreview(),
-              isMono: true,
-              hasMultipleLines: true,
-            },
-            {
-              label: "Variables",
-              value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
-            },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <PythonCodeDialog

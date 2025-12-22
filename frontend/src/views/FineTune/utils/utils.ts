@@ -62,34 +62,29 @@ export const formatDate = (value: unknown): string => {
   });
 };
 
-export const getAccuracyFromEvents = (job: FineTuneJob, isRunning: boolean): number | null => {
-  const events = (job as Record<string, unknown>).events as
-    | Array<{ metrics?: Record<string, unknown> }>
-    | undefined;
-  if (!Array.isArray(events) || !events.length) return null;
+const inProgressAccuracyFields = [
+  "valid_mean_token_accuracy",
+  "train_mean_token_accuracy",
+  "full_valid_mean_token_accuracy",
+  "full_valid_loss",
+] as const;
 
-  const lastWithMetrics = [...events]
-    .reverse()
-    .find((e) => e.metrics && Object.keys(e.metrics || {}).length > 0);
+const completedAccuracyFields = [
+  "full_valid_mean_token_accuracy",
+  "valid_mean_token_accuracy",
+  "train_mean_token_accuracy",
+  "full_valid_loss",
+] as const;
 
-  if (!lastWithMetrics?.metrics) return null;
-  const metrics = lastWithMetrics.metrics;
-  const accuracyFields = isRunning
-    ? [
-        "valid_mean_token_accuracy",
-        "train_mean_token_accuracy",
-        "full_valid_mean_token_accuracy",
-        "full_valid_loss",
-      ]
-    : [
-        "full_valid_mean_token_accuracy",
-        "valid_mean_token_accuracy",
-        "train_mean_token_accuracy",
-        "full_valid_loss",
-      ];
+export const getAccuracyFromMetrics = (
+  metrics: Record<string, unknown> | undefined,
+  isRunning: boolean
+): number | null => {
+  if (!metrics) return null;
+  const accuracyFields = isRunning ? inProgressAccuracyFields : completedAccuracyFields;
 
   for (const key of accuracyFields) {
-    const v = metrics[key as keyof typeof metrics];
+    const v = metrics[key];
     const num = Number(v);
     if (!isNaN(num)) {
       if (key.includes("loss")) {

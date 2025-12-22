@@ -3,10 +3,10 @@ import { NodeProps } from "reactflow";
 import { LLMModelNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import { getLLMProvider } from "@/services/llmProviders";
 import { LLModelDialog } from "../../nodeDialogs/LLModelDialog";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
 
 export const LL_MODEL_NODE_TYPE = "llmModelNode";
 
@@ -42,6 +42,19 @@ const LLModelNode: React.FC<NodeProps<LLMModelNodeData>> = ({
     }
   };
 
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "LLM Provider",
+      value: providerName,
+      placeholder: "None selected",
+    },
+    {
+      label: "Mode",
+      value: `${data.type} (${data.memory ? "with" : "without"} memory)`,
+    },
+    { label: "System Prompt", value: data.systemPrompt },
+  ];
+
   return (
     <>
       <BaseNodeContainer
@@ -53,19 +66,9 @@ const LLModelNode: React.FC<NodeProps<LLMModelNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType="llmModelNode"
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content */}
-        <NodeContent
-          data={[
-            { label: "LLM Provider", value: providerName },
-            { label: "System Prompt", value: data.systemPrompt },
-            { label: "User Prompt", value: data.userPrompt },
-            { label: "Type", value: data.type },
-            { label: "Memory", value: data.memory ? "On" : "Off" },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       {/* Edit Dialog */}
       <LLModelDialog

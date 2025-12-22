@@ -177,6 +177,9 @@ export const WorkflowExecutionProvider: React.FC<
 
   const hasNodeBeenExecuted = useCallback(
     (nodeId: string) => {
+      if (Object.keys(state.nodeOutputs).length === 0) {
+        return true;
+      }
       return !!state.nodeOutputs[nodeId];
     },
     [state.nodeOutputs]
@@ -284,7 +287,7 @@ export const WorkflowExecutionProvider: React.FC<
         session: state.session,
         source: source,
         node_outputs: nodeOutputs,
-        predecessors: predecessorIds,
+        // predecessors: predecessorIds,
       };
 
       return availableData;

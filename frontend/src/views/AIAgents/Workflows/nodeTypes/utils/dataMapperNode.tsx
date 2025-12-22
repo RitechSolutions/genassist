@@ -4,8 +4,9 @@ import { getNodeColor } from "../../utils/nodeColors";
 import { DataMapperDialog } from "../../nodeDialogs/DataMapperDialog";
 import { DataMapperNodeData } from "../../types/nodes";
 import BaseNodeContainer from "../BaseNodeContainer";
-import NodeContent from "../nodeContent";
 import nodeRegistry from "../../registry/nodeRegistry";
+import { NodeContentRow } from "../nodeContent";
+import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
 
 export const DATA_MAPPER_NODE_TYPE = "dataMapperNode";
 const DataMapperNode: React.FC<NodeProps<DataMapperNodeData>> = ({
@@ -17,14 +18,6 @@ const DataMapperNode: React.FC<NodeProps<DataMapperNodeData>> = ({
   const color = getNodeColor(nodeDefinition.category);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // Get code preview (first few lines)
-  const getCodePreview = () => {
-    if (!data.pythonScript) return "";
-    const lines = data.pythonScript?.split("\n");
-    if (lines?.length <= 3) return data.pythonScript;
-    return lines?.slice(0, 3).join("\n") + "\n...";
-  };
-
   const onUpdate = (updatedData: Partial<DataMapperNodeData>) => {
     if (data.updateNodeData) {
       const dataToUpdate = {
@@ -35,13 +28,18 @@ const DataMapperNode: React.FC<NodeProps<DataMapperNodeData>> = ({
     }
   };
 
-  const getMappingPreview = () => {
-    const scriptPreview =
-      data.pythonScript.length > 50
-        ? data.pythonScript.substring(0, 50) + "..."
-        : data.pythonScript;
-    return `Transform data using Python script: ${scriptPreview}`;
-  };
+  const nodeContent: NodeContentRow[] = [
+    {
+      label: "Python Script",
+      value: data.pythonScript,
+      isCode: true,
+    },
+    {
+      label: "Variables",
+      value: extractDynamicVariablesAsRecord(JSON.stringify(data)),
+      areDynamicVars: true,
+    },
+  ];
 
   return (
     <>
@@ -54,25 +52,9 @@ const DataMapperNode: React.FC<NodeProps<DataMapperNodeData>> = ({
         subtitle={nodeDefinition.shortDescription}
         color={color}
         nodeType={DATA_MAPPER_NODE_TYPE}
+        nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
-      >
-        {/* Node content */}
-        <NodeContent
-          data={[
-            {
-              label: "Python Script",
-              value: getCodePreview(),
-              isMono: true,
-              hasMultipleLines: true,
-            },
-            // {
-            //   label: "Mapping Preview",
-            //   value: getMappingPreview(),
-            //   hasMultipleLines: false,
-            // },
-          ]}
-        />
-      </BaseNodeContainer>
+      />
 
       <DataMapperDialog
         isOpen={isEditDialogOpen}

@@ -11,7 +11,7 @@ import {
   formatStatusLabel,
   normalizePercent,
   normalizeNumber,
-  getAccuracyFromEvents,
+  getAccuracyFromMetrics,
   buildAccuracySeries,
   formatNumber,
   formatDate,
@@ -64,12 +64,13 @@ export default function FineTuneJobDetail() {
     | Array<{ metrics?: Record<string, unknown>; created_at?: string }>
     | undefined;
 
-  const detailTitle =
-    job?.user_provided_suffix ||
-    job?.suffix ||
-    job?.fine_tuned_model ||
-    job?.id ||
-    "Fine-Tune Job";
+  const detailTitle = String(
+    job?.user_provided_suffix ??
+    job?.suffix ??
+    job?.fine_tuned_model ??
+    job?.id ??
+    "Fine-Tune Job"
+  );
 
   const statusLabel = (() => {
     if (["succeeded", "failed", "cancelled"].includes(normalizedStatus)) {
@@ -79,17 +80,13 @@ export default function FineTuneJobDetail() {
     return percent !== null ? `${percent} %` : formatStatusLabel(normalizedStatus);
   })();
 
-  const accuracyFromEvents = useMemo(() => {
-    if (!job) return null;
-    return getAccuracyFromEvents(job, isInProgress);
-  }, [job, isInProgress]);
-
+  const latestMetricsAccuracy = getAccuracyFromMetrics(progress?.latest_metrics, isInProgress);
   const accuracy =
     normalizePercent((job as Record<string, unknown> | null)?.accuracy) ??
     normalizePercent((job as Record<string, unknown> | null)?.validation_accuracy) ??
     normalizePercent((job as Record<string, unknown> | null)?.full_valid_mean_token_accuracy) ??
     normalizePercent(progress?.accuracy) ??
-    (accuracyFromEvents !== null ? accuracyFromEvents : null);
+    latestMetricsAccuracy;
 
   const hyper = (job?.hyperparameters as { n_epochs?: unknown; batch_size?: unknown } | undefined) || {};
   const nEpochsValue: string | number = normalizeNumber(hyper.n_epochs) ?? "—";
@@ -178,13 +175,44 @@ export default function FineTuneJobDetail() {
                 label="Status"
                 value={
                   <div className="flex items-center gap-2">
-                    <span>{statusLabel}</span>
                     {isInProgress && <Loader2 className="h-4 w-4 text-primary animate-spin" />}
+                    <span>{statusLabel}</span>
                   </div>
                 }
               />
-              <StatItem label="Accuracy" value={accuracy !== null ? `${accuracy} %` : "—"} />
-              <StatItem label="# of trained tokens" value={formatNumber(interactions)} />
+              <StatItem
+                label="Accuracy"
+                value={
+                  accuracy === null ? (
+                    isInProgress ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                        <span className="text-muted-foreground">Calculating...</span>
+                      </div>
+                    ) : (
+                      "—"
+                    )
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {isInProgress && <Loader2 className="h-4 w-4 text-primary animate-spin" />}
+                      <span>{`${accuracy} %`}</span>
+                    </div>
+                  )
+                }
+              />
+              <StatItem
+                label="# of trained tokens"
+                value={
+                  interactions === null && isInProgress ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                      <span className="text-muted-foreground">Calculating...</span>
+                    </div>
+                  ) : (
+                    formatNumber(interactions)
+                  )
+                }
+              />
             </div>
 
             <div className="border-t border-border" />
