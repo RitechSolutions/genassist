@@ -1,5 +1,5 @@
 
-<img width="2752" height="1536" alt="GenAssist_Infographic" src="https://github.com/user-attachments/assets/7f5b636c-ae01-4076-9480-b29ce84bf2ea" />
+<img width="2880" height="2048" alt="GenAssist Infographics" src="https://github.com/user-attachments/assets/4ba0ac3e-7453-4110-8038-02ec6a9becb1" />
 
 # GenAssist
 
