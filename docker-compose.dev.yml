@@ -120,10 +120,10 @@ services:
 
   # Chroma vector database
   chroma:
-    image: ghcr.io/chroma-core/chroma:latest
+    image: ghcr.io/chroma-core/chroma:1.3.7
     container_name: genassist-chroma-dev
     ports:
-      - "8005:8005"  # API
+      - "8005:8000"  # API
     volumes:
       - chroma_data_dev:/chroma/chroma
     environment:
