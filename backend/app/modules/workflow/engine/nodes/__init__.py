@@ -8,7 +8,6 @@ from .chat_nodes import ChatInputNode, ChatOutputNode
 from .router_node import RouterNode
 from .agent_node import AgentNode
 from .api_tool_node import ApiToolNode
-from .open_api_node import OpenAPINode
 from .prompt_node import TemplateNode
 from .llm_model_node import LLMModelNode
 from .knowledge_tool_node import KnowledgeToolNode
@@ -31,7 +30,6 @@ __all__ = [
     "RouterNode",
     "AgentNode",
     "ApiToolNode",
-    "OpenAPINode",
     "TemplateNode",
     "LLMModelNode",
     "KnowledgeToolNode",

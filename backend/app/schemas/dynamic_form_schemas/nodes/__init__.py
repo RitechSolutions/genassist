@@ -5,7 +5,6 @@ from .chat_output_schema import CHAT_OUTPUT_NODE_DIALOG_SCHEMA
 from .router_schema import ROUTER_NODE_DIALOG_SCHEMA
 from .agent_schema import AGENT_NODE_DIALOG_SCHEMA
 from .api_tool_schema import API_TOOL_NODE_DIALOG_SCHEMA
-from .open_api_schema import OPEN_API_NODE_DIALOG_SCHEMA
 from .template_schema import TEMPLATE_NODE_DIALOG_SCHEMA
 from .llm_model_schema import LLM_MODEL_NODE_DIALOG_SCHEMA
 from .knowledge_base_schema import KNOWLEDGE_BASE_NODE_DIALOG_SCHEMA
@@ -33,7 +32,6 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "routerNode": ROUTER_NODE_DIALOG_SCHEMA,
     "agentNode": AGENT_NODE_DIALOG_SCHEMA,
     "apiToolNode": API_TOOL_NODE_DIALOG_SCHEMA,
-    "openApiNode": OPEN_API_NODE_DIALOG_SCHEMA,
     "templateNode": TEMPLATE_NODE_DIALOG_SCHEMA,
     "llmModelNode": LLM_MODEL_NODE_DIALOG_SCHEMA,
     "knowledgeBaseNode": KNOWLEDGE_BASE_NODE_DIALOG_SCHEMA,
@@ -55,3 +53,7 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "preprocessingNode": PREPROCESSING_NODE_DIALOG_SCHEMA,
     "trainModelNode": TRAIN_MODEL_NODE_DIALOG_SCHEMA,
 }
+
+
+def get_node_dialog_schema(node_type: str):
+    return NODE_DIALOG_SCHEMAS.get(node_type)

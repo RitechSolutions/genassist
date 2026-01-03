@@ -37,7 +37,6 @@ from app.api.v1.routes import (
     tenants,
     azure_blob_router, 
     public_registration,
-    workflow_manager,
 )
 
 
@@ -112,4 +111,3 @@ router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenA
 router.include_router(azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"])
 
 router.include_router(public_registration.router, prefix="/public-registration", tags=["Public Registration"])  
-router.include_router(workflow_manager.router, prefix="/workflow-manager", tags=["Workflow Manager"])  

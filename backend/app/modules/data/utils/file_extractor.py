@@ -62,7 +62,6 @@ class FileTextExtractor:
         - Delimited: .csv, .tsv, .tab (dialect sniff; normalized to tab-separated text)
         - Excel: .xlsx (openpyxl), .xls (xlrd<2.0)
         - HTML: .html, .htm (BeautifulSoup/readability → plain text; optional Markdown if enabled)
-        - YAML: .yaml, .yml (PyYAML safe_load → formatted text; fallback to plaintext)
         - Other/unknown: optional generic textract fallback
 
         Behavior
@@ -83,7 +82,6 @@ class FileTextExtractor:
     # (extend later for .xlsb via pyxlsb if nedded)
     EXCEL_SUFFIXES = {".xlsx", ".xls"}
     HTML_SUFFIXES = {".html", ".htm"}
-    YAML_SUFFIXES = {".yaml", ".yml"}
 
     def __init__(self, options: Optional[ExtractorOptions] = None):
         self.options = options or ExtractorOptions()
@@ -148,8 +146,6 @@ class FileTextExtractor:
             return self._extract_delimited(path)
         if sfx in self.HTML_SUFFIXES:
             return self._extract_html(path)
-        if sfx in self.YAML_SUFFIXES:
-            return self._extract_yaml(path)
         if sfx in self.TEXT_SUFFIXES:
             return self._extract_plaintext(path)
 
@@ -386,37 +382,6 @@ class FileTextExtractor:
             # last resort: strip tags naively
             stripped = re.sub(r"<[^>]+>", " ", html_to_parse or "")
             return self._normalize_whitespace(stripped)
-
-    def _extract_yaml(self, path: Path) -> str:
-        """
-        YAML → formatted text representation.
-        Parses YAML and converts it to a readable string format.
-        """
-        logger.info("[extractor] used=yaml")
-        try:
-            import yaml
-
-            # Try UTF-8 first, fall back to latin-1
-            try:
-                content = path.read_text(encoding="utf-8", errors="replace")
-            except Exception:
-                content = path.read_text(encoding="latin-1", errors="replace")
-
-            # Parse YAML
-            data = yaml.safe_load(content)
-
-            # Convert to formatted string
-            if data is None:
-                return ""
-
-            # Use yaml.dump for clean formatting
-            return yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
-
-        except Exception as e:
-            logger.info(
-                f"[extractor] yaml parsing failed: {e}, falling back to plaintext")
-            # Fallback to plaintext if YAML parsing fails
-            return self._extract_plaintext(path)
 
     # Small helper to collapse excessive whitespace/newlines
 

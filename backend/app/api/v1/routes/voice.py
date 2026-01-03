@@ -5,14 +5,13 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 import httpx
-from app.auth.dependencies import auth, permissions, socket_auth
+from app.auth.dependencies import auth, permissions
 from app.services.auth import AuthService
 from app.auth.utils import has_permission, socket_user_id
 
 import openai
 
 from app.tasks.audio_tasks import transcribe_audio_files_async
-from app.schemas.socket_principal import SocketPrincipal
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +74,10 @@ async def get_openai_session_key(lang_code: str = Query(default=""), input_audio
 @router.websocket("/audio/tts")
 async def ws_tts(
         websocket: WebSocket,
-        principal: SocketPrincipal = socket_auth(["create:in_progress_conversation"]),
+        access_token: str = Query(default=None),
+        api_key: str = Query(default=None)
     ):
 
-    logger.debug("WebSocket connection accepted, user is: %s", principal.user_id)
     await websocket.accept()
     
     text_message = await websocket.receive_text()

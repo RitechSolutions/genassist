@@ -25,35 +25,16 @@ from app.core.config.logging import (
 )
 
 
-def get_allowed_origins() -> list[str]:
-    """
-    Get the list of allowed CORS origins.
-    Merges default origins with additional origins from CORS_ALLOWED_ORIGINS environment variable.
-    """
-    default_origins = [
-        "http://localhost:8080",
-        "http://localhost:3000",
-        "http://127.0.0.1:8080",
-        "http://127.0.0.1:3000",
-    ]
-    
-    # Start with default origins
-    allowed_origins = default_origins.copy()
-    
-    # Add additional origins from environment variable if provided
-    if settings.CORS_ALLOWED_ORIGINS:
-        # Parse comma-separated origins and strip whitespace
-        additional_origins = [
-            origin.strip() 
-            for origin in settings.CORS_ALLOWED_ORIGINS.split(",") 
-            if origin.strip()
-        ]
-        # Add unique origins only
-        for origin in additional_origins:
-            if origin not in allowed_origins:
-                allowed_origins.append(origin)
-    
-    return allowed_origins
+ALLOWED_ORIGINS = [
+    "https://app.test.genassist.ritech.io",
+    "https://app.dev.genassist.ritech.io",
+    "http://localhost",
+    "http://localhost",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "http://127.0.0.1:8080",
+    "http://127.0.0.1:3000",
+]
 
 
 def build_middlewares() -> list[Middleware]:
@@ -87,7 +68,7 @@ def build_middlewares() -> list[Middleware]:
         # 4️⃣  CORS
         Middleware(
             CORSMiddleware,
-            allow_origins=get_allowed_origins(),
+            allow_origins=ALLOWED_ORIGINS,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
