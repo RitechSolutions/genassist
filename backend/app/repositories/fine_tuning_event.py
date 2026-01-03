@@ -136,33 +136,3 @@ class FineTuningEventRepository(DbRepository[FineTuningEventModel]):
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
-
-    async def get_latest_step_event_by_job_id(
-            self,
-            job_id: UUID
-            ) -> Optional[FineTuningEventModel]:
-        """
-        Get the most recent event with training metrics (has 'step' field).
-        This excludes validation/completion events that don't have training metrics.
-
-        Args:
-            job_id: Job UUID
-
-        Returns:
-            Latest training event or None
-        """
-        query = (
-            select(FineTuningEventModel)
-            .where(
-                and_(
-                    FineTuningEventModel.job_id == job_id,
-                    FineTuningEventModel.metrics.isnot(None),
-                    FineTuningEventModel.metrics['step'].astext.isnot(None)
-                )
-            )
-            .order_by(desc(FineTuningEventModel.event_created_at))
-            .limit(1)
-        )
-
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()

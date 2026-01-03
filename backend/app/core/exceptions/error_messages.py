@@ -217,7 +217,7 @@ ERROR_MESSAGES = {
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",
-        ErrorKey.PKL_FILE_TOO_LARGE: "PKL file too large. Maximum size is 500MB.",
+        ErrorKey.PKL_FILE_TOO_LARGE: "PKL file too large. Maximum size is 100MB.",
         ErrorKey.ERROR_UPLOAD_FILE_OPEN_AI: "Failed to upload file to OpenAI.",
         ErrorKey.ERROR_CREATE_JOB_OPEN_AI: "Failed to create job openai.",
         ErrorKey.ERROR_EXIST_JOB_OPEN_AI: "Job not found.",

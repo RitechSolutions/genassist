@@ -5423,14 +5423,6 @@
         "summary": "Switch Agent",
         "description": "Switch to an agent with the specified ID",
         "operationId": "switch_agent_api_genagent_agents_switch__agent_id__post",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "agent_id",
@@ -5476,14 +5468,6 @@
         ],
         "summary": "Query Agent",
         "operationId": "query_agent_api_genagent_agents__agent_id__query__thread_id__post",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "agent_id",
@@ -6709,24 +6693,15 @@
         ]
       }
     },
-    "/api/genagent/workflow/node_schemas": {
+    "/api/genagent/workflow/{workflow_id}": {
       "get": {
         "tags": [
           "v1",
           "Workflows"
         ],
-        "summary": "Get Node Dialog Schemas",
-        "operationId": "get_node_dialog_schemas_api_genagent_workflow_node_schemas_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
+        "summary": "Get Workflow",
+        "description": "Get a workflow by ID",
+        "operationId": "get_workflow_api_genagent_workflow__workflow_id__get",
         "security": [
           {
             "APIKeyHeader": []
@@ -6734,10 +6709,42 @@
           {
             "OAuth2PasswordBearer": []
           }
-        ]
-      }
-    },
-    "/api/genagent/workflow/{workflow_id}": {
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "put": {
         "tags": [
           "v1",
@@ -6830,57 +6837,6 @@
         "responses": {
           "204": {
             "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "v1",
-          "Workflows"
-        ],
-        "summary": "Get Workflow",
-        "description": "Get a workflow by ID",
-        "operationId": "get_workflow_api_genagent_workflow__workflow_id__get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "workflow_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Workflow Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Workflow"
-                }
-              }
-            }
           },
           "422": {
             "description": "Validation Error",
@@ -7218,15 +7174,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/zendesk/closed": {
@@ -7266,15 +7214,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/zendesk/zendesk-unrated-closed-tickets": {
@@ -7507,15 +7447,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/twilio/incoming-call/{agent_id}": {
@@ -7526,14 +7458,6 @@
         ],
         "summary": "Handle Incoming Call",
         "operationId": "handle_incoming_call_api_twilio_incoming_call__agent_id__get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "agent_id",
@@ -8268,7 +8192,7 @@
           "ML Models"
         ],
         "summary": "Upload Pkl File",
-        "description": "Upload a .pkl model file.\n\n- Validates file type (.pkl only)\n- Validates file size (max 500MB)\n- Saves file with unique filename\n- Returns file path and original filename",
+        "description": "Upload a .pkl model file.\n\n- Validates file type (.pkl only)\n- Validates file size (max 100MB)\n- Saves file with unique filename\n- Returns file path and original filename",
         "operationId": "upload_pkl_file_api_ml_models_upload_post",
         "requestBody": {
           "content": {
@@ -10942,9 +10866,9 @@
           "v1",
           "OpenAI API"
         ],
-        "summary": "Get Jobs",
+        "summary": "List User Jobs",
         "description": "List all fine-tuning jobs for the current user.\nSet sync=true to fetch fresh status from OpenAI for all jobs (slower).",
-        "operationId": "get_jobs_api_openai_fine_tuning_jobs_get",
+        "operationId": "list_user_jobs_api_openai_fine_tuning_jobs_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -11793,83 +11717,6 @@
             }
           }
         }
-      }
-    },
-    "/api/workflow-manager/config/from-wizard": {
-      "post": {
-        "tags": [
-          "v1",
-          "Workflow Manager"
-        ],
-        "summary": "Create Workflow From Wizard",
-        "description": "- Create a new Agent\n- Create a new workflow based on the wizard JSON",
-        "operationId": "create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
-    "/api/workflow-manager/config/available-node-types": {
-      "get": {
-        "tags": [
-          "v1",
-          "Workflow Manager"
-        ],
-        "summary": "Get Available Node Types",
-        "operationId": "get_available_node_types_api_workflow_manager_config_available_node_types_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
       }
     }
   },
@@ -12902,24 +12749,6 @@
           "password"
         ],
         "title": "Body_auth_token_api_auth_token_post"
-      },
-      "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post": {
-        "properties": {
-          "workflow_name": {
-            "type": "string",
-            "title": "Workflow Name"
-          },
-          "workflow_json": {
-            "type": "string",
-            "title": "Workflow Json"
-          }
-        },
-        "type": "object",
-        "required": [
-          "workflow_name",
-          "workflow_json"
-        ],
-        "title": "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
       },
       "Body_process_files_api_genagent_knowledge_process_files__post": {
         "properties": {

@@ -6,7 +6,6 @@ from injector import inject
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
-from app.db.models import FineTuningJobModel
 from app.db.models.fine_tuning import FineTuningEventModel
 from app.repositories.fine_tuning_event import FineTuningEventRepository
 from app.repositories.openai_fine_tuning import FineTuningRepository
@@ -112,8 +111,7 @@ class FineTuningEventService:
                             level=openai_event.level,
                             message=openai_event.message,
                             event_created_at=datetime.fromtimestamp(openai_event.created_at),
-                            metrics=openai_event.data if hasattr(openai_event,
-                                                                 'data') and openai_event.data and openai_event.data != "null" else None
+                            metrics=openai_event.data if hasattr(openai_event, 'data') and openai_event.data else None
                             )
                     new_events.append(event)
 
@@ -184,7 +182,7 @@ class FineTuningEventService:
             raise AppException(error_key=ErrorKey.ERROR_ACTIVE_JOB_EVENTS_SYNC)
 
 
-    async def get_job_progress(self, job: FineTuningJobModel) -> dict:
+    async def get_job_progress(self, job_id: UUID) -> dict:
         """
         Get current progress for a job based on stored events.
 
@@ -195,33 +193,33 @@ class FineTuningEventService:
             Progress information
         """
         try:
+            # Get job
+            job = await self.job_repository.get_job_by_id(job_id)
+            if not job:
+                raise AppException(error_key=ErrorKey.ERROR_JOB_NOT_FOUND)
 
             # If job is not active, return basic info
             if job.status not in [JobStatus.VALIDATING_FILES, JobStatus.QUEUED, JobStatus.RUNNING]:
-                latest_step_event = await self.event_repository.get_latest_step_event_by_job_id(job.id)
                 return {
-                    "job_id": str(job.id),
+                    "job_id": str(job_id),
                     "status": job.status.value,
                     "is_running": False,
                     "progress_percentage": 100 if job.status == JobStatus.SUCCEEDED else 0,
-                    "latest_metrics" : latest_step_event.metrics if latest_step_event else {},
                     "message": f"Job is {job.status.value}"
                     }
 
             # Get latest event with metrics
             latest_event = await self.event_repository.get_latest_event_by_job_id(job_id)
-            latest_step_event = await self.event_repository.get_latest_step_event_by_job_id(job_id)
 
-            if not latest_event or not latest_step_event or not latest_step_event.metrics:
+            if not latest_event or not latest_event.metrics:
                 return {
-                    "job_id": str(job.id),
+                    "job_id": str(job_id),
                     "status": job.status.value,
-                    "is_running": False if job.status not in [JobStatus.VALIDATING_FILES, JobStatus.QUEUED,
-                                                             JobStatus.RUNNING] else True,
+                    "is_running": True,
                     "message": "Waiting for training to start..."
                     }
 
-            metrics = latest_step_event.metrics
+            metrics = latest_event.metrics
             current_step = metrics.get('step')
             total_steps = metrics.get('total_steps')
 
@@ -242,20 +240,16 @@ class FineTuningEventService:
                 time_per_step = time_elapsed / current_step
                 steps_remaining = total_steps - current_step
                 estimated_seconds_remaining = int(time_per_step * steps_remaining)
-                estimated_finish_at = int(current_timestamp + estimated_seconds_remaining + (
-                    estimated_seconds_remaining if estimated_seconds_remaining != 0 else
-            300))
+                estimated_finish_at = int(current_timestamp + estimated_seconds_remaining)
 
             return {
-                "job_id": str(job.id),
+                "job_id": str(job_id),
                 "status": job.status.value,
-                "is_running": False if job.status not in [JobStatus.VALIDATING_FILES, JobStatus.QUEUED,
-                                                             JobStatus.RUNNING] else True,
+                "is_running": True,
                 "current_step": current_step,
                 "total_steps": total_steps,
-                "progress_percentage": progress_percentage if progress_percentage!=100 else progress_percentage -5,
-                "estimated_seconds_remaining": estimated_seconds_remaining if estimated_seconds_remaining != 0 else
-            300,
+                "progress_percentage": progress_percentage,
+                "estimated_seconds_remaining": estimated_seconds_remaining,
                 "estimated_finish_at": estimated_finish_at,
                 "created_at": int(job.created_at.timestamp()),
                 "latest_metrics": metrics,

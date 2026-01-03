@@ -25,8 +25,8 @@ router = APIRouter()
 ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
 os.makedirs(ML_MODELS_UPLOAD_DIR, exist_ok=True)
 
-# Maximum file size for .pkl files (500MB)
-MAX_PKL_FILE_SIZE = 500 * 1024 * 1024
+# Maximum file size for .pkl files (100MB)
+MAX_PKL_FILE_SIZE = 100 * 1024 * 1024
 
 
 @router.post("/", response_model=MLModelRead, dependencies=[
@@ -106,7 +106,7 @@ async def upload_pkl_file(
     Upload a .pkl model file.
 
     - Validates file type (.pkl only)
-    - Validates file size (max 500MB)
+    - Validates file size (max 100MB)
     - Saves file with unique filename
     - Returns file path and original filename
     """

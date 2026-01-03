@@ -77,7 +77,7 @@ async def get_fine_tuning_job(
     Depends(auth),
     Depends(permissions("read:openai-job"))
 ])
-async def get_jobs(
+async def list_user_jobs(
     status: Optional[JobStatus] = Query(None, description="Filter by job status"),
     sync: bool = Query(False, description="Sync with OpenAI API for latest statuses"),
     service: OpenAIFineTuningService = Injected(OpenAIFineTuningService)

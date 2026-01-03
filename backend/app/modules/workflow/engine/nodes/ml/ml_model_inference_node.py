@@ -5,7 +5,6 @@ ML Model Inference node implementation using the BaseNode class.
 from typing import Dict, Any
 import logging
 import os
-import json
 from uuid import UUID
 import pandas as pd
 
@@ -19,51 +18,9 @@ from app.services.ml_model_manager import get_ml_model_manager
 logger = logging.getLogger(__name__)
 
 
-def convert_value(val: Any) -> Any:
-    """
-    Convert a single value to its appropriate type.
-    
-    Args:
-        val: Value to convert (can be any type)
-    
-    Returns:
-        Converted value with appropriate type
-    """
-    # If not a string, keep as-is
-    if not isinstance(val, str):
-        return val
-    
-    # Try to parse JSON strings (arrays, objects)
-    if val.strip().startswith('[') or val.strip().startswith('{'):
-        try:
-            return json.loads(val)
-        except (json.JSONDecodeError, ValueError):
-            pass  # Fall through to other conversions
-    
-    # Try to convert string values to appropriate types
-    val_lower = val.lower().strip()
-    
-    # Boolean conversion
-    if val_lower in ('true', 'false'):
-        return val_lower == 'true'
-    # Try float conversion
-    elif '.' in val:
-        try:
-            return float(val)
-        except ValueError:
-            return val
-    # Try integer conversion
-    else:
-        try:
-            return int(val)
-        except ValueError:
-            return val
-
-
 def convert_input_types(inference_inputs: Dict[str, Any]) -> Dict[str, Any]:
     """
     Convert string values in inference inputs to their appropriate types.
-    Supports both single values and lists of values (for batch predictions).
 
     Args:
         inference_inputs: Raw inference inputs with string values
@@ -72,17 +29,83 @@ def convert_input_types(inference_inputs: Dict[str, Any]) -> Dict[str, Any]:
         Dictionary with properly typed values
     """
     converted = {}
-    
+
     for key, value in inference_inputs.items():
-        # Handle list of values (batch input) - apply conversion to each element
-        if isinstance(value, list):
-            converted[key] = [convert_value(v) for v in value]
+        if not isinstance(value, str):
+            # Keep non-string values as is
+            converted[key] = value
+            continue
+
+        # Try to convert string values to appropriate types
+        value_lower = value.lower().strip()
+
+        # Boolean conversion
+        if value_lower in ('true', 'false'):
+            converted[key] = value_lower == 'true'
+        # Try float conversion
+        elif '.' in value:
+            try:
+                converted[key] = float(value)
+            except ValueError:
+                # Keep as string if conversion fails
+                converted[key] = value
+        # Try integer conversion
         else:
-            # Handle single value
-            converted[key] = convert_value(value)
+            try:
+                converted[key] = int(value)
+            except ValueError:
+                # Keep as string if conversion fails
+                converted[key] = value
 
     logger.debug(f"Converted input types: {converted}")
     return converted
+
+
+def preprocess_features(feature_data: Dict[str, Any], feature_columns: list, expected_features: list) -> pd.DataFrame:
+    """
+    Preprocess feature data using the same steps as training.
+
+    Args:
+        feature_data: Feature data as dictionary
+        feature_columns: List of feature column names
+
+    Returns:
+        pd.DataFrame: Preprocessed features
+    """
+    logger.debug("Preprocessing features...")
+
+    # Convert dict to DataFrame
+    df = pd.DataFrame([feature_data])
+
+    # Select only the required feature columns
+    X = df[feature_columns].copy()
+
+    # Handle categorical variables by one-hot encoding
+    categorical_columns = X.select_dtypes(include=['object']).columns
+    if len(categorical_columns) > 0:
+        logger.info(
+            f"One-hot encoding categorical columns: {list(categorical_columns)}")
+        X = pd.get_dummies(X, columns=categorical_columns, drop_first=True)
+
+    # Handle boolean columns
+    boolean_columns = X.select_dtypes(include=['bool']).columns
+    if len(boolean_columns) > 0:
+        logger.info(
+            f"Converting boolean columns to int: {list(boolean_columns)}")
+        X[boolean_columns] = X[boolean_columns].astype(int)
+
+    logger.debug(f"Preprocessed feature shape: {X.shape}")
+    missing_features = set(expected_features) - set(X.columns)
+
+    if missing_features:
+        print(
+            f"Adding missing features with default values: {missing_features}")
+        for feature in missing_features:
+            X[feature] = 0
+
+    # Reorder columns to match training data
+    X = X[expected_features]
+    return X
 
 
 class MLModelInferenceNode(BaseNode):
@@ -91,28 +114,14 @@ class MLModelInferenceNode(BaseNode):
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process an ML model inference node.
-        Always returns batch format (even for single predictions).
 
         Args:
             config: The resolved configuration for the node containing:
                 - modelId: UUID of the ML model to use
-                - inferenceInputs: Dictionary mapping feature names to values
-                  
-                  Single value (treated as batch of 1):
-                    {"feature1": value1, "feature2": value2}
-                  
-                  Batch values:
-                    {"feature1": [val1, val2], "feature2": [val3, val4]}
+                - inferenceInputs: Dictionary mapping feature names to values (subset of features)
 
         Returns:
-            Dictionary with prediction results in batch format:
-                {
-                    "prediction": [1, 0, ...],
-                    "prediction_label": ["Available", "Not Available", ...],
-                    "probabilities": [{...}, {...}, ...],
-                    "batch_size": N,
-                    ...
-                }
+            Dictionary with prediction results and metadata
         """
         try:
             # Extract configuration
@@ -174,74 +183,46 @@ class MLModelInferenceNode(BaseNode):
                 ) from e
 
             # Prepare features for inference
-            # Convert string inputs to proper types (bool, float, int) and parse JSON arrays
-            inference_inputs = convert_input_types(inference_inputs)
-            logger.info(f"Converted inference inputs: {inference_inputs}")
-            
-            # Normalize to batch format: convert single values to lists
-            normalized_inputs = {}
-            for key, value in inference_inputs.items():
-                if isinstance(value, list):
-                    normalized_inputs[key] = value
-                else:
-                    # Wrap single value in list to treat as batch of 1
-                    normalized_inputs[key] = [value]
-            
-            # Prepare DataFrame for prediction (always batch format)
-            try:
-                # Create DataFrame directly from dict of lists
-                df = pd.DataFrame(normalized_inputs)
-                batch_size = len(df)
-                logger.info(f"Batch size: {batch_size} rows")
-                logger.info(f"Input columns: {list(df.columns)}")
-                logger.info(f"Expected features from model: {list(model.feature_names_in_)}")
-                
-                # Add missing features with default values (0)
-                missing_features = set(model.feature_names_in_) - set(df.columns)
-                if missing_features:
-                    logger.info(f"Adding missing features with default values: {missing_features}")
-                    for feature in missing_features:
-                        df[feature] = 0
+            # inferenceInputs contains a subset of features with user-provided values
+            # All other required features are filled with default values
 
-                # Select only expected features in the correct order
-                X = df[model.feature_names_in_]
-                input_data = X.values  # Convert DataFrame to numpy array
-                
-                logger.info(f"Final input shape: {input_data.shape}")
-                logger.info(f"Input data before prediction:\n{input_data}")
-                
+            # Convert string inputs to proper types (bool, float, int)
+            inference_inputs = convert_input_types(inference_inputs)
+
+            # Preprocess features (handles categorical encoding, boolean conversion, etc.)
+            try:
+                X_processed = preprocess_features(
+                    inference_inputs, inference_inputs.keys(), model.feature_names_in_)
+                input_data = X_processed.values  # Convert DataFrame to numpy array
+                logger.debug(f"Preprocessed input shape: {input_data.shape}")
             except Exception as e:
-                logger.error(f"Data preparation failed: {str(e)}", exc_info=True)
+                logger.error(
+                    f"Feature preprocessing failed: {str(e)}", exc_info=True)
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail=f"Data preparation failed: {str(e)}"
+                    error_detail=f"Feature preprocessing failed: {str(e)}"
                 ) from e
 
-            # Make prediction (always returns batch format)
+            # Make prediction
             try:
-                predictions = model.predict(input_data)
-                
-                # Get class labels
-                if hasattr(model, 'classes_'):
+                prediction = model.predict(input_data)[0]
+
+                # Try to get prediction probabilities if available (for classifiers)
+                probabilities = [0.0, 0.0]
+                if hasattr(model, 'predict_proba'):
+                    try:
+                        probabilities = model.predict_proba(
+                            input_data)[0]
+                    except Exception as prob_error:
+                        logger.warning(
+                            f"Could not get prediction probabilities: {prob_error}")
+                        
+                if hasattr(model, 'predict_proba'):
                     class_labels = model.classes_
                 else:
                     class_labels = [0, 1]
 
-                # Try to get prediction probabilities if available (for classifiers)
-                probabilities = None
-                if hasattr(model, 'predict_proba'):
-                    try:
-                        probabilities = model.predict_proba(input_data)
-                    except Exception as prob_error:
-                        logger.warning(
-                            f"Could not get prediction probabilities: {prob_error}")
-
-                # Build response (always batch format)
-                # Convert input_data to column-wise dictionary
-                input_data_by_column = {}
-                for i, feature_name in enumerate(model.feature_names_in_):
-                    input_data_by_column[feature_name] = input_data[:, i].tolist()
-                
+                # Build response
                 result = {
                     "status": "success",
                     "model_id": str(model_id),
@@ -249,21 +230,20 @@ class MLModelInferenceNode(BaseNode):
                     "model_type": ml_model.model_type.value if hasattr(ml_model.model_type, 'value') else ml_model.model_type,
                     "target_variable": ml_model.target_variable,
                     "features_used": ml_model.features,
-                    "batch_size": batch_size,
-                    "input_data": input_data_by_column,  # Dictionary organized by column
-                    "prediction": [int(p) for p in predictions],
-                    "prediction_label": ['Available' if p == 1 else 'Not Available' for p in predictions]
+                    'prediction': int(prediction),
+                    'prediction_label': 'Available' if prediction == 1 else 'Not Available',
+                    'probabilities': {
+                        f'Class_{int(class_labels[0])}': float(probabilities[0]),
+                        f'Class_{int(class_labels[1])}': float(probabilities[1])
+                    },
+                    'confidence': float(max(probabilities))
                 }
-                
-                # Add probabilities and confidence
-                if probabilities is not None:
-                    result["probabilities"] = [
-                        {f'Class_{int(class_labels[i])}': float(prob) for i, prob in enumerate(probs)}
-                        for probs in probabilities
-                    ]
-                    result["confidences"] = [float(max(probs)) for probs in probabilities]
-                
-                logger.info(f"Prediction successful: {batch_size} predictions")
+
+                # # Add probabilities if available
+                # if probabilities is not None:
+                #     result["probabilities"] = probabilities
+
+                logger.info(f"Prediction successful: {prediction}")
                 return result
 
             except Exception as e:

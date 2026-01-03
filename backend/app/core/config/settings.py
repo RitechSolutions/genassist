@@ -120,9 +120,6 @@ class ProjectSettings(BaseSettings):
     # Check if inside celery container
     BACKGROUND_TASK: bool = False
 
-    # === CORS Configuration ===
-    CORS_ALLOWED_ORIGINS: Optional[str] = None  # Comma-separated list of additional allowed origins
-
     @property
     def _zendesk_base(self) -> str:
         return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"

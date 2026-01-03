@@ -11,7 +11,6 @@ from app.modules.workflow.engine.nodes import (
     RouterNode,
     AgentNode,
     ApiToolNode,
-    OpenAPINode,
     TemplateNode,
     LLMModelNode,
     KnowledgeToolNode,
@@ -38,9 +37,6 @@ import logging
 import asyncio
 from collections import defaultdict
 import uuid
-from fastapi_injector import RequestScopeFactory
-from app.dependencies.injector import injector
-from app.core.tenant_scope import get_tenant_context, set_tenant_context
 
 
 logger = logging.getLogger(__name__)
@@ -83,7 +79,6 @@ class WorkflowEngine:
         self.register_node_type("routerNode", RouterNode)
         self.register_node_type("agentNode", AgentNode)
         self.register_node_type("apiToolNode", ApiToolNode)
-        self.register_node_type("openApiNode", OpenAPINode)
         self.register_node_type("templateNode", TemplateNode)
         self.register_node_type("llmModelNode", LLMModelNode)
         self.register_node_type("knowledgeBaseNode", KnowledgeToolNode)
@@ -118,12 +113,10 @@ class WorkflowEngine:
             node_class: The class that implements the node
         """
         if not issubclass(node_class, BaseNode):
-            raise ValueError(
-                f"Node class must inherit from BaseNode: {node_class}")
+            raise ValueError(f"Node class must inherit from BaseNode: {node_class}")
 
         self.node_registry[node_type] = node_class
-        logger.info(
-            f"Registered node type: {node_type} -> {node_class.__name__}")
+        logger.info(f"Registered node type: {node_type} -> {node_class.__name__}")
 
     def build_workflow(self, workflow_config: Dict[str, Any]) -> str:
         """
@@ -223,8 +216,7 @@ class WorkflowEngine:
             if len(start_node_ids) == 1:
                 start_node_id = start_node_ids[0]
             else:
-                raise ValueError(
-                    f"Multiple starting nodes found: {start_node_ids}")
+                raise ValueError(f"Multiple starting nodes found: {start_node_ids}")
 
         # Verify start node exists
         if start_node_id not in [node["id"] for node in workflow["nodes"]]:
@@ -332,31 +324,15 @@ class WorkflowEngine:
 
         # Find and execute next nodes in parallel
         if next_nodes:
-            # Get request scope factory for creating separate scopes for parallel tasks
-            request_scope_factory = injector.get(RequestScopeFactory)
-            # Capture tenant context from the main request scope
-            tenant_id = get_tenant_context()
-
             # Create tasks for all next nodes
             next_tasks = []
             for next_node_id in next_nodes:
                 # Create a copy of visited set for each task to avoid conflicts
                 task_visited = visited.copy()
-
-                # Create a wrapper function that runs in its own request scope
-                async def execute_node_with_scope(
-                    node_id: str, visited_set: Set[str], tenant: str
-                ):
-                    """Execute a node in its own request scope to avoid session conflicts."""
-                    async with request_scope_factory.create_scope():
-                        # Set tenant context in the new scope to match the main request
-                        set_tenant_context(tenant)
-                        return await self._execute_from_node_recursive(
-                            node_id, state, workflow_id, visited_set
-                        )
-
                 task = asyncio.create_task(
-                    execute_node_with_scope(next_node_id, task_visited, tenant_id)
+                    self._execute_from_node_recursive(
+                        next_node_id, state, workflow_id, task_visited
+                    )
                 )
                 next_tasks.append(task)
 
@@ -385,8 +361,7 @@ class WorkflowEngine:
     def get_node_config(self, workflow_id: str, node_id: str):
         """Get the node config and type."""
         workflow = self.workflows[workflow_id]
-        node_config = next(
-            node for node in workflow["nodes"] if node["id"] == node_id)
+        node_config = next(node for node in workflow["nodes"] if node["id"] == node_id)
         node_type = node_config.get("type", "")
         return node_config, node_type
 
@@ -399,8 +374,7 @@ class WorkflowEngine:
         )
         node_class = self.node_registry.get(node_type)
         if not node_class:
-            raise ValueError(
-                f"Unknown node type: {node_type}, skipping node {node_id}")
+            raise ValueError(f"Unknown node type: {node_type}, skipping node {node_id}")
         node = node_class(node_id, node_config, state)
         return node
 

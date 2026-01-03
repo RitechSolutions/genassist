@@ -71,7 +71,7 @@ async def post_private_comment(ticket_id: int, body: str):
         logger.info(f"Posted analysis comment to ticket #{ticket_id}")
 
 
-@router.post("/closed", status_code=200, summary="Zendesk webhook: ticket closed", dependencies=[Depends(auth)])
+@router.post("/closed", status_code=200, summary="Zendesk webhook: ticket closed")
 async def zendesk_ticket_closed(
     payload: ZendeskClosedPayload,
     db: AsyncSession = Injected(AsyncSession),
