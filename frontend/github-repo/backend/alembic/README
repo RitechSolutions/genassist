@@ -1,0 +1,36 @@
+# Database Migrations with **Alembic**
+
+This folder contains every change we have ever made to the database schema.  
+The tool that tracks and applies those changes is **[Alembic](https://alembic.sqlalchemy.org/)**.
+
+---
+
+## 1  What Alembic Does
+
+| Stage | What Happens |
+|-------|--------------|
+| **Revision** | A new Python file describing the *next* change (add table, drop column, etc.) is created in `versions/`. |
+| **Upgrade** | Alembic reads the pending revision files in order and executes the `upgrade()` function in each one against the database. |
+| **Downgrade** | If you need to roll back, Alembic runs the `downgrade()` function in reverse order. |
+
+Think of each file in **`versions/`** as a *git commit*, but for your database.
+
+---
+
+## 2  Creating a New Migration
+
+We never call `alembic revision` directly.  
+Instead, run the helper script from the **scripts** folder using command:
+
+python scripts/alembic_create_migration_wrapper.py "short description of change"
+
+## 3 To upgrade we use standard commands:
+
+alembic upgrade head
+
+## 4 To downgrade we use standard commands
+
+alembic downgrade -1
+
+## 5 The database migration is called before app startup on run.py
+

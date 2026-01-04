@@ -4,7 +4,10 @@ import { Save, Upload, PlayCircle } from "lucide-react";
 import { useBlocker } from "react-router-dom";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
+import {
+  useWorkflowExecution,
+  WorkflowExecutionState,
+} from "../../context/WorkflowExecutionContext";
 
 interface BottomPanelProps {
   workflow: Workflow;
@@ -12,6 +15,7 @@ interface BottomPanelProps {
   onWorkflowLoaded: (workflow: Workflow) => void;
   onTestWorkflow: (workflow: Workflow) => void;
   onSaveWorkflow?: (workflow: Workflow) => Promise<void>;
+  onExecutionStateChange?: (executionState: WorkflowExecutionState) => void;
 }
 
 const BottomPanel: React.FC<BottomPanelProps> = ({
@@ -20,26 +24,31 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   onWorkflowLoaded,
   onTestWorkflow,
   onSaveWorkflow,
+  onExecutionStateChange,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [agentFormOpen, setAgentFormOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const { loadExecutionState, setWorkflowStructure } = useWorkflowExecution();
+  const {
+    state: executionState,
+    loadExecutionState,
+    setWorkflowStructure,
+  } = useWorkflowExecution();
+
+  useEffect(() => {
+    if (onExecutionStateChange) {
+      onExecutionStateChange(executionState);
+    }
+  }, [executionState, onExecutionStateChange]);
 
   useEffect(() => {
     if (workflow.executionState && workflow.nodes && workflow.edges) {
       setWorkflowStructure(workflow.nodes, workflow.edges);
       loadExecutionState(workflow.executionState);
     }
-  }, [
-    workflow.executionState,
-    workflow.nodes,
-    workflow.edges,
-    setWorkflowStructure,
-    loadExecutionState,
-  ]);
+  }, [workflow.nodes, workflow.edges]);
 
   // Handle save to server
   const handleSaveToServer = async () => {

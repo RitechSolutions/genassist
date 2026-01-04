@@ -8,6 +8,9 @@ import {
 } from "genassist-chat-react";
 import { getAgentIntegrationKey } from "@/services/api";
 import { getApiUrl } from "@/config/api";
+import { Button } from "@/components/button";
+import { ArrowLeft } from "lucide-react";
+import IntegrationCodePanel from "@/views/AIAgents/components/Customer/IntegrationCodePanel";
 
 export default function ChatAsCustomer() {
   const { agentId } = useParams<{ agentId: string }>();
@@ -71,8 +74,41 @@ export default function ChatAsCustomer() {
 
   return (
     <div className="h-full min-h-0 w-full">
-      <div className="h-full min-h-0 w-full grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-6 p-6">
-        <div className="min-h-0 flex items-start justify-center lg:justify-center">
+      <div className="h-full min-h-0 w-full grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)_360px] gap-6 p-6">
+        <div className="min-h-0 flex w-full flex-col items-start gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/ai-agents")}
+            className="rounded-full bg-white shadow-lg"
+            aria-label="Back to AI Agents"
+          >
+            <ArrowLeft />
+          </Button>
+          <GenAgentConfigPanel
+            theme={theme}
+            onThemeChange={setTheme}
+            chatSettings={chatSettings}
+            onChatSettingsChange={setChatSettings}
+            metadata={metadata}
+            onMetadataChange={setMetadata}
+            defaultOpen={{ appearance: true, settings: false, metadata: false }}
+            style={{
+              width: "100%",
+              maxWidth: "100%",
+              flex: "0 1 auto",
+              maxHeight: "calc(100vh - 50px)",
+              overflowY: "auto",
+            }}
+            onSave={({ theme, chatSettings, metadata }) => {
+              setTheme(theme);
+              setChatSettings(chatSettings);
+              setMetadata(metadata);
+            }}
+          />
+        </div>
+
+        <div className="min-h-0 flex h-full items-center justify-center">
           <GenAgentChat
             baseUrl={baseUrl}
             apiKey={apiKey}
@@ -87,26 +123,11 @@ export default function ChatAsCustomer() {
           />
         </div>
 
-        <div className="min-h-0 flex items-start justify-center lg:justify-end">
-          <GenAgentConfigPanel
-            theme={theme}
-            onThemeChange={setTheme}
-            chatSettings={chatSettings}
-            onChatSettingsChange={setChatSettings}
-            metadata={metadata}
-            onMetadataChange={setMetadata}
-            defaultOpen={{ appearance: true, settings: false, metadata: false }}
-            style={{
-              width: "100%",
-              maxWidth: "100%",
-              maxHeight: "calc(100vh - 48px)",
-              overflowY: "auto",
-            }}
-            onSave={({ theme, chatSettings, metadata }) => {
-              setTheme(theme);
-              setChatSettings(chatSettings);
-              setMetadata(metadata);
-            }}
+        <div className="min-h-0 flex h-full w-full">
+          <IntegrationCodePanel
+            agentId={agentId}
+            className="w-full h-full overflow-y-auto"
+            style={{ maxHeight: "calc(100vh - 50px)" }}
           />
         </div>
       </div>

@@ -1,0 +1,48 @@
+{
+  "name": "genassist-chat-react",
+  "version": "1.0.8",
+  "description": "React chat component for GenAssist",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "assets"
+  ],
+  "scripts": {
+    "build": "node build.js",
+    "test": "echo \"No tests specified\" && exit 0",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "react",
+    "chat",
+    "component",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@types/react": "*",
+    "@types/react-dom": ">=16.8.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "lucide-react": "^0.511.0",
+    "websocket": "^1.0.34"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/node": "^24.1.0",
+    "@types/websocket": "^1.0.5",
+    "@vitejs/plugin-react": "^4.7.0",
+    "esbuild": "^0.25.8",
+    "typescript": "^5.0.0",
+    "vite": "^7.0.5"
+  },
+  "overrides": {
+    "react": false,
+    "react-dom": false
+  }
+}

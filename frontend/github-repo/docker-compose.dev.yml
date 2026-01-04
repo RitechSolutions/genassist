@@ -1,0 +1,310 @@
+services:
+  # Database
+  db:
+    image: postgres:17
+    container_name: genassist_db_dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: core_db
+    volumes:
+      - genassist_pgdata_dev:/var/lib/postgresql/data
+      - ./backend/scripts/db_init_scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - genassist-network-dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Main application service
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: genassist-app-dev
+    image: genassist-app-image
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - VECTOR_DB_TYPE=chroma
+      - CHROMA_PERSIST_DIR=/src/datavolume/chroma
+      - CHROMA_COLLECTION_NAME=default
+      - RAG_GRAPH_DB_TYPE=neo4j
+      - RAG_NEO4J_URL=bolt://neo4j:7687
+      - RAG_NEO4J_USERNAME=neo4j
+      - RAG_NEO4J_PASSWORD=password
+      - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
+      - DB_HOST=db
+      - DB_PORT=5432
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      chroma:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      whisper:
+        condition: service_started
+    volumes:
+      - app_data_volume:/src/datavolume
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+  # UI service
+  ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      additional_contexts:
+         plugins: ./plugins/react
+    container_name: genassist-ui-dev
+    ports:
+      - "8080:8080"
+      - "80:80"
+    env_file:
+      - ./frontend/.env
+    environment:
+      CUSTOM_PARAM: 'string'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+  # Neo4j graph database
+  neo4j:
+    image: neo4j:5.23.0
+    container_name: genassist-neo4j-dev
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_dbms_memory_pagecache_size=256M
+      - NEO4J_dbms_memory_heap_initial__size=256M
+      - NEO4J_dbms_memory_heap_max__size=512M
+      - NEO4JLABS_PLUGINS=["apoc"]  # Enable APOC plugin
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_logs_http_enabled=true
+      - NEO4J_server_logs_debug_enabled=true
+    volumes:
+      - neo4j_data_dev:/data
+      - neo4j_logs_dev:/logs
+      - neo4j_import_dev:/var/lib/neo4j/import
+      - neo4j_plugins_dev:/plugins
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+  # Chroma vector database
+  chroma:
+    image: ghcr.io/chroma-core/chroma:1.3.7
+    container_name: genassist-chroma-dev
+    ports:
+      - "8005:8000"  # API
+    volumes:
+      - chroma_data_dev:/chroma/chroma
+    environment:
+      - CHROMA_DB_IMPL=duckdb+parquet
+      - CHROMA_PERSIST_DIRECTORY=/chroma/chroma
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+  # Optional: Pinecone proxy (if you want to use Pinecone locally for development)
+  # pinecone-proxy:
+  #   image: pinecone/pinecone-proxy:latest
+  #   container_name: genagent-pinecone-proxy
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - PINECONE_API_KEY=${PINECONE_API_KEY}
+  #   networks:
+  #     - genagent-network
+  #   restart: unless-stopped
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: genassist-redis-dev
+    ports:
+      - "6379:6379"
+    networks:
+      - genassist-network-dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Celery worker
+  celery_worker:
+    image: genassist-app-image
+    container_name: genassist-celery-worker-dev
+    command: python /src/run_celery.py worker -l DEBUG
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_TRACE_APP=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
+      - DB_HOST=db
+      - DB_PORT=5432
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+  # Celery beat for periodic tasks
+  celery_beat:
+    image: genassist-app-image
+    container_name: genassist-celery-beat-dev
+    command: python /src/run_celery.py beat -l DEBUG
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_TRACE_APP=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+  # Flower for monitoring
+  flower:
+    image: genassist-app-image
+    container_name: genassist-flower-dev
+    command: python /src/run_celery.py flower -l DEBUG --port=5555 --persistent=True --db="flower_db" --basic-auth="user1:password1"
+    ports:
+      - "5555:5555"
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_TRACE_APP=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: genassist-metabase-dev
+    volumes:
+      - ./metabase-data:/data
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: db
+      MB_DB_PORT: 5432
+      MB_DB_USER: metabase_admin
+      MB_DB_PASS: metabase_admin
+      MB_DB_DBNAME: metabase_db
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network-dev
+
+  whisper:
+    build:
+      context: ./backend
+      dockerfile: ./whisper_ext/Dockerfile.whisper
+    container_name: genassist-whisper-dev
+    environment:
+      - DEFAULT_WHISPER_MODEL=base # Or 'tiny', 'small', 'medium', 'large', 'large-v1', 'large-v2'
+#    volumes:
+#      - ./recordings:/recordings  # Mount audio/input/output directory RECORDINGS_DIR
+    ports:           # Not-required to expose port - uncoment to test trenscribe with swagger or debug from PC     
+      - "8001:8001"  # Not-required to expose port - uncoment to test trenscribe with swagger or debug from PC
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+  uitests:
+    build:
+      context: ./ui_tests
+      dockerfile: Dockerfile
+    container_name: genassist-uitests-dev
+    environment:
+      BASE_URL: 'http://host.docker.internal'  # Adjust if needed
+      PLAYWRIGHT_HEADLESS: 'true'  # Run Playwright in headless mode
+      CI: 'true'  # Enable CI mode for Playwright
+    depends_on:
+      app:
+        condition: service_healthy
+      ui:
+        condition: service_healthy
+    ports:
+      - "9323:9323"  # Port for UI tests
+    networks:
+      - genassist-network-dev
+    volumes:
+      - ./ui_tests:/app
+
+networks:
+  genassist-network-dev:
+    driver: bridge
+
+volumes:
+  neo4j_data_dev:
+  neo4j_logs_dev:
+  neo4j_import_dev:
+  neo4j_plugins_dev:
+  chroma_data_dev:
+  genassist_pgdata_dev:
+  app_data_volume:

@@ -269,6 +269,38 @@ export interface ThreadRAGNodeData extends BaseNodeData {
   message?: string;
 }
 
+// MCP Node Data
+export interface MCPTool {
+  name: string;
+  description: string;
+  inputSchema?: NodeSchema;
+}
+
+// Connection configuration types
+export type MCPConnectionType = "stdio" | "sse" | "http";
+
+export interface STDIOConnectionConfig {
+  command: string; // Required: Command to run
+  args?: string[]; // Optional: Command arguments
+  env?: Record<string, string>; // Optional: Environment variables
+}
+
+export interface HTTPConnectionConfig {
+  url: string; // Required: Server URL
+  api_key?: string; // Optional: API key for auth
+  headers?: Record<string, string>; // Optional: Custom headers
+  timeout?: number; // Optional: Timeout in seconds
+}
+
+export type MCPConnectionConfig = STDIOConnectionConfig | HTTPConnectionConfig;
+
+export interface MCPNodeData extends ToolBaseNodeData {
+  connectionType: MCPConnectionType; // Required: Type of connection
+  connectionConfig: MCPConnectionConfig; // Required: Configuration based on connection type
+  availableTools: MCPTool[];
+  whitelistedTools: string[]; // Array of tool names to expose
+}
+
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
@@ -292,7 +324,8 @@ export type NodeData =
   | TrainDataSourceNodeData
   | PreprocessingNodeData
   | TrainModelNodeData
-  | ThreadRAGNodeData;
+  | ThreadRAGNodeData
+  | MCPNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

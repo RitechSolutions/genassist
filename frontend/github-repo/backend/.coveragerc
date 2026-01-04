@@ -1,0 +1,5 @@
+[coverage:run]
+branch = True
+concurrency =
+    greenlet
+    thread

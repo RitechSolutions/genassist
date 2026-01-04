@@ -1,0 +1,177 @@
+{
+  "name": "hr_cv_analyzer Workflow",
+  "description": "Default workflow for hr_cv_analyzer",
+  "nodes": [
+    {
+      "id": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "data": {
+        "name": "Chat Input",
+        "label": "Chat Input",
+        "handlers": [
+          {
+            "id": "output_message",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "inputSchema": {
+          "message": {
+            "type": "string",
+            "required": false,
+            "description": "The message to send to the LLM"
+          }
+        }
+      },
+      "type": "chatInputNode",
+      "width": 300,
+      "height": 174,
+      "dragging": false,
+      "position": {
+        "x": 205.15074797759564,
+        "y": 467.344670678833
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 205.15074797759564,
+        "y": 467.344670678833
+      }
+    },
+    {
+      "id": "b73f8249-5811-40d8-b448-240b86c6c288",
+      "data": {
+        "name": "Chat Output",
+        "label": "Chat Output",
+        "handlers": [
+          {
+            "id": "input_message",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          }
+        ]
+      },
+      "type": "chatOutputNode",
+      "width": 300,
+      "height": 136,
+      "dragging": false,
+      "position": {
+        "x": 1421.283752237165,
+        "y": 253.39783185667665
+      },
+      "selected": false
+    },
+    {
+      "id": "6149368b-b5e3-4a30-9cb6-ad5dd093c089",
+      "data": {
+        "name": "Agent",
+        "label": "Agent",
+        "memory": false,
+        "handlers": [
+          {
+            "id": "input_system_prompt",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          },
+          {
+            "id": "input_prompt",
+            "type": "target",
+            "position": "left",
+            "compatibility": "text"
+          },
+          {
+            "id": "input_tools_reference",
+            "type": "target",
+            "position": "bottom",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output_message",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "agentType": "Chain-of-Thought",
+        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
+        "outputFormat": "string"
+      },
+      "type": "agentNode",
+      "width": 320,
+      "height": 445,
+      "dragging": false,
+      "position": {
+        "x": 791.2666825478266,
+        "y": 193.3310154301076
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 791.2666825478266,
+        "y": 193.3310154301076
+      }
+    },
+    {
+      "id": "38e38f00-d650-4454-9c25-e5d50cf85103",
+      "data": {
+        "name": "Prompt Template",
+        "label": "Prompt Template",
+        "handlers": [
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "text"
+          }
+        ],
+        "template": "You are my AI assistant!\nCV documents will be uploaded in the chat, which then will be parsed and saved to the chat rag. Your job is to analyze these CVs and answers Human Resources questions (e.g. what are top 2 candidates for Python programming? what is the most common skill of candidates? etc.)",
+        "inputSchema": {}
+      },
+      "type": "templateNode",
+      "width": 400,
+      "height": 324,
+      "dragging": false,
+      "position": {
+        "x": 147.67875947622633,
+        "y": 50.95234154950538
+      },
+      "selected": true,
+      "positionAbsolute": {
+        "x": 147.67875947622633,
+        "y": 50.95234154950538
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "reactflow__edge-6149368b-b5e3-4a30-9cb6-ad5dd093c089output_message-b73f8249-5811-40d8-b448-240b86c6c288input_message",
+      "source": "6149368b-b5e3-4a30-9cb6-ad5dd093c089",
+      "target": "b73f8249-5811-40d8-b448-240b86c6c288",
+      "sourceHandle": "output_message",
+      "targetHandle": "input_message"
+    },
+    {
+      "id": "reactflow__edge-47393298-ecd5-496c-9bd4-d4dc963e23d6output_message-6149368b-b5e3-4a30-9cb6-ad5dd093c089input_prompt",
+      "source": "47393298-ecd5-496c-9bd4-d4dc963e23d6",
+      "target": "6149368b-b5e3-4a30-9cb6-ad5dd093c089",
+      "sourceHandle": "output_message",
+      "targetHandle": "input_prompt"
+    },
+    {
+      "id": "reactflow__edge-38e38f00-d650-4454-9c25-e5d50cf85103output-6149368b-b5e3-4a30-9cb6-ad5dd093c089input_system_prompt",
+      "source": "38e38f00-d650-4454-9c25-e5d50cf85103",
+      "target": "6149368b-b5e3-4a30-9cb6-ad5dd093c089",
+      "sourceHandle": "output",
+      "targetHandle": "input_system_prompt"
+    }
+  ],
+  "testInput": {
+    "message": "Who are the most appropriate candidates for Data Science ?"
+  },
+  "user_id": "00000196-1b89-8e8e-905c-0eefdb9008f1",
+  "version": "1.0",
+  "agent_id": "01987130-50c0-7f8c-9fdb-a177221e8b99",
+  "id": "01987130-50bb-7ac0-834f-023ed275145c",
+  "created_at": "2025-08-03T18:27:28.571845Z",
+  "updated_at": "2025-08-03T18:31:32.523453Z"
+}

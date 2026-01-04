@@ -1,0 +1,389 @@
+{
+  "name": "GenAgent Assistant Workflow",
+  "description": "AI assistant workflow specialized to provide information about genagent",
+  "nodes": [
+    {
+      "id": "e2f9e7b1-0722-4b5d-bf9c-af03ac3dcdc1",
+      "data": {
+        "name": "Chat Input",
+        "label": "Chat Input",
+        "handlers": [
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "inputSchema": {
+          "message": {
+            "type": "string",
+            "required": true,
+            "description": "The message received from the user"
+          }
+        }
+      },
+      "type": "chatInputNode",
+      "width": 400,
+      "height": 174,
+      "dragging": false,
+      "position": {
+        "x": -108.46100969764905,
+        "y": 890.2847102036667
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": -108.46100969764905,
+        "y": 890.2847102036667
+      }
+    },
+    {
+      "id": "334ca4eb-0720-4cac-8339-eea8c29a3116",
+      "data": {
+        "name": "agent",
+        "type": "ToolSelector",
+        "label": "Agent",
+        "memory": true,
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "input_tools",
+            "type": "target",
+            "position": "bottom",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
+        "userPrompt": "{{source.message}}",
+        "systemPrompt": "You are an AI assistant! Your task is to provide information about GenAgent, a framework for building AI agents. You can answer questions about its features, capabilities, and how to use it effectively. If you don't know the answer, you can refer to the knowledge base for more information."
+      },
+      "type": "agentNode",
+      "width": 400,
+      "height": 565,
+      "dragging": false,
+      "position": {
+        "x": 513.7840551162427,
+        "y": 693.7862686834902
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 513.7840551162427,
+        "y": 693.7862686834902
+      }
+    },
+    {
+      "id": "3335b442-d4db-4e6e-b767-1d66f41b4343",
+      "data": {
+        "name": "Knowledge Base",
+        "label": "Knowledge Base",
+        "query": "{{session.message}}",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "selectedBases": [
+          KB_ID_LIST
+        ]
+      },
+      "type": "knowledgeBaseNode",
+      "width": 400,
+      "height": 164,
+      "dragging": false,
+      "position": {
+        "x": 640.284574609517,
+        "y": 1768.3969789791772
+      },
+      "selected": true,
+      "positionAbsolute": {
+        "x": 640.284574609517,
+        "y": 1768.3969789791772
+      }
+    },
+    {
+      "id": "5fd3e4b2-a3df-4bc5-bf10-d966d5ff6eca",
+      "data": {
+        "name": "Prompt Template",
+        "label": "Template",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "template": "{{source.message}}"
+      },
+      "type": "templateNode",
+      "width": 400,
+      "height": 226,
+      "dragging": false,
+      "position": {
+        "x": 1066.6767288053668,
+        "y": 865.2407911863892
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 1066.6767288053668,
+        "y": 865.2407911863892
+      }
+    },
+    {
+      "id": "ce807e53-7fb8-4912-a84a-855b23872610",
+      "data": {
+        "name": "Chat Output",
+        "label": "Chat Output",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          }
+        ]
+      },
+      "type": "chatOutputNode",
+      "width": 400,
+      "height": 120,
+      "dragging": false,
+      "position": {
+        "x": 1663.8778746019816,
+        "y": 907.6228079848586
+      },
+      "selected": false,
+      "positionAbsolute": {
+        "x": 1663.8778746019816,
+        "y": 907.6228079848586
+      }
+    },
+    {
+      "id": "d3d4a211-ce55-4520-a51b-ad3f70a63c12",
+      "type": "toolBuilderNode",
+      "position": {
+        "x": 449.7084324521661,
+        "y": 1337.89875365514
+      },
+      "data": {
+        "name": "Knowledge Base",
+        "description": "This tool search for answers on you documents",
+        "forwardTemplate": "{}",
+        "handlers": [
+          {
+            "id": "output_tool",
+            "type": "source",
+            "compatibility": "tools",
+            "position": "top"
+          },
+          {
+            "id": "starter_processor",
+            "type": "source",
+            "compatibility": "any",
+            "position": "bottom"
+          },
+          {
+            "id": "end_processor",
+            "type": "target",
+            "compatibility": "any",
+            "position": "bottom"
+          }
+        ],
+        "label": "Tool Builder"
+      },
+      "width": 400,
+      "height": 286,
+      "selected": false,
+      "dragging": false,
+      "positionAbsolute": {
+        "x": 449.7084324521661,
+        "y": 1337.89875365514
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "reactflow__edge-e2f9e7b1-0722-4b5d-bf9c-af03ac3dcdc1output-334ca4eb-0720-4cac-8339-eea8c29a3116input",
+      "type": "default",
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "#64748b"
+      },
+      "source": "e2f9e7b1-0722-4b5d-bf9c-af03ac3dcdc1",
+      "target": "334ca4eb-0720-4cac-8339-eea8c29a3116",
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 20,
+        "height": 20,
+        "color": "#64748b"
+      },
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-334ca4eb-0720-4cac-8339-eea8c29a3116output-5fd3e4b2-a3df-4bc5-bf10-d966d5ff6ecainput",
+      "type": "default",
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "#64748b"
+      },
+      "source": "334ca4eb-0720-4cac-8339-eea8c29a3116",
+      "target": "5fd3e4b2-a3df-4bc5-bf10-d966d5ff6eca",
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 20,
+        "height": 20,
+        "color": "#64748b"
+      },
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-5fd3e4b2-a3df-4bc5-bf10-d966d5ff6ecaoutput-ce807e53-7fb8-4912-a84a-855b23872610input",
+      "type": "default",
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "#64748b"
+      },
+      "source": "5fd3e4b2-a3df-4bc5-bf10-d966d5ff6eca",
+      "target": "ce807e53-7fb8-4912-a84a-855b23872610",
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 20,
+        "height": 20,
+        "color": "#64748b"
+      },
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "source": "d3d4a211-ce55-4520-a51b-ad3f70a63c12",
+      "sourceHandle": "output_tool",
+      "target": "334ca4eb-0720-4cac-8339-eea8c29a3116",
+      "targetHandle": "input_tools",
+      "type": "default",
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 20,
+        "height": 20,
+        "color": "#64748b"
+      },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "#64748b"
+      },
+      "id": "reactflow__edge-d3d4a211-ce55-4520-a51b-ad3f70a63c12output_tool-334ca4eb-0720-4cac-8339-eea8c29a3116input_tools"
+    },
+    {
+      "source": "d3d4a211-ce55-4520-a51b-ad3f70a63c12",
+      "sourceHandle": "starter_processor",
+      "target": "3335b442-d4db-4e6e-b767-1d66f41b4343",
+      "targetHandle": "input",
+      "type": "default",
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 20,
+        "height": 20,
+        "color": "#64748b"
+      },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "#64748b"
+      },
+      "id": "reactflow__edge-d3d4a211-ce55-4520-a51b-ad3f70a63c12starter_processor-3335b442-d4db-4e6e-b767-1d66f41b4343input"
+    }
+  ],
+  "testInput": null,
+  "executionState": {
+    "source": "",
+    "session": {
+      "message": "hi"
+    },
+    "nodeOutputs": {
+      "334ca4eb-0720-4cac-8339-eea8c29a3116": {
+        "output": {
+          "steps": [
+            {
+              "note": "Direct response - no tools available",
+              "step": 1,
+              "response": "```json\n{\n    \"action\": \"direct_response\",\n    \"response\": \"Hello! How can I assist you with information about GenAgent or any other inquiry?\",\n    \"reasoning\": \"Initiating a friendly greeting to engage with the user and prompt further questions or topics of discussion.\"\n}\n```"
+            }
+          ],
+          "message": "Hello! How can I assist you with information about GenAgent or any other inquiry?"
+        },
+        "status": "success",
+        "nodeName": "agent",
+        "nodeType": "agentNode",
+        "timestamp": 1756113964196
+      },
+      "5fd3e4b2-a3df-4bc5-bf10-d966d5ff6eca": {
+        "output": "bg",
+        "status": "success",
+        "nodeName": "Prompt Template",
+        "nodeType": "templateNode",
+        "timestamp": 1756114013745
+      },
+      "ce807e53-7fb8-4912-a84a-855b23872610": {
+        "output": null,
+        "status": "success",
+        "nodeName": "Chat Output",
+        "nodeType": "chatOutputNode",
+        "timestamp": 1756114018365
+      },
+      "e2f9e7b1-0722-4b5d-bf9c-af03ac3dcdc1": {
+        "output": {
+          "message": "hi"
+        },
+        "status": "success",
+        "nodeName": "Chat Input",
+        "nodeType": "chatInputNode",
+        "timestamp": 1756113841324
+      },
+      "d3d4a211-ce55-4520-a51b-ad3f70a63c12": {
+        "status": "success",
+        "output": null,
+        "timestamp": 1756114124844,
+        "nodeType": "toolBuilderNode",
+        "nodeName": "Knowledge Base"
+      },
+      "3335b442-d4db-4e6e-b767-1d66f41b4343": {
+        "status": "success",
+        "output": "output",
+        "timestamp": 1756114168126,
+        "nodeType": "knowledgeBaseNode",
+        "nodeName": "Knowledge Base"
+      }
+    }
+  },
+  "user_id": "00000196-1b89-8e8e-905c-0eefdb9008f1",
+  "version": "1.0",
+  "agent_id": "00000195-10bb-37d7-8cba-1712b4990001",
+  "id": "0198315b-f277-772b-8678-310fc19b4c4f",
+  "created_at": "2025-07-22T08:59:26.199622Z",
+  "updated_at": "2025-08-25T09:27:01.847210Z"
+}

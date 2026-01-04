@@ -1,0 +1,66 @@
+TYper-Based FastAPI CLI
+
+A tiny command-line helper that lets you call any FastAPI (or other HTTP) endpoint from the terminal.
+Features:
+• Default base URL: http://localhost:8000
+• Optional override of that base URL
+• Optional Bearer-token authentication (-t / --token or API_TOKEN environment variable)
+• Unlimited extra headers (-H / --header KEY:VALUE)
+• Pretty-prints JSON; falls back to raw text for everything else
+
+INSTALLATION
+
+Copy the script into your project, e.g. cli/typer_cli.py.
+Install dependencies:
+pip install typer[all] requests
+(Optional) make it executable:
+chmod +x cli/typer_cli.py
+USAGE
+
+python cli/typer_cli.py call-api ENDPOINT [OPTIONS]
+Positional argument
+• ENDPOINT – path part of the URL to call (no leading slash), e.g. api/audio/metrics
+Options
+• -u, --url Override the base URL (default http://localhost:8000)
+• -t, --token Bearer token for the Authorization header. If omitted, the tool looks for API_TOKEN in the environment.
+• -H, --header Extra header(s) in KEY:VALUE format. Repeat the option for multiple headers.
+• --help Show full help
+
+EXAMPLES
+
+Default URL, no token
+python cli/typer_cli.py api/audio/metrics
+
+Default URL, with token supplied on the command line
+python cli/typer_cli.py api/audio/metrics
+-t eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9....
+
+Default URL, token picked up from environment variable
+export API_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...."
+python cli/typer_cli.py call-api api/audio/metrics
+
+Overridden URL, no token
+python cli/typer_cli.py api/audio/metrics
+-u http://127.0.0.1:9000
+
+Overridden URL, with token
+python cli/typer_cli.py api/audio/metrics
+-u http://127.0.0.1:9000
+-t eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9....
+
+Default URL with token and body
+python cli/typer-cli.py api/llm-analyst \
+  -t eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.... -d '{"name":"test5","llm_provider_id":"00000196-19d2-9c28-a2dd-561fff608fa0","prompt":"test5","is_active":1}'
+
+
+Extra headers (with default URL)
+python cli/typer_cli.py api/audio/metrics
+-H "X-Correlation-ID:1234"
+-H "Client-Version:1.4.0"
+
+TAB-COMPLETION (optional)
+
+Enable shell completion:
+python cli/typer_cli.py --install-completion (bash)
+python cli/typer_cli.py --show-completion | source (fish)
+See Typer docs for z-sh or PowerShell instructions.

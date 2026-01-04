@@ -88,3 +88,28 @@ export const generatePythonTemplate = (schema: any, prompt?: string) =>
     parameters_schema: schema,
     prompt,
   } as unknown as Record<string, unknown>);
+
+export interface WorkflowWizardPayload {
+  workflow_name: string;
+  workflow_json: string;
+}
+
+export interface WorkflowWizardResponse {
+  id?: string;
+  name?: string;
+  description?: string;
+  user_id?: string;
+  agent_id?: string;
+  url?: string;
+  worflow_json?: string;
+  db_record?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+// Create a workflow from onboarding chat
+export const createWorkflowFromWizard = (payload: WorkflowWizardPayload) =>
+  apiRequest<WorkflowWizardResponse>(
+    "POST",
+    "workflow-manager/config/from-wizard",
+    payload as unknown as Record<string, unknown>
+  );

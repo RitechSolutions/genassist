@@ -1,0 +1,16 @@
+repos:
+  - repo: local
+    hooks:
+#      - id: export-conda-env
+#        name: Export Conda env to environment.yml
+#        entry: scripts/export_conda_env.sh
+#        language: script
+#        pass_filenames: false
+#        always_run: true
+      -
+      - id: export-pip-reqs
+        name: Export pip requirements to requirements.txt
+        entry: scripts/export_pip_requirements.sh
+        language: script
+        pass_filenames: false
+        always_run: true

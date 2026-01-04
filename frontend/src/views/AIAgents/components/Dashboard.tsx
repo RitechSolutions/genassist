@@ -4,6 +4,7 @@ import {
   deleteAgentConfig,
   getAgentConfig,
   getAllAgentConfigs,
+  getAgentIntegrationKey,
   initializeAgent,
 } from "@/services/api";
 import { useNavigate } from "react-router-dom";
@@ -20,6 +21,7 @@ const Dashboard: React.FC = () => {
   const [modalContext, setModalContext] = useState<{
     agentId: string;
     userId: string;
+    redirectOnClose?: boolean;
   } | null>(null);
   const [agentToDelete, setAgentToDelete] = useState<AgentConfig | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -31,8 +33,16 @@ const Dashboard: React.FC = () => {
     const agent = agents.find((a) => a.id === agentId);
     if (agent) {
       const a = agents.find((a) => a.id === agentId)!;
-      setModalContext({ agentId, userId: a.user_id });
+      setModalContext({ agentId, userId: a.user_id, redirectOnClose: false });
     }
+  };
+
+  const isMissingApiKeyError = (err: unknown) => {
+    if (!(err instanceof Error)) return false;
+    return (
+      err.message.includes("No active API key") ||
+      err.message.includes("API key value missing")
+    );
   };
 
   const fetchAgents = async () => {
@@ -95,12 +105,38 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleGetIntegrationCode = (agentId: string) => {
-    navigate(`/ai-agents/integration/${agentId}`);
+  const handleGetIntegrationCode = async (
+    agentId: string,
+    userId: string
+  ) => {
+    try {
+      await getAgentIntegrationKey(agentId);
+      navigate(`/ai-agents/integration/${agentId}`);
+    } catch (err) {
+      if (isMissingApiKeyError(err)) {
+        setModalContext({ agentId, userId, redirectOnClose: true });
+        return;
+      }
+      toast.error("Failed to fetch an API key.");
+    }
   };
 
-  const handleChatAsCustomer = (agentId: string) => {
-    navigate(`/ai-agents/chat-as-customer/${agentId}`);
+  const handleApiKeyModalClose = async () => {
+    if (!modalContext) return;
+    const { agentId, redirectOnClose } = modalContext;
+    setModalContext(null);
+
+    if (!redirectOnClose) return;
+
+    try {
+      await getAgentIntegrationKey(agentId);
+      navigate(`/ai-agents/integration/${agentId}`);
+    } catch (err) {
+      if (isMissingApiKeyError(err)) {
+        return;
+      }
+      toast.error("Failed to fetch an API key.");
+    }
   };
 
   if (loading)
@@ -145,9 +181,8 @@ const Dashboard: React.FC = () => {
           agents={agents}
           onDelete={handleDeleteClick}
           onUpdate={handleUpdateAgent}
-          onGetIntegrationCode={handleGetIntegrationCode}
           onManageKeys={handleManageKeys}
-          onChatAsCustomer={handleChatAsCustomer}
+          onGetIntegrationCode={handleGetIntegrationCode}
         />
 
         {modalContext && (
@@ -155,7 +190,7 @@ const Dashboard: React.FC = () => {
             agentId={modalContext.agentId}
             userId={modalContext.userId}
             isOpen={!!modalContext}
-            onClose={() => setModalContext(null)}
+            onClose={handleApiKeyModalClose}
           />
         )}
 

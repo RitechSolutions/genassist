@@ -57,7 +57,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     unknown
   > | null>(null);
 
-  const { updateNodeOutput, getAvailableDataForNode } = useWorkflowExecution();
+  const { updateNodeOutput, getAvailableDataForNode, getNodeOutput } =
+    useWorkflowExecution();
 
   // Extract variables from node config when dialog opens
   useEffect(() => {
@@ -91,8 +92,14 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
 
       // Initialize form data with available data from workflow execution context
       const initialData: Record<string, string> = {};
+
+      // Get the node's own output to check for previous test input values
+      const nodeOutput = nodeId ? getNodeOutput(nodeId) : null;
+      const output = nodeOutput ? nodeOutput.output : null;
+
       allFields.forEach((field) => {
-        let defaultValue = field.defaultValue || "";
+        const previousValue = output ? output[`session.${field.id}`] : "";
+        let defaultValue = field.defaultValue || previousValue || "";
 
         // Try to get value from availableData using the field ID as a path
         if (availableData) {
