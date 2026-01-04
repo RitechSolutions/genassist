@@ -192,24 +192,17 @@ class OpenAIFineTuningService:
                         )
 
                 # Sync events for active jobs
-                if sync or job_record.status in [JobStatus.VALIDATING_FILES, JobStatus.QUEUED, JobStatus.RUNNING]:
-                    try:
+                try:
 
-                        await self.event_service.sync_events_for_job(job_record.id)
-                        logger.info(f"Synced events for job {job_id}")
+                    await self.event_service.sync_events_for_job(job_record.id)
+                    logger.info(f"Synced events for job {job_id}")
 
-                        # Refresh to get updated events
-                        await self.repository.db.refresh(job_record)
-                    except Exception as event_error:
-                        logger.error(f"Error syncing events for job {job_id}: {str(event_error)}")
+                    # Refresh to get updated events
+                    await self.repository.db.refresh(job_record)
+                except Exception as event_error:
+                    logger.error(f"Error syncing events for job {job_id}: {str(event_error)}")
 
                 logger.info(f"Retrieved and synced job {job_id}. Status: {response.status}")
-            else:
-                # Job is in terminal state, return cached data but still fetch from OpenAI for consistency
-                logger.info(f"Job {job_id} is in terminal state ({job_record.status}), fetching from OpenAI")
-                response = await self.client.fine_tuning.jobs.retrieve(job_record.openai_job_id)
-                logger.info(f"Successfully retrieved job {job_id}. Status: {response.status}")
-
             # Build response with events and progress
             job_dict = job_record.to_dict()
 
@@ -218,7 +211,7 @@ class OpenAIFineTuningService:
 
             # Add progress information
             try:
-                progress = await self.event_service.get_job_progress(job_record.id)
+                progress = await self.event_service.get_job_progress(job_record)
                 job_dict['progress'] = progress
             except Exception as progress_error:
                 logger.error(f"Error getting progress for job {job_id}: {str(progress_error)}")
@@ -290,13 +283,10 @@ class OpenAIFineTuningService:
                                 )
                         synced_jobs.append(updated_job)
 
-                        # Sync events for active jobs
-                        if sync or updated_job.status in [JobStatus.VALIDATING_FILES, JobStatus.QUEUED,
-                                JobStatus.RUNNING]:
-                            try:
-                                await self.event_service.sync_events_for_job(updated_job.id)
-                            except Exception as event_error:
-                                logger.error(f"Error syncing events for job {updated_job.id}: {str(event_error)}")
+                        try:
+                            await self.event_service.sync_events_for_job(updated_job.id)
+                        except Exception as event_error:
+                            logger.error(f"Error syncing events for job {updated_job.id}: {str(event_error)}")
 
                         await asyncio.sleep(0.2)
 
@@ -312,7 +302,7 @@ class OpenAIFineTuningService:
                 job_dict = job.to_dict()
                 self.attach_job_events(job_dict, job)
                 try:
-                    progress = await self.event_service.get_job_progress(job.id)
+                    progress = await self.event_service.get_job_progress(job)
                     job_dict['progress'] = progress
                 except Exception as e:
                     logger.error(f"Error getting progress for job {job.id}: {str(e)}")

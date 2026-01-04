@@ -24,6 +24,7 @@ def sanitize_for_json(obj: Any) -> Any:
     """
     Recursively sanitize data to make it JSON-compliant.
     Converts inf, -inf, and nan float values to None or string representations.
+    Also handles custom objects by converting them to strings or dictionaries.
 
     Args:
         obj: Any object to sanitize
@@ -57,8 +58,24 @@ def sanitize_for_json(obj: Any) -> Any:
         return sanitize_for_json(obj.to_dict("records"))
     elif pd.isna(obj):
         return None
-    else:
+    elif isinstance(obj, (str, int, bool, type(None))):
+        # Basic JSON-serializable types
         return obj
+    else:
+        # Handle custom objects - try to convert to dict or string
+        try:
+            # Try to get a dict representation if it has __dict__
+            if hasattr(obj, '__dict__'):
+                return sanitize_for_json(obj.__dict__)
+            # Try to get a string representation
+            elif hasattr(obj, '__str__'):
+                return str(obj)
+            else:
+                # Fallback: return type name
+                return f"<{type(obj).__name__}>"
+        except Exception:
+            # If all else fails, return type name
+            return f"<{type(obj).__name__}>"
 
 
 def get_sample_data(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

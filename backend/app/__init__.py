@@ -83,21 +83,48 @@ async def _lifespan(app: FastAPI):
 
     await init_fastapi_cache_with_redis(app, settings)
 
-    # Initialize Redis connection manager for conversation memory (via DI)
+    # Initialize Redis connection manager (via DI with async initialization)
     if settings.REDIS_FOR_CONVERSATION:
         try:
             from app.cache.redis_connection_manager import RedisConnectionManager
 
+            # Get uninitialized instance from DI
             redis_manager = injector.get(RedisConnectionManager)
+
+            # Perform async initialization
+            await redis_manager.initialize()
             connection_info = await redis_manager.get_connection_info()
             logger.info(f"Redis connection manager initialized: {connection_info}")
         except Exception as e:
             logger.error(f"Failed to initialize Redis connection manager: {e}")
 
+    # Initialize SocketConnectionManager (via DI with async Redis Pub/Sub setup)
+    try:
+        from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+
+        # Get instance from DI (Redis dependency already injected)
+        socket_manager = injector.get(SocketConnectionManager)
+
+        # Perform async initialization (sets up Redis Pub/Sub subscriber)
+        await socket_manager.initialize_redis_subscriber()
+        logger.info("SocketConnectionManager initialized with Redis Pub/Sub")
+    except Exception as e:
+        logger.error(f"Failed to initialize SocketConnectionManager: {e}")
+
     await pre_wormup_tenant_singleton()
     try:
         yield
     finally:
+        # Cleanup SocketConnectionManager (Redis subscriber)
+        try:
+            from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+
+            socket_manager = injector.get(SocketConnectionManager)
+            await socket_manager.cleanup()
+            logger.info("SocketConnectionManager cleanup complete")
+        except Exception as e:
+            logger.error(f"Error during SocketConnectionManager cleanup: {e}")
+
         # Cleanup Redis connections
         if hasattr(app.state, "redis"):
             await app.state.redis.aclose()

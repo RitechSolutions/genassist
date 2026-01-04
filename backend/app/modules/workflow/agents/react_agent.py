@@ -83,8 +83,7 @@ class ReActAgent(BaseToolAgent):
             try:
                 response = await self.llm_model.ainvoke(
                     [{"role": "user", "content": current_prompt}])
-                response_content = response.content if hasattr(
-                    response, 'content') else str(response)
+                response_content = self._extract_response_content(response)
 
                 if self.verbose:
                     logger.info(

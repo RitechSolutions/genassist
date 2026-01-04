@@ -19,8 +19,8 @@ async def init_fastapi_cache_with_redis(app, settings):
 
 def make_key_builder(param: str | int = 1) -> Callable[[Any, str, Any], str]:
     """
-    Build a `fastapi-cache` key_builder that plucks *one* argument from the
-    wrapped function call.
+    Build a tenant-aware `fastapi-cache` key_builder that plucks *one* argument from the
+    wrapped function call and includes tenant context.
 
     Parameters
     ----------
@@ -32,7 +32,13 @@ def make_key_builder(param: str | int = 1) -> Callable[[Any, str, Any], str]:
     Returns
     -------
     Callable usable as `key_builder=` in `@cache(...)`
+
+    Note
+    ----
+    Cache keys include tenant context to ensure data isolation between tenants.
+    Format: {namespace}:{tenant_id}:{value}
     """
+    from app.core.tenant_scope import get_tenant_context
 
     def _builder(func, namespace, *args, **kwargs):
         # 1) Because fastapi-cache sometimes passes (args, kwargs) inside kwargs
@@ -58,6 +64,9 @@ def make_key_builder(param: str | int = 1) -> Callable[[Any, str, Any], str]:
                     value = pos_args[pos]
                 except ValueError:
                     pass
-        return f"{namespace}:{value}"
+
+        # 3) Include tenant context in cache key for data isolation
+        tenant_id = get_tenant_context()
+        return f"{namespace}:{tenant_id}:{value}"
 
     return _builder

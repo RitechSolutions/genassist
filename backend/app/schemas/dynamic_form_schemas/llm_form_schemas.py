@@ -27,8 +27,11 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 required=True,
                 default="gpt-3.5-turbo",
                 options=[
-                    {"value": "gpt-3.5-turbo", "label": "GPT-3.5 Turbo"},
-                    {"value": "gpt-3.5-turbo-16k", "label": "GPT-3.5 Turbo 16K"},
+                    {"value": "gpt-5", "label": "GPT 5"},
+                    {"value": "gpt-5-mini", "label": "GPT 5 mini"},
+                    {"value": "gpt-5-nano", "label": "GPT 5 nano"},
+                    {"value": "gpt-5.1", "label": "GPT 5.1"},
+                    {"value": "gpt-5.2", "label": "GPT 5.2"},
                     {"value": "gpt-4o", "label": "GPT-4o"},
                     {"value": "gpt-4o-mini", "label": "GPT-4o Mini"},
                     {"value": "gpt-4", "label": "GPT-4"},
@@ -38,6 +41,9 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                     {"value": "o1-small", "label": "O1 Small"},
                     {"value": "o1-medium", "label": "O1 Medium"},
                     {"value": "o1-large", "label": "O1 Large"},
+                    {"value": "gpt-3.5-turbo", "label": "GPT-3.5 Turbo"},
+                    {"value": "gpt-3.5-turbo-16k", "label": "GPT-3.5 Turbo 16K"},
+
                 ],
             ),
             FieldSchema(
@@ -108,6 +114,8 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 default="gemini-2.5-pro",
                 options=[
                     {"value": "gemini-2.5-pro", "label": "Gemini Pro (2.5)"},
+                    {"value": "gemini-3-pro-preview", "label": "Gemini 3 pro preview"},
+                    {"value": "gemini-3-flash-preview", "label": "Gemini 3 flash preview"},
                 ],
             ),
             FieldSchema(

@@ -1,4 +1,4 @@
-opik==1.7.32
+opik==1.9.58
 injector==0.22.0
 fastapi-injector==0.8.0
 PyMySQL==1.1.1
@@ -10,7 +10,7 @@ google-api-python-client==2.171.0
 sqlglot==26.33.0
 twilio==9.6.3
 msal==1.32.3
-langchain-google-genai==2.0.10
+langchain-google-genai==4.1.2
 google-generativeai==0.8.5
 python-docx==1.2.0
 pytesseract==0.3.13

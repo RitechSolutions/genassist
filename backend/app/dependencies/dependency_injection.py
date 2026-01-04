@@ -81,11 +81,27 @@ class Dependencies(Module):
 
     @provider
     @singleton
-    async def provide_redis_connection_manager(self) -> RedisConnectionManager:
-        """Provide Redis connection manager as a global singleton."""
-        manager = RedisConnectionManager()
-        await manager.initialize()
-        return manager
+    def provide_redis_connection_manager(self) -> RedisConnectionManager:
+        """
+        Provide Redis connection manager as a global singleton.
+
+        Note: Returns uninitialized instance. Async initialization
+        (connection pool setup) happens in the application lifespan.
+        """
+        return RedisConnectionManager()
+
+    @provider
+    @singleton
+    def provide_socket_connection_manager(
+        self, redis_manager: RedisConnectionManager
+    ) -> SocketConnectionManager:
+        """
+        Provide SocketConnectionManager with Redis support for horizontal scaling.
+
+        The manager is created with Redis dependency injected. Async initialization
+        (Redis Pub/Sub subscriber) happens in the application lifespan.
+        """
+        return SocketConnectionManager(redis_manager=redis_manager)
 
     @provider
     @request_scope
@@ -205,13 +221,13 @@ class Dependencies(Module):
         binder.bind(ThreadScopedRAG, scope=tenant_scope)
 
         # Global singletons (shared across all tenants)
-        # - SocketConnectionManager: Global singleton with tenant-aware room IDs
+        # - SocketConnectionManager: Provided by provide_socket_connection_manager (with Redis support)
         #   (Tenant isolation achieved via room ID prefixes: tenant_{id}_room_id)
-        # - RedisConnectionManager: Connection pool is stateless, shared across tenants
-        #   (Tenant isolation achieved via key prefixes in Redis keys)
+        # - RedisConnectionManager: Provided by provide_redis_connection_manager
+        #   (Connection pool is stateless, shared across tenants, tenant isolation via key prefixes)
         # - RequestScopeFactory: Infrastructure for creating request scopes
-        binder.bind(SocketConnectionManager, scope=singleton)
-        binder.bind(RedisConnectionManager, scope=singleton)
+        # Note: SocketConnectionManager and RedisConnectionManager use @provider methods (lines 82-104)
+        # so they don't need binder.bind() here - providers handle the singleton scope automatically
         binder.bind(RequestScopeFactory, scope=singleton)
 
         binder.bind(logging.Logger, to=lambda: logging.getLogger(), scope=request_scope)

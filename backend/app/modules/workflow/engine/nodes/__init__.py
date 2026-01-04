@@ -8,6 +8,7 @@ from .chat_nodes import ChatInputNode, ChatOutputNode
 from .router_node import RouterNode
 from .agent_node import AgentNode
 from .api_tool_node import ApiToolNode
+from .open_api_node import OpenAPINode
 from .prompt_node import TemplateNode
 from .llm_model_node import LLMModelNode
 from .knowledge_tool_node import KnowledgeToolNode
@@ -23,6 +24,7 @@ from .zendesk_tool_node import ZendeskToolNode
 from .sql_node import SQLNode
 from .aggregator_node import AggregatorNode
 from .thread_rag_node import ThreadRAGNode
+from .mcp_node import MCPNode
 
 __all__ = [
     "ChatInputNode",
@@ -30,6 +32,7 @@ __all__ = [
     "RouterNode",
     "AgentNode",
     "ApiToolNode",
+    "OpenAPINode",
     "TemplateNode",
     "LLMModelNode",
     "KnowledgeToolNode",
@@ -50,4 +53,5 @@ __all__ = [
     "TrainPreprocessNode",
     "TrainModelNode",
     "ThreadRAGNode",
+    "MCPNode",
 ]

@@ -12,7 +12,6 @@ from app.services.agent_config import AgentConfigService
 
 router = APIRouter()
 
-
 # TODO set permission validation
 @router.get(
     "/configs",

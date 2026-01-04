@@ -137,7 +137,17 @@ class BaseToolAgent(ABC):
         return self.__class__.__name__
 
     def _extract_response_content(self, response) -> str:
-        """Extract content from LLM response object"""
+        # Modern approach: Use content_blocks for standardized access (LangChain 1.0+)
+        if hasattr(response, 'content_blocks'):
+            text_parts = []
+            for block in response.content_blocks:
+                # Extract from TextContentBlock
+                if block.get('type') == 'text' and 'text' in block:
+                    text_parts.append(block['text'])
+
+            if text_parts:
+                return '\n'.join(text_parts)
+        # fallback old version
         return response.content if hasattr(response, 'content') else str(response)
 
     def _log_if_verbose(self, message: str):

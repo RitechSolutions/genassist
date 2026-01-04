@@ -1,7 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import ChatOllama
 from langchain_core.language_models import BaseChatModel
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
@@ -26,6 +26,7 @@ class LlmModelFactory:
         model = llm_analyst.llm_provider.llm_model
         connection_data = llm_analyst.llm_provider.connection_data
         temperature = connection_data.get("temperature", 0)
+        thinking_level = connection_data.get("thinking_level", "high")
 
         if provider == "openai":
             api_key = decrypt_key(connection_data.get("api_key"))
@@ -37,7 +38,8 @@ class LlmModelFactory:
 
         elif provider == "google_genai":
             api_key = decrypt_key(connection_data.get("api_key"))
-            return ChatGoogleGenerativeAI(model=model, temperature=temperature, api_key=api_key)
+            return ChatGoogleGenerativeAI(model=model, temperature=temperature, thinking_level=thinking_level,
+                                          api_key=api_key)
 
         elif provider == "ollama":
             # Ollama doesn't need API key, but uses base_url for local server

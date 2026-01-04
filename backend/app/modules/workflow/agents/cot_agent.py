@@ -44,6 +44,20 @@ class ChainOfThoughtAgent:
 
         logger.info("Chain-of-Thought Agent initialized.")
 
+    def _extract_response_content(self, response) -> str:
+        # Modern approach: Use content_blocks for standardized access (LangChain 1.0+)
+        if hasattr(response, 'content_blocks'):
+            text_parts = []
+            for block in response.content_blocks:
+                # Extract from TextContentBlock
+                if block.get('type') == 'text' and 'text' in block:
+                    text_parts.append(block['text'])
+
+            if text_parts:
+                return '\n'.join(text_parts)
+        # fallback old version
+        return response.content if hasattr(response, 'content') else str(response)
+
     async def invoke(
         self, query: str, chat_history: Optional[List] = None
     ) -> Dict[str, Any]:
@@ -81,9 +95,7 @@ class ChainOfThoughtAgent:
                 response = await self.llm_model.ainvoke(
                     [{"role": "user", "content": current_prompt}]
                 )
-                response_content = (
-                    response.content if hasattr(response, "content") else str(response)
-                )
+                response_content = self._extract_response_content(response)
 
                 if self.verbose:
                     logger.info(

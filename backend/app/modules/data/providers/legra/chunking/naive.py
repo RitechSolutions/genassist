@@ -1,7 +1,7 @@
 from typing import List
 
 import nltk
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from .base import Chunker
 

@@ -5423,6 +5423,14 @@
         "summary": "Switch Agent",
         "description": "Switch to an agent with the specified ID",
         "operationId": "switch_agent_api_genagent_agents_switch__agent_id__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "agent_id",
@@ -5468,6 +5476,14 @@
         ],
         "summary": "Query Agent",
         "operationId": "query_agent_api_genagent_agents__agent_id__query__thread_id__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "agent_id",
@@ -6693,15 +6709,24 @@
         ]
       }
     },
-    "/api/genagent/workflow/{workflow_id}": {
+    "/api/genagent/workflow/node_schemas": {
       "get": {
         "tags": [
           "v1",
           "Workflows"
         ],
-        "summary": "Get Workflow",
-        "description": "Get a workflow by ID",
-        "operationId": "get_workflow_api_genagent_workflow__workflow_id__get",
+        "summary": "Get Node Dialog Schemas",
+        "operationId": "get_node_dialog_schemas_api_genagent_workflow_node_schemas_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
         "security": [
           {
             "APIKeyHeader": []
@@ -6709,42 +6734,10 @@
           {
             "OAuth2PasswordBearer": []
           }
-        ],
-        "parameters": [
-          {
-            "name": "workflow_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Workflow Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Workflow"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
+        ]
+      }
+    },
+    "/api/genagent/workflow/{workflow_id}": {
       "put": {
         "tags": [
           "v1",
@@ -6837,6 +6830,57 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "v1",
+          "Workflows"
+        ],
+        "summary": "Get Workflow",
+        "description": "Get a workflow by ID",
+        "operationId": "get_workflow_api_genagent_workflow__workflow_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workflow"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -7174,7 +7218,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/zendesk/closed": {
@@ -7214,7 +7266,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/zendesk/zendesk-unrated-closed-tickets": {
@@ -7447,7 +7507,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/twilio/incoming-call/{agent_id}": {
@@ -7458,6 +7526,14 @@
         ],
         "summary": "Handle Incoming Call",
         "operationId": "handle_incoming_call_api_twilio_incoming_call__agent_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "agent_id",
@@ -8192,7 +8268,7 @@
           "ML Models"
         ],
         "summary": "Upload Pkl File",
-        "description": "Upload a .pkl model file.\n\n- Validates file type (.pkl only)\n- Validates file size (max 100MB)\n- Saves file with unique filename\n- Returns file path and original filename",
+        "description": "Upload a .pkl model file.\n\n- Validates file type (.pkl only)\n- Validates file size (max 500MB)\n- Saves file with unique filename\n- Returns file path and original filename",
         "operationId": "upload_pkl_file_api_ml_models_upload_post",
         "requestBody": {
           "content": {
@@ -10866,9 +10942,9 @@
           "v1",
           "OpenAI API"
         ],
-        "summary": "List User Jobs",
+        "summary": "Get Jobs",
         "description": "List all fine-tuning jobs for the current user.\nSet sync=true to fetch fresh status from OpenAI for all jobs (slower).",
-        "operationId": "list_user_jobs_api_openai_fine_tuning_jobs_get",
+        "operationId": "get_jobs_api_openai_fine_tuning_jobs_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -11713,6 +11789,715 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workflow-manager/config/from-wizard": {
+      "post": {
+        "tags": [
+          "v1",
+          "Workflow Manager"
+        ],
+        "summary": "Create Workflow From Wizard",
+        "description": "- Create a new Agent\n- Create a new workflow based on the wizard JSON",
+        "operationId": "create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/workflow-manager/config/available-node-types": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflow Manager"
+        ],
+        "summary": "Get Available Node Types",
+        "operationId": "get_available_node_types_api_workflow_manager_config_available_node_types_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/mcp/discover-tools": {
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Discover Mcp Tools",
+        "description": "Discover available tools from an MCP server using the official MCP SDK.\n\nThis endpoint connects to an MCP server and retrieves the list of available tools.\nSupports STDIO, SSE, and HTTP connection types.\n\nArgs:\n    request: Request containing connection type and configuration\n\nReturns:\n    Response containing list of available tools\n\nRaises:\n    HTTPException: If tool discovery fails",
+        "operationId": "discover_mcp_tools_api_mcp_discover_tools_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverToolsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoverToolsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/mcp/jsonrpc": {
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Handle Jsonrpc Jsonrpc",
+        "description": "Handle JSON-RPC requests at /jsonrpc endpoint.",
+        "operationId": "handle_jsonrpc_jsonrpc_api_mcp_jsonrpc_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JSONRPCRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JSONRPCResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/": {
+      "get": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Handle Root Get",
+        "description": "Handle GET requests at root endpoint for SSE connections.\n\nThis allows the MCP SDK's SSE client to connect to the base URL.",
+        "operationId": "handle_root_get_api_mcp__get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Handle Jsonrpc Root",
+        "description": "Handle JSON-RPC requests at root endpoint.",
+        "operationId": "handle_jsonrpc_root_api_mcp__post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JSONRPCRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JSONRPCResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/tools": {
+      "get": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "List Mcp Tools Get",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - GET).\n\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "operationId": "list_mcp_tools_get_api_mcp_tools_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response List Mcp Tools Get Api Mcp Tools Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/tools/list": {
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "List Mcp Tools Post",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - POST).\n\nThis endpoint matches the MCP client's expected format for tool discovery.\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "operationId": "list_mcp_tools_post_api_mcp_tools_list_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response List Mcp Tools Post Api Mcp Tools List Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/tools/call": {
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Execute Mcp Tool",
+        "description": "Execute a workflow as an MCP tool (MCP Protocol endpoint).\n\nAuthenticates using API key, finds the tool in the server's workflows,\nvalidates arguments, and executes the workflow.",
+        "operationId": "execute_mcp_tool_api_mcp_tools_call_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPToolCallRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolCallResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp-servers/": {
+      "get": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "List Mcp Servers",
+        "description": "Get all MCP servers for the current user.",
+        "operationId": "list_mcp_servers_api_mcp_servers__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MCPServerResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Mcp Servers Api Mcp Servers  Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "Create Mcp Server",
+        "description": "Create a new MCP server.",
+        "operationId": "create_mcp_server_api_mcp_servers__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPServerCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPServerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/mcp-servers/{mcp_server_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "Get Mcp Server",
+        "description": "Get an MCP server by ID.",
+        "operationId": "get_mcp_server_api_mcp_servers__mcp_server_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mcp_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mcp Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPServerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "Update Mcp Server",
+        "description": "Update an MCP server.",
+        "operationId": "update_mcp_server_api_mcp_servers__mcp_server_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mcp_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mcp Server Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPServerUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPServerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "Delete Mcp Server",
+        "description": "Delete an MCP server (soft delete).",
+        "operationId": "delete_mcp_server_api_mcp_servers__mcp_server_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mcp_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mcp Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -12750,6 +13535,24 @@
         ],
         "title": "Body_auth_token_api_auth_token_post"
       },
+      "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post": {
+        "properties": {
+          "workflow_name": {
+            "type": "string",
+            "title": "Workflow Name"
+          },
+          "workflow_json": {
+            "type": "string",
+            "title": "Workflow Json"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_name",
+          "workflow_json"
+        ],
+        "title": "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
+      },
       "Body_process_files_api_genagent_knowledge_process_files__post": {
         "properties": {
           "files": {
@@ -13581,6 +14384,45 @@
         "type": "object",
         "title": "DataSourceUpdate"
       },
+      "DiscoverToolsRequest": {
+        "properties": {
+          "connection_type": {
+            "type": "string",
+            "title": "Connection Type",
+            "description": "Connection type: 'stdio', 'sse', or 'http'"
+          },
+          "connection_config": {
+            "type": "object",
+            "title": "Connection Config",
+            "description": "Connection configuration"
+          }
+        },
+        "type": "object",
+        "required": [
+          "connection_type",
+          "connection_config"
+        ],
+        "title": "DiscoverToolsRequest",
+        "description": "Request model for discovering MCP tools"
+      },
+      "DiscoverToolsResponse": {
+        "properties": {
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/MCPTool"
+            },
+            "type": "array",
+            "title": "Tools",
+            "description": "List of available tools from the MCP server"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tools"
+        ],
+        "title": "DiscoverToolsResponse",
+        "description": "Response model for tool discovery"
+      },
       "FeatureFlagCreate": {
         "properties": {
           "key": {
@@ -13943,6 +14785,95 @@
         },
         "type": "object",
         "title": "InProgressConversationTranscriptFinalize"
+      },
+      "JSONRPCRequest": {
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "title": "Jsonrpc",
+            "description": "JSON-RPC version",
+            "default": "2.0"
+          },
+          "id": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Request ID"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "Method name (e.g., 'tools/list', 'tools/call')"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params",
+            "description": "Method parameters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "method"
+        ],
+        "title": "JSONRPCRequest",
+        "description": "JSON-RPC request model"
+      },
+      "JSONRPCResponse": {
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "title": "Jsonrpc",
+            "description": "JSON-RPC version",
+            "default": "2.0"
+          },
+          "id": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Request ID"
+          },
+          "result": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result",
+            "description": "Method result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error information"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "JSONRPCResponse",
+        "description": "JSON-RPC response model"
       },
       "JobStatus": {
         "type": "string",
@@ -14815,6 +15746,387 @@
         },
         "type": "object",
         "title": "LlmProviderUpdate"
+      },
+      "MCPServerCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "api_key": {
+            "type": "string",
+            "minLength": 32,
+            "title": "Api Key",
+            "description": "API key for authentication (minimum 32 characters)"
+          },
+          "workflows": {
+            "items": {
+              "$ref": "#/components/schemas/MCPServerWorkflowCreate"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Workflows",
+            "description": "List of workflows to expose as tools"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Is Active",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "api_key",
+          "workflows"
+        ],
+        "title": "MCPServerCreate",
+        "description": "Schema for creating an MCP Server"
+      },
+      "MCPServerResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Is Active",
+            "default": 1
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "MCP server URL (generated by backend)"
+          },
+          "api_key": {
+            "type": "string",
+            "title": "Api Key",
+            "description": "Masked API key (***)"
+          },
+          "workflows": {
+            "items": {
+              "$ref": "#/components/schemas/MCPServerWorkflowResponse"
+            },
+            "type": "array",
+            "title": "Workflows"
+          },
+          "is_deleted": {
+            "type": "integer",
+            "title": "Is Deleted"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "api_key",
+          "workflows",
+          "is_deleted",
+          "user_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MCPServerResponse",
+        "description": "Schema for MCP Server response"
+      },
+      "MCPServerUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key",
+            "description": "API key for authentication (minimum 32 characters)"
+          },
+          "workflows": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MCPServerWorkflowCreate"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflows"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "MCPServerUpdate",
+        "description": "Schema for updating an MCP Server"
+      },
+      "MCPServerWorkflowCreate": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workflow Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Name",
+            "description": "Name to expose as MCP tool (lowercase with underscores)"
+          },
+          "tool_description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Description",
+            "description": "Description for the MCP tool"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "tool_name",
+          "tool_description"
+        ],
+        "title": "MCPServerWorkflowCreate",
+        "description": "Schema for creating an MCP Server Workflow"
+      },
+      "MCPServerWorkflowResponse": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workflow Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Name",
+            "description": "Name to expose as MCP tool (lowercase with underscores)"
+          },
+          "tool_description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Description",
+            "description": "Description for the MCP tool"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "mcp_server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Mcp Server Id"
+          },
+          "input_schema": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Schema",
+            "description": "Input schema extracted from chatInputNode (JSON Schema format)"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "tool_name",
+          "tool_description",
+          "id",
+          "mcp_server_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MCPServerWorkflowResponse",
+        "description": "Schema for MCP Server Workflow response"
+      },
+      "MCPTool": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Tool name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Tool description"
+          },
+          "inputSchema": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputschema",
+            "description": "JSON schema defining tool parameters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "MCPTool",
+        "description": "MCP tool definition"
+      },
+      "MCPToolCallRequest": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool",
+            "description": "Tool name to execute"
+          },
+          "arguments": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments",
+            "description": "Tool arguments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool"
+        ],
+        "title": "MCPToolCallRequest",
+        "description": "Request model for calling an MCP tool"
+      },
+      "MCPToolCallResponse": {
+        "properties": {
+          "output": {
+            "type": "object",
+            "title": "Output",
+            "description": "Tool execution output"
+          }
+        },
+        "type": "object",
+        "required": [
+          "output"
+        ],
+        "title": "MCPToolCallResponse",
+        "description": "Response model for tool execution"
       },
       "MLModelCreate": {
         "properties": {

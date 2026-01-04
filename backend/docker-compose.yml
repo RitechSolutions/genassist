@@ -96,7 +96,7 @@ services:
 
   # Chroma vector database
   chroma:
-    image: ghcr.io/chroma-core/chroma:0.6.3
+    image: ghcr.io/chroma-core/chroma:1.3.7
     container_name: genassist-chroma
     ports:
       - "8005:8000"
