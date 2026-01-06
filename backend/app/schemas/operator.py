@@ -33,13 +33,5 @@ class OperatorRead(OperatorBase):
             populate_by_name=True
             )
 
-class OperatorReadMinimal(BaseModel):
-    user: UserReadMinimal
-
-    model_config = ConfigDict(
-            from_attributes = True,
-            populate_by_name=True
-            )
-
 class OperatorReadAfterCreate(OperatorRead):
     user: UserReadMinimal
