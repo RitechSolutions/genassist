@@ -13,6 +13,7 @@ import {
 } from "@/components/select";
 import { Save } from "lucide-react";
 import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { DraggableInput } from "../components/custom/DraggableInput";
 import { BaseNodeDialogProps } from "./base";
 import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
@@ -136,7 +137,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
             <div className="space-y-2">
               <div className="space-y-2">
                 <Label htmlFor="summary">Summary</Label>
-                <Input
+                <DraggableInput
                   id="summary"
                   type="text"
                   value={summary}
@@ -167,7 +168,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="start">Start</Label>
-                  <Input
+                  <DraggableInput
                     id="start"
                     type="datetime"
                     value={start}
@@ -178,7 +179,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="end">End</Label>
-                  <Input
+                  <DraggableInput
                     id="end"
                     type="datetime"
                     value={end}
@@ -190,7 +191,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
               </div>
               <div className="space-y-2">
                 <Label htmlFor="query">Subject Contains</Label>
-                <Input
+                <DraggableInput
                   id="subjectContains"
                   type="text"
                   value={subjectContains}

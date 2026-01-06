@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/select";
 import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { DraggableInput } from "../components/custom/DraggableInput";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { BaseNodeDialogProps } from "./base";
 
@@ -151,7 +152,7 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
 
       <div className="space-y-2">
         <Label htmlFor="forward-template">Forward Template</Label>
-        <Input
+        <DraggableInput
           id="forward-template"
           value={forwardTemplate}
           onChange={(e) => setForwardTemplate(e.target.value)}

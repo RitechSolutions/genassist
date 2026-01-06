@@ -6,6 +6,7 @@ import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Save } from "lucide-react";
+import { DraggableInput } from "../components/custom/DraggableInput";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import {
   Select,
@@ -140,7 +141,7 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
         </div>
         <div className="space-y-2">
           <Label htmlFor="name">Space Key</Label>
-          <Input
+          <DraggableInput
             id="space_key"
             value={spaceKey}
             onChange={(e) => setSpaceKey(e.target.value)}
@@ -150,7 +151,7 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
         </div>
         <div className="space-y-2">
           <Label htmlFor="name">Task Name</Label>
-          <Input
+          <DraggableInput
             id="task_name"
             value={taskName}
             onChange={(e) => setTaskName(e.target.value)}

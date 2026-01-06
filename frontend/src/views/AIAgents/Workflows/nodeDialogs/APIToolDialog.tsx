@@ -229,7 +229,7 @@ export const APIToolDialog: React.FC<
               key={`header-${idx}`}
               className="flex items-center gap-2 w-full"
             >
-              <Input
+              <DraggableInput
                 placeholder="Header name"
                 value={key}
                 onChange={(e) => updateHeader(key, e.target.value, value)}
@@ -273,7 +273,7 @@ export const APIToolDialog: React.FC<
               key={`param-${idx}`}
               className="flex items-center gap-2 w-full"
             >
-              <Input
+              <DraggableInput
                 placeholder="Parameter name"
                 value={key}
                 onChange={(e) => updateParameter(key, e.target.value, value)}

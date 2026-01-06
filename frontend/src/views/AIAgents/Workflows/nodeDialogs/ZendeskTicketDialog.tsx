@@ -3,7 +3,6 @@ import { ZendeskTicketNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
 import { Save } from "lucide-react";
 import { NodeConfigDialog } from "../components/NodeConfigDialog";
 import { BaseNodeDialogProps } from "./base";
@@ -226,7 +225,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
           <div className="space-y-2">
             <div className="space-y-2">
               <Label htmlFor="tags">Tags</Label>
-              <Input
+              <DraggableInput
                 id="tags"
                 value={tagsCsv}
                 onChange={(e) => setTagsCsv(e.target.value)}

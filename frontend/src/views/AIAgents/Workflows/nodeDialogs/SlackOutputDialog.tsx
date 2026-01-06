@@ -139,7 +139,7 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
         </div>
         <div className="space-y-2">
           <Label htmlFor="channel">Channel ID</Label>
-          <Input
+          <DraggableInput
             id="channel"
             value={channel}
             onChange={(e) => setChannel(e.target.value)}
