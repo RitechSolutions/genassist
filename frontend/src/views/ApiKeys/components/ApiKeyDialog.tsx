@@ -14,6 +14,7 @@ import { ApiKeyDialogLogic } from "./ApiKeyDialogLogic";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import { ApiRoleSelection } from "./ApiRoleSelection";
 import { Switch } from "@/components/switch";
+import { maskInput } from "@/helpers/utils";
 
 interface ApiKeyDialogProps {
   isOpen: boolean;
@@ -101,18 +102,18 @@ export function ApiKeyDialog({
             {hasGeneratedKey && generatedKey && (
               <div className="space-y-2 mt-4">
                 <Label htmlFor="generated_key">Generated API Key</Label>
-                <div className="relative">
+                <div className="relative flex flex-row items-center">
                   <Input
                     id="generated_key"
                     value={
                       isKeyVisible
                         ? generatedKey
-                        : generatedKey.replace(/./g, "*")
+                        : maskInput(generatedKey || "")
                     }
                     readOnly
-                    className="pr-20"
+                    className="w-full z-10"
                   />
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
+                  <div className="absolute right-2 flex gap-1 elevation-1 z-20">
                     <Button
                       type="button"
                       variant="ghost"
