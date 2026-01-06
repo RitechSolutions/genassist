@@ -2,7 +2,6 @@ from typing import List
 from uuid import UUID
 from fastapi import Depends
 from injector import inject
-
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.workflow import WorkflowModel
@@ -43,7 +42,7 @@ class WorkflowService:
         return WorkflowInDB.model_validate(created, from_attributes=True)
 
     async def update(self, workflow_id: UUID, data: WorkflowUpdate) -> WorkflowInDB:
-        orm_obj = await self.repository.get_by_id(workflow_id)
+        orm_obj = await self.repository.get_by_id(workflow_id, eager=["agent"])
         if not orm_obj:
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
 
@@ -52,10 +51,15 @@ class WorkflowService:
             setattr(orm_obj, field, value)
 
         updated = await self.repository.update(orm_obj)
+        from app.cache.redis_cache import invalidate_cache
+
+        await invalidate_cache("agents:get_by_id_full", updated.agent.id)
         return WorkflowInDB.model_validate(updated, from_attributes=True)
 
-    async def delete(self, tool_id: UUID) -> None:
-        orm_obj = await self.repository.get_by_id(tool_id)
+    async def delete(self, workflow_id: UUID) -> None:
+        orm_obj = await self.repository.get_by_id(workflow_id, eager=["agent"])
         if not orm_obj:
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
+        from app.cache.redis_cache import invalidate_cache
+        await invalidate_cache("agents:get_by_id_full", orm_obj.agent.id)
         await self.repository.delete(orm_obj)

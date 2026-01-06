@@ -1,9 +1,14 @@
+import logging
 from inspect import signature
 from typing import Any, Callable, cast
+from uuid import UUID
+
 from redis.asyncio import Redis
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from starlette.datastructures import State
+
+logger = logging.getLogger(__name__)
 
 
 async def init_fastapi_cache_with_redis(app, settings):
@@ -70,3 +75,60 @@ def make_key_builder(param: str | int = 1) -> Callable[[Any, str, Any], str]:
         return f"{namespace}:{tenant_id}:{value}"
 
     return _builder
+
+
+async def invalidate_cache(namespace: str, value: Any) -> bool:
+    """
+    Invalidate a specific cache entry for the current tenant.
+
+    Parameters
+    ----------
+    namespace : str
+        The cache namespace (e.g., "agents:get_by_id_full", "users:get_by_id_for_auth")
+    value : Any
+        The parameter value used in the cache key (e.g., agent_id, user_id)
+
+    Returns
+    -------
+    bool
+        True if the key was deleted, False if it didn't exist
+
+    Example
+    -------
+    await invalidate_cache("agents:get_by_id_full", agent_id)
+    await invalidate_cache("users:get_by_id_for_auth", user_id)
+
+    Note
+    ----
+    The cache key format matches the one used by make_key_builder:
+    {prefix}:{namespace}:{tenant_id}:{value}
+    """
+    from app.core.tenant_scope import get_tenant_context
+
+    # Get the current tenant context
+    tenant_id = get_tenant_context()
+
+    # Construct the full cache key (must match the format used by FastAPICache)
+    # Format: {prefix}:{namespace}:{tenant_id}:{value}
+    # The prefix "auth" is set in init_fastapi_cache_with_redis
+    cache_key = f"auth:{namespace}:{tenant_id}:{value}"
+
+    try:
+        # Get the Redis backend from FastAPICache
+        backend = FastAPICache.get_backend()
+        if backend:
+            # Delete the key from Redis
+            result = await backend.clear(namespace=None, key=cache_key)
+            logger.debug(f"Invalidated cache key: {cache_key}, result: {result}")
+            return True
+        else:
+            logger.warning("FastAPICache backend not initialized")
+            return False
+    except Exception as e:
+        logger.error(f"Failed to invalidate cache key {cache_key}: {e}")
+        return False
+
+
+async def invalidate_agent_cache(agent_id: UUID, user_id: UUID):
+    await invalidate_cache("agents:get_by_id_full", agent_id)
+    await invalidate_cache("agents:get_by_user_id", user_id)

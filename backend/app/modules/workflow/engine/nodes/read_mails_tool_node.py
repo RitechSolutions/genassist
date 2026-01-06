@@ -26,7 +26,7 @@ class ReadMailsToolNode(BaseNode):
         """
 
         try:
-            ds_id = config.get("dataSourceId", None)
+            ds_id = config.get('data').get("dataSourceId", None)
             gmail_connector = GmailConnector(ds_id)
             search_criteria = config.get("searchCriteria", None)
 

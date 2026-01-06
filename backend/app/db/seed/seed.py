@@ -635,6 +635,7 @@ async def seed_demo_agent(session: AsyncSession, agent_role: RoleModel,  injecto
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
 
+
     await session.refresh(agent_role)
     urm = UserRoleModel(role_id=agent_role.id,
                         user_id=full_agent.operator.user.id)
@@ -707,6 +708,7 @@ async def seed_gen_agent(session: AsyncSession, agent_role: RoleModel, injector:
                                           agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
+
 
     await session.refresh(agent_role)
     urm = UserRoleModel(role_id=agent_role.id,

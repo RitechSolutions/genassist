@@ -19,7 +19,9 @@ from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
 from dotenv import load_dotenv
 from app.api.v1.routes.voice import get_openai_session_key
 from app.auth.dependencies import auth
-from app.modules.workflow.registry import AgentRegistry
+from app.modules.workflow.registry import RegistryItem
+from app.services.agent_config import AgentConfigService
+
 
 router = APIRouter()
 load_dotenv()
@@ -39,7 +41,7 @@ async def process_with_agent(
     agent_id: str,
     thread_id: str,
     transcribed_text: str,
-    agent_registry: AgentRegistry = Injected(AgentRegistry),
+    agent_service: AgentConfigService = Injected(AgentConfigService),
 ) -> dict:
     """
     Passes the transcribed text to your FastAPI agent endpoint using the AgentRegistry.
@@ -65,7 +67,8 @@ async def process_with_agent(
     )
 
     try:
-        agent = agent_registry.get_agent(agent_id)
+        agent = await agent_service.get_by_id_full(UUID(agent_id))
+        agent = RegistryItem(agent)
         agent_response = await agent.execute(
             session_message=transcribed_text, metadata={"thread_id": thread_id}
         )
@@ -203,7 +206,7 @@ async def handle_incoming_call(request: Request, agent_id: str):
 async def handle_media_stream(
     twilio_inbound_socket: WebSocket,
     agent_id: str,
-    agent_registry: AgentRegistry = Injected(AgentRegistry),
+    agent_service: AgentConfigService = Injected(AgentConfigService),
 ):
     """Handle WebSocket connections for transcription and TTS playback."""
     logger.info(f"WebSocket connection requested for agent {agent_id}")
@@ -275,7 +278,7 @@ async def handle_media_stream(
                         logger.debug(f"Final Transcript: '{final_transcript}'")
 
                         agent_response = await process_with_agent(
-                            agent_id, session_id, final_transcript, agent_registry
+                            agent_id, session_id, final_transcript, agent_service
                         )
                         if not agent_response.get("success"):
                             logger.error(f"AGENT ERROR: {agent_response.get('message')}")

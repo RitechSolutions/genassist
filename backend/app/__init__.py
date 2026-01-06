@@ -77,11 +77,11 @@ async def _lifespan(app: FastAPI):
 
     await output_open_api(app)
 
+    # Initialize FastAPI cache first (before database operations that might use @cache decorator)
+    await init_fastapi_cache_with_redis(app, settings)
+
     # Initialize multi-tenant session manager
     await multi_tenant_manager.initialize()
-    # pass both for flexibility
-
-    await init_fastapi_cache_with_redis(app, settings)
 
     # Initialize Redis connection manager (via DI with async initialization)
     if settings.REDIS_FOR_CONVERSATION:

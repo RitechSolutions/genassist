@@ -2152,6 +2152,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Get Schemas Api App Settings Form Schemas Get"
                 }
@@ -5421,7 +5422,7 @@
           "agents"
         ],
         "summary": "Switch Agent",
-        "description": "Switch to an agent with the specified ID",
+        "description": "Switch an agent between active and inactive states.\n\nUpdates the database directly - all server instances will see the change\nimmediately on the next agent query (database is source of truth).\n\nInvalidates the cache for this agent to ensure fresh data is fetched.",
         "operationId": "switch_agent_api_genagent_agents_switch__agent_id__post",
         "security": [
           {
@@ -5450,6 +5451,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Switch Agent Api Genagent Agents Switch  Agent Id  Post"
                 }
               }
@@ -5522,6 +5524,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Query Agent Api Genagent Agents  Agent Id  Query  Thread Id  Post"
                 }
               }
@@ -6930,6 +6933,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "additionalProperties": true,
                 "title": "Input Data"
               }
             }
@@ -6999,6 +7003,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "additionalProperties": true,
                 "title": "Test Data"
               }
             }
@@ -7088,6 +7093,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "type": "object",
                 "title": "Test Data"
               }
@@ -7138,6 +7144,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "type": "object",
                 "title": "Test Data"
               }
@@ -7151,6 +7158,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Generate Python Template Api Genagent Workflow Generate Python Template Post"
                 }
@@ -9566,6 +9574,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "type": "object",
                 "title": "Data"
               }
@@ -12724,9 +12733,32 @@
             "format": "uuid",
             "title": "Operator Id"
           },
+          "operator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatorReadMinimal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow"
+          },
           "test_input": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13124,6 +13156,7 @@
             "title": "Type"
           },
           "values": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Values"
           },
@@ -13172,6 +13205,7 @@
             "title": "Type"
           },
           "values": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Values"
           },
@@ -13254,6 +13288,7 @@
           "values": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14199,6 +14234,7 @@
           "hyperparameters": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14249,6 +14285,7 @@
             "title": "Source Type"
           },
           "connection_data": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Connection Data"
           },
@@ -14297,6 +14334,7 @@
           "connection_data": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14359,6 +14397,7 @@
           "connection_data": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14740,6 +14779,7 @@
           "metadata": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14982,6 +15022,7 @@
           "vector_store": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14993,6 +15034,7 @@
           "rag_config": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -15002,6 +15044,7 @@
             "title": "Rag Config"
           },
           "extra_metadata": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Extra Metadata"
           },
@@ -15234,6 +15277,7 @@
           "vector_store": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -15245,6 +15289,7 @@
           "rag_config": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -15254,6 +15299,7 @@
             "title": "Rag Config"
           },
           "extra_metadata": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Extra Metadata"
           },
@@ -15578,6 +15624,7 @@
             "title": "Llm Model"
           },
           "connection_data": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Connection Data",
             "description": "Connection parameters like api key."
@@ -15631,6 +15678,7 @@
             "title": "Llm Model"
           },
           "connection_data": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Connection Data",
             "description": "Connection parameters like api key."
@@ -15713,6 +15761,7 @@
           "connection_data": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16176,6 +16225,7 @@
           "inference_params": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16519,6 +16569,7 @@
           "execution_output": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16654,6 +16705,7 @@
           "inference_params": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16769,6 +16821,7 @@
           "inference_params": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -17163,6 +17216,18 @@
           "updated_at"
         ],
         "title": "OperatorReadAfterCreate"
+      },
+      "OperatorReadMinimal": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserReadMinimal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user"
+        ],
+        "title": "OperatorReadMinimal"
       },
       "OperatorStatisticsCreate": {
         "properties": {
@@ -17565,6 +17630,7 @@
           "metadata": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -19061,6 +19127,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -19075,6 +19142,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -19088,6 +19156,7 @@
           "testInput": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -19099,6 +19168,7 @@
           "executionState": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -19182,6 +19252,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -19196,6 +19267,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -19209,6 +19281,7 @@
           "testInput": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -19220,6 +19293,7 @@
           "executionState": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -19292,6 +19366,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -19306,6 +19381,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -19319,6 +19395,7 @@
           "testInput": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -19330,6 +19407,7 @@
           "executionState": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -19430,6 +19508,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"

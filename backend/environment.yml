@@ -303,7 +303,6 @@ dependencies:
   - sympy=1.14.0
   - tenacity=8.5.0
   - text-generation=0.7.0
-  - textract=1.6.5
   - threadpoolctl=3.6.0
   - tiktoken=0.9.0
   - tk=8.6.13
