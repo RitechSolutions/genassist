@@ -33,6 +33,10 @@ const CalendarEventNode: React.FC<NodeProps<CalendarEventToolNodeData>> = ({
       ),
   });
 
+  const selectedConnector = connectors.find(
+    (c) => c.id.toString() === data.dataSourceId
+  );
+
   useEffect(() => {
     if (data.dataSourceId === undefined && connectors.length > 0) {
       if (data.updateNodeData) {
@@ -53,7 +57,7 @@ const CalendarEventNode: React.FC<NodeProps<CalendarEventToolNodeData>> = ({
   const nodeContent: NodeContentRow[] = [
     {
       label: "Connector",
-      value: data.dataSourceId,
+      value: selectedConnector?.name,
       placeholder: "None selected",
     },
     {
