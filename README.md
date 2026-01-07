@@ -5,9 +5,15 @@
 
 GenAssist is an AI-powered platform for managing and leveraging various AI workflows, with a focus on conversation management, analytics, and agent-based interactions.
 
-Documentation: https://docs.genassist.ai/docs/introduction/
+## Documentation
 
-How-to Videos: https://docs.genassist.ai/docs/workflows/
+For comprehensive guides and tutorials, visit our [Official Documentation](https://docs.genassist.ai/docs/introduction/).
+
+Internal technical documentation can be found in the [docs](./docs) directory:
+- [Architecture Diagrams](./docs/architecture_diagrams.md)
+- [Tech Stack](./docs/tech_stack.md)
+
+How-to Videos: [GenAssist Workflows](https://docs.genassist.ai/docs/workflows/)
 
 ## Overview
 
