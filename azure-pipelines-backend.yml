@@ -131,6 +131,7 @@ steps:
     displayName: 'Publish Test Results'
     inputs:
       testResultsFiles: '$(System.DefaultWorkingDirectory)/test-results.xml'
+      testRunTitle: 'Backend Tests'
       failTaskOnFailedTests: true
     condition: succeededOrFailed()
 
