@@ -1,0 +1,167 @@
+name: GenAssist-GitHub-Backend_$(Date:yyyyMMdd)$(Rev:.r)
+
+pool:
+  name: Ritech-AI-TR1
+
+trigger:
+  branches:
+    include:
+      - development
+  paths:
+    include:
+      - backend/**
+
+pr:
+  branches:
+    include:
+      - development
+  paths:
+    include:
+      - backend/**
+
+steps:
+  - checkout: self
+    clean: true
+    fetchTags: true
+
+  - task: UseDotNet@2
+    displayName: 'Use .NET Core sdk 8.X'
+    inputs:
+      version: 8.x
+
+  - task: gittools.gittools.setup-gitversion-task.gitversion/setup@3
+    displayName: 'gitversion-setup'
+    inputs:
+      versionSpec: 5.x
+
+  - script: |
+      echo "stopping existing containers of cicd"
+      touch .env
+      docker compose -f docker-compose.cicd.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
+    workingDirectory: backend
+    displayName: 'Stop Test Containers - Before Start'
+
+  - task: DownloadSecureFile@1
+    name: cicdenv
+    displayName: 'Download .env for CICD'
+    inputs:
+      secureFile: env.cicd
+
+  - script: |
+      set -euo pipefail
+
+      BACKEND_DIR="$(System.DefaultWorkingDirectory)/backend"
+      ENV_FILE="$BACKEND_DIR/.env"
+
+      cp "$(cicdenv.secureFilePath)" "$ENV_FILE"
+      cd "$BACKEND_DIR"
+
+      branch="$(Build.SourceBranch)"
+      branchNo="${branch#refs/heads/}"
+
+      echo -e "\nAPI_VERSION=${branchNo}-$(Build.BuildNumber)" >> "$ENV_FILE"
+
+      esc_sed() { printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'; }
+
+      OAIKEY_ESC="$(esc_sed "$OAIKEY")"
+      HFTOKEN_ESC="$(esc_sed "$HFTOKEN")"
+      FERNET_KEY_ESC="$(esc_sed "$FERNET_KEY")"
+      S3_ACCESS_KEY_ID_ESC="$(esc_sed "$S3_ACCESS_KEY_ID")"
+      S3_SECRET_ACCESS_KEY_ESC="$(esc_sed "$S3_SECRET_ACCESS_KEY")"
+
+      sed -i "s/OPENAI_API_KEY_VALUE/${OAIKEY_ESC}/g" "$ENV_FILE"
+      sed -i "s/HUGGINGFACE_TOKEN_VALUE/${HFTOKEN_ESC}/g" "$ENV_FILE"
+      sed -i "s/FERNET_KEY_VALUE/${FERNET_KEY_ESC}/g" "$ENV_FILE"
+      sed -i "s/AWS_ACCESS_KEY_ID_VALUE/${S3_ACCESS_KEY_ID_ESC}/g" "$ENV_FILE"
+      sed -i "s/AWS_SECRET_ACCESS_KEY_VALUE/${S3_SECRET_ACCESS_KEY_ESC}/g" "$ENV_FILE"
+
+      sed -i 's/DEBUG=false/DEBUG=true/g' "$ENV_FILE"
+
+      echo -e "\nCREATE_DB=true" >> "$ENV_FILE"
+      sed -i 's/DB_HOST=db/DB_HOST=genassist_db/g' "$ENV_FILE"
+
+      echo -e "\nCHROMA_HOST=chroma" >> "$ENV_FILE"
+      echo -e "\nCHROMA_PORT=8000" >> "$ENV_FILE"
+
+      echo "starting fresh db"
+      docker compose -f docker-compose.cicd.yml -p genassist_cicd up --force-recreate -d db
+
+      echo "starting app and whisper"
+      docker compose -f docker-compose.cicd.yml -p genassist_cicd up --build --force-recreate -d app whisper
+    workingDirectory: backend
+    displayName: 'Build and Start App + Whisper'
+    env:
+      OAIKEY: $(OAIKEY)
+      HFTOKEN: $(HFTOKEN)
+      FERNET_KEY: $(FERNET_KEY)
+      S3_ACCESS_KEY_ID: $(S3_ACCESS_KEY_ID)
+      S3_SECRET_ACCESS_KEY: $(S3_SECRET_ACCESS_KEY)
+
+  - script: |
+      set -euo pipefail
+
+      OUT_DIR="$(System.DefaultWorkingDirectory)"
+
+      echo "installing pytest and coverage libs to app"
+      docker exec "genassist-app-cicd" pip install -q coverage pytest-cov pytest-azurepipelines
+
+      echo "waiting 5 sec.."
+      sleep 5
+
+      echo "📝 Following container logs..."
+      docker logs --since 5s -f "genassist-app-cicd" &
+      LOG_PID=$!
+
+      echo "📊 Running pytest..."
+      if ! docker exec "genassist-app-cicd" python -m pytest tests -vvv \
+        --cov=app --cov-branch --cov-report xml \
+        --junitxml="test-results.xml" --cov-report=html \
+        --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG; then
+        echo "❌ Tests failed"
+        TEST_RESULT=1
+      else
+        echo "✅ Tests passed successfully!"
+        TEST_RESULT=0
+      fi
+
+      echo "Copying test outputs to: $OUT_DIR"
+      docker cp "genassist-app-cicd":/src/test-results.xml "$OUT_DIR/test-results.xml"
+      docker cp "genassist-app-cicd":/src/coverage.xml "$OUT_DIR/coverage.xml"
+      docker cp "genassist-app-cicd":/src/htmlcov "$OUT_DIR/htmlcov"
+
+      kill $LOG_PID 2>/dev/null || true
+
+      echo "Files in $OUT_DIR:"
+      ls -lah "$OUT_DIR" | sed -n '1,200p'
+
+      exit $TEST_RESULT
+    displayName: 'Start Tests'
+    timeoutInMinutes: 3
+
+  - script: |
+      docker compose -f docker-compose.cicd.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
+    workingDirectory: backend
+    displayName: 'Stop Test Containers - After End'
+    condition: always()
+
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
+    inputs:
+      testResultsFiles: '$(System.DefaultWorkingDirectory)/test-results.xml'
+      testRunTitle: 'Backend Tests'
+      failTaskOnFailedTests: true
+    condition: succeededOrFailed()
+
+  - task: PublishCodeCoverageResults@2
+    displayName: 'Publish code coverage results'
+    inputs:
+      summaryFileLocation: '$(System.DefaultWorkingDirectory)/coverage.xml'
+      pathToSources: '$(System.DefaultWorkingDirectory)/backend/app/'
+    condition: succeededOrFailed()
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish Pipeline Artifact'
+    inputs:
+      targetPath: '$(System.DefaultWorkingDirectory)/backend'
+      artifact: code
+    condition: succeededOrFailed()
