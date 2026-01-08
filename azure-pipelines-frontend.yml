@@ -52,17 +52,25 @@ steps:
       mkdir -p plugins
       cd plugins
 
-      # Clone the repository
-      GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i /azagent/_work/_temp/azdev_sync -vvv" \
-        git clone git@ssh.dev.azure.com:v3/Ritech/GenAssist/plugin-react react
+      if [ -d "react/.git" ]; then
+        echo "react plugin already exists, updating..."
+        cd react
+        git reset --hard
+        git clean -fd
+        git pull
+      else
+        echo "cloning react plugin..."
+        GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i /azagent/_work/_temp/azdev_sync -vvv" \
+          git clone git@ssh.dev.azure.com:v3/Ritech/GenAssist/plugin-react react
+        cd react
+      fi
 
-      cd react
       ls -al
-
-      echo "plugin cloning complete"
+      echo "plugin ready"
       pwd
     workingDirectory: frontend
     displayName: 'Get React Plugin Sources'
+
 
   - bash: |
       set -e
