@@ -5,10 +5,8 @@ name: GenAssist-GitHub-Frontend_$(Date:yyyyMMdd)$(Rev:.r)
 pool:
   name: Ritech-AI-TR1
 
-variables:
-  # Define this as a SECRET in pipeline variables (classic UI) or a variable group
-  - name: VITE_GENASSIST_CHAT_APIKEY
-    value: $(VITE_GENASSIST_CHAT_APIKEY)
+workspace:
+  clean: all
 
 trigger:
   branches:
@@ -44,20 +42,30 @@ steps:
   - bash: |
       set -e
 
-      echo "now starting plugin cloning"
-      pwd
+      echo "now starting plugin setup"
+      echo "PWD=$(pwd)"
       ls -al
 
       cd ..
       mkdir -p plugins
       cd plugins
 
+      echo "plugins dir: $(pwd)"
+      ls -al
+
+      # If folder exists but isn't a git repo (leftover from a previous run), remove it
+      if [ -d "react" ] && [ ! -d "react/.git" ]; then
+        echo "react exists but is not a git repo -> removing"
+        rm -rf react
+      fi
+
       if [ -d "react/.git" ]; then
         echo "react plugin already exists, updating..."
         cd react
         git reset --hard
         git clean -fd
-        git pull
+        git fetch --all --prune
+        git pull --rebase
       else
         echo "cloning react plugin..."
         GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i /azagent/_work/_temp/azdev_sync -vvv" \
@@ -65,18 +73,17 @@ steps:
         cd react
       fi
 
+      echo "plugin ready:"
+      git rev-parse --short HEAD || true
       ls -al
-      echo "plugin ready"
-      pwd
     workingDirectory: frontend
     displayName: 'Get React Plugin Sources'
-
 
   - bash: |
       set -e
 
       echo "now starting build"
-      pwd
+      echo "PWD=$(pwd)"
       ls -al
 
       echo "cleanup old images"
@@ -93,8 +100,8 @@ steps:
       echo "VITE_WEBSOCKET_PRIVATE_URL=wss://api.dev.genassist.ritech.io/api" >> .env
       echo "VITE_WEBSOCKET_PUBLIC_URL=wss://api.dev.genassist.ritech.io/api" >> .env
 
-      # Use secret pipeline variable (do NOT hardcode)
-      echo "VITE_GENASSIST_CHAT_APIKEY=$(VITE_GENASSIST_CHAT_APIKEY)" >> .env
+      # Use secret passed via env
+      echo "VITE_GENASSIST_CHAT_APIKEY=$VITE_GENASSIST_CHAT_APIKEY" >> .env
       echo "VITE_MULTI_TENANT_ENABLED=true" >> .env
 
       echo "current.env (redacted):"
@@ -105,3 +112,5 @@ steps:
       docker compose -f docker-compose.dev.yml build frontend
     workingDirectory: frontend
     displayName: 'Build Image'
+    env:
+      VITE_GENASSIST_CHAT_APIKEY: $(VITE_GENASSIST_CHAT_APIKEY)
