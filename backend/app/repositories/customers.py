@@ -60,7 +60,7 @@ class CustomersRepository:
         result = await self.db.execute(query)
         return result.scalars().all()
 
-    async def update(self, user_id: UUID, customer_id: UUID, data: CustomerUpdate) -> CustomerModel:
+    async def update(self, customer_id: UUID, data: CustomerUpdate) -> CustomerModel:
         customer = await self.get_by_id(customer_id)
         if not customer:
             raise AppException(ErrorKey.CUSTOMER_NOT_FOUND, status_code=404)
@@ -75,8 +75,6 @@ class CustomersRepository:
             customer.is_active = data.is_active
         if data.source_ref is not None:
             customer.source_ref = data.source_ref
-
-        customer.updated_by = user_id
 
         self.db.add(customer)
         await self.db.commit()

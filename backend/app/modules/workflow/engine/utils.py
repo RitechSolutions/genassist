@@ -164,7 +164,8 @@ def _resolve_variable_value(
 
     # Try direct_input pattern
     if var_name.startswith("direct_input"):
-        resolved_value = _resolve_variable_from_direct_input(var_name, direct_input)
+        resolved_value = _resolve_variable_from_direct_input(
+            var_name, direct_input)
         if resolved_value is None:
             # try state
             resolved_value = state.get_value(var_name)
@@ -223,6 +224,7 @@ def _encode_replacement_value(
     try:
         # Always encode the replacement value as JSON first
         json_encoded = json.dumps(replacement_value)
+        json_encoded = json_encoded.replace("\\n", " ")
 
         # Check if the variable is in a string context
         var_start = json_string.find(var_pattern)
@@ -256,7 +258,8 @@ def _encode_replacement_value(
         logger.warning(
             f"Failed to JSON encode replacement value for {var_name}: {e}. Using string representation."
         )
-        string_replacement = json.dumps(str(replacement_value))[1:-1]  # Remove quotes
+        string_replacement = json.dumps(str(replacement_value))[
+            1:-1]  # Remove quotes
         logger.debug(
             f"Used fallback string encoding for {var_name}: {string_replacement}"
         )
@@ -316,7 +319,8 @@ def replace_config_vars(
             json_replacement = _encode_replacement_value(
                 replacement_value, var_name, string_config, var_pattern
             )
-            string_config = string_config.replace(var_pattern, json_replacement)
+            string_config = string_config.replace(
+                var_pattern, json_replacement)
 
     # Parse the result back to a dictionary
     try:
