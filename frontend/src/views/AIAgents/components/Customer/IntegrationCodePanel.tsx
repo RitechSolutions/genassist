@@ -181,7 +181,10 @@ import { GenAgentChat } from 'genassist-chat-react';
   baseUrl={process.env.REACT_APP_CHAT_API_URL}
   apiKey={process.env.REACT_APP_CHAT_API_KEY}
   headerTitle="Name"
-  placeholder="Ask us anything about your operations..."
+  agentName="Agent"
+  logoUrl="https://example.com/logo.png"
+  placeholder="Ask us anything..."
+  tenant={process.env.REACT_APP_TENANT_ID || undefined}
   mode="floating"
   theme={{
     primaryColor: '#2962FF',
@@ -192,7 +195,8 @@ import { GenAgentChat } from 'genassist-chat-react';
   }}
 />`;
   const reactEnv = `REACT_APP_CHAT_API_URL=${baseUrl} # change this to your backend url
-REACT_APP_CHAT_API_KEY=${apiKey}`;
+REACT_APP_CHAT_API_KEY=${apiKey}
+REACT_APP_TENANT_ID=your-tenant-id # optional, if applicable`;
 
   const flutterDeps = `dependencies:
   gen_agent_chat: ^1.0.0`;
