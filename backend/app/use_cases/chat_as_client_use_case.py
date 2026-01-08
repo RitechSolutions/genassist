@@ -17,6 +17,7 @@ from app.schemas.conversation_transcript import (
 from app.db.models.conversation import ConversationModel
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
+from app.db.base import generate_sequential_uuid
 
 
 async def process_conversation_update_with_agent(
@@ -41,19 +42,6 @@ async def process_conversation_update_with_agent(
     agent_config_service = injector.get(AgentConfigService)
     agent_service = injector.get(AgentConfigService)
 
-    transcript_json = [segment.model_dump() for segment in model.messages]
-
-    _ = asyncio.create_task(
-        socket_connection_manager.broadcast(
-            msg_type="message",
-            payload=transcript_json[0],
-            room_id=conversation_id,
-            current_user_id=current_user_id,
-            required_topic="message",
-            tenant_id=tenant_id,
-        )
-    )
-
     conversation = await service.get_conversation_by_id(conversation_id)
     if conversation.status == ConversationStatus.FINALIZED.value:
         raise AppException(ErrorKey.CONVERSATION_FINALIZED)
@@ -66,6 +54,30 @@ async def process_conversation_update_with_agent(
         ):
             if current_user_id != conversation.supervisor_id:
                 raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER_OTHER)
+
+    # Generate IDs upfront for all incoming messages
+    for message in model.messages:
+        message.id = generate_sequential_uuid()
+
+    # Broadcast user message immediately with pre-generated ID
+    user_message = model.messages[0]
+    _ = asyncio.create_task(
+        socket_connection_manager.broadcast(
+            msg_type="message",
+            payload={
+                "id": str(user_message.id),
+                "create_time": user_message.create_time.isoformat() if user_message.create_time else None,
+                "start_time": user_message.start_time,
+                "end_time": user_message.end_time,
+                "speaker": user_message.speaker,
+                "text": user_message.text,
+            },
+            room_id=conversation_id,
+            current_user_id=current_user_id,
+            required_topic="message",
+            tenant_id=tenant_id,
+        )
+    )
 
     if conversation.status == ConversationStatus.IN_PROGRESS.value:
         agent = await agent_config_service.get_by_user_id(current_user_id)
@@ -93,6 +105,7 @@ async def process_conversation_update_with_agent(
         elapsed_seconds = (now - conversation.created_at).total_seconds()
 
         transcript_object = TranscriptSegmentInput(
+            id=generate_sequential_uuid(),  # Generate ID upfront
             create_time=now,
             start_time=elapsed_seconds,
             end_time=elapsed_seconds,
@@ -102,10 +115,18 @@ async def process_conversation_update_with_agent(
 
         model.messages.append(transcript_object)
 
+        # Broadcast agent message immediately with pre-generated ID
         _ = asyncio.create_task(
             socket_connection_manager.broadcast(
                 msg_type="message",
-                payload=transcript_object.model_dump(),
+                payload={
+                    "id": str(transcript_object.id),
+                    "create_time": transcript_object.create_time.isoformat() if transcript_object.create_time else None,
+                    "start_time": transcript_object.start_time,
+                    "end_time": transcript_object.end_time,
+                    "speaker": transcript_object.speaker,
+                    "text": transcript_object.text,
+                },
                 room_id=conversation_id,
                 current_user_id=current_user_id,
                 required_topic="message",
