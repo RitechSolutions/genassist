@@ -49,10 +49,12 @@ case "$1" in
         # Start the necessary services for integration tests
         "$SCRIPT_DIR/manage-services.sh" start-db
         "$SCRIPT_DIR/manage-services.sh" start-chroma
+        "$SCRIPT_DIR/manage-services.sh" start-neo4j
         sleep 5
         python -m pytest tests/ -v --cov=app --cov-report xml --junitxml="test-results.xml" --cov-report=html
         "$SCRIPT_DIR/manage-services.sh" stop-db
         "$SCRIPT_DIR/manage-services.sh" stop-chroma
+        "$SCRIPT_DIR/manage-services.sh" stop-neo4j
         rm .coverage.*
         ;;
     test-unit)
@@ -68,10 +70,12 @@ case "$1" in
         # Start the necessary services for integration tests
         "$SCRIPT_DIR/manage-services.sh" start-db
         "$SCRIPT_DIR/manage-services.sh" start-chroma
+        "$SCRIPT_DIR/manage-services.sh" start-neo4j
         sleep 5
         python -m pytest tests/integration/ -v --cov=app --cov-report xml --junitxml="test-results.xml" --cov-report=html
         "$SCRIPT_DIR/manage-services.sh" stop-db
         "$SCRIPT_DIR/manage-services.sh" stop-chroma
+        "$SCRIPT_DIR/manage-services.sh" stop-neo4j
         rm .coverage.*
         ;;
     test-clean)

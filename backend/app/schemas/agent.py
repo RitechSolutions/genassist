@@ -1,8 +1,10 @@
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from fastapi import UploadFile
+
+from app.schemas.operator import OperatorReadMinimal
 
 
 class AgentBase(BaseModel):
@@ -49,10 +51,40 @@ class AgentRead(AgentBase):
     model_config = ConfigDict(extra='ignore')  # shared rules
     user_id: Optional[UUID] = None
     operator_id: UUID
+    operator: Optional[OperatorReadMinimal] = None
     workflow_id: UUID
+    workflow: Optional[Dict[str, Any]] = None  # Workflow dict (from workflow.to_dict()) - needed for RegistryItem
     test_input: Optional[dict] = None
     # Exclude the image blob from serialization
     welcome_image: Optional[bytes] = Field(None, exclude=True)
+
+    @model_validator(mode='before')
+    @classmethod
+    def convert_workflow_to_dict(cls, data: Any) -> Any:
+        """Convert SQLAlchemy WorkflowModel to dict during validation"""
+        # Handle SQLAlchemy model with workflow relationship
+        if hasattr(data, 'workflow') and data.workflow is not None:
+            if hasattr(data.workflow, 'to_dict'):
+                # It's a SQLAlchemy WorkflowModel - convert to dict
+                workflow_dict = data.workflow.to_dict()
+                # Need to convert SQLAlchemy model to dict for Pydantic to process
+                if not isinstance(data, dict):
+                    # Convert SQLAlchemy model attributes to dict
+                    data_dict = {}
+                    for key in dir(data):
+                        if not key.startswith('_') and key not in ['metadata', 'registry']:
+                            try:
+                                value = getattr(data, key)
+                                # Skip methods and relationships except workflow
+                                if not callable(value):
+                                    data_dict[key] = value
+                            except:
+                                pass
+                    data_dict['workflow'] = workflow_dict
+                    return data_dict
+                else:
+                    data['workflow'] = workflow_dict
+        return data
 
     @field_validator("possible_queries", mode="before")
     @classmethod

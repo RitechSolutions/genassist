@@ -3,12 +3,16 @@ from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
 from injector import inject
 from app.auth.utils import get_password_hash
+from app.cache.redis_cache import make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.date_time_utils import shift_datetime
-from app.repositories.users import UserRepository, userid_key_builder
+from app.repositories.users import UserRepository
 from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserCreate, UserRead, UserReadAuth, UserUpdate
+
+
+userid_key_builder = make_key_builder("user_id")
 
 @inject
 class UserService:

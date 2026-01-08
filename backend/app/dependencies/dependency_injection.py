@@ -58,7 +58,6 @@ from app.repositories.api_keys import ApiKeysRepository
 from app.repositories.agent import AgentRepository
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.modules.workflow.registry import AgentRegistry
 from app.modules.workflow.llm.provider import LLMProvider
 from app.cache.redis_connection_manager import RedisConnectionManager
 from app.modules.data.manager import AgentRAGServiceManager
@@ -215,7 +214,6 @@ class Dependencies(Module):
         # - ThreadScopedRAG: Each tenant has their own per-chat RAG instance
         from app.modules.workflow.agents.rag import ThreadScopedRAG
 
-        binder.bind(AgentRegistry, scope=tenant_scope)
         binder.bind(LLMProvider, scope=tenant_scope)
         binder.bind(AgentRAGServiceManager, scope=tenant_scope)
         binder.bind(ThreadScopedRAG, scope=tenant_scope)

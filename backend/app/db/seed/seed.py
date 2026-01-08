@@ -529,6 +529,7 @@ async def seed_knowledge_base(session: AsyncSession, created_by: UUID, injector:
         rag_config={
             "enabled": False,
             "vector_db": {"enabled": False},
+            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False}
         }
     )
@@ -572,6 +573,7 @@ async def seed_knowledge_base_for_gen_agent(
         rag_config={
             "enabled": False,
             "vector_db": {"enabled": False},
+            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False},
         },
     )
@@ -632,6 +634,7 @@ async def seed_demo_agent(session: AsyncSession, agent_role: RoleModel,  injecto
                                           agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
+
 
     await session.refresh(agent_role)
     urm = UserRoleModel(role_id=agent_role.id,
@@ -705,6 +708,7 @@ async def seed_gen_agent(session: AsyncSession, agent_role: RoleModel, injector:
                                           agent_id=full_agent.id)
 
     await workflow_service.update(workflow_model.id, workflow_update_data)
+
 
     await session.refresh(agent_role)
     urm = UserRoleModel(role_id=agent_role.id,
@@ -1094,6 +1098,7 @@ async def seed_knowledge_base_for_sql_database(
         rag_config={
             "enabled": False,
             "vector_db": {"enabled": False},
+            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False},
         },
         llm_provider_id=seed_test_data.llm_provider_id,
@@ -1124,6 +1129,7 @@ async def seed_knowledge_base_for_s3(
         rag_config={
             "enabled": True,
             "vector_db": {"enabled": True},
+            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False},
         },
         sync_source_id=s3_datasource.id,

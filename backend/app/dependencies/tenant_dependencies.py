@@ -29,21 +29,23 @@ async def pre_wormup_tenant_singleton() -> None:
     from app.dependencies.injector import injector
 
     # Pre-warm tenant-scoped singletons for all tenants on startup
+    # Note: AgentRegistry no longer needs pre-warming as it fetches from database on demand
     try:
-        from app.modules.workflow.registry import AgentRegistry
-
         set_tenant_context("master")
         try:
-            ag = injector.get(AgentRegistry)
-            await ag.initialize()
+            # Pre-warm other tenant-scoped singletons
+            from app.modules.workflow.llm.provider import LLMProvider
+            from app.modules.data.manager import AgentRAGServiceManager
+            _ = injector.get(LLMProvider)
+            _ = injector.get(AgentRAGServiceManager)
             logger.info("Pre-warmed tenant-scoped singletons for tenant: master")
         finally:
             clear_tenant_context()
+
         if settings.MULTI_TENANT_ENABLED:
             # Query active tenants from master DB and initialize their tenant-scoped singletons
             from sqlalchemy import select
             from app.db.models.tenant import TenantModel
-            from app.modules.workflow.registry import AgentRegistry
             from app.modules.workflow.llm.provider import LLMProvider
             from app.modules.data.manager import AgentRAGServiceManager
 
@@ -63,8 +65,6 @@ async def pre_wormup_tenant_singleton() -> None:
                 try:
                     set_tenant_context(tenant_slug)
                     # Resolving these triggers per-tenant initialization
-                    ag = injector.get(AgentRegistry)
-                    await ag.initialize()
                     _ = injector.get(LLMProvider)
                     _ = injector.get(AgentRAGServiceManager)
                     logger.info(

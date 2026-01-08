@@ -1,10 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
-
 from app.dependencies.injector import injector
-
-from app.modules.workflow.registry import AgentRegistry
 from app.api.v1.routes.agents import run_query_agent_logic
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -42,7 +39,7 @@ async def process_conversation_update_with_agent(
     service = injector.get(ConversationService)
     socket_connection_manager = injector.get(SocketConnectionManager)
     agent_config_service = injector.get(AgentConfigService)
-    agent_registry = injector.get(AgentRegistry)
+    agent_service = injector.get(AgentConfigService)
 
     transcript_json = [segment.model_dump() for segment in model.messages]
 
@@ -82,7 +79,7 @@ async def process_conversation_update_with_agent(
         model.metadata["thread_id"] = str(conversation_id)
 
         agent_response = await run_query_agent_logic(
-            agent_registry,
+            agent_service,
             str(agent.id),
             session_message=model.messages[-1].text,
             metadata=model.metadata,

@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from datetime import datetime, timedelta
 
-
+from app.core.utils.date_time_utils import utc_now
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
 from app.repositories.conversations import ConversationRepository
 from app.repositories.llm_analysts import LlmAnalystRepository
@@ -176,7 +176,7 @@ async def process_zendesk_tickets():
         "status": "completed",
         "processed": processed,
         "failed": failed,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_now().isoformat(),
     }
 
     logger.info(f"Zendesk ticket analysis completed: {result}")
@@ -240,7 +240,7 @@ async def get_zendesk_unrated_closed_tickets():
     tickets_to_rate = []
     updated_later_then = "" 
     #add time constrains uncomment the next line
-    updated_later_then = f" updated>={(datetime.utcnow().date() - timedelta(days=7)).isoformat()}"
+    updated_later_then = f" updated>={(utc_now().date() - timedelta(days=7)).isoformat()}"
     
     query_definition = f"type:ticket status:solved status:closed -tags:analyzed {updated_later_then}" # last 7 days
     search_url = f"{BASE_URL}/search.json?query={query_definition}"

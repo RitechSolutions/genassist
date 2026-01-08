@@ -27,7 +27,7 @@ async def get_all_configs(
     models = await config_service.get_all_full()
 
     agent_reads = [
-        AgentRead(**agent_model.__dict__).model_copy(
+        AgentRead.model_validate(agent_model).model_copy(
             update={
                 "user_id": agent_model.operator.user.id,
                 "test_input": (
@@ -54,10 +54,9 @@ async def get_config_by_id(
 ):
     """Get a specific agent configuration by ID"""
     agent_model = await config_service.get_by_id_full(agent_id)
-    agent_read = AgentRead(**agent_model.__dict__).model_copy(
+    agent_read = AgentRead.model_validate(agent_model).model_copy(
         update={"user_id": agent_model.operator.user.id}
     )
-    agent_read.user_id = agent_model.operator.user.id
     return agent_read
 
 
@@ -77,9 +76,9 @@ async def create_config(
     current_user = request.state.user
     result = await config_service.create(agent_create, user_id=current_user.id)
 
-    return AgentRead(
-        **result.__dict__,
-    ).model_copy(update={"user_id": result.operator.user.id})
+    return AgentRead.model_validate(result).model_copy(
+        update={"user_id": result.operator.user.id if result.operator else None}
+    )
 
 
 @router.put(
@@ -97,9 +96,7 @@ async def update_config(
     """Update an existing agent configuration"""
 
     result = await agent_config_service.update(agent_id, agent_update)
-    return AgentRead(
-        **result.__dict__,
-    )
+    return AgentRead.model_validate(result)
 
 
 @router.delete(

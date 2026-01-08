@@ -32,6 +32,7 @@ def new_kb_data():
         "rag_config": {
             "enabled": False,
             "vector_db": {"enabled": False},
+            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False},
         },
         "llm_provider_id": seed_test_data.llm_provider_id,

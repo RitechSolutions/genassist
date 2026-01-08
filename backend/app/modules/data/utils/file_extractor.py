@@ -2,6 +2,7 @@ import csv
 import logging
 import os
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, date
@@ -11,6 +12,7 @@ from fastapi import UploadFile
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 import re
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,22 +28,22 @@ class OCRConfig:
 @dataclass
 class ExtractorOptions:
     ocr: OCRConfig = field(default_factory=OCRConfig)
-    enable_generic_textract_fallback: bool = True
+    enable_generic_fallback: bool = True  # renamed from enable_generic_textract_fallback
     strict_pdf_header_check: bool = True
 
     # spreadsheet / delimited extraction guards
-    excel_max_rows_per_sheet: Optional[int] = 10000   # None = no cap
+    excel_max_rows_per_sheet: Optional[int] = 10000  # None = no cap
     delimited_max_rows: Optional[int] = 100000
-    include_sheet_headers: bool = True                # prepend "## Sheet: <name>"
-    output_cell_sep: str = "\t"                       # normalize to TSV-like text
-    output_row_sep: str = "\n"                        # row separator
+    include_sheet_headers: bool = True  # prepend "## Sheet: <name>"
+    output_cell_sep: str = "\t"  # normalize to TSV-like text
+    output_row_sep: str = "\n"  # row separator
     # how much to sample for dialect sniffing
     csv_sniff_limit_bytes: int = 4096
 
     # html
     # when not using Markdown, keep "text (URL)" for anchors
     html_preserve_links: bool = True
-    html_block_separator: str = "\n"       # separator for extracted text blocks
+    html_block_separator: str = "\n"  # separator for extracted text blocks
 
 
 class FileTextExtractor:
@@ -56,15 +58,15 @@ class FileTextExtractor:
 
         Supported types
         ---------------
-        - PDF (.pdf): pdfminer.six → OCR fallback (Tesseract/pdf2image) → textract fallback
-        - Word: .docx via docx2txt; .doc via antiword/textract (when available)
+        - PDF (.pdf): pdfminer.six → OCR fallback (Tesseract/pdf2image) → pypdf/pdftotext fallback
+        - Word: .docx via docx2txt; .doc via antiword (subprocess)
         - Plain text: .txt, .md, .log (UTF-8 with latin-1 fallback)
         - Delimited: .csv, .tsv, .tab (dialect sniff; normalized to tab-separated text)
         - Excel: .xlsx (openpyxl), .xls (xlrd<2.0)
         - HTML: .html, .htm (BeautifulSoup/readability → plain text; optional Markdown if enabled)
         - YAML: .yaml, .yml (PyYAML safe_load → formatted text; fallback to plaintext)
         - JSON: .json (json.loads → formatted text; fallback to plaintext)
-        - Other/unknown: optional generic textract fallback
+        - Other/unknown: optional generic fallback (plaintext attempt)
 
         Behavior
         --------
@@ -81,18 +83,21 @@ class FileTextExtractor:
     # (moved .csv out to delimited handler)
     TEXT_SUFFIXES = {".txt", ".md", ".log"}
     DELIMITED_SUFFIXES = {".csv", ".tsv", ".tab"}
-    # (extend later for .xlsb via pyxlsb if nedded)
+    # (extend later for .xlsb via pyxlsb if needed)
     EXCEL_SUFFIXES = {".xlsx", ".xls"}
     HTML_SUFFIXES = {".html", ".htm"}
     YAML_SUFFIXES = {".yaml", ".yml"}
     JSON_SUFFIXES = {".json"}
 
+
     def __init__(self, options: Optional[ExtractorOptions] = None):
         self.options = options or ExtractorOptions()
 
+
     # ---------- Public API ----------
 
-    def extract(self, *, file: Optional[UploadFile] = None, filename: Optional[str] = None, content: Optional[bytes] = None,
+    def extract(self, *, file: Optional[UploadFile] = None, filename: Optional[str] = None,
+                content: Optional[bytes] = None,
                 path: Optional[str | Path] = None) -> str:
         # Provide either (Path) or (filename and content) or file(UploadFile type).
         if path is not None:
@@ -100,12 +105,13 @@ class FileTextExtractor:
         if filename is not None and content is not None:
             if len(content) == 0:
                 logger.warning(
-                    f"No content provided for {filename}, returning empty string")
+                        f"No content provided for {filename}, returning empty string")
                 return ""
             return self.extract_from_bytes(filename, content)
         if file is not None:
             return self.extract_from_bytes(file.filename, file.file.read())
         raise AppException(ErrorKey.FILE_EXTRACT_USAGE)
+
 
     def extract_from_bytes(self, filename: str, content: bytes) -> str:
         suffix = (Path(filename).suffix or ".bin").lower()
@@ -113,7 +119,7 @@ class FileTextExtractor:
         if suffix == ".pdf" and self.options.strict_pdf_header_check:
             if not self._looks_like_pdf(content[:8]):
                 logger.warning(
-                    f"[extractor] Not a real PDF for {filename} (head={content[:8]!r}); decoding as text.")
+                        f"[extractor] Not a real PDF for {filename} (head={content[:8]!r}); decoding as text.")
                 return content.decode("utf-8", errors="replace")
 
         tmp_path: Optional[str] = None
@@ -130,8 +136,10 @@ class FileTextExtractor:
                 except Exception:
                     pass
 
+
     def extract_from_path(self, path: str | Path) -> str:
         return self._extract_by_suffix(Path(path))
+
 
     # ---------- Routing ----------
 
@@ -157,7 +165,8 @@ class FileTextExtractor:
         if sfx in self.TEXT_SUFFIXES:
             return self._extract_plaintext(path)
 
-        return self._extract_generic_textract(path) if self.options.enable_generic_textract_fallback else ""
+        return self._extract_generic_fallback(path) if self.options.enable_generic_fallback else ""
+
 
     # ---------- Concrete extractors ----------
 
@@ -165,6 +174,7 @@ class FileTextExtractor:
         txt = ""
         try:
             from pdfminer.high_level import extract_text as pdfminer_extract_text
+
             txt = pdfminer_extract_text(str(path)) or ""
             logger.info("[extractor] pdf used=pdfminer.six")
         except Exception as e:
@@ -173,7 +183,7 @@ class FileTextExtractor:
         if self._is_mostly_pagebreaks(txt) and self.options.ocr.enabled:
             has_tesseract = bool(shutil.which("tesseract"))
             logger.info(
-                f"[extractor] pdf empty; OCR fallback (tesseract={has_tesseract})")
+                    f"[extractor] pdf empty; OCR fallback (tesseract={has_tesseract})")
             if has_tesseract:
                 try:
                     ocr_txt = self._ocr_pdf(path)
@@ -182,28 +192,52 @@ class FileTextExtractor:
                         return ocr_txt
                 except Exception as e:
                     logger.info(f"[extractor] OCR failed: {e}")
+
+            # Try pdftotext command-line tool
+            if shutil.which("pdftotext"):
+                try:
+                    result = subprocess.run(
+                            ["pdftotext", "-layout", str(path), "-"],
+                            capture_output=True,
+                            text=True,
+                            check=True,
+                            timeout=30
+                            )
+                    if result.stdout.strip():
+                        logger.info("[extractor] pdf used=pdftotext(subprocess)")
+                        return result.stdout
+                except Exception as e:
+                    logger.info(f"[extractor] pdftotext subprocess failed: {e}")
+
+            # Try pypdf as last resort
             try:
-                import textract
-                if shutil.which("pdftotext"):
-                    txt = textract.process(str(path), method="pdftotext").decode(
-                        "utf-8", errors="replace")
-                    logger.info("[extractor] pdf used=textract(pdftotext)")
-                else:
-                    txt = textract.process(str(path), method="pdfminer").decode(
-                        "utf-8", errors="replace")
-                    logger.info("[extractor] pdf used=textract(pdfminer)")
-            except Exception as e2:
-                logger.info(f"[extractor] textract PDF fallbacks failed: {e2}")
+                import pypdf
+
+                reader = pypdf.PdfReader(str(path))
+                pages_text = []
+                for page in reader.pages:
+                    pages_text.append(page.extract_text() or "")
+                extracted = "\n".join(pages_text)
+                if extracted.strip():
+                    logger.info("[extractor] pdf used=pypdf")
+                    return extracted
+            except Exception as e:
+                logger.info(f"[extractor] pypdf failed: {e}")
+
         return txt
+
 
     def _extract_docx(self, path: Path) -> str:
         try:
             import docx2txt
+
             logger.info("[extractor] docx used=docx2txt")
             return docx2txt.process(str(path)) or ""
         except Exception as e:
             logger.info(f"[extractor] docx2txt failed: {e}")
-            return self._extract_generic_textract(path)
+            # Try as zip with plaintext fallback
+            return self._extract_generic_fallback(path)
+
 
     def _extract_plaintext(self, path: Path) -> str:
         logger.info("[extractor] used=plaintext")
@@ -212,19 +246,47 @@ class FileTextExtractor:
         except Exception:
             return path.read_text(encoding="latin-1", errors="replace")
 
+
     def _extract_doc(self, path: Path) -> str:
-        # 1) Try textract with specific backends if present
-        try:
-            import textract
+        """Extract text from legacy .doc files using antiword"""
+        # Try antiword via subprocess
+        if shutil.which("antiword"):
+            try:
+                result = subprocess.run(
+                        ["antiword", str(path)],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=30
+                        )
+                logger.info("[extractor] doc used=antiword(subprocess)")
+                return result.stdout
+            except subprocess.CalledProcessError as e:
+                logger.info(f"[extractor] antiword failed with code {e.returncode}: {e.stderr}")
+            except subprocess.TimeoutExpired:
+                logger.info("[extractor] antiword timed out")
+            except Exception as e:
+                logger.info(f"[extractor] antiword failed: {e}")
 
-            if shutil.which("antiword"):
-                logger.info("[extractor] doc used=textract(antiword)")
-                return textract.process(str(path), method="antiword").decode("utf-8", errors="replace")
-        except Exception as e:
-            logger.info(f"[extractor] textract(.doc) failed: {e}")
+        # Try catdoc if available
+        if shutil.which("catdoc"):
+            try:
+                result = subprocess.run(
+                        ["catdoc", str(path)],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=30
+                        )
+                logger.info("[extractor] doc used=catdoc(subprocess)")
+                return result.stdout
+            except Exception as e:
+                logger.info(f"[extractor] catdoc failed: {e}")
 
-        # 2) Last resort: generic textract (if enabled)
-        return self._extract_generic_textract(path)
+        # Last resort: try as plaintext
+        logger.warning("[extractor] No .doc converter available (antiword/catdoc not found)")
+        return self._extract_generic_fallback(path)
+
 
     def _extract_delimited(self, path: Path) -> str:
         """
@@ -259,12 +321,13 @@ class FileTextExtractor:
                         if max_rows is not None and i >= max_rows:
                             break
                         lines.append(self.options.output_cell_sep.join(
-                            self._fmt_cell(v) for v in row))
+                                self._fmt_cell(v) for v in row))
                     return self.options.output_row_sep.join(lines)
             except Exception as e:
                 logger.info(
-                    f"[extractor] CSV read with encoding={enc} failed: {e}")
+                        f"[extractor] CSV read with encoding={enc} failed: {e}")
         return ""
+
 
     def _extract_excel(self, path: Path) -> str:
         sfx = path.suffix.lower()
@@ -274,8 +337,9 @@ class FileTextExtractor:
         if sfx == ".xlsx":
             try:
                 from openpyxl import load_workbook
+
                 wb = load_workbook(filename=str(
-                    path), read_only=True, data_only=True)
+                        path), read_only=True, data_only=True)
                 for ws in wb.worksheets:
                     if self.options.include_sheet_headers:
                         out_parts.append(f"## Sheet: {ws.title}")
@@ -284,16 +348,17 @@ class FileTextExtractor:
                         if rows_cap is not None and count >= rows_cap:
                             break
                         out_parts.append(self.options.output_cell_sep.join(
-                            self._fmt_cell(v) for v in row))
+                                self._fmt_cell(v) for v in row))
                         count += 1
                 logger.info("[extractor] xlsx used=openpyxl")
                 return self.options.output_row_sep.join(out_parts)
             except Exception as e:
                 logger.info(f"[extractor] openpyxl failed: {e}")
-                # fallthrough → try xlrd if it happens to support (unlikely), else textract
+
         if sfx == ".xls":
             try:
                 import xlrd  # xlrd<2.0 supports .xls
+
                 book = xlrd.open_workbook(str(path))
                 for sheet in book.sheets():
                     if self.options.include_sheet_headers:
@@ -306,15 +371,17 @@ class FileTextExtractor:
                         for c in range(sheet.ncols):
                             vals.append(self._fmt_cell(sheet.cell_value(r, c)))
                         out_parts.append(
-                            self.options.output_cell_sep.join(vals))
+                                self.options.output_cell_sep.join(vals))
                         count += 1
                 logger.info("[extractor] xls used=xlrd")
                 return self.options.output_row_sep.join(out_parts)
             except Exception as e:
                 logger.info(f"[extractor] xlrd failed: {e}")
 
-        # Last resort for spreadsheets
-        return self._extract_generic_textract(path)
+        # If both failed, return empty (spreadsheets need specialized libraries)
+        logger.warning(f"[extractor] Unable to extract Excel file: {path}")
+        return ""
+
 
     def _extract_html(self, path: Path) -> str:
         """
@@ -331,7 +398,7 @@ class FileTextExtractor:
             from bs4 import UnicodeDammit
 
             decoded = UnicodeDammit(raw).unicode_markup or raw.decode(
-                "utf-8", errors="replace")
+                    "utf-8", errors="replace")
         except Exception:
             decoded = raw.decode("utf-8", errors="replace")
         html_to_parse = decoded
@@ -391,6 +458,7 @@ class FileTextExtractor:
             stripped = re.sub(r"<[^>]+>", " ", html_to_parse or "")
             return self._normalize_whitespace(stripped)
 
+
     def _extract_yaml(self, path: Path) -> str:
         """
         YAML → formatted text representation.
@@ -418,9 +486,10 @@ class FileTextExtractor:
 
         except Exception as e:
             logger.info(
-                f"[extractor] yaml parsing failed: {e}, falling back to plaintext")
+                    f"[extractor] yaml parsing failed: {e}, falling back to plaintext")
             # Fallback to plaintext if YAML parsing fails
             return self._extract_plaintext(path)
+
 
     def _extract_json(self, path: Path) -> str:
         """
@@ -445,9 +514,10 @@ class FileTextExtractor:
 
         except Exception as e:
             logger.info(
-                f"[extractor] json parsing failed: {e}, falling back to plaintext")
+                    f"[extractor] json parsing failed: {e}, falling back to plaintext")
             # Fallback to plaintext if JSON parsing fails
             return self._extract_plaintext(path)
+
 
     # Small helper to collapse excessive whitespace/newlines
 
@@ -457,16 +527,27 @@ class FileTextExtractor:
         s = re.sub(r"[ \t]{2,}", " ", s)  # collapse runs of spaces/tabs
         return s.strip()
 
-    def _extract_generic_textract(self, path: Path) -> str:
-        if not self.options.enable_generic_textract_fallback:
+
+    def _extract_generic_fallback(self, path: Path) -> str:
+        """
+        Generic fallback for unknown file types.
+        Attempts to read as plaintext.
+        """
+        if not self.options.enable_generic_fallback:
             return ""
+
+        logger.info("[extractor] used=generic_fallback(plaintext)")
         try:
-            import textract
-            logger.info("[extractor] used=textract(generic)")
-            return (textract.process(str(path)) or b"").decode("utf-8", errors="replace")
-        except Exception as e:
-            logger.info(f"[extractor] textract(generic) failed: {e}")
-            return ""
+            # Try reading as UTF-8
+            return path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            try:
+                # Try reading as latin-1
+                return path.read_text(encoding="latin-1", errors="replace")
+            except Exception as e:
+                logger.info(f"[extractor] generic fallback failed: {e}")
+                return ""
+
 
     # ---------- Helpers ----------
 
@@ -474,21 +555,25 @@ class FileTextExtractor:
     def _looks_like_pdf(head8: bytes) -> bool:
         return head8.startswith(b"%PDF-")
 
+
     @staticmethod
     def _is_mostly_pagebreaks(s: str) -> bool:
         return len(s.strip().replace("\x0c", "")) < 10
 
+
     def _ocr_pdf(self, pdf_path: Path) -> str:
         from pdf2image import convert_from_path
         import pytesseract
+
         imgs = convert_from_path(str(pdf_path), dpi=self.options.ocr.dpi)
         texts: list[str] = []
         for i, img in enumerate(imgs):
             if self.options.ocr.max_pages is not None and i >= self.options.ocr.max_pages:
                 break
             texts.append(pytesseract.image_to_string(
-                img, lang=self.options.ocr.lang))
+                    img, lang=self.options.ocr.lang))
         return "\n".join(texts)
+
 
     @staticmethod
     def _fmt_cell(v) -> str:
@@ -502,6 +587,7 @@ class FileTextExtractor:
 class FileExtractor:
     """Handles extraction of text content from various file formats"""
 
+
     @staticmethod
     def extract_from_pdf(file_path: str) -> str:
         """Extract text from PDF files"""
@@ -511,6 +597,7 @@ class FileExtractor:
         except Exception as e:
             logger.error(f"Error extracting from PDF: {str(e)}")
             return ""
+
 
     @staticmethod
     def extract_from_docx(file_path: str) -> str:
@@ -522,18 +609,21 @@ class FileExtractor:
             logger.error(f"Error extracting from DOCX: {str(e)}")
             return ""
 
+
     @staticmethod
     def extract_from_image(file_path: str) -> str:
         """Extract text from image files using OCR"""
         try:
             from PIL import Image
             import pytesseract
+
             image = Image.open(file_path)
             text = pytesseract.image_to_string(image)
             return text.strip()
         except Exception as e:
             logger.error(f"Error extracting from image: {str(e)}")
             return ""
+
 
     @staticmethod
     def extract_from_txt(file_path: str) -> str:

@@ -25,7 +25,6 @@ from fastapi_cache import FastAPICache
 logger = logging.getLogger(__name__)
 
 username_key_builder = make_key_builder("username")
-userid_key_builder = make_key_builder("user_id")
 
 @inject
 class UserRepository:

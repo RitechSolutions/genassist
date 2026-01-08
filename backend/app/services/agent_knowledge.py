@@ -3,6 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import logger
 from injector import inject
+from neo4j import AsyncSession
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.knowledge_base import KnowledgeBaseModel

@@ -10,16 +10,19 @@ function show_usage {
     echo "  stop-all        Stop all services"
     echo "  start-db        Start only DB"
     echo "  stop-db         Stop only DB"
+    echo "  start-neo4j     Start only Neo4j"
+    echo "  stop-neo4j      Stop only Neo4j"
     echo "  start-chroma    Start only Chroma"
     echo "  stop-chroma     Stop only Chroma"
     echo "  start-app       Start only the application"
     echo "  stop-app        Stop only the application"
-    echo "  logs [service]  Show logs for a specific service (chroma, app) or all if not specified"
+    echo "  logs [service]  Show logs for a specific service (neo4j, chroma, app) or all if not specified"
     echo "  status          Show status of all services"
     echo "  clean           Remove all containers and volumes (WARNING: This will delete all data)"
     echo ""
     echo "Examples:"
     echo "  $0 start-all"
+    echo "  $0 logs neo4j"
     echo "  $0 status"
 }
 
@@ -52,6 +55,14 @@ case "$1" in
     stop-db)
         echo "Stopping DB..."
         docker-compose stop db
+        ;;
+    start-neo4j)
+        echo "Starting Neo4j..."
+        docker-compose up -d neo4j
+        ;;
+    stop-neo4j)
+        echo "Stopping Neo4j..."
+        docker-compose stop neo4j
         ;;
     start-chroma)
         echo "Starting Chroma..."

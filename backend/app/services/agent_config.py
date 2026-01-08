@@ -1,15 +1,20 @@
 import logging
 from typing import Optional
 from uuid import UUID
+
+from fastapi_cache.coder import PickleCoder
+from fastapi_cache.decorator import cache
 from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.utils import generate_password
+from app.cache.redis_cache import invalidate_agent_cache, make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models import AgentModel
+from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.agent import AgentRepository
 from app.repositories.user_types import UserTypesRepository
-from app.schemas.agent import AgentCreate, AgentUpdate
+from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
 from app.schemas.workflow import WorkflowUpdate, get_base_workflow
 from app.services.operators import OperatorService
 from app.services.workflow import WorkflowService
@@ -17,6 +22,8 @@ from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
 
+agent_id_key_builder = make_key_builder("agent_id")
+user_id_key_builder = make_key_builder("user_id")
 
 @inject
 class AgentConfigService:
@@ -38,7 +45,25 @@ class AgentConfigService:
         """Get all agent configurations as dictionaries (for backward compatibility)"""
         return await self.repository.get_all_full()
 
-    async def get_by_id_full(self, agent_id: UUID) -> AgentModel:
+    @cache(
+            expire=300,
+            namespace="agents:get_by_id_full",
+            key_builder=agent_id_key_builder,
+            coder=PickleCoder
+            )
+    async def get_by_id_full(self, agent_id: UUID) -> AgentRead:
+        agent = await self.repository.get_by_id_full(agent_id)
+        if not agent:
+            raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
+
+        # Convert to Pydantic model for caching (avoids pickling SQLAlchemy objects)
+        # The model_validator in AgentRead handles workflow conversion automatically
+        null_unloaded_attributes(agent)
+        agent_read = AgentRead.model_validate(agent)
+
+        return agent_read
+
+    async def get_by_id_cached(self, agent_id: UUID) -> AgentModel:
         agent = await self.repository.get_by_id_full(agent_id)
         if not agent:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
@@ -93,7 +118,7 @@ class AgentConfigService:
         orm_agent = AgentModel(**agent_data)
 
         created_agent = await self.repository.create(orm_agent)
-        await self.db.refresh(created_agent)
+        await self.db.refresh(created_agent, attribute_names=['operator'])
 
         old_workflow = await self.workflow_service.get_by_id(created_agent.workflow_id)
         await self.workflow_service.update(created_agent.workflow_id, WorkflowUpdate(name=old_workflow.name,
@@ -106,7 +131,7 @@ class AgentConfigService:
                                                                                      agent_id=created_agent.id))
 
         # await self.db.commit()
-
+        null_unloaded_attributes(created_agent)
         return created_agent
 
     async def _operator_user_type_id(self) -> UUID:
@@ -116,7 +141,10 @@ class AgentConfigService:
     async def update(
             self, agent_id: UUID, agent_update: AgentUpdate
     ) -> AgentModel:
-        agent: AgentModel | None = await self.repository.get_by_id(agent_id)
+        agent: AgentModel | None = await self.repository.get_by_id_full(agent_id)
+
+        await invalidate_agent_cache(agent_id, agent.operator.user.id)
+
         if not agent:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
@@ -144,6 +172,8 @@ class AgentConfigService:
         updated = await self.repository.update(
             agent
         )
+        null_unloaded_attributes(agent)
+
         return updated
 
     async def switch_agent(
@@ -163,17 +193,33 @@ class AgentConfigService:
         Args:
             agent_id: ID of the agent to delete
         """
-        agent_delete = await self.repository.get_by_id(agent_id)
+
+        agent_delete = await self.repository.get_by_id_full(agent_id)
         if not agent_delete:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
         await self.repository.soft_delete(agent_delete)
 
-    async def get_by_user_id(self, user_id: UUID) -> AgentModel:
+        # Invalidate cache entries for this agent
+        await invalidate_agent_cache(agent_id, agent_delete.operator.user.id)
+
+    @cache(
+            expire=300,
+            namespace="agents:get_by_user_id",
+            key_builder=user_id_key_builder,
+            coder=PickleCoder
+            )
+    async def get_by_user_id(self, user_id: UUID) -> AgentRead:
+        """Get agent by user ID and cache the result"""
         agent = await self.repository.get_by_user_id(user_id)
         if not agent:
             logger.debug("No agent for userid:"+str(user_id))
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
-        return agent
+
+        # Convert to Pydantic model for caching (avoids pickling SQLAlchemy objects)
+        null_unloaded_attributes(agent)
+        agent_read = AgentRead.model_validate(agent)
+
+        return agent_read
 
     async def upload_welcome_image(self, agent_id: UUID, image_data: bytes) -> AgentModel:
         """Upload welcome image for an agent"""

@@ -41,6 +41,10 @@ services:
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma          # connect to Chroma service over the compose network
       - CHROMA_PORT=8000            # Chroma server listens on 8000 inside its container
+      - RAG_GRAPH_DB_TYPE=neo4j
+      - RAG_NEO4J_URL=bolt://neo4j:7687
+      - RAG_NEO4J_USERNAME=neo4j
+      - RAG_NEO4J_PASSWORD=password
       - DB_HOST=genassist_db
       - REDIS_HOST=redis
     depends_on:
@@ -60,6 +64,35 @@ services:
     labels:
       - "app=genassist"
       - "service=app"
+
+
+  # Neo4j graph database
+  neo4j:
+    image: neo4j:5.23.0
+    container_name: genassist-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_dbms_memory_pagecache_size=256M
+      - NEO4J_dbms_memory_heap_initial__size=256M
+      - NEO4J_dbms_memory_heap_max__size=512M
+      - NEO4JLABS_PLUGINS=["apoc"]  # Enable APOC plugin
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_logs_http_enabled=true
+      - NEO4J_server_logs_debug_enabled=true
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    networks:
+      - genassist-network
+    restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=neo4j"
 
   # Chroma vector database
   chroma:
