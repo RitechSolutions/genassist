@@ -10,10 +10,7 @@ from typing import Dict, Any
 from pathlib import Path
 
 from celery import shared_task
-from fastapi_injector import RequestScopeFactory
-from app.dependencies.injector import injector
 from app.db.multi_tenant_session import multi_tenant_manager
-from app.core.tenant_scope import get_tenant_context
 from app.repositories.ml_model_pipeline import (
     MLModelPipelineRunRepository,
     MLModelPipelineArtifactRepository,
@@ -24,7 +21,6 @@ from app.repositories.workflow import WorkflowRepository
 from app.repositories.ml_models import MLModelsRepository
 from app.core.project_path import DATA_VOLUME
 from app.schemas.ml_model_pipeline import MLModelPipelineArtifactCreate
-from app.tasks.base import run_task_for_all_tenants
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +82,8 @@ async def execute_pipeline_run_async(run_id: UUID):
     Async function to execute a pipeline run.
     This is called from the Celery task.
     """
-    # Get tenant session factory based on current tenant context
-    tenant_id = get_tenant_context()
-    session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
+    # Get tenant session factory (using master for now, can be extended for multi-tenant)
+    session_factory = multi_tenant_manager.get_tenant_session_factory("master")
 
     async with session_factory() as session:
         run_repository = MLModelPipelineRunRepository(session)
@@ -179,34 +174,6 @@ async def execute_pipeline_run_async(run_id: UUID):
                 logger.error(f"Error updating run status: {str(update_error)}")
 
 
-async def execute_pipeline_run_async_with_scope(run_id: UUID):
-    """Wrapper to run pipeline execution for all tenants"""
-    try:
-        logger.info(f"Starting pipeline run execution task for all tenants: {run_id}")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await execute_pipeline_run_async(run_id)
-
-        results = await run_task_for_all_tenants(run_with_scope)
-
-        logger.info(f"Pipeline run execution completed for {len(results)} tenant(s)")
-        return {
-            "status": "success",
-            "results": results,
-        }
-
-    except Exception as e:
-        logger.error(f"Error in pipeline run execution task: {str(e)}")
-        return {
-            "status": "failed",
-            "error": str(e),
-        }
-    finally:
-        logger.info("Pipeline run execution task completed.")
-
-
 @shared_task(name="execute_pipeline_run")
 def execute_pipeline_run_task(run_id: str):
     """
@@ -224,7 +191,7 @@ def execute_pipeline_run_task(run_id: str):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        loop.run_until_complete(execute_pipeline_run_async_with_scope(UUID(run_id)))
+        loop.run_until_complete(execute_pipeline_run_async(UUID(run_id)))
 
     except Exception as e:
         logger.error(f"Error in pipeline run task {run_id}: {str(e)}", exc_info=True)
@@ -241,9 +208,7 @@ async def check_and_execute_scheduled_pipelines_async():
     from app.repositories.ml_model_pipeline import MLModelPipelineConfigRepository
     from app.schemas.ml_model_pipeline import MLModelPipelineRunCreate
 
-    # Get tenant session factory based on current tenant context
-    tenant_id = get_tenant_context()
-    session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
+    session_factory = multi_tenant_manager.get_tenant_session_factory("master")
 
     async with session_factory() as session:
         config_repository = MLModelPipelineConfigRepository(session)
@@ -283,7 +248,7 @@ async def check_and_execute_scheduled_pipelines_async():
                     if 0 <= time_diff < 60:  # Within the last minute
                         # Check if we already ran this recently (avoid duplicates)
                         # Get the last run for this config
-                        from sqlalchemy import select
+                        from sqlalchemy import select, func
                         from app.db.models.ml_model_pipeline import MLModelPipelineRun
 
                         last_run_query = (
@@ -340,34 +305,6 @@ async def check_and_execute_scheduled_pipelines_async():
             logger.error(f"Error checking scheduled pipelines: {str(e)}", exc_info=True)
 
 
-async def check_and_execute_scheduled_pipelines_async_with_scope():
-    """Wrapper to run scheduled pipeline check for all tenants"""
-    try:
-        logger.info("Starting scheduled pipeline check task for all tenants...")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await check_and_execute_scheduled_pipelines_async()
-
-        results = await run_task_for_all_tenants(run_with_scope)
-
-        logger.info(f"Scheduled pipeline check completed for {len(results)} tenant(s)")
-        return {
-            "status": "success",
-            "results": results,
-        }
-
-    except Exception as e:
-        logger.error(f"Error in scheduled pipeline check task: {str(e)}")
-        return {
-            "status": "failed",
-            "error": str(e),
-        }
-    finally:
-        logger.info("Scheduled pipeline check task completed.")
-
-
 @shared_task(name="check_scheduled_pipeline_runs")
 def check_scheduled_pipeline_runs_task():
     """
@@ -380,9 +317,7 @@ def check_scheduled_pipeline_runs_task():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        loop.run_until_complete(
-            check_and_execute_scheduled_pipelines_async_with_scope()
-        )
+        loop.run_until_complete(check_and_execute_scheduled_pipelines_async())
     except Exception as e:
         logger.error(f"Error in scheduled pipeline check task: {str(e)}", exc_info=True)
         raise
