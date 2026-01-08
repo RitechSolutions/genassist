@@ -16,7 +16,6 @@ class TranscriptSegment:
 
 
 class TranscriptSegmentInput(BaseModel):
-    id: Optional[UUID] = None
     create_time: Optional[datetime] = None
     start_time: float
     end_time: float

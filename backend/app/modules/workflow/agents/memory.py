@@ -349,8 +349,8 @@ class RedisConversationMemory(BaseConversationMemory):
             if as_string:
                 history_parts = []
                 for message in messages:
-                    prefix = f"{message.role.capitalize()}: "
-                    content = message.content
+                    prefix = f"{message['role'].capitalize()}: "
+                    content = message['content']
                     history_parts.append(f"{prefix}{content}")
                 return "\n".join(history_parts)
 

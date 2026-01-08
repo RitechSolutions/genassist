@@ -76,22 +76,16 @@ def schema_to_transcript_message(
     """
     Convert TranscriptSegmentInput schema to TranscriptMessageModel
     """
-    message_data = {
-        "conversation_id": conversation_id,
-        "create_time": segment.create_time,
-        "start_time": segment.start_time,
-        "end_time": segment.end_time,
-        "speaker": segment.speaker,
-        "text": segment.text,
-        "type": segment.type,
-        "sequence_number": sequence_number,
-    }
-
-    # Include pre-generated ID if provided
-    if segment.id is not None:
-        message_data["id"] = segment.id
-
-    return TranscriptMessageModel(**message_data)
+    return TranscriptMessageModel(
+            conversation_id=conversation_id,
+            create_time=segment.create_time,
+            start_time=segment.start_time,
+            end_time=segment.end_time,
+            speaker=segment.speaker,
+            text=segment.text,
+            type=segment.type,
+            sequence_number=sequence_number,
+            )
 
 def json_to_transcript_messages(
         transcript_json: str,

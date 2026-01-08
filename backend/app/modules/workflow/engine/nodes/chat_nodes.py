@@ -39,8 +39,20 @@ class ChatInputNode(BaseNode):
                 input_schema=input_schema,
                 data_getter=self.get_state().get_value,
             )
-            self.set_node_input(validated_data)
 
+            session = self.get_state().get_session()
+            if "conversation_history" in input_schema and (
+                session["conversation_history"] is None
+                or session["conversation_history"] == ""
+            ):
+                conversation_history = await self.get_memory().get_chat_history(as_string=True)
+                session["conversation_history"] = conversation_history
+                validated_data["conversation_history"] = conversation_history
+                self.get_state().update_session_value(
+                    "conversation_history", conversation_history
+                )
+
+            self.set_node_input(validated_data)
             return validated_data
         except ValueError as e:
             self.set_node_output({"error": str(e)})
@@ -67,7 +79,7 @@ class ChatOutputNode(BaseNode):
         Returns:
             The output from the last connected node
         """
-        #source_output = self.get_last_node_output()
+        # source_output = self.get_last_node_output()
         source_output = self.get_input_from_source()
         logger.info(
             "ChatOutputNode %s forwarding output: %s", self.node_id, source_output
