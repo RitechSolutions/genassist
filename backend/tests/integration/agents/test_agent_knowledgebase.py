@@ -15,7 +15,6 @@ def new_knowledge_item_data():
         "content": "This is a test knowledge base content",
         "rag_config": {
             "vector_db": {"enabled": True},
-            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False},
             "legra": {"enabled": True}
         }

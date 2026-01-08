@@ -529,7 +529,6 @@ async def seed_knowledge_base(session: AsyncSession, created_by: UUID, injector:
         rag_config={
             "enabled": False,
             "vector_db": {"enabled": False},
-            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False}
         }
     )
@@ -573,7 +572,6 @@ async def seed_knowledge_base_for_gen_agent(
         rag_config={
             "enabled": False,
             "vector_db": {"enabled": False},
-            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False},
         },
     )
@@ -1098,7 +1096,6 @@ async def seed_knowledge_base_for_sql_database(
         rag_config={
             "enabled": False,
             "vector_db": {"enabled": False},
-            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False},
         },
         llm_provider_id=seed_test_data.llm_provider_id,
@@ -1129,7 +1126,6 @@ async def seed_knowledge_base_for_s3(
         rag_config={
             "enabled": True,
             "vector_db": {"enabled": True},
-            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False},
         },
         sync_source_id=s3_datasource.id,
