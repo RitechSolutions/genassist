@@ -42,5 +42,5 @@ class CustomersService:
         """
         Update an existing customer's fields.
         """
-        model = await self.repository.update(context["user_id"], customer_id, data)
+        model = await self.repository.update(customer_id, data)
         return model
