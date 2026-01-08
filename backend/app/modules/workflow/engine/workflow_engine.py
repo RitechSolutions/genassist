@@ -199,7 +199,6 @@ class WorkflowEngine:
         start_node_id: Optional[str] = None,
         input_data: Optional[Dict[str, Any]] = None,
         thread_id: str = str(uuid.uuid4()),
-        persist: Optional[bool] = True,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -261,7 +260,7 @@ class WorkflowEngine:
             raise
 
         try:
-            if initial_values.get("message") and persist:
+            if initial_values.get("message"):
                 asyncio.create_task(
                     state.get_memory().add_user_message(
                         initial_values.get("message", "")

@@ -2,9 +2,10 @@
 Tool builder node implementation using the BaseNode class.
 """
 
+from typing import Dict, Any, List
 import logging
+import time
 import json
-from typing import Dict, Any
 
 from app.modules.workflow.engine.base_node import BaseNode
 
@@ -55,7 +56,6 @@ class ToolBuilderNode(BaseNode):
             start_node_id=start_node_id,
             input_data={**template, **source_input, **temp_data},
             thread_id=self.get_state().get_thread_id(),
-            persist=False,
         )
         self.get_state().update_nodes_from_another_state(state)
         return state.get_last_node_output()
