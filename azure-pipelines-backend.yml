@@ -1,0 +1,150 @@
+name: GenAssist-GitHub-Backend_$(Date:yyyyMMdd)$(Rev:.r)
+
+pool:
+  name: Ritech-AI-TR1
+
+trigger:
+  branches:
+    include:
+      - development
+  paths:
+    include:
+      - backend/**
+
+pr:
+  branches:
+    include:
+      - development
+  paths:
+    include:
+      - backend/**
+
+steps:
+  - checkout: self
+    clean: true
+    fetchTags: true
+
+  - task: UseDotNet@2
+    displayName: 'Use .NET Core sdk 8.X'
+    inputs:
+      version: 8.x
+
+  - task: gittools.gittools.setup-gitversion-task.gitversion/setup@3
+    displayName: 'gitversion-setup'
+    inputs:
+      versionSpec: 5.x
+
+  - script: |
+      echo "stopping existing containers of cicd"
+      touch .env
+
+      # docker compose -f docker-compose.cicd.yml -p genassist_cicd down --rmi local --volumes --remove-orphans
+      docker compose -f docker-compose.cicd.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
+    workingDirectory: backend
+    displayName: 'Stop Test Containers - Before Start'
+
+  - task: DownloadSecureFile@1
+    name: cicdenv
+    displayName: 'Download .env for CICD'
+    inputs:
+      secureFile: env.cicd
+
+  - script: |
+      set -e
+
+      BACKEND_DIR="$(System.DefaultWorkingDirectory)/backend"
+      ENV_FILE="$BACK_topics like `$(...)` inside bash in some contexts.
+      # We'll avoid any bash command substitution that uses $(...) for branch name.
+      branch="$(Build.SourceBranch)"
+      branchNo="${branch#refs/heads/}"
+
+      echo -e "\nAPI_VERSION=${branchNo}-$(Build.BuildNumber)" >> "$ENV_FILE"
+
+      sed -i 's/OPENAI_API_KEY_VALUE/$(OAIKEY)/g' "$ENV_FILE"
+      sed -i 's/HUGGINGFACE_TOKEN_VALUE/$(HFTOKEN)/g' "$ENV_FILE"
+      sed -i 's/FERNET_KEY_VALUE/$(FERNET_KEY)/g' "$ENV_FILE"
+      sed -i 's/AWS_ACCESS_KEY_ID_VALUE/$(S3_ACCESS_KEY_ID)/g' "$ENV_FILE"
+      sed -i 's/AWS_SECRET_ACCESS_KEY_VALUE/$(S3_SECRET_ACCESS_KEY)/g' "$ENV_FILE"
+
+      sed -i 's/DEBUG=false/DEBUG=true/g' "$ENV_FILE"
+
+      echo -e "\nCREATE_DB=true" >> "$ENV_FILE"
+      sed -i 's/DB_HOST=db/DB_HOST=genassist_db/g' "$ENV_FILE"
+
+      echo -e "\nCHROMA_HOST=chroma" >> "$ENV_FILE"
+      echo -e "\nCHROMA_PORT=8000" >> "$ENV_FILE"
+
+      echo "backend env (keys only):"
+      grep -E '^(API_VERSION|DEBUG|CREATE_DB|DB_HOST|DB_USER|DB_PASS|DB_NAME|DB_PORT|FERNET_KEY|CHROMA_HOST|CHROMA_PORT)=' "$ENV_FILE" \
+        | sed 's/=.*$/=***hidden***/'
+
+      echo "starting fresh db"
+      docker compose -f docker-compose.cicd.yml -p genassist_cicd up --force-recreate -d db
+
+      echo "starting app and whisper"
+      docker compose -f docker-compose.cicd.yml -p genassist_cicd up --build --force-recreate -d app whisper
+    workingDirectory: backend
+    displayName: 'Build and Start App + Whisper'
+
+  - script: |
+      #!/bin/bash
+      set -e
+
+      echo "installing pytest and coverage libs to app"
+      docker exec "genassist-app-cicd" pip install coverage
+      docker exec "genassist-app-cicd" pip install pytest-cov pytest-azurepipelines
+
+      echo "waiting 5 sec.."
+      sleep 5
+
+      echo "📝 Following container logs..."
+      docker logs --since 5s -f "genassist-app-cicd" &
+      LOG_PID=$!
+
+      echo "📊 Running pytest..."
+      if ! docker exec "genassist-app-cicd" python -m pytest tests -vvv --cov=app --cov-branch --cov-report xml --junitxml="test-results.xml" --cov-report=html --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG; then
+            echo "❌ Tests failed"
+            TEST_RESULT=1
+      else
+            echo "✅ Tests passed successfully!"
+            TEST_RESULT=0
+      fi
+
+      docker cp "genassist-app-cicd":/src/coverage.xml .
+      docker cp "genassist-app-cicd":/src/test-results.xml .
+      docker cp "genassist-app-cicd":/src/htmlcov ./htmlcov
+
+      kill $LOG_PID 2>/dev/null || true
+
+      exit $TEST_RESULT
+    displayName: 'Start Tests'
+    timeoutInMinutes: 3
+
+  - script: |
+      echo "stopping existing containers of cicd after run"
+      # docker compose -p genassist_cicd down --rmi local --volumes --remove-orphans
+      docker compose -f docker-compose.cicd.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
+    workingDirectory: backend
+    displayName: 'Stop Test Containers - After End'
+    condition: always()
+
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results *.xml'
+    inputs:
+      testResultsFiles: '$(System.DefaultWorkingDirectory)/test-results.xml'
+      failTaskOnFailedTests: true
+    condition: succeededOrFailed()
+
+  - task: PublishCodeCoverageResults@2
+    displayName: 'Publish code coverage results'
+    inputs:
+      summaryFileLocation: '$(System.DefaultWorkingDirectory)/coverage.xml'
+      pathToSources: '$(System.DefaultWorkingDirectory)/backend/app/'
+    condition: succeededOrFailed()
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish Pipeline Artifact'
+    inputs:
+      targetPath: '$(System.DefaultWorkingDirectory)/backend'
+      artifact: code
+    condition: succeededOrFailed()
