@@ -12135,6 +12135,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response List Mcp Tools Get Api Mcp Tools Get"
                 }
               }
@@ -12187,6 +12188,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response List Mcp Tools Post Api Mcp Tools List Post"
                 }
               }
@@ -14431,6 +14433,7 @@
             "description": "Connection type: 'stdio', 'sse', or 'http'"
           },
           "connection_config": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Connection Config",
             "description": "Connection configuration"
@@ -14852,6 +14855,7 @@
           "params": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14900,6 +14904,7 @@
           "error": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16069,6 +16074,7 @@
           "input_schema": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16117,6 +16123,7 @@
           "inputSchema": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16145,6 +16152,7 @@
           "arguments": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16165,6 +16173,7 @@
       "MCPToolCallResponse": {
         "properties": {
           "output": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Output",
             "description": "Tool execution output"
