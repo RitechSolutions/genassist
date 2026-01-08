@@ -11,7 +11,6 @@ import ReactFlow, {
   ReactFlowInstance,
   NodeMouseHandler,
   MarkerType,
-  reconnectEdge,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { Button } from "@/components/button";
@@ -49,7 +48,8 @@ const nodeTypes = getNodeTypes();
 const edgeTypes = getEdgeTypes();
 
 const GraphFlowContent: React.FC = () => {
-  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const [reactFlowInstance, setReactFlowInstance] =
+    useState<ReactFlowInstance | null>(null);
 
   const [workflow, setWorkflow] = useState<Workflow>();
   const [agent, setAgent] = useState<AgentConfig>();
@@ -68,13 +68,13 @@ const GraphFlowContent: React.FC = () => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const lastSavedWorkflowRef = useRef<Workflow | null>(null);
   const [isSettling, setIsSettling] = useState(true);
-  const [executionState, setExecutionState] = useState<WorkflowExecutionState | null>(null);
+  const [executionState, setExecutionState] =
+    useState<WorkflowExecutionState | null>(null);
 
   const { toggleSidebar } = useSidebar();
   const { validateConnection } = useSchemaValidation();
 
   const { agentId } = useParams<{ agentId: string }>();
-  const edgeReconnectSuccessful = useRef(true);
 
   // Handle double-click on nodes to focus view using helper function
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
@@ -289,23 +289,6 @@ const GraphFlowContent: React.FC = () => {
     [setEdges, validateConnection]
   );
 
-  const onReconnectStart = useCallback(() => {
-    edgeReconnectSuccessful.current = false;
-  }, []);
- 
-  const onReconnect = useCallback((oldEdge, newConnection) => {
-    edgeReconnectSuccessful.current = true;
-    setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
-  }, []);
- 
-  const onReconnectEnd = useCallback((_, edge) => {
-    if (!edgeReconnectSuccessful.current) {
-      setEdges((eds) => eds.filter((e) => e.id !== edge.id));
-    }
- 
-    edgeReconnectSuccessful.current = true;
-  }, []);
-
   // Toggle panel functions
   const toggleNodePanel = () => {
     setShowNodePanel(!showNodePanel);
@@ -472,9 +455,6 @@ const GraphFlowContent: React.FC = () => {
               onDragOver={onDragOver}
               onDrop={onDrop}
               onNodeDoubleClick={onNodeDoubleClick}
-              onReconnect={onReconnect}
-              onReconnectStart={onReconnectStart}
-              onReconnectEnd={onReconnectEnd}
               proOptions={{ hideAttribution: true }} // remove React Flow watermark
             >
               <Background />
