@@ -40,6 +40,7 @@ interface ParameterSectionProps {
     name: string
   ) => void;
   suggestParams?: boolean;
+  listSuggestedParams?: NodeSchema;
 }
 
 interface ParameterDialogProps {
@@ -277,6 +278,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
   addItem,
   removeItem,
   suggestParams = false,
+  listSuggestedParams = {},
 }) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedParamName, setSelectedParamName] = useState<string | null>(
@@ -284,7 +286,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
   );
   const [dialogMode, setDialogMode] = useState<"edit" | "create">("create");
   const chatInputSchema = useChatInputSchema();
-  const suggestedParams = suggestParams ? chatInputSchema : {};
+  const suggestedParams = listSuggestedParams || (suggestParams ? chatInputSchema : {});
   const handleParamClick = (name: string) => {
     setSelectedParamName(name);
     setDialogMode("edit");
