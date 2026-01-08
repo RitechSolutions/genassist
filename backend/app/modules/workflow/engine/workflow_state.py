@@ -8,7 +8,10 @@ import uuid
 from datetime import datetime
 import time
 
-from app.modules.workflow.agents.memory import BaseConversationMemory, ConversationMemory
+from app.modules.workflow.agents.memory import (
+    BaseConversationMemory,
+    ConversationMemory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +19,12 @@ logger = logging.getLogger(__name__)
 class WorkflowState:
     """Enhanced class to maintain state during workflow execution with performance tracking"""
 
-    def __init__(self,
-                 workflow: dict,
-                 initial_values: dict = None,
-                 thread_id: str = str(uuid.uuid4())):
+    def __init__(
+        self,
+        workflow: dict,
+        initial_values: dict = None,
+        thread_id: str = str(uuid.uuid4()),
+    ):
         """Initialize the workflow state
 
         Args:
@@ -63,17 +68,15 @@ class WorkflowState:
             "fastestNode": "",
             "fastestNodeTime": 0,
             "totalNodesExecuted": 0,
-            "successRate": 0
+            "successRate": 0,
         }
 
         # Error tracking
         self.errors = []
 
         # Edge data and execution context
-        self.source_edges = workflow.get(
-            "source_edges", {}) if workflow else {}
-        self.target_edges = workflow.get(
-            "target_edges", {}) if workflow else {}
+        self.source_edges = workflow.get("source_edges", {}) if workflow else {}
+        self.target_edges = workflow.get("target_edges", {}) if workflow else {}
 
         # Apply initial values if provided
         if initial_values:
@@ -96,7 +99,7 @@ class WorkflowState:
             key_path: Dot-separated path to the nested attribute
             value: Value to set
         """
-        keys = key_path.split('.')
+        keys = key_path.split(".")
         current: Union[Dict, Any] = self
 
         # Navigate to the parent of the target attribute
@@ -141,10 +144,13 @@ class WorkflowState:
             The value at the specified path, or default if not found
         """
         from app.modules.workflow.engine.utils import get_nested_value
+
         result = get_nested_value(self, key_path)
         return result if result is not None else default
 
-    def add_node_output(self, node_id: str, output: Any, output_key: str = "result") -> None:
+    def add_node_output(
+        self, node_id: str, output: Any, output_key: str = "result"
+    ) -> None:
         """Add output for a specific node with a specific key
 
         Args:
@@ -160,8 +166,7 @@ class WorkflowState:
 
     def get_node_config(self, node_id: str) -> dict:
         """Get the config for a specific node"""
-        return next(
-            node for node in self.workflow["nodes"] if node["id"] == node_id)
+        return next(node for node in self.workflow["nodes"] if node["id"] == node_id)
 
     def get_node_config_data(self, node_id: str) -> dict:
         """Get the config data for a specific node"""
@@ -197,7 +202,7 @@ class WorkflowState:
         error_entry = {
             "message": error,
             "type": error_type,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
         self.errors.append(error_entry)
 
@@ -225,7 +230,7 @@ class WorkflowState:
             "fastestNode": "",
             "fastestNodeTime": 0,
             "totalNodesExecuted": 0,
-            "successRate": 0
+            "successRate": 0,
         }
 
     def start_execution(self) -> None:
@@ -268,8 +273,7 @@ class WorkflowState:
         if self.execution_start_time:
             self.time_taken = self.execution_end_time - self.execution_start_time
         self.add_error(error, "execution_failure")
-        logger.error(
-            f"Workflow execution failed: {self.execution_id}, Error: {error}")
+        logger.error(f"Workflow execution failed: {self.execution_id}, Error: {error}")
 
     def _update_performance_metrics(self) -> None:
         """Update performance metrics based on execution data"""
@@ -283,12 +287,13 @@ class WorkflowState:
                 execution_times.append((node_id, execution_time))
 
         if execution_times:
-            self.performance_metrics["totalNodesExecuted"] = len(
-                execution_times)
+            self.performance_metrics["totalNodesExecuted"] = len(execution_times)
             self.performance_metrics["totalExecutionTime"] = sum(
-                time for _, time in execution_times)
-            self.performance_metrics["averageNodeExecutionTime"] = self.performance_metrics["totalExecutionTime"] / len(
-                execution_times)
+                time for _, time in execution_times
+            )
+            self.performance_metrics["averageNodeExecutionTime"] = (
+                self.performance_metrics["totalExecutionTime"] / len(execution_times)
+            )
 
             # Find fastest and slowest nodes
             fastest = min(execution_times, key=lambda x: x[1])
@@ -300,10 +305,14 @@ class WorkflowState:
             self.performance_metrics["slowestNodeTime"] = slowest[1]
 
             # Calculate success rate
-            successful_nodes = sum(1 for _, status in self.node_execution_status.items()
-                                   if status.get("status") == "success")
+            successful_nodes = sum(
+                1
+                for _, status in self.node_execution_status.items()
+                if status.get("status") == "success"
+            )
             self.performance_metrics["successRate"] = (
-                successful_nodes / len(self.node_execution_status)) * 100
+                successful_nodes / len(self.node_execution_status)
+            ) * 100
 
     def start_node_execution(self, node_id: str) -> None:
         """Start execution of a specific node"""
@@ -315,20 +324,24 @@ class WorkflowState:
             "startTime": start_time,
             "input": self.initial_values,
             "output": None,
-            "error": None
+            "error": None,
         }
         logger.debug(f"Node execution started: {node_id}")
 
-    def complete_node_execution(self, node_id: str, output: Any = None, error: str = None) -> None:
+    def complete_node_execution(
+        self, node_id: str, output: Any = None, error: str = None
+    ) -> None:
         """Complete execution of a specific node"""
         if node_id in self.node_execution_status:
             end_time = int(time.time() * 1000)
-            self.node_execution_status[node_id].update({
-                "status": "success" if error is None else "failed",
-                "endTime": end_time,
-                "output": output,
-                "error": error
-            })
+            self.node_execution_status[node_id].update(
+                {
+                    "status": "success" if error is None else "failed",
+                    "endTime": end_time,
+                    "output": output,
+                    "error": error,
+                }
+            )
 
             if error:
                 self.add_error(f"Node {node_id}: {error}", "node_execution")
@@ -342,6 +355,13 @@ class WorkflowState:
     def get_session(self) -> dict:
         """Get the metadata for this workflow execution"""
         return self.get_value("session", {})
+
+    def update_session_value(self, key: str, value: Any) -> None:
+        """Update a value in the session"""
+        session = self.get_session()
+        session[key] = value
+        self.set_value("session", session)
+        logger.debug(f"Session value updated: {key} = {value}")
 
     def get_session_flat(self) -> dict:
         """Get the session values as a flattened dictionary with dot notation keys
@@ -373,7 +393,11 @@ class WorkflowState:
 
     def get_last_node_output(self) -> Any:
         """Get the output of the last node"""
-        return self.node_outputs.get(self.execution_path[-1]) if self.execution_path and self.execution_path[-1] else None
+        return (
+            self.node_outputs.get(self.execution_path[-1])
+            if self.execution_path and self.execution_path[-1]
+            else None
+        )
 
     def set_node_output(self, node_id: str, output: Any) -> None:
         """Set the output of a specific node"""
@@ -384,9 +408,7 @@ class WorkflowState:
     def set_node_input(self, node_id: str, input_data: Any) -> None:
         """Set the input for a specific node"""
         self.node_inputs[node_id] = input_data
-        self.node_execution_status[node_id].update({
-            "input": input_data
-        })
+        self.node_execution_status[node_id].update({"input": input_data})
 
     def get_node_input(self, node_id: str) -> Any:
         """Get the input for a specific node"""
@@ -408,7 +430,9 @@ class WorkflowState:
         self.node_outputs = {**self.node_outputs, **state.node_outputs}
         self.node_inputs = {**self.node_inputs, **state.node_inputs}
         self.node_execution_status = {
-            **self.node_execution_status, **state.node_execution_status}
+            **self.node_execution_status,
+            **state.node_execution_status,
+        }
         self.execution_path = [*self.execution_path, *state.execution_path]
         self.execution_history = [*self.execution_history, *state.execution_history]
 
@@ -428,7 +452,7 @@ class WorkflowState:
             "executionHistory": self.execution_history,
             "errors": self.errors,
             "performanceMetrics": self.performance_metrics,
-            "execution_end_time": self.execution_end_time
+            "execution_end_time": self.execution_end_time,
         }
 
     def format_state_as_response(self):
@@ -438,11 +462,21 @@ class WorkflowState:
         state = self.get_full_state()
         summary = self.get_execution_summary()
 
-        _input = self.initial_values.get("message", "") if self.initial_values and self.initial_values.get(
-            "message", None) else self.initial_values
+        _input = (
+            self.initial_values.get("message", "")
+            if self.initial_values and self.initial_values.get("message", None)
+            else self.initial_values
+        )
 
-        output = state["output"] if state["output"] else summary["node_outputs"][summary["execution_path"]
-                                                                               [-1]] if "execution_path" in summary and summary["execution_path"] else None
+        output = (
+            state["output"]
+            if state["output"]
+            else (
+                summary["node_outputs"][summary["execution_path"][-1]]
+                if "execution_path" in summary and summary["execution_path"]
+                else None
+            )
+        )
         performance_metrics = self.performance_metrics
         status = "success"
         response = {
@@ -450,9 +484,10 @@ class WorkflowState:
             "input": _input,
             "output": output,
             "performance_metrics": performance_metrics,
-            "state": state
+            "state": state,
         }
 
         # Sanitize response to ensure JSON compliance (handle inf, -inf, nan values)
         from app.modules.workflow.engine.nodes.ml import ml_utils
+
         return ml_utils.sanitize_for_json(response)
