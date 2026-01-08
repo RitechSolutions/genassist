@@ -1,0 +1,99 @@
+# azure-pipelines-frontend.yml
+
+name: GenAssist-GitHub-Frontend_$(Date:yyyyMMdd)$(Rev:.r)
+
+pool:
+  name: Ritech-AI-TR1
+
+variables:
+  # Define this as a SECRET in pipeline variables (classic UI) or a variable group
+  - name: VITE_GENASSIST_CHAT_APIKEY
+    value: $(VITE_GENASSIST_CHAT_APIKEY)
+
+trigger:
+  branches:
+    include:
+      - development
+  paths:
+    include:
+      - frontend/**
+
+pr:
+  branches:
+    include:
+      - development
+  paths:
+    include:
+      - frontend/**
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+
+  - task: NodeTool@0
+    displayName: 'Use Node 18.x'
+    inputs:
+      versionSpec: 18.x
+
+  - task: InstallSSHKey@0
+    displayName: 'Install an SSH key (az devops)'
+    inputs:
+      knownHostsEntry: 'ssh-genassist-azdevops'
+      sshKeySecureFile: 'azdev_sync'
+
+  - bash: |
+      set -e
+
+      echo "now starting plugin cloning"
+      pwd
+      ls -al
+
+      cd ..
+      mkdir -p plugins
+      cd plugins
+
+      # Clone the repository
+      GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i /azagent/_work/_temp/azdev_sync -vvv" \
+        git clone git@ssh.dev.azure.com:v3/Ritech/GenAssist/plugin-react react
+
+      cd react
+      ls -al
+
+      echo "plugin cloning complete"
+      pwd
+    workingDirectory: frontend
+    displayName: 'Get React Plugin Sources'
+
+  - bash: |
+      set -e
+
+      echo "now starting build"
+      pwd
+      ls -al
+
+      echo "cleanup old images"
+      docker image prune -a -f --filter "until=48h"
+
+      echo "preparing .env for new container"
+      branch="$(Build.SourceBranch)"
+      branchNo="$(echo "${branch}" | sed 's#refs/heads/##g')"
+
+      : > .env
+      echo "VITE_UI_VERSION=${branchNo}-$(Build.BuildNumber)" >> .env
+      echo "VITE_PRIVATE_API_URL=https://api.dev.genassist.ritech.io/api" >> .env
+      echo "VITE_PUBLIC_API_URL=https://api.dev.genassist.ritech.io/api" >> .env
+      echo "VITE_WEBSOCKET_PRIVATE_URL=wss://api.dev.genassist.ritech.io/api" >> .env
+      echo "VITE_WEBSOCKET_PUBLIC_URL=wss://api.dev.genassist.ritech.io/api" >> .env
+
+      # Use secret pipeline variable (do NOT hardcode)
+      echo "VITE_GENASSIST_CHAT_APIKEY=$(VITE_GENASSIST_CHAT_APIKEY)" >> .env
+      echo "VITE_MULTI_TENANT_ENABLED=true" >> .env
+
+      echo "current.env (redacted):"
+      grep -E '^(VITE_UI_VERSION|VITE_PRIVATE_API_URL|VITE_PUBLIC_API_URL|VITE_WEBSOCKET_PRIVATE_URL|VITE_WEBSOCKET_PUBLIC_URL|VITE_MULTI_TENANT_ENABLED)=' .env
+      echo "VITE_GENASSIST_CHAT_APIKEY=***hidden***"
+
+      echo "building image"
+      docker compose -f docker-compose.dev.yml build frontend
+    workingDirectory: frontend
+    displayName: 'Build Image'
