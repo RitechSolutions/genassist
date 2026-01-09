@@ -5,7 +5,7 @@ from fastapi_injector import Injected
 from typing import Optional, List
 import os
 import logging
-from app.core.permissions.constants import Permissions as P
+
 from app.auth.dependencies import auth, permissions
 from app.schemas.ml_model_pipeline import (
     MLModelPipelineConfigCreate,
@@ -36,7 +36,7 @@ router = APIRouter()
 @router.get(
     "/{model_id}/pipeline-configs",
     response_model=List[MLModelPipelineConfigRead],
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.READ))]
+    dependencies=[Depends(auth), Depends(permissions("read:ml_model"))]
 )
 async def get_pipeline_configs(
     model_id: UUID,
@@ -54,7 +54,7 @@ async def get_pipeline_configs(
 @router.get(
     "/{model_id}/pipeline-configs/{config_id}",
     response_model=MLModelPipelineConfigRead,
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.READ))]
+    dependencies=[Depends(auth), Depends(permissions("read:ml_model"))]
 )
 async def get_pipeline_config(
     model_id: UUID,
@@ -74,7 +74,7 @@ async def get_pipeline_config(
     "/{model_id}/pipeline-configs",
     response_model=MLModelPipelineConfigRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.CREATE))]
+    dependencies=[Depends(auth), Depends(permissions("create:ml_model"))]
 )
 async def create_pipeline_config(
     model_id: UUID,
@@ -98,7 +98,7 @@ async def create_pipeline_config(
 @router.put(
     "/{model_id}/pipeline-configs/{config_id}",
     response_model=MLModelPipelineConfigRead,
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.UPDATE))]
+    dependencies=[Depends(auth), Depends(permissions("update:ml_model"))]
 )
 async def update_pipeline_config(
     model_id: UUID,
@@ -120,7 +120,7 @@ async def update_pipeline_config(
 @router.delete(
     "/{model_id}/pipeline-configs/{config_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.DELETE))]
+    dependencies=[Depends(auth), Depends(permissions("delete:ml_model"))]
 )
 async def delete_pipeline_config(
     model_id: UUID,
@@ -142,7 +142,7 @@ async def delete_pipeline_config(
 @router.get(
     "/{model_id}/pipeline-runs",
     response_model=List[MLModelPipelineRunRead],
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.READ))]
+    dependencies=[Depends(auth), Depends(permissions("read:ml_model"))]
 )
 async def get_pipeline_runs(
     model_id: UUID,
@@ -163,7 +163,7 @@ async def get_pipeline_runs(
 @router.get(
     "/{model_id}/pipeline-runs/{run_id}",
     response_model=MLModelPipelineRunRead,
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.READ))]
+    dependencies=[Depends(auth), Depends(permissions("read:ml_model"))]
 )
 async def get_pipeline_run(
     model_id: UUID,
@@ -183,7 +183,7 @@ async def get_pipeline_run(
     "/{model_id}/pipeline-runs",
     response_model=MLModelPipelineRunRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.CREATE))]
+    dependencies=[Depends(auth), Depends(permissions("create:ml_model"))]
 )
 async def create_pipeline_run(
     model_id: UUID,
@@ -227,7 +227,7 @@ async def create_pipeline_run(
 @router.post(
     "/{model_id}/pipeline-runs/{run_id}/promote",
     response_model=PipelineRunPromoteResponse,
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.UPDATE))]
+    dependencies=[Depends(auth), Depends(permissions("update:ml_model"))]
 )
 async def promote_pipeline_run(
     model_id: UUID,
@@ -250,7 +250,7 @@ async def promote_pipeline_run(
 @router.get(
     "/{model_id}/pipeline-runs/{run_id}/artifacts",
     response_model=List[MLModelPipelineArtifactRead],
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.READ))]
+    dependencies=[Depends(auth), Depends(permissions("read:ml_model"))]
 )
 async def get_pipeline_artifacts(
     model_id: UUID,
@@ -268,7 +268,7 @@ async def get_pipeline_artifacts(
 
 @router.get(
     "/{model_id}/pipeline-runs/{run_id}/artifacts/{artifact_id}/download",
-    dependencies=[Depends(auth), Depends(permissions(P.MlModel.READ))]
+    dependencies=[Depends(auth), Depends(permissions("read:ml_model"))]
 )
 async def download_artifact(
     model_id: UUID,

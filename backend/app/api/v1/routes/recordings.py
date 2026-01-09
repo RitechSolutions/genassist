@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
-from app.core.permissions.constants import Permissions as P
+
 from app.core.config.settings import settings
 from app.auth.dependencies import auth, permissions
 from app.core.exceptions.error_messages import ErrorKey
@@ -23,7 +23,7 @@ router = APIRouter()
 
 @router.post("/analyze_recording", dependencies=[
                    Depends(auth),
-                   Depends(permissions(P.Recording.CREATE_ANALYZE))
+                   Depends(permissions("create:analyze_recording"))
                    ])
 async def analyze_audio(
         operator_id: Annotated[UUID, Form(...)],
@@ -58,7 +58,7 @@ async def analyze_audio(
 
 @router.post("/upload_transcript", dependencies=[
                    Depends(auth),
-                   Depends(permissions(P.Recording.CREATE_UPLOAD_TRANSCRIPT))
+                   Depends(permissions("create:upload_transcript"))
                    ])
 async def process_transcript(
         model: ConversationTranscriptCreate, service: AudioService = Injected(AudioService)
@@ -69,7 +69,7 @@ async def process_transcript(
 
 @router.get("/recordings/{recording_id}", dependencies=[
                    Depends(auth),
-                   Depends(permissions(P.Recording.READ))
+                   Depends(permissions("read:recording"))
                    ])
 def get_recording(recording_id: UUID, service: AudioService = Injected(AudioService)):
     processed_recording_data = service.fetch_processed_recording(recording_id)
@@ -78,7 +78,7 @@ def get_recording(recording_id: UUID, service: AudioService = Injected(AudioServ
 
 @router.post("/ask_question", dependencies=[
     Depends(auth),
-    Depends(permissions(P.Recording.CREATE_ASK_QUESTION))
+    Depends(permissions("create:ask_question"))
     ])
 async def ask_question(question_model: QuestionCreate, service: AudioService = Injected(AudioService)):
     answer = await service.ask_question_to_model(question_model)
@@ -87,7 +87,7 @@ async def ask_question(question_model: QuestionCreate, service: AudioService = I
 
 @router.get("/files/{rec_id}", dependencies=[
     Depends(auth),
-    Depends(permissions(P.Recording.READ_FILES))
+    Depends(permissions("read:files"))
     ])
 async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService)):
     """Serve the saved recording file based on filename."""
@@ -98,7 +98,7 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
 
 @router.get("/metrics", dependencies=[
     Depends(auth),
-    Depends(permissions(P.Recording.READ_METRICS))
+    Depends(permissions("read:metrics"))
     ])
 async def get_metrics(service: AudioService = Injected(AudioService)):
     return await service.fetch_and_calculate_metrics()

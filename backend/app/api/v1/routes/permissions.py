@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from typing import List
 from uuid import UUID
-from app.core.permissions.constants import Permissions as P
+
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
@@ -13,7 +13,7 @@ router = APIRouter()
 
 @router.post("/", response_model=PermissionRead, dependencies=[
     Depends(auth),
-    Depends(permissions(P.Permission.CREATE))
+    Depends(permissions("create:permission"))
 ])
 async def create(
     request: Request,
@@ -24,7 +24,7 @@ async def create(
 
 @router.get("/", response_model=List[PermissionRead], dependencies=[
     Depends(auth),
-    Depends(permissions(P.Permission.READ))
+    Depends(permissions("read:permission"))
 ])
 async def get_all(filter: BaseFilterModel = Depends(),
     service: PermissionsService = Injected(PermissionsService)
@@ -33,7 +33,7 @@ async def get_all(filter: BaseFilterModel = Depends(),
 
 @router.get("/{permission_id}", response_model=PermissionRead, dependencies=[
     Depends(auth),
-    Depends(permissions(P.Permission.READ))
+    Depends(permissions("read:permission"))
 ])
 async def get(
     permission_id: UUID,
@@ -43,7 +43,7 @@ async def get(
 
 @router.delete("/{permission_id}", dependencies=[
     Depends(auth),
-    Depends(permissions(P.Permission.DELETE))
+    Depends(permissions("delete:permission"))
 ])
 async def delete(
     permission_id: UUID,
@@ -53,7 +53,7 @@ async def delete(
 
 @router.patch("/{permission_id}", response_model=PermissionRead, dependencies=[
     Depends(auth),
-    Depends(permissions(P.Permission.UPDATE))
+    Depends(permissions("update:permission"))
 ])
 async def update(
     permission_id: UUID,

@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from uuid import UUID
-from app.core.permissions.constants import Permissions as P
+
 from fastapi import APIRouter, Depends, File, Form, UploadFile, Query
 from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
@@ -21,7 +21,7 @@ router = APIRouter()
 
 @router.post("/upload", dependencies=[
     Depends(auth),
-    Depends(permissions(P.OpenAI.WRITE_FILE))
+    Depends(permissions("write:openai-file"))
 ])
 async def upload_file_to_openai(
     file: UploadFile = File(...),
@@ -40,7 +40,7 @@ async def upload_file_to_openai(
 
 @router.post("/fine-tuning/jobs", dependencies=[
     Depends(auth),
-    Depends(permissions(P.OpenAI.WRITE_JOB))
+    Depends(permissions("write:openai-job"))
 ])
 async def create_fine_tuning_job(
     job_request: CreateFineTuningJobRequest,
@@ -58,7 +58,7 @@ async def create_fine_tuning_job(
 
 @router.get("/fine-tuning/jobs/{job_id}", dependencies=[
     Depends(auth),
-    Depends(permissions(P.OpenAI.READ_JOB))
+    Depends(permissions("read:openai-job"))
 ])
 async def get_fine_tuning_job(
     job_id: UUID,
@@ -75,7 +75,7 @@ async def get_fine_tuning_job(
 
 @router.get("/fine-tuning/jobs", dependencies=[
     Depends(auth),
-    Depends(permissions(P.OpenAI.READ_JOB))
+    Depends(permissions("read:openai-job"))
 ])
 async def get_jobs(
     status: Optional[JobStatus] = Query(None, description="Filter by job status"),
@@ -95,7 +95,7 @@ async def get_jobs(
 
 @router.get("/files", dependencies=[
     Depends(auth),
-    Depends(permissions(P.OpenAI.READ_FILE))
+    Depends(permissions("read:openai"))
 ])
 async def list_user_files(
     sync: bool = Query(False, description="Sync with OpenAI API for latest file statuses"),
@@ -110,7 +110,7 @@ async def list_user_files(
 
 @router.post("/fine-tuning/jobs/{job_id}/cancel", dependencies=[
     Depends(auth),
-    Depends(permissions(P.OpenAI.WRITE_JOB))
+    Depends(permissions("write:openai-job"))
 ])
 async def cancel_fine_tuning_job(
     job_id: str,
@@ -126,7 +126,7 @@ async def cancel_fine_tuning_job(
 
 @router.delete("/files/{file_id}", dependencies=[
     Depends(auth),
-    Depends(permissions(P.OpenAI.DELETE_FILE))
+    Depends(permissions("delete:openai-file"))
 ])
 async def delete_file(
     file_id: str,
@@ -141,6 +141,7 @@ async def delete_file(
 
 @router.get("/models/fine-tunable", dependencies=[
     Depends(auth),
+    Depends(permissions("read:openai-fine-tunable-models"))
 ])
 async def get_fine_tunable_models(
     service: OpenAIFineTuningService = Injected(OpenAIFineTuningService)
@@ -153,7 +154,7 @@ async def get_fine_tunable_models(
 
 @router.delete("/models/{model_id}", dependencies=[
     Depends(auth),
-    Depends(permissions(P.OpenAI.DELETE_FINE_TUNED_MODEL))
+    Depends(permissions("delete:openai-fine-tuned-model"))
 ])
 async def delete_fine_tuned_model(
     model_id: str,

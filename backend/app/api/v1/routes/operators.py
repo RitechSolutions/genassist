@@ -1,7 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends
 from fastapi_injector import Injected
-from app.core.permissions.constants import Permissions as P
+
 from app.auth.dependencies import auth, permissions
 from app.auth.utils import generate_password
 from app.schemas.operator import OperatorCreate, OperatorRead, OperatorReadAfterCreate
@@ -14,7 +14,7 @@ router = APIRouter()
 @router.post("/", status_code=201, response_model=OperatorReadAfterCreate,
                       dependencies=[
                           Depends(auth),
-                          Depends(permissions(P.Operator.UPDATE))
+                          Depends(permissions("update:operator"))
                           ])
 async def create(operator: OperatorCreate, operator_service: OperatorService = Injected(OperatorService)):
     generated_password = generate_password()
@@ -28,7 +28,7 @@ async def create(operator: OperatorCreate, operator_service: OperatorService = I
 @router.get("/", response_model=list[OperatorRead],
                      dependencies=[
                          Depends(auth),
-                         Depends(permissions(P.Operator.READ))
+                         Depends(permissions("read:operator"))
                          ])
 async def get_all(operator_service: OperatorService = Injected(OperatorService)):
     operators =  await operator_service.get_all()
@@ -46,7 +46,7 @@ async def get_all(operator_service: OperatorService = Injected(OperatorService))
 @router.get("/{operator_id}", response_model=OperatorRead,
                      dependencies=[
                          Depends(auth),
-                         Depends(permissions(P.Operator.READ))
+                         Depends(permissions("read:operator"))
                          ])
 async def get(operator_id: UUID, operator_service: OperatorService = Injected(OperatorService)):
     operator = operator_service.get_by_id(operator_id)

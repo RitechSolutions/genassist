@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi_injector import Injected
 from app.modules.workflow.utils import generate_python_function_template
-from app.core.permissions.constants import Permissions as P
+
 from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowUpdate
 from app.auth.dependencies import auth, permissions
 
@@ -59,7 +59,7 @@ SUPPORTED_NODE_TYPES = [
     "/",
     response_model=Workflow,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.CREATE))],
+    dependencies=[Depends(auth), Depends(permissions("create:workflow"))],
 )
 async def create_workflow(
     workflow_data: WorkflowCreate,
@@ -95,7 +95,7 @@ async def get_node_dialog_schemas():
 @router.get(
     "/",
     response_model=List[Workflow],
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+    dependencies=[Depends(auth), Depends(permissions("read:workflow"))],
 )
 async def get_workflows(service: WorkflowService = Injected(WorkflowService)):
     """
@@ -107,7 +107,7 @@ async def get_workflows(service: WorkflowService = Injected(WorkflowService)):
 
 @router.put(
     "/{workflow_id}",
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+    dependencies=[Depends(auth), Depends(permissions("update:workflow"))],
     response_model=Workflow,
 )
 async def update_workflow(
@@ -142,7 +142,7 @@ async def update_workflow(
 
 @router.delete(
     "/{workflow_id}",
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.DELETE))],
+    dependencies=[Depends(auth), Depends(permissions("delete:workflow"))],
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_workflow(
@@ -170,7 +170,7 @@ async def delete_workflow(
 
 @router.post(
     "/{workflow_id}/execute",
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.EXECUTE))],
+    dependencies=[Depends(auth), Depends(permissions("execute:workflow"))],
 )
 async def execute_workflow(
     workflow_id: UUID,
@@ -229,7 +229,7 @@ async def execute_workflow(
 
 
 @router.post(
-    "/test", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
+    "/test", dependencies=[Depends(auth), Depends(permissions("test:workflow"))]
 )
 async def test_workflow(
     test_data: Dict[str, Any],
@@ -472,7 +472,7 @@ async def debug_logging_probe():
 @router.get(
     "/{workflow_id}",
     response_model=Workflow,
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+    dependencies=[Depends(auth), Depends(permissions("read:workflow"))],
 )
 async def get_workflow(
     workflow_id: UUID, service: WorkflowService = Injected(WorkflowService)

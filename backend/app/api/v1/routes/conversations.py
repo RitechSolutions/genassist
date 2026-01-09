@@ -29,7 +29,6 @@ from app.services.conversations import ConversationService
 from app.services.transcript_message_service import TranscriptMessageService
 from app.core.tenant_scope import get_tenant_context
 from app.use_cases.chat_as_client_use_case import process_conversation_update_with_agent
-from app.core.permissions.constants import Permissions as P
 
 
 logger = logging.getLogger(__name__)
@@ -41,7 +40,7 @@ router = APIRouter()
     response_model=ConversationRead,
     dependencies=[
         Depends(auth),
-        # Depends(permissions(P.Conversation.READ))
+        # Depends(permissions("read:conversation"))
     ],
 )
 async def get(
@@ -59,7 +58,7 @@ async def get(
     "/in-progress/start",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.CREATE_IN_PROGRESS)),
+        Depends(permissions("create:in_progress_conversation")),
     ],
 )
 async def start(
@@ -107,7 +106,7 @@ async def start(
     "/in-progress/no-agent-update/{conversation_id}",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions("update:in_progress_conversation")),
     ],
 )
 async def update_no_agent(
@@ -215,7 +214,7 @@ async def update_no_agent(
     "/in-progress/update/{conversation_id}",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions("update:in_progress_conversation")),
     ],
 )
 async def update(
@@ -239,7 +238,7 @@ async def update(
     "/in-progress/finalize/{conversation_id}",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions("update:in_progress_conversation")),
     ],
 )
 async def finalize(
@@ -285,7 +284,7 @@ async def finalize(
     "/in-progress/takeover-super/{conversation_id}",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.TAKEOVER_IN_PROGRESS)),
+        Depends(permissions("takeover_in_progress_conversation")),
     ],
 )
 async def takeover_supervisor(
@@ -329,7 +328,7 @@ async def takeover_supervisor(
 @router.get(
     "/",
     response_model=list[ConversationRead],
-    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+    dependencies=[Depends(auth), Depends(permissions("read:conversation"))],
 )
 async def get(
     conversation_filter: ConversationFilter = Depends(),
@@ -341,7 +340,7 @@ async def get(
 
 @router.get(
     "/filter/count",
-    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+    dependencies=[Depends(auth), Depends(permissions("read:conversation"))],
 )
 async def get(
     conversation_filter: ConversationFilter = Depends(),
@@ -354,7 +353,7 @@ async def get(
     "/message/add-feedback/{message_id}",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions("update:in_progress_conversation")),
     ],
 )
 async def add_message_feedback(
@@ -377,7 +376,7 @@ async def add_message_feedback(
     "/feedback/{conversation_id}",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(permissions("update:in_progress_conversation")),
     ],
 )
 async def add_conversation_feedback(

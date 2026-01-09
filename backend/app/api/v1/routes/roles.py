@@ -1,6 +1,6 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends
-from app.core.permissions.constants import Permissions as P
+
 from typing import List
 
 from fastapi_injector import Injected
@@ -16,7 +16,7 @@ router = APIRouter()
 
 @router.get("/", response_model=List[RoleRead], dependencies=[
     Depends(auth),
-    Depends(permissions(P.Role.READ))
+    Depends(permissions("read:role"))
     ])
 async def get_all(filter: BaseFilterModel = Depends(), service: RolesService = Injected(RolesService)):
     return await service.get_all(filter)
@@ -24,7 +24,7 @@ async def get_all(filter: BaseFilterModel = Depends(), service: RolesService = I
 
 @router.get("/{role_id}", response_model=RoleRead, dependencies=[
     Depends(auth),
-    Depends(permissions(P.Role.READ))
+    Depends(permissions("read:role"))
     ])
 async def get(role_id: UUID, service: RolesService = Injected(RolesService)):
     return await service.get_by_id(role_id)
@@ -32,14 +32,14 @@ async def get(role_id: UUID, service: RolesService = Injected(RolesService)):
 
 @router.post("/", response_model=RoleRead, dependencies=[
     Depends(auth),
-    Depends(permissions(P.Role.CREATE))
+    Depends(permissions("create:role"))
     ])
 async def create(role: RoleCreate, service: RolesService = Injected(RolesService)):
     return await service.create(role)
 
 @router.patch("/{role_id}", response_model=RoleRead, dependencies=[
     Depends(auth),
-    Depends(permissions(P.Role.UPDATE))
+    Depends(permissions("update:role"))
     ])
 async def update(role_id: UUID, role: RoleUpdate, service: RolesService = Injected(RolesService)):
     return await service.update_partial(role_id, role)
@@ -47,7 +47,7 @@ async def update(role_id: UUID, role: RoleUpdate, service: RolesService = Inject
 
 @router.delete("/{role_id}", dependencies=[
     Depends(auth),
-    Depends(permissions(P.Role.DELETE))
+    Depends(permissions("delete:role"))
     ])
 async def delete(role_id: UUID, service: RolesService = Injected(RolesService)):
     return await service.delete(role_id)

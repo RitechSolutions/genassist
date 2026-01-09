@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from pydantic import BaseModel, Field, ConfigDict
 from starlette.responses import Response as StarletteResponse
-from app.core.permissions.constants import Permissions as P
+
 from app.auth.dependencies import auth, permissions
 from app.modules.workflow.mcp.mcp_client import MCPClientV2
 from app.modules.workflow.mcp.mcp_server_adapter import WorkflowMCPServerAdapter
@@ -47,7 +47,7 @@ class DiscoverToolsResponse(BaseModel):
     "/discover-tools",
     response_model=DiscoverToolsResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))],
+    dependencies=[Depends(auth), Depends(permissions("test:workflow"))],
 )
 async def discover_mcp_tools(request: DiscoverToolsRequest) -> DiscoverToolsResponse:
     """

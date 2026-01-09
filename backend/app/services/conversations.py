@@ -355,10 +355,21 @@ class ConversationService:
 
         #  Run GPT analysis
         if not llm_analyst_id:
-            llm_analyst_id = seed_test_data.llm_analyst_kpi_analyzer_id
+            llm_analyst_id = seed_test_data.llm_analyst_in_progress_hostility_id
 
-        llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
-        analysis_result = await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst)
+        llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id, throw_not_found=False)
+
+        if llm_analyst:
+            analysis_result = await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst)
+        else:
+            #TODO remove after fixing seed
+            # Temporary solution to avoid seed missing llm_analyst
+            print("Test")
+            analysis_result = {
+                "hostile_score" : 0,
+                "topic": "Other",
+                "negative_reason": "OTHER"
+                }
 
         conversation.in_progress_hostility_score = analysis_result["hostile_score"]
         conversation.topic = analysis_result["topic"]

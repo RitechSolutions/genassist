@@ -6,14 +6,13 @@ from app.auth.dependencies import auth, permissions
 from app.schemas.datasource import DataSourceRead, DataSourceCreate, DataSourceUpdate
 from app.services.datasources import DataSourceService
 from app.schemas.dynamic_form_schemas import DATA_SOURCE_SCHEMAS_DICT
-from app.core.permissions.constants import Permissions as P
 
 router = APIRouter()
 
 
 @router.post("/", response_model=DataSourceRead, dependencies=[
     Depends(auth),
-    Depends(permissions(P.DataSource.CREATE))
+    Depends(permissions("create:data_source"))
 ])
 async def create(
     datasource: DataSourceCreate,
@@ -30,7 +29,7 @@ async def get_schemas():
 
 @router.get("/{datasource_id}", response_model=DataSourceRead, dependencies=[
     Depends(auth),
-    Depends(permissions(P.DataSource.READ))
+    Depends(permissions("read:data_source"))
 ])
 async def get(
     datasource_id: UUID,
@@ -42,7 +41,7 @@ async def get(
 
 @router.get("/", response_model=list[DataSourceRead], dependencies=[
     Depends(auth),
-    Depends(permissions(P.DataSource.READ))
+    Depends(permissions("read:data_source"))
 ])
 async def get_all(
     service: DataSourceService = Injected(DataSourceService)
@@ -52,7 +51,7 @@ async def get_all(
 
 @router.put("/{datasource_id}", response_model=DataSourceRead, dependencies=[
     Depends(auth),
-    Depends(permissions(P.DataSource.UPDATE))
+    Depends(permissions("update:data_source"))
 ])
 async def update(
     datasource_id: UUID,
@@ -64,7 +63,7 @@ async def update(
 
 @router.delete("/{datasource_id}", dependencies=[
     Depends(auth),
-    Depends(permissions(P.DataSource.DELETE))
+    Depends(permissions("delete:data_source"))
 ])
 async def delete(
     datasource_id: UUID,

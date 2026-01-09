@@ -8,7 +8,7 @@ import httpx
 from app.auth.dependencies import auth, permissions, socket_auth
 from app.services.auth import AuthService
 from app.auth.utils import has_permission, socket_user_id
-from app.core.permissions.constants import Permissions as P
+
 import openai
 
 from app.tasks.audio_tasks import transcribe_audio_files_async
@@ -21,7 +21,7 @@ router = APIRouter()
 @router.get("/openai/session", summary="Get a temporary session key for OpenAI API",
             dependencies=[
                 Depends(auth),
-                Depends(permissions(P.Conversation.CREATE_IN_PROGRESS))
+                Depends(permissions("create:in_progress_conversation"))
             ])
 async def get_openai_session_key(lang_code: str = Query(default=""), input_audio_format: str = Query(default="pcm16")) -> str:
     """
