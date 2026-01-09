@@ -5,11 +5,13 @@ from app.auth.dependencies import auth, permissions
 from app.schemas.role_permission import RolePermissionRead, RolePermissionCreate, RolePermissionUpdate
 from app.services.role_permissions import RolePermissionsService
 from uuid import UUID
+from app.core.permissions.constants import Permissions as P
+
 router = APIRouter()
 
 @router.post("/", response_model=RolePermissionRead, dependencies=[
     Depends(auth),
-    Depends(permissions("create:role_permission"))
+    Depends(permissions(P.RolePermission.CREATE))
 ])
 async def create(
     data: RolePermissionCreate,
@@ -19,7 +21,7 @@ async def create(
 
 @router.get("/", response_model=List[RolePermissionRead], dependencies=[
     Depends(auth),
-    Depends(permissions("read:role_permission"))
+    Depends(permissions(P.RolePermission.READ))
 ])
 async def get_all(
     service: RolePermissionsService = Injected(RolePermissionsService)
@@ -28,7 +30,7 @@ async def get_all(
 
 @router.get("/{rp_id}", response_model=RolePermissionRead, dependencies=[
     Depends(auth),
-    Depends(permissions("read:role_permission"))
+    Depends(permissions(P.RolePermission.READ))
 ])
 async def get(
     rp_id: UUID,
@@ -38,7 +40,7 @@ async def get(
 
 @router.patch("/{rp_id}", response_model=RolePermissionRead, dependencies=[
     Depends(auth),
-    Depends(permissions("update:role_permission"))
+    Depends(permissions(P.RolePermission.UPDATE))
 ])
 async def update(
     rp_id: UUID,
@@ -49,7 +51,7 @@ async def update(
 
 @router.delete("/{rp_id}", dependencies=[
     Depends(auth),
-    Depends(permissions("delete:role_permission"))
+    Depends(permissions(P.RolePermission.DELETE))
 ])
 async def delete(
     rp_id: UUID,

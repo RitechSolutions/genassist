@@ -14,7 +14,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
-
+from app.core.permissions.constants import Permissions as P
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ MAX_PKL_FILE_SIZE = 500 * 1024 * 1024
 
 @router.post("/", response_model=MLModelRead, dependencies=[
     Depends(auth),
-    Depends(permissions("create:ml_model"))
+    Depends(permissions(P.MlModel.CREATE))
 ])
 async def create_ml_model(
     ml_model: MLModelCreate,
@@ -43,7 +43,7 @@ async def create_ml_model(
 
 @router.get("/{ml_model_id}", response_model=MLModelRead, dependencies=[
     Depends(auth),
-    Depends(permissions("read:ml_model"))
+    Depends(permissions(P.MlModel.READ))
 ])
 async def get_ml_model(
     ml_model_id: UUID,
@@ -55,7 +55,7 @@ async def get_ml_model(
 
 @router.get("/", response_model=list[MLModelRead], dependencies=[
     Depends(auth),
-    Depends(permissions("read:ml_model"))
+    Depends(permissions(P.MlModel.READ))
 ])
 async def get_all_ml_models(
     service: MLModelsService = Injected(MLModelsService)
@@ -66,7 +66,7 @@ async def get_all_ml_models(
 
 @router.put("/{ml_model_id}", response_model=MLModelRead, dependencies=[
     Depends(auth),
-    Depends(permissions("update:ml_model"))
+    Depends(permissions(P.MlModel.UPDATE))
 ])
 async def update_ml_model(
     ml_model_id: UUID,
@@ -79,7 +79,7 @@ async def update_ml_model(
 
 @router.delete("/{ml_model_id}", status_code=204, dependencies=[
     Depends(auth),
-    Depends(permissions("delete:ml_model"))
+    Depends(permissions(P.MlModel.DELETE))
 ])
 async def delete_ml_model(
     ml_model_id: UUID,
@@ -97,7 +97,7 @@ async def delete_ml_model(
 
 @router.post("/upload", response_model=FileUploadResponse, dependencies=[
     Depends(auth),
-    Depends(permissions("create:ml_model"))
+    Depends(permissions(P.MlModel.CREATE))
 ])
 async def upload_pkl_file(
     file: UploadFile = File(...),
@@ -158,7 +158,7 @@ async def upload_pkl_file(
 
 @router.get("/cache/stats", dependencies=[
     Depends(auth),
-    Depends(permissions("read:ml_model"))
+    Depends(permissions(P.MlModel.READ))
 ])
 async def get_cache_stats():
     """Get ML model cache statistics."""
@@ -168,7 +168,7 @@ async def get_cache_stats():
 
 @router.post("/cache/clear", dependencies=[
     Depends(auth),
-    Depends(permissions("update:ml_model"))
+    Depends(permissions(P.MlModel.UPDATE))
 ])
 async def clear_model_cache():
     """Clear all cached ML models."""
@@ -179,7 +179,7 @@ async def clear_model_cache():
 
 @router.post("/cache/invalidate/{ml_model_id}", dependencies=[
     Depends(auth),
-    Depends(permissions("update:ml_model"))
+    Depends(permissions(P.MlModel.UPDATE))
 ])
 async def invalidate_model_cache(ml_model_id: UUID):
     """Invalidate a specific ML model from cache."""
@@ -190,7 +190,7 @@ async def invalidate_model_cache(ml_model_id: UUID):
 
 @router.post("/validate/{ml_model_id}", dependencies=[
     Depends(auth),
-    Depends(permissions("read:ml_model"))
+    Depends(permissions(P.MlModel.READ))
 ])
 async def validate_model_file(
     ml_model_id: UUID,
@@ -233,7 +233,7 @@ async def validate_model_file(
 
 @router.post("/analyze-csv", dependencies=[
     Depends(auth),
-    Depends(permissions("read:ml_model"))
+    Depends(permissions(P.MlModel.READ))
 ])
 async def analyze_csv(
     file_url: str = Body(..., embed=True, description="Path or URL to CSV file"),
