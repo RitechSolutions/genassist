@@ -41,16 +41,17 @@ class ChatInputNode(BaseNode):
             )
 
             session = self.get_state().get_session()
-            if "conversation_history" in input_schema and (
-                session["conversation_history"] is None
-                or session["conversation_history"] == ""
-            ):
-                conversation_history = await self.get_memory().get_chat_history(as_string=True)
-                session["conversation_history"] = conversation_history
-                validated_data["conversation_history"] = conversation_history
-                self.get_state().update_session_value(
-                    "conversation_history", conversation_history
-                )
+            if "conversation_history" in input_schema:
+                conversation_history = session.get("conversation_history", None)
+                if conversation_history is None or conversation_history == "":
+                    conversation_history = await self.get_memory().get_chat_history(
+                        as_string=True
+                    )
+                    session["conversation_history"] = conversation_history
+                    validated_data["conversation_history"] = conversation_history
+                    self.get_state().update_session_value(
+                        "conversation_history", conversation_history
+                    )
 
             self.set_node_input(validated_data)
             return validated_data

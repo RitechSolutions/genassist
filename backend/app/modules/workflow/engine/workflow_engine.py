@@ -263,14 +263,11 @@ class WorkflowEngine:
         try:
             if initial_values.get("message") and persist:
                 asyncio.create_task(
-                    state.get_memory().add_user_message(
-                        initial_values.get("message", "")
+                    state.get_memory().add_input_output(
+                        initial_values.get("message", ""),
+                        state.output
                     )
                 )
-                asyncio.create_task(
-                    state.get_memory().add_assistant_message(state.output)
-                )
-
         except Exception as e:
             logger.error(f"Error adding message to memory: {e}")
         return state

@@ -12519,7 +12519,7 @@
       "post": {
         "tags": [
           "v1",
-          "MCP Servers"
+          "Customers"
         ],
         "summary": "Create",
         "description": "Create a customer.",
@@ -12568,7 +12568,7 @@
       "get": {
         "tags": [
           "v1",
-          "MCP Servers"
+          "Customers"
         ],
         "summary": "Get All",
         "operationId": "get_all_api_customers__get",
@@ -12634,7 +12634,7 @@
       "get": {
         "tags": [
           "v1",
-          "MCP Servers"
+          "Customers"
         ],
         "summary": "Get",
         "operationId": "get_api_customers__customer_id__get",
@@ -12684,7 +12684,7 @@
       "delete": {
         "tags": [
           "v1",
-          "MCP Servers"
+          "Customers"
         ],
         "summary": "Delete",
         "operationId": "delete_api_customers__customer_id__delete",
@@ -12732,7 +12732,7 @@
       "patch": {
         "tags": [
           "v1",
-          "MCP Servers"
+          "Customers"
         ],
         "summary": "Update",
         "operationId": "update_api_customers__customer_id__patch",

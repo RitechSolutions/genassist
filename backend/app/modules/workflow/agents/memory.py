@@ -53,6 +53,11 @@ class BaseConversationMemory:
         """Add an assistant message to the conversation"""
         raise NotImplementedError
 
+    async def add_input_output(self, input: str, output: str) -> None:
+        """Add an input and output to the conversation"""
+        await self.add_user_message(input)
+        await self.add_assistant_message(output)
+
     async def get_messages(
         self, max_messages: int = 10, roles: List[str] | None = None
     ) -> List[Union[Message, dict[str, Any]]]:
@@ -161,6 +166,7 @@ class RedisConversationMemory(BaseConversationMemory):
         """Get Redis client, initializing if needed"""
         if self.redis_client is None:
             from app.dependencies.injector import injector
+
             manager = injector.get(RedisConnectionManager)
             self.redis_client = await manager.get_redis()
         return self.redis_client
@@ -350,7 +356,7 @@ class RedisConversationMemory(BaseConversationMemory):
                 history_parts = []
                 for message in messages:
                     prefix = f"{message['role'].capitalize()}: "
-                    content = message['content']
+                    content = message["content"]
                     history_parts.append(f"{prefix}{content}")
                 return "\n".join(history_parts)
 
