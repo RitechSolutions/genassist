@@ -261,7 +261,6 @@ export const CALENDAR_EVENT_NODE_DEFINITION: NodeTypeDefinition<CalendarEventToo
       end: "",
       dataSourceId: "",
       subjectContains: "",
-      timezone: "",
       handlers: [
         {
           id: "input",

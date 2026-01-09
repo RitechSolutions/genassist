@@ -204,7 +204,6 @@ export interface CalendarEventToolNodeData extends BaseNodeData {
   operation: string; // operation
   dataSourceId: string;
   subjectContains: string;
-  timezone: string;
 }
 
 // Jira Node Data
