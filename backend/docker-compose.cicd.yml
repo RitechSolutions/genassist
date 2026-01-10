@@ -250,10 +250,6 @@ networks:
     driver: bridge
 
 volumes:
-  neo4j_data_cicd:
-  neo4j_logs_cicd:
-  neo4j_import_cicd:
-  neo4j_plugins_cicd:
   chroma_data_cicd:
   pgdata_cicd:
   app_data_volume_cicd:
