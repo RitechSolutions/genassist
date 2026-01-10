@@ -42,6 +42,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
   const [subjectContains, setSubjectContains] = useState(
     data.subjectContains || ""
   );
+  const [timezone, setTimezone] = useState("");
   const [isCreateDataSourceOpen, setIsCreateDataSourceOpen] = useState(false);
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
       setOperation(data.operation || "");
       setDataSourceId(data.dataSourceId?.toString() || "");
       setSubjectContains(data.subjectContains || "");
+      setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
     }
   }, [isOpen, data]);
 
@@ -66,6 +68,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
       operation,
       dataSourceId,
       subjectContains,
+      timezone,
     });
     onClose();
   };
