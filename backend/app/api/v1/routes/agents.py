@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_injector import Injected
-
+from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
 from app.cache.redis_cache import invalidate_agent_cache
 from app.core.exceptions.error_messages import ErrorKey
@@ -19,7 +19,7 @@ router = APIRouter()
 
 @router.post("/switch/{agent_id}", response_model=Dict[str, Any], dependencies=[
         Depends(auth),
-        Depends(permissions("switch:agent"))
+        Depends(permissions(P.Agent.SWITCH))
     ])
 async def switch_agent(
         agent_id: UUID,

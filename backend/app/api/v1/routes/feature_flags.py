@@ -11,19 +11,20 @@ from app.schemas.feature_flag import (
 )
 from app.services.feature_flag import FeatureFlagService
 from app.auth.dependencies import auth, permissions
+from app.core.permissions.constants import Permissions as P
 
 router = APIRouter()
 
 @router.get(
     "/", response_model=List[FeatureFlagRead],
-    dependencies=[Depends(auth), Depends(permissions("read:feature_flag"))]
+    dependencies=[Depends(auth), Depends(permissions(P.FeatureFlag.READ))]
 )
 async def list_feature_flags(svc: FeatureFlagService = Injected(FeatureFlagService)):
     return await svc.get_all()
 
 @router.get(
     "/{flag_id}", response_model=FeatureFlagRead,
-    dependencies=[Depends(auth), Depends(permissions("read:feature_flag"))]
+    dependencies=[Depends(auth), Depends(permissions(P.FeatureFlag.READ))]
 )
 async def get_feature_flag(flag_id: UUID, svc: FeatureFlagService = Injected(FeatureFlagService)):
     return await svc.get_by_id(flag_id)
@@ -31,7 +32,7 @@ async def get_feature_flag(flag_id: UUID, svc: FeatureFlagService = Injected(Fea
 @router.post(
     "/", response_model=FeatureFlagRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth), Depends(permissions("create:feature_flag"))]
+    dependencies=[Depends(auth), Depends(permissions(P.FeatureFlag.CREATE))]
 )
 async def create_feature_flag(
     dto: FeatureFlagCreate, svc: FeatureFlagService = Injected(FeatureFlagService)
@@ -41,7 +42,7 @@ async def create_feature_flag(
 @router.patch(
     "/{flag_id}", response_model=FeatureFlagRead,
     response_model_exclude_none=True,
-    dependencies=[Depends(auth), Depends(permissions("update:feature_flag"))]
+    dependencies=[Depends(auth), Depends(permissions(P.FeatureFlag.UPDATE))]
 )
 async def update_feature_flag(
     flag_id: UUID, dto: FeatureFlagUpdate, svc: FeatureFlagService = Injected(FeatureFlagService)
@@ -50,7 +51,7 @@ async def update_feature_flag(
 
 @router.delete(
     "/{flag_id}", status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(auth), Depends(permissions("delete:feature_flag"))]
+    dependencies=[Depends(auth), Depends(permissions(P.FeatureFlag.DELETE))]
 )
 async def delete_feature_flag(flag_id: UUID, svc: FeatureFlagService = Injected(FeatureFlagService)):
     await svc.delete(flag_id)

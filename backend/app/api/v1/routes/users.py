@@ -1,7 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends
 from fastapi_injector import Injected
-
+from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -16,7 +16,7 @@ router = APIRouter()
 @router.post(
     "/",
     response_model=UserRead,
-    dependencies=[Depends(auth), Depends(permissions("create:user"))],
+    dependencies=[Depends(auth), Depends(permissions(P.User.CREATE))],
 )
 async def create(
     user: UserCreate,
@@ -34,7 +34,7 @@ async def create(
 @router.get(
     "/{user_id}",
     response_model=UserRead,
-    dependencies=[Depends(auth), Depends(permissions("read:user"))],
+    dependencies=[Depends(auth), Depends(permissions(P.User.READ))],
 )
 async def get(user_id: UUID, service: UserService = Injected(UserService)):
     user = await service.get_by_id(user_id)
@@ -46,7 +46,7 @@ async def get(user_id: UUID, service: UserService = Injected(UserService)):
 @router.get(
     "/",
     response_model=list[UserRead],
-    dependencies=[Depends(auth), Depends(permissions("read:user"))],
+    dependencies=[Depends(auth), Depends(permissions(P.User.READ))],
 )
 async def get_all(
     filter: BaseFilterModel = Depends(), service: UserService = Injected(UserService)
@@ -58,7 +58,7 @@ async def get_all(
 @router.put(
     "/{user_id}",
     response_model=UserRead,
-    dependencies=[Depends(auth), Depends(permissions("update:user"))],
+    dependencies=[Depends(auth), Depends(permissions(P.User.UPDATE))],
 )
 async def update(
     user_id: UUID, user_update: UserUpdate, service: UserService = Injected(UserService)

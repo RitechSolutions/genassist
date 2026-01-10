@@ -18,7 +18,7 @@ from app.services.workflow import WorkflowService
 from app.dependencies.injector import injector
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
-
+from app.core.permissions.constants import Permissions as P
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
 
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 @router.post(
     "/config/from-wizard",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth), Depends(permissions("create:workflow"))],
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.CREATE))],
 )
 async def create_workflow_from_wizard(
     request: Request,

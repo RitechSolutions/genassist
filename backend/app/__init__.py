@@ -112,6 +112,9 @@ async def _lifespan(app: FastAPI):
         logger.error(f"Failed to initialize SocketConnectionManager: {e}")
 
     await pre_wormup_tenant_singleton()
+
+    from app.core.permissions import sync_permissions_on_startup
+    await sync_permissions_on_startup()
     try:
         yield
     finally:

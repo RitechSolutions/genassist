@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from fastapi_injector import Injected
-
+from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
 from app.modules.workflow.llm.provider import LLMProvider
 from app.schemas.llm import LlmProviderCreate, LlmProviderRead, LlmProviderUpdate
@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get(
     "/",
     response_model=list[LlmProviderRead],
-    dependencies=[Depends(auth), Depends(permissions("read:llm_provider"))],
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.READ))],
 )
 async def get_all(service: LlmProviderService = Injected(LlmProviderService)):
     return await service.get_all()
@@ -34,7 +34,7 @@ async def get_form_schemas(llm_provider: LLMProvider = Injected(LLMProvider)):
 @router.get(
     "/{llm_provider_id}",
     response_model=LlmProviderRead,
-    dependencies=[Depends(auth), Depends(permissions("read:llm_provider"))],
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.READ))],
 )
 async def get(
     llm_provider_id: UUID, service: LlmProviderService = Injected(LlmProviderService)
@@ -45,7 +45,7 @@ async def get(
 @router.post(
     "/",
     response_model=LlmProviderRead,
-    dependencies=[Depends(auth), Depends(permissions("create:llm_provider"))],
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.CREATE))],
 )
 async def create(
     data: LlmProviderCreate,
@@ -60,7 +60,7 @@ async def create(
 @router.patch(
     "/{llm_provider_id}",
     response_model=LlmProviderRead,
-    dependencies=[Depends(auth), Depends(permissions("update:llm_provider"))],
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.UPDATE))],
 )
 async def update(
     llm_provider_id: UUID,
@@ -75,7 +75,7 @@ async def update(
 
 @router.delete(
     "/{llm_provider_id}",
-    dependencies=[Depends(auth), Depends(permissions("delete:llm_provider"))],
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.DELETE))],
 )
 async def delete(
     llm_provider_id: UUID,
