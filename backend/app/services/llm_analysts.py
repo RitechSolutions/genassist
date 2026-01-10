@@ -25,13 +25,13 @@ class LlmAnalystService:
         model = await self.repository.get_by_id(llm_analyst.id)
         return model
 
-    async def get_by_id(self, llm_analyst_id: UUID, throw_not_found: bool = True):
-        obj = await self._read_by_id(llm_analyst_id, throw_not_found=throw_not_found)
+    async def get_by_id(self, llm_analyst_id: UUID):
+        obj = await self._read_by_id(llm_analyst_id)
         return obj
 
-    async def _read_by_id(self, llm_analyst_id: UUID, throw_not_found: bool = True):
+    async def _read_by_id(self, llm_analyst_id: UUID):
         obj = await self.repository.get_by_id(llm_analyst_id)
-        if not obj and throw_not_found:
+        if not obj:
             raise AppException(error_key=ErrorKey.LLM_ANALYST_NOT_FOUND, status_code=404)
         return obj
 
