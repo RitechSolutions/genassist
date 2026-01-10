@@ -310,15 +310,37 @@ export const generateSampleOutput = (
 
 export const generateTemplateFromInputSchema = (
   inputSchema: NodeSchema
-): Record<string, string> => {
-  const templateObject: Record<string, string> = {};
+): string => {
   if (inputSchema === null || inputSchema === undefined) {
-    return templateObject;
+    return "{}";
   }
-  Object.entries(inputSchema).forEach(([key, value]) => {
-    templateObject[`source.${key}`] = `{{direct_input.parameters.${key}}}`;
+  
+  const entries = Object.entries(inputSchema);
+  if (entries.length === 0) {
+    return "{}";
+  }
+  
+  // Build JSON string manually, checking types to determine if values should be quoted
+  const parts = entries.map(([key, fieldSchema]) => {
+    const templateValue = `{{direct_input.parameters.${key}}}`;
+    const sourceKey = `source.${key}`;
+    
+    // Only quote string types; leave object, array, number, boolean unquoted
+    const shouldQuote = fieldSchema.type === "string";
+    
+    // Use JSON.stringify for keys to properly escape special characters
+    const escapedKey = JSON.stringify(sourceKey);
+    
+    if (shouldQuote) {
+      // For string types, quote the template value
+      return `${escapedKey}:${JSON.stringify(templateValue)}`;
+    } else {
+      // For non-string types, don't quote the template value
+      return `${escapedKey}:${templateValue}`;
+    }
   });
-  return templateObject;
+  
+  return `{${parts.join(",")}}`;
 };
 
 /**

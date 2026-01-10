@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import { Copy } from "lucide-react";
 import { getAgentConfig, getAgentIntegrationKey } from "@/services/api";
 import { getApiUrl } from "@/config/api";
+import { getTenantId } from "@/services/auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/tabs";
 import { cn } from "@/helpers/utils";
 
@@ -75,12 +76,14 @@ export const IntegrationCodePanel = ({
   const [baseUrl, setBaseUrl] = useState<string>("");
   const [apiKey, setApiKey] = useState<string>("");
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!agentId) return;
     setBaseUrl("");
     setApiKey("");
     setConfigName(null);
+    setTenantId(getTenantId());
 
     (async () => {
       try {
@@ -127,35 +130,53 @@ export const IntegrationCodePanel = ({
     );
   }
 
-  const curlWorkflowExecute = `curl -X POST \
-  "${baseUrl}genagent/workflow/019ae8a6-4ed7-7a5e-9fc4-85d4a7717411/execute" \
-  -H "Accept: application/json" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ${apiKey}" \
+  const curlWorkflowExecute = `curl -X 'POST' \\
+  '${baseUrl}genagent/agents/${
+    agentId || "019b8614-72d2-74bd-8b48-8388ba371d40"
+  }/query/${apiKey}' \\
+  -H 'accept: application/json' \\
+  -H 'Content-Type: application/json' \\
+  -H "X-API-Key: ${apiKey}"${
+    tenantId
+      ? ` \\
+  -H "X-Tenant-ID: ${tenantId}"`
+      : ""
+  } \\
   -d '{
-    "input_data": {
-      "message": "Your message here"
-    }
-  }'
+  "query": "string",
+  "metadata": {
+
+  }
+}'
 `;
-  const curlCallInitiation = `curl -X POST \
-  "${baseUrl}conversations/in-progress/start" \
-  -H "Accept: application/json" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ${apiKey}" \
-  -d '{
+  const curlCallInitiation = `curl -X POST \\
+    "${baseUrl}conversations/in-progress/start" \\
+    -H "Accept: application/json" \\
+    -H "Content-Type: application/json" \\
+    -H "X-API-Key: ${apiKey}"${
+    tenantId
+      ? ` \\
+    -H "X-Tenant-ID: ${tenantId}"`
+      : ""
+  } \\
+    -d '{
     "messages": [],
     "recorded_at": "2025-12-22T11:28:22.293Z",
     "data_source_id": "00000000-0000-0000-0000-000000000000",
     "metadata": {}
   }'
 `;
-  const curlCallUpdate = `curl -X PATCH \
-  "${baseUrl}conversations/in-progress/update/019b4a41-fc2d-776e-96f5-d6ea3cbe7776" \
-  -H "Accept: application/json" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ${apiKey}" \
-  -d '{
+  const curlCallUpdate = `curl -X PATCH \\
+    "${baseUrl}conversations/in-progress/update/019b4a41-fc2d-776e-96f5-d6ea3cbe7776" \\
+    -H "Accept: application/json" \\
+    -H "Content-Type: application/json" \\
+    -H "X-API-Key: ${apiKey}"${
+    tenantId
+      ? ` \\
+    -H "X-Tenant-ID: ${tenantId}"`
+      : ""
+  } \\
+    -d '{
     "messages": [
       {
         "create_time": "2025-12-22T11:09:22.762Z",
@@ -277,15 +298,7 @@ struct ContentView: View {
         <div className="px-4 pb-4">
           <TabsContent value="curl" className="mt-4 space-y-6">
             <CodeSection
-              title="1. Workflow Execution"
-              code={curlWorkflowExecute}
-              copyId="workflow-execution"
-              copiedSection={copiedSection}
-              onCopy={copyToClipboard}
-              minHeightClass="min-h-[120px]"
-            />
-            <CodeSection
-              title="2. Start Conversation"
+              title="1. Start Conversation"
               code={curlCallInitiation}
               copyId="start-conversation"
               copiedSection={copiedSection}
@@ -293,12 +306,21 @@ struct ContentView: View {
               minHeightClass="min-h-[120px]"
             />
             <CodeSection
-              title="3. Update Conversation"
+              title="2. Update Conversation"
               code={curlCallUpdate}
               copyId="update-conversation"
               copiedSection={copiedSection}
               onCopy={copyToClipboard}
               minHeightClass="min-h-[240px]"
+            />
+
+            <CodeSection
+              title="1. Direct Agent Execution"
+              code={curlWorkflowExecute}
+              copyId="direct-agent-execution"
+              copiedSection={copiedSection}
+              onCopy={copyToClipboard}
+              minHeightClass="min-h-[120px]"
             />
           </TabsContent>
 
