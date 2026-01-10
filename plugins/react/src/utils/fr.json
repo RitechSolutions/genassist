@@ -1,0 +1,91 @@
+{
+  "header": {
+    "subtitle": "Support"
+  },
+  "menu": {
+    "title": "Menu",
+    "resetConversation": "Réinitialiser la conversation",
+    "language": "Langue"
+  },
+  "buttons": {
+    "startConversation": "Démarrer la conversation",
+    "cancel": "Annuler",
+    "reset": "Réinitialiser",
+    "save": "Enregistrer",
+    "saveChanges": "Enregistrer les modifications",
+    "add": "Ajouter"
+  },
+  "input": {
+    "placeholder": "Posez une question"
+  },
+  "labels": {
+    "agent": "Agent",
+    "you": "Vous"
+  },
+  "dialog": {
+    "resetConversation": {
+      "title": "Réinitialiser la conversation",
+      "message": "Cela effacera l'historique de conversation actuel et démarrera une nouvelle conversation. Êtes-vous sûr ?"
+    }
+  },
+  "feedback": {
+    "thumbsUp": "Pouce vers le haut",
+    "thumbsDown": "Pouce vers le bas"
+  },
+  "thinking": {
+    "messages": [
+      "Réflexion…",
+      "Analyse de votre question…",
+      "Recherche d'informations…",
+      "Récupération d'informations pertinentes…",
+      "Rédaction de la réponse…",
+      "Vérification des détails…",
+      "Assemblage de tout…",
+      "Presque terminé…"
+    ]
+  },
+  "time": {
+    "justNow": "À l'instant",
+    "today": "Aujourd'hui",
+    "yesterday": "Hier"
+  },
+  "settings": {
+    "defaultDescription": "Support"
+  },
+  "metadata": {
+    "addParameter": "Ajouter un paramètre",
+    "editParameter": "Modifier le paramètre",
+    "defineKeyValue": "Définir des paramètres clé/valeur envoyés comme métadonnées du chat."
+  },
+  "configPanel": {
+    "appearance": "APPARENCE",
+    "settings": "PARAMÈTRES",
+    "metadata": "MÉTADONNÉES",
+    "primaryColor": "Couleur principale",
+    "secondaryColor": "Couleur secondaire",
+    "backgroundColor": "Couleur de fond",
+    "textColor": "Couleur du texte",
+    "fontSize": "Taille de police",
+    "fontFamily": "Famille de police",
+    "name": "Nom",
+    "description": "Description",
+    "small": "Petit (12px)",
+    "medium": "Moyen (15px)",
+    "large": "Grand (18px)",
+    "parameterName": "Nom du paramètre",
+    "type": "Type",
+    "required": "Requis",
+    "defaultValue": "Valeur par défaut",
+    "value": "Valeur",
+    "yes": "Oui",
+    "no": "Non",
+    "true": "Vrai",
+    "false": "Faux",
+    "string": "Chaîne",
+    "number": "Nombre",
+    "boolean": "Booléen",
+    "edit": "Modifier",
+    "remove": "Supprimer"
+  }
+}
+

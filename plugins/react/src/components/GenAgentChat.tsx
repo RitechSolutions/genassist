@@ -1,12 +1,20 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { ChatMessageComponent, AttachmentPreview } from './ChatMessage';
 import { useChat } from '../hooks/useChat';
-import { ChatMessage, GenAgentChatProps } from '../types';
+import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
-import { Send, Paperclip, MoreVertical, RefreshCw } from 'lucide-react';
+import { Send, Paperclip, MoreVertical, RefreshCw, Globe } from 'lucide-react';
 import { ChatBubble } from './ChatBubble';
+import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
+import {
+  resolveLanguage,
+  mergeTranslations,
+  getTranslationString,
+  getTranslationArray,
+  getTranslationsForLanguage,
+} from '../utils/i18n';
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
@@ -18,13 +26,59 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   onFinalize,
   theme,
   headerTitle = 'Genassist',
-  placeholder = 'Ask a question',
+  placeholder,
+  agentName,
+  logoUrl,
   mode = 'embedded',
-  floatingConfig = {}
+  floatingConfig = {},
+  language,
+  translations: customTranslations,
 }): React.ReactElement => {
+  // Language selection state (with localStorage persistence)
+  const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
+    if (language) return language;
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('genassist_language') : null;
+    if (stored) return stored;
+    return resolveLanguage();
+  });
+
+  // Save language to localStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !language) {
+      localStorage.setItem('genassist_language', selectedLanguage);
+    }
+  }, [selectedLanguage, language]);
+
+  // Resolve language: prop > selected > browser > 'en'
+  const resolvedLanguage = useMemo(() => {
+    if (language) return language;
+    return selectedLanguage || resolveLanguage() || 'en';
+  }, [language, selectedLanguage]);
+
+  // Get translations based on resolved language, then merge with custom translations
+  const translations = useMemo(() => {
+    // First get base translations for the language
+    const baseTranslations = getTranslationsForLanguage(resolvedLanguage);
+    // Then merge with any custom translations provided
+    return mergeTranslations(customTranslations, baseTranslations);
+  }, [resolvedLanguage, customTranslations]);
+
+  // Translation helper function
+  const t = (key: string, fallback?: string): string => {
+    return getTranslationString(key, translations, fallback);
+  };
+
+  // Get translated placeholder or use provided/default
+  // Make it reactive to language changes
+  const inputPlaceholder = useMemo(() => {
+    // If placeholder prop is explicitly provided, use it
+    // Otherwise, use the translation which will update with language changes
+    return placeholder || t('input.placeholder', 'Ask a question');
+  }, [placeholder, translations]);
   const [inputValue, setInputValue] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -37,16 +91,19 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [showBacklight, setShowBacklight] = useState(false);
 
   // default thinking messages if none provided by workflow
-  const DEFAULT_THINKING_MESSAGES = [
-    "Thinking…",
-    "Analyzing your question…",
-    "Searching knowledge…",
-    "Pulling relevant info…",
-    "Drafting the answer…",
-    "Double‑checking details…",
-    "Tying it together…",
-    "Almost there…",
-  ];
+  const DEFAULT_THINKING_MESSAGES = useMemo(
+    () => getTranslationArray('thinking.messages', translations, [
+      "Thinking…",
+      "Analyzing your question…",
+      "Searching knowledge…",
+      "Pulling relevant info…",
+      "Drafting the answer…",
+      "Double‑checking details…",
+      "Tying it together…",
+      "Almost there…",
+    ]),
+    [translations]
+  );
   const [currentThinkingParts, setCurrentThinkingParts] = useState<string[]>([]);
   const [currentThinkingPartIndex, setCurrentThinkingPartIndex] = useState(0);
   const {
@@ -221,6 +278,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     const filesToUpload = [...attachments];
     setInputValue('');
     setAttachments([]);
+    // Reset the file input value so the same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     try {
       await sendMessage(textToSend, filesToUpload);
     } catch (error) {
@@ -231,6 +292,24 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await submitMessage();
+  };
+
+  const handleQuickAction = async (text: string) => {
+    if (!text.trim()) return;
+    try {
+      await sendMessage(text);
+    } catch (error) {
+      // ignore quick action errors to avoid interrupting the flow
+    }
+  };
+
+  const handleScheduleConfirm = async (schedule: ScheduleItem) => {
+    const summary = `Schedule confirmed with ${schedule.restaurants.length} restaurants`;
+    try {
+      await sendMessage(summary, [], { confirmSchedule: JSON.stringify(schedule) });
+    } catch (error) {
+      // ignore
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -250,6 +329,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         const finalUploadingFiles = new Set(uploadingFiles);
         newFiles.forEach(file => finalUploadingFiles.delete(file.name));
         setUploadingFiles(finalUploadingFiles);
+        // Reset the file input value so the same file can be selected again
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     }
   };
@@ -317,6 +400,20 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const handleCancelReset = () => {
     setShowResetConfirm(false);
   };
+
+  const handleLanguageChange = (lang: string) => {
+    setSelectedLanguage(lang);
+  };
+
+  // Available languages (can be extended)
+  const availableLanguages = [
+    { code: 'en', name: 'English' },
+    { code: 'es', name: 'Español' },
+    { code: 'fr', name: 'Français' },
+    { code: 'de', name: 'Deutsch' },
+    { code: 'it', name: 'Italiano' },
+    { code: 'pt', name: 'Português' },
+  ];
 
   const primaryColor = theme?.primaryColor || '#2962FF';
   const backgroundColor = theme?.backgroundColor || '#ffffff';
@@ -414,9 +511,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     backgroundColor: backgroundColor,
     borderRadius: '8px',
     boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
-    zIndex: 5,
+    zIndex: 1000,
     minWidth: '150px',
-    overflow: 'hidden',
+    overflow: 'visible',
   };
 
   const menuItemStyle: React.CSSProperties = {
@@ -430,6 +527,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     fontFamily,
     borderBottom: '1px solid #f0f0f0',
   };
+
 
   const chatContainerStyle: React.CSSProperties = {
     flex: 1,
@@ -703,16 +801,16 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       `}</style>
       <div style={headerStyle} ref={headerRef}>
         <div style={logoContainerStyle}>
-          <img src={chatLogo} alt="Logo" style={logoStyle} />
+          <img src={logoUrl?.trim() || chatLogo} alt="Logo" style={logoStyle} />
           <div style={headerTitleContainerStyle}>
             <div style={headerTitleStyle}>{headerTitle}</div>
-            <div style={headerSubtitleStyle}>Support</div>
+            <div style={headerSubtitleStyle}>{t('header.subtitle')}</div>
           </div>
         </div>
         <button
           style={menuButtonStyle}
           onClick={handleMenuClick}
-          title="Menu"
+          title={t('menu.title')}
         >
           <MoreVertical size={24} color="#111111" />
         </button>
@@ -754,13 +852,90 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         <div ref={menuRef} style={menuPopupStyle}>
           <div style={menuItemStyle} onClick={handleResetClick}>
             <RefreshCw size={16} />
-            Reset conversation
+            {t('menu.resetConversation')}
+          </div>
+          <div 
+            style={{ ...menuItemStyle, position: 'relative', borderBottom: 'none' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowLanguageDropdown(!showLanguageDropdown);
+            }}
+          >
+            <Globe size={16} />
+            <span style={{ flex: 1 }}>{t('menu.language')}</span>
+            {showLanguageDropdown && (
+              <div 
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: '100%',
+                  marginTop: '4px',
+                  backgroundColor: backgroundColor,
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
+                  minWidth: '180px',
+                  maxWidth: '200px',
+                  overflow: 'hidden',
+                  zIndex: 1001,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {availableLanguages.map((lang, index) => (
+                  <div
+                    key={lang.code}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '10px 15px',
+                      color: textColor,
+                      backgroundColor: resolvedLanguage === lang.code 
+                        ? (theme?.secondaryColor || '#f5f5f5') 
+                        : 'transparent',
+                      borderBottom: index < availableLanguages.length - 1 ? '1px solid #f0f0f0' : 'none',
+                      cursor: 'pointer',
+                      fontSize,
+                      fontFamily,
+                      transition: 'background-color 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (resolvedLanguage !== lang.code) {
+                        e.currentTarget.style.backgroundColor = theme?.secondaryColor || '#f5f5f5';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (resolvedLanguage !== lang.code) {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleLanguageChange(lang.code);
+                      setShowLanguageDropdown(false);
+                      setShowMenu(false);
+                    }}
+                  >
+                    {lang.name}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
       
       <div style={contentCardStyle}>
         <div style={chatContainerStyle} ref={chatContainerRef}>
+          {/* Language Selector - Show only when no conversation started */}
+          {(!conversationId || isFinalized) && messages.length === 0 && !hasUserMessages && (
+            <LanguageSelector
+              availableLanguages={availableLanguages}
+              selectedLanguage={resolvedLanguage}
+              onLanguageChange={handleLanguageChange}
+              translations={translations}
+              theme={theme}
+            />
+          )}
           {(() => {
             return null;
           })()}
@@ -795,6 +970,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 welcomeTitle={welcomeTitle || undefined}
                 possibleQueries={possibleQueries}
                 onQuickQuery={handleQueryClick}
+                onQuickAction={handleQuickAction}
+                translations={translations}
+                language={resolvedLanguage}
+                agentName={agentName}
               />
             );
           })()}
@@ -820,13 +999,19 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   welcomeTitle={isFirstAgentMessage ? (welcomeTitle || undefined) : undefined}
                   possibleQueries={isFirstAgentMessage ? possibleQueries : undefined}
                   onQuickQuery={handleQueryClick}
+                  onQuickAction={handleQuickAction}
+                  onScheduleConfirm={handleScheduleConfirm}
+                  isLastMessage={index === messages.length - 1 && message.speaker === 'agent'}
+                  translations={translations}
+                  language={resolvedLanguage}
+                  agentName={agentName}
                 />
               );
             });
           })()}
           {isAgentTyping && currentThinkingParts.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '80%' }}>
-              <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>Agent</div>
+              <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>{agentName || t('labels.agent')}</div>
               <div style={{
                 backgroundColor: 'transparent',
                 padding: 0,
@@ -895,7 +1080,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               onClick={handleStartConversation}
               disabled={isLoading}
             >
-              Start Conversation
+              {t('buttons.startConversation')}
             </button>
           </div>
         ) : (
@@ -930,7 +1115,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     }
                   }
                 }}
-                placeholder={placeholder}
+                placeholder={inputPlaceholder}
                 disabled={!conversationId || isFinalized}
                 rows={1}
               />
@@ -960,11 +1145,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
       <div style={confirmOverlayStyle}>
         <div style={confirmDialogStyle}>
-          <h3 style={{fontFamily, marginTop: 0}}>Reset Conversation</h3>
-          <p style={{fontFamily, fontSize}}>This will clear the current conversation history and start a new conversation. Are you sure?</p>
+          <h3 style={{fontFamily, marginTop: 0}}>{t('dialog.resetConversation.title')}</h3>
+          <p style={{fontFamily, fontSize}}>{t('dialog.resetConversation.message')}</p>
           <div style={confirmButtonsStyle}>
-            <button style={{...confirmButtonStyle(false), color: textColor}} onClick={handleCancelReset}>Cancel</button>
-            <button style={confirmButtonStyle(true)} onClick={handleConfirmReset}>Reset</button>
+            <button style={{...confirmButtonStyle(false), color: textColor}} onClick={handleCancelReset}>{t('buttons.cancel')}</button>
+            <button style={confirmButtonStyle(true)} onClick={handleConfirmReset}>{t('buttons.reset')}</button>
           </div>
         </div>
       </div>

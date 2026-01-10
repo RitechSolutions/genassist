@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChatService } from '../services/chatService';
 import { ChatMessage, Attachment, MessageFeedback } from '../types';
 
@@ -35,93 +35,159 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
     return `genassist_conversation_messages:${apiKeyVal}:${convId}`;
   }, []);
 
-  // Initialize chat service
+  // Deep compare metadata to prevent unnecessary re-initializations
+  // Only re-initialize if metadata actually changes (by value, not reference)
+  const metadataString = useMemo(() => JSON.stringify(metadata || {}), [metadata]);
+  const metadataRef = useRef<string>(metadataString);
+  const prevBaseUrlRef = useRef<string>(baseUrl);
+  const prevApiKeyRef = useRef<string>(apiKey);
+  const prevTenantRef = useRef<string | undefined>(tenant);
+
+  // Store callbacks in refs so they don't trigger re-initialization
+  const onErrorRef = useRef(onError);
+  const onTakeoverRef = useRef(onTakeover);
+  const onFinalizeRef = useRef(onFinalize);
+
+  // Update callback refs when they change
   useEffect(() => {
-    chatServiceRef.current = new ChatService(baseUrl, apiKey, metadata, tenant);
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  useEffect(() => {
+    onTakeoverRef.current = onTakeover;
+  }, [onTakeover]);
+
+  useEffect(() => {
+    onFinalizeRef.current = onFinalize;
+  }, [onFinalize]);
+
+  // Initialize chat service - only when baseUrl, apiKey, tenant, or metadata actually change
+  useEffect(() => {
+    const metadataChanged = metadataRef.current !== metadataString;
+    const baseUrlChanged = prevBaseUrlRef.current !== baseUrl;
+    const apiKeyChanged = prevApiKeyRef.current !== apiKey;
+    const tenantChanged = prevTenantRef.current !== tenant;
     
-    chatServiceRef.current.setMessageHandler((message: ChatMessage) => {
-      const normalizedMessage: ChatMessage = {
-        ...message,
-        create_time: (!message.create_time || isNaN(message.create_time))
-          ? Math.floor(Date.now() / 1000)
-          : message.create_time,
-      };
+    const needsReinit = !chatServiceRef.current || baseUrlChanged || apiKeyChanged || tenantChanged || metadataChanged;
 
-      setMessages(prevMessages => [...prevMessages, normalizedMessage]);
-      // Stop typing animation when agent or system message arrives
-      if (normalizedMessage.speaker === 'agent' || normalizedMessage.speaker === 'special') {
-        setIsAgentTyping(false);
-      }
-    });
+    if (needsReinit) {
+      // Update refs
+      if (metadataChanged) metadataRef.current = metadataString;
+      if (baseUrlChanged) prevBaseUrlRef.current = baseUrl;
+      if (apiKeyChanged) prevApiKeyRef.current = apiKey;
+      if (tenantChanged) prevTenantRef.current = tenant;
 
-    chatServiceRef.current.setTakeoverHandler(() => {
-      setIsTakenOver(true);
-      setIsAgentTyping(false);
-      if (onTakeover) {
-        onTakeover();
-      }
-    });
-
-    chatServiceRef.current.setFinalizedHandler(() => {
-      setIsFinalized(true);
-      setIsAgentTyping(false);
-      if (onFinalize) {
-        onFinalize();
-      }
-    });
-
-    // Clear typing animation if agent is not connected
-    chatServiceRef.current.setConnectionStateHandler((state) => {
-      setConnectionState(state);
-      if (state !== 'connected') {
-        setIsAgentTyping(false);
-      }
-    });
-
-    chatServiceRef.current.setWelcomeDataHandler((data) => {
-      setWelcomeTitle(data.title ?? null);
-      setWelcomeImageUrl(data.imageUrl ?? null);
-      setWelcomeMessage(data.message ?? null);
-      if (data.possibleQueries && data.possibleQueries.length > 0) {
-        setPossibleQueries(data.possibleQueries);
-      }
-    });
-
-    // Check for a saved conversation and connect to it
-    const convId = chatServiceRef.current.getConversationId();
-    if (convId) {
-      setConversationId(convId);
-      if (chatServiceRef.current.isConversationFinalized()) {
-        setIsFinalized(true);
-      } else {
-        chatServiceRef.current.connectWebSocket();
-      }
-    }
-    // Pull initial static data
-    if (chatServiceRef.current) {
-      const queries = chatServiceRef.current.getPossibleQueries?.() || [];
-      if (queries.length) setPossibleQueries(queries);
-      const welcome = chatServiceRef.current.getWelcomeData?.();
-      if (welcome) {
-        setWelcomeTitle(welcome.title || null);
-        setWelcomeImageUrl(welcome.imageUrl || null);
-        setWelcomeMessage(welcome.message || null);
-      }
-      const thinking = chatServiceRef.current.getThinkingConfig?.();
-      if (thinking) {
-        setThinkingPhrases(thinking.phrases || []);
-        setThinkingDelayMs(thinking.delayMs || 1000);
-      }
-    }
-
-    // Cleanup
-    return () => {
+      // Clean up existing service if it exists
       if (chatServiceRef.current) {
         chatServiceRef.current.disconnect();
         chatServiceRef.current.setWelcomeDataHandler(null);
       }
+      
+      chatServiceRef.current = new ChatService(baseUrl, apiKey, metadata, tenant);
+      
+      // Set up handlers
+      chatServiceRef.current.setMessageHandler((message: ChatMessage) => {
+        const normalizedMessage: ChatMessage = {
+          ...message,
+          create_time: (!message.create_time || isNaN(message.create_time))
+            ? Math.floor(Date.now() / 1000)
+            : message.create_time,
+        };
+
+        setMessages(prevMessages => [...prevMessages, normalizedMessage]);
+        // Stop typing animation when agent or system message arrives
+        if (normalizedMessage.speaker === 'agent' || normalizedMessage.speaker === 'special') {
+          setIsAgentTyping(false);
+        }
+      });
+
+      chatServiceRef.current.setTakeoverHandler(() => {
+        setIsTakenOver(true);
+        setIsAgentTyping(false);
+        if (onTakeoverRef.current) {
+          onTakeoverRef.current();
+        }
+      });
+
+      chatServiceRef.current.setFinalizedHandler(() => {
+        setIsFinalized(true);
+        setIsAgentTyping(false);
+        if (onFinalizeRef.current) {
+          onFinalizeRef.current();
+        }
+      });
+
+      chatServiceRef.current.setConnectionStateHandler((state) => {
+        setConnectionState(state);
+        if (state !== 'connected') {
+          setIsAgentTyping(false);
+        }
+      });
+
+      chatServiceRef.current.setWelcomeDataHandler((data) => {
+        setWelcomeTitle(data.title ?? null);
+        setWelcomeImageUrl(data.imageUrl ?? null);
+        setWelcomeMessage(data.message ?? null);
+        if (data.possibleQueries && data.possibleQueries.length > 0) {
+          setPossibleQueries(data.possibleQueries);
+        }
+      });
+
+      // Check for a saved conversation and connect to it
+      const convId = chatServiceRef.current.getConversationId();
+      if (convId) {
+        setConversationId(convId);
+        if (chatServiceRef.current.isConversationFinalized()) {
+          setIsFinalized(true);
+        } else {
+          chatServiceRef.current.connectWebSocket();
+        }
+      }
+      // Pull initial static data
+      if (chatServiceRef.current) {
+        const queries = chatServiceRef.current.getPossibleQueries?.() || [];
+        if (queries.length) setPossibleQueries(queries);
+        const welcome = chatServiceRef.current.getWelcomeData?.();
+        if (welcome) {
+          setWelcomeTitle(welcome.title || null);
+          setWelcomeImageUrl(welcome.imageUrl || null);
+          setWelcomeMessage(welcome.message || null);
+        }
+        const thinking = chatServiceRef.current.getThinkingConfig?.();
+        if (thinking) {
+          setThinkingPhrases(thinking.phrases || []);
+          setThinkingDelayMs(thinking.delayMs || 1000);
+        }
+      }
+    } else if (chatServiceRef.current && metadata) {
+      // Just update metadata without re-initializing
+      (chatServiceRef.current as any).metadata = metadata;
+    }
+
+    // Always update handlers when callbacks change (without re-initializing)
+    if (chatServiceRef.current) {
+      chatServiceRef.current.setTakeoverHandler(() => {
+        setIsTakenOver(true);
+        setIsAgentTyping(false);
+        if (onTakeoverRef.current) {
+          onTakeoverRef.current();
+        }
+      });
+
+      chatServiceRef.current.setFinalizedHandler(() => {
+        setIsFinalized(true);
+        setIsAgentTyping(false);
+        if (onFinalizeRef.current) {
+          onFinalizeRef.current();
+        }
+      });
+    }
+
+    // Cleanup only on unmount
+    return () => {
+      // Only cleanup on unmount, not on every dependency change
     };
-  }, [baseUrl, apiKey, metadata, onError, onTakeover, onFinalize]);
+  }, [baseUrl, apiKey, tenant, metadataString]);
 
   // Load messages for current pair when available
   useEffect(() => {
@@ -203,15 +269,15 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
     } catch (error) {
       setConnectionState('disconnected');
       setIsAgentTyping(false);
-      if (onError && error instanceof Error) {
-        onError(error);
+      if (onErrorRef.current && error instanceof Error) {
+        onErrorRef.current(error);
       } else {
         // ignore
       }
     } finally {
       setIsLoading(false);
     }
-  }, [onError]);
+  }, []);
 
   const uploadFile = useCallback(async (file: File): Promise<Attachment | null> => {
     if (!chatServiceRef.current || !chatServiceRef.current.getConversationId()) {
@@ -234,15 +300,15 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
       setPreloadedAttachments(prev => [...prev, attachment]);
       return attachment;
     } catch (error) {
-      if (onError) {
-        onError(error as Error);
+      if (onErrorRef.current) {
+        onErrorRef.current(error as Error);
       }
       return null;
     }
-  }, [onError]);
+  }, []);
 
   // Send message
-  const sendMessage = useCallback(async (text: string, files: File[] = []) => {
+  const sendMessage = useCallback(async (text: string, files: File[] = [], extraMetadata?: Record<string, any>) => {
     if (!chatServiceRef.current) {
       throw new Error('Chat service not initialized');
     }
@@ -261,21 +327,21 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
       if (!isTakenOver) {
         setIsAgentTyping(true);
       }
-      await chatServiceRef.current.sendMessage(text, newAttachments);
+      await chatServiceRef.current.sendMessage(text, newAttachments, extraMetadata);
 
       setPreloadedAttachments([]);
 
     } catch (error) {
       setIsAgentTyping(false);
-      if (onError && error instanceof Error) {
-        onError(error);
+      if (onErrorRef.current && error instanceof Error) {
+        onErrorRef.current(error);
       } else {
         // ignore
       }
     } finally {
       setIsLoading(false);
     }
-  }, [onError, preloadedAttachments, isTakenOver]);
+  }, [preloadedAttachments, isTakenOver]);
 
   const startConversation = useCallback(async () => {
     if (!chatServiceRef.current) {
@@ -321,22 +387,28 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
     } catch (error) {
       setConnectionState('disconnected');
       setIsAgentTyping(false);
-      if (onError && error instanceof Error) {
-        onError(error);
+      if (onErrorRef.current && error instanceof Error) {
+        onErrorRef.current(error);
       } else {
         // ignore
       }
     } finally {
       setIsLoading(false);
     }
-  }, [onError]);
+  }, []);
 
   // Add feedback to an agent message
   const addFeedback = useCallback(
     async (messageId: string, value: 'good' | 'bad', feedbackMessage?: string) => {
-      if (!chatServiceRef.current || !conversationId) {
+      if (!chatServiceRef.current) {
+        console.error('Cannot send feedback: ChatService not initialized');
         return;
       }
+      if (!messageId) {
+        console.error('Cannot send feedback: messageId is required');
+        return;
+      }
+      
       try {
         await chatServiceRef.current.addFeedback(messageId, value, feedbackMessage);
 
@@ -347,19 +419,21 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
         };
 
         setMessages(prev =>
-          prev.map(m =>
-            m.message_id === messageId
+          prev.map(m => {
+            // Match by message_id or id field
+            const msgId = m.message_id || (m as any).id;
+            return msgId === messageId
               ? { ...m, feedback: [...(m.feedback || []), newFeedback] }
-              : m
-          )
+              : m;
+          })
         );
       } catch (error) {
-        if (onError) {
-          onError(error as Error);
+        if (onErrorRef.current) {
+          onErrorRef.current(error as Error);
         }
       }
     },
-    [conversationId, onError]
+    []
   );
 
   return {

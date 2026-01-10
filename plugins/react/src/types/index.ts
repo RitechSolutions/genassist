@@ -1,3 +1,5 @@
+import { Translations } from '../utils/i18n';
+
 // Chat message types
 export interface MessageFeedback {
   feedback: "good" | "bad";
@@ -53,6 +55,31 @@ export interface AgentThinkingConfig {
   delayMs: number; // rotation delay in ms
 }
 
+// Interactive content types
+export interface DynamicChatItem {
+  id: string;
+  image?: string;
+  type?: string;
+  category?: string;
+  name: string;
+  description?: string;
+  venueId?: string;
+  slots?: string[];
+  selectedSlot?: string;
+}
+
+export interface ScheduleItem {
+  id: string;
+  title?: string | null;
+  restaurants: DynamicChatItem[];
+}
+
+export type ChatContentBlock =
+  | { kind: "text"; text: string }
+  | { kind: "items"; items: DynamicChatItem[] }
+  | { kind: "schedule"; schedule: ScheduleItem }
+  | { kind: "options"; options: string[] };
+
 // Props for the GenAgentChat component
 export interface GenAgentChatProps {
   baseUrl: string;
@@ -72,6 +99,8 @@ export interface GenAgentChatProps {
   };
   headerTitle?: string;
   placeholder?: string;
+  agentName?: string; // Custom agent name to display instead of "Agent"
+  logoUrl?: string; // Custom logo URL to display in header instead of default logo
   mode?: "embedded" | "floating";
   floatingConfig?: {
     position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
@@ -79,4 +108,8 @@ export interface GenAgentChatProps {
     toggleButtonIcon?: React.ReactElement;
     closeButtonIcon?: React.ReactElement;
   };
+  language?: string; // Language code (e.g., 'en', 'es', 'fr'). If not provided, will use browser language
+  translations?: Partial<Translations>; // Custom translations. If not provided, will use default English translations
 }
+
+export type { Translations } from '../utils/i18n';

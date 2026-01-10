@@ -1,0 +1,91 @@
+{
+  "header": {
+    "subtitle": "Support"
+  },
+  "menu": {
+    "title": "Menu",
+    "resetConversation": "Reset conversation",
+    "language": "Language"
+  },
+  "buttons": {
+    "startConversation": "Start Conversation",
+    "cancel": "Cancel",
+    "reset": "Reset",
+    "save": "Save",
+    "saveChanges": "Save Changes",
+    "add": "Add"
+  },
+  "input": {
+    "placeholder": "Ask a question"
+  },
+  "labels": {
+    "agent": "Agent",
+    "you": "You"
+  },
+  "dialog": {
+    "resetConversation": {
+      "title": "Reset Conversation",
+      "message": "This will clear the current conversation history and start a new conversation. Are you sure?"
+    }
+  },
+  "feedback": {
+    "thumbsUp": "Thumbs up",
+    "thumbsDown": "Thumbs down"
+  },
+  "thinking": {
+    "messages": [
+      "Thinking…",
+      "Analyzing your question…",
+      "Searching knowledge…",
+      "Pulling relevant info…",
+      "Drafting the answer…",
+      "Double‑checking details…",
+      "Tying it together…",
+      "Almost there…"
+    ]
+  },
+  "time": {
+    "justNow": "Just now",
+    "today": "Today",
+    "yesterday": "Yesterday"
+  },
+  "settings": {
+    "defaultDescription": "Support"
+  },
+  "metadata": {
+    "addParameter": "Add Parameter",
+    "editParameter": "Edit Parameter",
+    "defineKeyValue": "Define key/value parameters sent as chat metadata."
+  },
+  "configPanel": {
+    "appearance": "APPEARANCE",
+    "settings": "SETTINGS",
+    "metadata": "METADATA",
+    "primaryColor": "Primary Color",
+    "secondaryColor": "Secondary Color",
+    "backgroundColor": "Background Color",
+    "textColor": "Text Color",
+    "fontSize": "Font Size",
+    "fontFamily": "Font Family",
+    "name": "Name",
+    "description": "Description",
+    "small": "Small (12px)",
+    "medium": "Medium (15px)",
+    "large": "Large (18px)",
+    "parameterName": "Parameter Name",
+    "type": "Type",
+    "required": "Required",
+    "defaultValue": "Default / Value",
+    "value": "Value",
+    "yes": "Yes",
+    "no": "No",
+    "true": "True",
+    "false": "False",
+    "string": "String",
+    "number": "Number",
+    "boolean": "Boolean",
+    "edit": "Edit",
+    "remove": "Remove"
+  }
+}
+
