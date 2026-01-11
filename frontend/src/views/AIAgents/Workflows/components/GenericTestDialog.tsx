@@ -14,8 +14,9 @@ import { Checkbox } from "@/components/checkbox";
 import { Play, X } from "lucide-react";
 import { NodeData } from "../types/nodes";
 import { testNode, WorkflowTestResponse } from "@/services/workflows";
-import { extractDynamicVariables, getValueFromPath } from "../utils/helpers";
+import { extractDynamicVariables, getValueFromPath, parseInputValue } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
+import { SchemaField, SchemaType } from "../types/schemas";
 import JsonViewer from "@/components/JsonViewer";
 
 export interface GenericTestInputField {
@@ -98,8 +99,13 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       const output = nodeOutput ? nodeOutput.output : null;
 
       allFields.forEach((field) => {
-        const previousValue = output ? output[`session.${field.id}`] : "";
-        let defaultValue = field.defaultValue || previousValue || "";
+        let previousValueStr = "";
+        if (output && typeof output === "object" && output !== null) {
+          const outputObj = output as Record<string, unknown>;
+          const prevValue = outputObj[`session.${field.id}`];
+          previousValueStr = prevValue !== undefined ? String(prevValue) : "";
+        }
+        let defaultValue: string = field.defaultValue || previousValueStr || "";
 
         // Try to get value from availableData using the field ID as a path
         if (availableData) {
@@ -111,9 +117,9 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
             } else if (typeof availableValue === "string") {
               defaultValue = availableValue;
             } else if (typeof availableValue === "object") {
-              defaultValue = availableValue;
-            } else {
               defaultValue = JSON.stringify(availableValue);
+            } else {
+              defaultValue = String(availableValue);
             }
           } else {
             // ignore
@@ -124,7 +130,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       });
       setFormData(initialData);
     }
-  }, [isOpen, nodeData, nodeId, getAvailableDataForNode, nodeType]);
+  }, [isOpen, nodeData, nodeId, getAvailableDataForNode, getNodeOutput, nodeType]);
 
   // Extract all {{var}} parameters from node config
   const extractVariablesFromNodeConfig = (data: NodeData): string[] => {
@@ -191,25 +197,54 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     setOutput(null);
 
     try {
-      // Validate JSON fields before sending
-      const validatedData = { ...formData };
+      // Parse input values based on their schema types
+      const parsedData: Record<string, unknown> = {};
+      
+      // Get inputSchema if available
+      const inputSchema = "inputSchema" in nodeData && nodeData.inputSchema 
+        ? nodeData.inputSchema 
+        : null;
+
       for (const field of inputFields) {
-        if (
-          (field.type === "object" || field.type === "array") &&
-          formData[field.id]
-        ) {
-          try {
-            JSON.parse(formData[field.id]);
-          } catch (err) {
-            setError(`Invalid JSON in field "${field.label}"`);
-            setIsLoading(false);
-            return;
+        const value = formData[field.id];
+        
+        if (value === undefined || value === "") {
+          // Skip empty values unless required
+          if (!field.required) {
+            continue;
+          }
+        }
+
+        // Try to get the schema field type from inputSchema
+        let fieldType: SchemaType = field.type as SchemaType;
+        if (inputSchema && field.id in inputSchema) {
+          const schemaField = inputSchema[field.id] as SchemaField;
+          fieldType = schemaField.type;
+        }
+
+        // Parse the value based on its type
+        try {
+          parsedData[field.id] = parseInputValue(value || "", fieldType);
+        } catch (err) {
+          // If parsing fails, validate JSON for object/array types
+          if (fieldType === "object" || fieldType === "array") {
+            try {
+              JSON.parse(value);
+              parsedData[field.id] = value; // Keep as string if JSON is valid but parsing failed
+            } catch (jsonErr) {
+              setError(`Invalid JSON in field "${field.label}"`);
+              setIsLoading(false);
+              return;
+            }
+          } else {
+            // For other types, use the original value
+            parsedData[field.id] = value;
           }
         }
       }
 
       const response = await testNode({
-        input_data: validatedData,
+        input_data: parsedData,
         node_type: nodeType,
         node_config: nodeData,
       });

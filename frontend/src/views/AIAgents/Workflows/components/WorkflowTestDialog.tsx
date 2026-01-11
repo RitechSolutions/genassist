@@ -10,6 +10,8 @@ import {
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
+import { Textarea } from "@/components/textarea";
+import { Checkbox } from "@/components/checkbox";
 import {
   Loader2,
   Send,
@@ -19,9 +21,9 @@ import {
 } from "lucide-react";
 import { testWorkflow, WorkflowTestResponse } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
-import { NodeSchema } from "../types/schemas";
+import { NodeSchema, SchemaField } from "../types/schemas";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
-import { getValueFromPath } from "../utils/helpers";
+import { getValueFromPath, parseInputValue, valueToString } from "../utils/helpers";
 import JsonViewer from "@/components/JsonViewer";
 
 interface WorkflowTestDialogProps {
@@ -65,8 +67,8 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
         const initialInputs: Record<string, string> = {};
         const prefilled = new Set<string>();
 
-        Object.keys(chatInputNode.data.inputSchema).forEach((key) => {
-          let value = "";
+        Object.entries(chatInputNode.data.inputSchema).forEach(([key, field]: [string, SchemaField]) => {
+          let value: unknown = undefined;
 
           // First try to get value from session data
           if (
@@ -75,17 +77,23 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
           ) {
             const sessionValue = getValueFromPath(executionState.session, key);
             if (sessionValue !== undefined) {
-              value = String(sessionValue);
+              value = sessionValue;
               prefilled.add(key);
             }
           }
 
           // Fallback to saved test inputs if no session value
-          if (!value) {
-            value = workflow?.testInput?.[key] ?? "";
+          if (value === undefined) {
+            const savedValue = workflow?.testInput?.[key];
+            if (savedValue !== undefined) {
+              value = savedValue;
+            }
           }
 
-          initialInputs[key] = value;
+          // Convert to string for input fields
+          initialInputs[key] = value !== undefined 
+            ? valueToString(value, field.type)
+            : "";
         });
 
         setTestInputs(initialInputs);
@@ -103,8 +111,17 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     // Check if all required fields are filled
     if (inputSchema) {
       const missingRequired = Object.entries(inputSchema)
-        .filter(([_, field]) => field.required)
-        .some(([key]) => !testInput[key]?.trim());
+        .filter(([_, field]: [string, SchemaField]) => field.required)
+        .some(([key, field]: [string, SchemaField]) => {
+          const value = testInput[key];
+          if (!value) return true;
+          // For string types, check if trimmed value is empty
+          if (field.type === "string") {
+            return !value.trim();
+          }
+          // For other types, just check if value exists
+          return false;
+        });
 
       if (missingRequired) {
         setError("Please fill in all required fields");
@@ -117,12 +134,40 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     setResponse(null);
 
     try {
+      // Parse input values based on their schema types
+      const parsedInputs: Record<string, unknown> = {
+        message: testInput.message || "",
+        thread_id: "test",
+      };
+
+      if (inputSchema) {
+        Object.entries(inputSchema).forEach(([key, field]: [string, SchemaField]) => {
+          if (key === "message") {
+            // message is already handled above
+            return;
+          }
+          const value = testInput[key];
+          if (value !== undefined && value !== "") {
+            try {
+              parsedInputs[key] = parseInputValue(value, field.type);
+            } catch (err) {
+              // If parsing fails, use the original string value
+              console.warn(`Failed to parse ${key} as ${field.type}, using string value`);
+              parsedInputs[key] = value;
+            }
+          }
+        });
+      } else {
+        // Fallback: include all testInput values as-is if no schema
+        Object.entries(testInput).forEach(([key, value]) => {
+          if (key !== "message") {
+            parsedInputs[key] = value;
+          }
+        });
+      }
+
       const response = await testWorkflow({
-        input_data: {
-          message: testInput.message || "",
-          thread_id: "test",
-          ...testInput,
-        },
+        input_data: parsedInputs,
         workflow: workflow,
       });
       setResponse(response);
@@ -231,40 +276,100 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                   <div className="pl-4 space-y-4 border-l-2 border-gray-200">
                     {Object.entries(inputSchema)
                       .filter(([key]) => key !== "message")
-                      .map(([key, field]) => (
-                        <div key={key} className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor={`test-input-${key}`}>
-                              {field.description || key}
-                              {field.required && (
-                                <span className="text-red-500 ml-1">*</span>
+                      .map(([key, field]: [string, SchemaField]) => {
+                        const isBoolean = field.type === "boolean";
+                        const isObjectOrArray = field.type === "object" || field.type === "array";
+                        const isNumber = field.type === "number";
+                        
+                        return (
+                          <div key={key} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor={`test-input-${key}`}>
+                                {field.description || key}
+                                {field.required && (
+                                  <span className="text-red-500 ml-1">*</span>
+                                )}
+                                {field.type !== "string" && (
+                                  <span className="text-xs text-gray-500 ml-2">
+                                    ({field.type})
+                                  </span>
+                                )}
+                              </Label>
+                              {prefilledFields.has(key) && (
+                                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                                  📝 Session
+                                </span>
                               )}
-                            </Label>
-                            {prefilledFields.has(key) && (
-                              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
-                                📝 Session
-                              </span>
+                            </div>
+                            {isBoolean ? (
+                              <div className="flex items-center space-x-2">
+                                <Checkbox
+                                  id={`test-input-${key}`}
+                                  checked={testInput[key] === "true" || testInput[key] === "1"}
+                                  onCheckedChange={(checked) =>
+                                    setTestInputs((prev) => ({
+                                      ...prev,
+                                      [key]: String(checked),
+                                    }))
+                                  }
+                                  disabled={testing}
+                                  className={
+                                    prefilledFields.has(key)
+                                      ? "border-blue-300"
+                                      : ""
+                                  }
+                                />
+                                <Label
+                                  htmlFor={`test-input-${key}`}
+                                  className="text-sm font-normal cursor-pointer"
+                                >
+                                  {testInput[key] === "true" || testInput[key] === "1"
+                                    ? "True"
+                                    : "False"}
+                                </Label>
+                              </div>
+                            ) : isObjectOrArray ? (
+                              <Textarea
+                                id={`test-input-${key}`}
+                                placeholder={`Enter ${field.description || key} as JSON`}
+                                value={testInput[key] || ""}
+                                onChange={(e) =>
+                                  setTestInputs((prev) => ({
+                                    ...prev,
+                                    [key]: e.target.value,
+                                  }))
+                                }
+                                disabled={testing}
+                                className={`flex-1 font-mono text-sm ${
+                                  prefilledFields.has(key)
+                                    ? "border-blue-300 bg-blue-50"
+                                    : ""
+                                }`}
+                                rows={4}
+                              />
+                            ) : (
+                              <Input
+                                id={`test-input-${key}`}
+                                type={isNumber ? "number" : "text"}
+                                placeholder={`Enter ${field.description || key}`}
+                                value={testInput[key] || ""}
+                                onChange={(e) =>
+                                  setTestInputs((prev) => ({
+                                    ...prev,
+                                    [key]: e.target.value,
+                                  }))
+                                }
+                                disabled={testing}
+                                className={`flex-1 ${
+                                  prefilledFields.has(key)
+                                    ? "border-blue-300 bg-blue-50"
+                                    : ""
+                                }`}
+                              />
                             )}
                           </div>
-                          <Input
-                            id={`test-input-${key}`}
-                            placeholder={`Enter ${field.description || key}`}
-                            value={testInput[key] || ""}
-                            onChange={(e) =>
-                              setTestInputs((prev) => ({
-                                ...prev,
-                                [key]: e.target.value,
-                              }))
-                            }
-                            disabled={testing}
-                            className={`flex-1 ${
-                              prefilledFields.has(key)
-                                ? "border-blue-300 bg-blue-50"
-                                : ""
-                            }`}
-                          />
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 )}
               </div>
