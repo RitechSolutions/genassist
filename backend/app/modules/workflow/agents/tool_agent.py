@@ -64,6 +64,20 @@ class ToolAgent(BaseToolAgent):
 
     # ==================== RESPONSE PARSING ====================
 
+    def _extract_response_content(self, response: Any) -> str:
+        # Modern approach: Use content_blocks for standardized access (LangChain 1.0+)
+        if hasattr(response, 'content_blocks'):
+            text_parts = []
+            for block in response.content_blocks:
+                # Extract from TextContentBlock
+                if block.get('type') == 'text' and 'text' in block:
+                    text_parts.append(block['text'])
+
+            if text_parts:
+                return '\n'.join(text_parts)
+        # fallback old version
+        return response.content if hasattr(response, 'content') else str(response)
+
     def _parse_tool_call(self, response: str) -> Optional[Dict[str, Any]]:
         """Parse tool call from LLM response with JSON format support"""
         # Try JSON parsing first
@@ -151,8 +165,7 @@ class ToolAgent(BaseToolAgent):
         try:
             response = await self.llm_model.ainvoke(
                 [{"role": "user", "content": prompt}])
-            response_content = response.content if hasattr(
-                response, 'content') else str(response)
+            response_content = self._extract_response_content(response)
             logger.info(f"Response: {response}")
             direct_response = extract_direct_response(response_content)
 
@@ -225,8 +238,7 @@ class ToolAgent(BaseToolAgent):
     ) -> Optional[Dict[str, Any]]:
         """Execute a single workflow iteration"""
         response = await self.llm_model.ainvoke([{"role": "user", "content": prompt}])
-        response_content = response.content if hasattr(
-            response, 'content') else str(response)
+        response_content = self._extract_response_content(response)
         workflow_steps.append(
             {"step": iteration + 1, "response": response_content})
 
@@ -358,8 +370,7 @@ class ToolAgent(BaseToolAgent):
 
             response = await self.llm_model.ainvoke(
                 [{"role": "user", "content": selection_prompt}])
-            response_content = response.content if hasattr(
-                response, 'content') else str(response)
+            response_content = self._extract_response_content(response)
 
             return create_success_response(
                 response_content,

@@ -19,10 +19,26 @@ build/
 test-results.xml
 coverage.xml
 recordings/
-infra/setup/.terraform/
-infra/setup/.terraform.lock.hcl
 models/whisper/
-infra/terraform.tfstate.backup
+venv/
+/datavolume
+agents_config/
+chroma_db/
+lightrag_data/
+infra/.terraform/
+/certs/*.key
+/certs/*.crt
+/certs/*.pem
+/logs/
+env.*
+legra_data/
+# infra/setup/.terraform/
+# infra/setup/.terraform.lock.hcl
+# infra/terraform.tfstate.backup
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+models/whisper/
 venv/
 /datavolume
 agents_config/

@@ -237,7 +237,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
             <div className="space-y-2">
               {Object.entries(parameters).map(([key, value], index) => (
                 <div key={index} className="flex gap-2">
-                  <Input
+                  <DraggableInput
                     placeholder="Parameter name"
                     value={key}
                     onChange={(e) => {
@@ -278,7 +278,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
                 onClick={() => {
                   setParameters({
                     ...parameters,
-                    [`param_${Object.keys(parameters).length + 1}`]: "",
+                    "": "",
                   });
                 }}
               >

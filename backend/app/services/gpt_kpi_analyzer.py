@@ -2,7 +2,9 @@ import json
 import logging
 from typing import List
 import asyncio
-from langchain.schema import HumanMessage, SystemMessage
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from app.core.utils.enums.conversation_topic_enum import ConversationTopic
 from app.core.utils.enums.negative_conversation_reason import NegativeConversationReason
 from app.schemas.conversation_analysis import AnalysisResult

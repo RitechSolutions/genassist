@@ -24,6 +24,7 @@ from .zendesk_tool_node import ZendeskToolNode
 from .sql_node import SQLNode
 from .aggregator_node import AggregatorNode
 from .thread_rag_node import ThreadRAGNode
+from .mcp_node import MCPNode
 
 __all__ = [
     "ChatInputNode",
@@ -52,4 +53,5 @@ __all__ = [
     "TrainPreprocessNode",
     "TrainModelNode",
     "ThreadRAGNode",
+    "MCPNode",
 ]

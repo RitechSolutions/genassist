@@ -3,7 +3,7 @@ import { Node, ReactFlowInstance } from "reactflow";
 import { v4 as uuidv4 } from "uuid";
 import nodeRegistry from "../registry/nodeRegistry";
 import { NodeData } from "../types/nodes";
-import { NodeSchema } from "../types/schemas";
+import { NodeSchema, SchemaType } from "../types/schemas";
 
 export const getHandlerPosition = (index: number, total: number) => {
   return `${(index + 1) * (100 / (total + 1))}%`;
@@ -310,15 +310,37 @@ export const generateSampleOutput = (
 
 export const generateTemplateFromInputSchema = (
   inputSchema: NodeSchema
-): Record<string, string> => {
-  const templateObject: Record<string, string> = {};
+): string => {
   if (inputSchema === null || inputSchema === undefined) {
-    return templateObject;
+    return "{}";
   }
-  Object.entries(inputSchema).forEach(([key, value]) => {
-    templateObject[`source.${key}`] = `{{direct_input.parameters.${key}}}`;
+  
+  const entries = Object.entries(inputSchema);
+  if (entries.length === 0) {
+    return "{}";
+  }
+  
+  // Build JSON string manually, checking types to determine if values should be quoted
+  const parts = entries.map(([key, fieldSchema]) => {
+    const templateValue = `{{direct_input.parameters.${key}}}`;
+    const sourceKey = `source.${key}`;
+    
+    // Only quote string types; leave object, array, number, boolean unquoted
+    const shouldQuote = fieldSchema.type === "string";
+    
+    // Use JSON.stringify for keys to properly escape special characters
+    const escapedKey = JSON.stringify(sourceKey);
+    
+    if (shouldQuote) {
+      // For string types, quote the template value
+      return `${escapedKey}:${JSON.stringify(templateValue)}`;
+    } else {
+      // For non-string types, don't quote the template value
+      return `${escapedKey}:${templateValue}`;
+    }
   });
-  return templateObject;
+  
+  return `{${parts.join(",")}}`;
 };
 
 /**
@@ -416,4 +438,91 @@ export const getValueFromPath = (
   }
 
   return current;
+};
+
+/**
+ * Parses an input string value based on the schema field type
+ * @param value The string value to parse
+ * @param type The expected schema type
+ * @returns Parsed value of the correct type, or the original string if parsing fails
+ */
+export const parseInputValue = (value: string, type: SchemaType): unknown => {
+  if (!value || value.trim() === "") {
+    return value;
+  }
+
+  try {
+    switch (type) {
+      case "string":
+        return value;
+      case "number": {
+        const num = parseFloat(value);
+        if (isNaN(num)) {
+          throw new Error(`Invalid number: ${value}`);
+        }
+        return num;
+      }
+      case "boolean": {
+        const lowerValue = value.toLowerCase().trim();
+        if (lowerValue === "true" || lowerValue === "1" || lowerValue === "yes") {
+          return true;
+        }
+        if (lowerValue === "false" || lowerValue === "0" || lowerValue === "no") {
+          return false;
+        }
+        throw new Error(`Invalid boolean: ${value}`);
+      }
+      case "object":
+      case "array":
+        try {
+          return JSON.parse(value);
+        } catch (e) {
+          throw new Error(`Invalid JSON: ${value}`);
+        }
+      case "any":
+        // Try to parse as JSON first, then number, then boolean, finally string
+        try {
+          return JSON.parse(value);
+        } catch {
+          const num = parseFloat(value);
+          if (!isNaN(num)) return num;
+          const lowerValue = value.toLowerCase().trim();
+          if (lowerValue === "true") return true;
+          if (lowerValue === "false") return false;
+          return value;
+        }
+      default:
+        return value;
+    }
+  } catch (error) {
+    // Return the original string if parsing fails
+    console.warn(`Failed to parse value "${value}" as ${type}:`, error);
+    return value;
+  }
+};
+
+/**
+ * Converts a value to a string representation for input fields
+ * @param value The value to convert
+ * @param type The schema type
+ * @returns String representation of the value
+ */
+export const valueToString = (value: unknown, type: SchemaType): string => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  
+  if (type === "object" || type === "array") {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  
+  if (type === "boolean") {
+    return String(value);
+  }
+  
+  return String(value);
 };

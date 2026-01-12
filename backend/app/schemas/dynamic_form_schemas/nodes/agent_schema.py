@@ -18,25 +18,29 @@ AGENT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         name="systemPrompt",
         type="text",
         label="System Prompt",
-        required=True
+        required=True,
+        default="You are a helpful assistant that helps the user with their requests."
     ),
     FieldSchema(
         name="userPrompt",
         type="text",
         label="User Prompt",
-        required=True
+        required=True,
+        default="{{session.message}}"
     ),
     FieldSchema(
         name="type",
         type="select",
         label="Agent Type",
-        required=True
+        required=True,
+        default="ToolSelection"
     ),
     FieldSchema(
         name="maxIterations",
         type="number",
         label="Max Iterations",
-        required=True
+        required=True,
+        default=3
     ),
     FieldSchema(
         name="memory",

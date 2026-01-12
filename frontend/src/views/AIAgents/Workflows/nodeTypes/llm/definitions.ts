@@ -5,10 +5,12 @@ import {
   AgentNodeData,
   LLMModelNodeData,
   ToolBuilderNodeData,
+  MCPNodeData,
 } from "../../types/nodes";
 import AgentNode from "./agentNode";
 import LLMModelNode from "./modelNode";
 import ToolBuilderNode from "./toolBuilderNode";
+import MCPNode from "./mcpNode";
 
 export const AGENT_NODE_DEFINITION: NodeTypeDefinition<AgentNodeData> = {
   type: "agentNode",
@@ -149,3 +151,43 @@ export const TOOL_BUILDER_NODE_DEFINITION: NodeTypeDefinition<ToolBuilderNodeDat
       },
     }),
   };
+
+export const MCP_NODE_DEFINITION: NodeTypeDefinition<MCPNodeData> = {
+  type: "mcpNode",
+  label: "MCP Server",
+  description:
+    "Connects to an MCP (Model Context Protocol) server and exposes selected tools to agents.",
+  shortDescription: "Connect to MCP server",
+  configSubtitle:
+    "Configure MCP server connection and select which tools to expose to your agent.",
+  category: "ai",
+  icon: "Server",
+  defaultData: {
+    name: "MCP Server",
+    description: "MCP server tool connector",
+    connectionType: "http",
+    connectionConfig: {
+      url: "",
+    },
+    availableTools: [],
+    whitelistedTools: [],
+    inputSchema: {},
+    handlers: [
+      {
+        id: "output_tool",
+        type: "source",
+        compatibility: "tools",
+        position: "top",
+      },
+    ],
+  } as MCPNodeData,
+  component: MCPNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "mcpNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};

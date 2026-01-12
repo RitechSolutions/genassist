@@ -18,7 +18,7 @@ class ZendeskConnector:
         self.subdomain = subdomain or settings.ZENDESK_SUBDOMAIN
         self.email = email or settings.ZENDESK_EMAIL
         self.api_token = api_token or settings.ZENDESK_API_TOKEN
-        self.base_url = f"https://{self.subdomain}.zendesk.com/api/v2"
+        self.base_url = f"https://{self.subdomain}/api/v2"
 
     async def create_ticket(
         self,
@@ -65,5 +65,6 @@ class ZendeskConnector:
                     return {"status": resp.status, "data": await resp.json()}
                 except Exception as e:
                     text = await resp.text()
-                    logger.error(f"Zendesk ticket creation failed: {e} / {text}")
+                    logger.error(
+                        f"Zendesk ticket creation failed: {e} / {text}")
                     return {"status": resp.status, "data": {"error": text}}

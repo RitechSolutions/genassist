@@ -72,7 +72,8 @@ async def get_access_token(
             'expires_at': expires_at.isoformat(),
             'expires_in': expires_in,
             'token_type': token_data.get('token_type', 'Bearer'),
-            'scope': token_data.get('scope', '')
+            'scope': token_data.get('scope', ''),
+            'app_settings_id': app_settings_id
         }
 
     except requests.exceptions.RequestException as e:

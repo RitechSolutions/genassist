@@ -55,3 +55,128 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "preprocessingNode": PREPROCESSING_NODE_DIALOG_SCHEMA,
     "trainModelNode": TRAIN_MODEL_NODE_DIALOG_SCHEMA,
 }
+
+
+NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
+  "templateNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "dataMapperNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "llmModelNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "agentNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "input_tools", "type": "target", "position": "bottom", "compatibility": "tools" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "toolBuilderNode": [
+    { "id": "output_tool", "type": "source", "position": "top", "compatibility": "tools" },
+    { "id": "starter_processor", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "apiToolNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "knowledgeBaseNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "sqlNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "mlModelInferenceNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "pythonCodeNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "threadRAGNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "whatsappToolNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" }
+  ],
+
+  "slackMessageNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "zendeskTicketNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "text" }
+  ],
+
+  "gmailNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" }
+  ],
+
+  "readMailsNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "calendarEventNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "jiraNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "chatInputNode": [
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "chatOutputNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" }
+  ],
+
+  "routerNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output_true", "type": "source", "position": "right", "compatibility": "any" },
+    { "id": "output_false", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "aggregatorNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "trainDataSourceNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "preprocessingNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "trainModelNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ]
+}

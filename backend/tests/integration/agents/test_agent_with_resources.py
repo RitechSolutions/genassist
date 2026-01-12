@@ -24,10 +24,6 @@ def new_knowledge_base_data():
                 "enabled": True,
                 "collection_name": ""
             },
-            "graph_db": {
-                "type": "neo4j",
-                "enabled": False
-            },
             "light_rag": {
                 "enabled": True,
                 "search_mode": "mix"

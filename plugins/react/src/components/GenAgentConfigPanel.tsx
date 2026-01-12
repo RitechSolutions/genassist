@@ -13,6 +13,8 @@ export interface ChatTheme {
 export interface ChatSettingsConfig {
   name: string;
   description: string;
+  agentName: string;
+  logoUrl?: string;
 }
 
 type ParamType = 'string' | 'number' | 'boolean';
@@ -54,6 +56,8 @@ const defaultTheme: ChatTheme = {
 const defaultSettings: ChatSettingsConfig = {
   name: 'Genassist',
   description: 'Support',
+  agentName: 'Agent',
+  logoUrl: '',
 };
 
 function objectToParams(obj: Record<string, any> | undefined): MetadataParam[] {
@@ -455,13 +459,32 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                 onChange={(e) => handleSettingChange('name', e.target.value)}
               />
             </div>
-            <div style={{ padding: '0 16px 16px' }}>
+            <div style={{ padding: '0 16px 12px' }}>
               <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>Description</label>
               <input
                 type="text"
                 style={{ ...inputStyle, height: 40, padding: '0 12px', boxSizing: 'border-box' }}
                 value={chatSettings.description}
                 onChange={(e) => handleSettingChange('description', e.target.value)}
+              />
+            </div>
+            <div style={{ padding: '0 16px 12px' }}>
+              <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>Agent Name</label>
+              <input
+                type="text"
+                style={{ ...inputStyle, height: 40, padding: '0 12px', boxSizing: 'border-box' }}
+                value={chatSettings.agentName}
+                onChange={(e) => handleSettingChange('agentName', e.target.value)}
+              />
+            </div>
+            <div style={{ padding: '0 16px 16px' }}>
+              <label style={{ ...labelStyle, display: 'block', marginBottom: 8 }}>Logo URL</label>
+              <input
+                type="text"
+                style={{ ...inputStyle, height: 40, padding: '0 12px', boxSizing: 'border-box' }}
+                value={chatSettings.logoUrl || ''}
+                onChange={(e) => handleSettingChange('logoUrl', e.target.value)}
+                placeholder="https://example.com/logo.png"
               />
             </div>
           </>

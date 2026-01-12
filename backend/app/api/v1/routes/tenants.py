@@ -2,7 +2,7 @@ from typing import List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_injector import Injected
-
+from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
 from app.schemas.tenants import TenantCreate, TenantResponse, TenantUpdate
 from app.services.tenant import TenantService
@@ -14,7 +14,7 @@ router = APIRouter()
     "/",
     response_model=TenantResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth), Depends(permissions("create:tenant"))],
+    dependencies=[Depends(auth), Depends(permissions(P.Tenant.CREATE))],
 )
 async def create_tenant(
     tenant_data: TenantCreate,
@@ -42,7 +42,7 @@ async def create_tenant(
 @router.get(
     "/",
     response_model=List[TenantResponse],
-    dependencies=[Depends(auth), Depends(permissions("read:tenant"))],
+    dependencies=[Depends(auth), Depends(permissions(P.Tenant.READ))],
 )
 async def list_tenants(
     service: TenantService = Injected(TenantService),
@@ -55,7 +55,7 @@ async def list_tenants(
 @router.get(
     "/{tenant_id}",
     response_model=TenantResponse,
-    dependencies=[Depends(auth), Depends(permissions("read:tenant"))],
+    dependencies=[Depends(auth), Depends(permissions(P.Tenant.READ))],
 )
 async def get_tenant(
     tenant_id: UUID,
@@ -75,7 +75,7 @@ async def get_tenant(
 @router.get(
     "/slug/{tenant_slug}",
     response_model=TenantResponse,
-    dependencies=[Depends(auth), Depends(permissions("read:tenant"))],
+    dependencies=[Depends(auth), Depends(permissions(P.Tenant.READ))],
 )
 async def get_tenant_by_slug(
     tenant_slug: str,
@@ -95,7 +95,7 @@ async def get_tenant_by_slug(
 @router.put(
     "/{tenant_id}",
     response_model=TenantResponse,
-    dependencies=[Depends(auth), Depends(permissions("update:tenant"))],
+    dependencies=[Depends(auth), Depends(permissions(P.Tenant.UPDATE))],
 )
 async def update_tenant(
     tenant_id: UUID,
@@ -118,7 +118,7 @@ async def update_tenant(
 @router.delete(
     "/{tenant_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(auth), Depends(permissions("delete:tenant"))],
+    dependencies=[Depends(auth), Depends(permissions(P.Tenant.DELETE))],
 )
 async def deactivate_tenant(
     tenant_id: UUID,

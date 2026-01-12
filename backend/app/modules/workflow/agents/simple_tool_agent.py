@@ -34,8 +34,7 @@ class SimpleToolAgent(BaseToolAgent):
         try:
             response = await self.llm_model.ainvoke(
                 [{"role": "user", "content": prompt}])
-            response_content = response.content if hasattr(
-                response, 'content') else str(response)
+            response_content = self._extract_response_content(response)
             logger.info(f"SimpleToolAgent LLM response: {response_content}")
             parsed = parse_json_response(response_content)
             if not parsed:
@@ -53,8 +52,7 @@ class SimpleToolAgent(BaseToolAgent):
                     query, chat_history)
                 direct_response = await self.llm_model.ainvoke(
                     [{"role": "user", "content": no_tools_prompt}])
-                direct_content = direct_response.content if hasattr(
-                    direct_response, 'content') else str(direct_response)
+                direct_content = self._extract_response_content(direct_response)
                 direct_parsed = parse_json_response(direct_content)
                 answer = direct_parsed.get(
                     "response", direct_content) if direct_parsed else direct_content

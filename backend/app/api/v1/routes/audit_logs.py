@@ -7,12 +7,13 @@ from app.auth.dependencies import auth, permissions
 from app.schemas.audit_log import AuditLogRead, AuditLogSearchParams
 from app.services.audit_logs import AuditLogService
 from datetime import datetime
+from app.core.permissions.constants import Permissions as P
 
 router = APIRouter()
 
 @router.get("/search", response_model=List[AuditLogRead], dependencies=[
     Depends(auth),
-    Depends(permissions("read:audit_log"))
+    Depends(permissions(P.AuditLog.READ))
 ])
 async def search(
     start_date: datetime = Query(None),

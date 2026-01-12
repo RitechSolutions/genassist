@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import Dict, Any
 import logging
-
+from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
 from app.schemas.datasource import DataSourceUpdate
 from app.services.app_settings import AppSettingsService
@@ -38,7 +38,7 @@ class Office365AuthResponse(BaseModel):
 
 @router.post("/oauth/callback", response_model=Office365AuthResponse, dependencies=[
     Depends(auth),
-    Depends(permissions("write:app_settings"))
+    Depends(permissions(P.AppSettings.WRITE))
 ])
 async def office365_callback(
     req: Office365AuthRequest,

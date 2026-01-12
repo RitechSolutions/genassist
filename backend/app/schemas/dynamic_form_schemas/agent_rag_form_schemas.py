@@ -430,151 +430,151 @@ AGENT_RAG_FORM_SCHEMAS_VECTOR_AND_LEGRA: Dict[str, TypeSchema] = {
             ),
         ],
     ),
-    "lightrag": TypeSchema(
-        name="LightRAG",
-        description="Use only LightRAG for graph-based retrieval with LLM completion",
-        sections=[
-            SectionSchema(
-                name="core",
-                label="Core Configuration",
-                fields=[
-                    FieldSchema(
-                        name="working_directory",
-                        type="text",
-                        label="Working Directory",
-                        required=False,
-                        default="lightrag_data",
-                        description="Directory to store LightRAG data",
-                    ),
-                    FieldSchema(
-                        name="search_mode",
-                        type="select",
-                        label="Search Mode",
-                        required=True,
-                        default="mix",
-                        options=[
-                            {"value": "local", "label": "Local Search"},
-                            {"value": "global", "label": "Global Search"},
-                            {"value": "mix", "label": "Mixed Search"},
-                        ],
-                        description="Search strategy for LightRAG",
-                    ),
-                ],
-            ),
-            SectionSchema(
-                name="functions",
-                label="Function Configuration",
-                fields=[
-                    FieldSchema(
-                        name="embedding_func_name",
-                        type="select",
-                        label="Embedding Function",
-                        required=True,
-                        default="openai_embed",
-                        options=[
-                            {"value": "openai_embed", "label": "OpenAI Embeddings"}
-                        ],
-                        description="Embedding function for LightRAG",
-                    ),
-                    FieldSchema(
-                        name="llm_model_func_name",
-                        type="select",
-                        label="LLM Model Function",
-                        required=True,
-                        default="gpt_4o_mini_complete",
-                        options=[
-                            {"value": "gpt_4o_mini_complete", "label": "GPT-4o Mini"}
-                        ],
-                        description="LLM model function for completion",
-                    ),
-                ],
-            ),
-            SectionSchema(
-                name="chunking",
-                label="Chunking Configuration",
-                fields=[
-                    FieldSchema(
-                        name="chunk_token_size",
-                        type="number",
-                        label="Chunk Token Size",
-                        required=True,
-                        default=512,
-                        min=128,
-                        max=2048,
-                        step=32,
-                        description="Size of chunks in tokens",
-                    ),
-                    FieldSchema(
-                        name="chunk_overlap_token_size",
-                        type="number",
-                        label="Chunk Overlap Token Size",
-                        required=True,
-                        default=50,
-                        min=0,
-                        max=200,
-                        step=10,
-                        description="Overlap between chunks in tokens",
-                    ),
-                ],
-            ),
-            SectionSchema(
-                name="vector_storage",
-                label="Vector Storage Configuration",
-                fields=[
-                    FieldSchema(
-                        name="vector_storage",
-                        type="select",
-                        label="Vector Storage Type",
-                        required=False,
-                        default="ChromaVectorDBStorage",
-                        options=[
-                            {
-                                "value": "ChromaVectorDBStorage",
-                                "label": "ChromaDB Storage",
-                            }
-                        ],
-                        description="Vector storage backend for LightRAG",
-                    ),
-                    FieldSchema(
-                        name="embedding_batch_num",
-                        type="number",
-                        label="Embedding Batch Number",
-                        required=False,
-                        default=32,
-                        min=1,
-                        max=128,
-                        step=1,
-                        description="Number of embeddings to process in a batch",
-                    ),
-                ],
-            ),
-            SectionSchema(
-                name="query",
-                label="Query Configuration",
-                fields=[
-                    FieldSchema(
-                        name="top_k",
-                        type="number",
-                        label="Top K Results",
-                        required=False,
-                        default=5,
-                        min=1,
-                        max=20,
-                        step=1,
-                        description="Maximum number of results to return",
-                    ),
-                    FieldSchema(
-                        name="response_type",
-                        type="text",
-                        label="Response Type",
-                        required=False,
-                        default="Single Paragraph",
-                        description="Format for query responses",
-                    ),
-                ],
-            ),
-        ],
-    ),
+    # "lightrag": TypeSchema(
+    #     name="LightRAG",
+    #     description="Use only LightRAG for graph-based retrieval with LLM completion",
+    #     sections=[
+    #         SectionSchema(
+    #             name="core",
+    #             label="Core Configuration",
+    #             fields=[
+    #                 FieldSchema(
+    #                     name="working_directory",
+    #                     type="text",
+    #                     label="Working Directory",
+    #                     required=False,
+    #                     default="lightrag_data",
+    #                     description="Directory to store LightRAG data",
+    #                 ),
+    #                 FieldSchema(
+    #                     name="search_mode",
+    #                     type="select",
+    #                     label="Search Mode",
+    #                     required=True,
+    #                     default="mix",
+    #                     options=[
+    #                         {"value": "local", "label": "Local Search"},
+    #                         {"value": "global", "label": "Global Search"},
+    #                         {"value": "mix", "label": "Mixed Search"},
+    #                     ],
+    #                     description="Search strategy for LightRAG",
+    #                 ),
+    #             ],
+    #         ),
+    #         SectionSchema(
+    #             name="functions",
+    #             label="Function Configuration",
+    #             fields=[
+    #                 FieldSchema(
+    #                     name="embedding_func_name",
+    #                     type="select",
+    #                     label="Embedding Function",
+    #                     required=True,
+    #                     default="openai_embed",
+    #                     options=[
+    #                         {"value": "openai_embed", "label": "OpenAI Embeddings"}
+    #                     ],
+    #                     description="Embedding function for LightRAG",
+    #                 ),
+    #                 FieldSchema(
+    #                     name="llm_model_func_name",
+    #                     type="select",
+    #                     label="LLM Model Function",
+    #                     required=True,
+    #                     default="gpt_4o_mini_complete",
+    #                     options=[
+    #                         {"value": "gpt_4o_mini_complete", "label": "GPT-4o Mini"}
+    #                     ],
+    #                     description="LLM model function for completion",
+    #                 ),
+    #             ],
+    #         ),
+    #         SectionSchema(
+    #             name="chunking",
+    #             label="Chunking Configuration",
+    #             fields=[
+    #                 FieldSchema(
+    #                     name="chunk_token_size",
+    #                     type="number",
+    #                     label="Chunk Token Size",
+    #                     required=True,
+    #                     default=512,
+    #                     min=128,
+    #                     max=2048,
+    #                     step=32,
+    #                     description="Size of chunks in tokens",
+    #                 ),
+    #                 FieldSchema(
+    #                     name="chunk_overlap_token_size",
+    #                     type="number",
+    #                     label="Chunk Overlap Token Size",
+    #                     required=True,
+    #                     default=50,
+    #                     min=0,
+    #                     max=200,
+    #                     step=10,
+    #                     description="Overlap between chunks in tokens",
+    #                 ),
+    #             ],
+    #         ),
+    #         SectionSchema(
+    #             name="vector_storage",
+    #             label="Vector Storage Configuration",
+    #             fields=[
+    #                 FieldSchema(
+    #                     name="vector_storage",
+    #                     type="select",
+    #                     label="Vector Storage Type",
+    #                     required=False,
+    #                     default="ChromaVectorDBStorage",
+    #                     options=[
+    #                         {
+    #                             "value": "ChromaVectorDBStorage",
+    #                             "label": "ChromaDB Storage",
+    #                         }
+    #                     ],
+    #                     description="Vector storage backend for LightRAG",
+    #                 ),
+    #                 FieldSchema(
+    #                     name="embedding_batch_num",
+    #                     type="number",
+    #                     label="Embedding Batch Number",
+    #                     required=False,
+    #                     default=32,
+    #                     min=1,
+    #                     max=128,
+    #                     step=1,
+    #                     description="Number of embeddings to process in a batch",
+    #                 ),
+    #             ],
+    #         ),
+    #         SectionSchema(
+    #             name="query",
+    #             label="Query Configuration",
+    #             fields=[
+    #                 FieldSchema(
+    #                     name="top_k",
+    #                     type="number",
+    #                     label="Top K Results",
+    #                     required=False,
+    #                     default=5,
+    #                     min=1,
+    #                     max=20,
+    #                     step=1,
+    #                     description="Maximum number of results to return",
+    #                 ),
+    #                 FieldSchema(
+    #                     name="response_type",
+    #                     type="text",
+    #                     label="Response Type",
+    #                     required=False,
+    #                     default="Single Paragraph",
+    #                     description="Format for query responses",
+    #                 ),
+    #             ],
+    #         ),
+    #     ],
+    # ),
 }
 
 # For backwards compatibility, alias to the main schema (includes all types: vector, legra, lightrag)

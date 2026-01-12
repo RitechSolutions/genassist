@@ -60,6 +60,16 @@ const NodePanel: React.FC<NodePanelProps> = ({
     setDraggingNodeType(null);
   };
 
+  const categoryLabel = {
+    io: "I/O",
+    ai: "AI",
+    routing: "Routing",
+    integrations: "Integrations",
+    formatting: "Formatting",
+    tools: "Tools",
+    training: "Training",
+  };
+
   return (
     <>
       <div
@@ -102,7 +112,9 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 return (
                   <div key={category} className="mb-4">
                     <h4 className="text-sm font-medium capitalize mb-2">
-                      {category}
+                      {categoryLabel[category]
+                        ? categoryLabel[category]
+                        : category}
                     </h4>
                     <div className="space-y-3">
                       {nodesInCategory.map((nodeType) => {

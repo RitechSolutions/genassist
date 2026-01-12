@@ -1,7 +1,9 @@
 import json
 import logging
 import asyncio
-from langchain.schema import SystemMessage, HumanMessage
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.llm import LlmAnalyst

@@ -1,0 +1,91 @@
+{
+  "header": {
+    "subtitle": "Support"
+  },
+  "menu": {
+    "title": "Menü",
+    "resetConversation": "Konversation zurücksetzen",
+    "language": "Sprache"
+  },
+  "buttons": {
+    "startConversation": "Konversation starten",
+    "cancel": "Abbrechen",
+    "reset": "Zurücksetzen",
+    "save": "Speichern",
+    "saveChanges": "Änderungen speichern",
+    "add": "Hinzufügen"
+  },
+  "input": {
+    "placeholder": "Stellen Sie eine Frage"
+  },
+  "labels": {
+    "agent": "Agent",
+    "you": "Sie"
+  },
+  "dialog": {
+    "resetConversation": {
+      "title": "Konversation zurücksetzen",
+      "message": "Dies löscht den aktuellen Konversationsverlauf und startet eine neue Konversation. Sind Sie sicher?"
+    }
+  },
+  "feedback": {
+    "thumbsUp": "Daumen hoch",
+    "thumbsDown": "Daumen runter"
+  },
+  "thinking": {
+    "messages": [
+      "Denken…",
+      "Ihre Frage wird analysiert…",
+      "Wissen wird durchsucht…",
+      "Relevante Informationen werden abgerufen…",
+      "Antwort wird verfasst…",
+      "Details werden überprüft…",
+      "Alles wird zusammengefügt…",
+      "Fast fertig…"
+    ]
+  },
+  "time": {
+    "justNow": "Gerade eben",
+    "today": "Heute",
+    "yesterday": "Gestern"
+  },
+  "settings": {
+    "defaultDescription": "Support"
+  },
+  "metadata": {
+    "addParameter": "Parameter hinzufügen",
+    "editParameter": "Parameter bearbeiten",
+    "defineKeyValue": "Definieren Sie Schlüssel/Wert-Parameter, die als Chat-Metadaten gesendet werden."
+  },
+  "configPanel": {
+    "appearance": "AUSSEHEN",
+    "settings": "EINSTELLUNGEN",
+    "metadata": "METADATEN",
+    "primaryColor": "Primärfarbe",
+    "secondaryColor": "Sekundärfarbe",
+    "backgroundColor": "Hintergrundfarbe",
+    "textColor": "Textfarbe",
+    "fontSize": "Schriftgröße",
+    "fontFamily": "Schriftfamilie",
+    "name": "Name",
+    "description": "Beschreibung",
+    "small": "Klein (12px)",
+    "medium": "Mittel (15px)",
+    "large": "Groß (18px)",
+    "parameterName": "Parametername",
+    "type": "Typ",
+    "required": "Erforderlich",
+    "defaultValue": "Standardwert",
+    "value": "Wert",
+    "yes": "Ja",
+    "no": "Nein",
+    "true": "Wahr",
+    "false": "Falsch",
+    "string": "Zeichenkette",
+    "number": "Zahl",
+    "boolean": "Boolesch",
+    "edit": "Bearbeiten",
+    "remove": "Entfernen"
+  }
+}
+

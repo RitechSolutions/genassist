@@ -340,7 +340,8 @@ export class ChatService {
 
   async sendMessage(
     message: string,
-    attachments?: Attachment[]
+    attachments?: Attachment[],
+    extraMetadata?: Record<string, any>
   ): Promise<void> {
     if (!this.conversationId || !this.conversationCreateTime) {
       throw new Error("Conversation not started");
@@ -367,8 +368,12 @@ export class ChatService {
       };
 
       // Include metadata
-      if (this.metadata) {
-        requestBody.metadata = this.metadata;
+      const mergedMetadata = {
+        ...(this.metadata || {}),
+        ...(extraMetadata || {}),
+      };
+      if (Object.keys(mergedMetadata).length > 0) {
+        requestBody.metadata = mergedMetadata;
       }
 
       await axios.patch(
@@ -472,14 +477,26 @@ export class ChatService {
           if (Array.isArray(data.payload)) {
             const messages = data.payload as ChatMessage[];
             // Adjust timestamps to be relative to conversation start
+            // Also normalize message_id field (backend might send 'id' instead of 'message_id')
             const adjustedMessages = messages
-              .map((msg) => this.adjustMessageTimestamps(msg))
+              .map((msg) => {
+                const adjusted = this.adjustMessageTimestamps(msg);
+                // Normalize: if backend sends 'id', use it as 'message_id'
+                if (!adjusted.message_id && (msg as any).id) {
+                  adjusted.message_id = (msg as any).id;
+                }
+                return adjusted;
+              })
               .filter((msg) => msg.speaker !== "customer");
             adjustedMessages.forEach(this.messageHandler);
           } else {
             const adjustedMessage = this.adjustMessageTimestamps(
               data.payload as ChatMessage
             );
+            // Normalize: if backend sends 'id', use it as 'message_id'
+            if (!adjustedMessage.message_id && (data.payload as any).id) {
+              adjustedMessage.message_id = (data.payload as any).id;
+            }
             if (adjustedMessage.speaker !== "customer") {
               this.messageHandler(adjustedMessage);
             }
@@ -585,27 +602,39 @@ export class ChatService {
     feedback: "good" | "bad",
     feedback_message?: string
   ): Promise<void> {
-    if (!this.conversationId) {
-      throw new Error("Conversation not started");
+    if (!messageId) {
+      throw new Error("Message ID is required for feedback");
     }
 
     try {
-      await axios.patch(
-        `${this.baseUrl}/api/conversations/message/add-feedback/${this.conversationId}`,
-        {
-          message_id: messageId,
-          feedback,
-          feedback_message,
+      // Use message ID in the URL path, not conversation ID
+      const url = `${this.baseUrl}/api/conversations/message/add-feedback/${messageId}`;
+      // Body should only contain feedback and feedback_message (no message_id)
+      const payload: {
+        feedback: "good" | "bad";
+        feedback_message?: string;
+      } = {
+        feedback,
+      };
+      
+      if (feedback_message) {
+        payload.feedback_message = feedback_message;
+      }
+      
+      await axios.patch(url, payload, {
+        headers: {
+          "x-api-key": this.apiKey,
+          "Content-Type": "application/json",
+          ...(this.tenant ? { "X-Tenant-Id": this.tenant } : {}),
         },
-        {
-          headers: {
-            "x-api-key": this.apiKey,
-            "Content-Type": "application/json",
-            ...(this.tenant ? { "X-Tenant-Id": this.tenant } : {}),
-          },
-        }
-      );
-    } catch (error) {
+      });
+      
+    } catch (error: any) {
+      console.error('Feedback API call failed:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
       throw error;
     }
   }

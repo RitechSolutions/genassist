@@ -8,11 +8,9 @@ import {
   MoreVertical,
   Edit,
   Trash2,
-  MessageSquare,
   AlertCircle,
-  CodeIcon,
+  SquareCode,
   KeyRoundIcon,
-  MessageCircle,
 } from "lucide-react";
 import { Switch } from "@/components/switch";
 import {
@@ -28,18 +26,16 @@ interface AgentListProps {
   agents: AgentConfig[];
   onDelete: (agentId: string) => void;
   onUpdate: (agentId: string) => void;
-  onGetIntegrationCode: (agentId: string) => void;
   onManageKeys: (agentId: string) => void;
-  onChatAsCustomer: (agentId: string, userId: string) => void;
+  onGetIntegrationCode: (agentId: string, userId: string) => void;
 }
 
 const AgentList: React.FC<AgentListProps> = ({
   agents,
   onDelete,
   onUpdate,
-  onGetIntegrationCode,
   onManageKeys,
-  onChatAsCustomer,
+  onGetIntegrationCode,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
@@ -164,33 +160,6 @@ const AgentList: React.FC<AgentListProps> = ({
                       <span>Edit</span>
                     </Link>
                   </DropdownMenuItem>
-                  {isActive ? (
-                    <DropdownMenuItem asChild>
-                      <Link
-                        to={`/ai-agents/chat/${agent.id}/${Math.random()
-                          .toString(36)
-                          .substring(2, 15)}`}
-                      >
-                        <MessageSquare className="mr-2 h-4 w-4" />
-                        <span>Chat</span>
-                      </Link>
-                    </DropdownMenuItem>
-                  ) : (
-                    <DropdownMenuItem
-                      className="text-muted-foreground"
-                      disabled
-                    >
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      <span>Chat (Agent Inactive)</span>
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    className="text-black"
-                    onClick={() => onGetIntegrationCode(agent.id)}
-                  >
-                    <CodeIcon className="mr-2 h-4 w-4" />
-                    <span>Get integration code</span>
-                  </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-black"
                     onClick={() => onManageKeys(agent.id)}
@@ -201,10 +170,10 @@ const AgentList: React.FC<AgentListProps> = ({
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
-                      onChatAsCustomer(agent.id, agent.user_id!);
+                      onGetIntegrationCode(agent.id, agent.user_id!);
                     }}
                   >
-                    <MessageCircle className="mr-2 h-4 w-4" /> Chat as Customer
+                    <SquareCode className="mr-2 h-4 w-4" /> Integration
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem

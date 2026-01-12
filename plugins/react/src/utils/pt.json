@@ -1,0 +1,91 @@
+{
+  "header": {
+    "subtitle": "Suporte"
+  },
+  "menu": {
+    "title": "Menu",
+    "resetConversation": "Reiniciar conversa",
+    "language": "Idioma"
+  },
+  "buttons": {
+    "startConversation": "Iniciar conversa",
+    "cancel": "Cancelar",
+    "reset": "Reiniciar",
+    "save": "Salvar",
+    "saveChanges": "Salvar alterações",
+    "add": "Adicionar"
+  },
+  "input": {
+    "placeholder": "Faça uma pergunta"
+  },
+  "labels": {
+    "agent": "Agente",
+    "you": "Você"
+  },
+  "dialog": {
+    "resetConversation": {
+      "title": "Reiniciar conversa",
+      "message": "Isso limpará o histórico de conversa atual e iniciará uma nova conversa. Tem certeza?"
+    }
+  },
+  "feedback": {
+    "thumbsUp": "Polegar para cima",
+    "thumbsDown": "Polegar para baixo"
+  },
+  "thinking": {
+    "messages": [
+      "Pensando…",
+      "Analisando sua pergunta…",
+      "Buscando informações…",
+      "Obtendo informações relevantes…",
+      "Redigindo a resposta…",
+      "Verificando detalhes…",
+      "Juntando tudo…",
+      "Quase lá…"
+    ]
+  },
+  "time": {
+    "justNow": "Agora mesmo",
+    "today": "Hoje",
+    "yesterday": "Ontem"
+  },
+  "settings": {
+    "defaultDescription": "Suporte"
+  },
+  "metadata": {
+    "addParameter": "Adicionar parâmetro",
+    "editParameter": "Editar parâmetro",
+    "defineKeyValue": "Defina parâmetros chave/valor enviados como metadados do chat."
+  },
+  "configPanel": {
+    "appearance": "APARÊNCIA",
+    "settings": "CONFIGURAÇÕES",
+    "metadata": "METADADOS",
+    "primaryColor": "Cor primária",
+    "secondaryColor": "Cor secundária",
+    "backgroundColor": "Cor de fundo",
+    "textColor": "Cor do texto",
+    "fontSize": "Tamanho da fonte",
+    "fontFamily": "Família da fonte",
+    "name": "Nome",
+    "description": "Descrição",
+    "small": "Pequeno (12px)",
+    "medium": "Médio (15px)",
+    "large": "Grande (18px)",
+    "parameterName": "Nome do parâmetro",
+    "type": "Tipo",
+    "required": "Obrigatório",
+    "defaultValue": "Valor padrão",
+    "value": "Valor",
+    "yes": "Sim",
+    "no": "Não",
+    "true": "Verdadeiro",
+    "false": "Falso",
+    "string": "String",
+    "number": "Número",
+    "boolean": "Booleano",
+    "edit": "Editar",
+    "remove": "Remover"
+  }
+}
+

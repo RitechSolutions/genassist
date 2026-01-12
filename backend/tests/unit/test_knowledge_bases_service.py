@@ -34,7 +34,6 @@ def sample_kb_data():
         "rag_config": {
             "enabled": True,
             "vector_db": {"enabled": True},
-            "graph_db": {"enabled": False},
             "light_rag": {"enabled": False}
         },
         "extra_metadata": {},

@@ -32,6 +32,7 @@ from app.modules.workflow.engine.nodes import (
     TrainPreprocessNode,
     TrainModelNode,
     ThreadRAGNode,
+    MCPNode,
 )
 from typing import Dict, Any, List, Optional, Set
 import logging
@@ -104,6 +105,7 @@ class WorkflowEngine:
         self.register_node_type("preprocessingNode", TrainPreprocessNode)
         self.register_node_type("trainModelNode", TrainModelNode)
         self.register_node_type("threadRAGNode", ThreadRAGNode)
+        self.register_node_type("mcpNode", MCPNode)
 
     def __init__(self):
         """Initialize the workflow engine."""
@@ -197,6 +199,7 @@ class WorkflowEngine:
         start_node_id: Optional[str] = None,
         input_data: Optional[Dict[str, Any]] = None,
         thread_id: str = str(uuid.uuid4()),
+        persist: Optional[bool] = True,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -258,16 +261,13 @@ class WorkflowEngine:
             raise
 
         try:
-            if initial_values.get("message"):
+            if initial_values.get("message") and persist:
                 asyncio.create_task(
-                    state.get_memory().add_user_message(
-                        initial_values.get("message", "")
+                    state.get_memory().add_input_output(
+                        initial_values.get("message", ""),
+                        state.output
                     )
                 )
-                asyncio.create_task(
-                    state.get_memory().add_assistant_message(state.output)
-                )
-
         except Exception as e:
             logger.error(f"Error adding message to memory: {e}")
         return state

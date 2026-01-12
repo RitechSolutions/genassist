@@ -1,0 +1,91 @@
+{
+  "header": {
+    "subtitle": "Soporte"
+  },
+  "menu": {
+    "title": "Menú",
+    "resetConversation": "Reiniciar conversación",
+    "language": "Idioma"
+  },
+  "buttons": {
+    "startConversation": "Iniciar Conversación",
+    "cancel": "Cancelar",
+    "reset": "Reiniciar",
+    "save": "Guardar",
+    "saveChanges": "Guardar Cambios",
+    "add": "Agregar"
+  },
+  "input": {
+    "placeholder": "Haz una pregunta"
+  },
+  "labels": {
+    "agent": "Agente",
+    "you": "Tú"
+  },
+  "dialog": {
+    "resetConversation": {
+      "title": "Reiniciar Conversación",
+      "message": "Esto borrará el historial de conversación actual y comenzará una nueva conversación. ¿Estás seguro?"
+    }
+  },
+  "feedback": {
+    "thumbsUp": "Pulgar arriba",
+    "thumbsDown": "Pulgar abajo"
+  },
+  "thinking": {
+    "messages": [
+      "Pensando…",
+      "Analizando tu pregunta…",
+      "Buscando información…",
+      "Obteniendo información relevante…",
+      "Redactando la respuesta…",
+      "Verificando detalles…",
+      "Uniendo todo…",
+      "Casi listo…"
+    ]
+  },
+  "time": {
+    "justNow": "Ahora",
+    "today": "Hoy",
+    "yesterday": "Ayer"
+  },
+  "settings": {
+    "defaultDescription": "Soporte"
+  },
+  "metadata": {
+    "addParameter": "Agregar Parámetro",
+    "editParameter": "Editar Parámetro",
+    "defineKeyValue": "Define parámetros clave/valor enviados como metadatos del chat."
+  },
+  "configPanel": {
+    "appearance": "APARIENCIA",
+    "settings": "CONFIGURACIÓN",
+    "metadata": "METADATOS",
+    "primaryColor": "Color Principal",
+    "secondaryColor": "Color Secundario",
+    "backgroundColor": "Color de Fondo",
+    "textColor": "Color de Texto",
+    "fontSize": "Tamaño de Fuente",
+    "fontFamily": "Familia de Fuente",
+    "name": "Nombre",
+    "description": "Descripción",
+    "small": "Pequeño (12px)",
+    "medium": "Mediano (15px)",
+    "large": "Grande (18px)",
+    "parameterName": "Nombre del Parámetro",
+    "type": "Tipo",
+    "required": "Requerido",
+    "defaultValue": "Valor por Defecto",
+    "value": "Valor",
+    "yes": "Sí",
+    "no": "No",
+    "true": "Verdadero",
+    "false": "Falso",
+    "string": "Cadena",
+    "number": "Número",
+    "boolean": "Booleano",
+    "edit": "Editar",
+    "remove": "Eliminar"
+  }
+}
+

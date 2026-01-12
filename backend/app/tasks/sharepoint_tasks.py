@@ -204,7 +204,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
                             f"File {file_info.get('name', '')} has no content, skipping...")
                         continue
 
-                    # Use the filename's suffix so textract identifies the type (e.g., .docx)
+                    # Use the filename's suffix to indentify the type (e.g., .docx)
                     extracted_text = FileTextExtractor().extract_from_bytes(
                         filename=file_info.get("name", ""),
                         content=file_content,

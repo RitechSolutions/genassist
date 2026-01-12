@@ -33,6 +33,7 @@ from .tenant import TenantModel
 from .fine_tuning import FineTuningJobModel, OpenAIFileModel, FineTuningEventModel
 from .app_settings import AppSettingsModel
 from .webhook import WebhookModel
+from .mcp_server import MCPServerModel, MCPServerWorkflowModel
 __all__ = [
     # Primary model class names
     "OperatorModel",
@@ -71,7 +72,9 @@ __all__ = [
     "FineTuningJobModel",
     "AppSettingsModel",
     "WebhookModel",
-    "FineTuningEventModel"
+    "FineTuningEventModel",
+    "MCPServerModel",
+    "MCPServerWorkflowModel"
 ]
 
 models = [
@@ -104,7 +107,9 @@ models = [
     MLModelPipelineArtifact,
     TenantModel,
     AppSettingsModel,
-    FineTuningEventModel
+    FineTuningEventModel,
+    MCPServerModel,
+    MCPServerWorkflowModel
 ]
 
 auto_register_updated_by(models)

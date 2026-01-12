@@ -18,7 +18,7 @@ from app.services.workflow import WorkflowService
 from app.dependencies.injector import injector
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
-
+from app.core.permissions.constants import Permissions as P
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
 
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 @router.post(
     "/config/from-wizard",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth), Depends(permissions("create:workflow"))],
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.CREATE))],
 )
 async def create_workflow_from_wizard(
     request: Request,
@@ -86,8 +86,8 @@ async def create_workflow_from_wizard(
 
     json_workflow = json.loads(workflow_json)
     workflow_record.nodes = workflow_engine.generate_nodes_from_wizard(input_data=json_workflow)
-    workflow_record.edges = workflow_engine.generate_edges_from_wizard(input_data=json_workflow)
-    workflow_record.executionState = {}
+    workflow_record.edges = [] # workflow_engine.generate_edges_from_wizard(input_data=json_workflow)
+    workflow_record.executionState = workflow_engine.generate_execution_state_from_wizard(input_data=json_workflow) # required not to crash Studio
     workflow_record.testInput = {}
 
     workflow_record_updated = await workflow_service.update(workflow_id=workflow_id, data=workflow_record)

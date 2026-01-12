@@ -37,9 +37,7 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
       description,
       inputSchema,
       returnDirect,
-      forwardTemplate: JSON.stringify(
-        generateTemplateFromInputSchema(inputSchema)
-      ),
+      forwardTemplate: generateTemplateFromInputSchema(inputSchema),
     });
   }, [name, description, inputSchema, returnDirect, onToolDefinitionChange]);
 

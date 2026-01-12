@@ -9,6 +9,19 @@ import nodeRegistry from "../../registry/nodeRegistry";
 
 export const CHAT_INPUT_NODE_TYPE = "chatInputNode";
 
+const DEFAULT_SUGGESTED_PARAMS: NodeSchema = {
+  thread_id: {
+    type: "string",
+    description: "The thread id of the parameter",
+    required: false,
+  },
+  conversation_history: {
+    type: "string",
+    description: "The conversation history",
+    required: false,
+  },
+};
+
 const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
   id,
   data,
@@ -76,6 +89,8 @@ const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
           setDynamicParams={setDynamicParams}
           addItem={addItem}
           removeItem={removeItem}
+          suggestParams={true}
+          listSuggestedParams={DEFAULT_SUGGESTED_PARAMS}
         />
       </div>
     </BaseNodeContainer>

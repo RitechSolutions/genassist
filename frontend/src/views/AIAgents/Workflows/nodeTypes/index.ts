@@ -22,6 +22,7 @@ import KnowledgeBaseNode from "./tools/knowledgeBaseNode";
 import SQLNode from "./tools/sqlNode";
 import MLModelInferenceNode from "./tools/mlModelInferenceNode";
 import ThreadRAGNode from "./tools/threadRAGNode";
+import MCPNode from "./llm/mcpNode";
 import ReadMailsNode from "./integrations/readMailsNode";
 import ToolBuilderNode from "./llm/toolBuilderNode";
 import ChatOutputNode from "./chat/chatOutputNode";
@@ -29,6 +30,7 @@ import {
   AGENT_NODE_DEFINITION,
   MODEL_NODE_DEFINITION,
   TOOL_BUILDER_NODE_DEFINITION,
+  MCP_NODE_DEFINITION,
 } from "./llm/definitions";
 import {
   DATA_MAPPER_NODE_DEFINITION,
@@ -108,6 +110,8 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(TRAIN_DATA_SOURCE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(PREPROCESSING_NODE_DEFINITION);
   nodeRegistry.registerNodeType(TRAIN_MODEL_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(MCP_NODE_DEFINITION);
 };
 
 // Get node types for React Flow
@@ -140,5 +144,6 @@ export const getNodeTypes = () => {
     trainDataSourceNode: TrainDataSourceNode,
     preprocessingNode: PreprocessingNode,
     trainModelNode: TrainModelNode,
+    mcpNode: MCPNode,
   };
 };

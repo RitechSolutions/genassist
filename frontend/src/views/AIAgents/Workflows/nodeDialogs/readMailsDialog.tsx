@@ -5,7 +5,6 @@ import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Checkbox } from "@/components/checkbox";
-import { Textarea } from "@/components/textarea";
 import {
   Select,
   SelectContent,
@@ -15,6 +14,8 @@ import {
 } from "@/components/select";
 import { Save } from "lucide-react";
 import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { DraggableInput } from "../components/custom/DraggableInput";
+import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { BaseNodeDialogProps } from "./base";
 import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
@@ -171,7 +172,7 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="from">From Email</Label>
-            <Input
+            <DraggableInput
               id="from"
               value={searchCriteria.from}
               onChange={(e) =>
@@ -184,7 +185,7 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
 
           <div className="space-y-2">
             <Label htmlFor="to">To Email</Label>
-            <Input
+            <DraggableInput
               id="to"
               value={searchCriteria.to}
               onChange={(e) => updateSearchCriteriaField("to", e.target.value)}
@@ -196,7 +197,7 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
 
         <div className="space-y-2">
           <Label htmlFor="subject">Subject Contains</Label>
-          <Input
+          <DraggableInput
             id="subject"
             value={searchCriteria.subject}
             onChange={(e) =>
@@ -317,7 +318,7 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
 
         <div className="space-y-2 pt-2">
           <Label htmlFor="custom_query">Custom Gmail Query</Label>
-          <Textarea
+          <DraggableTextArea
             id="custom_query"
             value={searchCriteria.custom_query}
             onChange={(e) =>

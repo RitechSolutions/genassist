@@ -2152,6 +2152,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Get Schemas Api App Settings Form Schemas Get"
                 }
@@ -5421,7 +5422,7 @@
           "agents"
         ],
         "summary": "Switch Agent",
-        "description": "Switch to an agent with the specified ID",
+        "description": "Switch an agent between active and inactive states.\n\nUpdates the database directly - all server instances will see the change\nimmediately on the next agent query (database is source of truth).\n\nInvalidates the cache for this agent to ensure fresh data is fetched.",
         "operationId": "switch_agent_api_genagent_agents_switch__agent_id__post",
         "security": [
           {
@@ -5450,6 +5451,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Switch Agent Api Genagent Agents Switch  Agent Id  Post"
                 }
               }
@@ -5522,6 +5524,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Query Agent Api Genagent Agents  Agent Id  Query  Thread Id  Post"
                 }
               }
@@ -6930,6 +6933,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "additionalProperties": true,
                 "title": "Input Data"
               }
             }
@@ -6999,6 +7003,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "additionalProperties": true,
                 "title": "Test Data"
               }
             }
@@ -7088,6 +7093,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "type": "object",
                 "title": "Test Data"
               }
@@ -7138,6 +7144,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "type": "object",
                 "title": "Test Data"
               }
@@ -7151,6 +7158,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Generate Python Template Api Genagent Workflow Generate Python Template Post"
                 }
@@ -9566,6 +9574,7 @@
           "content": {
             "application/json": {
               "schema": {
+                "additionalProperties": true,
                 "type": "object",
                 "title": "Data"
               }
@@ -11871,6 +11880,915 @@
           }
         ]
       }
+    },
+    "/api/mcp/discover-tools": {
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Discover Mcp Tools",
+        "description": "Discover available tools from an MCP server using the official MCP SDK.\n\nThis endpoint connects to an MCP server and retrieves the list of available tools.\nSupports STDIO, SSE, and HTTP connection types.\n\nArgs:\n    request: Request containing connection type and configuration\n\nReturns:\n    Response containing list of available tools\n\nRaises:\n    HTTPException: If tool discovery fails",
+        "operationId": "discover_mcp_tools_api_mcp_discover_tools_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverToolsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoverToolsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/mcp/jsonrpc": {
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Handle Jsonrpc Jsonrpc",
+        "description": "Handle JSON-RPC requests at /jsonrpc endpoint.",
+        "operationId": "handle_jsonrpc_jsonrpc_api_mcp_jsonrpc_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JSONRPCRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JSONRPCResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/": {
+      "get": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Handle Root Get",
+        "description": "Handle GET requests at root endpoint for SSE connections.\n\nThis allows the MCP SDK's SSE client to connect to the base URL.",
+        "operationId": "handle_root_get_api_mcp__get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Handle Jsonrpc Root",
+        "description": "Handle JSON-RPC requests at root endpoint.",
+        "operationId": "handle_jsonrpc_root_api_mcp__post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JSONRPCRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JSONRPCResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/tools": {
+      "get": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "List Mcp Tools Get",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - GET).\n\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "operationId": "list_mcp_tools_get_api_mcp_tools_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Mcp Tools Get Api Mcp Tools Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/tools/list": {
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "List Mcp Tools Post",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - POST).\n\nThis endpoint matches the MCP client's expected format for tool discovery.\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "operationId": "list_mcp_tools_post_api_mcp_tools_list_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Mcp Tools Post Api Mcp Tools List Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp/tools/call": {
+      "post": {
+        "tags": [
+          "v1",
+          "MCP"
+        ],
+        "summary": "Execute Mcp Tool",
+        "description": "Execute a workflow as an MCP tool (MCP Protocol endpoint).\n\nAuthenticates using API key, finds the tool in the server's workflows,\nvalidates arguments, and executes the workflow.",
+        "operationId": "execute_mcp_tool_api_mcp_tools_call_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPToolCallRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPToolCallResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp-servers/": {
+      "get": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "List Mcp Servers",
+        "description": "Get all MCP servers for the current user.",
+        "operationId": "list_mcp_servers_api_mcp_servers__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MCPServerResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Mcp Servers Api Mcp Servers  Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "Create Mcp Server",
+        "description": "Create a new MCP server.",
+        "operationId": "create_mcp_server_api_mcp_servers__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPServerCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPServerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/mcp-servers/{mcp_server_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "Get Mcp Server",
+        "description": "Get an MCP server by ID.",
+        "operationId": "get_mcp_server_api_mcp_servers__mcp_server_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mcp_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mcp Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPServerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "Update Mcp Server",
+        "description": "Update an MCP server.",
+        "operationId": "update_mcp_server_api_mcp_servers__mcp_server_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mcp_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mcp Server Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPServerUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPServerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "MCP Servers",
+          "MCP Servers"
+        ],
+        "summary": "Delete Mcp Server",
+        "description": "Delete an MCP server (soft delete).",
+        "operationId": "delete_mcp_server_api_mcp_servers__mcp_server_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mcp_server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Mcp Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/customers/": {
+      "post": {
+        "tags": [
+          "v1",
+          "Customers"
+        ],
+        "summary": "Create",
+        "description": "Create a customer.",
+        "operationId": "create_api_customers__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "v1",
+          "Customers"
+        ],
+        "summary": "Get All",
+        "operationId": "get_all_api_customers__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomerRead"
+                  },
+                  "title": "Response Get All Api Customers  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/customers/{customer_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Customers"
+        ],
+        "summary": "Get",
+        "operationId": "get_api_customers__customer_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "Customers"
+        ],
+        "summary": "Delete",
+        "operationId": "delete_api_customers__customer_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "v1",
+          "Customers"
+        ],
+        "summary": "Update",
+        "operationId": "update_api_customers__customer_id__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -12092,9 +13010,32 @@
             "format": "uuid",
             "title": "Operator Id"
           },
+          "operator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatorReadMinimal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow"
+          },
           "test_input": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -12492,6 +13433,7 @@
             "title": "Type"
           },
           "values": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Values"
           },
@@ -12540,6 +13482,7 @@
             "title": "Type"
           },
           "values": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Values"
           },
@@ -12622,6 +13565,7 @@
           "values": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13567,6 +14511,7 @@
           "hyperparameters": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13604,6 +14549,221 @@
           "training_file": "file-RCnFCYRhFDcq1aHxiYkBHw"
         }
       },
+      "CustomerCreate": {
+        "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name",
+            "description": "Customer full name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "Customer phone number"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id",
+            "description": "External ID from source system"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "description": "Is the customer active (0/1)",
+            "default": 1
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref",
+            "description": "Source reference"
+          }
+        },
+        "type": "object",
+        "title": "CustomerCreate"
+      },
+      "CustomerRead": {
+        "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name",
+            "description": "Customer full name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "Customer phone number"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id",
+            "description": "External ID from source system"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "description": "Is the customer active (0/1)",
+            "default": 1
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref",
+            "description": "Source reference"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "CustomerRead"
+      },
+      "CustomerUpdate": {
+        "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          }
+        },
+        "type": "object",
+        "title": "CustomerUpdate"
+      },
       "DataSourceCreate": {
         "properties": {
           "name": {
@@ -13617,6 +14777,7 @@
             "title": "Source Type"
           },
           "connection_data": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Connection Data"
           },
@@ -13665,6 +14826,7 @@
           "connection_data": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13727,6 +14889,7 @@
           "connection_data": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13751,6 +14914,46 @@
         },
         "type": "object",
         "title": "DataSourceUpdate"
+      },
+      "DiscoverToolsRequest": {
+        "properties": {
+          "connection_type": {
+            "type": "string",
+            "title": "Connection Type",
+            "description": "Connection type: 'stdio', 'sse', or 'http'"
+          },
+          "connection_config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Connection Config",
+            "description": "Connection configuration"
+          }
+        },
+        "type": "object",
+        "required": [
+          "connection_type",
+          "connection_config"
+        ],
+        "title": "DiscoverToolsRequest",
+        "description": "Request model for discovering MCP tools"
+      },
+      "DiscoverToolsResponse": {
+        "properties": {
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/MCPTool"
+            },
+            "type": "array",
+            "title": "Tools",
+            "description": "List of available tools from the MCP server"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tools"
+        ],
+        "title": "DiscoverToolsResponse",
+        "description": "Response model for tool discovery"
       },
       "FeatureFlagCreate": {
         "properties": {
@@ -14069,6 +15272,7 @@
           "metadata": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14114,6 +15318,97 @@
         },
         "type": "object",
         "title": "InProgressConversationTranscriptFinalize"
+      },
+      "JSONRPCRequest": {
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "title": "Jsonrpc",
+            "description": "JSON-RPC version",
+            "default": "2.0"
+          },
+          "id": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Request ID"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "Method name (e.g., 'tools/list', 'tools/call')"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params",
+            "description": "Method parameters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "method"
+        ],
+        "title": "JSONRPCRequest",
+        "description": "JSON-RPC request model"
+      },
+      "JSONRPCResponse": {
+        "properties": {
+          "jsonrpc": {
+            "type": "string",
+            "title": "Jsonrpc",
+            "description": "JSON-RPC version",
+            "default": "2.0"
+          },
+          "id": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Request ID"
+          },
+          "result": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result",
+            "description": "Method result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error information"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "JSONRPCResponse",
+        "description": "JSON-RPC response model"
       },
       "JobStatus": {
         "type": "string",
@@ -14222,6 +15517,7 @@
           "vector_store": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14233,6 +15529,7 @@
           "rag_config": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14242,6 +15539,7 @@
             "title": "Rag Config"
           },
           "extra_metadata": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Extra Metadata"
           },
@@ -14474,6 +15772,7 @@
           "vector_store": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14485,6 +15784,7 @@
           "rag_config": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14494,6 +15794,7 @@
             "title": "Rag Config"
           },
           "extra_metadata": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Extra Metadata"
           },
@@ -14818,6 +16119,7 @@
             "title": "Llm Model"
           },
           "connection_data": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Connection Data",
             "description": "Connection parameters like api key."
@@ -14871,6 +16173,7 @@
             "title": "Llm Model"
           },
           "connection_data": {
+            "additionalProperties": true,
             "type": "object",
             "title": "Connection Data",
             "description": "Connection parameters like api key."
@@ -14953,6 +16256,7 @@
           "connection_data": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -14986,6 +16290,391 @@
         },
         "type": "object",
         "title": "LlmProviderUpdate"
+      },
+      "MCPServerCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "api_key": {
+            "type": "string",
+            "minLength": 32,
+            "title": "Api Key",
+            "description": "API key for authentication (minimum 32 characters)"
+          },
+          "workflows": {
+            "items": {
+              "$ref": "#/components/schemas/MCPServerWorkflowCreate"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Workflows",
+            "description": "List of workflows to expose as tools"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Is Active",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "api_key",
+          "workflows"
+        ],
+        "title": "MCPServerCreate",
+        "description": "Schema for creating an MCP Server"
+      },
+      "MCPServerResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Is Active",
+            "default": 1
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url",
+            "description": "MCP server URL (generated by backend)"
+          },
+          "api_key": {
+            "type": "string",
+            "title": "Api Key",
+            "description": "Masked API key (***)"
+          },
+          "workflows": {
+            "items": {
+              "$ref": "#/components/schemas/MCPServerWorkflowResponse"
+            },
+            "type": "array",
+            "title": "Workflows"
+          },
+          "is_deleted": {
+            "type": "integer",
+            "title": "Is Deleted"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "api_key",
+          "workflows",
+          "is_deleted",
+          "user_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MCPServerResponse",
+        "description": "Schema for MCP Server response"
+      },
+      "MCPServerUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key",
+            "description": "API key for authentication (minimum 32 characters)"
+          },
+          "workflows": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MCPServerWorkflowCreate"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflows"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "MCPServerUpdate",
+        "description": "Schema for updating an MCP Server"
+      },
+      "MCPServerWorkflowCreate": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workflow Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Name",
+            "description": "Name to expose as MCP tool (lowercase with underscores)"
+          },
+          "tool_description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Description",
+            "description": "Description for the MCP tool"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "tool_name",
+          "tool_description"
+        ],
+        "title": "MCPServerWorkflowCreate",
+        "description": "Schema for creating an MCP Server Workflow"
+      },
+      "MCPServerWorkflowResponse": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workflow Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Name",
+            "description": "Name to expose as MCP tool (lowercase with underscores)"
+          },
+          "tool_description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Description",
+            "description": "Description for the MCP tool"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "mcp_server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Mcp Server Id"
+          },
+          "input_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Schema",
+            "description": "Input schema extracted from chatInputNode (JSON Schema format)"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "tool_name",
+          "tool_description",
+          "id",
+          "mcp_server_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MCPServerWorkflowResponse",
+        "description": "Schema for MCP Server Workflow response"
+      },
+      "MCPTool": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Tool name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Tool description"
+          },
+          "inputSchema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputschema",
+            "description": "JSON schema defining tool parameters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "MCPTool",
+        "description": "MCP tool definition"
+      },
+      "MCPToolCallRequest": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool",
+            "description": "Tool name to execute"
+          },
+          "arguments": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments",
+            "description": "Tool arguments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool"
+        ],
+        "title": "MCPToolCallRequest",
+        "description": "Request model for calling an MCP tool"
+      },
+      "MCPToolCallResponse": {
+        "properties": {
+          "output": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Output",
+            "description": "Tool execution output"
+          }
+        },
+        "type": "object",
+        "required": [
+          "output"
+        ],
+        "title": "MCPToolCallResponse",
+        "description": "Response model for tool execution"
       },
       "MLModelCreate": {
         "properties": {
@@ -15035,6 +16724,7 @@
           "inference_params": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -15378,6 +17068,7 @@
           "execution_output": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -15513,6 +17204,7 @@
           "inference_params": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -15628,6 +17320,7 @@
           "inference_params": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -16022,6 +17715,18 @@
           "updated_at"
         ],
         "title": "OperatorReadAfterCreate"
+      },
+      "OperatorReadMinimal": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserReadMinimal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user"
+        ],
+        "title": "OperatorReadMinimal"
       },
       "OperatorStatisticsCreate": {
         "properties": {
@@ -16424,6 +18129,7 @@
           "metadata": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -17131,6 +18837,18 @@
       },
       "TranscriptSegmentInput": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
           "create_time": {
             "anyOf": [
               {
@@ -17920,6 +19638,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -17934,6 +19653,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -17947,6 +19667,7 @@
           "testInput": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -17958,6 +19679,7 @@
           "executionState": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -18041,6 +19763,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -18055,6 +19778,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -18068,6 +19792,7 @@
           "testInput": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -18079,6 +19804,7 @@
           "executionState": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -18151,6 +19877,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -18165,6 +19892,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"
@@ -18178,6 +19906,7 @@
           "testInput": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -18189,6 +19918,7 @@
           "executionState": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -18289,6 +20019,7 @@
             "anyOf": [
               {
                 "items": {
+                  "additionalProperties": true,
                   "type": "object"
                 },
                 "type": "array"

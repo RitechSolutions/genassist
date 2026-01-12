@@ -1,9 +1,11 @@
 from typing import Dict, List, Any, Optional
 from uuid import uuid4
 from copy import deepcopy
+
+from sqlalchemy import null
 from app.modules.workflow.manage.data_models import ValidationError
 from app.schemas.dynamic_form_schemas.base import FieldSchema
-from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
+from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS, NODE_HANDLERS_SCHEMAS
 
 
 #TODO: Validate Handlers
@@ -28,6 +30,7 @@ class WorkflowManager:
 
     json_nodes = []
     json_edges = []
+    node_id_mapping = {}
     # ------------------------
     # Core helpers
     # ------------------------
@@ -59,20 +62,32 @@ class WorkflowManager:
         return data
 
 
-    
-    def _gen_node_from_type(self, node_type: str, name: str) -> Dict:
+
+
+    def _gen_node_from_type(self, node_type: str, name: str, idx: int) -> Dict:
         fields = NODE_DIALOG_SCHEMAS.get(node_type) or []     
+        handlers = NODE_HANDLERS_SCHEMAS.get(node_type) or []
+        x = idx * 500 + 50
+        y = 150
+        
         node={
             "id": str(uuid4()),
             "type": node_type,
             "data": {
                 **self._build_data_fields(fields),
-                "handlers": self.build_handlers(node_type),
+                "handlers": handlers,
             },
-            "position": {"x": 0, "y": 0}
+            "width": 400,
+            "height": 226,
+            "dragging": False,
+            "selected": False,
+            "position": {"x": x, "y": y},
+            "positionAbsolute": {"x": x, "y": y},
         }
         node["data"]["name"] = name
         node["data"]["label"] = name
+        node["data"]["description"] = name
+        node["data"]["inputSchema"] ={}
 
         return node
 
@@ -227,73 +242,22 @@ class WorkflowManager:
     # ------------------------
     # Create Workflow from wizard
     # ------------------------
-
-    def generate_from_wizard(self, wizard_json: Dict[str, Any]) -> None:
-        # Example implementation - adapt based on actual wizard JSON structure
-        steps = wizard_json.get("steps", [])
-        previous_node_id = None
-
-        for step in steps:
-            node_id = str(uuid4())
-            node = {
-                "id": node_id,
-                "type": step.get("type", "default"),
-                "data": {
-                    "name": step.get("name", f"Step {node_id}"),
-                    "handlers": step.get("handlers", [])
-                },
-                "position": step.get("position", {"x": 0, "y": 0})
-            }
-            self.add_node(node)
-
-            if previous_node_id:
-                self.add_edge(previous_node_id, node_id)
-
-            previous_node_id = node_id
-
-
     def generate_nodes_from_wizard(self, input_data: Dict) -> List[Dict]:
-        output_nodes = []
 
         for index, node in enumerate(input_data["workflow"]):
             node_type = node["node_name"]
-            name = node["node_name"]
+            name = node["function_of_node"]
+            node_simple_id= node["uniqueId"]
 
             x = index * 500 + 50
             y = 150
-            
-            output_nodes.append({
-                "id": str(uuid4()),
-                "type": node_type,
-                "width": 400,
-                "height": 174 if node["node_name"] == "chatInputNode" else 226,
-                "dragging": False,
-                "selected": False,
-                "position": {"x": x, "y": y},
-                "positionAbsolute": {"x": x, "y": y},
-                "data": {
-                    "name": name,
-                    "label": name,
-                    "handlers": self.build_handlers(node["node_name"]),
-                    **(
-                        {
-                            "inputSchema": {
-                                "message": {
-                                    "type": "string",
-                                    "required": True,
-                                    "description": "The input received from the user.",
-                                    "defaultValue": ""
-                                }
-                            }
-                        }
-                        if node["node_name"] == "chatInputNode"
-                        else {}
-                    )
-                }
-            })
-            self.json_nodes.append(output_nodes[-1])
 
-        return output_nodes
+            full_node = self._gen_node_from_type(node_type, name, index)
+            
+            self.node_id_mapping[node_simple_id]= full_node["id"]
+            self.json_nodes.append(full_node)
+
+        return self.json_nodes
 
     def generate_edges_from_wizard(self, input_data: Dict) -> List[Dict]:
         output_edges = []
@@ -325,33 +289,14 @@ class WorkflowManager:
         return output_edges
     
 
-    def build_handlers(self, node_name: str) -> List[Dict]:
-        if node_name == "chatInputNode":
-            return [{
-                "id": "output",
-                "type": "source",
-                "position": "right",
-                "compatibility": "any"
-            }]
-        if node_name == "chatOutputNode":
-            return [{
-                "id": "input",
-                "type": "target",
-                "position": "left",
-                "compatibility": "any"
-            }]
-
-        return [
-            {
-                "id": "input",
-                "type": "target",
-                "position": "left",
-                "compatibility": "any"
+    def generate_execution_state_from_wizard(self, input_data: Dict) -> Dict:
+        execution_state = {
+            "source": {
+                "message": None
             },
-            {
-                "id": "output",
-                "type": "source",
-                "position": "right",
-                "compatibility": "any"
-            }
-        ]
+            "session": {
+                "message": None
+            },
+            "nodeOutputs": {}
+        }
+        return execution_state

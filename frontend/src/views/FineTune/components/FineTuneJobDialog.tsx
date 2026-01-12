@@ -9,7 +9,7 @@ import {
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Button } from "@/components/button";
-import { Loader2, Upload, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Upload, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
@@ -18,6 +18,7 @@ import {
   uploadFineTuneFile,
 } from "@/services/openaiFineTune";
 import type { CreateFineTuneJobRequest } from "@/interfaces/fineTune.interface";
+import { Tooltip } from "@/components/tooltip";
 import {
   Select,
   SelectContent,
@@ -235,7 +236,24 @@ export function FineTuneJobDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Training file</Label>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Label>Training file</Label>
+                  <Tooltip
+                    content="The dataset used to teach the model desired behavior. Must be properly formatted (JSONL) and representative of real usage"
+                    contentClassName="w-48"
+                    iconClassName="h-4 w-4"
+                  />
+                </div>
+                <a
+                  href="/sample-files/traning_sample.jsonl"
+                  download="training_sample.jsonl"
+                  className="flex items-center gap-1 text-xs hover:text-foreground"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Download Sample File</span>
+                </a>
+              </div>
               <label className="border border-dashed border-muted-foreground/40 rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-muted-foreground/70 transition">
                 <Upload className="w-5 h-5 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Select file to upload</span>
@@ -257,7 +275,24 @@ export function FineTuneJobDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Validation file</Label>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Label>Validation file</Label>
+                  <Tooltip
+                    content="A separate dataset used to evaluate model performance during training and detect overfitting"
+                    contentClassName="w-48"
+                    iconClassName="h-4 w-4"
+                  />
+                </div>
+                <a
+                  href="/sample-files/validation_sample.jsonl"
+                  download="validation_sample.jsonl"
+                  className="flex items-center gap-1 text-xs hover:text-foreground"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Download Sample File</span>
+                </a>
+              </div>
               <label className="border border-dashed border-muted-foreground/40 rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-muted-foreground/70 transition">
                 <Upload className="w-5 h-5 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Select file to upload</span>

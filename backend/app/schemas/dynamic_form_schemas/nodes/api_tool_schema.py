@@ -12,13 +12,15 @@ API_TOOL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         name="endpoint",
         type="text",
         label="Endpoint URL",
-        required=True
+        required=True,
+        default="http://loclahost/api/endpoint"
     ),
     FieldSchema(
         name="method",
         type="select",
         label="HTTP Method",
-        required=True
+        required=True,
+        default="GET"
     ),
     FieldSchema(
         name="requestBody",

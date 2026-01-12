@@ -4,9 +4,8 @@ import logging
 import re
 import time
 from typing import Any, Dict, Optional
-
-from langchain.schema import SystemMessage, HumanMessage
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from .database_manager import DatabaseManager
 from .query_validator import validate_with_sqlglot

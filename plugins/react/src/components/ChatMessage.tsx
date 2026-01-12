@@ -1,9 +1,12 @@
 import React from 'react';
 import { WelcomeCard } from './WelcomeCard';
-import { ChatMessage } from '../types';
+import { ChatMessage, ScheduleItem, Translations } from '../types';
 import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { formatTimestamp } from '../utils/time';
 import { getFileIcon } from './FileTypeIcon';
+import { InteractiveContent } from './InteractiveContent';
+import { parseInteractiveContentBlocks } from '../utils/interactiveContent';
+import { defaultTranslations, getTranslationString, mergeTranslations } from '../utils/i18n';
 export { AttachmentPreview } from './AttachmentPreview';
 
 interface ChatMessageProps {
@@ -27,6 +30,12 @@ interface ChatMessageProps {
   welcomeTitle?: string;
   possibleQueries?: string[];
   onQuickQuery?: (query: string) => void;
+  isLastMessage?: boolean;
+  onQuickAction?: (text: string) => void;
+  onScheduleConfirm?: (schedule: ScheduleItem) => void;
+  translations?: Translations;
+  language?: string;
+  agentName?: string; // Custom agent name to display instead of translation
 }
 
 export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
@@ -40,15 +49,43 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   welcomeTitle: welcomeTitleProp,
   possibleQueries,
   onQuickQuery,
+  isLastMessage = false,
+  onQuickAction,
+  onScheduleConfirm,
+  translations: customTranslations,
+  language,
+  agentName,
 }) => {
+  // Merge translations with defaults
+  const translations = React.useMemo(
+    () => mergeTranslations(customTranslations, defaultTranslations),
+    [customTranslations]
+  );
+
+  // Translation helper
+  const t = (key: string, fallback?: string): string => {
+    return getTranslationString(key, translations, fallback);
+  };
   const isUser = message.speaker === 'customer';
   const isSpecial = message.speaker === 'special';
   const isWelcomeMessage = !isUser && !isSpecial && isFirstMessage;
   const [isHovered, setIsHovered] = React.useState(false);
   const [editingFeedback] = React.useState(false);
   const [displayText] = React.useState<string>(message.text);
+  const contentBlocks = React.useMemo(
+    () => parseInteractiveContentBlocks(displayText),
+    [displayText]
+  );
 
-  const timestamp = formatTimestamp(message.create_time);
+  // Format timestamp with translations
+  const timestamp = React.useMemo(() => {
+    const timeTranslations = translations?.time ? {
+      justNow: translations.time.justNow,
+      today: translations.time.today,
+      yesterday: translations.time.yesterday,
+    } : undefined;
+    return formatTimestamp(message.create_time, language, timeTranslations);
+  }, [message.create_time, language, translations]);
 
   // Fast typewriter effect for newly displayed agent messages, fix later
   // React.useEffect(() => {
@@ -81,9 +118,11 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   // Updated design colors
   const userBubbleBgColor = '#E4E4E7'; // grey for user
   const userTextColor = '#000000';
-  const agentTextColor = '#000000';
+  const agentTextColor = theme?.textColor || '#000000';
+  const primaryColor = theme?.primaryColor || '#4f46e5';
   const fontFamily = theme?.fontFamily || 'Roboto, Arial, sans-serif';
   const fontSize = theme?.fontSize || '15px';
+  const bubbleTextColor = isUser ? userTextColor : agentTextColor;
 
   const messageContainerStyle: React.CSSProperties = {
     display: 'flex',
@@ -216,13 +255,6 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
     }
   }
 
-  const messageLines = !isWelcomeMessage ? displayText.split('\n').map((line, i) => (
-    <React.Fragment key={i}>
-      {line}
-      {i < displayText.split('\n').length - 1 && <br />}
-    </React.Fragment>
-  )) : null;
-
   // Handle special messages (like takeover indicators)
   if (isSpecial) {
     const specialMessageStyle: React.CSSProperties = {
@@ -298,11 +330,11 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
         {isUser ? (
           <>
             <div style={topTimestampStyle}>{timestamp}</div>
-            <div style={messageLabelStyle}>You</div>
+            <div style={messageLabelStyle}>{t('labels.you')}</div>
           </>
         ) : (
           <>
-            <div style={messageLabelStyle}>Agent</div>
+            <div style={messageLabelStyle}>{agentName || t('labels.agent')}</div>
             <div style={topTimestampStyle}>{timestamp}</div>
           </>
         )}
@@ -352,7 +384,16 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
       {message.text && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', alignSelf: isUser ? 'flex-end' : 'flex-start' }}>
           <div style={{ ...bubbleStyle, position: 'relative' }}>
-            {messageLines}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <InteractiveContent
+                blocks={contentBlocks}
+                primaryColor={primaryColor}
+                textColor={bubbleTextColor}
+                isActionable={!isUser && isLastMessage}
+                onQuickAction={onQuickAction}
+                onScheduleConfirm={onScheduleConfirm}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -373,10 +414,14 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
               <button
                 type="button"
                 style={iconButtonStyle}
-                title="Thumbs up"
+                title={t('feedback.thumbsUp')}
                 onClick={() => {
-                  if (message.message_id && onFeedback) {
-                    onFeedback(message.message_id, 'good');
+                  // Use message_id from socket, fallback to id if message_id doesn't exist
+                  const msgId = message.message_id || (message as any).id;
+                  if (msgId && onFeedback) {
+                    onFeedback(msgId, 'good');
+                  } else {
+                    // ignore
                   }
                 }}
               >
@@ -386,10 +431,14 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
               <button
                 type="button"
                 style={iconButtonStyle}
-                title="Thumbs down"
+                title={t('feedback.thumbsDown')}
                 onClick={() => {
-                  if (message.message_id && onFeedback) {
-                    onFeedback(message.message_id, 'bad');
+                  // Use message_id from socket, fallback to id if message_id doesn't exist
+                  const msgId = message.message_id || (message as any).id;
+                  if (msgId && onFeedback) {
+                    onFeedback(msgId, 'bad');
+                  } else {
+                    // ignore
                   }
                 }}
               >

@@ -1,0 +1,91 @@
+{
+  "header": {
+    "subtitle": "Supporto"
+  },
+  "menu": {
+    "title": "Menu",
+    "resetConversation": "Reimposta conversazione",
+    "language": "Lingua"
+  },
+  "buttons": {
+    "startConversation": "Avvia conversazione",
+    "cancel": "Annulla",
+    "reset": "Reimposta",
+    "save": "Salva",
+    "saveChanges": "Salva modifiche",
+    "add": "Aggiungi"
+  },
+  "input": {
+    "placeholder": "Fai una domanda"
+  },
+  "labels": {
+    "agent": "Agente",
+    "you": "Tu"
+  },
+  "dialog": {
+    "resetConversation": {
+      "title": "Reimposta conversazione",
+      "message": "Questo cancellerà la cronologia della conversazione corrente e inizierà una nuova conversazione. Sei sicuro?"
+    }
+  },
+  "feedback": {
+    "thumbsUp": "Pollice su",
+    "thumbsDown": "Pollice giù"
+  },
+  "thinking": {
+    "messages": [
+      "Pensando…",
+      "Analizzando la tua domanda…",
+      "Cercando informazioni…",
+      "Recuperando informazioni rilevanti…",
+      "Redigendo la risposta…",
+      "Verificando i dettagli…",
+      "Mettendo tutto insieme…",
+      "Quasi fatto…"
+    ]
+  },
+  "time": {
+    "justNow": "Proprio ora",
+    "today": "Oggi",
+    "yesterday": "Ieri"
+  },
+  "settings": {
+    "defaultDescription": "Supporto"
+  },
+  "metadata": {
+    "addParameter": "Aggiungi parametro",
+    "editParameter": "Modifica parametro",
+    "defineKeyValue": "Definisci parametri chiave/valore inviati come metadati della chat."
+  },
+  "configPanel": {
+    "appearance": "ASPETTO",
+    "settings": "IMPOSTAZIONI",
+    "metadata": "METADATI",
+    "primaryColor": "Colore primario",
+    "secondaryColor": "Colore secondario",
+    "backgroundColor": "Colore di sfondo",
+    "textColor": "Colore del testo",
+    "fontSize": "Dimensione carattere",
+    "fontFamily": "Famiglia carattere",
+    "name": "Nome",
+    "description": "Descrizione",
+    "small": "Piccolo (12px)",
+    "medium": "Medio (15px)",
+    "large": "Grande (18px)",
+    "parameterName": "Nome parametro",
+    "type": "Tipo",
+    "required": "Obbligatorio",
+    "defaultValue": "Valore predefinito",
+    "value": "Valore",
+    "yes": "Sì",
+    "no": "No",
+    "true": "Vero",
+    "false": "Falso",
+    "string": "Stringa",
+    "number": "Numero",
+    "boolean": "Booleano",
+    "edit": "Modifica",
+    "remove": "Rimuovi"
+  }
+}
+

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { GenAgentChat } from "../../src";
 import { ChatBubble } from "../../src/components/ChatBubble";
 import {
@@ -37,6 +37,8 @@ function App() {
   const [chatSettings, setChatSettings] = useState({
     name: "Genassist",
     description: "Support",
+    agentName: "Agent",
+    logoUrl: "",
   });
 
   const [customLogo, setCustomLogo] = useState<FileState>({
@@ -141,6 +143,9 @@ function App() {
     // Here you would typically save the settings to a server
     alert("Changes saved!");
   };
+
+  // Memoize callbacks to prevent unnecessary re-renders of GenAgentChat
+  const handleError = useCallback(() => {}, []);
 
   const toggleChat = () => {
     setShowChat(!showChat);
@@ -773,7 +778,7 @@ function App() {
                 />
               </div>
 
-              <div style={{ padding: "0 16px 16px", borderBottom: "none" }}>
+              <div style={{ padding: "0 16px 12px", borderBottom: "none" }}>
                 <label
                   style={{
                     ...labelStyle,
@@ -798,6 +803,62 @@ function App() {
                   onChange={(e) =>
                     handleSettingChange("description", e.target.value)
                   }
+                />
+              </div>
+
+              <div style={{ padding: "0 16px 12px", borderBottom: "none" }}>
+                <label
+                  style={{
+                    ...labelStyle,
+                    display: "block",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Agent Name
+                </label>
+                <input
+                  type="text"
+                  style={{
+                    width: "100%",
+                    height: "40px",
+                    padding: "0 12px",
+                    border: "1px solid #e0e0e0",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    boxSizing: "border-box",
+                  }}
+                  value={chatSettings.agentName}
+                  onChange={(e) =>
+                    handleSettingChange("agentName", e.target.value)
+                  }
+                />
+              </div>
+              <div style={{ padding: "0 16px 16px", borderBottom: "none" }}>
+                <label
+                  style={{
+                    ...labelStyle,
+                    display: "block",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Logo URL
+                </label>
+                <input
+                  type="text"
+                  style={{
+                    width: "100%",
+                    height: "40px",
+                    padding: "0 12px",
+                    border: "1px solid #e0e0e0",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    boxSizing: "border-box",
+                  }}
+                  value={chatSettings.logoUrl || ""}
+                  onChange={(e) =>
+                    handleSettingChange("logoUrl", e.target.value)
+                  }
+                  placeholder="https://example.com/logo.png"
                 />
           </div>
         </>
@@ -885,8 +946,9 @@ function App() {
           metadata={metadata}
           theme={theme}
           headerTitle={chatSettings.name}
-          placeholder="Ask a question..."
-          onError={() => {}}
+          agentName={chatSettings.agentName}
+          logoUrl={chatSettings.logoUrl}
+          onError={handleError}
         />
       </div>
 

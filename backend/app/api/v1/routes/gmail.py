@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import Dict, Any
 import logging
-
+from app.core.permissions.constants import Permissions as P
 from requests import request
 from app.auth.dependencies import auth, permissions
 from app.core.utils.encryption_utils import decrypt_key
@@ -31,10 +31,10 @@ class GmailAuthResponse(BaseModel):
     status: str
     message: str
 
-
+# TODO choose which permissions to use
 @router.post("/oauth/callback", response_model=GmailAuthResponse, dependencies=[
     Depends(auth),
-    Depends(permissions("write:app_settings"))  # Adjust permission as needed
+    Depends(permissions(P.AppSettings.WRITE))  # Adjust permission as needed
 ])
 async def store_oauth_code(
     gmail_req: GmailAuthRequest,

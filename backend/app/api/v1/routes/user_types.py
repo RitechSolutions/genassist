@@ -1,7 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends
 from fastapi_injector import Injected
-
+from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
 from app.schemas.user import UserTypeRead, UserTypeCreate, UserTypeUpdate
 from app.services.user_types import UserTypesService
@@ -12,7 +12,7 @@ router = APIRouter()
 
 @router.get("/{user_type_id}", response_model=UserTypeRead, dependencies=[
     Depends(auth),
-    Depends(permissions("read:user_type"))
+    Depends(permissions(P.UserType.READ))
     ])
 async def get(user_type_id: UUID, service: UserTypesService = Injected(UserTypesService)):
     return await service.get_by_id(user_type_id)
@@ -20,7 +20,7 @@ async def get(user_type_id: UUID, service: UserTypesService = Injected(UserTypes
 
 @router.get("/", response_model=list[UserTypeRead],dependencies=[
     Depends(auth),
-    Depends(permissions("read:user_type"))
+    Depends(permissions(P.UserType.READ))
     ])
 async def get_all(service: UserTypesService = Injected(UserTypesService)):
     return await service.get_all()
@@ -28,7 +28,7 @@ async def get_all(service: UserTypesService = Injected(UserTypesService)):
 
 @router.post("/", response_model=UserTypeRead, dependencies=[
     Depends(auth),
-    Depends(permissions("create:user_type"))
+    Depends(permissions(P.UserType.CREATE))
     ])
 async def create(
         user_type: UserTypeCreate,
@@ -39,7 +39,7 @@ async def create(
 
 @router.delete("/{user_type_id}", dependencies=[
     Depends(auth),
-    Depends(permissions("delete:user_type"))
+    Depends(permissions(P.UserType.DELETE))
     ])
 async def delete(
         user_type_id: UUID,

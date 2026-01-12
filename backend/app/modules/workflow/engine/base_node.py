@@ -127,7 +127,7 @@ class BaseNode(ABC):
             source_id = edge.get("source")
             if source_id:
                 _, node_type = self.get_node_config(source_id)
-                if "toolBuilderNode" in node_type:
+                if "toolBuilderNode" or "mcpNode" in node_type:
                     # skip tool builder node because it does not produce output normally
                     continue
                 source_nodes.append(source_id)
@@ -183,7 +183,7 @@ class BaseNode(ABC):
             return self.execution_end_time - self.execution_start_time
         return 0.0
 
-    async def dummy_process(self, config: Dict[str, Any] = None, node_input: Any = None) -> Any:
+    async def dummy_process(self, config: Optional[Dict[str, Any]] = None, node_input: Any = None) -> Any:
         if config is None:
             config = {}
         logger.info(f"Dummy process called for node {self.node_id}")
@@ -247,18 +247,27 @@ class BaseNode(ABC):
                     source_node_id, self.get_state(), workflow_id)
 
                 if node:
-                    tool = BaseTool(
-                        node_id=source_node_id,
-                        name=node.get_name(),
-                        description=node.get_description(),
-                        parameters=node.get_input_schema(),
-                        return_direct=node.get_node_data().get("returnDirect", False),
-                        function=node.execute
-                    )
+                    # Check if node exposes multiple tools (e.g., MCP node)
+                    if hasattr(node, 'get_tools') and callable(getattr(node, 'get_tools')):
+                        # Node exposes multiple tools
+                        tools = node.get_tools()
+                        connected_nodes.extend(tools)
+                        logger.debug("Added %d tools from node %s",
+                                     len(tools), source_node_id)
+                    else:
+                        # Standard single tool node
+                        tool = BaseTool(
+                            node_id=source_node_id,
+                            name=node.get_name(),
+                            description=node.get_description(),
+                            parameters=node.get_input_schema(),
+                            return_direct=node.get_node_data().get("returnDirect", False),
+                            function=node.execute
+                        )
 
-                    connected_nodes.append(tool)
-                    logger.debug("Added tool: %s from node %s",
-                                 tool.name, source_node_id)
+                        connected_nodes.append(tool)
+                        logger.debug("Added tool: %s from node %s",
+                                     tool.name, source_node_id)
 
             else:
                 source_node_id = edge.get("target")

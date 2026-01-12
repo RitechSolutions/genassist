@@ -38,3 +38,11 @@ export function tryParse(value: any) {
     return value;
   }
 }
+
+export function maskInput(inputVal: string, maxLength: number = 36): string {
+  let maskSize = inputVal.length;  // default mask size
+  if (inputVal.length > maxLength) {
+    maskSize = maxLength;
+  }
+  return "*".repeat(maskSize);
+}

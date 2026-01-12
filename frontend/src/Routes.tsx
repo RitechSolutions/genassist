@@ -36,7 +36,8 @@ import ServerDownPage from "@/components/ServerDownPage";
 import { useServerStatus } from "@/context/ServerStatusContext";
 import { GmailOAuthCallback } from "./views/DataSources/components/GmailOAuthCallback";
 import { Office365OAuthCallback  } from "./views/DataSources/components/Office365OAuthCallback";
-import WebhookListPage from "@/views/Webhooks/pages/Webhooks"
+import WebhookListPage from "@/views/Webhooks/pages/Webhooks";
+import MCPServersPage from "@/views/MCPServers/pages/MCPServers";
 import Privacy from "@/views/Privacy";
 import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
@@ -311,6 +312,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:webhook"]}>
                   <WebhookListPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "mcp-servers",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:mcp_server"]}>
+                  <MCPServersPage />
                 </ProtectedRoute>
               ),
             },

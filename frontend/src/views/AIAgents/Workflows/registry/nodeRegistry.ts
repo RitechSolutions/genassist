@@ -50,7 +50,8 @@ class NodeRegistry {
   }
   getAllToolTypes(): string[] {
     const toolTypes = [
-      "toolBuilderNode", 
+      "toolBuilderNode",
+      "mcpNode",
     ];
     return Array.from(this.nodeTypes.keys()).filter(type => toolTypes.includes(type));
   }

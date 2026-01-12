@@ -5,7 +5,6 @@ import Chat from './components/Chat';
 import { SidebarProvider } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import IntegrationCodePage from '@/views/AIAgents/components/IntegrationCodePage';
 import ChatAsCustomer from "@/views/AIAgents/components/Customer/ChatAsCustomer"; 
 import AgentStudioPage from './Workflows/Index';
 // import Tools from '../Tools/Index';
@@ -26,8 +25,7 @@ const AIAgentsView: React.FC = () => {
                 <Route path="chat/:agentId/:threadId" element={<Chat />} />
                 <Route path="new" element={<AgentStudioPage />} />
                 <Route path="workflow/:agentId" element={<AgentStudioPage />} />
-                <Route path="integration/:agentId" element={<IntegrationCodePage />} />
-                <Route path="chat-as-customer/:agentId" element={<ChatAsCustomer />} />
+                <Route path="integration/:agentId" element={<ChatAsCustomer />} />
               </Routes>
           </div>
         </main>

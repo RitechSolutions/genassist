@@ -133,6 +133,11 @@ const mainMenuItems: MenuItem[] = [
         permissionsRequired: ["read:webhook"],
       },
       {
+        title: "MCP Servers",
+        url: "/mcp-servers",
+        permissionsRequired: ["read:mcp_server"],
+      },
+      {
         title: "Configuration Vars",
         url: "/app-settings",
         permissionsRequired: ["read:app_setting"],
