@@ -39,7 +39,7 @@ GenAssist provides a comprehensive solution for building, managing, and deployin
 - Git
 - Docker and Docker Compose
 - Node.js and npm (for local development)
-- Python 3.10+ (for local development)
+- Python 3.12+ (for local development)
 
 ### Clone the Repository
 
