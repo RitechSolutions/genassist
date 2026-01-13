@@ -33,7 +33,19 @@ class ToolBuilderNode(BaseNode):
         """
         from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
-        template = json.loads(config.get("forwardTemplate", "{}"))
+        template_str = config.get("forwardTemplate", "{}")
+        logger.info(f"Template string: {template_str}")
+        try:
+            template = json.loads(template_str)
+        except Exception as e:
+            logger.error(f"Error loading template: {e}")
+            return {
+                "status": 500,
+                "data": {
+                    "template": template_str,
+                    "error": f"Error loading tool builder parameters: {e}",
+                },
+            }
         source_input = self.get_state().get_session_flat()
 
         workflow_engine = WorkflowEngine.get_instance()
