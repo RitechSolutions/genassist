@@ -164,8 +164,7 @@ def _resolve_variable_value(
 
     # Try direct_input pattern
     if var_name.startswith("direct_input"):
-        resolved_value = _resolve_variable_from_direct_input(
-            var_name, direct_input)
+        resolved_value = _resolve_variable_from_direct_input(var_name, direct_input)
         if resolved_value is None:
             # try state
             resolved_value = state.get_value(var_name)
@@ -206,6 +205,119 @@ def _is_in_string_context(json_string: str, var_start: int) -> bool:
     return quote_count_before % 2 == 1
 
 
+def _convert_json_escapes_for_code_context(json_string: str) -> str:
+    """
+    Convert JSON escape sequences for Python code context while preserving JSON validity.
+
+    The issue: When JSON with escape sequences like \n is embedded in Python code as a string,
+    the escape sequences need to be properly handled. Converting to actual characters breaks JSON,
+    so we replace problematic escape sequences with spaces to avoid "invalid escape" errors.
+
+    Args:
+        json_string: The JSON string with escaped sequences (after quote escaping)
+
+    Returns:
+        String with escape sequences converted for safe use in Python code
+    """
+    # Replace escape sequences that might cause "invalid escape" errors in Python
+    # with spaces (as per user's original solution). This preserves JSON validity
+    # while preventing Python from interpreting escape sequences incorrectly.
+    escape_replacements = {
+        "\\n": " ",  # newline -> space
+        "\\t": " ",  # tab -> space
+        "\\r": " ",  # carriage return -> space
+        "\\b": " ",  # backspace -> space
+        "\\f": " ",  # form feed -> space
+    }
+
+    result = json_string
+    # Replace escape sequences, being careful not to replace parts of \\\\ (escaped backslash)
+    # Process from right to left or use regex with negative lookbehind
+    for escape_seq, replacement in escape_replacements.items():
+        # Pattern: match escape_seq but not when it's part of \\\\X (escaped backslash + X)
+        # Negative lookbehind: (?<!\\) means "not preceded by a single backslash"
+        pattern = r"(?<!\\)" + re.escape(escape_seq)
+        result = re.sub(pattern, replacement, result)
+
+    # Handle escaped backslashes: \\\\ -> \\ (single backslash in Python code)
+    # This must be done after other replacements to avoid interfering
+    result = result.replace("\\\\", "\\")
+
+    return result
+
+
+def _is_in_code_field_context(json_string: str, var_start: int) -> bool:
+    """
+    Determine if a variable position is within a "code" field context.
+
+    This checks if the variable is inside a JSON string value for a "code" key,
+    which typically contains Python code that will be executed.
+
+    Args:
+        json_string: The JSON string to analyze
+        var_start: The starting position of the variable
+
+    Returns:
+        True if the variable is inside a "code" field value, False otherwise
+    """
+    if var_start == -1:
+        return False
+
+    # Find the opening quote of the string value containing this variable
+    # by looking backwards for an unescaped quote
+    value_start = -1
+    for i in range(var_start - 1, -1, -1):
+        if json_string[i] == '"':
+            # Check if it's escaped
+            num_backslashes = 0
+            j = i - 1
+            while j >= 0 and json_string[j] == "\\":
+                num_backslashes += 1
+                j -= 1
+            if num_backslashes % 2 == 0:  # Not escaped
+                value_start = i
+                break
+
+    if value_start == -1:
+        return False
+
+    # Look backwards from value_start to find the key
+    # Search for pattern: "code"\s*:\s*"
+    # Find the colon before the value_start
+    colon_pos = -1
+    for i in range(value_start - 1, -1, -1):
+        if json_string[i] == ":":
+            # Check if it's in a string (shouldn't be, but be safe)
+            # For simplicity, assume colon before value quote is the separator
+            colon_pos = i
+            break
+        elif json_string[i] in " \t\n\r":
+            continue
+        elif json_string[i] == '"':
+            # Hit another quote, might be the key
+            break
+
+    if colon_pos == -1:
+        return False
+
+    # Look backwards from colon to find "code"
+    code_pattern = '"code"'
+    pattern_end = colon_pos
+    # Skip whitespace before colon
+    for i in range(colon_pos - 1, -1, -1):
+        if json_string[i] not in " \t\n\r":
+            pattern_end = i + 1
+            break
+
+    # Check if "code" appears just before the colon
+    if pattern_end >= len(code_pattern):
+        potential_match = json_string[pattern_end - len(code_pattern):pattern_end]
+        if potential_match == code_pattern:
+            return True
+
+    return False
+
+
 def _encode_replacement_value(
     replacement_value: Any, var_name: str, json_string: str, var_pattern: str
 ) -> str:
@@ -224,14 +336,15 @@ def _encode_replacement_value(
     try:
         # Always encode the replacement value as JSON first
         json_encoded = json.dumps(replacement_value)
-        json_encoded = json_encoded.replace("\\n", " ")
 
         # Check if the variable is in a string context
         var_start = json_string.find(var_pattern)
         in_string_context = _is_in_string_context(json_string, var_start)
+        in_code_context = _is_in_code_field_context(json_string, var_start)
 
         if isinstance(replacement_value, str):
             # For strings, always remove quotes since template provides them
+            # The JSON encoding already properly escapes all special characters
             json_replacement = json_encoded[1:-1]
             logger.debug(
                 f"Replaced {var_name} with escaped string content: {json_replacement}"
@@ -241,6 +354,16 @@ def _encode_replacement_value(
             if in_string_context:
                 # In string context, escape quotes so object can be embedded in string
                 json_replacement = json_encoded.replace('"', '\\"')
+
+                # Special handling for code context: if JSON with escape sequences is being inserted
+                # into Python code, we need to handle escape sequences to avoid "invalid escape" errors
+                # We replace escape sequences like \\n with spaces to prevent issues while preserving
+                # JSON validity (converting to actual characters would break JSON structure)
+                if in_code_context:
+                    json_replacement = _convert_json_escapes_for_code_context(
+                        json_replacement
+                    )
+
                 logger.debug(
                     f"Replaced {var_name} with escaped JSON object for string context: {json_replacement}"
                 )
@@ -258,8 +381,7 @@ def _encode_replacement_value(
         logger.warning(
             f"Failed to JSON encode replacement value for {var_name}: {e}. Using string representation."
         )
-        string_replacement = json.dumps(str(replacement_value))[
-            1:-1]  # Remove quotes
+        string_replacement = json.dumps(str(replacement_value))[1:-1]  # Remove quotes
         logger.debug(
             f"Used fallback string encoding for {var_name}: {string_replacement}"
         )
@@ -319,8 +441,7 @@ def replace_config_vars(
             json_replacement = _encode_replacement_value(
                 replacement_value, var_name, string_config, var_pattern
             )
-            string_config = string_config.replace(
-                var_pattern, json_replacement)
+            string_config = string_config.replace(var_pattern, json_replacement)
 
     # Parse the result back to a dictionary
     try:
