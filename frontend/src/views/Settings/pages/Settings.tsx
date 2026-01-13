@@ -45,6 +45,7 @@ const SettingsPage = () => {
             fields: section.fields.map((field) => ({
               ...field,
               readOnly: true,
+              className: "w-1/2",
               value:
                 (field.valueKey &&
                   profileValues[
