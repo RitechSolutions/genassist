@@ -10,6 +10,7 @@ export interface SettingFieldType {
   valueKey?: string;
   value?: string | number | boolean;
   readOnly?: boolean;
+  className?: string;
 }
 
 export interface SettingSectionType {
