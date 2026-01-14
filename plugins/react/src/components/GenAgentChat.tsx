@@ -162,8 +162,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const hasUserMessages = messages.some(message => message.speaker === 'customer');
 
-  const hasUserMessages = messages.some(message => message.speaker === 'customer');
-
   useEffect(() => {
     audioService.current = new AudioService({ baseUrl, apiKey });
   }, [baseUrl, apiKey]);
@@ -638,6 +636,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     width: '100%',
     fontFamily,
   };
+
   const queryButtonStyle: React.CSSProperties = {
     padding: '12px 15px',
     backgroundColor: theme?.secondaryColor || '#f5f5f5',
