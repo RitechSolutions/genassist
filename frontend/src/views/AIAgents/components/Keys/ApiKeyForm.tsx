@@ -15,6 +15,7 @@ import { createApiKey, updateApiKey } from "@/services/apiKeys";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import toast from "react-hot-toast";
 import { Copy, Eye, EyeOff } from "lucide-react";
+import { maskInput } from "@/helpers/utils";
 
 interface Props {
   agentId: string;
@@ -124,18 +125,18 @@ export default function ApiKeyForm({
             {existingKey?.key_val && (
               <div className="space-y-2">
                 <Label htmlFor="api_key">API Key</Label>
-                <div className="relative">
+                <div className="relative flex flex-row items-center">
                   <Input
                     id="api_key"
                     readOnly
-                    className="pr-20"
+                    className="w-full z-10"
                     value={
                       isKeyVisible
                         ? existingKey.key_val
-                        : existingKey.key_val.replace(/./g, "•")
+                        : maskInput(existingKey.key_val || "")
                     }
                   />
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
+                  <div className="absolute right-2 flex gap-1 elevation-1 z-20">
                     <Button
                       type="button"
                       variant="ghost"
