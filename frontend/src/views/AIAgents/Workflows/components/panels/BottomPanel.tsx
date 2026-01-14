@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/button";
-import { Save, Upload, PlayCircle } from "lucide-react";
+import { Save, Upload, PlayCircle, MoreVertical } from "lucide-react";
 import { useBlocker } from "react-router-dom";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -8,6 +8,12 @@ import {
   useWorkflowExecution,
   WorkflowExecutionState,
 } from "../../context/WorkflowExecutionContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
 
 interface BottomPanelProps {
   workflow: Workflow;
@@ -166,13 +172,13 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   return (
     <>
-      <div className="flex gap-2 bg-white/80 backdrop-blur-sm rounded-md shadow-sm p-2">
+      <div className="flex gap-2 bg-white/80 backdrop-blur-sm rounded-full shadow-sm p-2">
         {onSaveWorkflow && (
           <Button
             onClick={handleSaveToServer}
             size="sm"
             variant="outline"
-            className={`flex items-center gap-1 ${
+            className={`flex items-center gap-1 rounded-full ${
               hasUnsavedChanges
                 ? "text-blue-600 border-blue-200 hover:bg-blue-50"
                 : "opacity-50 cursor-not-allowed"
@@ -185,30 +191,9 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           </Button>
         )}
         <Button
-          onClick={handleSaveToFile}
-          size="sm"
-          variant="outline"
-          className="flex items-center gap-1"
-          title="Download as JSON file"
-        >
-          <Save className="h-4 w-4" />
-          Download
-        </Button>
-        <Button
-          onClick={triggerFileUpload}
-          size="sm"
-          variant="outline"
-          className="flex items-center gap-1"
-          title="Upload from JSON file"
-        >
-          <Upload className="h-4 w-4" />
-          Upload
-        </Button>
-        <Button
           onClick={handleTestCurrentGraph}
           size="sm"
-          variant="outline"
-          className="flex items-center gap-1 text-green-600 border-green-200 hover:bg-green-50"
+          className="flex items-center gap-1 rounded-full bg-blue-600 hover:bg-blue-700 text-white"
           title="Test current graph"
           disabled={
             !workflow?.nodes?.some((node) => node.type === "chatInputNode")
@@ -217,6 +202,27 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           <PlayCircle className="h-4 w-4" />
           Test
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-auto p-0 hover:bg-transparent"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleSaveToFile}>
+              <Save className="mr-2 h-4 w-4" />
+              <span>Download</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={triggerFileUpload}>
+              <Upload className="mr-2 h-4 w-4" />
+              <span>Upload</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <input
           type="file"
           ref={fileInputRef}
