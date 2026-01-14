@@ -1,4 +1,4 @@
-FROM python:3.10-slim-bookworm
+FROM python:3.12-slim-bookworm
 WORKDIR /src
 
 COPY packages.txt /src/packages.txt
@@ -10,8 +10,6 @@ RUN apt-get update && apt-get clean && apt-get install -y build-essential && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-RUN python -m pip install --upgrade pip==24.0
-
 COPY ./requirements-main.txt /src/requirements-main.txt
 RUN pip install --no-cache-dir -r /src/requirements-main.txt
 
@@ -22,6 +20,9 @@ COPY ./requirements-app.txt /src/requirements-app.txt
 # RUN pip install --no-cache-dir -r /src/requirements-whisper.txt && \
 RUN pip install --no-cache-dir -r /src/requirements-rag.txt && \
     pip install --no-cache-dir -r /src/requirements-app.txt
+
+# RUN playwright install to donwload the browser of the library
+RUN playwright install chromium
 
 COPY ./run.py /src/run.py
 COPY ./run_celery.py /src/run_celery.py
