@@ -114,3 +114,11 @@ steps:
     displayName: 'Build Image'
     env:
       VITE_GENASSIST_CHAT_APIKEY: $(VITE_GENASSIST_CHAT_APIKEY)
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish frontend deploy files'
+    inputs:
+      PathtoPublish: '$(Build.SourcesDirectory)/frontend'
+      ArtifactName: 'frontend'
+      publishLocation: 'Container'
+
