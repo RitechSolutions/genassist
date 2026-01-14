@@ -2702,6 +2702,58 @@
         }
       }
     },
+    "/api/audit-logs/{log_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Audit Logs"
+        ],
+        "summary": "Get By Id",
+        "description": "Get a specific audit log entry by ID.",
+        "operationId": "get_by_id_api_audit_logs__log_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "log_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Log Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/datasources/": {
       "get": {
         "tags": [
