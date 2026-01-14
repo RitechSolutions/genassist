@@ -24,20 +24,17 @@ class LLMProvider:
 
     Each tenant gets their own instance with isolated LLM configurations and cached models.
     This ensures that tenant-specific API keys, models, and configurations remain isolated.
+
+    Note: Services are obtained from injector when needed to ensure they use the correct
+    tenant database session, rather than caching stale request-scoped services.
     """
 
     llm_instances: Dict[str, BaseChatModel] = {}
     configurations: List[LlmProvidersModel] = []
     _loading: bool = False
 
-    def __init__(
-        self,
-        llm_provider_service: LlmProviderService,
-        fine_tuning_service: OpenAIFineTuningService,
-    ):
+    def __init__(self):
         self.llm_instances = {}
-        self.llm_provider_service = llm_provider_service
-        self.fine_tuning_service = fine_tuning_service
         self.configurations = []
         self._loading = False
         logger.info("LLMProvider initialized")
@@ -48,7 +45,10 @@ class LLMProvider:
         """
         Get all LLM configurations
         """
-        successful_jobs = await self.fine_tuning_service.get_all_by_statuses([JobStatus.SUCCEEDED])
+        # Get fresh service instance to ensure correct tenant database session
+        from app.dependencies.injector import injector
+        fine_tuning_service = injector.get(OpenAIFineTuningService)
+        successful_jobs = await fine_tuning_service.get_all_by_statuses([JobStatus.SUCCEEDED])
 
         # Transform successful jobs into options format
         fine_tuned_options = [
@@ -79,7 +79,10 @@ class LLMProvider:
         Returns:
             List[LlmProvidersModel]: All LLM configurations
         """
-        self.configurations = await self.llm_provider_service.get_all()
+        # Get fresh service instance to ensure correct tenant database session
+        from app.dependencies.injector import injector
+        llm_provider_service = injector.get(LlmProviderService)
+        self.configurations = await llm_provider_service.get_all()
         self.llm_instances = {}
         return self.configurations
 
