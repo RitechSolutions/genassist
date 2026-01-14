@@ -6,6 +6,8 @@
 set -e
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    CREATE EXTENSION IF NOT EXISTS vector;
+
     CREATE USER genassist_read WITH PASSWORD 'genassist_read';
     GRANT pg_read_all_data to genassist_read;
 

@@ -10,9 +10,13 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.js",
-      "default": "./dist/index.js"
+      "default": "./dist/index.js",
+      "browser": "./dist/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "browser": {
+    "websocket": false
   },
   "files": [
     "dist",
@@ -37,14 +41,12 @@
   },
   "dependencies": {
     "axios": "^1.6.0",
-    "lucide-react": "^0.511.0",
-    "websocket": "^1.0.34"
+    "lucide-react": "^0.511.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/node": "^24.1.0",
-    "@types/websocket": "^1.0.5",
     "@vitejs/plugin-react": "^4.7.0",
     "esbuild": "^0.25.8",
     "typescript": "^5.0.0",

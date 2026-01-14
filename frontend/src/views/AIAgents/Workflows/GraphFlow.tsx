@@ -14,8 +14,6 @@ import ReactFlow, {
   reconnectEdge,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { Button } from "@/components/button";
-import { ChevronLeft, FolderOpen, PanelLeft } from "lucide-react";
 import { isEqual } from "lodash";
 import { getNodeTypes } from "./nodeTypes";
 import { getEdgeTypes } from "./edgeTypes";
@@ -27,7 +25,6 @@ import NodePanel from "./components/panels/NodePanel";
 import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
 import { useSchemaValidation } from "./hooks/useSchemaValidation";
-import { useSidebar } from "@/components/sidebar";
 import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
 import { useParams } from "react-router-dom";
 import { getWorkflowById, updateWorkflow } from "@/services/workflows";
@@ -70,7 +67,6 @@ const GraphFlowContent: React.FC = () => {
   const [isSettling, setIsSettling] = useState(true);
   const [executionState, setExecutionState] = useState<WorkflowExecutionState | null>(null);
 
-  const { toggleSidebar } = useSidebar();
   const { validateConnection } = useSchemaValidation();
 
   const { agentId } = useParams<{ agentId: string }>();
@@ -447,15 +443,6 @@ const GraphFlowContent: React.FC = () => {
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>
       <WorkflowExecutionProvider>
         <div className="h-full w-full flex flex-col">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute top-4 left-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md"
-            onClick={toggleSidebar}
-          >
-            <PanelLeft className="h-4 w-4" />
-            <span className="sr-only">Toggle Sidebar</span>
-          </Button>
           <div className="flex-1 relative">
             <ReactFlow
               nodes={nodes}
@@ -499,37 +486,14 @@ const GraphFlowContent: React.FC = () => {
                   onExecutionStateChange={setExecutionState}
                 />
               </Panel>
-              <Panel
-                position="top-right"
-                className="mt-20 mr-2 flex flex-col gap-2"
-              >
-                {!showNodePanel && !showWorkflowPanel && (
-                  <>
-                    <Button
-                      onClick={toggleNodePanel}
-                      size="icon"
-                      variant="secondary"
-                      className="rounded-full h-10 w-10 shadow-md"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      onClick={toggleWorkflowPanel}
-                      size="icon"
-                      variant="secondary"
-                      className="rounded-full h-10 w-10 shadow-md"
-                    >
-                      <FolderOpen className="h-4 w-4" />
-                    </Button>
-                  </>
-                )}
-              </Panel>
             </ReactFlow>
 
             <NodePanel
               isOpen={showNodePanel}
               onClose={toggleNodePanel}
               onAddNode={addNewNode}
+              showWorkflowPanel={showWorkflowPanel}
+              onToggleWorkflowPanel={toggleWorkflowPanel}
             />
 
             <WorkflowsSavedPanel

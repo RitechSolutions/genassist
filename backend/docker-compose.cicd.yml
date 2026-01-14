@@ -1,7 +1,7 @@
 services:
   # Database
   db:
-    image: postgres:17
+    image: pgvector/pgvector:pg17
     container_name: genassist_db_cicd
     environment:
       POSTGRES_USER: postgres
@@ -46,6 +46,8 @@ services:
     depends_on:
       chroma:
         condition: service_started
+      qdrant:
+        condition: service_started
       redis:
         condition: service_healthy
       db:
@@ -81,6 +83,30 @@ services:
     labels:
       - "app=genassist"
       - "service=chroma"
+
+  # Qdrant vector database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: genassist-qdrant_cicd
+    ports:
+      - "9333:6333"  # REST API
+      - "9334:6334"  # gRPC
+    volumes:
+      - qdrant_data_cicd:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    networks:
+      - genassist-network-cicd
+    restart: unless-stopped
+    labels:
+      - "app=genassist"
+      - "service=qdrant"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://qdrant:6333/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # Optional: Pinecone proxy (if you want to use Pinecone locally for development)
   # pinecone-proxy:
@@ -250,10 +276,7 @@ networks:
     driver: bridge
 
 volumes:
-  neo4j_data_cicd:
-  neo4j_logs_cicd:
-  neo4j_import_cicd:
-  neo4j_plugins_cicd:
   chroma_data_cicd:
+  qdrant_data_cicd:
   pgdata_cicd:
   app_data_volume_cicd:
