@@ -1,16 +1,15 @@
 import axios from "axios";
 import {
-  w3cwebsocket as WebSocket,
-  IMessageEvent,
-  ICloseEvent,
-} from "websocket";
-import {
   ChatMessage,
   StartConversationResponse,
   Attachment,
   AgentThinkingConfig,
   AgentWelcomeData,
 } from "../types";
+import {
+  createWebSocket,
+  createWebSocketDiagnostic,
+} from "../utils/websocket";
 
 export class ChatService {
   private baseUrl: string;
@@ -314,24 +313,6 @@ export class ChatService {
 
       this.saveConversation();
       this.connectWebSocket();
-
-      // Store possible queries if available
-      if (response.data.agent_possible_queries && response.data.agent_possible_queries.length > 0) {
-        this.possibleQueries = response.data.agent_possible_queries;
-      }
-      
-      // Process agent welcome message if available
-      if (response.data.agent_welcome_message && this.messageHandler) {
-        const now = Date.now() / 1000;
-        const welcomeMessage: ChatMessage = {
-          create_time: now,
-          start_time: now - this.conversationCreateTime, // Relative to conversation start
-          end_time: (now - this.conversationCreateTime) + 0.01, // Relative to conversation start
-          speaker: 'agent',
-          text: response.data.agent_welcome_message
-        };
-        this.messageHandler(welcomeMessage);
-      }
       return response.data.conversation_id;
     } catch (error) {
       throw error;
@@ -461,16 +442,15 @@ export class ChatService {
       wsUrl += `&X-Tenant-Id=${encodeURIComponent(this.tenant)}`;
     }
     
-    // Also try to pass tenant as header (for Node.js environments that support it)
-    const headers = this.tenant ? { "X-Tenant-Id": this.tenant } : undefined;
-    this.webSocket = new WebSocket(wsUrl, undefined, undefined, headers);
+    // Use native browser WebSocket factory
+    this.webSocket = createWebSocket(wsUrl);
 
 
     this.webSocket.onopen = () => {
       if (this.connectionStateHandler) this.connectionStateHandler("connected");
     };
 
-    this.webSocket.onmessage = (event: IMessageEvent) => {
+    this.webSocket.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data as string);
         if (data.type === "message" && this.messageHandler) {
@@ -555,14 +535,24 @@ export class ChatService {
       }
     };
 
-    this.webSocket.onerror = (error: Error) => {
+    this.webSocket.onerror = (error: Event) => {
       if (this.connectionStateHandler)
         this.connectionStateHandler("disconnected");
+      
+      // Log diagnostic
+      const diagnostic = createWebSocketDiagnostic(error, wsUrl);
+      console.error(`[GenAssist Chat] ${diagnostic}`);
     };
 
-    this.webSocket.onclose = (event: ICloseEvent) => {
+    this.webSocket.onclose = (event: CloseEvent) => {
       if (this.connectionStateHandler)
         this.connectionStateHandler("disconnected");
+      
+      // Log diagnostic
+      if (!event.wasClean) {
+        const diagnostic = createWebSocketDiagnostic(event, wsUrl);
+        console.warn(`[GenAssist Chat] ${diagnostic}`);
+      }
     };
   }
 

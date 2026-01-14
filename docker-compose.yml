@@ -28,12 +28,9 @@ services:
       - VECTOR_DB_TYPE=chroma
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
       - CHROMA_COLLECTION_NAME=default
-      - RAG_GRAPH_DB_TYPE=neo4j
-      - RAG_NEO4J_URL=bolt://neo4j:7687
-      - RAG_NEO4J_USERNAME=neo4j
-      - RAG_NEO4J_PASSWORD=password
       - DB_HOST=db
       - DB_PORT=5432
+      - CHROMA_HOST=chroma
     depends_on:
       - chroma
       - db
@@ -58,29 +55,6 @@ services:
       CUSTOM_PARAM: "string"
     depends_on:
       - app
-    networks:
-      - genassist-network
-    restart: unless-stopped
-
-  # Neo4j graph database
-  neo4j:
-    image: neo4j:5.23.0
-    container_name: genassist-neo4j
-    ports:
-      - "7474:7474" # HTTP
-      - "7687:7687" # Bolt
-    environment:
-      - NEO4J_AUTH=neo4j/password
-      - NEO4J_dbms_memory_pagecache_size=1G
-      - NEO4J_dbms_memory_heap_initial__size=1G
-      - NEO4J_dbms_memory_heap_max__size=2G
-      - NEO4JLABS_PLUGINS=["apoc"] # Enable APOC plugin
-      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
-    volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
-      - neo4j_import:/var/lib/neo4j/import
-      - neo4j_plugins:/plugins
     networks:
       - genassist-network
     restart: unless-stopped
@@ -208,10 +182,6 @@ networks:
     driver: bridge
 
 volumes:
-  neo4j_data:
-  neo4j_logs:
-  neo4j_import:
-  neo4j_plugins:
   chroma_data:
   pgdata:
   app_data_volume:
