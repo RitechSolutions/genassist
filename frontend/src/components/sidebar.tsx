@@ -261,7 +261,11 @@ const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, state, isMobile } = useSidebar()
+
+  if (isMobile) {
+    return null
+  }
 
   return (
     <Button
@@ -269,7 +273,14 @@ const SidebarTrigger = React.forwardRef<
       data-sidebar="trigger"
       variant="ghost"
       size="icon"
-      className={cn("h-7 w-7", className)}
+      className={cn(
+        "h-7 w-7",
+        // Position based on sidebar state
+        state === "collapsed" && !isMobile
+          ? "left-4"
+          : "left-[calc(var(--sidebar-width)-1rem)]",
+        className
+      )}
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()

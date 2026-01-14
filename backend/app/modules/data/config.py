@@ -107,6 +107,16 @@ class KbRAGConfig(BaseModel):
             "collection_name": vector_data.get("vector_db_collection_name", get_schema_default("vector", "vector_db_collection_name", ""))
         }
 
+        # Add host and port if provided (for chroma, qdrant, or custom pgvector connection)
+        if vector_data.get("vector_db_host"):
+            vector_db_data["host"] = vector_data.get("vector_db_host")
+        if vector_data.get("vector_db_port"):
+            vector_db_data["port"] = vector_data.get("vector_db_port")
+
+        # Add persist_directory for qdrant local storage
+        if vector_data.get("vector_db_persist_directory"):
+            vector_db_data["persist_directory"] = vector_data.get("vector_db_persist_directory")
+
         return VectorConfig(
             enabled=True,
             chunking=ChunkConfig(**chunking_data),

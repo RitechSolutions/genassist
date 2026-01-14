@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📚 GenAssist Documentation
+    url: https://docs.genassist.ai/
+    about: Check Ritech's official GenAssist documentation for guides and tutorials
+  - name: 💬 GitHub Discussions
+    url: https://github.com/RitechSolutions/genassist/discussions
+    about: Ask questions and discuss ideas with the Ritech community
+  - name: 🐛 Bug Report
+    url: https://github.com/RitechSolutions/genassist/issues/new?template=bug_report.md
+    about: Report a bug or issue in GenAssist
+  - name: ✨ Feature Request
+    url: https://github.com/RitechSolutions/genassist/issues/new?template=feature_request.md
+    about: Suggest a new feature or enhancement for GenAssist
+

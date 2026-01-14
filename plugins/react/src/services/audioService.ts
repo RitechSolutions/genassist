@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { createWebSocket } from '../utils/websocket';
 
 interface AudioServiceConfig {
   baseUrl: string;
@@ -24,9 +24,9 @@ export class AudioService {
       this.rejectPromise = reject;
       this.audioChunks = [];
 
-      // Create WebSocket connection
+      // Create WebSocket connection using browser-native WebSocket
       const wsUrl = `${this.baseUrl.replace('http', 'ws')}/api/voice/audio/tts?api_key=${this.apiKey}`;
-      this.ws = new WebSocket(wsUrl);
+      this.ws = createWebSocket(wsUrl);
 
       this.ws.onopen = () => {
         this.ws?.send(JSON.stringify({ text }));

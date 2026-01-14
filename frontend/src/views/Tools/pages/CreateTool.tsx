@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { SidebarProvider } from "@/components/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useNavigate, useParams } from "react-router-dom";
@@ -322,7 +322,8 @@ export default function CreateTool() {
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 bg-zinc-50 py-8">
+        <main className="flex-1 bg-zinc-50 py-8 relative">
+          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="max-w-[1140px] mx-auto">
             <PageHeader
               title={isEditMode ? "Edit Tool" : "Create New Tool"}

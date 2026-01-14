@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { SidebarProvider } from "@/components/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
@@ -326,7 +326,8 @@ const MLModelDetail: React.FC = () => {
       <SidebarProvider>
         <div className="min-h-screen flex w-full">
           {!isMobile && <AppSidebar />}
-          <main className="flex-1 flex flex-col bg-zinc-100">
+          <main className="flex-1 flex flex-col bg-zinc-100 relative">
+            <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
             <div className="flex-1 p-8">
               <div className="max-w-7xl mx-auto">
                 <div className="flex justify-center items-center py-12">
@@ -345,7 +346,8 @@ const MLModelDetail: React.FC = () => {
       <SidebarProvider>
         <div className="min-h-screen flex w-full">
           {!isMobile && <AppSidebar />}
-          <main className="flex-1 flex flex-col bg-zinc-100">
+          <main className="flex-1 flex flex-col bg-zinc-100 relative">
+            <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
             <div className="flex-1 p-8">
               <div className="max-w-7xl mx-auto">
                 <div className="flex flex-col items-center justify-center py-12 gap-4">

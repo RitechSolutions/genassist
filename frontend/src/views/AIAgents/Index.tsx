@@ -2,7 +2,7 @@ import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Dashboard from './components/Dashboard';
 import Chat from './components/Chat';
-import { SidebarProvider } from "@/components/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import ChatAsCustomer from "@/views/AIAgents/components/Customer/ChatAsCustomer"; 
@@ -16,7 +16,8 @@ const AIAgentsView: React.FC = () => {
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative">
+          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1">
               <Routes>
                 <Route path="/" element={<Dashboard />} />

@@ -11,53 +11,63 @@ from app.services.permissions import PermissionsService
 
 router = APIRouter()
 
-@router.post("/", response_model=PermissionRead, dependencies=[
-    Depends(auth),
-    Depends(permissions(P.Permission.CREATE))
-])
+
+@router.post(
+    "/",
+    response_model=PermissionRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Permission.CREATE))],
+)
 async def create(
     request: Request,
     permission_data: PermissionCreate,
-    service: PermissionsService = Injected(PermissionsService)
+    service: PermissionsService = Injected(PermissionsService),
 ):
     return await service.create(permission_data)
 
-@router.get("/", response_model=List[PermissionRead], dependencies=[
-    Depends(auth),
-    Depends(permissions(P.Permission.READ))
-])
-async def get_all(filter: BaseFilterModel = Depends(),
-    service: PermissionsService = Injected(PermissionsService)
+
+@router.get(
+    "/",
+    response_model=List[PermissionRead],
+    dependencies=[Depends(auth), Depends(permissions(P.Permission.READ))],
+)
+async def get_all(
+    filter: BaseFilterModel = Depends(),
+    service: PermissionsService = Injected(PermissionsService),
 ):
+    filter.limit = 1000 if filter.limit == 20 else filter.limit
+
     return await service.get_all(filter)
 
-@router.get("/{permission_id}", response_model=PermissionRead, dependencies=[
-    Depends(auth),
-    Depends(permissions(P.Permission.READ))
-])
+
+@router.get(
+    "/{permission_id}",
+    response_model=PermissionRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Permission.READ))],
+)
 async def get(
-    permission_id: UUID,
-    service: PermissionsService = Injected(PermissionsService)
+    permission_id: UUID, service: PermissionsService = Injected(PermissionsService)
 ):
     return await service.get_by_id(permission_id)
 
-@router.delete("/{permission_id}", dependencies=[
-    Depends(auth),
-    Depends(permissions(P.Permission.DELETE))
-])
+
+@router.delete(
+    "/{permission_id}",
+    dependencies=[Depends(auth), Depends(permissions(P.Permission.DELETE))],
+)
 async def delete(
-    permission_id: UUID,
-    service: PermissionsService = Injected(PermissionsService)
+    permission_id: UUID, service: PermissionsService = Injected(PermissionsService)
 ):
     return await service.delete(permission_id)
 
-@router.patch("/{permission_id}", response_model=PermissionRead, dependencies=[
-    Depends(auth),
-    Depends(permissions(P.Permission.UPDATE))
-])
+
+@router.patch(
+    "/{permission_id}",
+    response_model=PermissionRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Permission.UPDATE))],
+)
 async def update(
     permission_id: UUID,
     permission_data: PermissionUpdate,
-    service: PermissionsService = Injected(PermissionsService)
+    service: PermissionsService = Injected(PermissionsService),
 ):
     return await service.update(permission_id, permission_data)
