@@ -10,6 +10,18 @@ logger = logging.getLogger(__name__)
 class TenantMiddleware(BaseHTTPMiddleware):
     """Middleware to extract tenant information from requests"""
 
+    def get_tenant_slug(self, source_data: dict) -> str:
+        looking_tenant_header = settings.TENANT_HEADER_NAME
+        # check for multiple cases of the tenant header name
+        if looking_tenant_header in source_data:
+            return source_data[looking_tenant_header]
+        elif looking_tenant_header.lower() in source_data:
+            return source_data[looking_tenant_header.lower()]
+        elif looking_tenant_header.upper() in source_data:
+            return source_data[looking_tenant_header.upper()]
+        elif looking_tenant_header.title() in source_data:
+            return source_data[looking_tenant_header.title()]
+
     async def dispatch(self, request: Request, call_next):
         if not settings.MULTI_TENANT_ENABLED:
             # Single tenant mode - no tenant resolution needed
@@ -19,21 +31,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         tenant_slug = None
 
-        # Method 1: Extract from header
-        if settings.TENANT_HEADER_NAME in request.headers:
-            tenant_slug = request.headers[settings.TENANT_HEADER_NAME]
-
-        # Method 2: Extract from query parameter (fallback when header not available)
-        elif settings.TENANT_HEADER_NAME in request.query_params:
-            tenant_slug = request.query_params[settings.TENANT_HEADER_NAME]
-
-        # Method 3: Extract from subdomain (if enabled)
-        elif settings.TENANT_SUBDOMAIN_ENABLED:
-            host = request.headers.get("host", "")
-            if "." in host:
-                subdomain = host.split(".")[0]
-                if subdomain and subdomain != "www":
-                    tenant_slug = subdomain
+        tenant_slug = self.get_tenant_slug(request.headers)
+        if not tenant_slug:
+            tenant_slug = self.get_tenant_slug(request.query_params)
+        if not tenant_slug:
+            tenant_slug = self.get_tenant_slug(request.headers.get("host", ""))
 
         # Store tenant information in request state
         request.state.tenant_id = tenant_slug
