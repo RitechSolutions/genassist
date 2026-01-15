@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
 import { getAllNodeSchemas } from "@/services/workflows";
+import { isAuthenticated } from "@/services/auth";
 
 interface NodeSchemaContextType {
   schemas: Map<string, FieldSchema[]>;
@@ -51,7 +52,10 @@ export const NodeSchemaProvider: React.FC<NodeSchemaProviderProps> = ({
   };
 
   useEffect(() => {
-    fetchSchemas();
+    // check if the user is authenticated
+    if (isAuthenticated()) {
+      fetchSchemas();
+    }
   }, []);
 
   const getSchema = (nodeType: string): FieldSchema[] | null => {
