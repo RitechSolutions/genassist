@@ -11,16 +11,15 @@ class TenantMiddleware(BaseHTTPMiddleware):
     """Middleware to extract tenant information from requests"""
 
     def get_tenant_slug(self, source_data: dict) -> str:
-        looking_tenant_header = settings.TENANT_HEADER_NAME
+        tenant_header_name = settings.TENANT_HEADER_NAME.lower()
+
+        # lowercase the keys of the source data to make the check case-insensitive
+        source_data_lower = {k.lower(): v for k, v in source_data.items()}
+
         # check for multiple cases of the tenant header name
-        if looking_tenant_header in source_data:
-            return source_data[looking_tenant_header]
-        elif looking_tenant_header.lower() in source_data:
-            return source_data[looking_tenant_header.lower()]
-        elif looking_tenant_header.upper() in source_data:
-            return source_data[looking_tenant_header.upper()]
-        elif looking_tenant_header.title() in source_data:
-            return source_data[looking_tenant_header.title()]
+        if tenant_header_name in source_data_lower:
+            return source_data_lower[tenant_header_name]
+        return None
 
     async def dispatch(self, request: Request, call_next):
         if not settings.MULTI_TENANT_ENABLED:
