@@ -1,5 +1,5 @@
 from typing import Optional, Tuple
-from pydantic import computed_field, ConfigDict
+from pydantic import computed_field, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 from app.core.project_path import DATA_VOLUME
@@ -24,6 +24,7 @@ class ProjectSettings(BaseSettings):
     REDIS_MAX_CONNECTIONS: int = 20  # Max connections in pool
     REDIS_SOCKET_TIMEOUT: int = 5  # Socket timeout in seconds
     REDIS_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval in seconds
+    
     FERNET_KEY: Optional[str]
 
     # === LLM Keys ===
@@ -122,6 +123,10 @@ class ProjectSettings(BaseSettings):
 
     # === CORS Configuration ===
     CORS_ALLOWED_ORIGINS: Optional[str] = None  # Comma-separated list of additional allowed origins
+
+    # === Chroma Configuration ===
+    CHROMA_HOST: Field(default="localhost", description="Database host")
+    CHROMA_PORT: Field(default=8005, description="Database port")
 
     @property
     def _zendesk_base(self) -> str:
