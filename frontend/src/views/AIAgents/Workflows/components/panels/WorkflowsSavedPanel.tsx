@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/button";
-import { Save, Plus, Trash2, Edit, X, Power, MoreVertical } from "lucide-react";
+import { Save, Plus, Trash2, Edit, Power, MoreVertical } from "lucide-react";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { getAllWorkflows, deleteWorkflow } from "@/services/workflows";
 import {
@@ -306,14 +306,6 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
         <div className="p-4 border-b">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Saved Versions</h2>
-            <Button
-              onClick={onClose}
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
         </div>
 

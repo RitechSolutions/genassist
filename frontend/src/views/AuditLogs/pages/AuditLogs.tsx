@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { fetchAuditLogs, fetchUsers } from "@/services/auditLogs";
-import { SidebarProvider } from "@/components/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { AuditLogCard } from "@/views/AuditLogs/components/AuditLogCard";
 import { AuditLogDetailsDialog } from "@/views/AuditLogs/components/AuditLogDetailsDialog";
@@ -116,7 +116,8 @@ export default function AuditLogs() {
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100">
+        <main className="flex-1 flex flex-col bg-zinc-100 relative">
+          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 p-8">
             <div className="max-w-2xl xl:max-w-7xl mx-auto space-y-6">
               <div className="flex justify-between items-start">

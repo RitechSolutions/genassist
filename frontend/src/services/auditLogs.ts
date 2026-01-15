@@ -34,19 +34,14 @@ export const fetchAuditLogs = async (
 
 export const fetchAuditLogDetails = async (id: string): Promise<AuditLog> => {
   try {
-    const data = await apiRequest<AuditLog[]>("GET", `/audit-logs/search`);
-    if (!data || data.length === 0) {
-      throw new Error("No audit logs found.");
-    }
-    const auditLog = data.find((log) => log.id === id);
-
-    if (!auditLog) {
+    const data = await apiRequest<AuditLog>("GET", `/audit-logs/${id}`);
+    if (!data) {
       throw new Error(`No audit log found with ID: ${id}`);
     }
-    if (!auditLog.json_changes) {
+    if (!data.json_changes) {
       throw new Error("No json_changes found in the audit log.");
     }
-    return auditLog;
+    return data;
   } catch (error) {
     throw error;
   }

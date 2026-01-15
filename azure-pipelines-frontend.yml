@@ -1,0 +1,124 @@
+# azure-pipelines-frontend.yml
+
+name: GenAssist-GitHub-Frontend_$(Date:yyyyMMdd)$(Rev:.r)
+
+pool:
+  name: Ritech-AI-TR1
+
+workspace:
+  clean: all
+
+trigger:
+  branches:
+    include:
+      - development
+  paths:
+    include:
+      - frontend/**
+
+pr:
+  branches:
+    include:
+      - development
+  paths:
+    include:
+      - frontend/**
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+
+  - task: NodeTool@0
+    displayName: 'Use Node 18.x'
+    inputs:
+      versionSpec: 18.x
+
+  - task: InstallSSHKey@0
+    displayName: 'Install an SSH key (az devops)'
+    inputs:
+      knownHostsEntry: 'ssh-genassist-azdevops'
+      sshKeySecureFile: 'azdev_sync'
+
+  - bash: |
+      set -e
+
+      echo "now starting plugin setup"
+      echo "PWD=$(pwd)"
+      ls -al
+
+      cd ..
+      mkdir -p plugins
+      cd plugins
+
+      echo "plugins dir: $(pwd)"
+      ls -al
+
+      # If folder exists but isn't a git repo (leftover from a previous run), remove it
+      if [ -d "react" ] && [ ! -d "react/.git" ]; then
+        echo "react exists but is not a git repo -> removing"
+        rm -rf react
+      fi
+
+      if [ -d "react/.git" ]; then
+        echo "react plugin already exists, updating..."
+        cd react
+        git reset --hard
+        git clean -fd
+        git fetch --all --prune
+        git pull --rebase
+      else
+        echo "cloning react plugin..."
+        GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i /azagent/_work/_temp/azdev_sync -vvv" \
+          git clone git@ssh.dev.azure.com:v3/Ritech/GenAssist/plugin-react react
+        cd react
+      fi
+
+      echo "plugin ready:"
+      git rev-parse --short HEAD || true
+      ls -al
+    workingDirectory: frontend
+    displayName: 'Get React Plugin Sources'
+
+  - bash: |
+      set -e
+
+      echo "now starting build"
+      echo "PWD=$(pwd)"
+      ls -al
+
+      echo "cleanup old images"
+      docker image prune -a -f --filter "until=48h"
+
+      echo "preparing .env for new container"
+      branch="$(Build.SourceBranch)"
+      branchNo="$(echo "${branch}" | sed 's#refs/heads/##g')"
+
+      : > .env
+      echo "VITE_UI_VERSION=${branchNo}-$(Build.BuildNumber)" >> .env
+      echo "VITE_PRIVATE_API_URL=https://api.dev.genassist.ritech.io/api" >> .env
+      echo "VITE_PUBLIC_API_URL=https://api.dev.genassist.ritech.io/api" >> .env
+      echo "VITE_WEBSOCKET_PRIVATE_URL=wss://api.dev.genassist.ritech.io/api" >> .env
+      echo "VITE_WEBSOCKET_PUBLIC_URL=wss://api.dev.genassist.ritech.io/api" >> .env
+
+      # Use secret passed via env
+      echo "VITE_GENASSIST_CHAT_APIKEY=$VITE_GENASSIST_CHAT_APIKEY" >> .env
+      echo "VITE_MULTI_TENANT_ENABLED=true" >> .env
+
+      echo "current.env (redacted):"
+      grep -E '^(VITE_UI_VERSION|VITE_PRIVATE_API_URL|VITE_PUBLIC_API_URL|VITE_WEBSOCKET_PRIVATE_URL|VITE_WEBSOCKET_PUBLIC_URL|VITE_MULTI_TENANT_ENABLED)=' .env
+      echo "VITE_GENASSIST_CHAT_APIKEY=***hidden***"
+
+      echo "building image"
+      docker compose -f docker-compose.dev.yml build frontend
+    workingDirectory: frontend
+    displayName: 'Build Image'
+    env:
+      VITE_GENASSIST_CHAT_APIKEY: $(VITE_GENASSIST_CHAT_APIKEY)
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish frontend deploy files'
+    inputs:
+      PathtoPublish: '$(Build.SourcesDirectory)/frontend'
+      ArtifactName: 'frontend'
+      publishLocation: 'Container'
+

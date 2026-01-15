@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SidebarProvider } from "@/components/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
@@ -21,7 +21,8 @@ const AnalyticsPage = () => {
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100 min-h-screen overflow-x-hidden">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-h-screen overflow-x-hidden relative">
+          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
             <div className="max-w-7xl mx-auto">
               <header className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

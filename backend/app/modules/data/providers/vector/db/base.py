@@ -84,6 +84,12 @@ class VectorDBConfig(BaseModel):
         elif self.type == "faiss":
             from .faiss import FaissVectorDB
             return FaissVectorDB(self.model_copy())
+        elif self.type == "pgvector":
+            from .pgvector import PgVectorDB
+            return PgVectorDB(self.model_copy())
+        elif self.type == "qdrant":
+            from .qdrant import QdrantVectorDB
+            return QdrantVectorDB(self.model_copy())
         else:
             raise ValueError(f"Invalid vector database type: {self.type}")
 

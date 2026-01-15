@@ -65,18 +65,6 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
     opacity: isLoading ? 0.9 : 1,
   };
 
-  // Keyframe animation for the spinner
-  const spinKeyframes = `
-    @keyframes spin {
-      from {
-        transform: rotate(0deg);
-      }
-      to {
-        transform: rotate(360deg);
-      }
-    }
-  `;
-
   return (
     <>
       <button
