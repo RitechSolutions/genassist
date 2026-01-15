@@ -40,6 +40,7 @@ export interface StartConversationResponse {
   agent_thinking_phrases?: string[];
   agent_thinking_phrase_delay?: number; // seconds
   create_time?: number;
+  guest_token?: string;
 }
 
 // Agent welcome/config info

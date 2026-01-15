@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Body, Depends, Query, WebSocket
+from fastapi import APIRouter, Body, Depends, Query, Request, WebSocket
 from fastapi_injector import Injected
 from starlette.websockets import WebSocketDisconnect
 from app.core.exceptions.exception_handler import send_socket_error
@@ -12,6 +12,13 @@ from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
+from app.core.rate_limit_utils import (
+    RATE_LIMIT_CONVERSATION_START_MINUTE,
+    RATE_LIMIT_CONVERSATION_START_HOUR,
+    RATE_LIMIT_CONVERSATION_UPDATE_MINUTE,
+    RATE_LIMIT_CONVERSATION_UPDATE_HOUR,
+)
+from app.middlewares.rate_limit_middleware import limiter, get_conversation_identifier
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.websockets.socket_room_enum import SocketRoomType
 from app.schemas.agent import AgentRead
@@ -62,7 +69,10 @@ async def get(
         Depends(permissions(P.Conversation.CREATE_IN_PROGRESS)),
     ],
 )
+@limiter.limit(RATE_LIMIT_CONVERSATION_START_MINUTE)
+@limiter.limit(RATE_LIMIT_CONVERSATION_START_HOUR)
 async def start(
+    request: Request,
     model: ConversationTranscriptCreate,
     service: ConversationService = Injected(ConversationService),
     agent_config_service: AgentConfigService = Injected(AgentConfigService),
@@ -110,7 +120,10 @@ async def start(
         Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
     ],
 )
+@limiter.limit(RATE_LIMIT_CONVERSATION_UPDATE_MINUTE, key_func=get_conversation_identifier)
+@limiter.limit(RATE_LIMIT_CONVERSATION_UPDATE_HOUR, key_func=get_conversation_identifier)
 async def update_no_agent(
+    request: Request,
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
     service: ConversationService = Injected(ConversationService),
@@ -218,7 +231,10 @@ async def update_no_agent(
         Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
     ],
 )
+@limiter.limit(RATE_LIMIT_CONVERSATION_UPDATE_MINUTE, key_func=get_conversation_identifier)
+@limiter.limit(RATE_LIMIT_CONVERSATION_UPDATE_HOUR, key_func=get_conversation_identifier)
 async def update(
+    request: Request,
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
 ):
