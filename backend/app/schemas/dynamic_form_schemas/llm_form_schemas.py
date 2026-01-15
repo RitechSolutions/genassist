@@ -476,6 +476,15 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                     {
                         "value": "amazon.titan-text-express-v1",
                         "label": "Titan Text Express",
+                    },                    {
+                        "value": "us.amazon.nova-2-lite-v1:0",
+                        "label": "Nova 2 Light",
+                    },                    {
+                        "value": "us.amazon.nova-lite-v1:0",
+                        "label": "Nova Light",
+                    },                    {
+                        "value": "us.amazon.nova-pro-v1:0",
+                        "label": "Nova Pro",
                     },
                     {"value": "meta.llama2-13b-chat-v1", "label": "Llama 2 13B Chat"},
                     {"value": "meta.llama2-70b-chat-v1", "label": "Llama 2 70B Chat"},
