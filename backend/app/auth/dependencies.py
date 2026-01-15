@@ -100,6 +100,9 @@ def socket_auth(required_permissions: list[str]):
             # Extract tenant information from WebSocket (priority: query param > header > subdomain)
             resolved_tenant_id = None
             tenant_slug = None
+            
+            # lowercase the tenant header name to make the check case-insensitive
+            tenant_header_name = settings.TENANT_HEADER_NAME.lower()
 
             if settings.MULTI_TENANT_ENABLED:
                 # Method 1: Extract from query parameter (highest priority)
@@ -109,7 +112,7 @@ def socket_auth(required_permissions: list[str]):
                     query_params = parse_qs(websocket.url.query)
                     # parse_qs returns lists, so get first item if exists
                     tenant_query_param = (
-                        query_params.get(settings.TENANT_HEADER_NAME, [None])[0] or
+                        query_params.get(tenant_header_name, [None])[0] or
                         query_params.get("tenant_id", [None])[0] or
                         query_params.get("tenant", [None])[0]
                     )
@@ -119,8 +122,8 @@ def socket_auth(required_permissions: list[str]):
                         logger.debug(f"WebSocket tenant resolved from query parameter: {tenant_slug}")
 
                 # Method 2: Extract from header (only if not found in query)
-                if not resolved_tenant_id and settings.TENANT_HEADER_NAME in websocket.headers:
-                    tenant_slug = websocket.headers[settings.TENANT_HEADER_NAME]
+                if not resolved_tenant_id and tenant_header_name in websocket.headers:
+                    tenant_slug = websocket.headers[tenant_header_name]
                     resolved_tenant_id = tenant_slug
                     logger.debug(f"WebSocket tenant resolved from header: {tenant_slug}")
 
