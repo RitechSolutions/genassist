@@ -1,6 +1,6 @@
 from typing import List
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
@@ -46,3 +46,19 @@ async def search(
         offset = offset,
     )
     return await service.search_audit_logs(search_params)
+
+@router.get("/{log_id}", response_model=AuditLogRead, dependencies=[
+    Depends(auth),
+    Depends(permissions(P.AuditLog.READ))
+])
+async def get_by_id(
+    log_id: int,
+    service: AuditLogService = Injected(AuditLogService),
+):
+    """
+    Get a specific audit log entry by ID.
+    """
+    log = await service.get_audit_log_by_id(log_id)
+    if log is None:
+        raise HTTPException(status_code=404, detail=f"Audit log with ID {log_id} not found")
+    return log

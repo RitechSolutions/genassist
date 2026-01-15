@@ -19,3 +19,10 @@ class AuditLogService:
         """
         logs = await self.audit_log_repo.search_logs(search_params)
         return logs
+
+    async def get_audit_log_by_id(self, log_id: int):
+        """
+        Get a specific audit log entry by ID.
+        """
+        log = await self.audit_log_repo.get_by_id(log_id)
+        return log

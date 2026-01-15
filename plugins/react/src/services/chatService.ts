@@ -439,7 +439,7 @@ export class ChatService {
     
     // Add tenant as query parameter if provided
     if (this.tenant) {
-      wsUrl += `&X-Tenant-Id=${encodeURIComponent(this.tenant)}`;
+      wsUrl += `&X-Tenant-ID=${encodeURIComponent(this.tenant)}`;
     }
     
     // Use native browser WebSocket factory
