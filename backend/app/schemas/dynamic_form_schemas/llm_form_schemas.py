@@ -459,23 +459,32 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 type="select",
                 label="Model",
                 required=True,
-                default="anthropic.claude-3-sonnet-20240229-v1:0",
+                default="us.anthropic.claude-3-sonnet-20240229-v1:0",
                 options=[
                     {
-                        "value": "anthropic.claude-3-sonnet-20240229-v1:0",
+                        "value": "us.anthropic.claude-3-sonnet-20240229-v1:0",
                         "label": "Claude 3 Sonnet",
                     },
                     {
-                        "value": "anthropic.claude-3-opus-20240229-v1:0",
+                        "value": "us.anthropic.claude-3-opus-20240229-v1:0",
                         "label": "Claude 3 Opus",
                     },
                     {
-                        "value": "anthropic.claude-3-haiku-20240307-v1:0",
+                        "value": "us.anthropic.claude-3-haiku-20240307-v1:0",
                         "label": "Claude 3 Haiku",
                     },
                     {
                         "value": "amazon.titan-text-express-v1",
                         "label": "Titan Text Express",
+                    },                    {
+                        "value": "us.amazon.nova-2-lite-v1:0",
+                        "label": "Nova 2 Light",
+                    },                    {
+                        "value": "us.amazon.nova-lite-v1:0",
+                        "label": "Nova Light",
+                    },                    {
+                        "value": "us.amazon.nova-pro-v1:0",
+                        "label": "Nova Pro",
                     },
                     {"value": "meta.llama2-13b-chat-v1", "label": "Llama 2 13B Chat"},
                     {"value": "meta.llama2-70b-chat-v1", "label": "Llama 2 70B Chat"},
