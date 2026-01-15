@@ -121,7 +121,25 @@ class ProjectSettings(BaseSettings):
     BACKGROUND_TASK: bool = False
 
     # === CORS Configuration ===
-    CORS_ALLOWED_ORIGINS: Optional[str] = None  # Comma-separated list of additional allowed origins
+    CORS_ALLOWED_ORIGINS: Optional[str] = (
+        None  # Comma-separated list of additional allowed origins
+    )
+
+    # === Rate Limiting Configuration ===
+    RATE_LIMIT_ENABLED: bool = True
+    # Global rate limit: requests per time window
+    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_PER_HOUR: int = 1000
+    # Auth endpoints rate limit (stricter)
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 5
+    RATE_LIMIT_AUTH_PER_HOUR: int = 20
+    # Conversation endpoints rate limits
+    RATE_LIMIT_CONVERSATION_START_PER_MINUTE: int = 10
+    RATE_LIMIT_CONVERSATION_START_PER_HOUR: int = 100
+    RATE_LIMIT_CONVERSATION_UPDATE_PER_MINUTE: int = 30
+    RATE_LIMIT_CONVERSATION_UPDATE_PER_HOUR: int = 500
+    # Rate limit storage backend (redis or memory)
+    RATE_LIMIT_STORAGE_BACKEND: str = "redis"  # "redis" or "memory"
 
     @property
     def _zendesk_base(self) -> str:
