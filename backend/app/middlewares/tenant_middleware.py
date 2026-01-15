@@ -31,11 +31,20 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         tenant_slug = None
 
+        # Method 1: Extract from header
         tenant_slug = self.get_tenant_slug(request.headers)
+        
+        # Method 2: Extract from query parameter (fallback when header not available)
         if not tenant_slug:
             tenant_slug = self.get_tenant_slug(request.query_params)
-        if not tenant_slug:
-            tenant_slug = self.get_tenant_slug(request.headers.get("host", ""))
+
+        # Method 3: Extract from subdomain (if enabled)
+        if not tenant_slug and settings.TENANT_SUBDOMAIN_ENABLED:
+            host = request.headers.get("host", "")
+            if "." in host:
+                subdomain = host.split(".")[0]
+                if subdomain and subdomain != "www":
+                    tenant_slug = subdomain
 
         # Store tenant information in request state
         request.state.tenant_id = tenant_slug
