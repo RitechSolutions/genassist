@@ -74,7 +74,7 @@ class ProjectSettings(BaseSettings):
 
     # === Multi-Tenancy ===
     MULTI_TENANT_ENABLED: bool = False
-    TENANT_HEADER_NAME: str = "X-Tenant-ID"
+    TENANT_HEADER_NAME: str = "x-tenant-id"
     TENANT_SUBDOMAIN_ENABLED: bool = False
 
     DEBUG: bool = True
@@ -126,7 +126,7 @@ class ProjectSettings(BaseSettings):
     )
 
     # === Rate Limiting Configuration ===
-    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_ENABLED: bool = False
     # Global rate limit: requests per time window
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_PER_HOUR: int = 1000

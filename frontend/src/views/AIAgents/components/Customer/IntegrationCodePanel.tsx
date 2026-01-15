@@ -139,7 +139,7 @@ export const IntegrationCodePanel = ({
   -H "X-API-Key: ${apiKey}"${
     tenantId
       ? ` \\
-  -H "X-Tenant-ID: ${tenantId}"`
+  -H "x-tenant-id: ${tenantId}"`
       : ""
   } \\
   -d '{
@@ -156,7 +156,7 @@ export const IntegrationCodePanel = ({
     -H "X-API-Key: ${apiKey}"${
     tenantId
       ? ` \\
-    -H "X-Tenant-ID: ${tenantId}"`
+    -H "x-tenant-id: ${tenantId}"`
       : ""
   } \\
     -d '{
@@ -173,7 +173,7 @@ export const IntegrationCodePanel = ({
     -H "X-API-Key: ${apiKey}"${
     tenantId
       ? ` \\
-    -H "X-Tenant-ID: ${tenantId}"`
+    -H "x-tenant-id: ${tenantId}"`
       : ""
   } \\
     -d '{
