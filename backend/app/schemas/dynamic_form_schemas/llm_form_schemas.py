@@ -459,18 +459,18 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 type="select",
                 label="Model",
                 required=True,
-                default="anthropic.claude-3-sonnet-20240229-v1:0",
+                default="us.anthropic.claude-3-sonnet-20240229-v1:0",
                 options=[
                     {
-                        "value": "anthropic.claude-3-sonnet-20240229-v1:0",
+                        "value": "us.anthropic.claude-3-sonnet-20240229-v1:0",
                         "label": "Claude 3 Sonnet",
                     },
                     {
-                        "value": "anthropic.claude-3-opus-20240229-v1:0",
+                        "value": "us.anthropic.claude-3-opus-20240229-v1:0",
                         "label": "Claude 3 Opus",
                     },
                     {
-                        "value": "anthropic.claude-3-haiku-20240307-v1:0",
+                        "value": "us.anthropic.claude-3-haiku-20240307-v1:0",
                         "label": "Claude 3 Haiku",
                     },
                     {
