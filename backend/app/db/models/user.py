@@ -32,6 +32,8 @@ class UserModel(Base):
                                                                                                 "OperatorModel.user_id]")
     workflows = relationship("WorkflowModel", back_populates="user", foreign_keys="[WorkflowModel.user_id]")
     mcp_servers = relationship("MCPServerModel", back_populates="user", foreign_keys="[MCPServerModel.user_id]")
+    
+    files = relationship("FileModel", back_populates="user", foreign_keys="[FileModel.user_id]")
 
     @property
     def roles(self) -> list["RoleModel"]:
