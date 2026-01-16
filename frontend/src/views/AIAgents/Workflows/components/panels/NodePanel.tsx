@@ -1,6 +1,4 @@
 import React, { useState, useRef } from "react";
-import { Button } from "@/components/button";
-import { X, ChevronLeft, History } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -16,16 +14,12 @@ interface NodePanelProps {
   isOpen: boolean;
   onClose: () => void;
   onAddNode: (nodeType: string) => void;
-  showWorkflowPanel?: boolean;
-  onToggleWorkflowPanel?: () => void;
 }
 
 const NodePanel: React.FC<NodePanelProps> = ({
   isOpen,
   onClose,
   onAddNode,
-  showWorkflowPanel = false,
-  onToggleWorkflowPanel,
 }) => {
   const nodeCategories = nodeRegistry.getAllCategories();
   const [draggingNodeType, setDraggingNodeType] = useState<string | null>(null);
@@ -81,50 +75,6 @@ const NodePanel: React.FC<NodePanelProps> = ({
         className="fixed pointer-events-none"
         style={{ visibility: "hidden" }}
       ></div>
-
-      <div className={`fixed top-4 z-10 flex flex-row gap-2 transition-[right] duration-300 ${
-        (() => {
-          if (isOpen && showWorkflowPanel) {
-            return "right-[calc(20rem+16rem+1rem)]";
-          } else if (isOpen) {
-            return "right-[calc(16rem+1rem)]";
-          } else if (showWorkflowPanel) {
-            return "right-[calc(20rem+1rem)]";
-          } else {
-            return "right-4";
-          }
-        })()
-      }`}>
-        {onToggleWorkflowPanel && (
-          <Button
-            onClick={onToggleWorkflowPanel}
-            size="icon"
-            variant="ghost"
-            className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
-          >
-            {showWorkflowPanel ? (
-              <X className="h-4 w-4" />
-            ) : (
-              <History className="h-4 w-4" />
-            )}
-            <span className="sr-only">{showWorkflowPanel ? "Close Workflow Panel" : "Open Workflow Panel"}</span>
-          </Button>
-        )}
-        
-        <Button
-          onClick={onClose}
-          size="icon"
-          variant="ghost"
-          className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
-        >
-          {isOpen ? (
-            <X className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-          <span className="sr-only">{isOpen ? "Close Node Panel" : "Open Node Panel"}</span>
-        </Button>
-      </div>
 
       <div
         className={`absolute top-0 right-0 h-full w-64 bg-white shadow-lg transition-transform duration-300 border-l ${

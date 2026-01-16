@@ -128,3 +128,46 @@ input[type="checkbox"]:hover {
 .react-flow__handle-bottom {
   bottom: calc(var(--handler-diameter) / -2 * 1px) !important;
 }
+
+/* Animated Multi-Color Shadow for AI Message Input */
+@keyframes animatedShadow {
+  0% {
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.2),
+                0 0 0 1px rgba(139, 92, 246, 0.15);
+  }
+  16.66% {
+    box-shadow: 0 4px 16px rgba(236, 72, 153, 0.2),
+                0 0 0 1px rgba(236, 72, 153, 0.15);
+  }
+  33.33% {
+    box-shadow: 0 4px 16px rgba(251, 146, 60, 0.2),
+                0 0 0 1px rgba(251, 146, 60, 0.15);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(34, 197, 94, 0.2),
+                0 0 0 1px rgba(34, 197, 94, 0.15);
+  }
+  66.66% {
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2),
+                0 0 0 1px rgba(59, 130, 246, 0.15);
+  }
+  83.33% {
+    box-shadow: 0 4px 16px rgba(168, 85, 247, 0.2),
+                0 0 0 1px rgba(168, 85, 247, 0.15);
+  }
+  100% {
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.2),
+                0 0 0 1px rgba(139, 92, 246, 0.15);
+  }
+}
+
+.animated-shadow-input {
+  animation: animatedShadow 8s ease-in-out infinite;
+  transition: all 0.3s ease;
+  border: none;
+}
+
+.animated-shadow-input:focus {
+  animation: animatedShadow 4s ease-in-out infinite;
+  outline: none;
+}
