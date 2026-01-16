@@ -24,6 +24,7 @@ import WorkflowTestDialog from "./components/WorkflowTestDialog";
 import NodePanel from "./components/panels/NodePanel";
 import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
+import ChatInputBar from "./components/panels/ChatInputBar";
 import { useSchemaValidation } from "./hooks/useSchemaValidation";
 import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
 import { useParams } from "react-router-dom";
@@ -40,6 +41,8 @@ import {
   handleDrop,
   handleNodeDoubleClick,
 } from "./utils/helpers";
+import { Button } from "@/components/button";
+import { History, ChevronLeft, X } from "lucide-react";
 
 // Get node types and edge types for React Flow
 const nodeTypes = getNodeTypes();
@@ -469,31 +472,66 @@ const GraphFlowContent: React.FC = () => {
               <Panel position="top-center" className="mt-2">
                 <AgentTopPanel data={agent} onUpdated={handleAgentUpdated} />
               </Panel>
-
-              <Panel position="bottom-center" className="mb-4">
-                <BottomPanel
-                  workflow={{
-                    ...workflow,
-                    nodes: nodes,
-                    edges: edges,
-                  }}
-                  hasUnsavedChanges={hasUnsavedChanges}
-                  onWorkflowLoaded={(workflow) =>
-                    handleWorkflowLoaded(workflow, true)
-                  }
-                  onTestWorkflow={handleTestGraph}
-                  onSaveWorkflow={handleSaveWorkflow}
-                  onExecutionStateChange={setExecutionState}
-                />
-              </Panel>
             </ReactFlow>
+
+            {/* Unified top-right controls (prevents overlap between ReactFlow Panel + NodePanel buttons) */}
+            <div
+              className={`fixed top-4 z-20 flex flex-row flex-wrap items-center justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
+                (() => {
+                  if (showNodePanel && showWorkflowPanel) {
+                    return "right-[calc(20rem+16rem+1rem)]";
+                  } else if (showNodePanel) {
+                    return "right-[calc(16rem+1rem)]";
+                  } else if (showWorkflowPanel) {
+                    return "right-[calc(20rem+1rem)]";
+                  } else {
+                    return "right-4";
+                  }
+                })()
+              }`}
+            >
+              <BottomPanel
+                workflow={{
+                  ...workflow,
+                  nodes: nodes,
+                  edges: edges,
+                }}
+                hasUnsavedChanges={hasUnsavedChanges}
+                onWorkflowLoaded={(workflow) => handleWorkflowLoaded(workflow, true)}
+                onTestWorkflow={handleTestGraph}
+                onSaveWorkflow={handleSaveWorkflow}
+                onExecutionStateChange={setExecutionState}
+              />
+
+              <Button
+                onClick={toggleWorkflowPanel}
+                size="icon"
+                variant="ghost"
+                className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
+              >
+                {showWorkflowPanel ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
+                <span className="sr-only">
+                  {showWorkflowPanel ? "Close Workflow Panel" : "Open Workflow Panel"}
+                </span>
+              </Button>
+
+              <Button
+                onClick={toggleNodePanel}
+                size="icon"
+                variant="ghost"
+                className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
+              >
+                {showNodePanel ? <X className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                <span className="sr-only">
+                  {showNodePanel ? "Close Node Panel" : "Open Node Panel"}
+                </span>
+              </Button>
+            </div>
 
             <NodePanel
               isOpen={showNodePanel}
               onClose={toggleNodePanel}
               onAddNode={addNewNode}
-              showWorkflowPanel={showWorkflowPanel}
-              onToggleWorkflowPanel={toggleWorkflowPanel}
             />
 
             <WorkflowsSavedPanel
@@ -519,6 +557,20 @@ const GraphFlowContent: React.FC = () => {
               workflowName="Current Graph"
               workflow={currentTestConfig}
               onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
+            />
+
+            <ChatInputBar
+              onSendMessage={(message) => {
+                // Open test dialog with the message pre-filled
+                setCurrentTestConfig({
+                  ...workflow,
+                  nodes: nodes,
+                  edges: edges,
+                  testInput: { message },
+                });
+                setTestDialogOpen(true);
+              }}
+              disabled={!workflow?.nodes?.some((node) => node.type === "chatInputNode")}
             />
           </div>
         </div>
