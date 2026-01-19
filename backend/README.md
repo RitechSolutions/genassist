@@ -43,7 +43,7 @@ Create virtual environment and install requirements\
 
 3. Start db and redis and whisper and chroma locally:
     ```bash
-    docker compose up -d db redis whisper chroma
+    docker compose up -d db redis whisper chroma qdrant
     ```
    **in development with backend running in IDE you need CHROMA_HOST and CHROMA_PORT in .env (check .env.example)
 
