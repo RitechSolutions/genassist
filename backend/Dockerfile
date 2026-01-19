@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r /src/requirements-rag.txt && \
     pip install --no-cache-dir -r /src/requirements-app.txt
 
 # RUN playwright install to donwload the browser of the library
-RUN playwright install chromium
+RUN playwright install --with-deps chromium
 
 COPY ./run.py /src/run.py
 COPY ./run_celery.py /src/run_celery.py

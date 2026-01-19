@@ -104,24 +104,12 @@ steps:
       echo "Upgrading pip tooling..."
       docker exec genassist-app-cicd python -m pip install -q -U pip setuptools wheel
 
-      echo "📊 Playwright check..."
 
       echo "Installing test dependencies..."
       docker exec genassist-app-cicd python -m pip install -q \
         "pytest>=8.2,<9" \
         "pytest-asyncio>=0.26,<0.27" \
         pytest-cov pytest-azurepipelines coverage
-
-        docker exec genassist-app-cicd sh -lc '
-        python - << "PY"
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            b = p.chromium.launch(headless=True, args=["--no-sandbox","--disable-dev-shm-usage"])
-            b.close()
-        print("PLAYWRIGHT OK")
-        PY
-        '
-
 
       echo "📊 Running pytest (writing /src/pytest.log)..."
       TEST_RESULT=0
