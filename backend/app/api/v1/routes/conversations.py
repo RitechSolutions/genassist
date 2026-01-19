@@ -7,7 +7,7 @@ from fastapi_injector import Injected
 from starlette.websockets import WebSocketDisconnect
 from app.core.exceptions.exception_handler import send_socket_error
 from app.core.utils.enums.message_feedback_enum import Feedback
-from app.auth.dependencies import auth, permissions, socket_auth
+from app.auth.dependencies import auth, permissions, socket_auth, auth_for_conversation_update
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -34,6 +34,7 @@ from app.schemas.socket_principal import SocketPrincipal
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
 from app.services.transcript_message_service import TranscriptMessageService
+from app.services.auth import AuthService
 from app.core.tenant_scope import get_tenant_context
 from app.use_cases.chat_as_client_use_case import process_conversation_update_with_agent
 from app.core.permissions.constants import Permissions as P
@@ -76,9 +77,11 @@ async def start(
     model: ConversationTranscriptCreate,
     service: ConversationService = Injected(ConversationService),
     agent_config_service: AgentConfigService = Injected(AgentConfigService),
+    auth_service: AuthService = Injected(AuthService),
 ):
     """
     Create a new in-progress conversation and store the partial transcript.
+    If agent.token_based_auth is true, returns a JWT token for secure frontend access.
     """
     if model.messages:
         raise AppException(
@@ -100,7 +103,8 @@ async def start(
     model.operator_id = agent.operator_id
     conversation = await service.start_in_progress_conversation(model)
     logger.info("conversation:" + str(conversation))
-    return {
+    
+    response = {
         "message": "Conversation started",
         "conversation_id": conversation.id,
         "agent_id": agent.id,
@@ -111,6 +115,20 @@ async def start(
         "agent_thinking_phrase_delay": agent_read.thinking_phrase_delay,
         "agent_has_welcome_image": agent_read.welcome_image is not None,
     }
+    
+    # If agent requires authentication, generate and return a guest JWT token
+    if agent_read.token_based_auth:
+        tenant_id = get_tenant_context()
+        # Include user_id from the API key used to start the conversation
+        guest_token = auth_service.create_guest_token(
+            tenant_id=tenant_id,
+            agent_id=str(agent.id),
+            conversation_id=str(conversation.id),
+            user_id=str(userid) if userid else None
+        )
+        response["guest_token"] = guest_token
+    
+    return response
 
 
 @router.patch(
@@ -227,7 +245,7 @@ async def update_no_agent(
 @router.patch(
     "/in-progress/update/{conversation_id}",
     dependencies=[
-        Depends(auth),
+        Depends(auth_for_conversation_update),
         Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
     ],
 )
@@ -240,6 +258,7 @@ async def update(
 ):
     """
     Append segments to an existing in-progress conversation.
+    If agent.token_based_auth is true, only accepts JWT tokens (rejects API keys).
     """
     tenant_id = get_tenant_context()
 

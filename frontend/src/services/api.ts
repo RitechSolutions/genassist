@@ -13,6 +13,7 @@ export interface AgentConfig {
   thinking_phrase_delay?: number;
   possible_queries?: string[];
   thinking_phrases?: string[];
+  token_based_auth?: boolean;
   workflow_id: string;
   user_id: string;
   [key: string]: unknown;
