@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Integer, String, LargeBinary
+from sqlalchemy import ForeignKey, Integer, String, LargeBinary, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -20,6 +20,7 @@ class AgentModel(Base):
     thinking_phrases: Mapped[str] = mapped_column(String(500), server_default="Thinking...")
     thinking_phrase_delay: Mapped[Integer] = mapped_column(Integer, nullable=True)
     workflow_id: Mapped[UUID] = mapped_column(ForeignKey("workflows.id"), nullable=True)
+    token_based_auth: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     # Relationships
     operator = relationship("OperatorModel", back_populates="agent", uselist=False)

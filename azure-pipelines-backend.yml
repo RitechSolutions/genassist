@@ -102,10 +102,15 @@ steps:
 
       OUT_DIR="$(System.DefaultWorkingDirectory)"
 
-      echo "installing pytest and coverage libs to app"
-      docker exec "genassist-app-cicd" pip install -q coverage pytest-cov pytest-azurepipelines
+      echo "Python inside container:"
+      docker exec "genassist-app-cicd" python --version
+      docker exec "genassist-app-cicd" python -c "import sys; print(sys.executable)"
 
-      echo "waiting 5 sec.."
+      echo "Installing pytest/coverage into the same interpreter..."
+      docker exec "genassist-app-cicd" python -m pip install -q -U pip setuptools wheel
+      docker exec "genassist-app-cicd" python -m pip install -q -U pytest coverage pytest-cov pytest-azurepipelines
+
+      echo "Waiting 5 sec.."
       sleep 5
 
       echo "📝 Following container logs..."
@@ -138,6 +143,11 @@ steps:
 
 
       echo "Copying test outputs to: $OUT_DIR"
+      # Only copy if they exist, so you get a clean error message
+      docker exec "genassist-app-cicd" test -f /src/test-results.xml
+      docker exec "genassist-app-cicd" test -f /src/coverage.xml
+      docker exec "genassist-app-cicd" test -d /src/htmlcov
+
       docker cp "genassist-app-cicd":/src/test-results.xml "$OUT_DIR/test-results.xml"
       docker cp "genassist-app-cicd":/src/coverage.xml "$OUT_DIR/coverage.xml"
       docker cp "genassist-app-cicd":/src/htmlcov "$OUT_DIR/htmlcov"

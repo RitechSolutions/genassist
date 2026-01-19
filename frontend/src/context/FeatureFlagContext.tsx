@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useMe
 import { getFeatureFlags } from '@/services/featureFlags';
 import { FeatureFlag, ParsedFeatureFlag } from '@/interfaces/featureFlag.interface';
 import { parseFeatureFlags, isFeatureEnabled as checkFeatureEnabled, getFeatureValue as getFeatureValueHelper } from '@/helpers/featureFlag';
+import { isAuthenticated } from '@/services/auth';
 
 interface FeatureFlagContextType {
   flags: FeatureFlag[];
@@ -39,7 +40,10 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
   };
 
   useEffect(() => {
-    fetchFlags();
+    // check if the user is authenticated
+    if (isAuthenticated()) {
+      fetchFlags();
+    }
   }, []);
 
   const isEnabled = (key: string): boolean => {

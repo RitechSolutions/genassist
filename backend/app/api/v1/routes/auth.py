@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from typing import Annotated
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_injector import Injected
 
@@ -9,6 +9,8 @@ from app.auth.dependencies import auth, get_current_user
 from app.auth.utils import get_password_hash
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.config.settings import settings
+from app.middlewares.rate_limit_middleware import limiter
 from app.schemas.password_update_request import PasswordUpdateRequest
 from app.services.auth import AuthService
 from app.services.users import UserService
@@ -19,7 +21,10 @@ router = APIRouter()
 
 
 @router.post("/token", summary="Authenticate user and return access and refresh tokens")
+@limiter.limit(f"{settings.RATE_LIMIT_AUTH_PER_MINUTE}/minute")
+@limiter.limit(f"{settings.RATE_LIMIT_AUTH_PER_HOUR}/hour")
 async def auth_token(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     auth_service: AuthService = Injected(AuthService),
 ):
@@ -38,7 +43,9 @@ async def auth_token(
 @router.post(
     "/refresh_token", summary="Refresh user access token via provided refresh token"
 )
+@limiter.limit(f"{settings.RATE_LIMIT_AUTH_PER_MINUTE}/minute")
 async def refresh_token(
+    request: Request,
     refresh_token: Annotated[str, Form(...)],
     auth_service: AuthService = Injected(AuthService),
 ):
@@ -73,7 +80,9 @@ async def me(
 
 
 @router.post("/change-password", summary="Change password using old password")
+@limiter.limit(f"{settings.RATE_LIMIT_AUTH_PER_MINUTE}/minute")
 async def change_password(
+    request: Request,
     req: PasswordUpdateRequest,
     auth_service: AuthService = Injected(AuthService),
     user_service: UserService = Injected(UserService),

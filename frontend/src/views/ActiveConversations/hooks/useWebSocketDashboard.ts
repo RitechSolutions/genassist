@@ -31,7 +31,7 @@ export function useWebSocketDashboard({
       const wsBaseUrl = await getWsUrl();
       const topicsQuery = topics.map(t => `topics=${t}`).join("&");
       const tenant = getTenantId();
-      const tenantParam = tenant ? `&X-Tenant-Id=${tenant}` : "";
+      const tenantParam = tenant ? `&x-tenant-id=${tenant}` : "";
       const wsUrl = `${wsBaseUrl}/conversations/ws/dashboard/list?access_token=${token}&lang=${lang}&${topicsQuery}${tenantParam}`;
 
       const socket = new WebSocket(wsUrl);

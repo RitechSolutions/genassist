@@ -26,7 +26,7 @@ export function useWebSocketTranscript({
     const topics = ["message", "statistics", "finalize", "takeover"];
     const queryString = topics.map((t) => `topics=${t}`).join("&");
     const tenant = getTenantId();
-    const tenantParam = tenant ? `&X-Tenant-Id=${tenant}` : "";
+    const tenantParam = tenant ? `&x-tenant-id=${tenant}` : "";
     
     getWsUrl().then(wsBaseUrl => {
       const wsUrl = `${wsBaseUrl}/conversations/ws/${conversationId}?access_token=${token}&lang=en&${queryString}${tenantParam}`;
