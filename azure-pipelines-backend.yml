@@ -136,7 +136,7 @@ steps:
       docker exec "genassist-app-cicd" ls -lah /src | sed -n '1,200p'
 
       echo "Copying test outputs to: $OUT_DIR"
-
+      # Only copy if they exist, so you get a clean error message
       docker exec "genassist-app-cicd" test -f /src/test-results.xml
       docker exec "genassist-app-cicd" test -f /src/coverage.xml
       docker exec "genassist-app-cicd" test -d /src/htmlcov
@@ -152,8 +152,7 @@ steps:
 
       exit $TEST_RESULT
     displayName: 'Start Tests'
-    timeoutInMinutes: 3=
-
+    timeoutInMinutes: 3
 
   - script: |
       docker compose -f docker-compose.cicd.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
