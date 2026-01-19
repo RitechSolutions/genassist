@@ -112,17 +112,30 @@ steps:
       docker logs --since 5s -f "genassist-app-cicd" &
       LOG_PID=$!
 
-      echo "📊 Running pytest..."
-      if ! docker exec "genassist-app-cicd" python -m pytest tests -vvv \
-        --cov=app --cov-branch --cov-report xml \
-        --junitxml="test-results.xml" --cov-report=html \
-        --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG; then
-        echo "❌ Tests failed"
+      echo "📊 Running pytest (and capturing output)..."
+      set +e
+      docker exec "genassist-app-cicd" bash -lc '
+        cd /src || exit 2
+        python -m pytest tests -vvv \
+          --maxfail=1 \
+          --showlocals \
+          --cov=app --cov-branch --cov-report xml \
+          --junitxml="test-results.xml" --cov-report=html \
+          --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG \
+          2>&1 | tee /src/pytest-output.log
+      '
+      PYTEST_EXIT=${PIPESTATUS[0]}
+      set -e
+
+      if [ "$PYTEST_EXIT" -ne 0 ]; then
+        echo "❌ Tests failed (exit=$PYTEST_EXIT). Last 200 lines of pytest output:"
+        docker exec "genassist-app-cicd" bash -lc 'tail -n 200 /src/pytest-output.log || true'
         TEST_RESULT=1
       else
         echo "✅ Tests passed successfully!"
         TEST_RESULT=0
       fi
+
 
       echo "Copying test outputs to: $OUT_DIR"
       docker cp "genassist-app-cicd":/src/test-results.xml "$OUT_DIR/test-results.xml"
