@@ -39,6 +39,11 @@ function App() {
     description: "Support",
     agentName: "Agent",
     logoUrl: "",
+    baseUrl: "http://localhost:8000/",
+    apiKey: "genagent123",
+    // baseUrl: "https://fibrously-lovelorn-porfirio.ngrok-free.dev/",
+    // apiKey: "FA40KmEYi17WgBnSH0mi4f25bSe4gZsWZ2JSjKW86eM6QOVg-WKWBQ",
+    // reCaptchaKey: "6LeLh08sAAAAAG_pJBb3KwgqRnqVmLRP6cTYjUIX",
   });
 
   const [customLogo, setCustomLogo] = useState<FileState>({
@@ -940,8 +945,8 @@ function App() {
       {/* Chat Widget Popup */}
       <div style={chatWidgetStyle}>
         <GenAgentChat
-          baseUrl="http://localhost:8000/"
-          apiKey="genagent123"
+          baseUrl={chatSettings.baseUrl}
+          apiKey={chatSettings.apiKey}
           tenant=""
           metadata={metadata}
           theme={theme}
@@ -949,6 +954,7 @@ function App() {
           agentName={chatSettings.agentName}
           logoUrl={chatSettings.logoUrl}
           onError={handleError}
+          reCaptchaKey={chatSettings.reCaptchaKey}
         />
       </div>
 
