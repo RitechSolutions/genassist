@@ -129,8 +129,7 @@ class TestCRUDOperations:
     """Test Create, Read, Update, Delete operations."""
 
     @pytest.mark.asyncio
-    async def test_create_file(self, file_manager_service: FileManagerService, mock_repository: FileManagerRepository, storage_provider: BaseStorageProvider, 
-test_user_id):
+    async def test_create_file(self, file_manager_service, mock_repository, storage_provider, test_user_id, test_tenant_id):
         """Test creating a file with content."""
         file_data = FileCreate(
             name="test_file.txt",
@@ -359,10 +358,9 @@ class TestMultipleProviders:
         # use the azure blob storage provider without mocking the provider
         from app.modules.filemanager.providers.azure.provider import AzureStorageProvider
         az_provider = AzureStorageProvider(config={})
-        await az_provider.initialize()
 
         file_manager_service = FileManagerService(repository=mock_repository)
-        file_manager_service.set_storage_provider(az_provider)
+        await file_manager_service.set_storage_provider(az_provider)
 
         # create a file content
         file_content = b"Test file content"

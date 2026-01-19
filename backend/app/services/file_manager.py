@@ -4,6 +4,7 @@ from typing import Optional, BinaryIO
 import logging
 from pathlib import Path
 
+from app.modules.filemanager.providers.base import BaseStorageProvider
 from app.db.models.file import FileModel
 from app.repositories.file_manager import FileManagerRepository
 from app.schemas.file import FileCreate, FileUpdate
@@ -22,9 +23,10 @@ class FileManagerService:
         # Storage provider will be injected via manager or configuration
         self.storage_provider = None
 
-    def set_storage_provider(self, provider):
+    async def set_storage_provider(self, provider: BaseStorageProvider):
         """Set the storage provider for this service instance."""
         self.storage_provider = provider
+        await self.storage_provider.initialize()
 
     # ==================== File Methods ====================
 
