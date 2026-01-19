@@ -123,6 +123,11 @@ steps:
         --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG
       then
         echo "❌ Tests failed"
+        docker exec -w /src genassist-app-cicd python -m pytest -q --maxfail=1 || true
+        docker exec -w /src genassist-app-cicd python -m pytest --help | head -n 80
+        docker exec -w /src genassist-app-cicd python -m pytest --help | grep -n "no-coverage-upload" || true
+        docker exec -w /src genassist-app-cicd python -m pip show pytest pytest-cov pytest-azurepipelines || true
+
         TEST_RESULT=1
       fi
 
