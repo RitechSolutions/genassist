@@ -113,28 +113,16 @@ steps:
 
       echo "📊 Running pytest (writing /src/pytest.log)..."
       TEST_RESULT=0
-      if ! docker exec -w /src genassist-app-cicd sh -lc '
-        set -e
-        python -m pytest tests \
-          -vvv \
-          --cov=app --cov-branch \
-          --cov-report xml:/src/coverage.xml \
-          --cov-report html:/src/htmlcov \
-          --junitxml=/src/test-results.xml \
-          --no-coverage-upload \
-          -s -o log_cli=true -o log_cli_level=DEBUG \
-          2>&1 | tee /src/pytest.log
-      '; then
-        echo "❌ Tests failed (tail of pytest log):"
-        docker exec genassist-app-cicd sh -lc 'tail -n 200 /src/pytest.log || true'
-
-        echo "Diagnostics:"
-        docker exec -w /src genassist-app-cicd python -m pytest -q --maxfail=1 || true
-        docker exec -w /src genassist-app-cicd python -m pytest --help | head -n 80 || true
-        docker exec -w /src genassist-app-cicd python -m pytest --help | grep -n "no-coverage-upload" || true
-        docker exec -w /src genassist-app-cicd python -m pip show pytest pytest-cov pytest-azurepipelines || true
-
+      
+      if ! docker exec "genassist-app-cicd" python -m pytest tests -vvv \
+        --cov=app --cov-branch --cov-report xml \
+        --junitxml="test-results.xml" --cov-report=html \
+        --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG; then
+        echo "❌ Tests failed"
         TEST_RESULT=1
+      else
+        echo "✅ Tests passed successfully!"
+        TEST_RESULT=0
       fi
 
       echo "Listing /src outputs:"
