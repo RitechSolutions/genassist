@@ -101,30 +101,35 @@ steps:
       set -euo pipefail
       OUT_DIR="$(System.DefaultWorkingDirectory)"
 
-      echo "Installing pytest/coverage..."
+      echo "Upgrading pip tooling..."
       docker exec genassist-app-cicd python -m pip install -q -U pip setuptools wheel
+
+      echo "Installing test dependencies..."
       docker exec genassist-app-cicd python -m pip install -q \
         "pytest>=8.2,<9" \
         "pytest-asyncio>=0.26,<0.27" \
         pytest-cov pytest-azurepipelines coverage
 
-      echo "📝 Following container logs..."
-      docker logs --since 5s -f genassist-app-cicd &
-      LOG_PID=$!
-      trap 'kill $LOG_PID 2>/dev/null || true' EXIT
-
-      echo "📊 Running pytest..."
+      echo "📊 Running pytest (writing /src/pytest.log)..."
       TEST_RESULT=0
-      if ! docker exec -w /src genassist-app-cicd python -m pytest tests -vvv \
-        --cov=app --cov-branch \
-        --cov-report xml:/src/coverage.xml \
-        --cov-report html:/src/htmlcov \
-        --junitxml=/src/test-results.xml \
-        --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG
-      then
-        echo "❌ Tests failed"
+      if ! docker exec -w /src genassist-app-cicd sh -lc '
+        set -e
+        python -m pytest tests \
+          -vvv \
+          --cov=app --cov-branch \
+          --cov-report xml:/src/coverage.xml \
+          --cov-report html:/src/htmlcov \
+          --junitxml=/src/test-results.xml \
+          --no-coverage-upload \
+          -s -o log_cli=true -o log_cli_level=DEBUG \
+          2>&1 | tee /src/pytest.log
+      '; then
+        echo "❌ Tests failed (tail of pytest log):"
+        docker exec genassist-app-cicd sh -lc 'tail -n 200 /src/pytest.log || true'
+
+        echo "Diagnostics:"
         docker exec -w /src genassist-app-cicd python -m pytest -q --maxfail=1 || true
-        docker exec -w /src genassist-app-cicd python -m pytest --help | head -n 80
+        docker exec -w /src genassist-app-cicd python -m pytest --help | head -n 80 || true
         docker exec -w /src genassist-app-cicd python -m pytest --help | grep -n "no-coverage-upload" || true
         docker exec -w /src genassist-app-cicd python -m pip show pytest pytest-cov pytest-azurepipelines || true
 
@@ -134,15 +139,27 @@ steps:
       echo "Listing /src outputs:"
       docker exec genassist-app-cicd ls -lah /src | sed -n '1,200p'
 
-      echo "Copying outputs (best effort) to: $OUT_DIR"
       if docker exec genassist-app-cicd test -f /src/test-results.xml; then
         docker cp genassist-app-cicd:/src/test-results.xml "$OUT_DIR/test-results.xml"
+      else
+        echo "⚠️ Missing /src/test-results.xml"
       fi
+
       if docker exec genassist-app-cicd test -f /src/coverage.xml; then
         docker cp genassist-app-cicd:/src/coverage.xml "$OUT_DIR/coverage.xml"
+      else
+        echo "⚠️ Missing /src/coverage.xml"
       fi
+
       if docker exec genassist-app-cicd test -d /src/htmlcov; then
         docker cp genassist-app-cicd:/src/htmlcov "$OUT_DIR/htmlcov"
+      else
+        echo "⚠️ Missing /src/htmlcov"
+      fi
+
+      # Optional: keep the pytest log as an artifact too
+      if docker exec genassist-app-cicd test -f /src/pytest.log; then
+        docker cp genassist-app-cicd:/src/pytest.log "$OUT_DIR/pytest.log"
       fi
 
       exit $TEST_RESULT
