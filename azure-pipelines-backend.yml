@@ -108,7 +108,10 @@ steps:
 
       echo "Installing pytest/coverage into the same interpreter..."
       docker exec "genassist-app-cicd" python -m pip install -q -U pip setuptools wheel
-      docker exec "genassist-app-cicd" python -m pip install -q -U pytest coverage pytest-cov pytest-azurepipelines
+      docker exec "genassist-app-cicd" pip install -q \
+      "pytest>=8.2,<9" \
+      "pytest-asyncio>=0.26,<0.27" \
+      pytest-cov pytest-azurepipelines coverage
 
       echo "Waiting 5 sec.."
       sleep 5
