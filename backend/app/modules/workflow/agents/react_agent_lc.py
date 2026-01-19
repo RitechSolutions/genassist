@@ -139,10 +139,10 @@ class ReActAgentLC(BaseToolAgent):
             role = message.get('role', 'user')
             content = message.get('content', '')
 
-            if role == 'user':
+            if role in ['user', 'human']:
                 messages.append(HumanMessage(content=content))
-            elif role == 'agent':
-                messages.append(AIMessage(content=content))
+            elif role in ['agent', 'assistant', 'ai']:
+                messages.append(AIMessage(content=content['message']))
 
         return messages
 
