@@ -406,10 +406,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     setSelectedLanguage(lang);
   };
 
-  const handleReCaptchaVerify = (token: string) => {
+  const handleReCaptchaVerify = useCallback((token: string) => {
     reCaptchaTokenRef.current = token;
     // console.log('handleReCaptchaVerify', token);
-  };
+  }, []);
 
   // Available languages (can be extended)
   const availableLanguages = [
@@ -795,28 +795,16 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   /**
    * Render the component with ReCaptcha
-   * @param token - The token to be used for the ReCaptcha
    * @param children - The children to be rendered
    * @returns The rendered component
    */
-  const renderWithReCaptcha = (children: React.ReactNode) => {
+  const renderWithReCaptcha = useMemo(() => {
     if (!reCaptchaKey) {
-      return <>{children}</>;
+      return (children: React.ReactNode) => <>{children}</>;
     }
-
-
-    return (
-      <GoogleReCaptchaProvider
-        reCaptchaKey={reCaptchaKey || ''}
-        container={{ // optional to render inside custom element
-          element: "genassist-chat-recaptcha",
-          parameters: {
-            badge: 'inline', // optional, default undefined
-            theme: 'dark', // optional, default undefined
-          }
-        }}
-        >
-        <div id="genassist-chat-recaptcha" style={{ display: 'none' }}></div>
+    
+    return (children: React.ReactNode) => (
+      <GoogleReCaptchaProvider reCaptchaKey={reCaptchaKey || ''}>
         <GoogleReCaptcha  
           action="genassist_chat"
           onVerify={handleReCaptchaVerify}
@@ -825,7 +813,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         <>{children}</>
       </GoogleReCaptchaProvider>
     );
-  };
+  }, [reCaptchaKey, handleReCaptchaVerify]);
 
   const renderChatComponent = () => (
     <div style={containerStyle} data-genassist-root="true">
@@ -839,6 +827,18 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         @keyframes ga-backlight-sweep2 { 0% { transform: translateX(-35%); } 100% { transform: translateX(105%); } }
         @keyframes ga-backlight-pulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
         @keyframes ga-think-change { 0% { opacity: 0; transform: translateY(4px); } 100% { opacity: 1; transform: translateY(0); } }
+        /* Hide reCAPTCHA badge */
+        /* Ensure reCAPTCHA container is always hidden */
+        .grecaptcha-badge {
+          display: none !important;
+          visibility: hidden !important;
+          position: absolute !important;
+          width: 0 !important;
+          height: 0 !important;
+          overflow: hidden !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+        }
       `}</style>
       <div style={headerStyle} ref={headerRef}>
         <div style={logoContainerStyle}>
