@@ -247,12 +247,13 @@ export class ChatService {
     return this.isFinalized;
   }
 
-  async startConversation(): Promise<string> {
+  async startConversation(reCaptchaToken: string | undefined): Promise<string> {
     try {
       const requestBody: any = {
         messages: [],
         recorded_at: new Date().toISOString(),
         data_source_id: "00000000-0000-0000-0000-000000000000",
+        recaptcha_token: reCaptchaToken,
       };
 
       if (this.metadata) {
