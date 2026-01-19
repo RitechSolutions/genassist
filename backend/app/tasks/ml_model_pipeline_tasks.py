@@ -25,6 +25,8 @@ from app.repositories.ml_models import MLModelsRepository
 from app.core.project_path import DATA_VOLUME
 from app.schemas.ml_model_pipeline import MLModelPipelineArtifactCreate
 from app.tasks.base import run_task_for_all_tenants
+from app.core.exceptions.exception_classes import AppException
+from app.core.exceptions.error_messages import ErrorKey
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +100,17 @@ async def execute_pipeline_run_async(run_id: UUID):
 
         try:
             # Get the pipeline run
-            run = await run_repository.get_by_id(run_id)
+            # If run doesn't exist in this tenant's database, skip execution
+            # (this happens when run_task_for_all_tenants queries all tenants)
+            try:
+                run = await run_repository.get_by_id(run_id)
+            except AppException as e:
+                if e.error_key == ErrorKey.NOT_FOUND:
+                    logger.info(
+                        f"Pipeline run {run_id} not found in tenant {tenant_id}, skipping execution"
+                    )
+                    return None  # Skip this tenant - run doesn't belong to it
+                raise
 
             # Update status to running
             await run_repository.update_status(run_id, PipelineRunStatus.RUNNING)
@@ -171,10 +183,18 @@ async def execute_pipeline_run_async(run_id: UUID):
             )
 
             # Update run status to failed
+            # Skip if run doesn't exist in this tenant's database
             try:
                 await run_repository.update_status(
                     run_id, PipelineRunStatus.FAILED, error_message=str(e)
                 )
+            except AppException as update_error:
+                if update_error.error_key == ErrorKey.NOT_FOUND:
+                    logger.info(
+                        f"Pipeline run {run_id} not found in tenant {tenant_id} when updating status, skipping"
+                    )
+                else:
+                    logger.error(f"Error updating run status: {str(update_error)}")
             except Exception as update_error:
                 logger.error(f"Error updating run status: {str(update_error)}")
 
