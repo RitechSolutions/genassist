@@ -99,58 +99,49 @@ steps:
 
   - script: |
       set -euo pipefail
-
       OUT_DIR="$(System.DefaultWorkingDirectory)"
 
-      echo "Python inside container:"
-      docker exec "genassist-app-cicd" python --version
-      docker exec "genassist-app-cicd" python -c "import sys; print(sys.executable)"
-
-      echo "Installing pytest/coverage into the same interpreter..."
-      docker exec "genassist-app-cicd" python -m pip install -q -U pip setuptools wheel
-      docker exec "genassist-app-cicd" pip install -q \
-      "pytest>=8.2,<9" \
-      "pytest-asyncio>=0.26,<0.27" \
-      pytest-cov pytest-azurepipelines coverage
-
-      echo "Waiting 5 sec.."
-      sleep 5
+      echo "Installing pytest/coverage..."
+      docker exec genassist-app-cicd python -m pip install -q -U pip setuptools wheel
+      docker exec genassist-app-cicd python -m pip install -q \
+        "pytest>=8.2,<9" \
+        "pytest-asyncio>=0.26,<0.27" \
+        pytest-cov pytest-azurepipelines coverage
 
       echo "📝 Following container logs..."
-      docker logs --since 5s -f "genassist-app-cicd" &
+      docker logs --since 5s -f genassist-app-cicd &
       LOG_PID=$!
+      trap 'kill $LOG_PID 2>/dev/null || true' EXIT
 
-      echo "📊 Running pytest from /src..."
-      if ! docker exec -w /src "genassist-app-cicd" python -m pytest tests -vvv \
-        --cov=app --cov-branch --cov-report xml:/src/coverage.xml \
-        --junitxml=/src/test-results.xml --cov-report=html:/src/htmlcov \
-        --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG; then
+      echo "📊 Running pytest..."
+      TEST_RESULT=0
+      if ! docker exec -w /src genassist-app-cicd python -m pytest tests -vvv \
+        --cov=app --cov-branch \
+        --cov-report xml:/src/coverage.xml \
+        --cov-report html:/src/htmlcov \
+        --junitxml=/src/test-results.xml \
+        --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG
+      then
         echo "❌ Tests failed"
         TEST_RESULT=1
-      else
-        echo "✅ Tests passed successfully!"
-        TEST_RESULT=0
       fi
 
       echo "Listing /src outputs:"
-      docker exec "genassist-app-cicd" ls -lah /src | sed -n '1,200p'
+      docker exec genassist-app-cicd ls -lah /src | sed -n '1,200p'
 
-      echo "Copying test outputs to: $OUT_DIR"
-      # Only copy if they exist, so you get a clean error message
-      docker exec "genassist-app-cicd" test -f /src/test-results.xml
-      docker exec "genassist-app-cicd" test -f /src/coverage.xml
-      docker exec "genassist-app-cicd" test -d /src/htmlcov
-
-      docker cp "genassist-app-cicd":/src/test-results.xml "$OUT_DIR/test-results.xml"
-      docker cp "genassist-app-cicd":/src/coverage.xml "$OUT_DIR/coverage.xml"
-      docker cp "genassist-app-cicd":/src/htmlcov "$OUT_DIR/htmlcov"
-
-      kill $LOG_PID 2>/dev/null || true
-
-      echo "Files in $OUT_DIR:"
-      ls -lah "$OUT_DIR" | sed -n '1,200p'
+      echo "Copying outputs (best effort) to: $OUT_DIR"
+      if docker exec genassist-app-cicd test -f /src/test-results.xml; then
+        docker cp genassist-app-cicd:/src/test-results.xml "$OUT_DIR/test-results.xml"
+      fi
+      if docker exec genassist-app-cicd test -f /src/coverage.xml; then
+        docker cp genassist-app-cicd:/src/coverage.xml "$OUT_DIR/coverage.xml"
+      fi
+      if docker exec genassist-app-cicd test -d /src/htmlcov; then
+        docker cp genassist-app-cicd:/src/htmlcov "$OUT_DIR/htmlcov"
+      fi
 
       exit $TEST_RESULT
+
     displayName: 'Start Tests'
     timeoutInMinutes: 3
 
