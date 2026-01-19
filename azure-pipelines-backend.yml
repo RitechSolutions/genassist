@@ -100,58 +100,100 @@ steps:
   - script: |
       set -euo pipefail
       OUT_DIR="$(System.DefaultWorkingDirectory)"
+      CONTAINER="genassist-app-cicd"
 
-      echo "Upgrading pip tooling..."
-      docker exec genassist-app-cicd python -m pip install -q -U pip setuptools wheel
+      echo "=== Basic context ==="
+      echo "Agent: $(uname -a)"
+      echo "Workdir: $OUT_DIR"
+      echo "Container: $CONTAINER"
+      docker ps -a --filter "name=${CONTAINER}" --no-trunc || true
 
+      echo "=== Python inside container ==="
+      docker exec "$CONTAINER" python --version || true
+      docker exec "$CONTAINER" python -c "import sys; print(sys.executable); print(sys.path)" || true
 
-      echo "Installing test dependencies..."
-      docker exec genassist-app-cicd python -m pip install -q \
+      echo "=== Disk/memory snapshot (host + container) ==="
+      df -h || true
+      free -h || true
+      docker exec "$CONTAINER" sh -lc "df -h; free -h || true; ulimit -a || true" || true
+
+      echo "=== Upgrading pip tooling (verbose) ==="
+      docker exec "$CONTAINER" python -m pip install -U pip setuptools wheel
+
+      echo "=== Installing test dependencies (verbose) ==="
+      docker exec "$CONTAINER" python -m pip install \
         "pytest>=8.2,<9" \
         "pytest-asyncio>=0.26,<0.27" \
         pytest-cov pytest-azurepipelines coverage
 
-      echo "📊 Running pytest (writing /src/pytest.log)..."
+      echo "=== Start tailing container logs (background) ==="
+      docker logs -f "$CONTAINER" &
+      LOG_PID=$!
+      cleanup() { kill "$LOG_PID" 2>/dev/null || true; }
+      trap cleanup EXIT
+
+      echo "=== Sanity check: can we see tests dir? ==="
+      docker exec -w /src "$CONTAINER" sh -lc "pwd; ls -lah; ls -lah tests | sed -n '1,200p'"
+
+      echo "=== Running pytest (tee to /src/pytest.log) ==="
       TEST_RESULT=0
-      
-      if ! docker exec "genassist-app-cicd" python -m pytest tests -vvv \
-        --cov=app --cov-branch --cov-report xml \
-        --junitxml="test-results.xml" --cov-report=html \
-        --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG; then
-        echo "❌ Tests failed"
+
+      # Run from /src so outputs land where you expect; tee captures stdout+stderr to file AND shows it live
+      set +e
+      docker exec -w /src "$CONTAINER" sh -lc '
+        python -m pytest tests -vvv \
+          --cov=app --cov-branch --cov-report=xml \
+          --junitxml=test-results.xml --cov-report=html \
+          --no-coverage-upload -s -o log_cli=true -o log_cli_level=DEBUG \
+        2>&1 | tee /src/pytest.log
+      '
+      PYTEST_EXIT=$?
+      set -e
+
+      if [ "$PYTEST_EXIT" -ne 0 ]; then
+        echo "❌ Pytest failed with exit code: $PYTEST_EXIT"
         TEST_RESULT=1
+
+        echo "=== Immediate container diagnostics after failure ==="
+        echo "--- docker inspect (State) ---"
+        docker inspect "$CONTAINER" --format '{{json .State}}' | sed -n '1,200p' || true
+
+        echo "--- last 300 lines of container logs ---"
+        docker logs --tail 300 "$CONTAINER" || true
+
+        echo "--- dmesg (kernel OOM/segfault clues) inside container (if permitted) ---"
+        docker exec "$CONTAINER" sh -lc "dmesg | tail -n 200" || true
+
+        echo "--- core dumps / crash traces (common paths) ---"
+        docker exec -w /src "$CONTAINER" sh -lc "ls -lah .; find / -maxdepth 3 -type f -name 'core*' 2>/dev/null | head -n 50" || true
       else
         echo "✅ Tests passed successfully!"
-        TEST_RESULT=0
       fi
 
-      echo "Listing /src outputs:"
-      docker exec genassist-app-cicd ls -lah /src | sed -n '1,200p'
+      echo "=== Listing /src outputs ==="
+      docker exec -w /src "$CONTAINER" sh -lc "ls -lah | sed -n '1,200p'; ls -lah htmlcov 2>/dev/null | sed -n '1,200p' || true"
 
-      if docker exec genassist-app-cicd test -f /src/test-results.xml; then
-        docker cp genassist-app-cicd:/src/test-results.xml "$OUT_DIR/test-results.xml"
-      else
-        echo "⚠️ Missing /src/test-results.xml"
-      fi
+      echo "=== Copying artifacts to agent workspace ==="
+      mkdir -p "$OUT_DIR"
 
-      if docker exec genassist-app-cicd test -f /src/coverage.xml; then
-        docker cp genassist-app-cicd:/src/coverage.xml "$OUT_DIR/coverage.xml"
-      else
-        echo "⚠️ Missing /src/coverage.xml"
-      fi
+      for f in test-results.xml coverage.xml pytest.log; do
+        if docker exec "$CONTAINER" test -f "/src/$f"; then
+          docker cp "$CONTAINER:/src/$f" "$OUT_DIR/$f"
+          echo "Copied $f"
+        else
+          echo "⚠️ Missing /src/$f"
+        fi
+      done
 
-      if docker exec genassist-app-cicd test -d /src/htmlcov; then
-        docker cp genassist-app-cicd:/src/htmlcov "$OUT_DIR/htmlcov"
+      if docker exec "$CONTAINER" test -d /src/htmlcov; then
+        docker cp "$CONTAINER:/src/htmlcov" "$OUT_DIR/htmlcov"
+        echo "Copied htmlcov/"
       else
         echo "⚠️ Missing /src/htmlcov"
       fi
 
-      # Optional: keep the pytest log as an artifact too
-      if docker exec genassist-app-cicd test -f /src/pytest.log; then
-        docker cp genassist-app-cicd:/src/pytest.log "$OUT_DIR/pytest.log"
-      fi
-
       exit $TEST_RESULT
+
 
     displayName: 'Start Tests'
     timeoutInMinutes: 3
