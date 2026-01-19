@@ -11,7 +11,7 @@ export default {
   safelist: [
     {
       pattern:
-        /(text|bg|hover:bg|focus:bg|placeholder:text)-(blue|indigo|green|orange|purple|teal|cyan|pink|rose|sky|brand|red)-(50|100|200|300|400|500|600)/,
+        /(text|bg|hover:bg|focus:bg|placeholder:text)-(blue|indigo|green|orange|purple|teal|cyan|pink|rose|sky|brand|red)-(50|100|200|300|400|500|600|700|800|900|950)/,
     },
   ],
   prefix: "",
@@ -61,6 +61,19 @@ export default {
         brand: {
           50: "hsl(var(--brand-50))",
           600: "hsl(var(--brand-600))",
+        },
+        blue: {
+          50: "#EFF3FE",
+          100: "#DBE4FD",
+          200: "#BFD0FC",
+          300: "#93B2F9",
+          400: "#608AF4",
+          500: "#3A65EE",
+          600: "#173DED",
+          700: "#1632D0",
+          800: "#182BA8",
+          900: "#192985",
+          950: "#131B51",
         },
       },
       keyframes: {

@@ -972,7 +972,7 @@ function InfoBox({
   value: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center p-3 bg-primary/5 rounded-lg">
+    <div className="flex flex-col items-center p-3 bg-gray-100 rounded-lg">
       {icon}
       <span className="text-sm font-medium">{value}</span>
       <span className="text-xs text-muted-foreground">{label}</span>

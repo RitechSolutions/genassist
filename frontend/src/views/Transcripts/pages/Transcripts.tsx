@@ -13,6 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Card } from "@/components/card";
+import { Button } from "@/components/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
@@ -236,13 +237,14 @@ const Transcripts = () => {
                     <h1 className="text-2xl md:text-3xl font-bold mb-1 animate-fade-down">
                       Conversations
                     </h1>
-                    <button
+                    <Button
                       onClick={() => setIsUploadDialogOpen(true)}
-                      className="inline-flex items-center gap-2 bg-white border rounded-md px-3 py-1.5 shadow-sm text-sm font-medium text-gray-800 hover:bg-gray-50"
+                      variant="outline"
+                      size="sm"
                     >
                       <Upload className="w-4 h-4" />
                       Upload
-                    </button>
+                    </Button>
                   </div>
                   <p className="text-sm md:text-base text-muted-foreground animate-fade-up">
                     Review and analyze your conversation transcripts

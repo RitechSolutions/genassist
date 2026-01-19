@@ -131,11 +131,11 @@ export default function AuditLogs() {
                 <div className="inline-flex gap-4">
                   <Popover>
                     <PopoverTrigger asChild>
-                      <button className="border px-4 py-2 rounded text-sm bg-white shadow-sm hover:bg-gray-50">
+                      <Button variant="outline">
                         {dateRange.from && dateRange.to
                           ? `${format(dateRange.from, "PPP")} - ${format(dateRange.to, "PPP")}`
                           : "Select a date range"}
-                      </button>
+                      </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
                       <Calendar

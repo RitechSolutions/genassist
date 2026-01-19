@@ -1,4 +1,4 @@
-import { Card } from "@/components/card";
+import { cn } from "@/helpers/utils";
 
 interface SummaryProps {
   total: number;
@@ -7,48 +7,46 @@ interface SummaryProps {
 }
 
 export function ActiveConversationsSummary({ total, counts, loading }: SummaryProps) {
+  const sentiments = [
+    { label: "Bad", count: counts.bad, color: "bg-red-500" },
+    { label: "Neutral", count: counts.neutral, color: "bg-blue-500" },
+    { label: "Good", count: counts.good, color: "bg-green-500" },
+  ];
+
   return (
-    <Card className="p-4 bg-muted/40 border-0">
+    <div className="bg-muted rounded-2xl flex flex-col gap-12 items-center pt-12 pb-1 px-1 max-h-[240px]">
       {loading ? (
         <div className="space-y-4">
-          <div className="h-10 w-16 bg-gray-200 rounded" />
-          <div className="space-y-3">
-            <div className="h-4 w-24 bg-gray-200 rounded" />
-            <div className="h-4 w-28 bg-gray-200 rounded" />
-            <div className="h-4 w-20 bg-gray-200 rounded" />
+          <div className="h-12 w-24 bg-gray-200 rounded animate-pulse" />
+          <div className="flex gap-1">
+            <div className="h-24 flex-1 bg-gray-200 rounded animate-pulse" />
+            <div className="h-24 flex-1 bg-gray-200 rounded animate-pulse" />
+            <div className="h-24 flex-1 bg-gray-200 rounded animate-pulse" />
           </div>
         </div>
       ) : (
         <>
-          <div className="text-5xl font-bold text-center">{total}</div>
-          <div className="mt-4 text-sm">
-            <div className="flex items-center justify-between py-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
-                <span>Bad</span>
+          <div className="text-5xl font-bold text-foreground leading-[48px]">
+            {total}
+          </div>
+          
+          <div className="flex gap-1 w-full">
+            {sentiments.map((sentiment, index) => (
+              <div
+                key={index}
+                className="flex-1 bg-white rounded-lg shadow-sm px-2 py-4 flex flex-col gap-2 items-center justify-center"
+              >
+                <div className="flex items-center justify-center shrink-0">
+                  <div className={cn("w-4 h-[4px] rounded-xl", sentiment.color)} />
+                </div>
+                <p className="text-sm text-muted-foreground shrink-0">{sentiment.count}</p>
+                <p className="text-sm text-accent-foreground shrink-0">{sentiment.label}</p>
               </div>
-              <span className="font-medium">{counts.bad}</span>
-            </div>
-            <div className="border-t border-border/50" />
-            <div className="flex items-center justify-between py-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-purple-500"></span>
-                <span>Neutral</span>
-              </div>
-              <span className="font-medium">{counts.neutral}</span>
-            </div>
-            <div className="border-t border-border/50" />
-            <div className="flex items-center justify-between py-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
-                <span>Good</span>
-              </div>
-              <span className="font-medium">{counts.good}</span>
-            </div>
+            ))}
           </div>
         </>
       )}
-    </Card>
+    </div>
   );
 }
 

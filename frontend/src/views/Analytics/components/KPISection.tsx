@@ -1,9 +1,6 @@
 import { useState, useEffect } from "react";
-import { Clock, ThumbsUp, Award, CheckCircle } from "lucide-react";
-import { fetchMetrics } from "@/services/metrics";
-import { generateMetricData } from "../helpers/metricDataGenerator";
-import { MetricsAPIResponse } from "@/interfaces/analytics.interface";
-import { MetricCard } from "@/components/analytics/MetricCard";
+import { fetchMetrics, FetchedMetricsData } from "@/services/metrics";
+import { StatsOverviewCard } from "./StatsOverviewCard";
 
 import { usePermissions, useIsLoadingPermissions } from "@/context/PermissionContext";
 
@@ -14,7 +11,7 @@ interface KPISectionProps {
 export function KPISection({ timeFilter }: KPISectionProps) {
   const permissions = usePermissions();
   const isLoadingPermissions = useIsLoadingPermissions();
-  const [metrics, setMetrics] = useState<MetricsAPIResponse | null>(null);
+  const [metrics, setMetrics] = useState<FetchedMetricsData | null>(null);
 
   useEffect(() => {
     const getMetrics = async () => {
@@ -44,71 +41,37 @@ export function KPISection({ timeFilter }: KPISectionProps) {
 
   const formattedData = metrics || defaultMetrics;
 
-  const kpiMetrics = [
+  // Transform metrics data for the new stats overview card
+  const statsMetrics = [
     {
-      title: "Responsiveness",
+      label: "Active Agents",
+      value: "24",
+      change: 0,
+      changeType: "neutral" as const,
+    },
+    {
+      label: "Workflow Runs",
+      value: "1,847",
+      change: 12,
+      changeType: "decrease" as const,
+    },
+    {
+      label: "Avg Response Time",
       value: formattedData["Response Time"],
-      icon: Clock,
-      color: "#3b82f6",
-      data: generateMetricData(timeFilter, parseFloat(formattedData["Response Time"]) || 0, 0.5).map(item => ({
-        name: item.date, 
-        value: item.value
-      })),
-      format: (value: number) => `${value.toFixed(1)}m`,
-      tooltip: "Average time it takes for agents to respond to customer inquiries",
+      change: 4,
+      changeType: "decrease" as const,
     },
     {
-      title: "Satisfaction",
-      value: formattedData["Customer Satisfaction"],
-      icon: ThumbsUp,
-      color: "#16a34a",
-      data: generateMetricData(timeFilter, parseFloat(formattedData["Customer Satisfaction"]) || 0, 5).map(item => ({
-        name: item.date, 
-        value: item.value
-      })),
-      format: (value: number) => `${value.toFixed(1)}%`,
-      tooltip: "Percentage of customers reporting a positive experience with our service",
-    },
-    {
-      title: "Service Quality",
-      value: formattedData["Quality of Service"],
-      icon: Award,
-      color: "#9333ea",
-      data: generateMetricData(timeFilter, parseFloat(formattedData["Quality of Service"]) || 0, 0.3).map(item => ({
-        name: item.date, 
-        value: item.value
-      })),
-      format: (value: number) => `${value.toFixed(1)}%`,
-      tooltip: "Measure of service performance based on internal quality standards",
-    },
-    {
-      title: "Resolution Rate",
-      value: formattedData["Resolution Rate"],
-      icon: CheckCircle,
-      color: "#dc2626",
-      data: generateMetricData(timeFilter, parseFloat(formattedData["Resolution Rate"]) || 0, 3).map(item => ({
-        name: item.date, 
-        value: item.value
-      })),
-      format: (value: number) => `${value.toFixed(1)}%`,
-      tooltip: "Percentage of customer issues resolved on first contact",
+      label: "Usage",
+      value: "~$48.00",
+      change: 16,
+      changeType: "increase" as const,
     },
   ];
 
   return (
-    <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6 mb-6">
-      {kpiMetrics.map((metric) => (
-        <MetricCard 
-          key={metric.title}
-          title={metric.title}
-          value={metric.value}
-          icon={metric.icon}
-          data={metric.data}
-          color={metric.color}
-          format={metric.format}
-          description={metric.tooltip}
-        />
-      ))}
+    <section className="mb-5">
+      <StatsOverviewCard metrics={statsMetrics} />
     </section>
   );
 } 

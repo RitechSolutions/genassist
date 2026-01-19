@@ -469,7 +469,7 @@ const GraphFlowContent: React.FC = () => {
             >
               <Background />
               <Controls />
-              <Panel position="top-center" className="mt-2">
+              <Panel position="top-center" className="mt-4">
                 <AgentTopPanel data={agent} onUpdated={handleAgentUpdated} />
               </Panel>
             </ReactFlow>

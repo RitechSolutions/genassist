@@ -11,14 +11,15 @@ import {
 } from "@/services/api";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
-import { ChevronLeft, AlertCircle, CheckCircle2, Trash2 } from "lucide-react";
+import { ChevronLeft, CheckCircle2, Trash2, Plus, HelpCircle, MessageSquare } from "lucide-react";
 // import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/sheet";
 import { Textarea } from "@/components/textarea";
 
 interface AgentFormData {
@@ -41,6 +42,10 @@ interface AgentFormProps {
   // When true, navigate to workflow after creating an agent
   redirectOnCreate?: boolean;
   onCreated?: (agentId: string) => void;
+  // When true, hides internal buttons (for external rendering)
+  hideButtons?: boolean;
+  // Form ID for external button association
+  formId?: string;
 }
 
 const AgentForm: React.FC<AgentFormProps> = ({
@@ -49,6 +54,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
   onClose,
   redirectOnCreate = true,
   onCreated,
+  hideButtons = false,
+  formId,
 }: AgentFormProps) => {
   const id = data?.id;
   const navigate = useNavigate();
@@ -332,7 +339,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
         </div>
       )}
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} id={formId}>
         <div className="space-y-6">
           <div className={`${plain ? "" : "rounded-lg border bg-white p-6 "}`}>
             <div className="space-y-6">
@@ -358,39 +365,157 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 />
               </div>
               <div>
-                <div className="mb-1">Welcome Image</div>
-                <div className="space-y-2">
+                <div className="mb-2 text-sm font-medium text-foreground">Welcome Image</div>
+                <div className="space-y-3">
                   {!imagePreview ? (
-                    <div className="relative">
-                      <Input
+                    <div className="relative group">
+                      <input
                         id="welcome_image"
                         name="welcome_image"
                         type="file"
                         accept="image/*"
                         onChange={handleImageChange}
-                        className="sr-only"
+                        className="hidden"
                       />
                       <label
                         htmlFor="welcome_image"
-                        className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg transition-all cursor-pointer ${
+                        className={`relative flex flex-col items-center justify-center w-full p-8 border-2 border-dashed rounded-xl transition-all duration-200 cursor-pointer overflow-hidden ${
                           isDragOver
-                            ? "border-primary bg-primary/5 scale-105"
-                            : "border-gray-300 hover:border-gray-400 bg-gray-50 hover:bg-gray-100"
+                            ? "border-primary bg-primary/10 shadow-lg shadow-primary/20 scale-[1.02]"
+                            : "border-border bg-gradient-to-br from-muted/30 to-muted/10 hover:border-primary/50 hover:bg-primary/5 hover:shadow-md"
                         }`}
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
                       >
-                        <div className="flex flex-col items-center justify-center text-gray-500">
+                        {/* Background decoration */}
+                        <div className="absolute inset-0 bg-grid-pattern opacity-[0.02]"></div>
+                        
+                        <div className="relative flex flex-col items-center justify-center z-10">
+                          {/* Upload icon with cloud */}
                           <div
-                            className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 transition-colors ${
-                              isDragOver ? "bg-primary/20" : "bg-primary/10"
+                            className={`relative w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 ${
+                              isDragOver 
+                                ? "bg-primary/20 scale-110 shadow-lg shadow-primary/30" 
+                                : "bg-primary/10 group-hover:bg-primary/15 group-hover:scale-105"
                             }`}
                           >
                             <svg
-                              className={`w-6 h-6 transition-colors ${
-                                isDragOver ? "text-primary" : "text-primary"
+                              className={`w-8 h-8 transition-all duration-300 ${
+                                isDragOver ? "text-primary scale-110" : "text-primary/80 group-hover:text-primary"
                               }`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                              />
+                            </svg>
+                            {/* Animated ring on drag */}
+                            {isDragOver && (
+                              <div className="absolute inset-0 rounded-2xl border-2 border-primary animate-ping opacity-50"></div>
+                            )}
+                          </div>
+
+                          {/* Text content */}
+                          <div className="text-center space-y-1.5">
+                            <p
+                              className={`text-base font-semibold transition-colors duration-200 ${
+                                isDragOver ? "text-primary" : "text-foreground/90 group-hover:text-primary"
+                              }`}
+                            >
+                              {isDragOver ? "Drop your image here" : "Choose a file or drag & drop"}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              Click to select or drag and drop
+                            </p>
+                            <div className="flex items-center justify-center gap-2 pt-2">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-background/80 border text-xs font-medium text-muted-foreground">
+                                PNG, JPG, GIF
+                              </span>
+                              <span className="text-xs text-muted-foreground">•</span>
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-background/80 border text-xs font-medium text-muted-foreground">
+                                up to 5MB
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Image preview card */}
+                      <div className="relative group border rounded-xl p-4 bg-gradient-to-br from-muted/30 to-muted/10 hover:shadow-md transition-all duration-200">
+                        <div className="flex items-start gap-4">
+                          {/* Thumbnail */}
+                          <div className="relative shrink-0">
+                            <img
+                              src={imagePreview}
+                              alt="Welcome image preview"
+                              className="h-20 w-20 object-cover rounded-lg border-2 border-border shadow-sm ring-2 ring-background"
+                            />
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon"
+                              onClick={handleRemoveImage}
+                              disabled={imageDeleting}
+                              className="absolute -top-2 -right-2 h-7 w-7 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              {imageDeleting ? (
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          </div>
+                          
+                          {/* File info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate mb-1">
+                                  {imageFile?.name || "Welcome image"}
+                                </p>
+                                {imageFile && (
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-background/80 border font-medium">
+                                      {(imageFile.size / 1024 / 1024).toFixed(2)} MB
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-green-50 border border-green-200 text-green-700 font-medium">
+                                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                                      Ready
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Replace button */}
+                        <div className="relative mt-3 pt-3 border-t">
+                          <input
+                            id="welcome_image_replace"
+                            name="welcome_image_replace"
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageChange}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full relative z-0 hover:bg-primary/5 hover:border-primary/50 hover:text-primary transition-colors"
+                          >
+                            <svg
+                              className="w-4 h-4 mr-2"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -399,75 +524,21 @@ const AgentForm: React.FC<AgentFormProps> = ({
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
                                 strokeWidth={2}
-                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
                               />
                             </svg>
-                          </div>
-                          <p
-                            className={`text-sm font-medium transition-colors ${
-                              isDragOver ? "text-primary" : "text-gray-500"
-                            }`}
-                          >
-                            {isDragOver ? "Drop image here" : "Upload Image"}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            Click to select or drag and drop
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            PNG, JPG, GIF up to 5MB
-                          </p>
+                            Replace Image
+                          </Button>
                         </div>
-                      </label>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="relative inline-block">
-                        <img
-                          src={imagePreview}
-                          alt="Preview"
-                          className="h-32 w-32 object-cover rounded-lg border shadow-sm"
-                        />
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          onClick={handleRemoveImage}
-                          disabled={imageDeleting}
-                          className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0 shadow-md"
-                        >
-                          {imageDeleting ? "..." : "×"}
-                        </Button>
-                      </div>
-                      {imageFile && (
-                        <div className="text-xs text-muted-foreground">
-                          {imageFile.name} (
-                          {(imageFile.size / 1024 / 1024).toFixed(2)} MB)
-                        </div>
-                      )}
-                      <div className="relative">
-                        <Input
-                          id="welcome_image_replace"
-                          name="welcome_image_replace"
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageChange}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                        >
-                          Replace Image
-                        </Button>
                       </div>
                     </div>
                   )}
+                  
+                  {/* Loading state */}
                   {imageLoading && (
-                    <div className="flex items-center justify-center text-sm text-muted-foreground">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2"></div>
-                      Uploading image...
+                    <div className="flex items-center justify-center gap-3 p-4 rounded-lg bg-primary/5 border border-primary/20">
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent"></div>
+                      <span className="text-sm font-medium text-primary">Uploading image...</span>
                     </div>
                   )}
                 </div>
@@ -493,70 +564,123 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 />
               </div>
 
-              <div>
-                <div className="mb-1">Frequently Asked Question</div>
-                <div className="space-y-2">
-                  {formData.possible_queries.map((query, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <Input
-                        value={query}
-                        onChange={(e) =>
-                          handlePossibleQueryChange(index, e.target.value)
-                        }
-                        placeholder="Enter a sample query"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removePossibleQuery(index)}
-                        // disabled={formData.possible_queries.length <= 1}
-                        className="px-2 h-9"
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  ))}
+              <div className="border border-border rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">
+                      Frequently Asked Questions
+                    </span>
+                    {formData.possible_queries.length > 0 && (
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                        {formData.possible_queries.length}
+                      </span>
+                    )}
+                  </div>
                   <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     onClick={addPossibleQuery}
-                    className="w-full"
+                    className="h-8 px-2 text-primary hover:text-primary"
                   >
-                    Add FAQ
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add
                   </Button>
                 </div>
+                {formData.possible_queries.length > 0 && (
+                  <div className="px-4 py-3 space-y-2 bg-white">
+                    {formData.possible_queries.map((query, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground w-5 text-center">
+                          {index + 1}.
+                        </span>
+                        <Input
+                          value={query}
+                          onChange={(e) =>
+                            handlePossibleQueryChange(index, e.target.value)
+                          }
+                          placeholder="Enter a sample query"
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removePossibleQuery(index)}
+                          className="px-2 h-9 shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {formData.possible_queries.length === 0 && (
+                  <div className="px-4 py-6 bg-white text-center">
+                    <p className="text-sm text-muted-foreground">
+                      No FAQs added yet. Add questions to help guide users.
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <div>
-                <div className="mb-1">
-                  Thinking Phrases Set (separate with |)
+              <div className="border border-border rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">
+                      Thinking Phrases
+                    </span>
+                    {formData.thinking_phrases.length > 0 && (
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                        {formData.thinking_phrases.length}
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={addThinkingPhrase}
+                    className="h-8 px-2 text-primary hover:text-primary"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  {formData.thinking_phrases.map((phrase, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <Input
-                        value={phrase}
-                        onChange={(e) =>
-                          handleThinkingPhraseChange(index, e.target.value)
-                        }
-                        placeholder="I think...|Getting the data..."
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeThinkingPhrase(index)}
-                        // disabled={formData.thinking_phrases.length <= 1}
-                        className="px-2 h-9"
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  ))}
-                  {formData.thinking_phrases.length > 0 && (
-                    <div>
-                      <div className="mb-1">
-                        Thinking Phrase Delay (seconds)
+                {formData.thinking_phrases.length > 0 ? (
+                  <div className="px-4 py-3 space-y-3 bg-white">
+                    <p className="text-xs text-muted-foreground">
+                      Separate multiple phrases with | (e.g., "Thinking...|Processing...")
+                    </p>
+                    {formData.thinking_phrases.map((phrase, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground w-5 text-center">
+                          {index + 1}.
+                        </span>
+                        <Input
+                          value={phrase}
+                          onChange={(e) =>
+                            handleThinkingPhraseChange(index, e.target.value)
+                          }
+                          placeholder="I think...|Getting the data..."
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeThinkingPhrase(index)}
+                          className="px-2 h-9 shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    ))}
+                    <div className="pt-2 border-t border-border">
+                      <div className="mb-1.5 text-sm text-muted-foreground">
+                        Delay between phrases (seconds)
                       </div>
                       <Input
                         id="thinking_phrase_delay"
@@ -565,35 +689,41 @@ const AgentForm: React.FC<AgentFormProps> = ({
                         min="0"
                         value={formData.thinking_phrase_delay}
                         onChange={handleInputChange}
-                        placeholder="Enter delay in seconds"
+                        placeholder="0"
+                        className="max-w-[120px]"
                       />
                     </div>
-                  )}
-                  <Button
-                    type="button"
-                    onClick={addThinkingPhrase}
-                    className="w-full"
-                  >
-                    Add Thinking Phrase
-                  </Button>
-                </div>
+                  </div>
+                ) : (
+                  <div className="px-4 py-6 bg-white text-center">
+                    <p className="text-sm text-muted-foreground">
+                      No thinking phrases added. These appear while the agent is processing.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
           {/* Submit buttons */}
-          <div className="flex justify-end gap-3">
-            <Button type="button" variant="outline" onClick={() => onClose?.()}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading
-                ? "Saving..."
-                : isEditMode
-                ? "Update Agent"
-                : "Create Agent"}
-            </Button>
-          </div>
+          {!hideButtons && (
+            <div
+              className={`flex justify-end gap-3 ${
+                plain ? "pt-6 mt-2 border-t" : ""
+              }`}
+            >
+              <Button type="button" variant="outline" onClick={() => onClose?.()}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading
+                  ? "Saving..."
+                  : isEditMode
+                  ? "Update Agent"
+                  : "Create Agent"}
+              </Button>
+            </div>
+          )}
         </div>
       </form>
     </>
@@ -690,23 +820,44 @@ export const AgentFormDialog = ({
   redirectOnCreate,
   onCreated,
 }: AgentDialogProps) => {
+  const formId = "agent-form-dialog";
+  const isEditMode = !!data?.id;
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="text-xl font-semibold">
+    <Sheet open={isOpen} onOpenChange={onClose}>
+      <SheetContent className="sm:max-w-lg w-full flex flex-col p-0">
+        <SheetHeader className="p-6 pb-4 border-b shrink-0">
+          <SheetTitle className="text-xl font-semibold">
             {data?.id ? "Edit Agent" : "Create New Agent"}
-          </DialogTitle>
-        </DialogHeader>
-        <AgentForm
-          data={data || undefined}
-          plain={true}
-          onClose={onClose}
-          redirectOnCreate={redirectOnCreate}
-          onCreated={onCreated}
-        />
-      </DialogContent>
-    </Dialog>
+          </SheetTitle>
+          <SheetDescription>
+            {data?.id
+              ? "Update your agent's configuration and settings."
+              : "Configure your new AI agent with a name, description, and welcome settings."}
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pt-4 pb-6">
+          <AgentForm
+            data={data || undefined}
+            plain={true}
+            onClose={onClose}
+            redirectOnCreate={redirectOnCreate}
+            onCreated={onCreated}
+            hideButtons={true}
+            formId={formId}
+          />
+        </div>
+        {/* Sticky Footer with Action Buttons */}
+        <div className="shrink-0 border-t bg-background px-6 py-4 flex justify-end gap-3">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId}>
+            {isEditMode ? "Update Agent" : "Create Agent"}
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 };
 export default AgentForm;

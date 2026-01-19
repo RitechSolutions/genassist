@@ -7,10 +7,10 @@ const AgentTopPanel = ({data, onUpdated}: {data?: AgentConfig, onUpdated?: () =>
     return (
         <>
           <div 
-            className="flex flex-col items-center justify-center bg-white rounded-lg shadow-sm px-6 w-full max-w-[480px] h-[44px] cursor-pointer hover:shadow-md transition-shadow"
+            className="flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm rounded-full shadow-sm px-6 w-full max-w-[360px] h-[44px] cursor-pointer hover:shadow-md transition-shadow gap-0.5"
             onClick={() => setIsEditDialogOpen(true)}
           >
-            <div className="text-base font-bold text-gray-900 truncate w-full text-center">
+            <div className="text-sm font-bold text-gray-900 truncate w-full text-center">
               {data?.name}
             </div>
             <div className="text-xs font-normal text-gray-500 truncate w-full text-center">

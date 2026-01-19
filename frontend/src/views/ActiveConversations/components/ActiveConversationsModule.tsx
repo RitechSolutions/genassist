@@ -172,23 +172,18 @@ export function ActiveConversationsModule({
   const handlePageChange = (page: number) => setParam("page", String(page));
 
   return (
-    <Card className="p-6 mb-8 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
-      <ActiveConversationsHeader
-        title={title}
-        sentiment={sentimentParam}
-        category={categoryParam}
-        categories={categories}
-        includeFeedback={includeFeedbackParam}
-        onChange={(key, value) => setParam(key, value)}
-      />
+    <Card className="p-6 mb-5 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white border border-border rounded-xl">
+      <ActiveConversationsHeader title={title} />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
-        <div className="md:col-span-1">
+      <div className="flex gap-6">
+        {/* Left Section - Sentiment Summary */}
+        <div className="w-60 shrink-0">
           <ActiveConversationsSummary total={globalTotal} counts={globalCounts} loading={isLoading} />
         </div>
 
-        <div className="md:col-span-3">
-          <div className="rounded-lg hover:rounded-lg bg-muted/40">
+        {/* Right Section - Conversation List */}
+        <div className="flex-1 flex flex-col">
+          <div className="flex flex-col rounded-2xl overflow-hidden bg-muted/40">
             <ActiveConversationsList
               items={pageItems.map((i) => ({ ...i, transcript: getLatestMessagePreview(i.transcript) }))}
               isLoading={isLoading}
