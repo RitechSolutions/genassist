@@ -39,8 +39,11 @@ async def create_webhook(
             )
         )
 
+    # lowercase the tenant header name to make the check case-insensitive
+    looking_tenant_header = settings.TENANT_HEADER_NAME.lower()
+
     # Add tenant ID as query parameter so middleware can detect it
-    query_params = {settings.TENANT_HEADER_NAME: tenant_id}
+    query_params = {f"{looking_tenant_header}": tenant_id}
     execution_url = f"{url}?{urlencode(query_params)}"
 
     # Create webhook with auto-generated URL
