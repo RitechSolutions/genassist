@@ -194,3 +194,32 @@ class ProjectSettings(BaseSettings):
 
 
 settings = ProjectSettings()
+
+# === File Storage Settings ===
+
+class FileStorageSettings(BaseSettings):
+    AZURE_CONNECTION_STRING: Optional[str] = None
+    AZURE_ACCOUNT_NAME: Optional[str] = None
+    AZURE_ACCOUNT_KEY: Optional[str] = None
+    AZURE_CONTAINER_NAME: Optional[str] = None
+
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = None
+    GOOGLE_STORAGE_BUCKET: Optional[str] = None
+
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_STORAGE_BUCKET: Optional[str] = None
+    AWS_REGION: Optional[str] = None
+    AWS_S3_ENDPOINT_URL: Optional[str] = None
+
+    GCP_PROJECT_ID: Optional[str] = None
+    GCP_REGION: Optional[str] = None
+
+
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",  # ignore unknown fields instead of raising an error
+    )
+
+file_storage_settings = FileStorageSettings()
