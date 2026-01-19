@@ -129,8 +129,8 @@ class TestCRUDOperations:
     """Test Create, Read, Update, Delete operations."""
 
     @pytest.mark.asyncio
-    async def test_create_file(self, file_manager_service, mock_repository, storage_provider, 
-                               test_user_id, test_tenant_id):
+    async def test_create_file(self, file_manager_service: FileManagerService, mock_repository: FileManagerRepository, storage_provider: BaseStorageProvider, 
+test_user_id):
         """Test creating a file with content."""
         file_data = FileCreate(
             name="test_file.txt",
@@ -352,6 +352,41 @@ class TestCRUDOperations:
 
 class TestMultipleProviders:
     """Test the same file with different storage providers."""
+
+    # test storing and reading file from Azure Blob Storage
+    @pytest.mark.asyncio
+    async def test_store_and_read_file_from_azure_blob_storage(self, test_user_id, mock_repository):
+        # use the azure blob storage provider without mocking the provider
+        from app.modules.filemanager.providers.azure.provider import AzureStorageProvider
+        az_provider = AzureStorageProvider(config={})
+        await az_provider.initialize()
+
+        file_manager_service = FileManagerService(repository=mock_repository)
+        file_manager_service.set_storage_provider(az_provider)
+
+        # create a file content
+        file_content = b"Test file content"
+        file_name = "test_file.txt"
+
+        # call the file manager service to store the file
+        result = await file_manager_service.create_file(
+            file_data=FileCreate(
+                name=file_name,
+                mime_type="text/plain",
+                storage_provider="azure"
+            ),
+            file_content=file_content,
+            user_id=test_user_id
+        )
+
+        assert result.name == file_name
+        assert result.storage_provider == "azure"
+        assert result.size == len(file_content)
+
+        # call the file manager service to read the file
+        content = await file_manager_service.get_file_content(result.id)
+
+        assert content == file_content
 
     @pytest.mark.asyncio
     async def test_same_file_different_providers(self, mock_repository, test_user_id, test_tenant_id):
