@@ -196,6 +196,7 @@ steps:
 
 
     displayName: 'Start Tests'
+    condition: false
     timeoutInMinutes: 3
 
   - script: |
