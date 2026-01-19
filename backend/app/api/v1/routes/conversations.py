@@ -41,6 +41,9 @@ from app.core.permissions.constants import Permissions as P
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
 
 
+# enforce  STST (short-term-security-token) for plugin access
+from app.auth.jwt_dependencies import verify_plugin_stst
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -264,6 +267,7 @@ async def update(
     request: Request,
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
+    token: dict = Depends(verify_plugin_stst), 
 ):
     """
     Append segments to an existing in-progress conversation.

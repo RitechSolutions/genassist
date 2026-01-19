@@ -168,7 +168,7 @@ pytest-cov==6.0.0
 pytest-env==1.1.5
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
-python-jose==3.5.0
+python-jose[cryptography]==3.5.0
 python-multipart==0.0.20
 python-pptx==0.6.23
 pytz==2025.1
