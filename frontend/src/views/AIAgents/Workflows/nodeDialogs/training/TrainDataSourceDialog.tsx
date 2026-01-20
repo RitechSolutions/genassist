@@ -14,7 +14,7 @@ import { DataSource } from "@/interfaces/dataSource.interface";
 import { getAllDataSources } from "@/services/dataSources";
 import { useToast } from "@/components/use-toast";
 import { Save } from "lucide-react";
-import { NodeConfigDialog } from "../../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";
 import { DraggableTextArea } from "../../components/custom/DraggableTextArea";
 import { FileUploader } from "@/components/FileUploader";
@@ -157,7 +157,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
       footer={
@@ -253,6 +253,6 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
           />
         )}
       </div>
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/select";
 import { Save } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { BaseNodeDialogProps } from "./base";
@@ -105,7 +105,7 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         footer={
           <>
             <Button variant="outline" onClick={onClose}>
@@ -331,7 +331,7 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
             Enter raw Gmail search query (overrides other filters).
           </p>
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
       <DataSourceDialog
         isOpen={isCreateDataSourceOpen}
         onOpenChange={setIsCreateDataSourceOpen}

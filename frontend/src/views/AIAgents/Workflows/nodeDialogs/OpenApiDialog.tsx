@@ -4,7 +4,7 @@ import { BaseNodeDialogProps } from "./base";
 import { useToast } from "@/hooks/useToast";
 import { getAllLLMProviders } from "@/services/llmProviders";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { Button } from "@/components/button";
 import { Save } from "lucide-react";
 import { Label } from "@/components/label";
@@ -80,7 +80,7 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         isOpen={isOpen}
         onClose={onClose}
         footer={
@@ -166,7 +166,7 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
             />
           </div>
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
 
       <LLMProviderDialog
         isOpen={isCreateProviderOpen}

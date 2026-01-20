@@ -3,7 +3,7 @@ import { AgentNodeData, BaseLLMNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Save } from "lucide-react";
 import { ModelConfiguration } from "../components/ModelConfiguration";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 
 type AgentDialogProps = BaseNodeDialogProps<AgentNodeData, BaseLLMNodeData>;
@@ -30,7 +30,7 @@ export const AgentDialog: React.FC<AgentDialogProps> = (props) => {
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -54,6 +54,6 @@ export const AgentDialog: React.FC<AgentDialogProps> = (props) => {
         onConfigChange={setConfig}
         typeSelect="agent"
       />
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

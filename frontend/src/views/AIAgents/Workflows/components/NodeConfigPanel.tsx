@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/sheet";
 import { cn } from "@/lib/utils";
 
 import { JsonViewer } from "./custom/JsonViewer";
@@ -20,7 +19,7 @@ import { Checkbox } from "@/components/checkbox";
 import { Label } from "@/components/label";
 import nodeRegistry from "../registry/nodeRegistry";
 
-interface WorkflowNodesDialogProps {
+interface WorkflowNodesPanelProps {
   isOpen: boolean;
   onClose: () => void;
   children: React.ReactNode;
@@ -46,7 +45,7 @@ interface WorkflowNodesDialogProps {
   onUnwrapChange?: (unwrap: boolean) => void;
 }
 
-export const NodeConfigDialog: React.FC<WorkflowNodesDialogProps> = ({
+export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   isOpen,
   onClose,
   children,
@@ -144,25 +143,38 @@ export const NodeConfigDialog: React.FC<WorkflowNodesDialogProps> = ({
 
   const nodeName = initialNodeName || nodeDefinition?.label || "node";
 
+  // Prevent body scroll when panel is open
+  React.useEffect(() => {
+    if (isOpen) {
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      
+      return () => {
+        document.body.style.overflow = previousOverflow;
+      };
+    }
+  }, [isOpen]);
+
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent
+      <Sheet open={isOpen} onOpenChange={onClose} modal={false}>
+        <SheetContent 
+          hideOverlay={true} 
           className={cn(
-            "max-w-6xl max-h-[85vh] w-full overflow-hidden",
+            "sm:max-w-4xl w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full overflow-hidden",
             className
           )}
           onDoubleClick={handleDoubleClick}
           onMouseDown={handleMouseDown}
           onClick={handleClick}
         >
-          <DialogHeader>
+          <SheetHeader className="p-6 pb-4 border-b shrink-0">
             <div className="flex items-center justify-between mr-4">
               <div>
-                <DialogTitle>{`Configure ${nodeName}`}</DialogTitle>
-                <DialogDescription className="break-words">
+                <SheetTitle className="text-xl font-semibold">{`Configure ${nodeName}`}</SheetTitle>
+                <SheetDescription className="break-words">
                   {nodeDefinition?.configSubtitle}
-                </DialogDescription>
+                </SheetDescription>
               </div>
               <div className="flex items-center gap-3">
                 {/* Unwrap checkbox - only show if showUnwrap is true */}
@@ -194,17 +206,14 @@ export const NodeConfigDialog: React.FC<WorkflowNodesDialogProps> = ({
                 )}
               </div>
             </div>
-          </DialogHeader>
+          </SheetHeader>
 
-          <div className="flex flex-1 gap-6 overflow-hidden">
+          <div className="flex flex-1 gap-6 overflow-hidden px-6">
             {/* Left side - JSON State section */}
             {jsonStateDisplay && (
-              <div className="w-80 border-r border-gray-200 pr-6 flex flex-col flex-shrink-0">
+              <div className="w-80 border-r border-gray-200 pr-6 flex flex-col flex-shrink-0 py-6">
                 <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200">
                   <div>
-                    {/* <h3 className="font-semibold text-gray-900 text-base">
-                      {jsonStateDisplay.title}
-                    </h3> */}
                     <p className="text-xs text-gray-500">
                       Drag variables to input fields
                     </p>
@@ -212,14 +221,14 @@ export const NodeConfigDialog: React.FC<WorkflowNodesDialogProps> = ({
                 </div>
 
                 <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden min-h-0">
-                  <div className="p-3 overflow-auto max-h-[calc(85vh-200px)]">
+                  <div className="p-3 overflow-auto max-h-full">
                     {jsonStateDisplay.data ? (
                       <JsonViewer
                         data={jsonStateDisplay.data as Record<string, unknown>}
                         onDragStart={handleDragStart}
                       />
                     ) : (
-                      <div className="text-gray-500 text-sm text-center font-extrabold text-red-500">
+                      <div className="text-sm text-center font-extrabold text-red-500">
                         Connect this node to workflow to see available data
                       </div>
                     )}
@@ -272,16 +281,19 @@ export const NodeConfigDialog: React.FC<WorkflowNodesDialogProps> = ({
             )}
 
             {/* Right side - Main content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden p-1 max-h-[calc(85vh-180px)] min-w-0">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden py-6 min-w-0">
               <div className="flex flex-col space-y-4 min-w-0 w-full">
                 {children}
               </div>
             </div>
           </div>
 
-          <DialogFooter className="mt-4">{footer}</DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {/* Sticky Footer with Action Buttons */}
+          <div className="shrink-0 border-t bg-background px-6 py-4 flex justify-end gap-3">
+            {footer}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Generic Test Dialog - automatically included when nodeType and data are provided */}
       {nodeType && data && (

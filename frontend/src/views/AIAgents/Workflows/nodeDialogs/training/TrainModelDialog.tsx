@@ -14,7 +14,7 @@ import { Slider } from "@/components/slider";
 import { useToast } from "@/components/use-toast";
 import { Save, Plus, X, Search } from "lucide-react";
 import { Badge } from "@/components/badge";
-import { NodeConfigDialog } from "../../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";
 import { DraggableInput } from "../../components/custom/DraggableInput";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
@@ -214,7 +214,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         isOpen={isOpen}
         onClose={onClose}
         footer={
@@ -450,7 +450,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
             </p>
           </div>
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
     </>
   );
 };

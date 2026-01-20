@@ -5,7 +5,7 @@ import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { Save } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 
 type TemplateNodeDialogProps = BaseNodeDialogProps<
@@ -45,7 +45,7 @@ export const TemplateNodeDialog: React.FC<TemplateNodeDialogProps> = (
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -91,6 +91,6 @@ export const TemplateNodeDialog: React.FC<TemplateNodeDialogProps> = (
           />
         </div>
       </div>
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };
