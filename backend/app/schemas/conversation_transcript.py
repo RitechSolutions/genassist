@@ -23,6 +23,7 @@ class TranscriptSegmentInput(BaseModel):
     speaker: str
     text: str
     type: Optional[str] = "message"
+    file_id: Optional[UUID] = None
 
     model_config = ConfigDict(
             from_attributes=True,

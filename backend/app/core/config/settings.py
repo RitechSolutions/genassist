@@ -220,6 +220,8 @@ class FileStorageSettings(BaseSettings):
     GCP_PROJECT_ID: Optional[str] = None
     GCP_REGION: Optional[str] = None
 
+    APP_URL: Optional[str] = "http://localhost:8000"
+
 
     model_config = ConfigDict(
         env_file=".env",

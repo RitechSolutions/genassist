@@ -3,6 +3,7 @@ from fastapi.responses import Response
 from uuid import UUID
 from typing import Optional, List
 import mimetypes
+from urllib.parse import quote
 
 from app.schemas.file import (
     FileCreate, FileUpdate, FileResponse
@@ -94,7 +95,8 @@ async def get_file(
         )
 
 
-@router.get("/files/{file_id}/download", dependencies=[Depends(auth)])
+# @router.get("/files/{file_id}/download", dependencies=[Depends(auth)])
+@router.get("/files/{file_id}/download")
 async def download_file(
     file_id: UUID,
     repository: FileManagerRepository = Injected(FileManagerRepository),
@@ -115,12 +117,26 @@ async def download_file(
         # Determine media type
         media_type = file.mime_type or "application/octet-stream"
         
+        # Properly encode filename for Content-Disposition header
+        # Use RFC 5987 encoding for non-ASCII characters to avoid latin-1 encoding errors
+        # Percent-encode the filename for safe ASCII representation
+        filename_encoded = quote(file.name, safe='')
+        
+        # For UTF-8 version (RFC 5987), percent-encode UTF-8 bytes
+        filename_utf8_bytes = file.name.encode('utf-8')
+        filename_utf8_encoded = ''.join(f'%{b:02X}' for b in filename_utf8_bytes)
+        
+        # Build Content-Disposition header with both ASCII fallback and UTF-8 version
+        # Modern browsers will prefer filename* if available
+        content_disposition = f'attachment; filename="{filename_encoded}"; filename*=UTF-8\'\'{filename_utf8_encoded}'
+        
         return Response(
             content=content,
             media_type=media_type,
             headers={
-                "Content-Disposition": f'attachment; filename="{file.name}"',
+                "Content-Disposition": content_disposition,
                 "Content-Length": str(len(content)),
+                "Access-Control-Allow-Origin": "*",
             }
         )
     except Exception as e:

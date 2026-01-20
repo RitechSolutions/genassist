@@ -8427,14 +8427,6 @@
         "summary": "Download File",
         "description": "Download a file by ID.",
         "operationId": "download_file_api_file_manager_files__file_id__download_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "file_id",
@@ -19688,6 +19680,18 @@
             ],
             "title": "Type",
             "default": "message"
+          },
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id"
           }
         },
         "type": "object",
