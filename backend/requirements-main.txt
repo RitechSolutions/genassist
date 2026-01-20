@@ -234,4 +234,5 @@ smbprotocol==1.15.0
 azure-storage-blob==12.27.1
 google-cloud-speech==2.34.0
 google-cloud-storage==3.5.0
+google-cloud-recaptcha-enterprise==1.26.0
 mcp>=1.0.0
