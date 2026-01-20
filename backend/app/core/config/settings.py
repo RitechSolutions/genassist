@@ -143,8 +143,8 @@ class ProjectSettings(BaseSettings):
     RATE_LIMIT_STORAGE_BACKEND: str = "redis"  # "redis" or "memory"
 
     # === Chroma Configuration ===
-    CHROMA_HOST: Field(default="localhost", description="Database host")
-    CHROMA_PORT: Field(default=8005, description="Database port")
+    CHROMA_HOST: str = Field(default="localhost", description="Database host")
+    CHROMA_PORT: int = Field(default=8005, description="Database port")
 
     @property
     def _zendesk_base(self) -> str:

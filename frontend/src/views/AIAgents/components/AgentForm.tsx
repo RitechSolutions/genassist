@@ -11,7 +11,8 @@ import {
 } from "@/services/api";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
-import { ChevronLeft, CheckCircle2, Trash2, Plus, HelpCircle, MessageSquare } from "lucide-react";
+import { Switch } from "@/components/switch";
+import { ChevronLeft, AlertCircle, CheckCircle2, Trash2 } from "lucide-react";
 // import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import {
   Sheet,
@@ -33,6 +34,7 @@ interface AgentFormData {
   thinking_phrases?: string[];
   is_active?: boolean;
   workflow_id?: string;
+  token_based_auth?: boolean;
 }
 
 interface AgentFormProps {
@@ -65,6 +67,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const cleanedThinkingPhrases =
     data?.thinking_phrases?.filter((p) => p.trim() !== "") ?? [];
 
+    console.log(data);
   const [formData, setFormData] = useState<AgentFormData>({
     ...(data || {
       name: "",
@@ -74,10 +77,12 @@ const AgentForm: React.FC<AgentFormProps> = ({
       thinking_phrase_delay: 0,
       possible_queries: [],
       thinking_phrases: [],
+      token_based_auth: false,
     }),
     possible_queries: cleanedQueries.length > 0 ? cleanedQueries : [],
     thinking_phrases:
       cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
+    token_based_auth: data?.token_based_auth ?? false,
   });
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -112,6 +117,13 @@ const AgentForm: React.FC<AgentFormProps> = ({
     setFormData((prev) => ({
       ...prev,
       [name]: name === "thinking_phrase_delay" ? Number(value) || 0 : value,
+    }));
+  };
+
+  const handleSwitchChange = (checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      token_based_auth: checked,
     }));
   };
 
@@ -564,19 +576,43 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 />
               </div>
 
-              <div className="border border-border rounded-lg overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
-                  <div className="flex items-center gap-2">
-                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">
-                      Frequently Asked Questions
-                    </span>
-                    {formData.possible_queries.length > 0 && (
-                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                        {formData.possible_queries.length}
-                      </span>
-                    )}
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="mb-1">Token Based Authentication</div>
+                  <p className="text-sm text-muted-foreground">
+                    Enable token based authentication for this agent
+                  </p>
+                </div>
+                <Switch
+                  checked={formData.token_based_auth ?? false}
+                  onCheckedChange={handleSwitchChange}
+                />
+              </div>
+
+              <div>
+                <div className="mb-1">Frequently Asked Question</div>
+                <div className="space-y-2">
+                  {formData.possible_queries.map((query, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <Input
+                        value={query}
+                        onChange={(e) =>
+                          handlePossibleQueryChange(index, e.target.value)
+                        }
+                        placeholder="Enter a sample query"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removePossibleQuery(index)}
+                        // disabled={formData.possible_queries.length <= 1}
+                        className="px-2 h-9"
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  ))}
                   <Button
                     type="button"
                     variant="ghost"
@@ -744,6 +780,7 @@ export const AgentFormPage: React.FC = () => {
     thinking_phrase_delay: undefined,
     possible_queries: [],
     thinking_phrases: [],
+    token_based_auth: false,
   });
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -767,6 +804,7 @@ export const AgentFormPage: React.FC = () => {
             possible_queries: cleanedQueries.length > 0 ? cleanedQueries : [],
             thinking_phrases:
               cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
+            token_based_auth: config.token_based_auth ?? false,
           });
 
           setError(null);
