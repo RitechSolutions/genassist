@@ -14,6 +14,7 @@ from app.cache.redis_cache import init_fastapi_cache_with_redis
 from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
 from app.file_system.file_system import ensure_directories
 from app.middlewares._middleware import build_middlewares
+from app.middlewares.rate_limit_middleware import init_rate_limiter
 from app.db.multi_tenant_session import multi_tenant_manager
 
 from celery.schedules import crontab
@@ -42,6 +43,9 @@ def create_app() -> FastAPI:
     validate_env()
 
     init_error_handlers(app)
+
+    # Initialize rate limiting
+    init_rate_limiter(app)
 
     # TODO: retest this
     # from fastapi.staticfiles import StaticFiles

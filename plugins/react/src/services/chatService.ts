@@ -17,6 +17,7 @@ export class ChatService {
   private metadata: Record<string, any> | undefined;
   private conversationId: string | null = null;
   private conversationCreateTime: number | null = null; // Track conversation start time
+  private guestToken: string | null = null; // Guest token for authorization
   private isFinalized: boolean = false;
   private webSocket: WebSocket | null = null;
   private messageHandler: ((message: ChatMessage) => void) | null = null;
@@ -51,6 +52,28 @@ export class ChatService {
   private getStorageKey(): string {
     // Pointer to current conversation metadata for this apiKey
     return `${this.storageKeyBase}:${this.apiKey}`;
+  }
+
+  /**
+   * Get headers for API requests, including authorization if guest token is available
+   */
+  private getHeaders(contentType: string = "application/json"): Record<string, string> {
+    const headers: Record<string, string> = {
+      "x-api-key": this.apiKey,
+      "Content-Type": contentType,
+    };
+
+    // Add tenant header if provided
+    if (this.tenant) {
+      headers["x-tenant-id"] = this.tenant;
+    }
+
+    // Add authorization header if guest token is available
+    if (this.guestToken) {
+      headers["Authorization"] = `Bearer ${this.guestToken}`;
+    }
+
+    return headers;
   }
 
   setMessageHandler(handler: (message: ChatMessage) => void) {
@@ -106,10 +129,12 @@ export class ChatService {
           welcomeData,
           thinkingConfig,
           agentId,
+          guestToken,
         } = JSON.parse(savedConversation);
         this.conversationId = conversationId;
         this.conversationCreateTime = createTime;
         this.isFinalized = isFinalized || false;
+        this.guestToken = guestToken || null;
         this.possibleQueries = Array.isArray(possibleQueries)
           ? possibleQueries
           : [];
@@ -159,6 +184,7 @@ export class ChatService {
           },
           thinkingConfig: this.thinkingConfig,
           agentId: this.agentId,
+          guestToken: this.guestToken,
         };
         localStorage.setItem(this.getStorageKey(), JSON.stringify(conversationData));
       }
@@ -180,6 +206,7 @@ export class ChatService {
     // Clear the conversation ID
     this.conversationId = null;
     this.conversationCreateTime = null;
+    this.guestToken = null;
     this.isFinalized = false;
 
     // Clear possible queries
@@ -236,11 +263,7 @@ export class ChatService {
         `${this.baseUrl}/api/conversations/in-progress/start`,
         requestBody,
         {
-          headers: {
-            "x-api-key": this.apiKey,
-            "Content-Type": "application/json",
-            ...(this.tenant ? { "X-Tenant-Id": this.tenant } : {}),
-          },
+          headers: this.getHeaders(),
         }
       );
 
@@ -249,6 +272,8 @@ export class ChatService {
       this.conversationCreateTime = response.data.create_time
         ? response.data.create_time / 1000
         : Date.now() / 1000;
+      // Store guest token if provided
+      this.guestToken = response.data.guest_token || null;
       this.isFinalized = false;
 
       // Store possible queries if available
@@ -361,11 +386,7 @@ export class ChatService {
         `${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`,
         requestBody,
         {
-          headers: {
-            "x-api-key": this.apiKey,
-            "Content-Type": "application/json",
-            ...(this.tenant ? { "X-Tenant-Id": this.tenant } : {}),
-          },
+          headers: this.getHeaders(),
         }
       );
     } catch (error: any) {
@@ -408,11 +429,7 @@ export class ChatService {
         `${this.baseUrl}/api/genagent/knowledge/upload-chat-file`,
         formData,
         {
-          headers: {
-            "x-api-key": this.apiKey,
-            "Content-Type": "multipart/form-data",
-            ...(this.tenant ? { "X-Tenant-Id": this.tenant } : {}),
-          },
+          headers: this.getHeaders("multipart/form-data"),
         }
       );
       return response.data;
@@ -439,7 +456,7 @@ export class ChatService {
     
     // Add tenant as query parameter if provided
     if (this.tenant) {
-      wsUrl += `&X-Tenant-ID=${encodeURIComponent(this.tenant)}`;
+      wsUrl += `&x-tenant-id=${encodeURIComponent(this.tenant)}`;
     }
     
     // Use native browser WebSocket factory
@@ -568,10 +585,7 @@ export class ChatService {
       const imageResponse = await axios.get(
         `${this.baseUrl}/api/genagent/agents/configs/${agentId}/welcome-image`,
         {
-          headers: {
-            "x-api-key": this.apiKey,
-            ...(this.tenant ? { "X-Tenant-Id": this.tenant } : {}),
-          },
+          headers: this.getHeaders(),
           responseType: "blob",
         }
       );
@@ -612,11 +626,7 @@ export class ChatService {
       }
       
       await axios.patch(url, payload, {
-        headers: {
-          "x-api-key": this.apiKey,
-          "Content-Type": "application/json",
-          ...(this.tenant ? { "X-Tenant-Id": this.tenant } : {}),
-        },
+        headers: this.getHeaders(),
       });
       
     } catch (error: any) {
