@@ -27,12 +27,13 @@ class FileManagerRepository:
         """Create a new file metadata record."""
         new_file = FileModel(
             name=file_data.name,
-            path=file_data.path or file_data.name,
             size=file_data.size,
             mime_type=file_data.mime_type,
-            storage_provider=file_data.storage_provider,
+            path=file_data.path or file_data.name,
             storage_path=file_data.storage_path or file_data.path or file_data.name,
+            storage_provider=file_data.storage_provider,
             description=file_data.description,
+            file_extension=file_data.file_extension,
             file_metadata=file_data.file_metadata,
             tags=file_data.tags,
             permissions=file_data.permissions,
