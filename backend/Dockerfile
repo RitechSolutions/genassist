@@ -77,6 +77,8 @@ COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alem
 COPY --chown=genassist:genassist ./app /src/app
 COPY --chown=genassist:genassist ./alembic /src/alembic
 
+RUN --chown -R genassist:genassist .cache
+
 # Optional: Certs (Ensure no keys)
 COPY --chown=genassist:genassist ./certs /src/certs
 
