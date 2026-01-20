@@ -43,7 +43,6 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                     {"value": "o1-large", "label": "O1 Large"},
                     {"value": "gpt-3.5-turbo", "label": "GPT-3.5 Turbo"},
                     {"value": "gpt-3.5-turbo-16k", "label": "GPT-3.5 Turbo 16K"},
-
                 ],
             ),
             FieldSchema(
@@ -115,7 +114,10 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 options=[
                     {"value": "gemini-2.5-pro", "label": "Gemini Pro (2.5)"},
                     {"value": "gemini-3-pro-preview", "label": "Gemini 3 pro preview"},
-                    {"value": "gemini-3-flash-preview", "label": "Gemini 3 flash preview"},
+                    {
+                        "value": "gemini-3-flash-preview",
+                        "label": "Gemini 3 flash preview",
+                    },
                 ],
             ),
             FieldSchema(
@@ -456,39 +458,11 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
             ),
             FieldSchema(
                 name="model",
-                type="select",
+                type="text",
                 label="Model",
                 required=True,
-                default="us.anthropic.claude-3-sonnet-20240229-v1:0",
-                options=[
-                    {
-                        "value": "us.anthropic.claude-3-sonnet-20240229-v1:0",
-                        "label": "Claude 3 Sonnet",
-                    },
-                    {
-                        "value": "us.anthropic.claude-3-opus-20240229-v1:0",
-                        "label": "Claude 3 Opus",
-                    },
-                    {
-                        "value": "us.anthropic.claude-3-haiku-20240307-v1:0",
-                        "label": "Claude 3 Haiku",
-                    },
-                    {
-                        "value": "amazon.titan-text-express-v1",
-                        "label": "Titan Text Express",
-                    },                    {
-                        "value": "us.amazon.nova-2-lite-v1:0",
-                        "label": "Nova 2 Light",
-                    },                    {
-                        "value": "us.amazon.nova-lite-v1:0",
-                        "label": "Nova Light",
-                    },                    {
-                        "value": "us.amazon.nova-pro-v1:0",
-                        "label": "Nova Pro",
-                    },
-                    {"value": "meta.llama2-13b-chat-v1", "label": "Llama 2 13B Chat"},
-                    {"value": "meta.llama2-70b-chat-v1", "label": "Llama 2 70B Chat"},
-                ],
+                default="us.amazon.nova-2-lite-v1:0",
+                description="AWS model name",
             ),
         ],
     ),

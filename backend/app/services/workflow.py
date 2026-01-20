@@ -53,7 +53,8 @@ class WorkflowService:
         updated = await self.repository.update(orm_obj)
         from app.cache.redis_cache import invalidate_cache
 
-        await invalidate_cache("agents:get_by_id_full", updated.agent.id)
+        if updated.agent:
+            await invalidate_cache("agents:get_by_id_full", updated.agent.id)
         return WorkflowInDB.model_validate(updated, from_attributes=True)
 
     async def delete(self, workflow_id: UUID) -> None:
@@ -61,5 +62,6 @@ class WorkflowService:
         if not orm_obj:
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
         from app.cache.redis_cache import invalidate_cache
-        await invalidate_cache("agents:get_by_id_full", orm_obj.agent.id)
+        if orm_obj.agent:
+            await invalidate_cache("agents:get_by_id_full", orm_obj.agent.id)
         await self.repository.delete(orm_obj)

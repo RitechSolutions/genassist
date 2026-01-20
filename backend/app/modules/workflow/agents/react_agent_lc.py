@@ -3,7 +3,7 @@ import logging
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages.base import BaseMessage
 from langchain_core.tools import StructuredTool
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain.agents import create_agent
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
@@ -230,8 +230,43 @@ class ReActAgentLC(BaseToolAgent):
 
             # Extract final response and build reasoning steps from all messages
             final_response = None
+            return_direct_tool_name = None
+            return_direct_tool_result = None
 
             if "messages" in result and result["messages"]:
+                # First pass: track tools with return_direct and find their results
+                tool_call_to_name_map = {}  # Map tool_call_id to tool_name
+                
+                for message in result["messages"]:
+                    # Track tool calls and their names
+                    if isinstance(message, AIMessage):
+                        if hasattr(message, "tool_calls") and message.tool_calls:
+                            tool_calls_list = message.tool_calls if isinstance(message.tool_calls, list) else [message.tool_calls]
+                            for tool_call in tool_calls_list:
+                                if isinstance(tool_call, dict):
+                                    tool_name = tool_call.get("name", "unknown")
+                                    tool_call_id = tool_call.get("id", "")
+                                else:
+                                    tool_name = getattr(tool_call, "name", "unknown")
+                                    tool_call_id = getattr(tool_call, "id", "")
+                                
+                                # Check if this tool has return_direct=True
+                                if tool_name in self.tool_map:
+                                    tool = self.tool_map[tool_name]
+                                    if hasattr(tool, "return_direct") and tool.return_direct:
+                                        return_direct_tool_name = tool_name
+                                        tool_call_to_name_map[tool_call_id] = tool_name
+                    
+                    # Check for ToolMessage results from return_direct tools
+                    if isinstance(message, ToolMessage):
+                        tool_call_id = getattr(message, "tool_call_id", "")
+                        if tool_call_id in tool_call_to_name_map:
+                            # This is a result from a return_direct tool
+                            return_direct_tool_result = self._extract_message_content(message)
+                            return_direct_tool_name = tool_call_to_name_map[tool_call_id]
+                            if self.verbose:
+                                logger.info(f"Found return_direct tool result from {return_direct_tool_name}: {return_direct_tool_result}")
+                
                 # Process all messages to extract reasoning steps
                 for message in result["messages"]:
                     if not isinstance(message, AIMessage):
@@ -303,8 +338,27 @@ class ReActAgentLC(BaseToolAgent):
                             "full_response": content,
                         })
                 
-                # Identify the final response (last AI message without tool calls)
-                if result["messages"]:
+                # If we found a return_direct tool result, use it as the final response
+                if return_direct_tool_result is not None:
+                    final_response = return_direct_tool_result
+                    if self.verbose:
+                        logger.info(f"Using return_direct tool result as final response: {final_response}")
+                # Fallback: check if the last message is a ToolMessage (might be return_direct)
+                elif result["messages"] and isinstance(result["messages"][-1], ToolMessage):
+                    last_message = result["messages"][-1]
+                    tool_call_id = getattr(last_message, "tool_call_id", "")
+                    # Look up the tool name from our mapping
+                    if tool_call_id in tool_call_to_name_map:
+                        tool_name_from_msg = tool_call_to_name_map[tool_call_id]
+                        if tool_name_from_msg in self.tool_map:
+                            tool = self.tool_map[tool_name_from_msg]
+                            if hasattr(tool, "return_direct") and tool.return_direct:
+                                final_response = self._extract_message_content(last_message)
+                                return_direct_tool_name = tool_name_from_msg
+                                if self.verbose:
+                                    logger.info(f"Found return_direct tool result in last message from {return_direct_tool_name}: {final_response}")
+                # Otherwise, identify the final response (last AI message without tool calls)
+                elif result["messages"]:
                     for message in reversed(result["messages"]):
                         if isinstance(message, AIMessage):
                             content = self._extract_message_content(message) if hasattr(message, "content") else ""
@@ -320,14 +374,23 @@ class ReActAgentLC(BaseToolAgent):
 
             # Extract final answer
             if final_response:
+                # Build response data
+                response_data = {
+                    "iterations": len(reasoning_steps),
+                    "reasoning_steps": reasoning_steps,
+                    "tools_used": tools_used,
+                    "thread_id": thread_id,
+                }
+                
+                # Add return_direct info if applicable
+                if return_direct_tool_name:
+                    response_data["return_direct"] = True
+                    response_data["tool"] = return_direct_tool_name
 
                 return create_success_response(
                     final_response,
                     self._get_agent_name(),
-                    iterations=len(reasoning_steps),
-                    reasoning_steps=reasoning_steps,
-                    tools_used=tools_used,
-                    thread_id=thread_id,
+                    **response_data,
                 )
             else:
                 return create_error_response(

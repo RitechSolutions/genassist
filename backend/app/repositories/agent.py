@@ -52,6 +52,9 @@ class AgentRepository(DbRepository[AgentModel]):
             select(AgentModel)
             .join(OperatorModel)
             .where(OperatorModel.user_id == user_id)
+            .options(
+                joinedload(AgentModel.operator).joinedload(OperatorModel.user),
+            )
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
