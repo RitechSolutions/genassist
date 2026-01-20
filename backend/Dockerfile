@@ -1,5 +1,5 @@
 # ==========================================
-# Stage 1: Builder
+# Stage 1: Builder (Compilers & Heavy Lifting)
 # ==========================================
 FROM python:3.12-slim-bookworm as builder
 
@@ -20,30 +20,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# 3. Install Requirements (Let pip do its thing first)
-
+# 3. Install Requirements (Aggressive Cleanup Mode)
 COPY requirements-main.txt .
 COPY requirements-rag.txt .
 COPY requirements-app.txt .
 
 RUN pip install --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements-main.txt && \
-    pip install --no-cache-dir -r requirements-rag.txt && \
-    pip install --no-cache-dir -r requirements-app.txt
-
-# 4. Force Replace PyTorch with CPU Version
-RUN pip uninstall -y torch torchvision torchaudio && \
+    # A. Install everything normally (might pull heavy GPU versions)
+    pip install --no-cache-dir \
+    -r requirements-main.txt \
+    -r requirements-rag.txt \
+    -r requirements-app.txt \
+    --extra-index-url https://download.pytorch.org/whl/cpu && \
+    # B. Uninstall Torch and NVIDIA bloat
+    pip uninstall -y torch torchvision torchaudio && \
+    pip freeze | grep nvidia | cut -d= -f1 | xargs -r pip uninstall -y && \
+    # C. Re-install strictly CPU-only versions
     pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # ==========================================
-# Stage 2: Runtime
+# Stage 2: Runtime (Minimal & Secure)
 # ==========================================
 FROM python:3.12-slim-bookworm as runtime
 
 WORKDIR /src
 
-# 1. Install Runtime System Dependencies ONLY
-# We keep the 500MB of runtime libs (ffmpeg, tesseract) because the app needs them
+# 1. Install Runtime Dependencies & Security Updates
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -65,21 +67,20 @@ ENV PATH="/opt/venv/bin:$PATH" \
     HF_HOME="/home/genassist/.cache" \
     TRANSFORMERS_CACHE="/home/genassist/.cache"
 
-# 3. Create Non-Root User
 RUN useradd -m -u 1000 genassist
 
-# 4. Copy Lean Virtual Environment from Builder
+# 3. Copy LEAN Virtual Environment from Builder
 COPY --from=builder /opt/venv /opt/venv
 
-# 5. Copy Application Code
+# 4. Copy Application Code
 COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alembic.ini /src/
 COPY --chown=genassist:genassist ./app /src/app
 COPY --chown=genassist:genassist ./alembic /src/alembic
 
-# Optional: Certs
+# Optional: Certs (Ensure no keys)
 COPY --chown=genassist:genassist ./certs /src/certs
 
-# 6. Set User and Entrypoint
+# 5. Set User and Entrypoint
 USER genassist
 
 EXPOSE 8000
