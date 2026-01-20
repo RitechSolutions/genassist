@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -58,23 +58,8 @@ export function RoleDialog({
     setDialogMode(mode);
   }, [mode]);
 
-  useEffect(() => {
-    if (isOpen) {
-      resetForm();
 
-      setAllPermissions([]);
-      setRolePermissions([]);
-      setSelectedPermissionIds([]);
-      setSearchQuery("");
-
-      if (roleToEdit && dialogMode === "edit") {
-        populateFormWithRoleData(roleToEdit);
-      }
-      fetchPermissions();
-    }
-  }, [isOpen, roleToEdit, dialogMode]);
-
-  const fetchPermissions = async () => {
+  const fetchPermissions = useCallback(async () => {
     setPermissionsLoading(true);
     try {
       const permissions = await getAllPermissions();
@@ -95,13 +80,39 @@ export function RoleDialog({
     } finally {
       setPermissionsLoading(false);
     }
-  };
+  }, [roleToEdit]);
 
-  const populateFormWithRoleData = (role: Role) => {
+
+  const populateFormWithRoleData = useCallback((role: Role) => {
     setRoleId(role.id);
     setName(role.name || "");
     setIsActive(role.is_active === 1);
-  };
+  }, []);
+
+  const resetForm = useCallback(() => {
+    if (dialogMode === "create") {
+      setRoleId(undefined);
+      setName("");
+      setIsActive(true);
+      setSelectedPermissionIds([]);
+    }
+  }, [dialogMode]);
+
+  useEffect(() => {
+    if (isOpen) {
+      resetForm();
+
+      setAllPermissions([]);
+      setRolePermissions([]);
+      setSelectedPermissionIds([]);
+      setSearchQuery("");
+
+      if (roleToEdit && dialogMode === "edit") {
+        populateFormWithRoleData(roleToEdit);
+      }
+      fetchPermissions();
+    }
+  }, [isOpen, roleToEdit, dialogMode, resetForm, populateFormWithRoleData, fetchPermissions]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,14 +177,6 @@ export function RoleDialog({
     }
   };
 
-  const resetForm = () => {
-    if (dialogMode === "create") {
-      setRoleId(undefined);
-      setName("");
-      setIsActive(true);
-      setSelectedPermissionIds([]);
-    }
-  };
   const title = dialogMode === "create" ? "Create New Role" : "Edit Role";
   const submitButtonText =
     dialogMode === "create" ? "Create Role" : "Update Role";
