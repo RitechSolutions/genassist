@@ -267,28 +267,28 @@ struct ContentView: View {
     >
       <Tabs defaultValue="curl" className="w-full">
         <div className="sticky top-0 z-10 rounded-t-2xl bg-white px-4 pt-4 pb-3">
-          <TabsList className="grid w-full grid-cols-4 rounded-xl bg-[#F4F4F5] p-1">
+          <TabsList className="grid w-full grid-cols-4 rounded-full bg-[#F4F4F5] p-1">
             <TabsTrigger
               value="curl"
-              className="rounded-lg text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
+              className="rounded-full text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
             >
               Curl -X
             </TabsTrigger>
             <TabsTrigger
               value="react"
-              className="rounded-lg text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
+              className="rounded-full text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
             >
               React
             </TabsTrigger>
             <TabsTrigger
               value="flutter"
-              className="rounded-lg text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
+              className="rounded-full text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
             >
               Flutter
             </TabsTrigger>
             <TabsTrigger
               value="swift"
-              className="rounded-lg text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
+              className="rounded-full text-xs font-medium data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm"
             >
               iOS (Swift)
             </TabsTrigger>

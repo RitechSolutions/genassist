@@ -125,49 +125,51 @@ export function YourAgentsCard({ agents = mockAgents, loading, onViewAll, onMana
       </div>
 
       {/* Agents List */}
-      <div className="flex flex-col gap-1 px-2 pb-3">
+      <div className="flex flex-col gap-2 px-4 pb-4">
         {loading ? (
-          <div className="space-y-2 p-4">
+          <div className="space-y-2">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-20 bg-gray-200 rounded-lg animate-pulse" />
+              <div key={i} className="h-16 bg-gray-200 rounded-lg animate-pulse" />
             ))}
           </div>
         ) : (
           agents.map((agent) => (
             <div
               key={agent.id}
-              className="bg-white rounded-lg px-4 py-3 flex items-center justify-between hover:bg-muted/50 transition-colors cursor-pointer"
+              className="flex gap-3 items-center p-2 hover:bg-muted/30 rounded-lg transition-colors cursor-pointer"
               onClick={() => handleAgentClick(agent)}
             >
-              <div className="flex flex-col gap-2 flex-1">
-                <p className="text-base font-medium text-foreground">{agent.name}</p>
+              <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                <p className="text-sm font-semibold text-accent-foreground truncate">
+                  {agent.name}
+                </p>
                 
                 {/* Stats Row */}
-                <div className="flex gap-4 items-center">
+                <div className="flex gap-3 items-center flex-wrap">
                   <div className="flex gap-1 items-center">
-                    <MessageCircleMore className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-xs text-card-foreground">
+                    <MessageCircleMore className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
                       {agent.conversationsToday} Today
                     </span>
                   </div>
                   
                   <div className="flex gap-1 items-center">
-                    <CircleCheckBig className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-xs text-card-foreground">
+                    <CircleCheckBig className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
                       {agent.resolutionRate}% resolved
                     </span>
                   </div>
                   
                   <div className="flex gap-1 items-center">
-                    <Clock className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-xs text-card-foreground">
+                    <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
                       {agent.avgResponseTime} avg
                     </span>
                   </div>
                   
                   <div className="flex gap-1 items-center">
-                    <DollarSign className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-xs text-card-foreground">
+                    <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
                       ${agent.costPerConversation}
                     </span>
                   </div>

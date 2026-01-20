@@ -17,8 +17,8 @@ const AgentStudioPage: React.FC = () => {
 
 
   return (
-    <div className="min-h-screen flex w-full">
-      <main className="flex-1 bg-zinc-100 relative">
+    <div className="h-screen flex w-full overflow-hidden">
+      <main className="flex-1 bg-zinc-100 relative overflow-hidden">
         <ReactFlowProvider>
           <GraphFlow/>
         </ReactFlowProvider>

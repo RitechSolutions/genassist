@@ -206,16 +206,16 @@ const NodePanel: React.FC<NodePanelProps> = ({
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="w-full h-10 bg-muted p-1 rounded-md">
+              <TabsList className="w-full h-10 bg-muted p-1 rounded-full">
                 <TabsTrigger
                   value="available"
-                  className="flex-1 text-sm font-medium rounded-lg"
+                  className="flex-1 text-sm font-medium rounded-full"
                 >
                   Available Nodes
                 </TabsTrigger>
                 <TabsTrigger
                   value="conversational"
-                  className="flex-1 text-sm font-medium rounded-sm"
+                  className="flex-1 text-sm font-medium rounded-full"
                 >
                   Conversational
                 </TabsTrigger>

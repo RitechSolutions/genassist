@@ -75,6 +75,17 @@ const GraphFlowContent: React.FC = () => {
   // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
+  // Prevent body scroll on Agent Studio page
+  useEffect(() => {
+    // Always hide overflow on the body when on Agent Studio page
+    document.body.style.overflow = 'hidden';
+    
+    // Cleanup on unmount - restore default overflow
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
   const { validateConnection } = useSchemaValidation();
 
   // Undo/Redo functionality

@@ -869,6 +869,20 @@ export const AgentFormDialog = ({
   const formId = "agent-form-dialog";
   const isEditMode = !!data?.id;
 
+  // Prevent body scroll when dialog is open
+  React.useEffect(() => {
+    if (isOpen) {
+      // Save the current overflow state
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      
+      // Restore previous overflow state on cleanup
+      return () => {
+        document.body.style.overflow = previousOverflow;
+      };
+    }
+  }, [isOpen]);
+
   return (
     <Sheet open={isOpen} onOpenChange={onClose} modal={false}>
       <SheetContent hideOverlay={true} className="sm:max-w-lg w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full">
