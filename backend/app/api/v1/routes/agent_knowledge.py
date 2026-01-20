@@ -304,10 +304,11 @@ async def upload_file_to_chat(
 
         # get file id from created file
         file_id = created_file.id
-        file_path = created_file.storage_path
         file_extension = created_file.file_extension
+        storage_path = created_file.storage_path
+        file_path = f"{UPLOAD_DIR}/{storage_path}"
 
-        logger.info(f"File Path: {file_path}", f"File Extension: {file_extension}", f"File ID: {file_id}")
+        logger.info(f"File Id: {file_id}")
 
         # Extract text from the file
         try:
@@ -334,10 +335,12 @@ async def upload_file_to_chat(
 
         # Return the filenames and paths
         result = {
-            "filename": file_id,
+            "filename": str(file_id),
             "original_filename": file.filename,
+            "storage_path": storage_path,
             "file_path": file_path,
         }
+
         logger.info(f"Upload successful: {result}")
         return result
     except Exception as e:
