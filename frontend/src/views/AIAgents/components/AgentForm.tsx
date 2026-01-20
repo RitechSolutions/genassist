@@ -12,7 +12,8 @@ import {
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Switch } from "@/components/switch";
-import { ChevronLeft, AlertCircle, CheckCircle2, Trash2 } from "lucide-react";
+import { Label } from "@/components/label";
+import { ChevronLeft, CheckCircle2, Trash2, Plus, HelpCircle, MessageSquare } from "lucide-react";
 // import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import {
   Sheet,
@@ -355,8 +356,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
         <div className="space-y-6">
           <div className={`${plain ? "" : "rounded-lg border bg-white p-6 "}`}>
             <div className="space-y-6">
-              <div>
-                <div className="mb-1">Workflow Name</div>
+              <div className="space-y-2">
+                <Label htmlFor="name">Workflow Name</Label>
                 <Input
                   id="name"
                   name="name"
@@ -366,8 +367,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 />
               </div>
 
-              <div>
-                <div className="mb-1">Description</div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
                 <Input
                   id="description"
                   name="description"
@@ -376,8 +377,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   placeholder="Enter agent description"
                 />
               </div>
-              <div>
-                <div className="mb-2 text-sm font-medium text-foreground">Welcome Image</div>
+              <div className="space-y-2">
+                <Label>Welcome Image</Label>
                 <div className="space-y-3">
                   {!imagePreview ? (
                     <div className="relative group">
@@ -555,8 +556,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   )}
                 </div>
               </div>
-              <div>
-                <div className="mb-1">Welcome Title</div>
+              <div className="space-y-2">
+                <Label htmlFor="welcome_title">Welcome Title</Label>
                 <Input
                   id="welcome_title"
                   name="welcome_title"
@@ -565,8 +566,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   placeholder="Enter welcome title"
                 />
               </div>
-              <div>
-                <div className="mb-1">Welcome Message</div>
+              <div className="space-y-2">
+                <Label htmlFor="welcome_message">Welcome Message</Label>
                 <Textarea
                   id="welcome_message"
                   name="welcome_message"
@@ -714,10 +715,10 @@ const AgentForm: React.FC<AgentFormProps> = ({
                         </Button>
                       </div>
                     ))}
-                    <div className="pt-2 border-t border-border">
-                      <div className="mb-1.5 text-sm text-muted-foreground">
+                    <div className="pt-2 border-t border-border space-y-2">
+                      <Label htmlFor="thinking_phrase_delay" className="text-muted-foreground">
                         Delay between phrases (seconds)
-                      </div>
+                      </Label>
                       <Input
                         id="thinking_phrase_delay"
                         name="thinking_phrase_delay"
