@@ -10,6 +10,17 @@ logger = logging.getLogger(__name__)
 class TenantMiddleware(BaseHTTPMiddleware):
     """Middleware to extract tenant information from requests"""
 
+    def get_tenant_slug(self, source_data: dict) -> str:
+        tenant_header_name = settings.TENANT_HEADER_NAME.lower()
+
+        # lowercase the keys of the source data to make the check case-insensitive
+        source_data_lower = {k.lower(): v for k, v in source_data.items()}
+
+        # check for multiple cases of the tenant header name
+        if tenant_header_name in source_data_lower:
+            return source_data_lower[tenant_header_name]
+        return None
+
     async def dispatch(self, request: Request, call_next):
         if not settings.MULTI_TENANT_ENABLED:
             # Single tenant mode - no tenant resolution needed
@@ -20,15 +31,14 @@ class TenantMiddleware(BaseHTTPMiddleware):
         tenant_slug = None
 
         # Method 1: Extract from header
-        if settings.TENANT_HEADER_NAME in request.headers:
-            tenant_slug = request.headers[settings.TENANT_HEADER_NAME]
-
+        tenant_slug = self.get_tenant_slug(request.headers)
+        
         # Method 2: Extract from query parameter (fallback when header not available)
-        elif settings.TENANT_HEADER_NAME in request.query_params:
-            tenant_slug = request.query_params[settings.TENANT_HEADER_NAME]
+        if not tenant_slug:
+            tenant_slug = self.get_tenant_slug(request.query_params)
 
         # Method 3: Extract from subdomain (if enabled)
-        elif settings.TENANT_SUBDOMAIN_ENABLED:
+        if not tenant_slug and settings.TENANT_SUBDOMAIN_ENABLED:
             host = request.headers.get("host", "")
             if "." in host:
                 subdomain = host.split(".")[0]

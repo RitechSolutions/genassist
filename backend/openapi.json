@@ -3785,7 +3785,7 @@
           "Conversations"
         ],
         "summary": "Start",
-        "description": "Create a new in-progress conversation and store the partial transcript.",
+        "description": "Create a new in-progress conversation and store the partial transcript.\nIf agent.token_based_auth is true, returns a JWT token for secure frontend access.",
         "operationId": "start_api_conversations_in_progress_start_post",
         "requestBody": {
           "content": {
@@ -3895,7 +3895,7 @@
           "Conversations"
         ],
         "summary": "Update",
-        "description": "Append segments to an existing in-progress conversation.",
+        "description": "Append segments to an existing in-progress conversation.\nIf agent.token_based_auth is true, only accepts JWT tokens (rejects API keys).",
         "operationId": "update_api_conversations_in_progress_update__conversation_id__patch",
         "security": [
           {
@@ -12929,6 +12929,12 @@
             "title": "Thinking Phrase Delay",
             "description": "Delay in seconds before showing thinking phrases."
           },
+          "token_based_auth": {
+            "type": "boolean",
+            "title": "Token Based Auth",
+            "description": "If true, requires JWT token for conversation updates instead of API key.",
+            "default": false
+          },
           "workflow_id": {
             "anyOf": [
               {
@@ -13034,6 +13040,12 @@
             ],
             "title": "Thinking Phrase Delay",
             "description": "Delay in seconds before showing thinking phrases."
+          },
+          "token_based_auth": {
+            "type": "boolean",
+            "title": "Token Based Auth",
+            "description": "If true, requires JWT token for conversation updates instead of API key.",
+            "default": false
           },
           "workflow_id": {
             "type": "string",
@@ -13216,6 +13228,17 @@
               }
             ],
             "title": "Thinking Phrase Delay"
+          },
+          "token_based_auth": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Based Auth"
           },
           "workflow_id": {
             "anyOf": [

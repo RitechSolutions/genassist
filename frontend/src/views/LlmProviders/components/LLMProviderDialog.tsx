@@ -26,7 +26,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/select";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
 
 interface LLMProviderDialogProps {
@@ -63,6 +63,7 @@ export function LLMProviderDialog({
   >(providerToEdit?.connection_data ?? {});
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["supportedModels"],
@@ -190,11 +191,13 @@ export function LLMProviderDialog({
       if (mode === "create") {
         const created = await createLLMProvider(data);
         toast.success("LLM provider created successfully.");
+        queryClient.invalidateQueries({ queryKey: ["llmProviders"] });
         onProviderSaved(created);
       } else {
         if (!providerId) throw new Error("Missing provider ID");
         const updated = await updateLLMProvider(providerId, data);
         toast.success("LLM provider updated successfully.");
+        queryClient.invalidateQueries({ queryKey: ["llmProviders"] });
         if (onProviderUpdated) {
           onProviderUpdated(updated);
         }

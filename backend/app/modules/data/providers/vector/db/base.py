@@ -1,17 +1,13 @@
 """
 Base vector database interface
 """
-import os
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.tenant_scope import get_tenant_context
+from app.core.config.settings import settings
 
 from ....schema_utils import VECTOR_DEFAULTS
-
-DEFAULT_HOST = os.getenv("CHROMA_HOST", "localhost")
-DEFAULT_PORT = int(os.getenv("CHROMA_PORT", 8005))
-
 
 class VectorDBConfig(BaseModel):
     """Configuration for vector database"""
@@ -21,9 +17,9 @@ class VectorDBConfig(BaseModel):
     persist_directory: Optional[str] = Field(
         default=None, description="Directory for data persistence")
     host: Optional[str] = Field(
-        default=DEFAULT_HOST, description="Database host")
+        default=settings.CHROMA_HOST, description="Database host")
     port: Optional[int] = Field(
-        default=DEFAULT_PORT, description="Database port")
+        default=settings.CHROMA_PORT, description="Database port")
     distance_metric: str = Field(
         default="cosine", description="Distance metric (cosine, euclidean, dot_product)")
     index_type: str = Field(

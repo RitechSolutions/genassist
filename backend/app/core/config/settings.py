@@ -1,5 +1,5 @@
 from typing import Optional, Tuple
-from pydantic import computed_field, ConfigDict
+from pydantic import computed_field, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 from app.core.project_path import DATA_VOLUME
@@ -24,6 +24,7 @@ class ProjectSettings(BaseSettings):
     REDIS_MAX_CONNECTIONS: int = 20  # Max connections in pool
     REDIS_SOCKET_TIMEOUT: int = 5  # Socket timeout in seconds
     REDIS_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval in seconds
+    
     FERNET_KEY: Optional[str]
 
     # === LLM Keys ===
@@ -74,7 +75,7 @@ class ProjectSettings(BaseSettings):
 
     # === Multi-Tenancy ===
     MULTI_TENANT_ENABLED: bool = False
-    TENANT_HEADER_NAME: str = "X-Tenant-ID"
+    TENANT_HEADER_NAME: str = "x-tenant-id"
     TENANT_SUBDOMAIN_ENABLED: bool = False
 
     DEBUG: bool = True
@@ -121,7 +122,29 @@ class ProjectSettings(BaseSettings):
     BACKGROUND_TASK: bool = False
 
     # === CORS Configuration ===
-    CORS_ALLOWED_ORIGINS: Optional[str] = None  # Comma-separated list of additional allowed origins
+    CORS_ALLOWED_ORIGINS: Optional[str] = (
+        None  # Comma-separated list of additional allowed origins
+    )
+
+    # === Rate Limiting Configuration ===
+    RATE_LIMIT_ENABLED: bool = False
+    # Global rate limit: requests per time window
+    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_PER_HOUR: int = 1000
+    # Auth endpoints rate limit (stricter)
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 5
+    RATE_LIMIT_AUTH_PER_HOUR: int = 20
+    # Conversation endpoints rate limits
+    RATE_LIMIT_CONVERSATION_START_PER_MINUTE: int = 10
+    RATE_LIMIT_CONVERSATION_START_PER_HOUR: int = 100
+    RATE_LIMIT_CONVERSATION_UPDATE_PER_MINUTE: int = 30
+    RATE_LIMIT_CONVERSATION_UPDATE_PER_HOUR: int = 500
+    # Rate limit storage backend (redis or memory)
+    RATE_LIMIT_STORAGE_BACKEND: str = "redis"  # "redis" or "memory"
+
+    # === Chroma Configuration ===
+    CHROMA_HOST: str = Field(default="localhost", description="Database host")
+    CHROMA_PORT: int = Field(default=8005, description="Database port")
 
     @property
     def _zendesk_base(self) -> str:

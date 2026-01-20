@@ -65,7 +65,7 @@ export function DataSourceDialog({
   const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["dataSourceSchemas"],
     queryFn: () => getDataSourceFormSchemas(),
-    refetchInterval: 5000,
+    refetchInterval: isOpen ? 5000 : false,
     refetchOnWindowFocus: false,
     staleTime: 3000,
   });
