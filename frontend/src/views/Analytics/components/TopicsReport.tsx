@@ -49,7 +49,7 @@ export function TopicsReport() {
   }, []);
 
   return (
-    <Card className="p-6 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white h-full">
+    <Card className="p-6 shadow-sm animate-fade-up bg-white h-full">
       <CardHeader 
         title="Conversations by type"
         tooltipText="Breakdown of conversations by their identified topics or types."

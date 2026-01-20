@@ -61,7 +61,7 @@ export function OperatorsCard({ searchQuery, refreshKey }) {
 
   return (
     <>
-      <Card className="p-6 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
+      <Card className="p-6 shadow-sm animate-fade-up bg-white">
         <CardHeader 
           title={isDashboard ? "Top Performing Operators" : ""}
           tooltipText={isDashboard ? "Operators ranked by customer satisfaction scores and overall performance metrics" : undefined}

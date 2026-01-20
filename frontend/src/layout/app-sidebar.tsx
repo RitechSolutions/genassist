@@ -359,8 +359,8 @@ export function AppSidebar() {
   const menuItemClasses = "h-8";
 
   return (
-    <Sidebar>
-      <SidebarContent className="bg-white">
+    <Sidebar variant="floating" side="left">
+      <SidebarContent className="bg-white" style={{ height: '100%' }}>
         <div className="flex flex-row items-center justify-between p-4 mb-0">
           <svg
             width="175"

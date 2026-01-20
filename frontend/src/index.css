@@ -11,6 +11,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
     --primary: 229 86% 51%;
+    --primary-hover: 229 86% 41%;
     --primary-foreground: 0 0% 98%;
     --secondary: 240 4.8% 95.9%;
     --secondary-foreground: 240 5.9% 10%;
@@ -36,6 +37,22 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer utilities {
+  /* Global primary button hover styles */
+  .bg-primary {
+    background-color: hsl(var(--primary));
+  }
+  .bg-primary:hover {
+    background-color: hsl(var(--primary-hover));
+  }
+  .hover\:bg-primary:hover {
+    background-color: hsl(var(--primary));
+  }
+  .hover\:bg-primary-hover:hover {
+    background-color: hsl(var(--primary-hover));
   }
 }
 
@@ -170,4 +187,19 @@ input[type="checkbox"]:hover {
 .animated-shadow-input:focus {
   animation: animatedShadow 4s ease-in-out infinite;
   outline: none;
+}
+
+/* Animated dashed stroke for workflow edges when node is selected */
+@keyframes dashOffset {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -28;
+  }
+}
+
+.react-flow__edge.animated-edge path {
+  animation: dashOffset 1s linear infinite;
+  stroke-width: 3 !important;
 }

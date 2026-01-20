@@ -172,7 +172,7 @@ export function ActiveConversationsModule({
   const handlePageChange = (page: number) => setParam("page", String(page));
 
   return (
-    <Card className="p-6 mb-5 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white border border-border rounded-xl">
+    <Card className="p-6 mb-5 shadow-sm animate-fade-up bg-white border border-border rounded-xl">
       <ActiveConversationsHeader title={title} />
 
       <div className="flex gap-6">

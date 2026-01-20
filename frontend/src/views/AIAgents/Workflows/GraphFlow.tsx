@@ -26,6 +26,7 @@ import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
 import ChatInputBar from "./components/panels/ChatInputBar";
 import { useSchemaValidation } from "./hooks/useSchemaValidation";
+import { useUndoRedo } from "./hooks/useUndoRedo";
 import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
 import { useParams } from "react-router-dom";
 import { getWorkflowById, updateWorkflow } from "@/services/workflows";
@@ -43,6 +44,7 @@ import {
 } from "./utils/helpers";
 import { Button } from "@/components/button";
 import { History, ChevronLeft, X } from "lucide-react";
+import CanvasContextMenu from "./components/CanvasContextMenu";
 
 // Get node types and edge types for React Flow
 const nodeTypes = getNodeTypes();
@@ -70,7 +72,18 @@ const GraphFlowContent: React.FC = () => {
   const [isSettling, setIsSettling] = useState(true);
   const [executionState, setExecutionState] = useState<WorkflowExecutionState | null>(null);
 
+  // Context menu state
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
+
   const { validateConnection } = useSchemaValidation();
+
+  // Undo/Redo functionality
+  const { undo, redo, canUndo, canRedo, takeSnapshot } = useUndoRedo(
+    nodes,
+    edges,
+    setNodes,
+    setEdges
+  );
 
   const { agentId } = useParams<{ agentId: string }>();
   const edgeReconnectSuccessful = useRef(true);
@@ -381,12 +394,62 @@ const GraphFlowContent: React.FC = () => {
   const onSelectionChange = useCallback(({ nodes: selectedNodes }) => {
     if (selectedNodes && selectedNodes.length === 1) {
       setSelectedNode(selectedNodes[0]);
+      
+      // Add animated-edge class to edges connected to selected node
+      const selectedNodeId = selectedNodes[0].id;
+      setEdges((eds) =>
+        eds.map((edge) => {
+          const isConnected = 
+            edge.source === selectedNodeId || edge.target === selectedNodeId;
+          return {
+            ...edge,
+            className: isConnected ? 'animated-edge' : '',
+          };
+        })
+      );
     } else {
       setSelectedNode(null);
+      // Remove animated-edge class from all edges
+      setEdges((eds) =>
+        eds.map((edge) => ({
+          ...edge,
+          className: '',
+        }))
+      );
     }
-  }, []);
+  }, [setEdges]);
 
-  // Keyboard event handlers for copy/paste
+  // Take snapshot when nodes or edges change (for undo/redo)
+  useEffect(() => {
+    if (!isSettling) {
+      takeSnapshot();
+    }
+  }, [nodes, edges, isSettling, takeSnapshot]);
+
+  // Handler for adding nodes from context menu
+  const handleAddNodeFromContextMenu = useCallback(
+    (nodeType: string, position: { x: number; y: number }) => {
+      addNewNode(nodeType, position);
+      setContextMenuPosition(null);
+    },
+    [addNewNode]
+  );
+
+  // Handler for right-click on canvas (capture position without preventing default)
+  const handleCanvasContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      if (reactFlowInstance) {
+        const flowPosition = reactFlowInstance.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        });
+        setContextMenuPosition(flowPosition);
+      }
+    },
+    [reactFlowInstance]
+  );
+
+  // Keyboard event handlers for copy/paste/undo/redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Only handle copy/paste if ReactFlow canvas is focused
@@ -397,6 +460,20 @@ const GraphFlowContent: React.FC = () => {
         target.closest(".react-flow__renderer");
 
       if (!isReactFlowCanvas) {
+        return;
+      }
+
+      // Undo (Ctrl+Z or Cmd+Z)
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+
+      // Redo (Ctrl+Shift+Z or Cmd+Shift+Z)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        redo();
         return;
       }
 
@@ -440,52 +517,66 @@ const GraphFlowContent: React.FC = () => {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedNode, setNodes]);
+  }, [selectedNode, setNodes, undo, redo]);
 
   return (
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>
       <WorkflowExecutionProvider>
         <div className="h-full w-full flex flex-col">
           <div className="flex-1 relative">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              minZoom={0.1}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              onInit={setReactFlowInstance}
-              fitView
-              onSelectionChange={onSelectionChange}
-              onDragOver={onDragOver}
-              onDrop={onDrop}
-              onNodeDoubleClick={onNodeDoubleClick}
-              onReconnect={onReconnect}
-              onReconnectStart={onReconnectStart}
-              onReconnectEnd={onReconnectEnd}
-              proOptions={{ hideAttribution: true }} // remove React Flow watermark
+            <CanvasContextMenu
+              onAddNode={handleAddNodeFromContextMenu}
+              onUndo={undo}
+              onRedo={redo}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              clickPosition={contextMenuPosition}
             >
-              <Background />
-              <Controls />
-              <Panel position="top-center" className="mt-4">
-                <AgentTopPanel data={agent} onUpdated={handleAgentUpdated} />
-              </Panel>
-            </ReactFlow>
+              <div
+                onContextMenu={handleCanvasContextMenu}
+                className="h-full w-full"
+              >
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  minZoom={0.1}
+                  nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
+                  onInit={setReactFlowInstance}
+                  fitView
+                  onSelectionChange={onSelectionChange}
+                  onDragOver={onDragOver}
+                  onDrop={onDrop}
+                  onNodeDoubleClick={onNodeDoubleClick}
+                  onReconnect={onReconnect}
+                  onReconnectStart={onReconnectStart}
+                  onReconnectEnd={onReconnectEnd}
+                  proOptions={{ hideAttribution: true }} // remove React Flow watermark
+                >
+                  <Background />
+                  <Controls />
+                  <Panel position="top-center" className="mt-4">
+                    <AgentTopPanel data={agent} onUpdated={handleAgentUpdated} />
+                  </Panel>
+                </ReactFlow>
+              </div>
+            </CanvasContextMenu>
 
             {/* Unified top-right controls (prevents overlap between ReactFlow Panel + NodePanel buttons) */}
             <div
-              className={`fixed top-4 z-20 flex flex-row flex-wrap items-center justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
+              className={`fixed top-2 z-20 flex flex-row flex-wrap items-center justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
                 (() => {
                   if (showNodePanel && showWorkflowPanel) {
-                    return "right-[calc(20rem+16rem+1rem)]";
+                    return "right-[calc(20rem+20rem+1rem)]";
                   } else if (showNodePanel) {
-                    return "right-[calc(16rem+1rem)]";
+                    return "right-[calc(20rem+1rem)]";
                   } else if (showWorkflowPanel) {
                     return "right-[calc(20rem+1rem)]";
                   } else {
-                    return "right-4";
+                    return "right-2";
                   }
                 })()
               }`}
@@ -501,19 +592,8 @@ const GraphFlowContent: React.FC = () => {
                 onTestWorkflow={handleTestGraph}
                 onSaveWorkflow={handleSaveWorkflow}
                 onExecutionStateChange={setExecutionState}
+                onToggleWorkflowPanel={toggleWorkflowPanel}
               />
-
-              <Button
-                onClick={toggleWorkflowPanel}
-                size="icon"
-                variant="ghost"
-                className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
-              >
-                {showWorkflowPanel ? <X className="h-4 w-4" /> : <History className="h-4 w-4" />}
-                <span className="sr-only">
-                  {showWorkflowPanel ? "Close Workflow Panel" : "Open Workflow Panel"}
-                </span>
-              </Button>
 
               <Button
                 onClick={toggleNodePanel}

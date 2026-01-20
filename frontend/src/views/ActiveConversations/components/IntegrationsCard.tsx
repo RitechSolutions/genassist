@@ -95,7 +95,7 @@ export function IntegrationsCard({
 
   return (
     <>
-      <Card className="bg-white border border-border rounded-xl overflow-hidden shadow-sm">
+      <Card className="bg-white border border-border rounded-xl overflow-hidden shadow-sm animate-fade-up">
         {/* Header */}
         <div className="bg-white flex items-center justify-between p-6">
           <div className="flex items-center gap-2">

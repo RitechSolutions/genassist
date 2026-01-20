@@ -58,34 +58,38 @@ export const StatsOverviewCard = ({ metrics }: StatsOverviewCardProps) => {
   };
 
   return (
-    <Card className="w-full px-6 py-6 shadow-sm bg-white">
-      <div className="flex items-center gap-8">
+    <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
         {metrics.map((metric, index) => {
           const ChangeIcon = getChangeIcon(metric.changeType);
           
           return (
-            <div key={index} className="flex items-center gap-8 flex-1">
-              <div className="flex flex-col gap-4 py-0 flex-1">
-                <div className="flex items-center gap-4">
-                  <div className="text-2xl font-bold text-foreground leading-8">
+            <div key={index} className="relative">
+              <div className="flex flex-col gap-3 sm:gap-4 py-2 sm:py-0">
+                <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+                  <div className="text-xl sm:text-2xl font-bold text-foreground leading-tight">
                     {metric.value}
                   </div>
                   <div className="flex items-center gap-2">
                     <div className={`${getChangeBadgeColor(metric.changeType)} flex items-center p-1 rounded-full`}>
-                      <ChangeIcon className={`w-5 h-5 ${getChangeIconColor(metric.changeType)}`} />
+                      <ChangeIcon className={`w-4 h-4 sm:w-5 sm:h-5 ${getChangeIconColor(metric.changeType)}`} />
                     </div>
-                    <div className={`text-base font-medium ${getChangeTextColor(metric.changeType)}`}>
+                    <div className={`text-sm sm:text-base font-medium ${getChangeTextColor(metric.changeType)}`}>
                       {metric.change === 0 ? "No Change" : `${Math.abs(metric.change)}%`}
                     </div>
                   </div>
                 </div>
-                <div className="text-base font-medium text-foreground">
+                <div className="text-sm sm:text-base font-medium text-foreground">
                   {metric.label}
                 </div>
               </div>
               
+              {/* Vertical divider - hidden on mobile, shown on larger screens between items */}
               {index < metrics.length - 1 && (
-                <div className="h-16 w-0 border-l border-zinc-200" />
+                <>
+                  <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-zinc-200" />
+                  <div className="sm:hidden border-b border-zinc-200 mt-4" />
+                </>
               )}
             </div>
           );
