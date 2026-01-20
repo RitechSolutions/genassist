@@ -101,7 +101,11 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     Depends(permissions(P.Recording.READ_METRICS))
     ])
 async def get_metrics(service: AudioService = Injected(AudioService)):
-    return await service.fetch_and_calculate_metrics()
+    try:
+        return await service.fetch_and_calculate_metrics()
+    except Exception as e:
+        logger.error(f"Error fetching metrics: {e}")
+        return {"error": "Error fetching metrics"}
 
 # @router.post("/transcribe_no_save")
 # async def transcribe_no_save(file: UploadFile, service: RecordingService = Depends()):

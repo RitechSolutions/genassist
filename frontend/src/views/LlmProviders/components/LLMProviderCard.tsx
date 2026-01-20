@@ -7,6 +7,7 @@ import { Badge } from "@/components/badge";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { getAllLLMProviders, deleteLLMProvider } from "@/services/llmProviders";
 import { toast } from "react-hot-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface LLMProviderCardProps {
   searchQuery: string;
@@ -29,6 +30,7 @@ export function LLMProviderCard({
   );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     fetchProviders();
@@ -72,6 +74,7 @@ export function LLMProviderCard({
       setIsDeleting(true);
       await deleteLLMProvider(providerToDelete.id);
       toast.success("LLM provider deleted successfully.");
+      queryClient.invalidateQueries({ queryKey: ["llmProviders"] });
       setProviders((prev) => prev.filter((p) => p.id !== providerToDelete.id));
     } catch (error) {
       toast.error("Failed to delete LLM provider.");

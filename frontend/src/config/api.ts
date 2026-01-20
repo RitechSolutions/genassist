@@ -45,7 +45,7 @@ api.interceptors.request.use(
     
     // Add tenant ID header if available
     if (tenantId) {
-      config.headers["X-Tenant-Id"] = tenantId;
+      config.headers["x-tenant-id"] = tenantId;
     }
     
     return config;

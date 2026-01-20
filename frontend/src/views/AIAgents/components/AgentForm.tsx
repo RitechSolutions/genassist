@@ -11,6 +11,7 @@ import {
 } from "@/services/api";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
+import { Switch } from "@/components/switch";
 import { ChevronLeft, AlertCircle, CheckCircle2, Trash2 } from "lucide-react";
 // import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import {
@@ -32,6 +33,7 @@ interface AgentFormData {
   thinking_phrases?: string[];
   is_active?: boolean;
   workflow_id?: string;
+  token_based_auth?: boolean;
 }
 
 interface AgentFormProps {
@@ -58,6 +60,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const cleanedThinkingPhrases =
     data?.thinking_phrases?.filter((p) => p.trim() !== "") ?? [];
 
+    console.log(data);
   const [formData, setFormData] = useState<AgentFormData>({
     ...(data || {
       name: "",
@@ -67,10 +70,12 @@ const AgentForm: React.FC<AgentFormProps> = ({
       thinking_phrase_delay: 0,
       possible_queries: [],
       thinking_phrases: [],
+      token_based_auth: false,
     }),
     possible_queries: cleanedQueries.length > 0 ? cleanedQueries : [],
     thinking_phrases:
       cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
+    token_based_auth: data?.token_based_auth ?? false,
   });
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -105,6 +110,13 @@ const AgentForm: React.FC<AgentFormProps> = ({
     setFormData((prev) => ({
       ...prev,
       [name]: name === "thinking_phrase_delay" ? Number(value) || 0 : value,
+    }));
+  };
+
+  const handleSwitchChange = (checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      token_based_auth: checked,
     }));
   };
 
@@ -493,6 +505,19 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 />
               </div>
 
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="mb-1">Token Based Authentication</div>
+                  <p className="text-sm text-muted-foreground">
+                    Enable token based authentication for this agent
+                  </p>
+                </div>
+                <Switch
+                  checked={formData.token_based_auth ?? false}
+                  onCheckedChange={handleSwitchChange}
+                />
+              </div>
+
               <div>
                 <div className="mb-1">Frequently Asked Question</div>
                 <div className="space-y-2">
@@ -614,6 +639,7 @@ export const AgentFormPage: React.FC = () => {
     thinking_phrase_delay: undefined,
     possible_queries: [],
     thinking_phrases: [],
+    token_based_auth: false,
   });
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -637,6 +663,7 @@ export const AgentFormPage: React.FC = () => {
             possible_queries: cleanedQueries.length > 0 ? cleanedQueries : [],
             thinking_phrases:
               cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
+            token_based_auth: config.token_based_auth ?? false,
           });
 
           setError(null);

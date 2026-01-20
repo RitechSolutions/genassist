@@ -23,6 +23,8 @@ class AgentBase(BaseModel):
         description="Thinking phrases, suggested when starting a conversation with an agent.", default=[])
     thinking_phrase_delay: Optional[int] = Field(None, ge=0,
                                                  description="Delay in seconds before showing thinking phrases.")
+    token_based_auth: bool = Field(default=False,
+                                description="If true, requires JWT token for conversation updates instead of API key.")
     model_config = ConfigDict(
         extra='forbid', from_attributes=True)  # shared rules
     workflow_id: Optional[UUID] = None
@@ -42,6 +44,7 @@ class AgentUpdate(BaseModel):
     possible_queries: Optional[list[str]] = None
     thinking_phrases: Optional[list[str]] = None
     thinking_phrase_delay: Optional[int] = None
+    token_based_auth: Optional[bool] = None
     workflow_id: Optional[UUID] = None
     model_config = ConfigDict(extra='forbid', from_attributes=True)
 
@@ -78,7 +81,7 @@ class AgentRead(AgentBase):
                                 # Skip methods and relationships except workflow
                                 if not callable(value):
                                     data_dict[key] = value
-                            except:
+                            except Exception:
                                 pass
                     data_dict['workflow'] = workflow_dict
                     return data_dict
