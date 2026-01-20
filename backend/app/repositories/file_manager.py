@@ -32,7 +32,6 @@ class FileManagerRepository:
             mime_type=file_data.mime_type,
             storage_provider=file_data.storage_provider,
             storage_path=file_data.storage_path or file_data.path or file_data.name,
-            user_id=user_id or context.get("user_id"),
             description=file_data.description,
             file_metadata=file_data.file_metadata,
             tags=file_data.tags,
@@ -81,7 +80,7 @@ class FileManagerRepository:
         query = select(FileModel).where(FileModel.is_deleted == 0)
 
         if user_id:
-            query = query.where(FileModel.user_id == user_id)
+            query = query.where(FileModel.created_by == user_id)
         if storage_provider:
             query = query.where(FileModel.storage_provider == storage_provider)
 

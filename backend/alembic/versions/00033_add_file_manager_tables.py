@@ -30,8 +30,8 @@ def upgrade() -> None:
         sa.Column('mime_type', sa.String(length=255), nullable=True),
         sa.Column('storage_provider', sa.String(length=50), nullable=False),
         sa.Column('storage_path', sa.String(length=1000), nullable=False),
-        sa.Column('user_id', sa.UUID(), nullable=True),
         sa.Column('description', sa.Text(), nullable=True),
+        sa.Column('file_extension', sa.String(length=10), nullable=True),
         sa.Column('file_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column('tags', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column('permissions', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
@@ -40,11 +40,9 @@ def upgrade() -> None:
         sa.Column('is_deleted', sa.Integer(), nullable=False),
         sa.Column('created_by', sa.UUID(), nullable=True),
         sa.Column('updated_by', sa.UUID(), nullable=True),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('id')
     )
-    op.create_index('idx_files_user_id', 'files', ['user_id'], unique=False)
     op.create_index('idx_files_path', 'files', ['path'], unique=False)
     op.create_index('idx_files_storage_provider', 'files', ['storage_provider'], unique=False)
     op.create_index('idx_files_storage_path', 'files', ['storage_path'], unique=False)
@@ -56,6 +54,5 @@ def downgrade() -> None:
     op.drop_index('idx_files_storage_path', table_name='files')
     op.drop_index('idx_files_storage_provider', table_name='files')
     op.drop_index('idx_files_path', table_name='files')
-    op.drop_index('idx_files_user_id', table_name='files')
     op.drop_table('files')
     # ### end Alembic commands ###

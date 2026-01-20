@@ -40,6 +40,16 @@ class BaseStorageProvider(ABC):
         pass
 
     @abstractmethod
+    def get_base_path(self) -> str:
+        """
+        Get the base path of the storage provider
+        
+        Returns:
+            Base path of the storage provider
+        """
+        pass
+
+    @abstractmethod
     async def upload_file(
         self,
         file_content: bytes,

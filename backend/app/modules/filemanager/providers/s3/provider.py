@@ -42,6 +42,15 @@ class S3StorageProvider(BaseStorageProvider):
         logger.warning("S3StorageProvider is not yet implemented")
         return False
 
+    def get_base_path(self) -> str:
+        """
+        Get the base path of the storage provider
+        
+        Returns:
+            Base path of the storage provider
+        """
+        return self.bucket_name
+
     async def upload_file(
         self,
         file_content: bytes,

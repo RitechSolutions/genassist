@@ -1,6 +1,6 @@
 from uuid import UUID
 from injector import inject
-from typing import Optional, BinaryIO
+from typing import Optional, BinaryIO, List
 import logging
 from pathlib import Path
 
@@ -11,6 +11,7 @@ from app.schemas.file import FileCreate, FileUpdate
 from app.core.tenant_scope import get_tenant_context
 from starlette_context import context
 
+from app.modules.filemanager.providers import init_by_name
 logger = logging.getLogger(__name__)
 
 
@@ -28,13 +29,23 @@ class FileManagerService:
         self.storage_provider = provider
         await self.storage_provider.initialize()
 
+
+    def get_storage_provider_by_name(self, name: str, config: Optional[dict] = None) -> BaseStorageProvider:
+        """Get storage provider by name."""
+        storage_provider_class = init_by_name(name, config=config)
+        if not storage_provider_class:
+            raise ValueError(f"Storage provider {name} not found")
+
+        return storage_provider_class
+
     # ==================== File Methods ====================
 
     async def create_file(
         self,
         file_data: FileCreate,
         file_content: Optional[bytes] = None,
-        user_id: Optional[UUID] = None
+        user_id: Optional[UUID] = None,
+        allowed_extensions: Optional[List[str]] = None
     ) -> FileModel:
         """
         Create a file metadata record and upload file content to storage.
@@ -43,15 +54,24 @@ class FileManagerService:
             file_data: File metadata
             file_content: Optional file content bytes
             user_id: Optional user ID (defaults to current user)
+            allowed_extensions: Optional list of allowed file extensions
         """
         if not self.storage_provider:
             raise ValueError("Storage provider not configured")
 
         user_id = user_id or context.get("user_id")
 
+        # Get file extension
+        file_extension = file_data.name.split(".")[-1].lower()
+        file_data.file_extension = file_extension or None
+
+        # Check if file extension is allowed
+        if allowed_extensions and file_extension not in allowed_extensions:
+            raise ValueError(f"File extension {file_extension} not allowed")
+
         # Generate paths if not provided
         if not file_data.path:
-            file_data.path = self._generate_file_path(file_data.name, user_id)
+            file_data.path = self.storage_provider.get_base_path()
         
         if not file_data.storage_path:
             file_data.storage_path = file_data.path
@@ -77,18 +97,34 @@ class FileManagerService:
         """Get file metadata by ID."""
         return await self.repository.get_file_by_id(file_id)
 
-    async def get_file_content(self, file_id: UUID) -> bytes:
+    async def get_file_content(self, file: FileModel) -> bytes:
         """Get file content from storage provider."""
-        if not self.storage_provider:
+        file_storage_provider = file.storage_provider
+
+        if not file_storage_provider:
             raise ValueError("Storage provider not configured")
 
-        file = await self.repository.get_file_by_id(file_id)
-        return await self.storage_provider.download_file(file.storage_path)
+        # get storage provider by name
+        provider_config = {
+            "base_path": file.path
+        }
+        
+        storage_provider_class = self.get_storage_provider_by_name(file_storage_provider, config=provider_config)
+        if not storage_provider_class:
+            raise ValueError(f"Storage provider class {file_storage_provider} not found")
+
+        # initialize storage provider
+        await self.set_storage_provider(storage_provider_class)
+        if not self.storage_provider.is_initialized():
+            raise ValueError(f"Storage provider {self.storage_provider} not initialized")
+
+        content = await self.storage_provider.download_file(file.storage_path)
+        return content
 
     async def download_file(self, file_id: UUID) -> tuple[FileModel, bytes]:
         """Get both file metadata and content."""
         file = await self.get_file_by_id(file_id)
-        content = await self.get_file_content(file_id)
+        content = await self.get_file_content(file)
         return file, content
 
     async def list_files(
@@ -100,8 +136,9 @@ class FileManagerService:
     ) -> list[FileModel]:
         """List files with optional filtering."""
         return await self.repository.list_files(
-            user_id=user_id or context.get("user_id"),
+            # user_id=user_id or context.get("user_id"),
             storage_provider=storage_provider,
+            user_id=user_id,
             limit=limit,
             offset=offset
         )

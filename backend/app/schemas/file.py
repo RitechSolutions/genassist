@@ -23,12 +23,13 @@ class FileBase(BaseModel):
 
 class FileCreate(BaseModel):
     name: str = Field(..., max_length=500, description="File name")
-    path: Optional[str] = Field(None, max_length=1000, description="File path (auto-generated if not provided)")
     size: Optional[int] = None
     mime_type: Optional[str] = Field(None, max_length=255)
-    storage_provider: StorageProviderType = Field(default="local")
+    path: Optional[str] = Field(None, max_length=1000, description="File path (auto-generated if not provided)")
     storage_path: Optional[str] = Field(None, max_length=1000, description="Path in storage provider (auto-generated if not provided)")
+    storage_provider: StorageProviderType = Field(default="local")
     description: Optional[str] = None
+    file_extension: Optional[str] = Field(None, max_length=10, description="File extension")
     file_metadata: Optional[Dict] = Field(default_factory=dict)
     tags: Optional[List[str]] = Field(default_factory=list)
     permissions: Optional[Dict] = Field(default_factory=dict)

@@ -5,16 +5,21 @@ This module provides a tenant-aware singleton manager that creates and caches Fi
 instances per tenant/user, ensuring tenant isolation while avoiding repeated initialization.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 from uuid import UUID
 
-from app.services.file_manager import FileManagerService
+if TYPE_CHECKING:
+    from app.services.file_manager import FileManagerService
+
 from app.repositories.file_manager import FileManagerRepository
 from .config import FileManagerConfig
 from .providers.base import BaseStorageProvider
 from .providers.local import LocalFileSystemProvider
+from .providers.azure import AzureStorageProvider
 from app.core.tenant_scope import get_tenant_context
 
 logger = logging.getLogger(__name__)
@@ -33,7 +38,7 @@ class FileManagerServiceManager:
     """
 
     def __init__(self):
-        self._services: Dict[str, FileManagerService] = {}
+        self._services: Dict[str, "FileManagerService"] = {}
         self._providers: Dict[str, BaseStorageProvider] = {}
         self._initialization_locks: Dict[str, asyncio.Lock] = {}
         self._lock = asyncio.Lock()
@@ -107,9 +112,7 @@ class FileManagerServiceManager:
                     logger.warning("S3StorageProvider is not yet implemented")
                     return None
                 elif provider_type == "azure":
-                    # TODO: Import and create AzureStorageProvider when implemented
-                    logger.warning("AzureStorageProvider is not yet implemented")
-                    return None
+                    provider = AzureStorageProvider(provider_config)
                 elif provider_type == "gcs":
                     # TODO: Import and create GoogleCloudStorageProvider when implemented
                     logger.warning("GoogleCloudStorageProvider is not yet implemented")
@@ -198,6 +201,9 @@ class FileManagerServiceManager:
                 if not provider:
                     logger.error(f"Failed to get storage provider: {provider_type}")
                     return None
+
+                # Lazy import to avoid circular dependency
+                from app.services.file_manager import FileManagerService
 
                 # Create service
                 service = FileManagerService(repository)

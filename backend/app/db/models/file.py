@@ -1,13 +1,9 @@
-from typing import Optional, TYPE_CHECKING
-from sqlalchemy import Column, String, Integer, ForeignKey, Index, Text, BigInteger
-from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import Optional
+from sqlalchemy import String, Index, Text, BigInteger
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
 from enum import Enum
 from app.db.base import Base
-
-if TYPE_CHECKING:
-    from app.db.models.user import UserModel
-
 
 class StorageProvider(str, Enum):
     LOCAL = "local"
@@ -26,7 +22,6 @@ class FileModel(Base):
 
     __tablename__ = "files"
     __table_args__ = (
-        Index("idx_files_user_id", "user_id"),
         Index("idx_files_path", "path"),
         Index("idx_files_storage_provider", "storage_provider"),
         Index("idx_files_storage_path", "storage_path"),
@@ -40,16 +35,11 @@ class FileModel(Base):
         String(50), nullable=False, default=StorageProvider.LOCAL.value, index=True
     )
     storage_path: Mapped[str] = mapped_column(String(1000), nullable=False, index=True)
-    user_id: Mapped[Optional[UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
-    )
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    file_extension: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     file_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     tags: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     permissions: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-
-    # Relationships
-    user = relationship("UserModel", back_populates="files", foreign_keys=[user_id])
 
     def __repr__(self):
         return f"<FileModel(id='{self.id}', name='{self.name}', path='{self.path}', provider='{self.storage_provider}')>"

@@ -51,6 +51,15 @@ class LocalFileSystemProvider(BaseStorageProvider):
             logger.error(f"Failed to initialize LocalFileSystemProvider: {e}")
             return False
 
+    def get_base_path(self) -> str:
+        """
+        Get the base path of the storage provider
+        
+        Returns:
+            Base path of the storage provider
+        """
+        return str(self.base_path)
+
     def _resolve_path(self, storage_path: str) -> Path:
         """
         Resolve storage path to absolute file system path.
