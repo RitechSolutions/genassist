@@ -59,7 +59,6 @@ from app.modules.websockets.socket_connection_manager import SocketConnectionMan
 from app.modules.workflow.llm.provider import LLMProvider
 from app.cache.redis_connection_manager import RedisConnectionManager
 from app.modules.data.manager import AgentRAGServiceManager
-from app.services.file_manager import FileManagerService
 from app.repositories.file_manager import FileManagerRepository
 # Multi-tenant session manager
 from app.core.tenant_scope import tenant_scope
@@ -239,5 +238,4 @@ class Dependencies(Module):
         binder.bind(TenantRepository, scope=request_scope)
 
         # File Manager services
-        binder.bind(FileManagerService, scope=request_scope)
         binder.bind(FileManagerRepository, scope=request_scope)
