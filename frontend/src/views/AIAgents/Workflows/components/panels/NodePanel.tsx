@@ -194,8 +194,8 @@ const NodePanel: React.FC<NodePanelProps> = ({
       ></div>
 
       <div
-        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-80 bg-primary-foreground shadow-lg rounded-xl transition-transform duration-300 border ${
-          isOpen ? "translate-x-0" : "translate-x-full"
+        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-80 bg-primary-foreground shadow-lg rounded-xl transition-transform duration-300 border z-[1001] ${
+          isOpen ? "translate-x-0" : "translate-x-[calc(100%+0.5rem)]"
         }`}
       >
         <div className="flex flex-col h-full">

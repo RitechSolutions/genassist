@@ -43,7 +43,7 @@ import {
   handleNodeDoubleClick,
 } from "./utils/helpers";
 import { Button } from "@/components/button";
-import { History, ChevronLeft, X } from "lucide-react";
+import { History, ChevronLeft, X, Plus } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 
 // Get node types and edge types for React Flow
@@ -601,7 +601,7 @@ const GraphFlowContent: React.FC = () => {
                 variant="ghost"
                 className="rounded-full h-10 w-10 shadow-md bg-white hover:bg-gray-50"
               >
-                {showNodePanel ? <X className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                {showNodePanel ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                 <span className="sr-only">
                   {showNodePanel ? "Close Node Panel" : "Open Node Panel"}
                 </span>

@@ -577,43 +577,51 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 />
               </div>
 
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="mb-1">Token Based Authentication</div>
-                  <p className="text-sm text-muted-foreground">
-                    Enable token based authentication for this agent
-                  </p>
+              <div className="border border-border rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-md bg-background/80">
+                      <svg
+                        className="h-4 w-4 text-muted-foreground"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                        />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium">Token Based Authentication</div>
+                      <p className="text-xs text-muted-foreground">
+                        Enable token based authentication for this agent
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={formData.token_based_auth ?? false}
+                    onCheckedChange={handleSwitchChange}
+                  />
                 </div>
-                <Switch
-                  checked={formData.token_based_auth ?? false}
-                  onCheckedChange={handleSwitchChange}
-                />
               </div>
 
-              <div>
-                <div className="mb-1">Frequently Asked Question</div>
-                <div className="space-y-2">
-                  {formData.possible_queries.map((query, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <Input
-                        value={query}
-                        onChange={(e) =>
-                          handlePossibleQueryChange(index, e.target.value)
-                        }
-                        placeholder="Enter a sample query"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removePossibleQuery(index)}
-                        // disabled={formData.possible_queries.length <= 1}
-                        className="px-2 h-9"
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  ))}
+              <div className="border border-border rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">
+                      Frequently Asked Questions
+                    </span>
+                    {formData.possible_queries.length > 0 && (
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                        {formData.possible_queries.length}
+                      </span>
+                    )}
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
@@ -625,8 +633,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     Add
                   </Button>
                 </div>
-                {formData.possible_queries.length > 0 && (
-                  <div className="px-4 py-3 space-y-2 bg-white">
+                {formData.possible_queries.length > 0 ? (
+                  <div className="px-4 py-3 space-y-3 bg-white">
                     {formData.possible_queries.map((query, index) => (
                       <div key={index} className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground w-5 text-center">
@@ -652,8 +660,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                       </div>
                     ))}
                   </div>
-                )}
-                {formData.possible_queries.length === 0 && (
+                ) : (
                   <div className="px-4 py-6 bg-white text-center">
                     <p className="text-sm text-muted-foreground">
                       No FAQs added yet. Add questions to help guide users.
@@ -863,8 +870,8 @@ export const AgentFormDialog = ({
   const isEditMode = !!data?.id;
 
   return (
-    <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="sm:max-w-lg w-full flex flex-col p-0">
+    <Sheet open={isOpen} onOpenChange={onClose} modal={false}>
+      <SheetContent hideOverlay={true} className="sm:max-w-lg w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full">
         <SheetHeader className="p-6 pb-4 border-b shrink-0">
           <SheetTitle className="text-xl font-semibold">
             {data?.id ? "Edit Agent" : "Create New Agent"}
