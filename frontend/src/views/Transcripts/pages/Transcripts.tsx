@@ -2,7 +2,6 @@ import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import {
   MessageSquare,
-  Search,
   PlayCircle,
   CheckCircle,
   MinusCircle,
@@ -13,6 +12,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Card } from "@/components/card";
+import { Button } from "@/components/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
@@ -36,6 +36,7 @@ import { conversationService } from "@/services/liveConversations";
 import { UploadMediaDialog } from "@/views/MediaUpload";
 import { getPaginationMeta } from "@/helpers/pagination";
 import { PaginationBar } from "@/components/PaginationBar";
+import { SearchInput } from "@/components/SearchInput";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -226,7 +227,7 @@ const Transcripts = () => {
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
           <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
           <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6 w-full">
@@ -236,20 +237,21 @@ const Transcripts = () => {
                     <h1 className="text-2xl md:text-3xl font-bold mb-1 animate-fade-down">
                       Conversations
                     </h1>
-                    <button
+                    <Button
                       onClick={() => setIsUploadDialogOpen(true)}
-                      className="inline-flex items-center gap-2 bg-white border rounded-md px-3 py-1.5 shadow-sm text-sm font-medium text-gray-800 hover:bg-gray-50"
+                      variant="outline"
+                      size="sm"
                     >
                       <Upload className="w-4 h-4" />
                       Upload
-                    </button>
+                    </Button>
                   </div>
                   <p className="text-sm md:text-base text-muted-foreground animate-fade-up">
                     Review and analyze your conversation transcripts
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto">
-                  <div className="flex items-center gap-2 bg-white border rounded-lg px-3 py-2 shadow-sm w-full sm:w-auto">
+                  <div className="flex items-center gap-2 bg-white border rounded-full px-4 py-2 shadow-sm w-full sm:w-auto">
                     <Radio className="w-4 h-4 text-green-500" />
                     <span className="text-sm font-medium">Live Only</span>
                     <Switch 
@@ -258,7 +260,7 @@ const Transcripts = () => {
                     />
                   </div>
                   <Select value={supportType} onValueChange={handleSupportTypeChange}>
-                    <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectTrigger className="w-full sm:w-[180px] bg-white">
                       <SelectValue placeholder="Support Type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -275,16 +277,11 @@ const Transcripts = () => {
                       <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
-                  <div className="relative w-full sm:w-[260px]">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                    <input
-                      type="text"
-                      placeholder="Search conversations..."
-                      value={searchQuery}
-                      onChange={(e) => handleSearchChange(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
+                  <SearchInput
+                    value={searchQuery}
+                    onChange={handleSearchChange}
+                    placeholder="Search conversations..."
+                  />
                 </div>
               </div>
 

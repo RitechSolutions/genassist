@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { JiraNodeData } from "../types/nodes";
 import { BaseNodeDialogProps } from "./base";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
@@ -76,7 +76,7 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         footer={
           <>
             <Button variant="outline" onClick={onClose}>
@@ -170,7 +170,7 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
             className="w-full resize-none"
           />
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
       <AppSettingDialog
         isOpen={isCreateSettingOpen}
         onOpenChange={setIsCreateSettingOpen}

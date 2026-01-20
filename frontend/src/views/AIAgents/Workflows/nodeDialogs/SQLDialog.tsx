@@ -17,7 +17,7 @@ import { getAllDataSources } from "@/services/dataSources";
 import { getAllLLMProviders } from "@/services/llmProviders";
 import { useToast } from "@/components/use-toast";
 import { Save } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { DraggableInput } from "../components/custom/DraggableInput";
@@ -113,7 +113,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         isOpen={isOpen}
         onClose={onClose}
         footer={
@@ -291,7 +291,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
             </p>
           </div>
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
       <LLMProviderDialog
         isOpen={isCreateProviderOpen}
         onOpenChange={setIsCreateProviderOpen}

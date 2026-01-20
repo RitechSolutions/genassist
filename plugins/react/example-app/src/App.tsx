@@ -26,7 +26,7 @@ function App() {
   }
 
   const [theme, setTheme] = useState({
-    primaryColor: "#4F46E5",
+    primaryColor: "#173DED",
     secondaryColor: "#f5f5f5",
     backgroundColor: "#ffffff",
     textColor: "#000000",

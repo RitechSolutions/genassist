@@ -11,6 +11,8 @@ import { ActiveConversationsModule } from "../components/ActiveConversationsModu
 import { HOSTILITY_NEUTRAL_MAX, HOSTILITY_POSITIVE_MAX } from "@/views/Transcripts/helpers/formatting";
 import { ActiveConversationDialog } from "../components/ActiveConversationDialog";
 import { useWebSocketDashboard } from "../hooks/useWebSocketDashboard";
+import { YourAgentsCard } from "../components/YourAgentsCard";
+import { IntegrationsCard } from "../components/IntegrationsCard";
 
 const enrichConversationItem = (item: ActiveConversation): Transcript => {
   let transcriptArray: TranscriptEntry[] = [];
@@ -318,6 +320,12 @@ export const ActiveConversations = () => {
         onItemClick={handleItemClick}
         totalCount={totalCount}
       />
+
+      {/* Your Agents and Integrations Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+        <YourAgentsCard />
+        <IntegrationsCard />
+      </div>
 
       <ActiveConversationDialog
         transcript={selectedTranscript}

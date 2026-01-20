@@ -10,7 +10,7 @@ interface MetricCardProps {
 
 export function MetricCard({ icon, value, label, iconColor = "text-primary", className = "" }: MetricCardProps) {
   return (
-    <div className={`flex flex-col items-center p-3 bg-primary/5 rounded-lg ${className}`}>
+    <div className={`flex flex-col items-center p-3 bg-gray-100 rounded-lg ${className}`}>
       <div className={`w-8 h-8 flex items-center justify-center mb-2 ${iconColor}`}>
         {icon}
       </div>

@@ -4,7 +4,7 @@ import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Save } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import {
   Select,
@@ -73,7 +73,7 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         footer={
           <>
             <Button variant="outline" onClick={onClose}>
@@ -161,7 +161,7 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
             className="w-full"
           />
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
       <AppSettingDialog
         isOpen={isCreateSettingOpen}
         onOpenChange={setIsCreateSettingOpen}

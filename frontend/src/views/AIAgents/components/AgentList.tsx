@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { AgentConfig, getAllKnowledgeItems } from "@/services/api";
 import { Button } from "@/components/button";
 import {
-  Search,
   Plus,
   MoreVertical,
   Edit,
@@ -21,6 +20,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/dropdown-menu";
 import { AgentFormDialog } from "./AgentForm";
+import { SearchInput } from "@/components/SearchInput";
 
 interface AgentListProps {
   agents: AgentConfig[];
@@ -197,24 +197,20 @@ const AgentList: React.FC<AgentListProps> = ({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold">
-            Workflows{" "}
-            {/* <span className="text-2xl text-zinc-400 font-normal">({activeAgents.length} Active, {inactiveAgents.length} Inactive)</span> */}
+            Agent Studio{" "}
+            <span className="text-2xl text-zinc-400 font-normal">({activeAgents.length} Active, {inactiveAgents.length} Inactive)</span>
           </h2>
           <p className="text-zinc-400 font-normal">View and manage workflows</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search agents..."
-              className="h-10 w-[200px] rounded-md border border-input bg-white pl-8 pr-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
+          <SearchInput
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="Search agents..."
+            className="w-[200px]"
+          />
           <Button
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 rounded-full"
             onClick={() => setOpenAgentForm(true)}
           >
             <Plus className="h-4 w-4" />
@@ -224,12 +220,6 @@ const AgentList: React.FC<AgentListProps> = ({
       </div>
 
       <div className="rounded-md border bg-card">
-        <div className="p-6">
-          <h3 className="text-xl font-semibold">
-            {filteredAgents.length} Workflows ({activeAgents.length} Active,{" "}
-            {inactiveAgents.length} Inactive)
-          </h3>
-        </div>
         <div className="divide-y">
           {filteredAgents.map((agent) => {
             return renderAgent(agent);

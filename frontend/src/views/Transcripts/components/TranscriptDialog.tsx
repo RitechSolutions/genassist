@@ -716,7 +716,7 @@ useEffect(() => {
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
               />
-              <Button onClick={handleSendMessage} className="px-4 py-2 bg-black text-white">
+              <Button onClick={handleSendMessage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white">
                 Send
               </Button>
             </div>

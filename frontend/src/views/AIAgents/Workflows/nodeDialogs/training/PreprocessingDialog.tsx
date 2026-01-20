@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { NodeConfigDialog } from "../../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";
 import {
   PreprocessingConfig,
@@ -571,7 +571,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         isOpen={isOpen}
         onClose={onClose}
         className="w-[95vw] h-[95vh] max-w-[95vw] max-h-[95vh]"
@@ -881,7 +881,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
             </div>
           )}
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
 
       {/* Prompt Dialog for Template Generation */}
       <Dialog open={isPromptDialogOpen} onOpenChange={setIsPromptDialogOpen}>
