@@ -77,10 +77,13 @@ COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alem
 COPY --chown=genassist:genassist ./app /src/app
 COPY --chown=genassist:genassist ./alembic /src/alembic
 
-RUN mkdir -p /home/genassist/.cache && chown -R genassist:genassist /home/genassist/.cache
-
 # Optional: Certs (Ensure no keys)
 COPY --chown=genassist:genassist ./certs /src/certs
+
+# ---------------------------------------------------------------------------
+# Grant ownership of /src to the app user
+# ---------------------------------------------------------------------------
+RUN mkdir -p /src/.cache && chown -R genassist:genassist /src
 
 # 5. Set User and Entrypoint
 USER genassist
