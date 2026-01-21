@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import { ChatMessageComponent, AttachmentPreview } from './ChatMessage';
 import { useChat } from '../hooks/useChat';
 import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
@@ -15,6 +15,7 @@ import {
   getTranslationArray,
   getTranslationsForLanguage,
 } from '../utils/i18n';
+import { GoogleReCaptcha, GoogleReCaptchaProvider } from 'react-google-recaptcha-v3';
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
@@ -33,6 +34,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   floatingConfig = {},
   language,
   translations: customTranslations,
+  reCaptchaKey,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -137,6 +139,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const audioService = useRef<AudioService | null>(null);
   const hasAnchoredHistory = useRef(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const reCaptchaTokenRef = useRef<string | undefined>(undefined);
 
   const anchorHistory = () => {
     const el = chatContainerRef.current;
@@ -375,9 +378,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     if (isLoading) return;
 
     try {
-      await startConversation();
+      await startConversation(reCaptchaTokenRef.current);
     } catch (error) {
-      // ignore
+      console.error('Error starting conversation', error);
     }
   };
 
@@ -391,7 +394,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   };
 
   const handleConfirmReset = async () => {
-    await resetConversation();
+    await resetConversation(reCaptchaTokenRef.current);
     setShowResetConfirm(false);
   };
 
@@ -402,6 +405,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const handleLanguageChange = (lang: string) => {
     setSelectedLanguage(lang);
   };
+
+  const handleReCaptchaVerify = useCallback((token: string) => {
+    reCaptchaTokenRef.current = token;
+  }, []);
 
   // Available languages (can be extended)
   const availableLanguages = [
@@ -785,6 +792,28 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     ...getResponsiveDimensions(),
   };
 
+  /**
+   * Render the component with ReCaptcha
+   * @param children - The children to be rendered
+   * @returns The rendered component
+   */
+  const renderWithReCaptcha = useMemo(() => {
+    if (!reCaptchaKey) {
+      return (children: React.ReactNode) => <>{children}</>;
+    }
+    
+    return (children: React.ReactNode) => (
+      <GoogleReCaptchaProvider reCaptchaKey={reCaptchaKey || ''}>
+        <GoogleReCaptcha  
+          action="genassist_chat"
+          onVerify={handleReCaptchaVerify}
+          refreshReCaptcha={false}
+        />
+        <>{children}</>
+      </GoogleReCaptchaProvider>
+    );
+  }, [reCaptchaKey, handleReCaptchaVerify]);
+
   const renderChatComponent = () => (
     <div style={containerStyle} data-genassist-root="true">
       <style>{`
@@ -797,6 +826,18 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         @keyframes ga-backlight-sweep2 { 0% { transform: translateX(-35%); } 100% { transform: translateX(105%); } }
         @keyframes ga-backlight-pulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
         @keyframes ga-think-change { 0% { opacity: 0; transform: translateY(4px); } 100% { opacity: 1; transform: translateY(0); } }
+        /* Hide reCAPTCHA badge */
+        /* Ensure reCAPTCHA container is always hidden */
+        .grecaptcha-badge {
+          display: none !important;
+          visibility: hidden !important;
+          position: absolute !important;
+          width: 0 !important;
+          height: 0 !important;
+          overflow: hidden !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+        }
       `}</style>
       <div style={headerStyle} ref={headerRef}>
         <div style={logoContainerStyle}>
@@ -1167,12 +1208,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         
         {isFloatingOpen && (
           <div style={floatingContainerStyle} data-genassist-container="floating">
-            {renderChatComponent()}
+            {renderWithReCaptcha(renderChatComponent())}
           </div>
         )}
       </>
     );
   }
 
-  return renderChatComponent();
+  return renderWithReCaptcha(renderChatComponent());
 };

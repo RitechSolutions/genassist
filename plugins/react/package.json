@@ -1,6 +1,6 @@
 {
   "name": "genassist-chat-react",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "React chat component for GenAssist",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -25,6 +25,9 @@
   "scripts": {
     "build": "node build.js",
     "test": "echo \"No tests specified\" && exit 0",
+    "bump:patch": "npm version patch",
+    "bump:minor": "npm version minor",
+    "bump:major": "npm version major",
     "prepare": "npm run build"
   },
   "keywords": [
@@ -41,12 +44,13 @@
   },
   "dependencies": {
     "axios": "^1.6.0",
-    "lucide-react": "^0.511.0"
+    "lucide-react": "^0.511.0",
+    "react-google-recaptcha-v3": "^1.11.0"
   },
   "devDependencies": {
+    "@types/node": "^24.1.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "@types/node": "^24.1.0",
     "@vitejs/plugin-react": "^4.7.0",
     "esbuild": "^0.25.8",
     "typescript": "^5.0.0",

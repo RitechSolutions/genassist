@@ -216,7 +216,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
   }, [messages, apiKey, conversationId, buildMessagesKey]);
 
   // Reset conversation
-  const resetConversation = useCallback(async () => {
+  const resetConversation = useCallback(async (reCaptchaToken: string | undefined) => {
     if (!chatServiceRef.current) {
       return;
     }
@@ -243,7 +243,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
       chatServiceRef.current.resetConversation();
       
       // Start a new conversation
-      const convId = await chatServiceRef.current.startConversation();
+      const convId = await chatServiceRef.current.startConversation(reCaptchaToken);
       setConversationId(convId);
       setConnectionState('connected');
 
@@ -343,7 +343,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
     }
   }, [preloadedAttachments, isTakenOver]);
 
-  const startConversation = useCallback(async () => {
+  const startConversation = useCallback(async (reCaptchaToken: string | undefined) => {
     if (!chatServiceRef.current) {
       return;
     }
@@ -363,7 +363,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
       setIsAgentTyping(false);
       chatServiceRef.current.resetConversation();
 
-      const convId = await chatServiceRef.current.startConversation();
+      const convId = await chatServiceRef.current.startConversation(reCaptchaToken);
       setConversationId(convId);
       setConnectionState('connected');
 
