@@ -1,0 +1,251 @@
+services:
+  # =========================
+  # Database (3rd party)
+  # =========================
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: genassist_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: core_db
+    volumes:
+      - genassist_pgdata:/var/lib/postgresql/data
+      - ./backend/scripts/db_init_scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - genassist-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # =========================
+  # Backend API (owned)
+  # =========================
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${APP_IMAGE:-ghcr.io/${OWNER}/${REPO}/app}:${IMAGE_TAG:-prod}
+    container_name: genassist_app
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - VECTOR_DB_TYPE=chroma
+      - CHROMA_PERSIST_DIR=/src/datavolume/chroma
+      - CHROMA_COLLECTION_NAME=default
+      - CHROMA_HOST=chroma
+      - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - app_data:/src/datavolume
+    depends_on:
+      chroma:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      whisper:
+        condition: service_started
+    networks:
+      - genassist-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =========================
+  # Frontend UI (owned)
+  # =========================
+  ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      additional_contexts:
+        plugins: ./plugins/react
+    image: ${UI_IMAGE:-ghcr.io/${OWNER}/${REPO}/ui}:${IMAGE_TAG:-prod}
+    container_name: genassist_ui
+    ports:
+      - "8080:8080"
+      - "80:80"
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - genassist-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =========================
+  # Chroma (3rd party)
+  # =========================
+  chroma:
+    image: ghcr.io/chroma-core/chroma:1.3.7
+    container_name: genassist_chroma
+    ports:
+      - "8005:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - CHROMA_DB_IMPL=duckdb+parquet
+      - CHROMA_PERSIST_DIRECTORY=/chroma/chroma
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # =========================
+  # Redis (3rd party)
+  # =========================
+  redis:
+    image: redis:7-alpine
+    container_name: genassist_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - genassist-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # =========================
+  # Celery Worker (owned)
+  # =========================
+  celery_worker:
+    image: ${APP_IMAGE:-ghcr.io/${OWNER}/${REPO}/app}:${IMAGE_TAG:-prod}
+    container_name: genassist_celery_worker
+    command: python /src/run_celery.py worker -l INFO
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=db
+      - DB_PORT=5432
+      - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # =========================
+  # Celery Beat (owned)
+  # =========================
+  celery_beat:
+    image: ${APP_IMAGE:-ghcr.io/${OWNER}/${REPO}/app}:${IMAGE_TAG:-prod}
+    container_name: genassist_celery_beat
+    command: python /src/run_celery.py beat -l INFO
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=db
+      - DB_PORT=5432
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # =========================
+  # Flower (owned)
+  # =========================
+  flower:
+    image: ${APP_IMAGE:-ghcr.io/${OWNER}/${REPO}/app}:${IMAGE_TAG:-prod}
+    container_name: genassist_flower
+    command: python /src/run_celery.py flower -l INFO --port=5555 --persistent=True --db="flower_db" --basic-auth="user1:password1"
+    ports:
+      - "5555:5555"
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=db
+      - DB_PORT=5432
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # =========================
+  # Metabase (3rd party)
+  # =========================
+  metabase:
+    image: metabase/metabase:latest
+    container_name: genassist_metabase
+    volumes:
+      - ./metabase-data:/data
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: db
+      MB_DB_PORT: 5432
+      MB_DB_USER: metabase_admin
+      MB_DB_PASS: metabase_admin
+      MB_DB_DBNAME: metabase_db
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network
+
+  # =========================
+  # Whisper (owned)
+  # =========================
+  whisper:
+    build:
+      context: ./backend
+      dockerfile: ./whisper_ext/Dockerfile.whisper
+    image: ${WHISPER_IMAGE:-ghcr.io/${OWNER}/${REPO}/whisper}:${IMAGE_TAG:-prod}
+    container_name: genassist_whisper
+    environment:
+      - DEFAULT_WHISPER_MODEL=base
+    ports:
+      - "8001:8001"
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+networks:
+  genassist-network:
+    driver: bridge
+
+volumes:
+  chroma_data:
+  genassist_pgdata:
+  app_data:
