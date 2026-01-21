@@ -39,6 +39,9 @@ function App() {
     description: "Support",
     agentName: "Agent",
     logoUrl: "",
+    baseUrl: "http://localhost:8000/",
+    apiKey: "genagent123",
+    // reCaptchaKey: "xx-yy-zz",
   });
 
   const [customLogo, setCustomLogo] = useState<FileState>({
@@ -940,8 +943,8 @@ function App() {
       {/* Chat Widget Popup */}
       <div style={chatWidgetStyle}>
         <GenAgentChat
-          baseUrl="http://localhost:8000/"
-          apiKey="genagent123"
+          baseUrl={chatSettings.baseUrl}
+          apiKey={chatSettings.apiKey}
           tenant=""
           metadata={metadata}
           theme={theme}

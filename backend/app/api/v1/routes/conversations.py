@@ -38,6 +38,7 @@ from app.services.auth import AuthService
 from app.core.tenant_scope import get_tenant_context
 from app.use_cases.chat_as_client_use_case import process_conversation_update_with_agent
 from app.core.permissions.constants import Permissions as P
+from app.core.utils.recaptcha_utils import verify_recaptcha_token
 
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,14 @@ async def start(
     Create a new in-progress conversation and store the partial transcript.
     If agent.token_based_auth is true, returns a JWT token for secure frontend access.
     """
+    # Verify reCAPTCHA token if it is present
+    is_valid, score, reason = verify_recaptcha_token(model.recaptcha_token)
+    if not is_valid:
+        logger.warning(f"reCAPTCHA verification failed: {reason}")
+        raise AppException(
+            error_key=ErrorKey.RECAPTCHA_VERIFICATION_FAILED, status_code=403
+        )
+
     if model.messages:
         raise AppException(
             error_key=ErrorKey.CONVERSATION_MUST_START_EMPTY, status_code=400
@@ -103,7 +112,7 @@ async def start(
     model.operator_id = agent.operator_id
     conversation = await service.start_in_progress_conversation(model)
     logger.info("conversation:" + str(conversation))
-    
+
     response = {
         "message": "Conversation started",
         "conversation_id": conversation.id,
@@ -115,7 +124,7 @@ async def start(
         "agent_thinking_phrase_delay": agent_read.thinking_phrase_delay,
         "agent_has_welcome_image": agent_read.welcome_image is not None,
     }
-    
+
     # If agent requires authentication, generate and return a guest JWT token
     if agent_read.token_based_auth:
         tenant_id = get_tenant_context()
@@ -127,7 +136,7 @@ async def start(
             user_id=str(userid) if userid else None
         )
         response["guest_token"] = guest_token
-    
+
     return response
 
 
@@ -433,7 +442,8 @@ async def add_conversation_feedback(
 async def websocket_endpoint(
     websocket: WebSocket,
     conversation_id: UUID,
-    principal: SocketPrincipal = socket_auth(["read:in_progress_conversation"]),
+    principal: SocketPrincipal = socket_auth(
+        ["read:in_progress_conversation"]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
     socket_connection_manager: SocketConnectionManager = Injected(
@@ -478,7 +488,8 @@ async def websocket_endpoint(
 @router.websocket("/ws/dashboard/list")
 async def websocket_dashboard_endpoint(
     websocket: WebSocket,
-    principal: SocketPrincipal = socket_auth(["read:in_progress_conversation"]),
+    principal: SocketPrincipal = socket_auth(
+        ["read:in_progress_conversation"]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
     socket_connection_manager: SocketConnectionManager = Injected(
@@ -503,7 +514,8 @@ async def websocket_dashboard_endpoint(
             data = await websocket.receive_text()
             logger.debug("Received data: %s", data)
     except WebSocketDisconnect:
-        logger.debug(f"WebSocket disconnected for dashboard (tenant: {tenant_id})")
+        logger.debug(
+            f"WebSocket disconnected for dashboard (tenant: {tenant_id})")
         await socket_connection_manager.disconnect(
             websocket, SocketRoomType.DASHBOARD, tenant_id
         )

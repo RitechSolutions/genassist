@@ -111,6 +111,7 @@ export interface GenAgentChatProps {
   };
   language?: string; // Language code (e.g., 'en', 'es', 'fr'). If not provided, will use browser language
   translations?: Partial<Translations>; // Custom translations. If not provided, will use default English translations
+  reCaptchaKey?: string; // ReCaptcha key for the chat
 }
 
 export type { Translations } from '../utils/i18n';

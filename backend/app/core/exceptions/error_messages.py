@@ -123,6 +123,7 @@ class ErrorKey(Enum):
     ERROR_JOB_EVENT_BY_ID = "ERROR_JOB_EVENT_BY_ID"
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
     CUSTOMER_ALREADY_EXISTS = "CUSTOMER_ALREADY_EXISTS"
+    RECAPTCHA_VERIFICATION_FAILED = "RECAPTCHA_VERIFICATION_FAILED"
 
 ERROR_MESSAGES = {
     'en': {
@@ -238,6 +239,7 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_JOB_EVENT_BY_ID: "There was an error fetching job events for this job id.",
         ErrorKey.CUSTOMER_NOT_FOUND: "Customer not found.",
         ErrorKey.CUSTOMER_ALREADY_EXISTS: "A customer with this external ID already exists.",
+        ErrorKey.RECAPTCHA_VERIFICATION_FAILED: "reCAPTCHA verification failed. Please try again.",
 },
     'fr': {
         ErrorKey.INTERNAL_ERROR: 'Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.',

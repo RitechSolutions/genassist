@@ -52,6 +52,7 @@ class ConversationTranscriptBase(BaseModel):
 
 class ConversationTranscriptCreate(ConversationTranscriptBase):
     operator_id: Optional[UUID] = None
+    recaptcha_token: Optional[str] = None
 
 
 class InProgConvTranscrUpdate(BaseModel):
