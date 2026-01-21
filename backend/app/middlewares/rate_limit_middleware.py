@@ -51,6 +51,7 @@ def get_conversation_identifier(request: Request) -> str:
 limiter = Limiter(
     key_func=get_user_identifier,
     default_limits=[RATE_LIMIT_GLOBAL_MINUTE, RATE_LIMIT_GLOBAL_HOUR],
+    enabled=settings.RATE_LIMIT_ENABLED,
 )
 
 
