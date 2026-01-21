@@ -80,10 +80,6 @@ COPY --chown=genassist:genassist ./alembic /src/alembic
 # Optional: Certs (Ensure no keys)
 COPY --chown=genassist:genassist ./certs /src/certs
 
-# Copy entrypoint script
-COPY --chown=genassist:genassist ./entrypoint.sh /src/entrypoint.sh
-RUN chmod +x /src/entrypoint.sh
-
 # ---------------------------------------------------------------------------
 # Grant ownership of /src to the app user
 # ---------------------------------------------------------------------------
@@ -93,4 +89,4 @@ RUN mkdir -p /src/.cache /home/genassist/.cache /src/datavolume/logs && chown -R
 USER genassist
 
 EXPOSE 8000
-ENTRYPOINT ["/src/entrypoint.sh"]
+CMD ["python", "/src/run.py"]

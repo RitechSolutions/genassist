@@ -15,6 +15,14 @@ services:
     networks:
       - genassist-network
 
+  # Init container to set up volume permissions
+  volume-init:
+    image: busybox
+    container_name: genassist-volume-init
+    command: sh -c "mkdir -p /data/logs && chown -R 1000:1000 /data"
+    volumes:
+      - app_data_volume:/data
+
   # Main application service
   app:
     container_name: genassist-app
@@ -32,10 +40,16 @@ services:
       - DB_PORT=5432
       - CHROMA_HOST=chroma
     depends_on:
-      - chroma
-      - db
-      - redis
-      - whisper
+      volume-init:
+        condition: service_completed_successfully
+      chroma:
+        condition: service_started
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      whisper:
+        condition: service_started
     volumes:
       - app_data_volume:/src/datavolume
     networks:

@@ -22,6 +22,16 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Init container to set up volume permissions
+  volume-init:
+    image: busybox
+    container_name: genassist-volume-init-dev
+    command: sh -c "mkdir -p /data/logs && chown -R 1000:1000 /data"
+    volumes:
+      - app_data_volume:/data
+    networks:
+      - genassist-network-dev
+
   # Main application service
   app:
     build:
@@ -48,6 +58,8 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
+      volume-init:
+        condition: service_completed_successfully
       chroma:
         condition: service_started
       qdrant:
