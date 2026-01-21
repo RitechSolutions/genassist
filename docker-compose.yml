@@ -15,16 +15,6 @@ services:
     networks:
       - genassist-network
 
-  # Init container to set up volume permissions (runs every time)
-  volume-init:
-    image: busybox
-    container_name: genassist-volume-init
-    user: "0:0"
-    command: sh -c "mkdir -p /data/logs /data/uploads /data/recordings && chown 1000:1000 /data /data/logs /data/uploads /data/recordings && echo 'Volume permissions set'"
-    volumes:
-      - app_data_volume:/data
-    restart: "no"
-
   # Main application service
   app:
     container_name: genassist-app
@@ -42,8 +32,6 @@ services:
       - DB_PORT=5432
       - CHROMA_HOST=chroma
     depends_on:
-      volume-init:
-        condition: service_completed_successfully
       chroma:
         condition: service_started
       db:
