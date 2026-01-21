@@ -22,15 +22,17 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # Init container to set up volume permissions
+  # Init container to set up volume permissions (runs every time)
   volume-init:
     image: busybox
     container_name: genassist-volume-init-dev
-    command: sh -c "mkdir -p /data/logs && chown -R 1000:1000 /data"
+    user: "0:0"
+    command: sh -c "mkdir -p /data/logs /data/uploads /data/recordings && chown 1000:1000 /data /data/logs /data/uploads /data/recordings && echo 'Volume permissions set'"
     volumes:
       - app_data_volume:/data
     networks:
       - genassist-network-dev
+    restart: "no"
 
   # Main application service
   app:
