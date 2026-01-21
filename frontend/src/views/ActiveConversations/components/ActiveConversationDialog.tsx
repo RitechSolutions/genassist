@@ -35,6 +35,7 @@ import { submitConversationFeedback } from "@/services/transcripts";
 import { apiRequest } from "@/config/api";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
+import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
 
 interface Props {
   transcript: Transcript | null;
@@ -878,15 +879,7 @@ function TranscriptDialogContent({
                               : "bg-gray-200 text-gray-900 rounded-tr-lg"
                           }`}
                         >
-                          <div 
-                            className={`[&_a]:underline [&_a]:hover:opacity-80 ${
-                              isAgent
-                                ? "[&_a]:text-blue-400"
-                                : "[&_a]:text-primary"
-                            }`}
-                            dangerouslySetInnerHTML={{ __html: entry.text }} 
-                          />
-                          {/* {entry.text} */}
+                          <ConversationEntryWrapper entry={entry} />
                           <span className="block text-[10px] text-muted-foreground text-right mt-1">
                             {formatMessageTime(entry.create_time)}
                           </span>
