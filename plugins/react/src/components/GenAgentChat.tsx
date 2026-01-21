@@ -408,7 +408,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const handleReCaptchaVerify = useCallback((token: string) => {
     reCaptchaTokenRef.current = token;
-    // console.log('handleReCaptchaVerify', token);
   }, []);
 
   // Available languages (can be extended)

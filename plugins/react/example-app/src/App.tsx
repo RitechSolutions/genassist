@@ -41,9 +41,7 @@ function App() {
     logoUrl: "",
     baseUrl: "http://localhost:8000/",
     apiKey: "genagent123",
-    // baseUrl: "https://fibrously-lovelorn-porfirio.ngrok-free.dev/",
-    // apiKey: "FA40KmEYi17WgBnSH0mi4f25bSe4gZsWZ2JSjKW86eM6QOVg-WKWBQ",
-    // reCaptchaKey: "6LeLh08sAAAAAG_pJBb3KwgqRnqVmLRP6cTYjUIX",
+    // reCaptchaKey: "xx-yy-zz",
   });
 
   const [customLogo, setCustomLogo] = useState<FileState>({
@@ -954,7 +952,6 @@ function App() {
           agentName={chatSettings.agentName}
           logoUrl={chatSettings.logoUrl}
           onError={handleError}
-          reCaptchaKey={chatSettings.reCaptchaKey}
         />
       </div>
 
