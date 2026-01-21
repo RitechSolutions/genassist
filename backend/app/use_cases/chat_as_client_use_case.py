@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import json
 from uuid import UUID
 from app.dependencies.injector import injector
 from app.api.v1.routes.agents import run_query_agent_logic
@@ -18,7 +19,9 @@ from app.db.models.conversation import ConversationModel
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
 from app.db.base import generate_sequential_uuid
+import logging
 
+logger = logging.getLogger(__name__)
 
 async def process_conversation_update_with_agent(
     conversation_id: UUID,
@@ -203,3 +206,48 @@ async def get_or_create_conversation(
         )
 
     return open_conversation
+
+async def process_file_upload_with_agent(
+    conversation_id: UUID,
+    file_id: UUID,
+    file_url: str,
+    file_name: str,
+    tenant_id: str,
+    current_user_id: UUID,
+) -> ConversationModel:
+    try:
+
+        file_data = json.dumps({
+            "url": file_url,
+            "type": "image",
+            "name": file_name,
+            "id": str(file_id),
+        })
+
+        # create the model for the conversation update
+        model = InProgConvTranscrUpdate(
+                messages=[
+                    TranscriptSegmentInput(
+                        create_time=datetime.now(),
+                        text=file_data,
+                        type="image_url",
+                        speaker="user",
+                        file_id=file_id,
+                        start_time=0.0,
+                        end_time=0.0,
+                    )
+                ]
+            )
+        
+        # process the conversation update with the agent and return the updated conversation
+        updated_conversation = await process_conversation_update_with_agent(
+                conversation_id=conversation_id,
+                    model=model,
+                    tenant_id=tenant_id,
+                    current_user_id=current_user_id,
+                )
+        # return the updated conversation
+        return updated_conversation
+    except Exception as e:
+        logger.error(f"Error processing file upload with agent: {str(e)}")
+        raise AppException(ErrorKey.ERROR_PROCESSING_FILE_UPLOAD_WITH_AGENT)

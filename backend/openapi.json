@@ -8461,6 +8461,48 @@
         }
       }
     },
+    "/api/file-manager/files/{file_id}/source": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Get File Source",
+        "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ml-models/": {
       "get": {
         "tags": [
@@ -14973,6 +15015,17 @@
               }
             ],
             "title": "Recorded At"
+          },
+          "recaptcha_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Token"
           }
         },
         "type": "object",

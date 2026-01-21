@@ -145,6 +145,34 @@ async def download_file(
             detail=f"File not found: {str(e)}"
         )
 
+# get file to be used as source for image_url
+@router.get("/files/{file_id}/source")
+async def get_file_source(
+    file_id: UUID,
+    repository: FileManagerRepository = Injected(FileManagerRepository),
+):
+    try:
+        manager = get_file_manager_manager()
+        service = await manager.get_service(repository)
+        
+        if not service:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to initialize file manager service"
+            )
+
+        file, content = await service.download_file(file_id)
+        media_type = file.mime_type or "application/octet-stream"
+        
+        return Response(
+            content=content,
+            media_type=media_type,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=404,
+            detail=f"File not found: {str(e)}"
+        )
 
 @router.get("/files", response_model=List[FileResponse], dependencies=[Depends(auth)])
 async def list_files(

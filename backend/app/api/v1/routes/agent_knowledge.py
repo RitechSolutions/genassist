@@ -37,12 +37,7 @@ from app.auth.utils import get_current_user_id
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant_scope import get_tenant_context
 from app.core.config.settings import file_storage_settings
-
-from app.schemas.conversation_transcript import (
-    InProgConvTranscrUpdate,
-    TranscriptSegmentInput,
-)
-from app.use_cases.chat_as_client_use_case import process_conversation_update_with_agent
+from app.use_cases.chat_as_client_use_case import process_file_upload_with_agent
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -354,25 +349,17 @@ async def upload_file_to_chat(
 
             # file url to download the file
             file_url = f"{base_url}/api/file-manager/files/{file_id}/download"
-            model = InProgConvTranscrUpdate(
-                messages=[
-                    TranscriptSegmentInput(
-                        create_time=datetime.now(),
-                        text=f"File <a href='{file_url}' target='_blank'>{file.filename}</a> uploaded successfully and added to the conversation.",
-                        speaker="user",
-                        file_id=file_id,
-                        start_time=0.0,
-                        end_time=0.0,
-                    )
-                ]
-            )
 
-            await process_conversation_update_with_agent(
+            # process the file upload with the agent
+            updated_conversation = await process_file_upload_with_agent(
                 conversation_id=chat_id,
-                    model=model,
-                    tenant_id=tenant_id,
-                    current_user_id=get_current_user_id(),
-                )
+                file_id=file_id,
+                file_url=file_url,
+                file_name=file.filename,
+                tenant_id=tenant_id,
+                current_user_id=user_id,
+            )   
+            
         except Exception as e:
             logger.error(f"Error posting message on conversation: {str(e)}")
         
