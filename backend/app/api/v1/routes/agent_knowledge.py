@@ -351,9 +351,8 @@ async def upload_file_to_chat(
 
             # get app url
             base_url = file_storage_settings.APP_URL
-            if not base_url.endswith("/"):
-                base_url += "/"
 
+            # file url to download the file
             file_url = f"{base_url}/api/file-manager/files/{file_id}/download"
             model = InProgConvTranscrUpdate(
                 messages=[
