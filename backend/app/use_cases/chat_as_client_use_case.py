@@ -74,6 +74,7 @@ async def process_conversation_update_with_agent(
                 "end_time": user_message.end_time,
                 "speaker": user_message.speaker,
                 "text": user_message.text,
+                "type": user_message.type,
             },
             room_id=conversation_id,
             current_user_id=current_user_id,
@@ -129,6 +130,7 @@ async def process_conversation_update_with_agent(
                     "end_time": transcript_object.end_time,
                     "speaker": transcript_object.speaker,
                     "text": transcript_object.text,
+                    "type": transcript_object.type,
                 },
                 room_id=conversation_id,
                 current_user_id=current_user_id,
@@ -212,6 +214,7 @@ async def process_file_upload_with_agent(
     file_id: UUID,
     file_url: str,
     file_name: str,
+    file_type: str,
     tenant_id: str,
     current_user_id: UUID,
 ) -> ConversationModel:
@@ -219,7 +222,7 @@ async def process_file_upload_with_agent(
 
         file_data = json.dumps({
             "url": file_url,
-            "type": "image",
+            "type": file_type,
             "name": file_name,
             "id": str(file_id),
         })
@@ -230,7 +233,7 @@ async def process_file_upload_with_agent(
                     TranscriptSegmentInput(
                         create_time=datetime.now(),
                         text=file_data,
-                        type="image_url",
+                        type="file",
                         speaker="user",
                         file_id=file_id,
                         start_time=0.0,

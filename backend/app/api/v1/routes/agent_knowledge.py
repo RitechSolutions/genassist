@@ -347,15 +347,19 @@ async def upload_file_to_chat(
             # get app url
             base_url = file_storage_settings.APP_URL
 
-            # file url to download the file
-            file_url = f"{base_url}/api/file-manager/files/{file_id}/download"
+            # file url to get the file source
+            file_url = f"{base_url}/api/file-manager/files/{file_id}/source"
+
+            # get file type from content type
+            file_type = file.content_type
 
             # process the file upload with the agent
-            updated_conversation = await process_file_upload_with_agent(
+            await process_file_upload_with_agent(
                 conversation_id=chat_id,
                 file_id=file_id,
                 file_url=file_url,
                 file_name=file.filename,
+                file_type=file_type,
                 tenant_id=tenant_id,
                 current_user_id=user_id,
             )   

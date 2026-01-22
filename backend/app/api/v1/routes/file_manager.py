@@ -145,7 +145,7 @@ async def download_file(
             detail=f"File not found: {str(e)}"
         )
 
-# get file to be used as source for image_url
+# get file to be used as source for file url
 @router.get("/files/{file_id}/source")
 async def get_file_source(
     file_id: UUID,
