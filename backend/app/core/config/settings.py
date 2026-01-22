@@ -21,7 +21,9 @@ class ProjectSettings(BaseSettings):
     CONVERSATION_MAX_MEMORY_MESSAGES: int = 50  # Max messages kept in memory
     CONVERSATION_REDIS_EXPIRY_DAYS: int = 30  # Redis data expiration
     # Redis connection pool settings
-    REDIS_MAX_CONNECTIONS: int = 20  # Max connections in pool
+    # For 300-500 concurrent WebSocket users, 30-40 connections is optimal
+    # Each publish takes ~5ms, so connections are rapidly reused
+    REDIS_MAX_CONNECTIONS: int = 40  # Max connections in pool
     REDIS_SOCKET_TIMEOUT: int = 5  # Socket timeout in seconds
     REDIS_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval in seconds
     

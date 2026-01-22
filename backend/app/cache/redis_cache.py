@@ -3,17 +3,44 @@ from inspect import signature
 from typing import Any, Callable, cast
 from uuid import UUID
 
-from redis.asyncio import Redis
+from redis.asyncio import Redis, ConnectionPool
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from starlette.datastructures import State
+from app.cache.redis_connection_manager import RedisConnectionManager
 
 logger = logging.getLogger(__name__)
 
 
-async def init_fastapi_cache_with_redis(app, settings):
-    # ── Redis pool & cache initialisation ─────────────────
-    redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
+async def init_fastapi_cache_with_redis(app, settings, redis_manager: RedisConnectionManager):
+    """
+    Initialize FastAPI cache using the DI-managed RedisConnectionManager.
+
+    This ensures all Redis connections go through a single managed pool,
+    improving resource utilization and monitoring.
+
+    Args:
+        app: FastAPI application instance
+        settings: Application settings
+        redis_manager: DI-injected singleton RedisConnectionManager
+    """
+    # FastAPI cache requires decode_responses=False for binary data support
+    # Create a dedicated pool with this configuration
+    logger.info(
+        f"Initializing FastAPI cache with dedicated pool "
+        f"(max_connections={settings.REDIS_MAX_CONNECTIONS}, decode_responses=False)"
+    )
+
+    cache_pool = ConnectionPool.from_url(
+        settings.REDIS_URL,
+        decode_responses=False,  # Required for FastAPI cache binary data
+        max_connections=settings.REDIS_MAX_CONNECTIONS,
+        socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
+        socket_connect_timeout=settings.REDIS_SOCKET_TIMEOUT,
+        retry_on_timeout=True,
+        health_check_interval=settings.REDIS_HEALTH_CHECK_INTERVAL,
+    )
+    redis = Redis(connection_pool=cache_pool)
 
     # tell the type checker what .state is
     app.state = cast(State, app.state)

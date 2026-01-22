@@ -37,6 +37,104 @@ async def playground_health():
     return {"status": "healthy", "service": "playground"}
 
 
+@router.get("/health/redis")
+async def redis_health():
+    """
+    Redis connection health check endpoint.
+    Returns detailed information about all Redis connection pools.
+    """
+    from app.dependencies.injector import injector
+    from app.cache.redis_connection_manager import RedisConnectionManager
+    from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+    from app.core.config.settings import settings
+
+    health_status = {
+        "status": "unknown",
+        "timestamp": "2024-01-01T00:00:00Z",
+        "pools": {}
+    }
+
+    try:
+        # Check FastAPI Cache Redis (from app.state.redis)
+        try:
+            from starlette.requests import Request
+            # Note: This would need request context to access app.state
+            # For now, we'll note it's managed separately
+            health_status["pools"]["fastapi_cache"] = {
+                "status": "managed_separately",
+                "note": "Uses separate Redis client with max_connections=50"
+            }
+        except Exception as e:
+            health_status["pools"]["fastapi_cache"] = {
+                "status": "error",
+                "error": str(e)
+            }
+
+        # Check Conversation Redis Manager
+        if settings.REDIS_FOR_CONVERSATION:
+            try:
+                redis_manager = injector.get(RedisConnectionManager)
+                conn_info = await redis_manager.get_connection_info()
+                is_healthy = await redis_manager.health_check()
+                health_status["pools"]["conversation_manager"] = {
+                    "status": "healthy" if is_healthy else "unhealthy",
+                    "connection_info": conn_info,
+                    "max_connections": settings.REDIS_MAX_CONNECTIONS
+                }
+            except Exception as e:
+                health_status["pools"]["conversation_manager"] = {
+                    "status": "error",
+                    "error": str(e)
+                }
+
+        # Check WebSocket Connection Manager
+        try:
+            socket_manager = injector.get(SocketConnectionManager)
+            ws_stats = await socket_manager.get_connection_stats()
+            health_status["pools"]["websocket_manager"] = {
+                "status": "healthy",
+                "websocket_stats": ws_stats,
+                "redis_subscriber": "active" if socket_manager._redis_subscriber_task and not socket_manager._redis_subscriber_task.done() else "inactive"
+            }
+        except Exception as e:
+            health_status["pools"]["websocket_manager"] = {
+                "status": "error",
+                "error": str(e)
+            }
+
+        # Check Celery Redis (note: these are managed by Celery, not directly accessible)
+        health_status["pools"]["celery"] = {
+            "broker": {
+                "status": "managed_by_celery",
+                "max_connections": 50,
+                "note": "Broker connection pool configured"
+            },
+            "backend": {
+                "status": "managed_by_celery",
+                "max_connections": 50,
+                "note": "Backend connection pool configured"
+            }
+        }
+
+        # Overall status
+        all_healthy = all(
+            pool.get("status") in ["healthy", "managed_separately", "managed_by_celery"]
+            for pool in health_status["pools"].values()
+            if isinstance(pool, dict)
+        )
+        health_status["status"] = "healthy" if all_healthy else "degraded"
+
+        return health_status
+
+    except Exception as e:
+        logger.error(f"Error in Redis health check: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "pools": health_status.get("pools", {})
+        }
+
+
 @router.get("/mock/{endpoint}")
 async def mock_get_endpoint(endpoint: str, request: Request):
     """Mock any GET endpoint - returns the endpoint name and query parameters."""

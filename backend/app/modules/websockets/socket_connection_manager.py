@@ -296,10 +296,22 @@ class SocketConnectionManager:
             logger.info("Redis not configured, running in single-server mode")
             return
 
+        # Clean up any existing subscriber task before creating a new one
         if self._redis_subscriber_task and not self._redis_subscriber_task.done():
-            logger.warning("Redis subscriber already running")
+            logger.warning("Redis subscriber already running, skipping initialization")
             return
+        elif self._redis_subscriber_task and self._redis_subscriber_task.done():
+            # Previous task completed/crashed, check for exceptions
+            try:
+                exc = self._redis_subscriber_task.exception()
+                if exc:
+                    logger.error(f"Previous Redis subscriber task failed with: {exc}")
+            except (asyncio.CancelledError, asyncio.InvalidStateError):
+                pass
+            logger.info("Reinitializing Redis subscriber after previous task completed")
 
+        # Reset shutdown event for new subscriber
+        self._shutdown_event.clear()
         self._redis_subscriber_task = asyncio.create_task(self._redis_subscriber_loop())
         logger.info("Redis subscriber initialized for WebSocket message distribution")
 
@@ -308,6 +320,7 @@ class SocketConnectionManager:
         Background task that subscribes to Redis Pub/Sub channels and delivers messages
         to local WebSocket connections.
         """
+        pubsub = None
         try:
             redis_client = await self._redis_manager.get_redis()
             pubsub = redis_client.pubsub()
@@ -328,6 +341,9 @@ class SocketConnectionManager:
 
                 except asyncio.TimeoutError:
                     continue
+                except asyncio.CancelledError:
+                    logger.info("Redis subscriber loop cancelled")
+                    break
                 except Exception as exc:
                     logger.error(f"Error processing Redis message: {exc}")
                     await asyncio.sleep(1)
@@ -335,11 +351,14 @@ class SocketConnectionManager:
         except Exception as exc:
             logger.error(f"Redis subscriber loop error: {exc}")
         finally:
-            try:
-                await pubsub.punsubscribe("websocket:*")
-                await pubsub.close()
-            except Exception as exc:
-                logger.error(f"Error closing Redis pubsub: {exc}")
+            # Ensure pubsub connection is always closed to prevent leaks
+            if pubsub is not None:
+                try:
+                    await pubsub.punsubscribe("websocket:*")
+                    await pubsub.close()
+                    logger.info("Redis pubsub connection closed successfully")
+                except Exception as exc:
+                    logger.error(f"Error closing Redis pubsub: {exc}")
             logger.info("Redis subscriber loop stopped")
 
     async def _handle_redis_message(self, message: dict) -> None:
