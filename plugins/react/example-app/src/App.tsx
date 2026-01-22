@@ -25,7 +25,7 @@ function App() {
   }
 
   const [theme, setTheme] = useState({
-    primaryColor: "#1bb600ff",
+    primaryColor: "#4F46E5",
     secondaryColor: "#f5f5f5",
     backgroundColor: "#ffffff",
     textColor: "#000000",
@@ -34,12 +34,12 @@ function App() {
   });
 
   const [chatSettings, setChatSettings] = useState({
-    name: "Client Support",
+    name: "Genassist Support",
     description: "Support",
     agentName: "Agent",
-    logoUrl: "https://example.com/logo.png",
+    logoUrl: "http://example.com/",
     baseUrl: "http://localhost:8000/",
-    apiKey: "your-api-key",
+    apiKey: "genagent",
     // reCaptchaKey: "xx-yy-zz",
   });
 
