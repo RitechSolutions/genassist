@@ -1023,6 +1023,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
               const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
               const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
+
               return (
                 <ChatMessageComponent 
                   key={index} 

@@ -1,6 +1,6 @@
 import React from 'react';
-import { X } from 'lucide-react';
-import { ChatContentBlock, DynamicChatItem, ScheduleItem } from '../types';
+import { ChatContentBlock, DynamicChatItem, FileItem, ScheduleItem } from '../types';
+import { getFileIcon } from './FileTypeIcon';
 
 interface InteractiveContentProps {
   blocks: ChatContentBlock[];
@@ -24,7 +24,15 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {blocks.map((block, index) => {
+        
         switch (block.kind) {
+          case 'file':
+            const fileData = block.data;
+            if (fileData && fileData.type && fileData.type.startsWith('image')) {
+              return <ImageBlock key={index} imageData={fileData} />;
+            } else {
+              return <FileBlock key={index} fileData={fileData} />;
+            }
           case 'text':
             return <TextBlock key={index} text={block.text} />;
           case 'options':
@@ -391,6 +399,23 @@ const ScheduleBlock: React.FC<ScheduleBlockProps> = ({
           </button>
         </div>
       )}
+    </div>
+  );
+};
+
+const ImageBlock: React.FC<{ imageData: FileItem }> = ({ imageData }) => {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => window.open(imageData.url, '_blank')}>
+      <img src={imageData.url} alt="Image" style={{ width: 80, height: 64, borderRadius: 8, objectFit: 'cover' }} />
+    </div>
+  );
+};
+
+const FileBlock: React.FC<{ fileData: FileItem }> = ({ fileData }) => {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => window.open(fileData.url, '_blank')}>
+      {getFileIcon(fileData.type)}
+      <span className="text-xs text-muted-foreground">{fileData.name}</span>
     </div>
   );
 };

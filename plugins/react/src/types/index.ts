@@ -18,6 +18,7 @@ export interface ChatMessage {
   // Optional metadata
   message_id?: string;
   feedback?: MessageFeedback[];
+  type?: string;
 }
 
 // Attachment type
@@ -75,11 +76,19 @@ export interface ScheduleItem {
   restaurants: DynamicChatItem[];
 }
 
+export interface FileItem {
+  url: string;
+  type: string;
+  name: string;
+  id: string;
+}
+
 export type ChatContentBlock =
   | { kind: "text"; text: string }
   | { kind: "items"; items: DynamicChatItem[] }
   | { kind: "schedule"; schedule: ScheduleItem }
-  | { kind: "options"; options: string[] };
+  | { kind: "options"; options: string[] }
+  | { kind: "file"; data: FileItem };
 
 // Props for the GenAgentChat component
 export interface GenAgentChatProps {

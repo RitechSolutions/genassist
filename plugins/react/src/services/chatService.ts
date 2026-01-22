@@ -471,6 +471,7 @@ export class ChatService {
     this.webSocket.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data as string);
+
         if (data.type === "message" && this.messageHandler) {
           if (Array.isArray(data.payload)) {
             const messages = data.payload as ChatMessage[];
