@@ -36,6 +36,7 @@ interface ChatMessageProps {
   translations?: Translations;
   language?: string;
   agentName?: string; // Custom agent name to display instead of translation
+  isAgentTyping?: boolean; // Whether agent is currently typing/thinking
 }
 
 export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
@@ -55,6 +56,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   translations: customTranslations,
   language,
   agentName,
+  isAgentTyping = false,
 }) => {
   // Merge translations with defaults
   const translations = React.useMemo(
@@ -314,6 +316,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
             content={welcomeContent}
             possibleQueries={possibleQueries}
             onQuickQuery={onQuickQuery}
+            isAgentTyping={isAgentTyping}
           />
         </div>
       </div>
@@ -389,7 +392,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
                 blocks={contentBlocks}
                 primaryColor={primaryColor}
                 textColor={bubbleTextColor}
-                isActionable={!isUser && isLastMessage}
+                isActionable={!isUser && isLastMessage && !isAgentTyping}
                 onQuickAction={onQuickAction}
                 onScheduleConfirm={onScheduleConfirm}
               />
