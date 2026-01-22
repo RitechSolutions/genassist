@@ -1,7 +1,6 @@
 import React, { useCallback, useState, useEffect, useRef } from "react";
 import ReactFlow, {
   Background,
-  Controls,
   useNodesState,
   useEdgesState,
   addEdge,
@@ -45,6 +44,7 @@ import {
 import { Button } from "@/components/button";
 import { History, ChevronLeft, X, Plus } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
+import CustomControls from "./components/CustomControls";
 
 // Get node types and edge types for React Flow
 const nodeTypes = getNodeTypes();
@@ -71,6 +71,11 @@ const GraphFlowContent: React.FC = () => {
   const lastSavedWorkflowRef = useRef<Workflow | null>(null);
   const [isSettling, setIsSettling] = useState(true);
   const [executionState, setExecutionState] = useState<WorkflowExecutionState | null>(null);
+
+  // Interactive state for lock/unlock functionality
+  const [nodesDraggable, setNodesDraggable] = useState(true);
+  const [nodesConnectable, setNodesConnectable] = useState(true);
+  const [elementsSelectable, setElementsSelectable] = useState(true);
 
   // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -565,10 +570,20 @@ const GraphFlowContent: React.FC = () => {
                   onReconnect={onReconnect}
                   onReconnectStart={onReconnectStart}
                   onReconnectEnd={onReconnectEnd}
+                  nodesDraggable={nodesDraggable}
+                  nodesConnectable={nodesConnectable}
+                  elementsSelectable={elementsSelectable}
                   proOptions={{ hideAttribution: true }} // remove React Flow watermark
                 >
                   <Background />
-                  <Controls />
+                  <CustomControls
+                    nodesDraggable={nodesDraggable}
+                    nodesConnectable={nodesConnectable}
+                    elementsSelectable={elementsSelectable}
+                    onNodesDraggableChange={setNodesDraggable}
+                    onNodesConnectableChange={setNodesConnectable}
+                    onElementsSelectableChange={setElementsSelectable}
+                  />
                   <Panel position="top-center" className="mt-4">
                     <AgentTopPanel data={agent} onUpdated={handleAgentUpdated} />
                   </Panel>

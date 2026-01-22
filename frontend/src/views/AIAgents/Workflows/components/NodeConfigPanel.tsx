@@ -164,6 +164,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
             "sm:max-w-4xl w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full overflow-hidden",
             className
           )}
+          style={{ zIndex: 1002 }}
           onDoubleClick={handleDoubleClick}
           onMouseDown={handleMouseDown}
           onClick={handleClick}
@@ -208,7 +209,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
             </div>
           </SheetHeader>
 
-          <div className="flex flex-1 gap-6 overflow-hidden px-6">
+          <div className="flex flex-1 gap-6 overflow-hidden px-6 pl-8">
             {/* Left side - JSON State section */}
             {jsonStateDisplay && (
               <div className="w-80 border-r border-gray-200 pr-6 flex flex-col flex-shrink-0 py-6">
@@ -281,7 +282,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
             )}
 
             {/* Right side - Main content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden py-6 min-w-0">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden py-6 min-w-0 pl-4 pr-2">
               <div className="flex flex-col space-y-4 min-w-0 w-full">
                 {children}
               </div>

@@ -203,3 +203,53 @@ input[type="checkbox"]:hover {
   animation: dashOffset 1s linear infinite;
   stroke-width: 3 !important;
 }
+
+/* React Flow controls panel (zoom in/out, fit view) */
+.react-flow__panel.react-flow__controls {
+  border-radius: 32px;
+  overflow: hidden;
+}
+
+/* Custom React Flow controls buttons with Lucide icons */
+.react-flow__controls-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  background-color: white;
+  border: none;
+  border-bottom: 1px solid #e5e7eb;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  color: #374151;
+}
+
+.react-flow__controls-button:first-child {
+  border-top-left-radius: 32px;
+  border-top-right-radius: 32px;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom-left-radius: 32px;
+  border-bottom-right-radius: 32px;
+  border-bottom: none;
+}
+
+.react-flow__controls-button:hover {
+  background-color: #f3f4f6;
+}
+
+.react-flow__controls-button:active {
+  background-color: #e5e7eb;
+}
+
+.react-flow__controls-button svg {
+  pointer-events: none;
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  flex-shrink: 0;
+}
