@@ -74,8 +74,8 @@ class ProjectSettings(BaseSettings):
     CREATE_DB: bool = False
     DB_ASYNC: bool = True
     # SQLAlchemy async engine pool settings
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_SIZE: int = 100
+    DB_MAX_OVERFLOW: int = 100
     DB_POOL_TIMEOUT: int = 30  # seconds
     DB_POOL_RECYCLE: int = 1800  # seconds
 
