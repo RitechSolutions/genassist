@@ -13,8 +13,19 @@ interface RowProps {
 export function ConversationRow({ item, reason, onClick }: RowProps) {
   const hostility = Number(item.in_progress_hostility_score || 0);
   const eff = item.effectiveSentiment;
-  const sentimentVariant = eff === "negative" ? "destructive" : "default";
   const sentimentLabel = eff === "positive" ? "Good" : eff === "negative" ? "Bad" : "Neutral";
+  
+  // Get sentiment badge styles: Green for Good, Blue for Neutral, Red for Bad
+  const getSentimentBadgeStyles = (sentiment: string) => {
+    if (sentiment === "positive") {
+      return "bg-green-100 text-green-800 border-transparent";
+    } else if (sentiment === "negative") {
+      return "bg-red-100 text-red-800 border-transparent";
+    } else {
+      return "bg-blue-100 text-blue-800 border-transparent";
+    }
+  };
+  
   const showHostility = hostility > 60;
   const shortId = (item.id || "").slice(-4);
   const title = item.topic && item.topic !== "Unknown" ? item.topic : "Booking Inquiry";
@@ -23,7 +34,7 @@ export function ConversationRow({ item, reason, onClick }: RowProps) {
     <div
       role="button"
       tabIndex={0}
-      className="bg-primary-foreground px-4 py-4 cursor-pointer border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors"
+      className="bg-primary-foreground px-4 py-4 cursor-pointer border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors overflow-hidden w-full max-w-full min-w-0"
       onClick={() => onClick?.(item)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -32,16 +43,16 @@ export function ConversationRow({ item, reason, onClick }: RowProps) {
         }
       }}
     >
-      <div className="flex flex-col gap-2 w-full">
+      <div className="flex flex-col gap-2 w-full min-w-0 overflow-hidden">
         {/* Top Row */}
-        <div className="flex items-center justify-between w-full">
+        <div className="flex items-center justify-between w-full min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             <p className="text-sm font-medium text-foreground shrink-0">
               {title} #{shortId}
             </p>
             <Badge 
-              variant={sentimentVariant}
-              className="px-2.5 py-0.5 shrink-0"
+              variant="outline"
+              className={cn("px-2.5 py-0.5 shrink-0", getSentimentBadgeStyles(eff || ""))}
             >
               {sentimentLabel}
             </Badge>
@@ -66,7 +77,7 @@ export function ConversationRow({ item, reason, onClick }: RowProps) {
         </div>
 
         {/* Bottom Row - Preview */}
-        <p className="text-sm text-muted-foreground leading-5">
+        <p className="text-sm text-muted-foreground leading-5 truncate min-w-0 w-full overflow-hidden">
           {item.transcript as unknown as string}
         </p>
       </div>

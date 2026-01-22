@@ -134,7 +134,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
             handleProviderSelect(val);
           }}
         >
-          <SelectTrigger id={`provider-select-${id}`}>
+          <SelectTrigger id={`provider-select-${id}`} className="w-full">
             <SelectValue placeholder="Select provider" />
           </SelectTrigger>
           <SelectContent>
@@ -175,7 +175,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
               onValueChange={handleAgentTypeSelect}
               defaultValue={typeSelect === "agent" ? "ToolSelector" : "Base"}
             >
-              <SelectTrigger id={`agent-type-select-${id}`}>
+              <SelectTrigger id={`agent-type-select-${id}`} className="w-full">
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
               {typeSelect === "agent" && (

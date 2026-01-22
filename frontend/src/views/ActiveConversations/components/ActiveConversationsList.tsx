@@ -53,7 +53,7 @@ export function ActiveConversationsList({ items, isLoading, error, onRetry, onCl
   }
 
   return (
-    <>
+    <div className="w-full min-w-0">
       {items.map((item) => (
         <ConversationRow
           key={item.id}
@@ -62,7 +62,7 @@ export function ActiveConversationsList({ items, isLoading, error, onRetry, onCl
           onClick={onClickRow}
         />
       ))}
-    </>
+    </div>
   );
 }
 
