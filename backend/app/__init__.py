@@ -77,57 +77,64 @@ async def _initialize_redis_services(app: FastAPI):
     Initialize all Redis-related services.
 
     This includes:
-    - RedisConnectionManager (connection pool for conversations/WebSockets)
-    - FastAPI cache (with dedicated pool for binary data)
+    - Redis string client (for WebSockets, conversations)
+    - Redis binary client (for FastAPI cache)
 
     Returns:
-        RedisConnectionManager: The initialized singleton instance
+        Tuple of (redis_string, redis_binary) clients
     """
-    from app.cache.redis_connection_manager import RedisConnectionManager
+    from redis.asyncio import Redis
+    from app.dependencies.dependency_injection import RedisString, RedisBinary
 
     logger.info("Initializing Redis services...")
 
-    # Get DI singleton and initialize connection pool
-    redis_manager = injector.get(RedisConnectionManager)
-    await redis_manager.initialize()
+    # Get Redis clients from DI (using type annotations to distinguish them)
+    redis_string = injector.get(RedisString)
+    redis_binary = injector.get(RedisBinary)
 
-    connection_info = await redis_manager.get_connection_info()
-    logger.info(f"Redis connection manager initialized: {connection_info}")
+    # Test connections
+    await redis_string.ping()
+    logger.info("Redis string client initialized (40 connections)")
 
-    # Initialize FastAPI cache using consistent pool settings
-    await init_fastapi_cache_with_redis(app, settings, redis_manager)
+    await redis_binary.ping()
+    logger.info("Redis binary client initialized (20 connections)")
+
+    # Initialize FastAPI cache with binary client
+    await init_fastapi_cache_with_redis(app, redis_binary)
 
     logger.info("Redis services initialization complete")
-    return redis_manager
+    return redis_string, redis_binary
 
 
-async def _cleanup_redis_services(app: FastAPI):
+async def _cleanup_redis_services(app: FastAPI, redis_string, redis_binary):
     """
     Clean up all Redis-related services.
 
     This closes:
-    - FastAPI cache Redis connection
-    - RedisConnectionManager connection pool
+    - Redis string client
+    - Redis binary client
+
+    Args:
+        redis_string: Redis client for string data
+        redis_binary: Redis client for binary data
     """
-    from app.cache.redis_connection_manager import RedisConnectionManager
+    from redis.asyncio import Redis
 
     logger.info("Cleaning up Redis services...")
 
-    # Close FastAPI cache connection
-    if hasattr(app.state, "redis"):
-        try:
-            await app.state.redis.aclose()
-            logger.info("FastAPI cache Redis connection closed")
-        except Exception as e:
-            logger.error(f"Error closing FastAPI cache Redis: {e}")
-
-    # Close RedisConnectionManager pool
+    # Close string client
     try:
-        manager = injector.get(RedisConnectionManager)
-        await manager.close()
-        logger.info("RedisConnectionManager closed")
+        await redis_string.close()
+        logger.info("Redis string client closed")
     except Exception as e:
-        logger.error(f"Error closing RedisConnectionManager: {e}")
+        logger.error(f"Error closing Redis string client: {e}")
+
+    # Close binary client
+    try:
+        await redis_binary.close()
+        logger.info("Redis binary client closed")
+    except Exception as e:
+        logger.error(f"Error closing Redis binary client: {e}")
 
 
 async def _initialize_websocket_services():
@@ -194,7 +201,7 @@ async def _lifespan(app: FastAPI):
     await output_open_api(app)
 
     # Initialize services in dependency order
-    await _initialize_redis_services(app)
+    redis_string, redis_binary = await _initialize_redis_services(app)
     await _initialize_websocket_services()
 
     # Initialize database and application services
@@ -213,7 +220,7 @@ async def _lifespan(app: FastAPI):
 
         # Clean up services in reverse dependency order
         await _cleanup_websocket_services()
-        await _cleanup_redis_services(app)
+        await _cleanup_redis_services(app, redis_string, redis_binary)
         await multi_tenant_manager.close_all()
 
         logger.info("Application shutdown complete")
@@ -258,9 +265,9 @@ def create_celery():
             "visibility_timeout": 3600,  # 1 hour
             "fanout_prefix": True,
             "fanout_patterns": True,
-            "max_connections": 50,  # Limit broker connection pool
+            "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit broker connection pool
         },
-        redis_max_connections=50,  # Limit result backend connection pool
+        redis_max_connections=settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit result backend connection pool
         task_serializer="json",
         accept_content=["json"],
         result_serializer="json",

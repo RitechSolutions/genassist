@@ -24,8 +24,12 @@ class ProjectSettings(BaseSettings):
     # For 300-500 concurrent WebSocket users, 30-40 connections is optimal
     # Each publish takes ~5ms, so connections are rapidly reused
     REDIS_MAX_CONNECTIONS: int = 40  # Max connections in pool
+    REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE: int = 20 # Used to cache agents, etc, in services
     REDIS_SOCKET_TIMEOUT: int = 5  # Socket timeout in seconds
     REDIS_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval in seconds
+
+    # Celery Redis connection pool settings
+    CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
     
     FERNET_KEY: Optional[str]
 

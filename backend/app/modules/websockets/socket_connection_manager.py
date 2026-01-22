@@ -37,10 +37,10 @@ class SocketConnectionManager:
     - Maintains backward compatibility with existing deployments
     """
 
-    def __init__(self, redis_manager=None) -> None:
+    def __init__(self, redis_client=None) -> None:
         self._rooms: Dict[Hashable, List[Connection]] = {}
         self._lock = asyncio.Lock()
-        self._redis_manager = redis_manager
+        self._redis_client = redis_client
         self._redis_subscriber_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
@@ -194,7 +194,7 @@ class SocketConnectionManager:
         tenant_aware_room_id = self._get_tenant_aware_room_id(room_id, tenant_id)
 
         # Publish to Redis for multi-server broadcasting (if available)
-        if self._redis_manager:
+        if self._redis_client:
             try:
                 redis_channel = self._get_redis_channel(tenant_aware_room_id)
                 message_data = {
@@ -204,8 +204,7 @@ class SocketConnectionManager:
                     "room_id": str(room_id),
                     "tenant_id": tenant_id,
                 }
-                redis_client = await self._redis_manager.get_redis()
-                await redis_client.publish(
+                await self._redis_client.publish(
                     redis_channel,
                     json.dumps(message_data, default=str)
                 )
@@ -292,7 +291,7 @@ class SocketConnectionManager:
         Initialize Redis Pub/Sub subscriber for receiving messages from other server instances.
         This should be called during application startup if Redis is available.
         """
-        if not self._redis_manager:
+        if not self._redis_client:
             logger.info("Redis not configured, running in single-server mode")
             return
 
@@ -322,8 +321,7 @@ class SocketConnectionManager:
         """
         pubsub = None
         try:
-            redis_client = await self._redis_manager.get_redis()
-            pubsub = redis_client.pubsub()
+            pubsub = self._redis_client.pubsub()
 
             # Subscribe to pattern that matches all websocket channels
             await pubsub.psubscribe("websocket:*")

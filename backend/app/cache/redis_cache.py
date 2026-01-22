@@ -3,51 +3,32 @@ from inspect import signature
 from typing import Any, Callable, cast
 from uuid import UUID
 
-from redis.asyncio import Redis, ConnectionPool
+from redis.asyncio import Redis
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from starlette.datastructures import State
-from app.cache.redis_connection_manager import RedisConnectionManager
 
 logger = logging.getLogger(__name__)
 
 
-async def init_fastapi_cache_with_redis(app, settings, redis_manager: RedisConnectionManager):
+async def init_fastapi_cache_with_redis(app, redis_binary: Redis):
     """
-    Initialize FastAPI cache using the DI-managed RedisConnectionManager.
-
-    This ensures all Redis connections go through a single managed pool,
-    improving resource utilization and monitoring.
+    Initialize FastAPI cache using DI-provided Redis binary client.
 
     Args:
         app: FastAPI application instance
-        settings: Application settings
-        redis_manager: DI-injected singleton RedisConnectionManager
+        redis_binary: Redis client with decode_responses=False (from DI)
     """
-    # FastAPI cache requires decode_responses=False for binary data support
-    # Create a dedicated pool with this configuration
-    logger.info(
-        f"Initializing FastAPI cache with dedicated pool "
-        f"(max_connections={settings.REDIS_MAX_CONNECTIONS}, decode_responses=False)"
-    )
-
-    cache_pool = ConnectionPool.from_url(
-        settings.REDIS_URL,
-        decode_responses=False,  # Required for FastAPI cache binary data
-        max_connections=settings.REDIS_MAX_CONNECTIONS,
-        socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
-        socket_connect_timeout=settings.REDIS_SOCKET_TIMEOUT,
-        retry_on_timeout=True,
-        health_check_interval=settings.REDIS_HEALTH_CHECK_INTERVAL,
-    )
-    redis = Redis(connection_pool=cache_pool)
+    logger.info("Initializing FastAPI cache with binary Redis client")
 
     # tell the type checker what .state is
     app.state = cast(State, app.state)
-    app.state.redis = redis  # type: ignore[attr-defined]
+    app.state.redis = redis_binary  # type: ignore[attr-defined]
 
-    FastAPICache.init(RedisBackend(redis), prefix="auth")
-    await FastAPICache.clear() #clean cache on start
+    FastAPICache.init(RedisBackend(redis_binary), prefix="auth")
+    await FastAPICache.clear()  # clean cache on start
+
+    logger.info("FastAPI cache initialized")
 
 def make_key_builder(param: str | int = 1) -> Callable[[Any, str, Any], str]:
     """

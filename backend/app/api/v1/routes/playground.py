@@ -44,48 +44,101 @@ async def redis_health():
     Returns detailed information about all Redis connection pools.
     """
     from app.dependencies.injector import injector
-    from app.cache.redis_connection_manager import RedisConnectionManager
+    from app.dependencies.dependency_injection import RedisString, RedisBinary
     from app.modules.websockets.socket_connection_manager import SocketConnectionManager
     from app.core.config.settings import settings
 
     health_status = {
         "status": "unknown",
-        "timestamp": "2024-01-01T00:00:00Z",
         "pools": {}
     }
 
     try:
-        # Check FastAPI Cache Redis (from app.state.redis)
+        # Check Redis String Client
         try:
-            from starlette.requests import Request
-            # Note: This would need request context to access app.state
-            # For now, we'll note it's managed separately
-            health_status["pools"]["fastapi_cache"] = {
-                "status": "managed_separately",
-                "note": "Uses separate Redis client with max_connections=50"
+            redis_string = injector.get(RedisString)
+            await redis_string.ping()
+
+            # Get connection pool statistics
+            pool = redis_string.connection_pool
+            pool_stats = {
+                "max_connections": settings.REDIS_MAX_CONNECTIONS,
+            }
+
+            # Try to get detailed pool stats (may not be available in all Redis versions)
+            try:
+                available_conns = getattr(pool, "_available_connections", None)
+                in_use_conns = getattr(pool, "_in_use_connections", None)
+
+                if available_conns is not None:
+                    pool_stats["available_connections"] = len(available_conns)
+                if in_use_conns is not None:
+                    pool_stats["in_use_connections"] = len(in_use_conns)
+
+                if available_conns is not None and in_use_conns is not None:
+                    total_created = len(available_conns) + len(in_use_conns)
+                    pool_stats["total_created_connections"] = total_created
+                    if settings.REDIS_MAX_CONNECTIONS > 0:
+                        pool_stats["utilization_percent"] = round(
+                            (len(in_use_conns) / settings.REDIS_MAX_CONNECTIONS) * 100, 2
+                        )
+            except Exception:
+                pass  # Silently ignore if pool stats aren't available
+
+            health_status["pools"]["redis_string"] = {
+                "status": "healthy",
+                "decode_responses": True,
+                "usage": "WebSockets, conversations",
+                **pool_stats
             }
         except Exception as e:
-            health_status["pools"]["fastapi_cache"] = {
+            health_status["pools"]["redis_string"] = {
                 "status": "error",
                 "error": str(e)
             }
 
-        # Check Conversation Redis Manager
-        if settings.REDIS_FOR_CONVERSATION:
+        # Check Redis Binary Client (FastAPI cache)
+        try:
+            redis_binary = injector.get(RedisBinary)
+            await redis_binary.ping()
+
+            # Get connection pool statistics
+            pool = redis_binary.connection_pool
+            pool_stats = {
+                "max_connections": settings.REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE,
+            }
+
+            # Try to get detailed pool stats
             try:
-                redis_manager = injector.get(RedisConnectionManager)
-                conn_info = await redis_manager.get_connection_info()
-                is_healthy = await redis_manager.health_check()
-                health_status["pools"]["conversation_manager"] = {
-                    "status": "healthy" if is_healthy else "unhealthy",
-                    "connection_info": conn_info,
-                    "max_connections": settings.REDIS_MAX_CONNECTIONS
-                }
-            except Exception as e:
-                health_status["pools"]["conversation_manager"] = {
-                    "status": "error",
-                    "error": str(e)
-                }
+                available_conns = getattr(pool, "_available_connections", None)
+                in_use_conns = getattr(pool, "_in_use_connections", None)
+
+                if available_conns is not None:
+                    pool_stats["available_connections"] = len(available_conns)
+                if in_use_conns is not None:
+                    pool_stats["in_use_connections"] = len(in_use_conns)
+
+                if available_conns is not None and in_use_conns is not None:
+                    total_created = len(available_conns) + len(in_use_conns)
+                    pool_stats["total_created_connections"] = total_created
+                    if settings.REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE > 0:
+                        pool_stats["utilization_percent"] = round(
+                            (len(in_use_conns) / settings.REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE) * 100, 2
+                        )
+            except Exception:
+                pass  # Silently ignore if pool stats aren't available
+
+            health_status["pools"]["redis_binary"] = {
+                "status": "healthy",
+                "decode_responses": False,
+                "usage": "FastAPI cache",
+                **pool_stats
+            }
+        except Exception as e:
+            health_status["pools"]["redis_binary"] = {
+                "status": "error",
+                "error": str(e)
+            }
 
         # Check WebSocket Connection Manager
         try:
@@ -94,7 +147,8 @@ async def redis_health():
             health_status["pools"]["websocket_manager"] = {
                 "status": "healthy",
                 "websocket_stats": ws_stats,
-                "redis_subscriber": "active" if socket_manager._redis_subscriber_task and not socket_manager._redis_subscriber_task.done() else "inactive"
+                "redis_subscriber": "active" if socket_manager._redis_subscriber_task and not socket_manager._redis_subscriber_task.done() else "inactive",
+                "note": "Uses redis_string pool for pub/sub (no separate connection limit)"
             }
         except Exception as e:
             health_status["pools"]["websocket_manager"] = {
@@ -105,24 +159,42 @@ async def redis_health():
         # Check Celery Redis (note: these are managed by Celery, not directly accessible)
         health_status["pools"]["celery"] = {
             "broker": {
-                "status": "managed_by_celery",
-                "max_connections": 50,
-                "note": "Broker connection pool configured"
+                "status": "unknown",
+                "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,
+                "note": "Managed by Celery, not directly accessible"
             },
             "backend": {
-                "status": "managed_by_celery",
-                "max_connections": 50,
-                "note": "Backend connection pool configured"
+                "status": "unknown",
+                "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,
+                "note": "Managed by Celery, not directly accessible"
             }
         }
 
-        # Overall status
-        all_healthy = all(
-            pool.get("status") in ["healthy", "managed_separately", "managed_by_celery"]
-            for pool in health_status["pools"].values()
-            if isinstance(pool, dict)
+        # Calculate overall status based on our managed pools only
+        # Count healthy, error, and unknown pools separately
+        managed_pools_healthy = sum(
+            1 for pool in [
+                health_status["pools"].get("redis_string"),
+                health_status["pools"].get("redis_binary"),
+                health_status["pools"].get("websocket_manager")
+            ]
+            if pool and pool.get("status") == "healthy"
         )
-        health_status["status"] = "healthy" if all_healthy else "degraded"
+
+        managed_pools_total = 3  # redis_string, redis_binary, websocket_manager
+
+        if managed_pools_healthy == managed_pools_total:
+            health_status["status"] = "healthy"
+        elif managed_pools_healthy > 0:
+            health_status["status"] = "degraded"
+        else:
+            health_status["status"] = "unhealthy"
+
+        health_status["summary"] = {
+            "managed_pools_healthy": managed_pools_healthy,
+            "managed_pools_total": managed_pools_total,
+            "unmanaged_pools": 2  # Celery broker & backend
+        }
 
         return health_status
 
