@@ -34,17 +34,20 @@ export class ChatService {
   private welcomeObjectUrl: string | null = null; // to revoke on reset
   private tenant: string | undefined;
   private agentId: string | undefined;
+  private language: string | undefined;
 
   constructor(
     baseUrl: string,
     apiKey: string,
     metadata?: Record<string, any>,
-    tenant?: string
+    tenant?: string,
+    language?: string
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
+    this.language = language;
     // Try to load a saved conversation for this apiKey from localStorage
     this.loadSavedConversation();
   }
@@ -52,6 +55,67 @@ export class ChatService {
   private getStorageKey(): string {
     // Pointer to current conversation metadata for this apiKey
     return `${this.storageKeyBase}:${this.apiKey}`;
+  }
+
+  /**
+   * Set the language for Accept-Language header
+   */
+  setLanguage(language: string | undefined): void {
+    this.language = language;
+  }
+
+  /**
+   * Update metadata (useful for updating language or other dynamic metadata)
+   */
+  setMetadata(metadata: Record<string, any> | undefined): void {
+    this.metadata = metadata;
+  }
+
+  /**
+   * Format language code for Accept-Language header
+   * Converts simple language codes (e.g., "en", "es") to proper format (e.g., "en-US,en;q=0.9")
+   * Follows HTTP Accept-Language header standards
+   */
+  private formatAcceptLanguage(langCode: string): string {
+    if (!langCode) return '';
+    
+    // Normalize language code (lowercase, handle common formats)
+    const normalized = langCode.toLowerCase().trim();
+    
+    // Map common language codes to their full locale format
+    const languageMap: Record<string, string> = {
+      'en': 'en-US',
+      'es': 'es-ES',
+      'fr': 'fr-FR',
+      'de': 'de-DE',
+      'it': 'it-IT',
+      'pt': 'pt-PT',
+      'ar': 'ar-SA',
+      'sq': 'sq-AL',
+    };
+    
+    // Check if the code already has a region (e.g., "en-US", "es-ES")
+    const hasRegion = normalized.includes('-');
+    
+    // Get the full locale or use the provided code if it already has a region
+    const fullLocale = hasRegion ? normalized : (languageMap[normalized] || normalized);
+    
+    // Extract base language from the full locale (e.g., "en" from "en-US")
+    const fullBaseLang = fullLocale.split('-')[0].toLowerCase();
+    
+    // Build Accept-Language header: primary locale, base language with quality, English fallback
+    // Format: "locale,base-lang;q=0.9,en;q=0.8"
+    const parts: string[] = [fullLocale];
+    
+    // fallback
+    parts.push(`${fullBaseLang};q=0.9`);
+    
+    // Add English as fallback if not already the primary language
+    if (fullBaseLang !== 'en') {
+      parts.push('en;q=0.8');
+    }
+    
+    return parts.join(', ');
   }
 
   /**
@@ -71,6 +135,14 @@ export class ChatService {
     // Add authorization header if guest token is available
     if (this.guestToken) {
       headers["Authorization"] = `Bearer ${this.guestToken}`;
+    }
+
+    // Add Accept-Language header if language is set
+    if (this.language) {
+      const acceptLanguage = this.formatAcceptLanguage(this.language);
+      if (acceptLanguage) {
+        headers["Accept-Language"] = acceptLanguage;
+      }
     }
 
     return headers;
@@ -449,11 +521,18 @@ export class ChatService {
     }
 
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
-    let wsUrl = `${this.baseUrl.replace("http", "ws")}/api/conversations/ws/${
-      this.conversationId
-    }?api_key=${
-      this.apiKey
-    }&lang=en&topics=message&topics=takeover&topics=finalize`;
+    
+    // Build WebSocket URL with proper authentication
+    const wsBase = this.baseUrl.replace("http", "ws");
+    const topics = ["message", "takeover", "finalize"];
+    const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
+    
+    // Use guest_token if available, otherwise fall back to api_key
+    const authParam = this.guestToken 
+      ? `access_token=${encodeURIComponent(this.guestToken)}`
+      : `api_key=${encodeURIComponent(this.apiKey)}`;
+    
+    let wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
     
     // Add tenant as query parameter if provided
     if (this.tenant) {
