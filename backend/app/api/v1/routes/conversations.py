@@ -39,6 +39,9 @@ from app.core.tenant_scope import get_tenant_context
 from app.use_cases.chat_as_client_use_case import process_conversation_update_with_agent
 from app.core.permissions.constants import Permissions as P
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
+from app.core.config.settings import file_storage_settings
+from app.services.file_manager import FileManagerService
+from app.use_cases.chat_as_client_use_case import process_file_upload_from_chat
 
 
 logger = logging.getLogger(__name__)
@@ -264,6 +267,7 @@ async def update(
     request: Request,
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Append segments to an existing in-progress conversation.
@@ -271,6 +275,40 @@ async def update(
     """
     tenant_id = get_tenant_context()
 
+    # 1 check for attachments on metadata
+    if model.metadata and model.metadata.get("attachments"):
+        # 2 check for file_id in attachments
+        for attachment in model.metadata.get("attachments"):
+            if attachment.get("file_id"):
+                file_type = attachment.get("type")
+
+                # 3 check if file_id is in the database
+                file = await file_manager_service.get_file_by_id(attachment.get("file_id"))
+                if not file:
+                    pass
+                else:
+                    base_url = file_storage_settings.APP_URL
+                    file_url = f"{base_url}/api/file-manager/files/{file.id}/source"
+
+                    # add to attachments
+                    attachment["file_local_path"] = f"{file.path}/{file.storage_path}"
+                    attachment["file_mime_type"] = file.mime_type
+
+                    # 4 process the file upload from chat
+                    await process_file_upload_from_chat(
+                        conversation_id=conversation_id,
+                        file_id=file.id,
+                        file_url=file_url,
+                        file_name=file.name,
+                        file_type=file_type,
+                        tenant_id=tenant_id,
+                        current_user_id=get_current_user_id(),
+                    )
+            else:
+                attachment["file_local_path"] = attachment.get("url")
+                attachment["file_mime_type"] = attachment.get("mime_type")
+
+    # add the attachments to the model
     return await process_conversation_update_with_agent(
         conversation_id=conversation_id,
         model=model,

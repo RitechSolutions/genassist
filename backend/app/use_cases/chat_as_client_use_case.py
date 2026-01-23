@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 import json
+from typing import List
 from uuid import UUID
 from app.dependencies.injector import injector
 from app.api.v1.routes.agents import run_query_agent_logic
@@ -22,6 +23,33 @@ from app.db.base import generate_sequential_uuid
 import logging
 
 logger = logging.getLogger(__name__)
+
+# send message to the socket
+async def send_message_to_socket(
+    message: TranscriptSegmentInput,
+    conversation_id: UUID,
+    current_user_id: UUID,
+    tenant_id: str,
+) -> None:
+    socket_connection_manager = injector.get(SocketConnectionManager)
+    _ = asyncio.create_task(
+        socket_connection_manager.broadcast(
+            msg_type="message",
+            payload={
+                "id": str(message.id),
+                "create_time": message.create_time.isoformat() if message.create_time else None,
+                "start_time": message.start_time,
+                "end_time": message.end_time,
+                "speaker": message.speaker,
+                "text": message.text,
+                "type": message.type,
+            },
+            room_id=conversation_id,
+            current_user_id=current_user_id,
+            required_topic="message",
+            tenant_id=tenant_id,
+        )
+    )
 
 async def process_conversation_update_with_agent(
     conversation_id: UUID,
@@ -64,34 +92,17 @@ async def process_conversation_update_with_agent(
 
     # Broadcast user message immediately with pre-generated ID
     user_message = model.messages[0]
-    _ = asyncio.create_task(
-        socket_connection_manager.broadcast(
-            msg_type="message",
-            payload={
-                "id": str(user_message.id),
-                "create_time": user_message.create_time.isoformat() if user_message.create_time else None,
-                "start_time": user_message.start_time,
-                "end_time": user_message.end_time,
-                "speaker": user_message.speaker,
-                "text": user_message.text,
-                "type": user_message.type,
-            },
-            room_id=conversation_id,
-            current_user_id=current_user_id,
-            required_topic="message",
-            tenant_id=tenant_id,
-        )
-    )
+    await send_message_to_socket(user_message, conversation_id, current_user_id, tenant_id)
 
     if conversation.status == ConversationStatus.IN_PROGRESS.value:
         agent = await agent_config_service.get_by_user_id(current_user_id)
 
         session_data = {"metadata": model.metadata if model.metadata else {}}
-
         session_data["thread_id"] = str(conversation_id)
 
         if not model.metadata:
             model.metadata = {}
+     
         model.metadata["thread_id"] = str(conversation_id)
 
         agent_response = await run_query_agent_logic(
@@ -209,7 +220,7 @@ async def get_or_create_conversation(
 
     return open_conversation
 
-async def process_file_upload_with_agent(
+async def process_file_upload_from_chat(
     conversation_id: UUID,
     file_id: UUID,
     file_url: str,
@@ -219,38 +230,38 @@ async def process_file_upload_with_agent(
     current_user_id: UUID,
 ) -> ConversationModel:
     try:
-
         file_data = json.dumps({
-            "url": file_url,
             "type": file_type,
+            "url": file_url,
             "name": file_name,
-            "id": str(file_id),
         })
 
+        message  = TranscriptSegmentInput(
+            create_time=datetime.now(),
+            text=file_data,
+            type="file",
+            speaker="user",
+            # file_id=file_id,
+            start_time=0.0,
+            end_time=0.0,
+        )
+
         # create the model for the conversation update
-        model = InProgConvTranscrUpdate(
-                messages=[
-                    TranscriptSegmentInput(
-                        create_time=datetime.now(),
-                        text=file_data,
-                        type="file",
-                        speaker="user",
-                        file_id=file_id,
-                        start_time=0.0,
-                        end_time=0.0,
-                    )
-                ]
-            )
-        
-        # process the conversation update with the agent and return the updated conversation
-        updated_conversation = await process_conversation_update_with_agent(
-                conversation_id=conversation_id,
-                    model=model,
-                    tenant_id=tenant_id,
-                    current_user_id=current_user_id,
-                )
-        # return the updated conversation
-        return updated_conversation
+        model = InProgConvTranscrUpdate(messages=[message])
+
+        # get the conversation
+        service = injector.get(ConversationService)
+        conversation = await service.get_conversation_by_id(conversation_id)
+        if not conversation:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND)
+
+        # update the conversation with the file data
+        await service.update_in_progress_conversation(conversation_id, model)
+
+        # send the message to the socket
+        await send_message_to_socket(message, conversation_id, current_user_id, tenant_id)
+
+        return conversation        
     except Exception as e:
-        logger.error(f"Error processing file upload with agent: {str(e)}")
-        raise AppException(ErrorKey.ERROR_PROCESSING_FILE_UPLOAD_WITH_AGENT)
+        logger.error(f"Error processing file upload from chat: {str(e)}")
+        raise AppException(ErrorKey.ERROR_PROCESSING_FILE_UPLOAD_FROM_CHAT)

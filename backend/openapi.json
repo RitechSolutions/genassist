@@ -6402,11 +6402,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Upload File To Chat Api Genagent Knowledge Upload Chat File Post"
+                  "$ref": "#/components/schemas/app__schemas__file__FileUploadResponse"
                 }
               }
             }
@@ -8419,6 +8415,47 @@
       }
     },
     "/api/file-manager/files/{file_id}/download": {
+      "head": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Download File",
+        "description": "Download a file by ID.",
+        "operationId": "download_file_api_file_manager_files__file_id__download_head",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "v1",
@@ -8426,7 +8463,7 @@
         ],
         "summary": "Download File",
         "description": "Download a file by ID.",
-        "operationId": "download_file_api_file_manager_files__file_id__download_get",
+        "operationId": "download_file_api_file_manager_files__file_id__download_head",
         "parameters": [
           {
             "name": "file_id",
@@ -8462,13 +8499,96 @@
       }
     },
     "/api/file-manager/files/{file_id}/source": {
+      "head": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Get File Source",
+        "operationId": "get_file_source_api_file_manager_files__file_id__source_head",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Get File Source",
-        "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
+        "operationId": "get_file_source_api_file_manager_files__file_id__source_head",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/files/{file_id}/base64": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Get File Base64",
+        "description": "Get file content as base64 encoded string (public endpoint).",
+        "operationId": "get_file_base64_api_file_manager_files__file_id__base64_get",
         "parameters": [
           {
             "name": "file_id",
@@ -8770,7 +8890,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FileUploadResponse"
+                  "$ref": "#/components/schemas/app__schemas__ml_model__FileUploadResponse"
                 }
               }
             }
@@ -15922,26 +16042,6 @@
         "type": "object",
         "title": "FileUpdate"
       },
-      "FileUploadResponse": {
-        "properties": {
-          "file_path": {
-            "type": "string",
-            "title": "File Path",
-            "description": "Path to the uploaded file"
-          },
-          "original_filename": {
-            "type": "string",
-            "title": "Original Filename",
-            "description": "Original name of the uploaded file"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file_path",
-          "original_filename"
-        ],
-        "title": "FileUploadResponse"
-      },
       "FolderRequest": {
         "properties": {
           "smb_host": {
@@ -19664,6 +19764,68 @@
         ],
         "title": "TranscriptMessageRead"
       },
+      "TranscriptSegmentAttachment": {
+        "properties": {
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          }
+        },
+        "type": "object",
+        "title": "TranscriptSegmentAttachment"
+      },
       "TranscriptSegmentFeedback": {
         "properties": {
           "feedback": {
@@ -19734,17 +19896,19 @@
             "title": "Type",
             "default": "message"
           },
-          "file_id": {
+          "attachments": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "uuid"
+                "items": {
+                  "$ref": "#/components/schemas/TranscriptSegmentAttachment"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "File Id"
+            "title": "Attachments"
           }
         },
         "type": "object",
@@ -21156,6 +21320,70 @@
           "filepath"
         ],
         "title": "FileRequest"
+      },
+      "app__schemas__file__FileUploadResponse": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "File name"
+          },
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename",
+            "description": "Original file name"
+          },
+          "storage_path": {
+            "type": "string",
+            "title": "Storage Path",
+            "description": "Storage path"
+          },
+          "file_path": {
+            "type": "string",
+            "title": "File Path",
+            "description": "File path"
+          },
+          "file_url": {
+            "type": "string",
+            "title": "File Url",
+            "description": "File URL"
+          },
+          "file_id": {
+            "type": "string",
+            "title": "File Id",
+            "description": "File ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "original_filename",
+          "storage_path",
+          "file_path",
+          "file_url",
+          "file_id"
+        ],
+        "title": "FileUploadResponse"
+      },
+      "app__schemas__ml_model__FileUploadResponse": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path",
+            "description": "Path to the uploaded file"
+          },
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename",
+            "description": "Original name of the uploaded file"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "original_filename"
+        ],
+        "title": "FileUploadResponse"
       }
     },
     "securitySchemes": {

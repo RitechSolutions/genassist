@@ -7,6 +7,8 @@ import { getFileIcon } from './FileTypeIcon';
 import { InteractiveContent } from './InteractiveContent';
 import { parseInteractiveContentBlocks } from '../utils/interactiveContent';
 import { defaultTranslations, getTranslationString, mergeTranslations } from '../utils/i18n';
+import { AttachmentPreview } from './AttachmentPreview';
+import { UploadFilePreview } from './common/UploadFilePreview';
 export { AttachmentPreview } from './AttachmentPreview';
 
 interface ChatMessageProps {
@@ -339,6 +341,15 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
           </>
         )}
       </div>
+
+      {/* Attachments */}
+      {message.attachments && message.attachments.length > 0 && (
+        <div style={{ ...attachmentsContainerStyle, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+          {message.attachments.map((attachment, index) => (
+            <UploadFilePreview key={index} file={attachment} />
+          ))}
+        </div>
+      )}
 
       {/* {message.text && message.type !== 'file' && ( */}
       {message.text && (

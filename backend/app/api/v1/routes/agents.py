@@ -89,7 +89,6 @@ async def run_query_agent_logic(
             )
     logger.info(f"Workflow Final Result: {result}")
     backward_compatibility_result = {
-
                 "status": result.get("status"),
                 "response": result.get("output"),
                 "agent_id": agent_id,

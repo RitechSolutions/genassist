@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, Request
 from fastapi.responses import Response
 from uuid import UUID
 from typing import Optional, List
+import base64
 import mimetypes
 from urllib.parse import quote
 
@@ -15,6 +16,40 @@ from fastapi_injector import Injected
 from app.db.models.file import StorageProvider
 
 router = APIRouter()
+
+
+def _build_file_headers(file, content: Optional[bytes] = None, disposition_type: str = "inline") -> tuple[dict, str]:
+    """Build HTTP headers for file responses."""
+    media_type = file.mime_type or "application/octet-stream"
+    
+    # Properly encode filename for Content-Disposition header
+    # Use RFC 5987 encoding for non-ASCII characters to avoid latin-1 encoding errors
+    # Percent-encode the filename for safe ASCII representation
+    filename_encoded = quote(file.name, safe='')
+    
+    # For UTF-8 version (RFC 5987), percent-encode UTF-8 bytes
+    filename_utf8_bytes = file.name.encode('utf-8')
+    filename_utf8_encoded = ''.join(f'%{b:02X}' for b in filename_utf8_bytes)
+    
+    # Build Content-Disposition header with both ASCII fallback and UTF-8 version
+    content_disposition = f'{disposition_type};filename="{filename_encoded}";filename*=UTF-8\'\'{filename_utf8_encoded}'
+    
+    headers = {
+        "content-type": media_type,
+        "content-disposition": content_disposition,
+        "x-content-type-options": "nosniff",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "Age, Date, Content-Length, Content-Range, X-Content-Duration, X-Cache",
+        "cache-control": "public, max-age=31536000"
+    }
+    
+    # Add Content-Length if content is provided
+    if content is not None:
+        headers["content-length"] = str(len(content))
+    elif hasattr(file, 'size') and file.size:
+        headers["content-Length"] = str(file.size)
+    
+    return headers, media_type
 
 
 # ==================== File Endpoints ====================
@@ -95,8 +130,7 @@ async def get_file(
         )
 
 
-# @router.get("/files/{file_id}/download", dependencies=[Depends(auth)])
-@router.get("/files/{file_id}/download")
+@router.api_route("/files/{file_id}/download", methods=["GET", "HEAD"])
 async def download_file(
     file_id: UUID,
     repository: FileManagerRepository = Injected(FileManagerRepository),
@@ -112,32 +146,14 @@ async def download_file(
                 detail="Failed to initialize file manager service"
             )
         
+        # download the file
         file, content = await service.download_file(file_id)
-        
-        # Determine media type
-        media_type = file.mime_type or "application/octet-stream"
-        
-        # Properly encode filename for Content-Disposition header
-        # Use RFC 5987 encoding for non-ASCII characters to avoid latin-1 encoding errors
-        # Percent-encode the filename for safe ASCII representation
-        filename_encoded = quote(file.name, safe='')
-        
-        # For UTF-8 version (RFC 5987), percent-encode UTF-8 bytes
-        filename_utf8_bytes = file.name.encode('utf-8')
-        filename_utf8_encoded = ''.join(f'%{b:02X}' for b in filename_utf8_bytes)
-        
-        # Build Content-Disposition header with both ASCII fallback and UTF-8 version
-        # Modern browsers will prefer filename* if available
-        content_disposition = f'attachment; filename="{filename_encoded}"; filename*=UTF-8\'\'{filename_utf8_encoded}'
+        headers, media_type = _build_file_headers(file, content=content, disposition_type="attachment")
         
         return Response(
             content=content,
-            media_type=media_type,
-            headers={
-                "Content-Disposition": content_disposition,
-                "Content-Length": str(len(content)),
-                "Access-Control-Allow-Origin": "*",
-            }
+            media_type=media_type,      
+            headers=headers
         )
     except Exception as e:
         raise HTTPException(
@@ -145,10 +161,10 @@ async def download_file(
             detail=f"File not found: {str(e)}"
         )
 
-# get file to be used as source for file url
-@router.get("/files/{file_id}/source")
+@router.api_route("/files/{file_id}/source", methods=["GET", "HEAD"])
 async def get_file_source(
     file_id: UUID,
+    request: Request,
     repository: FileManagerRepository = Injected(FileManagerRepository),
 ):
     try:
@@ -161,18 +177,66 @@ async def get_file_source(
                 detail="Failed to initialize file manager service"
             )
 
+        # For HEAD requests, only get metadata (no content download)
+        if request.method == "HEAD":
+            file = await service.get_file_by_id(file_id)
+            headers, media_type = _build_file_headers(file, disposition_type="inline")
+            return Response(
+                content=b"",
+                media_type=media_type,
+                headers=headers
+            )
+        
+        # For GET requests, download the file content
         file, content = await service.download_file(file_id)
-        media_type = file.mime_type or "application/octet-stream"
+        headers, media_type = _build_file_headers(file, content=content, disposition_type="inline")
         
         return Response(
             content=content,
             media_type=media_type,
+            headers=headers
         )
     except Exception as e:
         raise HTTPException(
             status_code=404,
             detail=f"File not found: {str(e)}"
         )
+
+
+@router.get("/files/{file_id}/base64")
+async def get_file_base64(
+    file_id: UUID,
+    repository: FileManagerRepository = Injected(FileManagerRepository),
+):
+    """Get file content as base64 encoded string (public endpoint)."""
+    try:
+        manager = get_file_manager_manager()
+        service = await manager.get_service(repository)
+
+        if not service:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to initialize file manager service"
+            )
+
+        file, content = await service.download_file(file_id)
+
+        # Encode content to base64
+        base64_content = base64.standard_b64encode(content).decode('utf-8')
+
+        return {
+            "file_id": str(file_id),
+            "name": file.name,
+            "mime_type": file.mime_type,
+            "size": file.size,
+            "content": base64_content
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=404,
+            detail=f"File not found: {str(e)}"
+        )
+
 
 @router.get("/files", response_model=List[FileResponse], dependencies=[Depends(auth)])
 async def list_files(

@@ -54,5 +54,12 @@ class FileResponse(FileBase):
     created_at: datetime
     updated_at: datetime
     is_deleted: int
-
     model_config = ConfigDict(from_attributes=True)
+
+class FileUploadResponse(BaseModel):
+    filename: str = Field(..., description="File name")
+    original_filename: str = Field(..., description="Original file name")
+    storage_path: str = Field(..., description="Storage path")
+    file_path: str = Field(..., description="File path")
+    file_url: str = Field(..., description="File URL")
+    file_id: str = Field(..., description="File ID")

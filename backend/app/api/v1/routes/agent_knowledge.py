@@ -32,12 +32,12 @@ from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 from app.services.file_manager import FileManagerService
 from app.repositories.file_manager import FileManagerRepository
 from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
-from app.schemas.file import FileCreate
+from app.schemas.file import FileCreate, FileUploadResponse
 from app.auth.utils import get_current_user_id
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant_scope import get_tenant_context
 from app.core.config.settings import file_storage_settings
-from app.use_cases.chat_as_client_use_case import process_file_upload_with_agent
+from app.use_cases.chat_as_client_use_case import process_file_upload_from_chat
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -260,7 +260,7 @@ async def upload_file(
 
 @router.post(
     "/upload-chat-file",
-    response_model=Dict[str, str],
+    response_model=FileUploadResponse,
     dependencies=[
         Depends(auth),
     ]
@@ -284,12 +284,14 @@ async def upload_file_to_chat(
 
 
         user_id = get_current_user_id()
+        tenant_id = get_tenant_context()
 
         # file storage path
         file_name = f"{uuid.uuid4()}.{file.filename.split('.')[-1]}"
         relative_storage_path = file_name
 
         try:
+            # create file in file manager service
             created_file = await file_manager_service.create_file(
                 file_data=FileCreate(
                     name=file.filename,
@@ -339,41 +341,38 @@ async def upload_file_to_chat(
         except Exception as e:
             logger.warning(f"Could not extract text from file: {str(e)}")
 
+        file_relative_url = f"/api/file-manager/files/{file_id}/source"
         
         # post message on conversation to be part of the conversation
-        try:
-            tenant_id = get_tenant_context()
+        # try:
+        #     base_url = file_storage_settings.APP_URL
+        #     file_url = f"{base_url}/api/file-manager/files/{file_id}/source"
 
-            # get app url
-            base_url = file_storage_settings.APP_URL
+        #     # get file type from content type
+        #     file_type = file.content_type
 
-            # file url to get the file source
-            file_url = f"{base_url}/api/file-manager/files/{file_id}/source"
-
-            # get file type from content type
-            file_type = file.content_type
-
-            # process the file upload with the agent
-            await process_file_upload_with_agent(
-                conversation_id=chat_id,
-                file_id=file_id,
-                file_url=file_url,
-                file_name=file.filename,
-                file_type=file_type,
-                tenant_id=tenant_id,
-                current_user_id=user_id,
-            )   
-            
-        except Exception as e:
-            logger.error(f"Error posting message on conversation: {str(e)}")
+        #     # process the file upload with the agent
+        #     await process_file_upload_from_chat(
+        #         conversation_id=chat_id,
+        #         file_id=file_id,
+        #         file_url=file_url,
+        #         file_name=file.filename,
+        #         file_type=file_type,
+        #         tenant_id=tenant_id,
+        #         current_user_id=user_id,
+        #     )       
+        # except Exception as e:
+        #     logger.error(f"Error posting message on conversation: {str(e)}")
         
         # Return the filenames and paths
-        result = {
-            "filename": str(file_id),
-            "original_filename": file.filename,
-            "storage_path": storage_path,
-            "file_path": file_path,
-        }
+        result = FileUploadResponse(
+            filename=str(file_id),
+            original_filename=file.filename,
+            storage_path=storage_path,
+            file_path=file_path,
+            file_url=file_relative_url,
+            file_id=str(file_id),
+        )
 
         logger.info(f"Upload successful: {result}")
         return result

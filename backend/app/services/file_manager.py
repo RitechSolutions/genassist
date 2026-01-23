@@ -3,6 +3,7 @@ from injector import inject
 from typing import Optional, BinaryIO, List
 import logging
 from pathlib import Path
+import base64
 
 from app.modules.filemanager.providers.base import BaseStorageProvider
 from app.db.models.file import FileModel
@@ -121,6 +122,12 @@ class FileManagerService:
         content = await self.storage_provider.download_file(file.storage_path)
         return content
 
+    async def get_file_base64(self, file_id: UUID) -> str:
+        """Get file content as base64 encoded string."""
+        file = await self.get_file_by_id(file_id)
+        content = await self.get_file_content(file)
+        return base64.standard_b64encode(content).decode('utf-8')
+    
     async def download_file(self, file_id: UUID) -> tuple[FileModel, bytes]:
         """Get both file metadata and content."""
         file = await self.get_file_by_id(file_id)

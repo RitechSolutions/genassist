@@ -8,6 +8,7 @@ import {
   Trash2,
   Pencil,
 } from "lucide-react";
+const logo = "../src/assets/logo.png";
 
 interface FileState {
   useCustom: boolean;
@@ -40,7 +41,7 @@ function App() {
     agentName: "Agent",
     logoUrl: "",
     baseUrl: "http://localhost:8000/",
-    apiKey: "genagent123",
+    apiKey: "agent123",
     // reCaptchaKey: "xx-yy-zz",
   });
 

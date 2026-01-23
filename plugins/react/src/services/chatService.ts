@@ -5,6 +5,7 @@ import {
   Attachment,
   AgentThinkingConfig,
   AgentWelcomeData,
+  FileUploadResponse,
 } from "../types";
 import {
   createWebSocket,
@@ -416,7 +417,7 @@ export class ChatService {
     }
   }
 
-  async uploadFile(chatId: string, file: File): Promise<{ fileUrl: string }> {
+  async uploadFile(chatId: string, file: File): Promise<FileUploadResponse | null> {
     if (!this.conversationId) {
       throw new Error("Conversation not started");
     }
@@ -426,14 +427,15 @@ export class ChatService {
     formData.append("file", file);
 
     try {
-      const response = await axios.post<{ fileUrl: string }>(
+      const response = await axios.post<FileUploadResponse>(
         `${this.baseUrl}/api/genagent/knowledge/upload-chat-file`,
         formData,
         {
           headers: this.getHeaders("multipart/form-data"),
         }
       );
-      return response.data;
+
+      return response.data as FileUploadResponse;
     } catch (error) {
       throw error;
     }

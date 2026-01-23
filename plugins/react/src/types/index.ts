@@ -27,6 +27,12 @@ export interface Attachment {
   type: string;
   size: number;
   url: string;
+  file_id?: string;
+}
+
+export interface AttachmentWithFile {
+  file: File;
+  attachment: Attachment | null;
 }
 
 // API Response types
@@ -124,3 +130,12 @@ export interface GenAgentChatProps {
 }
 
 export type { Translations } from '../utils/i18n';
+
+export interface FileUploadResponse {
+  filename: string;
+  original_filename: string;
+  storage_path: string;
+  file_path: string;
+  file_url: string;
+  file_id?: string;
+}
