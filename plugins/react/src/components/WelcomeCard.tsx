@@ -1,4 +1,5 @@
 import React from 'react';
+import { parseBoldText } from './InteractiveContent';
 
 interface ThemeLike {
   primaryColor?: string;
@@ -16,6 +17,7 @@ export interface WelcomeCardProps {
   content?: string;
   possibleQueries?: string[];
   onQuickQuery?: (query: string) => void;
+  isAgentTyping?: boolean;
 }
 
 export const WelcomeCard: React.FC<WelcomeCardProps> = ({
@@ -25,10 +27,12 @@ export const WelcomeCard: React.FC<WelcomeCardProps> = ({
   content,
   possibleQueries,
   onQuickQuery,
+  isAgentTyping = false,
 }) => {
   const agentTextColor = '#000000';
   const fontFamily = theme?.fontFamily || 'Roboto, Arial, sans-serif';
 
+  const isClickable = onQuickQuery && !isAgentTyping;
   const chipStyle: React.CSSProperties = {
     display: 'inline-block',
     backgroundColor: theme?.primaryColor || '#5B3DF5',
@@ -38,8 +42,9 @@ export const WelcomeCard: React.FC<WelcomeCardProps> = ({
     fontSize: '14px',
     marginRight: 8,
     marginBottom: 8,
-    cursor: onQuickQuery ? 'pointer' : 'default',
+    cursor: isClickable ? 'pointer' : 'default',
     userSelect: 'none',
+    opacity: isAgentTyping ? 0.6 : 1,
   };
 
   const chipContainerStyle: React.CSSProperties = {
@@ -69,16 +74,23 @@ export const WelcomeCard: React.FC<WelcomeCardProps> = ({
         <div style={{ display: 'flex', gap: 16 }}>
           <img
             src={imageUrl}
-            style={{ width: 160, height: 160, objectFit: 'cover', borderRadius: 12, display: 'block' }}
+            style={{ width: 160, height: 160, objectFit: 'contain', borderRadius: 12, display: 'block' }}
           />
         </div>
       )}
       {title && <div style={welcomeTitleStyle}>{title}</div>}
-      {content && <div style={welcomeSubtitleStyle}>{content}</div>}
+      {content && <div style={welcomeSubtitleStyle}>{parseBoldText(content)}</div>}
       {possibleQueries && possibleQueries.length > 0 && (
         <div style={chipContainerStyle}>
           {possibleQueries.map((q, idx) => (
-            <span key={idx} style={chipStyle} onClick={() => onQuickQuery && onQuickQuery(q)}>
+            <span 
+              key={idx} 
+              style={chipStyle} 
+              onClick={() => {
+                if (isAgentTyping) return;
+                onQuickQuery && onQuickQuery(q);
+              }}
+            >
               {q}
             </span>
           ))}

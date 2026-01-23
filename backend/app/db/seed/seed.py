@@ -215,28 +215,28 @@ async def seed_data(session: AsyncSession, injector: Injector):
                     apiuser, transcribe_operator_user])
     await session.commit()
 
-    # Seed s3 DataSource
-    s3_data_source = DataSourceModel(id=UUID(seed_test_data.data_source_id), name="s3 contracts small", source_type="S3",
-                                     connection_data={
-        "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
-        "region": os.environ.get("AWS_REGION"),
-        "access_key": encrypt_key(os.environ.get("AWS_ACCESS_KEY_ID")),
-        "secret_key": encrypt_key(os.environ.get("AWS_SECRET_ACCESS_KEY")),
-        "prefix": "contracts-small/"
-    }, is_active=1)
+    # # Seed s3 DataSource
+    # s3_data_source = DataSourceModel(id=UUID(seed_test_data.data_source_id), name="s3 contracts small", source_type="S3",
+    #                                  connection_data={
+    #     "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
+    #     "region": os.environ.get("AWS_REGION"),
+    #     "access_key": encrypt_key(os.environ.get("AWS_ACCESS_KEY_ID")),
+    #     "secret_key": encrypt_key(os.environ.get("AWS_SECRET_ACCESS_KEY")),
+    #     "prefix": "contracts-small/"
+    # }, is_active=1)
 
-    # Seed s3 AUDIO DataSource
-    s3_audio_data_source = DataSourceModel(id=UUID(seed_test_data.transcribe_data_source_id), name="s3 audio files to transcribe", source_type="S3",
-                                           connection_data={
-        "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
-        "region": os.environ.get("AWS_REGION"),
-        "access_key": os.environ.get("AWS_ACCESS_KEY_ID"),
-        "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY"),
-        "prefix": "sample-recordings/"
-    }, is_active=1)
-    session.add_all([s3_data_source, s3_audio_data_source])
+    # # Seed s3 AUDIO DataSource
+    # s3_audio_data_source = DataSourceModel(id=UUID(seed_test_data.transcribe_data_source_id), name="s3 audio files to transcribe", source_type="S3",
+    #                                        connection_data={
+    #     "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
+    #     "region": os.environ.get("AWS_REGION"),
+    #     "access_key": os.environ.get("AWS_ACCESS_KEY_ID"),
+    #     "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY"),
+    #     "prefix": "sample-recordings/"
+    # }, is_active=1)
+    # session.add_all([s3_data_source, s3_audio_data_source])
 
-    await session.commit()
+    # await session.commit()
 
     # Seed default Customer
     customer = CustomerModel(source_ref="default",
@@ -386,7 +386,7 @@ async def seed_data(session: AsyncSession, injector: Injector):
     product_docs = await seed_knowledge_base(session, admin.id, injector)
     gen_assist_kb = await seed_knowledge_base_for_gen_agent(session, admin.id, injector)
     db_kb = await seed_knowledge_base_for_sql_database(session, admin.id, injector)
-    s3_kb = await seed_knowledge_base_for_s3(session, admin.id, s3_data_source, injector)
+    # s3_kb = await seed_knowledge_base_for_s3(session, admin.id, s3_data_source, injector)
 
     # Seed agents
     await seed_demo_agent(session, agent_role, injector, [product_docs], admin.id)
