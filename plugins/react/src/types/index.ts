@@ -138,4 +138,5 @@ export interface FileUploadResponse {
   file_path: string;
   file_url: string;
   file_id?: string;
+  openai_file_id?: string;
 }

@@ -36,8 +36,6 @@ from app.schemas.file import FileCreate, FileUploadResponse
 from app.auth.utils import get_current_user_id
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant_scope import get_tenant_context
-from app.core.config.settings import file_storage_settings
-from app.use_cases.chat_as_client_use_case import process_file_upload_from_chat
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -342,27 +340,6 @@ async def upload_file_to_chat(
             logger.warning(f"Could not extract text from file: {str(e)}")
 
         file_relative_url = f"/api/file-manager/files/{file_id}/source"
-        
-        # post message on conversation to be part of the conversation
-        # try:
-        #     base_url = file_storage_settings.APP_URL
-        #     file_url = f"{base_url}/api/file-manager/files/{file_id}/source"
-
-        #     # get file type from content type
-        #     file_type = file.content_type
-
-        #     # process the file upload with the agent
-        #     await process_file_upload_from_chat(
-        #         conversation_id=chat_id,
-        #         file_id=file_id,
-        #         file_url=file_url,
-        #         file_name=file.filename,
-        #         file_type=file_type,
-        #         tenant_id=tenant_id,
-        #         current_user_id=user_id,
-        #     )       
-        # except Exception as e:
-        #     logger.error(f"Error posting message on conversation: {str(e)}")
         
         # Return the filenames and paths
         result = FileUploadResponse(

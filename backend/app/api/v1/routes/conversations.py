@@ -277,7 +277,10 @@ async def update(
 
     # 1 check for attachments on metadata
     if model.metadata and model.metadata.get("attachments"):
-        # 2 check for file_id in attachments
+        # supported_file_extensions = ["pdf", "docx", "txt"]
+        supported_file_extensions = ["pdf"]
+
+        # process attachments
         for attachment in model.metadata.get("attachments"):
             if not attachment.get("type"):
                 attachment["file_local_path"] = attachment.get("url")
@@ -285,7 +288,7 @@ async def update(
             else:
                 file_type = attachment.get("type")
 
-                # 3 check if file_id is in the database
+                # get file by file_id
                 file = await file_manager_service.get_file_by_id(attachment.get("file_id"))
                 if not file:
                     pass
@@ -296,8 +299,34 @@ async def update(
                     # add to attachments
                     attachment["file_local_path"] = f"{file.path}/{file.storage_path}"
                     attachment["file_mime_type"] = file.mime_type
+                    
+                    # Check if file has OpenAI file_id stored or upload if needed
+                    if not attachment.get("openai_file_id"):
+                        # Get file extension from filename or file_extension attribute
+                        file_extension = ""
+                        if hasattr(file, 'file_extension') and file.file_extension:
+                            file_extension = file.file_extension.lower()
+                        elif file.name and '.' in file.name:
+                            file_extension = file.name.split('.')[-1].lower()
+                        
+                        # Optionally upload to OpenAI if it's a PDF, DOCX, or TXT and not already uploaded
+                        if file_extension in supported_file_extensions:
+                            try:
+                                from app.services.open_ai_fine_tuning import OpenAIFineTuningService
+                                from app.dependencies.injector import injector
+                                openai_service = injector.get(OpenAIFineTuningService)
+                                full_file_path = f"{file.path}/{file.storage_path}"
+                                openai_file_id = await openai_service.upload_file_for_chat(
+                                    file_path=full_file_path,
+                                    filename=file.name,
+                                    purpose="user_data"
+                                )
+                                attachment["openai_file_id"] = openai_file_id
+                                logger.info(f"Uploaded file to OpenAI: {openai_file_id}")
+                            except Exception as e:
+                                logger.warning(f"Failed to upload file to OpenAI: {str(e)}")
 
-                    # 4 process the file upload from chat
+                    # process the file upload from chat
                     await process_file_upload_from_chat(
                         conversation_id=conversation_id,
                         file_id=file.id,
