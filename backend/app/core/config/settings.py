@@ -209,6 +209,8 @@ settings = ProjectSettings()
 # === File Storage Settings ===
 
 class FileStorageSettings(BaseSettings):
+    DEFAULT_STORAGE_PROVIDER: str = "local"
+
     AZURE_CONNECTION_STRING: Optional[str] = None
     AZURE_ACCOUNT_NAME: Optional[str] = None
     AZURE_ACCOUNT_KEY: Optional[str] = None
@@ -222,6 +224,7 @@ class FileStorageSettings(BaseSettings):
     AWS_STORAGE_BUCKET: Optional[str] = None
     AWS_REGION: Optional[str] = None
     AWS_S3_ENDPOINT_URL: Optional[str] = None
+    AWS_BUCKET_NAME: Optional[str] = None
 
     GCP_PROJECT_ID: Optional[str] = None
     GCP_REGION: Optional[str] = None

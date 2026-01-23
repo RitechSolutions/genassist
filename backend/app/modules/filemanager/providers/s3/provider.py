@@ -7,6 +7,8 @@ TODO: Implement full S3 storage operations using boto3.
 import logging
 from typing import List, Dict, Any, Optional
 
+from app.core.utils.s3_utils import S3Client
+
 from ..base import BaseStorageProvider
 
 logger = logging.getLogger(__name__)
@@ -30,11 +32,18 @@ class S3StorageProvider(BaseStorageProvider):
             config: Configuration dictionary containing S3 credentials and bucket
         """
         super().__init__(config)
-        self.bucket_name = config.get("bucket_name")
+        self.aws_bucket_name = config.get("aws_bucket_name")
         self.aws_access_key_id = config.get("aws_access_key_id")
         self.aws_secret_access_key = config.get("aws_secret_access_key")
-        self.region_name = config.get("region_name", "us-east-1")
-        # TODO: Initialize boto3 S3 client
+        self.aws_region_name = config.get("aws_region_name", "us-east-1")
+        
+        # Initialize S3 client
+        self.s3_client = S3Client(
+            bucket_name=self.aws_bucket_name,
+            aws_access_key_id=self.aws_access_key_id,
+            aws_secret_access_key=self.aws_secret_access_key,
+            region_name=self.aws_region_name,
+        )
 
     async def initialize(self) -> bool:
         """Initialize the provider."""
@@ -49,7 +58,7 @@ class S3StorageProvider(BaseStorageProvider):
         Returns:
             Base path of the storage provider
         """
-        return self.bucket_name
+        return self.aws_bucket_name
 
     async def upload_file(
         self,
@@ -82,14 +91,13 @@ class S3StorageProvider(BaseStorageProvider):
         limit: Optional[int] = None
     ) -> List[str]:
         """List files in S3 bucket."""
-        # TODO: Implement S3 file listing using boto3
-        raise NotImplementedError("S3StorageProvider.list_files is not yet implemented")
+        return self.s3_client.list_files(prefix=prefix, limit=limit)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get provider statistics."""
         return {
             "provider_type": self.provider_type,
-            "bucket_name": self.bucket_name,
+            "bucket_name": self.aws_bucket_name,
             "initialized": self._initialized,
             "status": "stub - not implemented",
         }

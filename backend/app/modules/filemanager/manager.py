@@ -20,6 +20,7 @@ from .config import FileManagerConfig
 from .providers.base import BaseStorageProvider
 from .providers.local import LocalFileSystemProvider
 from .providers.azure import AzureStorageProvider
+from .providers.s3 import S3StorageProvider
 from app.core.tenant_scope import get_tenant_context
 
 logger = logging.getLogger(__name__)
@@ -108,9 +109,7 @@ class FileManagerServiceManager:
                 if provider_type == "local":
                     provider = LocalFileSystemProvider(provider_config)
                 elif provider_type == "s3":
-                    # TODO: Import and create S3StorageProvider when implemented
-                    logger.warning("S3StorageProvider is not yet implemented")
-                    return None
+                    provider = S3StorageProvider(provider_config)
                 elif provider_type == "azure":
                     provider = AzureStorageProvider(provider_config)
                 elif provider_type == "gcs":
@@ -165,6 +164,7 @@ class FileManagerServiceManager:
             # Use default config if not set
             from .config import FileManagerConfig, LocalStorageConfig
             from app.core.config.settings import settings
+            
             config = FileManagerConfig(
                 default_storage_provider="local",
                 local=LocalStorageConfig(

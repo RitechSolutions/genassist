@@ -345,7 +345,6 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
         )}
       </div>
 
-      {/* Attachments */}
       {message.attachments && message.attachments.length > 0 && (
         <div style={{ ...attachmentsContainerStyle, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
           {message.attachments.map((attachment, index) => (
@@ -354,7 +353,6 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
         </div>
       )}
 
-      {/* {message.text && message.type !== 'file' && ( */}
       {message.text && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', alignSelf: isUser ? 'flex-end' : 'flex-start' }}>
           <div style={{ ...bubbleStyle, position: 'relative' }}>

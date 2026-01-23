@@ -1274,7 +1274,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           })()}
           {(() => {
             const firstAgentIndex = messages.findIndex(m => m.speaker === 'agent');
-            return messages.map((message, index) => {
+
+            const applyMessageFilter = (message: any) => {
+              // filter out file messages added by the agent
+              return message.type !== 'file';
+            }
+
+            return messages.filter(applyMessageFilter).map((message, index) => {
               const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
               const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
               const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
