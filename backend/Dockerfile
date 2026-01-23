@@ -21,6 +21,10 @@ COPY ./requirements-app.txt /src/requirements-app.txt
 RUN pip install --no-cache-dir -r /src/requirements-rag.txt && \
     pip install --no-cache-dir -r /src/requirements-app.txt
 
+# Download Hugging Face models for offline/firewalled deployments
+COPY ./download_models.py /tmp/download_models.py
+RUN python /tmp/download_models.py && rm /tmp/download_models.py
+
 # RUN playwright install to donwload the browser of the library
 RUN playwright install --with-deps chromium
 
