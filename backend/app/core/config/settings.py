@@ -9,8 +9,7 @@ class ProjectSettings(BaseSettings):
 
     def __init__(self, **values):
         super().__init__(**values)
-        if self.REDIS_HOST is None:
-            self.REDIS_HOST = "127.0.0.1" if self.DEV else "redis"
+
 
     # === Redis Configuration ===
     REDIS_HOST: Optional[str] = None
