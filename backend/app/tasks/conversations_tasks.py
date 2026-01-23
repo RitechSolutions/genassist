@@ -6,9 +6,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 from app.services.conversations import ConversationService
 from app.db.seed.seed_data_config import seed_test_data
-from app.tasks.base import BaseTaskWithLogging, run_task_for_all_tenants
-
-from fastapi_injector import RequestScopeFactory
+from app.tasks.base import BaseTaskWithLogging
 
 logger = logging.getLogger(__name__)
 
@@ -21,30 +19,11 @@ def cleanup_stale_conversations():
 
 async def cleanup_stale_conversations_async_with_scope():
     """Wrapper to run cleanup for all tenants"""
-    try:
-        logger.info("Starting cleanup of stale conversations for all tenants...")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await cleanup_stale_conversations_async()
-
-        results = await run_task_for_all_tenants(run_with_scope)
-
-        logger.info(f"Cleanup completed for {len(results)} tenant(s)")
-        return {
-            "status": "success",
-            "results": results,
-        }
-
-    except Exception as e:
-        logger.error(f"Error in cleanup of stale conversations task: {str(e)}")
-        return {
-            "status": "failed",
-            "error": str(e),
-        }
-    finally:
-        logger.info("Cleanup of stale conversations task completed.")
+    from app.tasks.base import run_task_with_tenant_support
+    return await run_task_with_tenant_support(
+        cleanup_stale_conversations_async,
+        "cleanup of stale conversations"
+    )
 
 
 async def cleanup_stale_conversations_async():

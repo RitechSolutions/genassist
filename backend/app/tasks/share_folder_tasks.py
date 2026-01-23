@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from celery import shared_task
-from fastapi_injector import RequestScopeFactory
 from io import BytesIO
 
 from app.dependencies.injector import injector
@@ -31,21 +30,13 @@ def transcribe_audio_files_from_smb():
 
 
 async def transcribe_audio_files_async_with_scope(ds_id: Optional[str] = None):
-    try:
-        logger.info("Starting SMB audio transcription task...")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-        async with request_scope_factory.create_scope():
-            result = await transcribe_audio_files_async(ds_id)
-            logger.info(f"SMB share/folder transcription task completed: {result}")
-            return {"status": "success", "result": result}
-
-    except Exception as e:
-        logger.error(f"Error in SMB transcription task: {str(e)}")
-        return {"status": "failed", "error": str(e)}
-
-    finally:
-        logger.info("SMB transcription task finished.")
+    """Wrapper to run SMB transcription for all tenants"""
+    from app.tasks.base import run_task_with_tenant_support
+    return await run_task_with_tenant_support(
+        transcribe_audio_files_async,
+        "SMB audio transcription",
+        ds_id=ds_id
+    )
 
 
 async def transcribe_audio_files_async(ds_id: Optional[str] = None):

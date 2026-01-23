@@ -13,8 +13,6 @@ from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.datasources import DataSourceService
 from celery import shared_task
-from fastapi_injector import RequestScopeFactory
-from app.tasks.base import run_task_for_all_tenants
 
 
 logger = logging.getLogger(__name__)
@@ -25,37 +23,29 @@ def import_zendesk_articles_to_kb():
     """
     Import articles from Zendesk Help Center into the knowledge base.
     """
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    if loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
     return loop.run_until_complete(import_zendesk_articles_to_kb_async_with_scope())
 
 
 async def import_zendesk_articles_to_kb_async_with_scope():
     """Wrapper to run Zendesk article import for all tenants"""
-    try:
-        logger.info("Starting Zendesk article import task for all tenants...")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await import_zendesk_articles_to_kb_async()
-
-        results = await run_task_for_all_tenants(run_with_scope)
-
-        logger.info(f"Zendesk article import completed for {len(results)} tenant(s)")
-        logger.info(f"Results: {results}")
-        return {
-            "status": "success",
-            "results": results,
-        }
-
-    except Exception as e:
-        logger.error(f"Error in Zendesk article import task: {str(e)}")
-        return {
-            "status": "failed",
-            "error": str(e),
-        }
-    finally:
-        logger.info("Zendesk article import task completed.")
+    from app.tasks.base import run_task_with_tenant_support
+    result = await run_task_with_tenant_support(
+        import_zendesk_articles_to_kb_async,
+        "Zendesk article import"
+    )
+    if result.get("status") == "success":
+        logger.info(f"Results: {result.get('results')}")
+    return result
 
 
 async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):

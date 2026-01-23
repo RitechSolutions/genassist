@@ -177,10 +177,11 @@ const KnowledgeBaseManager: React.FC = () => {
     const fetchSources = async () => {
       if (formData.type in targetTypes) {
         const allSources = await getAllDataSources();
+        console.log(allSources);
         const targetType = targetTypes[formData.type];
 
         const filtered = allSources.filter(
-          (source) => source.source_type === targetType,
+          (source) => source.source_type.toLowerCase() === targetType.toLowerCase(),
         );
         setAvailableSources(filtered);
       }
