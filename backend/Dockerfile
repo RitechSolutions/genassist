@@ -1,5 +1,5 @@
 # ==========================================
-# Stage 1: Builder (Compilers & Heavy Lifting)
+# Stage 1: Builder
 # ==========================================
 FROM python:3.12-slim-bookworm as builder
 
@@ -20,26 +20,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# 3. Install Requirements (Aggressive Cleanup Mode)
+# 3. GENERATE CONSTRAINT FILE
+# Locks PyTorch to CPU versions
+RUN echo "torch==2.9.1+cpu" > constraints.txt && \
+    echo "torchvision==0.24.1+cpu" >> constraints.txt && \
+    echo "torchaudio==2.9.1+cpu" >> constraints.txt
+
+# 4. Install Requirements
 COPY requirements-main.txt .
 COPY requirements-rag.txt .
 COPY requirements-app.txt .
 
 RUN pip install --upgrade pip setuptools wheel && \
-    # A. Install everything normally (might pull heavy GPU versions)
     pip install --no-cache-dir \
     -r requirements-main.txt \
     -r requirements-rag.txt \
     -r requirements-app.txt \
-    --extra-index-url https://download.pytorch.org/whl/cpu && \
-    # B. Uninstall Torch and NVIDIA bloat
-    pip uninstall -y torch torchvision torchaudio && \
-    pip freeze | grep nvidia | cut -d= -f1 | xargs -r pip uninstall -y && \
-    # C. Re-install strictly CPU-only versions
-    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+    -c constraints.txt \
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
 # ==========================================
-# Stage 2: Runtime (Minimal & Secure)
+# Stage 2: Runtime
 # ==========================================
 FROM python:3.12-slim-bookworm as runtime
 
@@ -69,7 +70,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 RUN useradd -m -u 1000 genassist
 
-# 3. Copy LEAN Virtual Environment from Builder
+# 3. Copy Virtual Environment
 COPY --from=builder /opt/venv /opt/venv
 
 # 4. Copy Application Code
@@ -81,10 +82,7 @@ COPY --chown=genassist:genassist ./alembic /src/alembic
 COPY --chown=genassist:genassist ./certs /src/certs
 
 # ---------------------------------------------------------------------------
-# Create Log & Cache directories and fix permissions
-# 1. Create .cache (for legra/graphrag)
-# 2. Create datavolume/logs (for access logs)
-# 3. Grant full ownership to genassist user
+# Create the folder structure and assign ownership to 'genassist'.
 # ---------------------------------------------------------------------------
 RUN mkdir -p /src/.cache && \
     mkdir -p /src/datavolume/logs && \
