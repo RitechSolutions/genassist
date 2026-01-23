@@ -388,8 +388,8 @@ async def check_and_execute_scheduled_pipelines_async_with_scope():
         logger.info("Scheduled pipeline check task completed.")
 
 
-@shared_task(name="check_scheduled_pipeline_runs")
-def check_scheduled_pipeline_runs_task():
+@shared_task
+def check_scheduled_pipeline_runs():
     """
     Celery beat task to check for scheduled pipeline runs and execute them.
     This should run every minute.

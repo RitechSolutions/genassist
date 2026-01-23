@@ -164,29 +164,23 @@ const KnowledgeBaseManager: React.FC = () => {
     fetchLLMAnalysts();
   }, []);
 
+  const targetTypes = {
+    s3: "S3",
+    sharepoint: "o365",
+    smb_share_folder: "smb_share_folder",
+    azure_blob: "azure_blob",
+    google_bucket: "gmail",
+    zendesk: "zendesk",
+  };
+
   useEffect(() => {
     const fetchSources = async () => {
-      if (
-        [
-          "s3",
-          "sharepoint",
-          "database",
-          "smb_share_folder",
-          "azure_blob",
-          "zendesk",
-        ].includes(formData.type)
-      ) {
+      if (formData.type in targetTypes) {
         const allSources = await getAllDataSources();
-        let targetType = formData.type;
-        if (formData.type === "sharepoint") targetType = "o365";
-        if (formData.type === "smb_share_folder")
-          targetType = "smb_share_folder";
-        if (formData.type === "azure_blob") targetType = "azure_blob";
-        if (formData.type === "google_bucket") targetType = "google_bucket";
-        if (formData.type === "zendesk") targetType = "zendesk";
+        const targetType = targetTypes[formData.type];
 
         const filtered = allSources.filter(
-          (source) => source.source_type.toLowerCase() === targetType
+          (source) => source.source_type === targetType,
         );
         setAvailableSources(filtered);
       }
@@ -196,7 +190,7 @@ const KnowledgeBaseManager: React.FC = () => {
   }, [formData.type]);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
@@ -243,7 +237,7 @@ const KnowledgeBaseManager: React.FC = () => {
       setError(
         `Failed to upload files: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
       return null;
     } finally {
@@ -307,7 +301,7 @@ const KnowledgeBaseManager: React.FC = () => {
     if (formData.type === "sharepoint") {
       requiredFields.push(
         { label: "source", isEmpty: !formData.sync_source_id },
-        { label: "url", isEmpty: !formData.url }
+        { label: "url", isEmpty: !formData.url },
       );
 
       if (formData.sync_active) {
@@ -412,7 +406,7 @@ const KnowledgeBaseManager: React.FC = () => {
         }
 
         dataToSubmit.files = uploadResults.map(
-          (result: any) => result.file_path
+          (result: any) => result.file_path,
         );
         dataToSubmit.content = `Files: ${uploadResults
           .map((r: any) => r.original_filename)
@@ -422,7 +416,7 @@ const KnowledgeBaseManager: React.FC = () => {
       if (editingItem) {
         await updateKnowledgeItem(editingItem.id, dataToSubmit);
         setSuccess(
-          `Knowledge base item "${dataToSubmit.name}" updated successfully`
+          `Knowledge base item "${dataToSubmit.name}" updated successfully`,
         );
       } else {
         //if (!dataToSubmit.id) {
@@ -431,7 +425,7 @@ const KnowledgeBaseManager: React.FC = () => {
 
         await createKnowledgeItem(dataToSubmit);
         setSuccess(
-          `Knowledge base item "${dataToSubmit.name}" created successfully`
+          `Knowledge base item "${dataToSubmit.name}" created successfully`,
         );
       }
 
@@ -451,7 +445,7 @@ const KnowledgeBaseManager: React.FC = () => {
       toast.error(
         `Failed to ${
           editingItem ? "update" : "create"
-        } knowledge base: ${errorMessage}`
+        } knowledge base: ${errorMessage}`,
       );
     } finally {
       setLoading(false);
@@ -498,7 +492,7 @@ const KnowledgeBaseManager: React.FC = () => {
     });
 
     setDynamicRagConfig(
-      (item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues
+      (item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues,
     );
 
     setSelectedFiles([]);
@@ -699,9 +693,9 @@ const KnowledgeBaseManager: React.FC = () => {
                                   {selectedFiles.length > 0
                                     ? `${selectedFiles.length} file(s) selected`
                                     : formData.files &&
-                                      formData.files.length > 0
-                                    ? "Replace files"
-                                    : "Select files to upload"}
+                                        formData.files.length > 0
+                                      ? "Replace files"
+                                      : "Select files to upload"}
                                 </span>
                                 <input
                                   id="file-upload"
@@ -734,7 +728,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                       size="icon"
                                       onClick={() =>
                                         setSelectedFiles((prev) =>
-                                          prev.filter((_, i) => i !== index)
+                                          prev.filter((_, i) => i !== index),
                                         )
                                       }
                                       className="h-8 w-8"
@@ -776,7 +770,7 @@ const KnowledgeBaseManager: React.FC = () => {
                       ) : (
                         // --- Data source dropdown block ---
                         <div>
-                          <div className="mb-1">Select Source</div>
+                          <div className="mb-1">Data Source</div>
                           <Select
                             value={formData.sync_source_id || ""}
                             onValueChange={(value) => {
@@ -1068,7 +1062,7 @@ const KnowledgeBaseManager: React.FC = () => {
                   showOnlyRequired={true}
                   knowledgeId={editingItem?.id}
                   initialLegraFinalize={Boolean(
-                    (editingItem as any)?.legra_finalize
+                    (editingItem as any)?.legra_finalize,
                   )}
                 />
               </div>
@@ -1082,8 +1076,8 @@ const KnowledgeBaseManager: React.FC = () => {
                   {loading || isUploading
                     ? "Saving..."
                     : editingItem
-                    ? "Update Knowledge Base"
-                    : "Create Knowledge Base"}
+                      ? "Update Knowledge Base"
+                      : "Create Knowledge Base"}
                 </Button>
               </div>
             </div>
@@ -1284,20 +1278,15 @@ const KnowledgeBaseManager: React.FC = () => {
               if (formData.type === "sharepoint") targetType = "o365";
               if (formData.type === "zendesk") targetType = "zendesk";
               const filtered = allSources.filter(
-                (source) => source.source_type.toLowerCase() === targetType
+                (source) => source.source_type.toLowerCase() === targetType,
               );
               setAvailableSources(filtered);
             })();
           }
         }}
         mode="create"
-        defaultSourceType={
-          formData.type === "sharepoint"
-            ? "o365"
-            : formData.type === "zendesk"
-            ? "zendesk"
-            : formData.type
-        }
+        defaultSourceType={targetTypes[formData.type]}
+        disableSourceType={true}
       />
     </div>
   );
