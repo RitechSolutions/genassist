@@ -173,6 +173,7 @@ const KnowledgeBaseManager: React.FC = () => {
           "database",
           "smb_share_folder",
           "azure_blob",
+          "zendesk",
         ].includes(formData.type)
       ) {
         const allSources = await getAllDataSources();
@@ -182,6 +183,7 @@ const KnowledgeBaseManager: React.FC = () => {
           targetType = "smb_share_folder";
         if (formData.type === "azure_blob") targetType = "azure_blob";
         if (formData.type === "google_bucket") targetType = "google_bucket";
+        if (formData.type === "zendesk") targetType = "zendesk";
 
         const filtered = allSources.filter(
           (source) => source.source_type.toLowerCase() === targetType
@@ -277,6 +279,20 @@ const KnowledgeBaseManager: React.FC = () => {
       });
     }
 
+    if (formData.type === "zendesk") {
+      requiredFields.push({
+        label: "source",
+        isEmpty: !formData.sync_source_id,
+      });
+
+      if (formData.sync_active) {
+        requiredFields.push({
+          label: "sync schedule",
+          isEmpty: !formData.sync_schedule,
+        });
+      }
+    }
+
     if (["s3", "azure_blob"].includes(formData.type) && formData.sync_active) {
       requiredFields.push({
         label: "sync schedule",
@@ -342,7 +358,7 @@ const KnowledgeBaseManager: React.FC = () => {
       setSuccess(null);
 
       if (
-        ["s3", "sharepoint", "smb_share_folder", "azure_blob"].includes(
+        ["s3", "sharepoint", "smb_share_folder", "azure_blob", "zendesk"].includes(
           formData.type
         ) &&
         formData.sync_active &&
@@ -639,6 +655,7 @@ const KnowledgeBaseManager: React.FC = () => {
                             <SelectItem value="google_bucket">
                               Google Bucket Storage
                             </SelectItem>
+                            <SelectItem value="zendesk">Zendesk</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -807,6 +824,7 @@ const KnowledgeBaseManager: React.FC = () => {
                             "sharepoint",
                             "smb_share_folder",
                             "azure_blob",
+                            "zendesk",
                           ].includes(formData.type) && (
                             <>
                               <div className="col-span-2 space-y-4">
@@ -1110,6 +1128,7 @@ const KnowledgeBaseManager: React.FC = () => {
                       <SelectItem value="google_bucket">
                         Google Bucket Storage
                       </SelectItem>
+                      <SelectItem value="zendesk">Zendesk</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1263,6 +1282,7 @@ const KnowledgeBaseManager: React.FC = () => {
               const allSources = await getAllDataSources();
               let targetType = formData.type;
               if (formData.type === "sharepoint") targetType = "o365";
+              if (formData.type === "zendesk") targetType = "zendesk";
               const filtered = allSources.filter(
                 (source) => source.source_type.toLowerCase() === targetType
               );
@@ -1272,7 +1292,11 @@ const KnowledgeBaseManager: React.FC = () => {
         }}
         mode="create"
         defaultSourceType={
-          formData.type === "sharepoint" ? "o365" : formData.type
+          formData.type === "sharepoint"
+            ? "o365"
+            : formData.type === "zendesk"
+            ? "zendesk"
+            : formData.type
         }
       />
     </div>

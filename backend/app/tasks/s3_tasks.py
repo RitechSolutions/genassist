@@ -84,6 +84,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
     files_added_tot = 0
     files_deleted_tot = 0
     last_file_date = None
+    kb_errors = []
 
     for kb in kbList:
         logger.info(f"Processing knowledge base {kb.name}")

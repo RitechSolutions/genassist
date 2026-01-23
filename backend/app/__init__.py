@@ -247,6 +247,7 @@ def create_celery():
             "app.tasks.s3_tasks",
             "app.tasks.conversations_tasks",
             "app.tasks.zendesk_tasks",
+            "app.tasks.zendesk_article_sync_tasks",
             "app.tasks.audio_tasks",
             "app.tasks.sharepoint_tasks",
             "app.tasks.fine_tune_job_sync_tasks",
@@ -278,6 +279,7 @@ def create_celery():
         task_soft_time_limit=240,  # 4 minutes (soft limit)
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
+        worker_pool="solo",  # Use solo pool (single-threaded) to avoid SIGSEGV with native libraries
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
     )

@@ -25,10 +25,10 @@ from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
 from app.db.seed.seed_data_config import seed_test_data
 
-from app.services.zendesk import ZendeskClient, fetch_ticket_details, post_private_comment, analyze_ticket_for_db
+from app.modules.integration.zendesk import ZendeskConnector
+from app.services.zendesk import analyze_ticket_for_db
 from app.core.config.settings import settings
-import httpx
-from  app.core.utils.enums.transcript_message_type import TranscriptMessageType
+from app.core.utils.enums.transcript_message_type import TranscriptMessageType
 from app.dependencies.injector import injector
 
 from celery import shared_task
@@ -80,7 +80,8 @@ async def analyze_zendesk_tickets_async():
 async def process_zendesk_tickets():
     logger.info("Processing Zendesk tickets...")
     conversation_service = injector.get(ConversationService)
-    zen_tickets = await get_zendesk_unrated_closed_tickets()
+    zendesk_connector = ZendeskConnector()
+    zen_tickets = await zendesk_connector.get_unrated_closed_tickets()
 
     processed = 0
     failed = 0
@@ -158,11 +159,11 @@ async def process_zendesk_tickets():
            
             # if ticket status is 'closed' - no update is allowed so related followup ticket must be created
             # otherwise is status is 'solved' it is allowed to update it and change the status to 'closed'
-            if ticket_status== 'closed':
-                x = await create_followup_zendesk_ticket(ticket_id,payload) # creates new related ticket (POST)
+            if ticket_status == 'closed':
+                x = await zendesk_connector.create_followup_ticket(ticket_id, payload) # creates new related ticket (POST)
             else:
                 payload["ticket"]["subject"] = f"ANALYZED: {ticket_subject}" 
-                x= await update_ticket_with_statistics(ticket_id,payload) # updates existing ticket with evaluation and closes it (PUT)
+                x = await zendesk_connector.update_ticket(ticket_id, payload=payload) # updates existing ticket with evaluation and closes it (PUT)
             
 
 
@@ -183,109 +184,3 @@ async def process_zendesk_tickets():
     return result
 
 
-################
-
-BASE_URL = f"https://{settings.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
-AUTH = (f"{settings.ZENDESK_EMAIL}/token", settings.ZENDESK_API_TOKEN)
-
-async def get_zendesk_api(url: str):
-    """Authenticates and makes call to Zendesk API."""
-    async with httpx.AsyncClient(auth=AUTH, timeout=10.0) as client:
-        try:
-            response = await client.get(url)
-            response.raise_for_status()  # Raises httpx.HTTPStatusError for 4xx/5xx
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Zendesk API error [{e.response.status_code}]: {e.response.text}")
-            raise HTTPException(status_code=e.response.status_code, detail="Zendesk fetch failed")
-        except httpx.RequestError as e:
-            logger.error(f"Network error during Zendesk API call: {e}")
-            raise HTTPException(status_code=500, detail="Zendesk API network error")
-
-async def update_ticket_with_statistics(ticket_id: int, payload):
-    """Updates a Zendesk ticket with a private comment, status, and tags."""
-    url = f"{BASE_URL}/tickets/{ticket_id}.json"
-
-    async with httpx.AsyncClient(auth=AUTH, timeout=10.0) as client:
-        try:
-            response = await client.put(url, json=payload)
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Zendesk update error [{e.response.status_code}]: {e.response.text}")
-            raise HTTPException(status_code=e.response.status_code, detail=f"Zendesk ({e.response.status_code}): {e.response.text}")
-        except httpx.RequestError as e:
-            logger.error(f"Network error during Zendesk update: {e}")
-            raise HTTPException(status_code=500, detail="Zendesk update network error")
-
-
-async def create_followup_zendesk_ticket(ticket_id: int, payload):
-    """Updates a Zendesk ticket with a private comment, status, and tags."""
-    url = f"{BASE_URL}/tickets.json"
-
-    async with httpx.AsyncClient(auth=AUTH, timeout=10.0) as client:
-        try:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Zendesk update error [{e.response.status_code}]: {e.response.text}")
-            raise HTTPException(status_code=e.response.status_code, detail=f"Zendesk ({e.response.status_code}): {e.response.text}")
-        except httpx.RequestError as e:
-            logger.error(f"Network error during Zendesk update: {e}")
-            raise HTTPException(status_code=500, detail="Zendesk update network error")
-
-async def get_zendesk_unrated_closed_tickets():
-    """Fetch all closed, unrated Zendesk tickets (-tags:analyzed) with comments."""
-    tickets_to_rate = []
-    updated_later_then = "" 
-    #add time constrains uncomment the next line
-    updated_later_then = f" updated>={(utc_now().date() - timedelta(days=7)).isoformat()}"
-    
-    query_definition = f"type:ticket status:solved status:closed -tags:analyzed {updated_later_then}" # last 7 days
-    search_url = f"{BASE_URL}/search.json?query={query_definition}"
-    
-    while search_url:
-        try:
-            response = await get_zendesk_api(search_url)
-            results = response.get("results", [])
-            search_url = response.get("next_page")  # handle pagination
-        except Exception as e:
-            print(f"Error fetching tickets: {e}")
-            break
-
-        for ticket in results:
-            try:
-                ticket_id = ticket["id"]
-                if ticket.get("followup_ids")==[]:
-                    # if followup_ids is [] it means it has Related Ticket where is saved analytics
-                    new_ticket = {
-                        "id": ticket_id,
-                        "created_at": ticket.get("created_at"),
-                        "subject": ticket.get("raw_subject"),
-                        "description": ticket.get("description"),
-                        "status": ticket.get("status"),
-                        "tags":ticket.get("tags"),
-                        "transcription": [],
-                    }
-
-                    # Get comments for this ticket
-                    comments_url = f"{BASE_URL}/tickets/{ticket_id}/comments.json"
-                    comments_response = await get_zendesk_api(comments_url)
-
-                    for comment in comments_response.get("comments", []):
-                        new_comment = {
-                            "id": comment.get("id"),
-                            "timestamp": comment.get("created_at"),
-                            "message": comment.get("plain_body"),
-                            "type": TranscriptMessageType.MESSAGE.value,
-                        }
-                        new_ticket["transcription"].append(new_comment)
-
-                    tickets_to_rate.append(new_ticket)
-                # else skip the ticket since it is already reated (it has related ticket - followup_ids)
-            except Exception as e:
-                print(f"Error processing ticket ID {ticket.get('id')}: {e}")
-                continue
-
-    return tickets_to_rate

@@ -15558,7 +15558,8 @@
               "sharepoint",
               "smb_share_folder",
               "azure_blob",
-              "google_bucket"
+              "google_bucket",
+              "zendesk"
             ],
             "title": "Type",
             "default": "file"
@@ -15813,7 +15814,8 @@
               "sharepoint",
               "smb_share_folder",
               "azure_blob",
-              "google_bucket"
+              "google_bucket",
+              "zendesk"
             ],
             "title": "Type",
             "default": "file"

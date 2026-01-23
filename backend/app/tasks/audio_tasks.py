@@ -37,9 +37,9 @@ async def transcribe_audio_files_async_with_scope(ds_id: Optional[str] = None):
         logger.info("Starting S3 audio transcription task for all tenants...")
         request_scope_factory = injector.get(RequestScopeFactory)
 
-        async def run_with_scope():
+        async def run_with_scope(**kwargs):
             async with request_scope_factory.create_scope():
-                return await transcribe_audio_files_async(ds_id)
+                return await transcribe_audio_files_async(kwargs.get("ds_id"))
 
         results = await run_task_for_all_tenants(run_with_scope, ds_id=ds_id)
 
