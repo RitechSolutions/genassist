@@ -31,6 +31,10 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - CHROMA_HOST=chroma
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       chroma:
         condition: service_started

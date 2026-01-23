@@ -43,6 +43,9 @@ services:
       - CHROMA_PORT=8000                # Chroma server listens on 8000 inside its container
       - DB_HOST=genassist_db_cicd
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       chroma:
         condition: service_started
