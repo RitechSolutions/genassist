@@ -37,7 +37,15 @@ steps:
   - script: |
       echo "stopping existing containers of cicd"
       touch .env
+      
+      # 1. Standard compose down with volume cleanup
       docker compose -f docker-compose.cicd.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
+      
+      # 2. Explicitly remove the specific volume if it survived
+      docker volume rm genassist_cicd_app_data_volume || true
+      
+      # 3. (Optional): Prune dangling volumes to free space
+      # docker volume prune -f || true
     workingDirectory: backend
     displayName: 'Stop Test Containers - Before Start'
 
