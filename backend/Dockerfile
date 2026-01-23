@@ -77,13 +77,18 @@ COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alem
 COPY --chown=genassist:genassist ./app /src/app
 COPY --chown=genassist:genassist ./alembic /src/alembic
 
-# Optional: Certs (Ensure no keys)
+# Optional: Certs
 COPY --chown=genassist:genassist ./certs /src/certs
 
 # ---------------------------------------------------------------------------
-# Grant ownership of /src to the app user
+# Create Log & Cache directories and fix permissions
+# 1. Create .cache (for legra/graphrag)
+# 2. Create datavolume/logs (for access logs)
+# 3. Grant full ownership to genassist user
 # ---------------------------------------------------------------------------
-RUN mkdir -p /src/.cache /home/genassist/.cache /src/datavolume/logs && chown -R genassist:genassist /src /home/genassist/.cache
+RUN mkdir -p /src/.cache && \
+    mkdir -p /src/datavolume/logs && \
+    chown -R genassist:genassist /src
 
 # 5. Set User and Entrypoint
 USER genassist
