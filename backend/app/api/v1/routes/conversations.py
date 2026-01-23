@@ -279,7 +279,10 @@ async def update(
     if model.metadata and model.metadata.get("attachments"):
         # 2 check for file_id in attachments
         for attachment in model.metadata.get("attachments"):
-            if attachment.get("file_id"):
+            if not attachment.get("type"):
+                attachment["file_local_path"] = attachment.get("url")
+                attachment["file_mime_type"] = attachment.get("mime_type")
+            else:
                 file_type = attachment.get("type")
 
                 # 3 check if file_id is in the database
@@ -304,9 +307,7 @@ async def update(
                         tenant_id=tenant_id,
                         current_user_id=get_current_user_id(),
                     )
-            else:
-                attachment["file_local_path"] = attachment.get("url")
-                attachment["file_mime_type"] = attachment.get("mime_type")
+
 
     # add the attachments to the model
     return await process_conversation_update_with_agent(
