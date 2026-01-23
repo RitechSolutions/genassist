@@ -54,10 +54,15 @@ services:
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
       - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
       - DB_HOST=db
       - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - REDIS_URL=redis://redis:6379/0
+      - QDRANT_HOST=http://qdrant
+      - QDRANT_PORT=6333
     volumes:
       - app_data:/src/datavolume
     depends_on:

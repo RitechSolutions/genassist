@@ -49,10 +49,14 @@ services:
     environment:
       - VECTOR_DB_TYPE=chroma
       - CHROMA_COLLECTION_NAME=default
-      - CHROMA_HOST=chroma          # connect to Chroma service over the compose network
-      - CHROMA_PORT=8000            # Chroma server listens on 8000 inside its container
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
       - DB_HOST=genassist_db
+      - DB_PORT=5432
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QDRANT_HOST=http://qdrant
+      - QDRANT_PORT=6333
     depends_on:
       volume-init:
         condition: service_completed_successfully
