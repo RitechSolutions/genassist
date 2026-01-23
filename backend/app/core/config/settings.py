@@ -6,13 +6,9 @@ from app.core.project_path import DATA_VOLUME
 
 
 class ProjectSettings(BaseSettings):
-
-    def __init__(self, **values):
-        super().__init__(**values)
-
-
+    
     # === Redis Configuration ===
-    REDIS_HOST: Optional[str] = None
+    REDIS_HOST: Optional[str] = redis
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_FOR_CONVERSATION: bool = True
