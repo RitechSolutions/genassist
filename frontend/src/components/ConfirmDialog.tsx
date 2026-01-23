@@ -42,7 +42,7 @@ export function ConfirmDialog({
   const confirmButtonClassName =
     primaryButtonText === "Delete"
       ? "bg-red-600 hover:bg-red-700 focus:ring-red-600"
-      : "px-4 bg-black hover:bg-black/90";
+      : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-600";
 
   return (
     <AlertDialog open={isOpen} onOpenChange={onOpenChange}>

@@ -59,7 +59,7 @@ export function FormDialog({
               <Button 
                 type="submit" 
                 disabled={isLoading}
-                className="px-4 bg-black hover:bg-black/90"
+                className="px-4 bg-blue-600 hover:bg-blue-700"
               >
                 {isLoading ? (
                   <>

@@ -296,11 +296,11 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   //   return new Date(dateString).toLocaleString();
   // };
 
+  if (!isOpen) return null;
+
   return (
     <div
-      className={`fixed top-0 right-0 h-full w-80 bg-white border-l shadow-lg transform transition-transform duration-200 ease-in-out ${
-        isOpen ? "translate-x-0" : "translate-x-full"
-      }`}
+      className="fixed top-2 right-2 h-[calc(100vh-1rem)] w-80 bg-white border shadow-lg rounded-lg transform transition-transform duration-200 ease-in-out translate-x-0 animate-in slide-in-from-right"
     >
       <div className="h-full flex flex-col">
         <div className="p-4 border-b">

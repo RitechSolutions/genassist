@@ -352,15 +352,15 @@ export function AppSidebar() {
     window.location.href = "/login";
   };
 
-  const linkClasses = `flex w-full h-full items-center gap-2 font-medium transition-colors duration-200 text-zinc-600 hover:text-primary hover:bg-zinc-100 px-3 rounded-md`;
-  const parentMenuClasses = `flex w-full items-center gap-2 font-medium transition-colors duration-200 text-zinc-700 hover:text-primary hover:bg-zinc-100 px-3 rounded-md`;
-  const submenuLinkClasses = `flex h-full items-center gap-2 font-medium transition-colors duration-200 text-zinc-600 hover:text-primary hover:bg-zinc-100 py-2 px-3 text-sm rounded-md w-[calc(100%-24px)] ml-2`;
+  const linkClasses = `flex w-full h-full items-center gap-2 font-medium transition-colors duration-200 text-zinc-600 hover:text-black hover:bg-zinc-100 px-3 rounded-md`;
+  const parentMenuClasses = `flex w-full items-center gap-2 font-medium transition-colors duration-200 text-zinc-700 hover:text-black hover:bg-zinc-100 px-3 rounded-md`;
+  const submenuLinkClasses = `flex h-full items-center gap-2 font-medium transition-colors duration-200 text-zinc-600 hover:text-black hover:bg-zinc-100 py-2 px-3 text-sm rounded-md w-[calc(100%-24px)] ml-2`;
   const activeSubmenuClasses = `bg-[#F5F5F5] text-zinc-900 font-medium`;
   const menuItemClasses = "h-8";
 
   return (
-    <Sidebar>
-      <SidebarContent className="bg-white">
+    <Sidebar variant="floating" side="left">
+      <SidebarContent className="bg-white" style={{ height: '100%' }}>
         <div className="flex flex-row items-center justify-between p-4 mb-0">
           <svg
             width="175"

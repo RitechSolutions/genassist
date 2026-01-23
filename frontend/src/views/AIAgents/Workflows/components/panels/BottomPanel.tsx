@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/button";
-import { Save, Upload, PlayCircle, MoreVertical } from "lucide-react";
+import { Save, Upload, PlayCircle, MoreVertical, History } from "lucide-react";
 import { useBlocker } from "react-router-dom";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -22,6 +22,7 @@ interface BottomPanelProps {
   onTestWorkflow: (workflow: Workflow) => void;
   onSaveWorkflow?: (workflow: Workflow) => Promise<void>;
   onExecutionStateChange?: (executionState: WorkflowExecutionState) => void;
+  onToggleWorkflowPanel?: () => void;
 }
 
 const BottomPanel: React.FC<BottomPanelProps> = ({
@@ -31,6 +32,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   onTestWorkflow,
   onSaveWorkflow,
   onExecutionStateChange,
+  onToggleWorkflowPanel,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -172,21 +174,18 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   return (
     <>
-      <div className="flex gap-2 bg-white/80 backdrop-blur-sm rounded-full shadow-sm p-2">
+      <div className="flex gap-2 bg-white/80 backdrop-blur-sm rounded-full shadow-sm p-1 pr-3">
         {onSaveWorkflow && (
           <Button
             onClick={handleSaveToServer}
             size="sm"
             variant="outline"
             className={`flex items-center gap-1 rounded-full ${
-              hasUnsavedChanges
-                ? "text-blue-600 border-blue-200 hover:bg-blue-50"
-                : "opacity-50 cursor-not-allowed"
+              !hasUnsavedChanges ? "opacity-50 cursor-not-allowed" : ""
             }`}
             title={hasUnsavedChanges ? "Save changes" : "No changes to save"}
             disabled={!hasUnsavedChanges || isSaving}
           >
-            <Save className={`h-4 w-4 ${isSaving ? "animate-spin" : ""}`} />
             {isSaving ? "Saving..." : "Save"}
           </Button>
         )}
@@ -213,6 +212,12 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {onToggleWorkflowPanel && (
+              <DropdownMenuItem onClick={onToggleWorkflowPanel}>
+                <History className="mr-2 h-4 w-4" />
+                <span>Saved Versions</span>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={handleSaveToFile}>
               <Save className="mr-2 h-4 w-4" />
               <span>Download</span>

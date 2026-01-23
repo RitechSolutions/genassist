@@ -9,7 +9,6 @@ import {
 } from "@/views/Transcripts/helpers/formatting";
 import type { TranscriptEntry } from "@/interfaces/transcript.interface";
 import { fetchTopicsReport } from "@/services/metrics";
-import { PaginationBar } from "@/components/PaginationBar";
 import ActiveConversationsHeader from "./ActiveConversationsHeader";
 import ActiveConversationsSummary from "./ActiveConversationsSummary";
 import ActiveConversationsList from "./ActiveConversationsList";
@@ -37,7 +36,6 @@ type Props = {
   totalCount?: number;
 };
 
-const PAGE_SIZE = 10;
 
 export function ActiveConversationsModule({
   title = "Active Conversations",
@@ -59,7 +57,6 @@ export function ActiveConversationsModule({
     : rawSentiment) as SentimentFilter;
   const categoryParam = (searchParams.get("category") || "all");
   const includeFeedbackParam = (searchParams.get("include_feedback") || "false").toLowerCase() === "true";
-  const pageParam = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
 
   useEffect(() => {
     let mounted = true;
@@ -134,61 +131,51 @@ export function ActiveConversationsModule({
 
   const total = filtered.length;
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = Math.min(pageParam, totalPages);
-  // Order: highest hostility first, then newest to oldest for everything else (and within buckets)
+  // Get sentiment priority: Bad (negative) = 0, Neutral = 1, Good (positive) = 2
+  const getSentimentPriority = (sentiment: string): number => {
+    if (sentiment === "negative") return 0; // Bad first
+    if (sentiment === "neutral") return 1;   // Neutral second
+    return 2; // Good (positive) last
+  };
+
+  // Sort by worst sentiment first (Bad → Neutral → Good), then by newest timestamp
   const ordered = useMemo(() => {
     return [...filtered].sort((a, b) => {
-      const aHostility = a.in_progress_hostility_score || 0;
-      const bHostility = b.in_progress_hostility_score || 0;
-      const aHigh = isHighHostility(aHostility);
-      const bHigh = isHighHostility(bHostility);
+      const aSentiment = a.effectiveSentiment || "";
+      const bSentiment = b.effectiveSentiment || "";
+      const aPriority = getSentimentPriority(aSentiment);
+      const bPriority = getSentimentPriority(bSentiment);
 
-      if (aHigh !== bHigh) {
-        return bHigh ? 1 : -1; // keep high hostility first
+      // First sort by sentiment priority (Bad first, then Neutral, then Good)
+      if (aPriority !== bPriority) {
+        return aPriority - bPriority;
       }
 
-      // If both high, keep the higher hostility first, then newest
-      if (aHigh && bHigh) {
-        const hostilityDiff = bHostility - aHostility;
-        if (hostilityDiff !== 0) return hostilityDiff;
-      }
-
+      // Within the same sentiment, sort by newest first (most recent timestamp)
       const timeDiff = parseTimestampMs(b.timestamp) - parseTimestampMs(a.timestamp);
       if (timeDiff !== 0) return timeDiff;
 
-      // Fallback: higher hostility wins
-      const hostilityDiff = bHostility - aHostility;
-      if (hostilityDiff !== 0) return hostilityDiff;
-
+      // Fallback: use ID for consistent ordering
       return (b.id || "").localeCompare(a.id || "");
     });
   }, [filtered]);
-  const pageItems = ordered.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
-  );
 
-  const handlePageChange = (page: number) => setParam("page", String(page));
+  // Show only the last 3 conversations
+  const pageItems = ordered.slice(0, 3);
 
   return (
-    <Card className="p-6 mb-8 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
-      <ActiveConversationsHeader
-        title={title}
-        sentiment={sentimentParam}
-        category={categoryParam}
-        categories={categories}
-        includeFeedback={includeFeedbackParam}
-        onChange={(key, value) => setParam(key, value)}
-      />
+    <Card className="p-6 mb-5 shadow-sm animate-fade-up bg-white border border-border rounded-xl">
+      <ActiveConversationsHeader title={title} />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
-        <div className="md:col-span-1">
+      <div className="flex gap-6">
+        {/* Left Section - Sentiment Summary */}
+        <div className="w-60 shrink-0">
           <ActiveConversationsSummary total={globalTotal} counts={globalCounts} loading={isLoading} />
         </div>
 
-        <div className="md:col-span-3">
-          <div className="rounded-lg hover:rounded-lg bg-muted/40">
+        {/* Right Section - Conversation List */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex flex-col rounded-2xl overflow-hidden bg-muted/40 min-w-0 w-full">
             <ActiveConversationsList
               items={pageItems.map((i) => ({ ...i, transcript: getLatestMessagePreview(i.transcript) }))}
               isLoading={isLoading}
@@ -197,13 +184,6 @@ export function ActiveConversationsModule({
               onClickRow={(row) => onItemClick?.(row as unknown as ActiveConversation)}
             />
           </div>
-          <PaginationBar
-            total={total}
-            pageSize={PAGE_SIZE}
-            currentPage={currentPage}
-            pageItemCount={pageItems.length}
-            onPageChange={handlePageChange}
-          />
         </div>
       </div>
     </Card>

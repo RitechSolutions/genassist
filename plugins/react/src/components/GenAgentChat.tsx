@@ -901,7 +901,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     const base: React.CSSProperties = {
       position: 'fixed',
       borderRadius: '32px',
-      zIndex: 999,
+      zIndex: 1004,
     };
 
     switch (position) {

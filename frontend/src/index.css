@@ -10,7 +10,8 @@
     --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
+    --primary: 229 86% 51%;
+    --primary-hover: 229 86% 41%;
     --primary-foreground: 0 0% 98%;
     --secondary: 240 4.8% 95.9%;
     --secondary-foreground: 240 5.9% 10%;
@@ -22,9 +23,9 @@
     --destructive-foreground: 0 0% 98%;
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --brand-600: 243 75% 59%;
-    --brand-50: 243 75% 98%;
+    --ring: 229 86% 51%;
+    --brand-600: 229 86% 51%;
+    --brand-50: 229 86% 98%;
     --radius: 0.75rem;
     --handler-diameter: 14;
   }
@@ -36,6 +37,22 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer utilities {
+  /* Global primary button hover styles */
+  .bg-primary {
+    background-color: hsl(var(--primary));
+  }
+  .bg-primary:hover {
+    background-color: hsl(var(--primary-hover));
+  }
+  .hover\:bg-primary:hover {
+    background-color: hsl(var(--primary));
+  }
+  .hover\:bg-primary-hover:hover {
+    background-color: hsl(var(--primary-hover));
   }
 }
 
@@ -127,4 +144,112 @@ input[type="checkbox"]:hover {
 
 .react-flow__handle-bottom {
   bottom: calc(var(--handler-diameter) / -2 * 1px) !important;
+}
+
+/* Animated Multi-Color Shadow for AI Message Input */
+@keyframes animatedShadow {
+  0% {
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.2),
+                0 0 0 1px rgba(139, 92, 246, 0.15);
+  }
+  16.66% {
+    box-shadow: 0 4px 16px rgba(236, 72, 153, 0.2),
+                0 0 0 1px rgba(236, 72, 153, 0.15);
+  }
+  33.33% {
+    box-shadow: 0 4px 16px rgba(251, 146, 60, 0.2),
+                0 0 0 1px rgba(251, 146, 60, 0.15);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(34, 197, 94, 0.2),
+                0 0 0 1px rgba(34, 197, 94, 0.15);
+  }
+  66.66% {
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2),
+                0 0 0 1px rgba(59, 130, 246, 0.15);
+  }
+  83.33% {
+    box-shadow: 0 4px 16px rgba(168, 85, 247, 0.2),
+                0 0 0 1px rgba(168, 85, 247, 0.15);
+  }
+  100% {
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.2),
+                0 0 0 1px rgba(139, 92, 246, 0.15);
+  }
+}
+
+.animated-shadow-input {
+  animation: animatedShadow 8s ease-in-out infinite;
+  transition: all 0.3s ease;
+  border: none;
+}
+
+.animated-shadow-input:focus {
+  animation: animatedShadow 4s ease-in-out infinite;
+  outline: none;
+}
+
+/* Animated dashed stroke for workflow edges when node is selected */
+@keyframes dashOffset {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -28;
+  }
+}
+
+.react-flow__edge.animated-edge path {
+  animation: dashOffset 1s linear infinite;
+  stroke-width: 3 !important;
+}
+
+/* React Flow controls panel (zoom in/out, fit view) */
+.react-flow__panel.react-flow__controls {
+  border-radius: 32px;
+  overflow: hidden;
+}
+
+/* Custom React Flow controls buttons with Lucide icons */
+.react-flow__controls-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  background-color: white;
+  border: none;
+  border-bottom: 1px solid #e5e7eb;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  color: #374151;
+}
+
+.react-flow__controls-button:first-child {
+  border-top-left-radius: 32px;
+  border-top-right-radius: 32px;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom-left-radius: 32px;
+  border-bottom-right-radius: 32px;
+  border-bottom: none;
+}
+
+.react-flow__controls-button:hover {
+  background-color: #f3f4f6;
+}
+
+.react-flow__controls-button:active {
+  background-color: #e5e7eb;
+}
+
+.react-flow__controls-button svg {
+  pointer-events: none;
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  flex-shrink: 0;
 }

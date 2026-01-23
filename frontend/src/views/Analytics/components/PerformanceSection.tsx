@@ -71,7 +71,7 @@ export function PerformanceSection({ timeFilter }: PerformanceSectionProps) {
   }
 
   return (
-    <Card className="p-4 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
+    <Card className="p-4 shadow-sm animate-fade-up bg-white">
       <CardHeader 
         title="Monthly Performance Trend"
         tooltipText="Aggregated KPI data showing customer satisfaction, service quality, and resolution rate trends over time"

@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/select";
 import { Paperclip, X, Save } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialog";
@@ -96,7 +96,7 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         footer={
           <>
             <Button variant="outline" onClick={onClose}>
@@ -305,7 +305,7 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
             )}
           </div>
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
       <DataSourceDialog
         isOpen={isCreateDataSourceOpen}
         onOpenChange={setIsCreateDataSourceOpen}

@@ -1,6 +1,6 @@
 import { Badge } from "@/components/badge";
-import { AlertTriangle, Clock } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { TriangleAlert, Clock } from "lucide-react";
+import { cn } from "@/helpers/utils";
 import { formatDuration } from "@/helpers/duration";
 import type { NormalizedConversation } from "../helpers/activeConversations.types";
 
@@ -13,19 +13,28 @@ interface RowProps {
 export function ConversationRow({ item, reason, onClick }: RowProps) {
   const hostility = Number(item.in_progress_hostility_score || 0);
   const eff = item.effectiveSentiment;
-  const sentimentStyle = eff === "positive"
-    ? "bg-green-600 text-white"
-    : eff === "negative"
-    ? "bg-red-600 text-white"
-    : "bg-purple-600 text-white";
+  const sentimentLabel = eff === "positive" ? "Good" : eff === "negative" ? "Bad" : "Neutral";
+  
+  // Get sentiment badge styles: Green for Good, Blue for Neutral, Red for Bad
+  const getSentimentBadgeStyles = (sentiment: string) => {
+    if (sentiment === "positive") {
+      return "bg-green-100 text-green-800 border-transparent";
+    } else if (sentiment === "negative") {
+      return "bg-red-100 text-red-800 border-transparent";
+    } else {
+      return "bg-blue-100 text-blue-800 border-transparent";
+    }
+  };
+  
   const showHostility = hostility > 60;
   const shortId = (item.id || "").slice(-4);
+  const title = item.topic && item.topic !== "Unknown" ? item.topic : "Booking Inquiry";
 
   return (
     <div
       role="button"
       tabIndex={0}
-      className="p-4 flex items-start justify-between gap-4 cursor-pointer border-b-2 border-gray-200 last:border-b-0 hover:bg-muted/60"
+      className="bg-primary-foreground px-4 py-4 cursor-pointer border-b border-border last:border-b-0 hover:bg-muted/40 transition-colors overflow-hidden w-full max-w-full min-w-0"
       onClick={() => onClick?.(item)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -34,23 +43,43 @@ export function ConversationRow({ item, reason, onClick }: RowProps) {
         }
       }}
     >
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <div className="font-medium truncate">{item.topic && item.topic !== "Unknown" ? item.topic : "Conversation"} #{shortId}</div>
-          <Badge className={cn("capitalize", sentimentStyle)}>{eff === "positive" ? "Good" : eff === "negative" ? "Bad" : "Neutral"}</Badge>
-          {reason && <Badge variant="outline" className="border-gray-300 text-gray-700 bg-gray-50">{reason}</Badge>}
-          {showHostility && (
-            <AlertTriangle className="w-4 h-4 text-red-500 motion-safe:animate-pulse" />
-          )}
+      <div className="flex flex-col gap-2 w-full min-w-0 overflow-hidden">
+        {/* Top Row */}
+        <div className="flex items-center justify-between w-full min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <p className="text-sm font-medium text-foreground shrink-0">
+              {title} #{shortId}
+            </p>
+            <Badge 
+              variant="outline"
+              className={cn("px-2.5 py-0.5 shrink-0", getSentimentBadgeStyles(eff || ""))}
+            >
+              {sentimentLabel}
+            </Badge>
+            {reason && (
+              <Badge 
+                variant="outline"
+                className="px-2.5 py-0.5 shrink-0"
+              >
+                {reason}
+              </Badge>
+            )}
+            {showHostility && (
+              <TriangleAlert className="w-5 h-5 text-destructive shrink-0" />
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Clock className="w-3 h-3 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground leading-none">
+              {formatDuration(Number(item.duration || 0))}
+            </p>
+          </div>
         </div>
-        <div className="text-sm text-muted-foreground truncate">
-          {/* preview text should be injected by parent */}
+
+        {/* Bottom Row - Preview */}
+        <p className="text-sm text-muted-foreground leading-5 truncate min-w-0 w-full overflow-hidden">
           {item.transcript as unknown as string}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
-        <Clock className="w-4 h-4" />
-        <span>{formatDuration(Number(item.duration || 0))}</span>
+        </p>
       </div>
     </div>
   );

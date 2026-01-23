@@ -922,7 +922,7 @@ function TranscriptDialogContent({
             {!hasTakenOver ? (
               <Button
                 onClick={handleTakeOver}
-                className="w-full bg-black text-white"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                 disabled={
                   loading || transcript.status === "complete" || hasTakenOver
                 }
@@ -941,7 +941,7 @@ function TranscriptDialogContent({
                   />
                   <Button
                     onClick={handleSendMessage}
-                    className="px-4 py-2 bg-black text-white"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white"
                   >
                     Send
                   </Button>
@@ -972,7 +972,7 @@ function InfoBox({
   value: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center p-3 bg-primary/5 rounded-lg">
+    <div className="flex flex-col items-center p-3 bg-gray-100 rounded-lg">
       {icon}
       <span className="text-sm font-medium">{value}</span>
       <span className="text-xs text-muted-foreground">{label}</span>

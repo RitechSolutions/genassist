@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/select";
 import { Save } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { BaseNodeDialogProps } from "./base";
 import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialog";
@@ -75,7 +75,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         footer={
           <>
             <Button variant="outline" onClick={onClose}>
@@ -206,7 +206,7 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
             </div>
           </div>
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
       <DataSourceDialog
         isOpen={isCreateDataSourceOpen}
         onOpenChange={setIsCreateDataSourceOpen}

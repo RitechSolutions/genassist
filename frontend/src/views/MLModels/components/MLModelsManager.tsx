@@ -26,12 +26,12 @@ import {
   AlertCircle,
   CheckCircle2,
   Plus,
-  Search,
   ChevronLeft,
   Trash2,
   Brain,
   FileCode,
 } from "lucide-react";
+import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MLModel } from "@/interfaces/ml-model.interface";
 import { Badge } from "@/components/badge";
@@ -632,7 +632,7 @@ const MLModelsManager: React.FC = () => {
                     onValueChange={(value) => setTypeFilter(value)}
                     defaultValue="all"
                   >
-                    <SelectTrigger className="min-w-32">
+                    <SelectTrigger className="min-w-32 bg-white">
                       <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -645,16 +645,13 @@ const MLModelsManager: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="relative">
-                  <Search className="absolute top-0 bottom-0 left-3 my-auto text-gray-500 h-4 w-4" />
-                  <Input
-                    placeholder="Search ML models..."
-                    className="pl-9 min-w-64"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                <Button onClick={() => setShowForm(true)}>
+                <SearchInput
+                  placeholder="Search ML models..."
+                  className="min-w-64"
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                />
+                <Button onClick={() => setShowForm(true)} className="rounded-full">
                   <Plus className="h-4 w-4 mr-2" />
                   Add New
                 </Button>

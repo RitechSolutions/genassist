@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { Input } from "@/components/input";
 
@@ -71,7 +71,7 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         footer={
           <>
             <Button variant="outline" onClick={onClose}>
@@ -160,7 +160,7 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
             </ul>
           </div>
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
 
       {/* Prompt Dialog for Template Generation */}
       <Dialog open={isPromptDialogOpen} onOpenChange={setIsPromptDialogOpen}>

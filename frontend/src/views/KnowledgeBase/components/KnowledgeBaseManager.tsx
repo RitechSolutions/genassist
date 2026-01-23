@@ -34,11 +34,11 @@ import {
   AlertCircle,
   CheckCircle2,
   Plus,
-  Search,
   FileText,
   ChevronLeft,
   Trash2,
 } from "lucide-react";
+import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RagConfigValues } from "../types/ragSchema";
 import {
@@ -1083,7 +1083,7 @@ const KnowledgeBaseManager: React.FC = () => {
                     onValueChange={(value) => setTypeFilter(value)}
                     defaultValue="all"
                   >
-                    <SelectTrigger className="min-w-32">
+                    <SelectTrigger className="min-w-32 bg-white">
                       <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1108,16 +1108,13 @@ const KnowledgeBaseManager: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="relative">
-                  <Search className="absolute top-0 bottom-0 left-3 my-auto text-gray-500 h-4 w-4" />
-                  <Input
-                    placeholder="Search knowledge base..."
-                    className="pl-9 min-w-64"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                <Button onClick={() => setShowForm(true)}>
+                <SearchInput
+                  placeholder="Search knowledge base..."
+                  className="min-w-64"
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                />
+                <Button onClick={() => setShowForm(true)} className="rounded-full">
                   <Plus className="h-4 w-4 mr-2" />
                   Add New
                 </Button>

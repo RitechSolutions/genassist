@@ -5,7 +5,6 @@ import { AppSidebar } from "@/layout/app-sidebar";
 import { AuditLogCard } from "@/views/AuditLogs/components/AuditLogCard";
 import { AuditLogDetailsDialog } from "@/views/AuditLogs/components/AuditLogDetailsDialog";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Search } from "lucide-react";
 import { Button } from "@/components/button";
 import { Select, SelectItem, SelectContent, SelectTrigger } from "@/components/select";
 import { format, startOfDay, subDays, endOfDay } from "date-fns";
@@ -21,6 +20,7 @@ import {
   PaginationEllipsis,
 } from "@/components/pagination";
 import { getPageList } from "@/helpers/pagination";
+import { SearchInput } from "@/components/SearchInput";
 
 const getDefaultDateRange = () => {
   const today = new Date();
@@ -114,11 +114,11 @@ export default function AuditLogs() {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100 relative">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
           <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-          <div className="flex-1 p-8">
+          <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-2xl xl:max-w-7xl mx-auto space-y-6">
               <div className="flex justify-between items-start">
                 <div>
@@ -131,11 +131,11 @@ export default function AuditLogs() {
                 <div className="inline-flex gap-4">
                   <Popover>
                     <PopoverTrigger asChild>
-                      <button className="border px-4 py-2 rounded text-sm bg-white shadow-sm hover:bg-gray-50">
+                      <Button variant="outline" className="rounded-full">
                         {dateRange.from && dateRange.to
                           ? `${format(dateRange.from, "PPP")} - ${format(dateRange.to, "PPP")}`
                           : "Select a date range"}
-                      </button>
+                      </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
                       <Calendar
@@ -149,7 +149,7 @@ export default function AuditLogs() {
 
                   <div className="w-40">
                     <Select value={selectedUser ?? ""} onValueChange={(value) => setSelectedUser(value === "" ? null : value)}>
-                      <SelectTrigger className="w-full h-full text-sm border rounded-md px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
+                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
                         {selectedUser ? users.find((u) => u.id === selectedUser)?.username : "Select User"}
                       </SelectTrigger>
                       <SelectContent>
@@ -163,7 +163,7 @@ export default function AuditLogs() {
 
                   <div className="w-40">
                     <Select value={selectedAction ?? undefined} onValueChange={(value) => setSelectedAction(value || null)}>
-                      <SelectTrigger className="w-full h-full text-sm border rounded-md px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
+                      <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
                         {selectedAction ? selectedAction : "Select Action"}
                       </SelectTrigger>
                       <SelectContent>
@@ -177,16 +177,13 @@ export default function AuditLogs() {
                 </div>
 
                 <div className="relative flex gap-x-4">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="text"
+                  <SearchInput
                     placeholder="Search audit logs..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    onChange={setSearchQuery}
                   />
                   <div className="flex justify-center items-center">
-                    <Button onClick={handleClearFilters}>Clear</Button>
+                    <Button onClick={handleClearFilters} className="rounded-full">Clear</Button>
                   </div>
                 </div>
               </div>

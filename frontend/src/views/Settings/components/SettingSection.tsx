@@ -28,7 +28,7 @@ export const SettingSection = ({ section, toggleStates, onToggle }: SettingSecti
         );
       case "select":
         return (
-          <select className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring">
+          <select className="rounded-full border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring">
             {field.options?.map((option) => (
               <option key={option}>{option}</option>
             ))}
@@ -41,7 +41,7 @@ export const SettingSection = ({ section, toggleStates, onToggle }: SettingSecti
             placeholder={field.placeholder}
             value={typeof field.value === "string" || typeof field.value === "number" ? field.value : undefined}
             readOnly={field.readOnly}
-            className={cn("rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-75", field.className)}
+            className={cn("rounded-full border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-75", field.className)}
             disabled={field.readOnly}
           />
         );
@@ -49,7 +49,7 @@ export const SettingSection = ({ section, toggleStates, onToggle }: SettingSecti
   };
 
   return (
-    <Card className="p-4 sm:p-6 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
+    <Card className="p-4 sm:p-6 shadow-sm animate-fade-up bg-white">
       <div className="flex items-center gap-3 mb-4">
         <section.icon className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
         <div>
