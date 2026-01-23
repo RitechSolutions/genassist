@@ -78,7 +78,7 @@ class LLMModelNode(BaseNode):
             attachments = self.get_state().get_value("attachments", [])
             if attachments:
                 for attachment in attachments:
-                    attachment_type = "image" if attachment.get("type").startswith("image/") else "file"
+                    attachment_type = "image" if attachment.get("type").startswith("image") else "file"
                     attachment_file_local_path = attachment.get("file_local_path")
                     attachment_mime_type = attachment.get("file_mime_type")
                     attachment_url = attachment.get("url")
