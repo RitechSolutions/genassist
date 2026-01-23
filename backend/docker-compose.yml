@@ -1,4 +1,14 @@
 services:
+  # Init container to set up volume permissions
+  volume-init:
+    image: busybox:latest
+    container_name: genassist-volume-init
+    volumes:
+      - app_data_volume:/data
+    command: sh -c "mkdir -p /data/logs /data/uploads /data/recordings && chown -R 1000:1000 /data"
+    networks:
+      - genassist-network
+
   # Database
   db:
     image: pgvector/pgvector:pg17
@@ -44,6 +54,8 @@ services:
       - DB_HOST=genassist_db
       - REDIS_HOST=redis
     depends_on:
+      volume-init:
+        condition: service_completed_successfully
       chroma:
         condition: service_started
       qdrant:
