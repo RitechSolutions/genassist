@@ -82,10 +82,20 @@ async def start(
 ):
     """
     Create a new in-progress conversation and store the partial transcript.
-    If agent.token_based_auth is true, returns a JWT token for secure frontend access.
+    If agent.security_settings.token_based_auth is true, returns a JWT token for secure frontend access.
     """
-    # Verify reCAPTCHA token if it is present
-    is_valid, score, reason = verify_recaptcha_token(model.recaptcha_token)
+    # Get agent first to use agent-specific reCAPTCHA settings
+    userid = get_current_user_id()
+    logger.debug("userid:" + str(userid))
+
+    agent = await agent_config_service.get_by_user_id(userid)
+    if not agent:
+        logger.debug("agent not found")
+    else:
+        logger.debug("agent:" + agent.name)
+
+    # Verify reCAPTCHA token if it is present, using agent-specific settings
+    is_valid, score, reason = verify_recaptcha_token(model.recaptcha_token, agent=agent)
     if not is_valid:
         logger.warning(f"reCAPTCHA verification failed: {reason}")
         raise AppException(
@@ -99,14 +109,6 @@ async def start(
 
     if model.conversation_id:
         raise AppException(error_key=ErrorKey.ID_CANT_BE_SPECIFIED)
-    userid = get_current_user_id()
-    logger.debug("userid:" + str(userid))
-
-    agent = await agent_config_service.get_by_user_id(userid)
-    if not agent:
-        logger.debug("agent not found")
-    else:
-        logger.debug("agent:" + agent.name)
 
     agent_read = AgentRead.model_validate(agent)
     model.operator_id = agent.operator_id
@@ -126,14 +128,25 @@ async def start(
     }
 
     # If agent requires authentication, generate and return a guest JWT token
-    if agent_read.token_based_auth:
+    token_based_auth = (
+        agent_read.security_settings.token_based_auth 
+        if agent_read.security_settings and agent_read.security_settings.token_based_auth 
+        else False
+    )
+    if token_based_auth:
         tenant_id = get_tenant_context()
+        # Use agent-specific token expiration if set, otherwise use default (24 hours)
+        from datetime import timedelta
+        expires_delta = None
+        if agent.security_settings and agent.security_settings.token_expiration_minutes:
+            expires_delta = timedelta(minutes=agent.security_settings.token_expiration_minutes)
         # Include user_id from the API key used to start the conversation
         guest_token = auth_service.create_guest_token(
             tenant_id=tenant_id,
             agent_id=str(agent.id),
             conversation_id=str(conversation.id),
-            user_id=str(userid) if userid else None
+            user_id=str(userid) if userid else None,
+            expires_delta=expires_delta
         )
         response["guest_token"] = guest_token
 
@@ -267,7 +280,7 @@ async def update(
 ):
     """
     Append segments to an existing in-progress conversation.
-    If agent.token_based_auth is true, only accepts JWT tokens (rejects API keys).
+    If agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).
     """
     tenant_id = get_tenant_context()
 
