@@ -16,6 +16,7 @@ import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Textarea } from "@/components/textarea";
 import { Switch } from "@/components/switch";
+import { Label } from "@/components/label";
 
 import {
   Select,
@@ -61,6 +62,7 @@ interface KnowledgeItem {
   files?: string[];
   rag_config?: LegacyRagConfig;
   url?: string;
+  use_http_request?: boolean;
   extra_metadata?: Record<string, any>;
   processing_filter?: string | null;
   llm_analyst_id?: string | null;
@@ -74,6 +76,13 @@ interface KnowledgeItem {
   [key: string]: unknown;
 }
 
+type UrlHeaderRow = {
+  id: string;
+  key: string;
+  value: string;
+  keyType: "known" | "custom";
+};
+
 const DEFAULT_FORM_DATA: KnowledgeItem = {
   id: uuidv4(),
   name: "",
@@ -84,6 +93,7 @@ const DEFAULT_FORM_DATA: KnowledgeItem = {
   llm_provider_id: null,
   files: [],
   url: null,
+  use_http_request: false,
   rag_config: DEFAULT_LEGACY_RAG_CONFIG,
   processing_filter: "",
   llm_analyst_id: null,
@@ -94,6 +104,17 @@ const DEFAULT_FORM_DATA: KnowledgeItem = {
   save_output: false,
   save_output_path: "",
 };
+
+const KNOWN_HTTP_HEADERS = [
+  "Authorization",
+  "User-Agent",
+  "Accept",
+  "Accept-Language",
+  "Content-Type",
+  "Cache-Control",
+  "If-None-Match",
+  "If-Modified-Since",
+];
 
 const KnowledgeBaseManager: React.FC = () => {
   const [items, setItems] = useState<KnowledgeItem[]>([]);
@@ -121,6 +142,7 @@ const KnowledgeBaseManager: React.FC = () => {
   const [formData, setFormData] = useState<KnowledgeItem>(DEFAULT_FORM_DATA);
   const [dynamicRagConfig, setDynamicRagConfig] = useState<RagConfigValues>({});
   const [isDataSourceDialogOpen, setIsDataSourceDialogOpen] = useState(false);
+  const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
 
   useEffect(() => {
     fetchItems();
@@ -297,8 +319,19 @@ const KnowledgeBaseManager: React.FC = () => {
 
     if (formData.type === "url") {
       requiredFields.push({ label: "url", isEmpty: !formData.url });
+      if (urlHeaders.length > 0) {
+        urlHeaders.forEach((header) => {
+          const hasKey = header.key.trim().length > 0;
+          const hasValue = header.value.trim().length > 0;
+          if (!hasKey || !hasValue) {
+            requiredFields.push({
+              label: "custom header",
+              isEmpty: true,
+            });
+          }
+        });
+      }
     }
-
     if (formData.type === "sharepoint") {
       requiredFields.push(
         { label: "source", isEmpty: !formData.sync_source_id },
@@ -364,9 +397,25 @@ const KnowledgeBaseManager: React.FC = () => {
 
       const dataToSubmit = { ...formData };
 
+      const normalizedUrlHeaders = urlHeaders.reduce<Record<string, string>>(
+        (acc, header) => {
+          const key = header.key.trim();
+          if (!key) return acc;
+          acc[key] = header.value;
+          return acc;
+        },
+        {}
+      );
+      const hasUrlHeaders = Object.keys(normalizedUrlHeaders).length > 0;
+
       // Move custom frontend-only fields into extra_metadata
       dataToSubmit.extra_metadata = {
         ...(dataToSubmit.extra_metadata || {}),
+        use_http_request: dataToSubmit.use_http_request || false,
+        http_headers:
+          dataToSubmit.type === "url" && hasUrlHeaders
+            ? normalizedUrlHeaders
+            : null,
         processing_filter: dataToSubmit.processing_filter || null,
         llm_analyst_id: dataToSubmit.llm_analyst_id || null,
         processing_mode: dataToSubmit.processing_mode || null,
@@ -397,6 +446,7 @@ const KnowledgeBaseManager: React.FC = () => {
       delete dataToSubmit.save_in_conversation;
       delete dataToSubmit.save_output;
       delete dataToSubmit.save_output_path;
+      delete dataToSubmit.use_http_request;
       //////////////////////////
 
       if (formData.type === "file" && selectedFiles.length > 0) {
@@ -433,6 +483,7 @@ const KnowledgeBaseManager: React.FC = () => {
       setFormData(DEFAULT_FORM_DATA);
       setDynamicRagConfig({});
       setSelectedFiles([]);
+      setUrlHeaders([]);
       setEditingItem(null);
       setShowForm(false);
       fetchItems();
@@ -457,6 +508,7 @@ const KnowledgeBaseManager: React.FC = () => {
     setFormData(DEFAULT_FORM_DATA);
     setDynamicRagConfig({});
     setSelectedFiles([]);
+    setUrlHeaders([]);
     setEditingItem(null);
     setError(null);
     setSuccess(null);
@@ -474,6 +526,7 @@ const KnowledgeBaseManager: React.FC = () => {
       type: item.type || DEFAULT_FORM_DATA.type,
       sync_source_id: item.sync_source_id,
       url: item.url,
+      use_http_request: item.extra_metadata?.use_http_request ?? false,
       llm_provider_id:
         item.llm_provider_id || DEFAULT_FORM_DATA.llm_provider_id,
       sync_schedule: item.sync_schedule || DEFAULT_FORM_DATA.sync_schedule,
@@ -491,6 +544,22 @@ const KnowledgeBaseManager: React.FC = () => {
       save_output: item.extra_metadata?.save_output ?? false,
       save_output_path: item.extra_metadata?.save_output_path ?? "",
     });
+
+    const existingUrlHeaders =
+      item.extra_metadata?.http_headers || item.extra_metadata?.custom_headers;
+    if (existingUrlHeaders && typeof existingUrlHeaders === "object") {
+      const rows = Object.entries(existingUrlHeaders as Record<string, string>)
+        .map(([key, value]) => ({
+          id: uuidv4(),
+          key,
+          value: value ?? "",
+          keyType: KNOWN_HTTP_HEADERS.includes(key) ? "known" : "custom",
+        }))
+        .filter((row) => row.key);
+      setUrlHeaders(rows);
+    } else {
+      setUrlHeaders([]);
+    }
 
     setDynamicRagConfig(
       (item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues,
@@ -679,6 +748,124 @@ const KnowledgeBaseManager: React.FC = () => {
                             placeholder="Enter URL (e.g., https://example.com)"
                             type="url"
                           />
+                          <div className="mt-4 rounded-lg border bg-white p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 pr-4">
+                                <div className="text-sm font-medium text-gray-900">
+                                  Use HTTP request
+                                </div>
+                                <p className="text-sm text-gray-500 mt-1">
+                                  Fetch content via a direct HTTP request
+                                  instead of browser scraping.
+                                </p>
+                              </div>
+                              <Switch
+                                checked={formData.use_http_request || false}
+                                onCheckedChange={(checked) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    use_http_request: checked,
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center">
+                                <Label>Custom Headers (optional)</Label>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-xs"
+                                  onClick={() =>
+                                    setUrlHeaders((prev) => [
+                                      ...prev,
+                                      {
+                                        id: uuidv4(),
+                                        key: "",
+                                        value: "",
+                                        keyType: "known",
+                                      },
+                                    ])
+                                  }
+                                >
+                                  <Plus className="h-3 w-3 mr-1" /> Add Header
+                                </Button>
+                              </div>
+
+                              <div className="space-y-2">
+                                <datalist id="known-url-headers">
+                                  {KNOWN_HTTP_HEADERS.map((key) => (
+                                    <option key={key} value={key} />
+                                  ))}
+                                </datalist>
+                                {urlHeaders.map((header, idx) => (
+                                  <div
+                                    key={`url-header-${idx}`}
+                                    className="flex items-center gap-2 w-full"
+                                  >
+                                    <Input
+                                      placeholder="Header name"
+                                      value={header.key}
+                                      onChange={(e) =>
+                                        setUrlHeaders((prev) =>
+                                          prev.map((row) =>
+                                            row.id === header.id
+                                              ? {
+                                                  ...row,
+                                                  key: e.target.value,
+                                                  keyType: KNOWN_HTTP_HEADERS.includes(
+                                                    e.target.value
+                                                  )
+                                                    ? "known"
+                                                    : "custom",
+                                                }
+                                              : row
+                                          )
+                                        )
+                                      }
+                                      list="known-url-headers"
+                                      className="flex-1 text-xs min-w-0 w-full"
+                                    />
+                                    <Input
+                                      placeholder="Value"
+                                      value={header.value}
+                                      onChange={(e) =>
+                                        setUrlHeaders((prev) =>
+                                          prev.map((row) =>
+                                            row.id === header.id
+                                              ? {
+                                                  ...row,
+                                                  value: e.target.value,
+                                                }
+                                              : row
+                                          )
+                                        )
+                                      }
+                                      className="flex-1 text-xs min-w-0 w-full"
+                                    />
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6 flex-shrink-0"
+                                      onClick={() =>
+                                        setUrlHeaders((prev) =>
+                                          prev.filter(
+                                            (row) => row.id !== header.id
+                                          )
+                                        )
+                                      }
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       ) : formData.type === "file" ? (
                         <div>
