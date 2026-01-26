@@ -88,7 +88,7 @@ export interface ZendeskTicketNodeData extends BaseNodeData {
   requester_name?: string;
   requester_email?: string;
   tags?: string[];
-  custom_fields?: Array<{ id: number; value: string | number }>;
+  custom_fields?: Array<{ id: string; value: string | number }>;
   app_settings_id?: string;
 }
 

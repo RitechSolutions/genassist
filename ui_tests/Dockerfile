@@ -1,5 +1,5 @@
 # Use Node.js LTS version as base image
-FROM node:20
+FROM node:20-bookworm-slim
 
 # Set working directory
 WORKDIR /app
