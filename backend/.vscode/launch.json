@@ -14,6 +14,18 @@
                 "--reload"
             ],
             "jinja": true
+        },
+        {
+            "name": "Python Debugger: Celery",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "run_celery",
+            "args": [
+                "worker",
+                "-l",
+                "DEBUG"
+            ],
+            "jinja": true
         }
     ]
 }

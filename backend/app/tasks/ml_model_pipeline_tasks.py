@@ -10,7 +10,6 @@ from typing import Dict, Any
 from pathlib import Path
 
 from celery import shared_task
-from fastapi_injector import RequestScopeFactory
 from app.dependencies.injector import injector
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.core.tenant_scope import get_tenant_context
@@ -93,130 +92,137 @@ async def execute_pipeline_run_async(run_id: UUID):
     session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
 
     async with session_factory() as session:
-        run_repository = MLModelPipelineRunRepository(session)
-        artifact_repository = MLModelPipelineArtifactRepository(session)
-        workflow_repository = WorkflowRepository(session)
-        model_repository = MLModelsRepository(session)
-
         try:
-            # Get the pipeline run
-            # If run doesn't exist in this tenant's database, skip execution
-            # (this happens when run_task_for_all_tenants queries all tenants)
+            run_repository = MLModelPipelineRunRepository(session)
+            artifact_repository = MLModelPipelineArtifactRepository(session)
+            workflow_repository = WorkflowRepository(session)
+            model_repository = MLModelsRepository(session)
+
             try:
-                run = await run_repository.get_by_id(run_id)
-            except AppException as e:
-                if e.error_key == ErrorKey.NOT_FOUND:
-                    logger.info(
-                        f"Pipeline run {run_id} not found in tenant {tenant_id}, skipping execution"
-                    )
-                    return None  # Skip this tenant - run doesn't belong to it
-                raise
+                # Get the pipeline run
+                # If run doesn't exist in this tenant's database, skip execution
+                # (this happens when run_task_for_all_tenants queries all tenants)
+                try:
+                    run = await run_repository.get_by_id(run_id)
+                except AppException as e:
+                    if e.error_key == ErrorKey.NOT_FOUND:
+                        logger.info(
+                            f"Pipeline run {run_id} not found in tenant {tenant_id}, skipping execution"
+                        )
+                        return None  # Skip this tenant - run doesn't belong to it
+                    raise
 
-            # Update status to running
-            await run_repository.update_status(run_id, PipelineRunStatus.RUNNING)
+                # Update status to running
+                await run_repository.update_status(run_id, PipelineRunStatus.RUNNING)
 
-            # Get workflow
-            workflow = await workflow_repository.get_by_id(run.workflow_id)
-            if not workflow:
-                raise Exception(f"Workflow {run.workflow_id} not found")
+                # Get workflow
+                workflow = await workflow_repository.get_by_id(run.workflow_id)
+                if not workflow:
+                    raise Exception(f"Workflow {run.workflow_id} not found")
 
-            # Get model
-            model = await model_repository.get_by_id(run.model_id)
+                # Get model
+                model = await model_repository.get_by_id(run.model_id)
 
-            # Prepare workflow execution input
-            workflow_config = {
-                "id": str(run.workflow_id),
-                "nodes": workflow.nodes or [],
-                "edges": workflow.edges or [],
-            }
+                # Prepare workflow execution input
+                workflow_config = {
+                    "id": str(run.workflow_id),
+                    "nodes": workflow.nodes or [],
+                    "edges": workflow.edges or [],
+                }
 
-            # Build workflow
-            workflow_engine = WorkflowEngine.get_instance()
-            workflow_engine.build_workflow(workflow_config)
+                # Build workflow
+                workflow_engine = WorkflowEngine.get_instance()
+                workflow_engine.build_workflow(workflow_config)
 
-            # Prepare input data with model context
-            input_data = {
-                "model_id": str(run.model_id),
-                "model_name": model.name,
-                "pipeline_run_id": str(run_id),
-            }
+                # Prepare input data with model context
+                input_data = {
+                    "model_id": str(run.model_id),
+                    "model_name": model.name,
+                    "pipeline_run_id": str(run_id),
+                }
 
-            # Execute workflow
-            thread_id = f"pipeline_run_{run_id}"
-            state = await workflow_engine.execute_from_node(
-                str(run.workflow_id), input_data=input_data, thread_id=thread_id
-            )
-
-            # Extract execution results
-            execution_output = state.format_state_as_response()
-
-            # Determine output directory (typically in datavolume/train/{run_id}/)
-            output_dir = str(DATA_VOLUME / "train" / str(run_id))
-
-            # Scan for artifacts
-            artifacts = scan_for_artifacts(output_dir, run_id)
-
-            # Create artifact records
-            for artifact_data in artifacts:
-                artifact_create = MLModelPipelineArtifactCreate(
-                    pipeline_run_id=run_id,
-                    artifact_type=artifact_data["artifact_type"],
-                    artifact_path=artifact_data["artifact_path"],
-                    artifact_name=artifact_data["artifact_name"],
-                    file_size=artifact_data["file_size"],
+                # Execute workflow
+                thread_id = f"pipeline_run_{run_id}"
+                state = await workflow_engine.execute_from_node(
+                    str(run.workflow_id), input_data=input_data, thread_id=thread_id
                 )
-                await artifact_repository.create(artifact_create)
 
-            # Update run status to completed
-            await run_repository.update_status(
-                run_id,
-                PipelineRunStatus.COMPLETED,
-                execution_output=execution_output,
-                execution_id=UUID(state.execution_id) if state.execution_id else None,
-            )
+                # Extract execution results
+                execution_output = state.format_state_as_response()
 
-            logger.info(f"Pipeline run {run_id} completed successfully")
+                # Determine output directory (typically in datavolume/train/{run_id}/)
+                output_dir = str(DATA_VOLUME / "train" / str(run_id))
 
-        except Exception as e:
-            logger.error(
-                f"Error executing pipeline run {run_id}: {str(e)}", exc_info=True
-            )
+                # Scan for artifacts
+                artifacts = scan_for_artifacts(output_dir, run_id)
 
-            # Update run status to failed
-            # Skip if run doesn't exist in this tenant's database
-            try:
+                # Create artifact records
+                for artifact_data in artifacts:
+                    artifact_create = MLModelPipelineArtifactCreate(
+                        pipeline_run_id=run_id,
+                        artifact_type=artifact_data["artifact_type"],
+                        artifact_path=artifact_data["artifact_path"],
+                        artifact_name=artifact_data["artifact_name"],
+                        file_size=artifact_data["file_size"],
+                    )
+                    await artifact_repository.create(artifact_create)
+
+                # Update run status to completed
                 await run_repository.update_status(
-                    run_id, PipelineRunStatus.FAILED, error_message=str(e)
+                    run_id,
+                    PipelineRunStatus.COMPLETED,
+                    execution_output=execution_output,
+                    execution_id=UUID(state.execution_id) if state.execution_id else None,
                 )
-            except AppException as update_error:
-                if update_error.error_key == ErrorKey.NOT_FOUND:
-                    logger.info(
-                        f"Pipeline run {run_id} not found in tenant {tenant_id} when updating status, skipping"
+
+                logger.info(f"Pipeline run {run_id} completed successfully")
+
+            except Exception as e:
+                logger.error(
+                    f"Error executing pipeline run {run_id}: {str(e)}", exc_info=True
+                )
+
+                # Update run status to failed
+                # Skip if run doesn't exist in this tenant's database
+                try:
+                    await run_repository.update_status(
+                        run_id, PipelineRunStatus.FAILED, error_message=str(e)
                     )
-                else:
+                except AppException as update_error:
+                    if update_error.error_key == ErrorKey.NOT_FOUND:
+                        logger.info(
+                            f"Pipeline run {run_id} not found in tenant {tenant_id} when updating status, skipping"
+                        )
+                    else:
+                        logger.error(f"Error updating run status: {str(update_error)}")
+                except Exception as update_error:
                     logger.error(f"Error updating run status: {str(update_error)}")
-            except Exception as update_error:
-                logger.error(f"Error updating run status: {str(update_error)}")
+        finally:
+            # Ensure session is properly closed
+            await session.close()
 
 
 async def execute_pipeline_run_async_with_scope(run_id: UUID):
     """Wrapper to run pipeline execution for all tenants"""
+    from app.tasks.base import create_task_wrapper, run_task_for_all_tenants
+    
+    # Create a wrapper that handles the UUID conversion
+    async def task_with_uuid_conversion(**kwargs):
+        task_run_id = kwargs.get("run_id", run_id)
+        if isinstance(task_run_id, str):
+            task_run_id = UUID(task_run_id)
+        return await execute_pipeline_run_async(task_run_id)
+    
     try:
         logger.info(f"Starting pipeline run execution task for all tenants: {run_id}")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await execute_pipeline_run_async(run_id)
-
-        results = await run_task_for_all_tenants(run_with_scope)
-
+        wrapper = create_task_wrapper(task_with_uuid_conversion)
+        results = await run_task_for_all_tenants(wrapper, run_id=str(run_id))
+        
         logger.info(f"Pipeline run execution completed for {len(results)} tenant(s)")
         return {
             "status": "success",
             "results": results,
         }
-
     except Exception as e:
         logger.error(f"Error in pipeline run execution task: {str(e)}")
         return {
@@ -266,10 +272,10 @@ async def check_and_execute_scheduled_pipelines_async():
     session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
 
     async with session_factory() as session:
-        config_repository = MLModelPipelineConfigRepository(session)
-        run_repository = MLModelPipelineRunRepository(session)
-
         try:
+            config_repository = MLModelPipelineConfigRepository(session)
+            run_repository = MLModelPipelineRunRepository(session)
+
             # Get all configs with cron schedules (this would need a new method)
             # For now, we'll get all configs and filter
             # TODO: Add a method to get configs with cron schedules
@@ -358,38 +364,22 @@ async def check_and_execute_scheduled_pipelines_async():
 
         except Exception as e:
             logger.error(f"Error checking scheduled pipelines: {str(e)}", exc_info=True)
+        finally:
+            # Ensure session is properly closed
+            await session.close()
 
 
 async def check_and_execute_scheduled_pipelines_async_with_scope():
     """Wrapper to run scheduled pipeline check for all tenants"""
-    try:
-        logger.info("Starting scheduled pipeline check task for all tenants...")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await check_and_execute_scheduled_pipelines_async()
-
-        results = await run_task_for_all_tenants(run_with_scope)
-
-        logger.info(f"Scheduled pipeline check completed for {len(results)} tenant(s)")
-        return {
-            "status": "success",
-            "results": results,
-        }
-
-    except Exception as e:
-        logger.error(f"Error in scheduled pipeline check task: {str(e)}")
-        return {
-            "status": "failed",
-            "error": str(e),
-        }
-    finally:
-        logger.info("Scheduled pipeline check task completed.")
+    from app.tasks.base import run_task_with_tenant_support
+    return await run_task_with_tenant_support(
+        check_and_execute_scheduled_pipelines_async,
+        "scheduled pipeline check"
+    )
 
 
-@shared_task(name="check_scheduled_pipeline_runs")
-def check_scheduled_pipeline_runs_task():
+@shared_task
+def check_scheduled_pipeline_runs():
     """
     Celery beat task to check for scheduled pipeline runs and execute them.
     This should run every minute.
