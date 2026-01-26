@@ -1,8 +1,10 @@
 import logging
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
 from app.core.permissions.constants import Permissions as P
@@ -15,6 +17,40 @@ from app.schemas.question import QuestionCreate
 from app.schemas.conversation_transcript import ConversationTranscriptCreate
 from app.services.audio import AudioService
 from app.core.utils.bi_utils import validate_upload_file_size
+
+
+def validate_file_path_within_directory(file_path: str, allowed_directory: str) -> Path:
+    """
+    Validate that a file path is within an allowed directory to prevent path traversal attacks.
+
+    Args:
+        file_path: The file path to validate
+        allowed_directory: The directory the file must be within
+
+    Returns:
+        The resolved Path if valid
+
+    Raises:
+        HTTPException: If the path escapes the allowed directory
+    """
+    resolved_file = Path(file_path).resolve()
+    resolved_dir = Path(allowed_directory).resolve()
+
+    try:
+        resolved_file.relative_to(resolved_dir)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file path"
+        )
+
+    if not resolved_file.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="File not found"
+        )
+
+    return resolved_file
 
 
 logger = logging.getLogger(__name__)
@@ -93,7 +129,24 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     """Serve the saved recording file based on filename."""
     recording_data: RecordingRead = await service.find_recording_by_id(rec_id)
 
-    return FileResponse(recording_data.file_path)
+    # Validate file path to prevent path traversal attacks
+    file_path = recording_data.file_path
+    if ".." in file_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file path"
+        )
+
+    # Validate file path is within allowed recordings directory to prevent path traversal
+    validated_path = validate_file_path_within_directory(
+        file_path,
+        settings.RECORDINGS_DIR
+    )
+
+    # Get safe path string for response
+    safe_path = str(validated_path)
+
+    return FileResponse(safe_path)
 
 
 @router.get("/metrics", dependencies=[

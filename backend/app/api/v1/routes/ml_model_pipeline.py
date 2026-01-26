@@ -1,4 +1,5 @@
 from uuid import UUID
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
@@ -6,6 +7,7 @@ from typing import Optional, List
 import os
 import logging
 from app.core.permissions.constants import Permissions as P
+from app.core.project_path import DATA_VOLUME
 from app.auth.dependencies import auth, permissions
 from app.schemas.ml_model_pipeline import (
     MLModelPipelineConfigCreate,
@@ -279,23 +281,45 @@ async def download_artifact(
     """Download an artifact file."""
     try:
         artifact = await service.get_by_id(model_id, run_id, artifact_id)
-        
+
+        # Validate artifact path to prevent path traversal attacks
+        artifact_path = artifact.artifact_path
+        if ".." in artifact_path:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid artifact path"
+            )
+
+        # Validate artifact path is within DATA_VOLUME to prevent path traversal
+        resolved_artifact_path = Path(artifact_path).resolve()
+        resolved_data_volume = DATA_VOLUME.resolve()
+        try:
+            resolved_artifact_path.relative_to(resolved_data_volume)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid artifact path"
+            )
+
         # Validate file exists
-        if not os.path.exists(artifact.artifact_path):
+        if not resolved_artifact_path.exists():
             raise HTTPException(
                 status_code=404,
                 detail="Artifact file not found on disk"
             )
-        
+
+        # Get safe path string for response
+        safe_path = str(resolved_artifact_path)
+
         # Determine media type based on artifact type
         media_type = "application/octet-stream"
         if artifact.artifact_type.value == "metrics":
             media_type = "application/json"
         elif artifact.artifact_type.value == "logs":
             media_type = "text/plain"
-        
+
         return FileResponse(
-            path=artifact.artifact_path,
+            path=safe_path,
             filename=artifact.artifact_name,
             media_type=media_type
         )

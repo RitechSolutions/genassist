@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, Query, Depends, UploadFile, HTTPException
 from typing import Optional, List, Union
 from pydantic import BaseModel
@@ -5,6 +6,45 @@ from app.auth.dependencies import auth, permissions
 
 from app.services.smb_share_service import SMBShareFSService
 from app.tasks.share_folder_tasks import transcribe_audio_files_async_with_scope
+
+
+def validate_path_no_traversal(path: str) -> str:
+    """
+    Validate that a path doesn't contain path traversal sequences.
+    Raises HTTPException if path traversal is detected.
+
+    Args:
+        path: The path to validate
+
+    Returns:
+        The validated path
+
+    Raises:
+        HTTPException: If path contains traversal sequences
+    """
+    if not path:
+        return path
+
+    # Check for common path traversal patterns
+    traversal_patterns = [
+        r'\.\.',           # Parent directory reference
+        r'\.\./',          # Unix-style parent traversal
+        r'\.\.\\',         # Windows-style parent traversal
+        r'%2e%2e',         # URL-encoded ..
+        r'%252e%252e',     # Double URL-encoded ..
+        r'\.%2e',          # Mixed encoding
+        r'%2e\.',          # Mixed encoding
+    ]
+
+    path_lower = path.lower()
+    for pattern in traversal_patterns:
+        if re.search(pattern, path_lower):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid path: path traversal not allowed"
+            )
+
+    return path
 
 router = APIRouter()
 router = APIRouter(prefix="/smb", tags=["SMB Share / Local FS"])
@@ -96,6 +136,11 @@ async def read_file(
     dependencies=[Depends(auth)]
 ):
     """Read file content."""
+    # Validate filepath to prevent path traversal attacks
+    if ".." in filepath or filepath.startswith("/") or filepath.startswith("\\"):
+        raise HTTPException(status_code=400, detail="Invalid path: path traversal not allowed")
+    validate_path_no_traversal(filepath)
+
     try:
         async with SMBShareFSService(
             smb_host=smb_host,
@@ -114,6 +159,11 @@ async def read_file(
 @router.post("/write")
 async def write_file(req: FileRequest, dependencies=[Depends(auth)]):
     """Write or update a file."""
+    # Validate filepath to prevent path traversal attacks
+    if ".." in req.filepath or req.filepath.startswith("/") or req.filepath.startswith("\\"):
+        raise HTTPException(status_code=400, detail="Invalid path: path traversal not allowed")
+    validate_path_no_traversal(req.filepath)
+
     try:
         async with SMBShareFSService(
             smb_host=req.smb_host,
@@ -122,7 +172,7 @@ async def write_file(req: FileRequest, dependencies=[Depends(auth)]):
             smb_pass=req.smb_pass,
             smb_port=req.smb_port,
             use_local_fs=req.use_local_fs,
-            local_root=req.local_root, 
+            local_root=req.local_root,
         ) as svc:
             await svc.write_file(
                 filepath=req.filepath,
@@ -174,8 +224,13 @@ async def create_folder(req: FolderRequest, dependencies=[Depends(auth)]):
 
 
 @router.delete("/folder")
-async def delete_folder(req: FolderRequest,dependencies=[Depends(auth)]):
+async def delete_folder(req: FolderRequest, dependencies=[Depends(auth)]):
     """Delete a folder and its contents."""
+    # Validate folderpath to prevent path traversal attacks
+    if ".." in req.folderpath or req.folderpath.startswith("/") or req.folderpath.startswith("\\"):
+        raise HTTPException(status_code=400, detail="Invalid path: path traversal not allowed")
+    validate_path_no_traversal(req.folderpath)
+
     try:
         async with SMBShareFSService(
             smb_host=req.smb_host,
@@ -184,7 +239,7 @@ async def delete_folder(req: FolderRequest,dependencies=[Depends(auth)]):
             smb_pass=req.smb_pass,
             smb_port=req.smb_port,
             use_local_fs=req.use_local_fs,
-            local_root=req.local_root, 
+            local_root=req.local_root,
         ) as svc:
             await svc.delete_folder(req.folderpath)
         return {"status": "success", "message": f"Folder '{req.folderpath}' deleted."}
