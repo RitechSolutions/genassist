@@ -4,7 +4,7 @@ import { useChat } from '../hooks/useChat';
 import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
-import { Send, Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp } from 'lucide-react';
+import { Send, Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2 } from 'lucide-react';
 import { ChatBubble } from './ChatBubble';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
@@ -35,6 +35,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   language,
   translations: customTranslations,
   reCaptchaKey,
+  widget = false,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -94,7 +95,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [showMenu, setShowMenu] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [isFloatingOpen, setIsFloatingOpen] = useState(false);
+  const [isFloatingOpen, setIsFloatingOpen] = useState(mode === 'fullscreen');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
   const menuRef = useRef<HTMLDivElement>(null);
@@ -103,6 +104,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(56);
   const [showBacklight, setShowBacklight] = useState(false);
+  const [isFullscreenToggled, setIsFullscreenToggled] = useState(false);
 
   // default thinking messages if none provided by workflow
   const DEFAULT_THINKING_MESSAGES = useMemo(
@@ -210,11 +212,18 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     hasAnchoredHistory.current = false;
   }, [conversationId]);
 
+  // Ensure chat is always open when mode is fullscreen
+  useEffect(() => {
+    if (mode === 'fullscreen' && !isFloatingOpen) {
+      setIsFloatingOpen(true);
+    }
+  }, [mode, isFloatingOpen]);
+
   // Scroll to bottom when chat is reopened in floating mode
   const prevIsFloatingOpenRef = useRef(isFloatingOpen);
   useEffect(() => {
     // Only trigger when chat transitions from closed to open
-    if (mode === 'floating' && isFloatingOpen && !prevIsFloatingOpenRef.current && messages.length > 0) {
+    if ((mode === 'floating' || mode === 'fullscreen') && isFloatingOpen && !prevIsFloatingOpenRef.current && messages.length > 0) {
       // Reset the anchor flag so it can scroll to bottom
       hasAnchoredHistory.current = false;
       isUserAtBottomRef.current = true;
@@ -498,13 +507,25 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     setSelectedLanguage(lang);
   };
 
+  const handleFullscreenToggle = () => {
+    setIsFullscreenToggled(prev => !prev);
+    setShowMenu(false);
+  };
+
   // Track window resize to update mobile detection
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
   
-  // Automatically determine if should be fullscreen (mobile devices)
+  // Automatically determine if should be fullscreen (mobile devices or widget mode or manual toggle or fullscreen mode)
   const isFullscreen = useMemo(() => {
+    // If mode is fullscreen, always fullscreen
+    if (mode === 'fullscreen') return true;
+    // If widget prop is true, always fullscreen
+    if (widget) return true;
+    // If manually toggled, use toggle state
+    if (isFullscreenToggled) return true;
+    // Otherwise, use mobile detection
     return windowWidth <= 768;
-  }, [windowWidth]);
+  }, [windowWidth, widget, isFullscreenToggled, mode]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -954,7 +975,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   };
 
   const floatingContainerStyle: React.CSSProperties = {
-    ...(isFullscreen && windowWidth <= 768 
+    ...((mode === 'fullscreen' || (isFullscreen && windowWidth <= 768))
       ? { 
           position: 'fixed',
           top: 0,
@@ -1097,6 +1118,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             <RefreshCw size={16} />
             {t('menu.resetConversation')}
           </div>
+          {mode !== 'fullscreen' && (
+            <div style={menuItemStyle} onClick={handleFullscreenToggle}>
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              {t('menu.fullscreen')}
+            </div>
+          )}
           <div 
             style={{ ...menuItemStyle, position: 'relative', borderBottom: 'none' }}
             onClick={(e) => {
@@ -1422,6 +1449,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           </div>
         )}
       </>
+    );
+  }
+
+  if (mode === 'fullscreen') {
+    return (
+      <div style={floatingContainerStyle} data-genassist-container="fullscreen">
+        {renderWithReCaptcha(renderChatComponent())}
+      </div>
     );
   }
 
