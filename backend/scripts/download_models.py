@@ -19,7 +19,7 @@ def main():
     print(f'Cache directory: {cache_dir}\n')
 
     for i, model in enumerate(MODELS, 1):
-        print(f'[{i}/{len(MODELS)}] 📥 Downloading {model}...')
+        print(f'[{i}/{len(MODELS)}] Downloading {model}...')
         try:
             snapshot_download(
                 repo_id=model,
