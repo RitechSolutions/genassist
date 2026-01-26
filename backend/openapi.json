@@ -3791,7 +3791,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConversationTranscriptCreate"
+                "$ref": "#/components/schemas/ConversationStartWithRecaptchaToken"
               }
             }
           },
@@ -3922,7 +3922,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/InProgConvTranscrUpdate"
+                "$ref": "#/components/schemas/ConversationUpdateWithRecaptchaToken"
               }
             }
           }
@@ -14930,6 +14930,117 @@
         ],
         "title": "ConversationRead"
       },
+      "ConversationStartWithRecaptchaToken": {
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegmentInput"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "operator_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Id"
+          },
+          "data_source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Source Id"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "recaptcha_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "ConversationStartWithRecaptchaToken"
+      },
       "ConversationStatus": {
         "type": "string",
         "enum": [
@@ -15041,6 +15152,46 @@
               }
             ],
             "title": "Recorded At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "ConversationTranscriptCreate"
+      },
+      "ConversationUpdateWithRecaptchaToken": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegmentInput"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
           },
           "recaptcha_token": {
             "anyOf": [
@@ -15058,7 +15209,7 @@
         "required": [
           "messages"
         ],
-        "title": "ConversationTranscriptCreate"
+        "title": "ConversationUpdateWithRecaptchaToken"
       },
       "CreateFineTuningJobRequest": {
         "properties": {
