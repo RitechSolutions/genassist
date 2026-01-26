@@ -87,7 +87,7 @@ services:
     image: ghcr.io/chroma-core/chroma:0.6.3
     container_name: genassist-chroma_cicd
     ports:
-      - "8005:8000"
+      - "9005:8000"
     volumes:
       - chroma_data_cicd:/chroma/chroma
     environment:
@@ -204,7 +204,7 @@ services:
       - VECTOR_DB_TYPE=chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma_cicd
-      - CHROMA_PORT=8005
+      - CHROMA_PORT=8000
     depends_on:
       redis:
         condition: service_healthy
