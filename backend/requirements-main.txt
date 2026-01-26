@@ -1,6 +1,6 @@
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
-aiosignal==1.3.2
+aiosignal==1.4.0
 alembic==1.16.1
 amqp==5.3.1
 annotated-types==0.7.0
@@ -12,6 +12,7 @@ astroid==3.3.10
 async-timeout==4.0.3
 asyncpg==0.30.0
 snowflake-sqlalchemy>=1.4.0
+snowflake-connector-python>=3.0.0
 snowflake-connector-python>=3.0.0
 attrs==25.3.0
 backoff==2.2.1
@@ -49,7 +50,7 @@ ebcdic==1.1.1
 email_validator==2.2.0
 exceptiongroup==1.3.0
 extract-msg==0.28.7
-fastapi==0.115.14
+fastapi==0.120.4
 fastapi-cache2==0.2.2
 filelock==3.20.3
 flake8==7.1.2
@@ -60,7 +61,8 @@ fsspec==2024.12.0
 google-auth>=2.47.0
 googleapis-common-protos==1.70.0
 greenlet==3.1.1
-grpcio==1.71.2
+grpcio==1.76.0
+grpcio-status==1.76.0
 h11>=0.14.0
 hf-xet==1.1.2
 httpcore>=1.0.9
@@ -143,7 +145,7 @@ posthog==4.2.0
 prometheus_client==0.22.0
 prompt_toolkit==3.0.51
 propcache==0.3.1
-protobuf==5.29.5
+protobuf==6.33.4
 psycopg2-binary==2.9.10
 pyasn1==0.6.2
 pyasn1_modules==0.4.2
@@ -184,6 +186,8 @@ safetensors==0.5.3
 scikit-learn==1.6.1
 scipy==1.15.3
 sentence-transformers==5.1.2
+torch==2.10.0
+torchaudio==2.10.0
 shellingham==1.5.4
 six==1.17.0
 slowapi==0.1.9
@@ -201,7 +205,7 @@ tiktoken==0.9.0
 tokenizers==0.21.1
 tomli==2.2.1
 tomlkit==0.13.2
-tornado==6.5.3c
+tornado==6.5.3
 tqdm==4.67.1
 typer==0.16.0
 types-PyYAML==6.0.12.20250516
@@ -230,5 +234,5 @@ smbprotocol==1.15.0
 azure-storage-blob==12.27.1
 google-cloud-speech>=2.34.0
 google-cloud-storage>=3.5.0
-google-cloud-recaptcha-enterprise==1.26.0
+google-cloud-recaptcha-enterprise==1.30.0
 mcp>=1.0.0
