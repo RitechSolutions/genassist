@@ -9,3 +9,5 @@ leidenalg==0.10.2
 annoy==1.17.3
 playwright==1.57.0
 qdrant-client==1.16.2
+torch==2.10.0
+torchaudio==2.10.0
