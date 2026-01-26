@@ -39,7 +39,7 @@ services:
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
+      - CHROMA_PORT=8005
       - DB_HOST=db
       - DB_PORT=5432
       - REDIS_HOST=redis

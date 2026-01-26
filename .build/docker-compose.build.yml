@@ -54,7 +54,7 @@ services:
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
+      - CHROMA_PORT=8005
       - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
       - DB_HOST=db
       - DB_PORT=5432
