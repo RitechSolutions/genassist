@@ -11,16 +11,24 @@ from starlette.datastructures import State
 logger = logging.getLogger(__name__)
 
 
-async def init_fastapi_cache_with_redis(app, settings):
-    # ── Redis pool & cache initialisation ─────────────────
-    redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
+async def init_fastapi_cache_with_redis(app, redis_binary: Redis):
+    """
+    Initialize FastAPI cache using DI-provided Redis binary client.
+
+    Args:
+        app: FastAPI application instance
+        redis_binary: Redis client with decode_responses=False (from DI)
+    """
+    logger.info("Initializing FastAPI cache with binary Redis client")
 
     # tell the type checker what .state is
     app.state = cast(State, app.state)
-    app.state.redis = redis  # type: ignore[attr-defined]
+    app.state.redis = redis_binary  # type: ignore[attr-defined]
 
-    FastAPICache.init(RedisBackend(redis), prefix="auth")
-    await FastAPICache.clear() #clean cache on start
+    FastAPICache.init(RedisBackend(redis_binary), prefix="auth")
+    await FastAPICache.clear()  # clean cache on start
+
+    logger.info("FastAPI cache initialized")
 
 def make_key_builder(param: str | int = 1) -> Callable[[Any, str, Any], str]:
     """

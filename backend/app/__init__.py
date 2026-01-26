@@ -69,6 +69,119 @@ def validate_env():
 
 
 # --------------------------------------------------------------------------- #
+# Lifespan handler helpers                                                    #
+# --------------------------------------------------------------------------- #
+
+
+async def _initialize_redis_services(app: FastAPI):
+    """
+    Initialize all Redis-related services.
+
+    This includes:
+    - Redis string client (for WebSockets, conversations)
+    - Redis binary client (for FastAPI cache)
+
+    Returns:
+        Tuple of (redis_string, redis_binary) clients
+    """
+    from redis.asyncio import Redis
+    from app.dependencies.dependency_injection import RedisString, RedisBinary
+
+    logger.info("Initializing Redis services...")
+
+    # Get Redis clients from DI (using type annotations to distinguish them)
+    redis_string = injector.get(RedisString)
+    redis_binary = injector.get(RedisBinary)
+
+    # Test connections
+    await redis_string.ping()
+    logger.info("Redis string client initialized (40 connections)")
+
+    await redis_binary.ping()
+    logger.info("Redis binary client initialized (20 connections)")
+
+    # Initialize FastAPI cache with binary client
+    await init_fastapi_cache_with_redis(app, redis_binary)
+
+    logger.info("Redis services initialization complete")
+    return redis_string, redis_binary
+
+
+async def _cleanup_redis_services(app: FastAPI, redis_string, redis_binary):
+    """
+    Clean up all Redis-related services.
+
+    This closes:
+    - Redis string client
+    - Redis binary client
+
+    Args:
+        redis_string: Redis client for string data
+        redis_binary: Redis client for binary data
+    """
+    from redis.asyncio import Redis
+
+    logger.info("Cleaning up Redis services...")
+
+    # Close string client
+    try:
+        await redis_string.close()
+        logger.info("Redis string client closed")
+    except Exception as e:
+        logger.error(f"Error closing Redis string client: {e}")
+
+    # Close binary client
+    try:
+        await redis_binary.close()
+        logger.info("Redis binary client closed")
+    except Exception as e:
+        logger.error(f"Error closing Redis binary client: {e}")
+
+
+async def _initialize_websocket_services():
+    """
+    Initialize WebSocket-related services.
+
+    This includes:
+    - SocketConnectionManager (WebSocket rooms and Redis Pub/Sub)
+    """
+    from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+
+    logger.info("Initializing WebSocket services...")
+
+    try:
+        # Get instance from DI (Redis dependency already injected)
+        socket_manager = injector.get(SocketConnectionManager)
+
+        # Initialize Redis Pub/Sub subscriber for cross-server broadcasting
+        await socket_manager.initialize_redis_subscriber()
+        logger.info("SocketConnectionManager initialized with Redis Pub/Sub")
+    except Exception as e:
+        logger.error(f"Failed to initialize SocketConnectionManager: {e}")
+        raise
+
+
+async def _cleanup_websocket_services():
+    """
+    Clean up WebSocket-related services.
+
+    This includes:
+    - Closing all WebSocket connections
+    - Shutting down Redis Pub/Sub subscriber
+    """
+    from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+
+    logger.info("Cleaning up WebSocket services...")
+
+    try:
+        socket_manager = injector.get(SocketConnectionManager)
+        await socket_manager.cleanup()
+        logger.info("SocketConnectionManager cleanup complete")
+    except Exception as e:
+        logger.error(f"Error during SocketConnectionManager cleanup: {e}")
+
+
+# --------------------------------------------------------------------------- #
 # Lifespan handler                                                            #
 # --------------------------------------------------------------------------- #
 @asynccontextmanager
@@ -76,78 +189,43 @@ async def _lifespan(app: FastAPI):
     """
     Startup / shutdown scaffold.
     Runs **before** the first request and **after** the last response.
-    """
-    logger.debug("Running lifespan startup tasks …")
 
+    Manages initialization and cleanup of:
+    - Redis services (connection manager, cache)
+    - WebSocket services (connection manager, pub/sub)
+    - Database services (multi-tenant sessions)
+    - Application services (permissions, tenants)
+    """
+    logger.debug("Running lifespan startup tasks...")
+
+    # Generate OpenAPI schema
     await output_open_api(app)
 
-    # Initialize FastAPI cache first (before database operations that might use @cache decorator)
-    await init_fastapi_cache_with_redis(app, settings)
+    # Initialize services in dependency order
+    redis_string, redis_binary = await _initialize_redis_services(app)
+    await _initialize_websocket_services()
 
-    # Initialize multi-tenant session manager
+    # Initialize database and application services
     await multi_tenant_manager.initialize()
-
-    # Initialize Redis connection manager (via DI with async initialization)
-    if settings.REDIS_FOR_CONVERSATION:
-        try:
-            from app.cache.redis_connection_manager import RedisConnectionManager
-
-            # Get uninitialized instance from DI
-            redis_manager = injector.get(RedisConnectionManager)
-
-            # Perform async initialization
-            await redis_manager.initialize()
-            connection_info = await redis_manager.get_connection_info()
-            logger.info(f"Redis connection manager initialized: {connection_info}")
-        except Exception as e:
-            logger.error(f"Failed to initialize Redis connection manager: {e}")
-
-    # Initialize SocketConnectionManager (via DI with async Redis Pub/Sub setup)
-    try:
-        from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-
-        # Get instance from DI (Redis dependency already injected)
-        socket_manager = injector.get(SocketConnectionManager)
-
-        # Perform async initialization (sets up Redis Pub/Sub subscriber)
-        await socket_manager.initialize_redis_subscriber()
-        logger.info("SocketConnectionManager initialized with Redis Pub/Sub")
-    except Exception as e:
-        logger.error(f"Failed to initialize SocketConnectionManager: {e}")
-
     await pre_wormup_tenant_singleton()
 
     from app.core.permissions import sync_permissions_on_startup
+
     await sync_permissions_on_startup()
+
+    logger.info("Application startup complete")
+
     try:
-        yield
+        yield  # Application runs here
     finally:
-        # Cleanup SocketConnectionManager (Redis subscriber)
-        try:
-            from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+        logger.info("Starting application shutdown...")
 
-            socket_manager = injector.get(SocketConnectionManager)
-            await socket_manager.cleanup()
-            logger.info("SocketConnectionManager cleanup complete")
-        except Exception as e:
-            logger.error(f"Error during SocketConnectionManager cleanup: {e}")
-
-        # Cleanup Redis connections
-        if hasattr(app.state, "redis"):
-            await app.state.redis.aclose()
-
-        # Cleanup conversation memory Redis connections
-        if settings.REDIS_FOR_CONVERSATION:
-            try:
-                manager = injector.get(RedisConnectionManager)
-                await manager.close()
-            except Exception as e:
-                logger.error(f"Error during Redis cleanup: {e}")
-
-        # Cleanup multi-tenant connections
+        # Clean up services in reverse dependency order
+        await _cleanup_websocket_services()
+        await _cleanup_redis_services(app, redis_string, redis_binary)
         await multi_tenant_manager.close_all()
 
-        logger.debug("Lifespan shutdown complete.")
+        logger.info("Application shutdown complete")
 
 
 async def output_open_api(app):
@@ -171,13 +249,13 @@ def create_celery():
             "app.tasks.s3_tasks",
             "app.tasks.conversations_tasks",
             "app.tasks.zendesk_tasks",
+            "app.tasks.zendesk_article_sync_tasks",
             "app.tasks.audio_tasks",
             "app.tasks.sharepoint_tasks",
             "app.tasks.fine_tune_job_sync_tasks",
             "app.tasks.share_folder_tasks",
             "app.tasks.ml_model_pipeline_tasks",
             "app.tasks.kb_batch_tasks",
-
         ],
     )
 
@@ -189,7 +267,9 @@ def create_celery():
             "visibility_timeout": 3600,  # 1 hour
             "fanout_prefix": True,
             "fanout_patterns": True,
+            "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit broker connection pool
         },
+        redis_max_connections=settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit result backend connection pool
         task_serializer="json",
         accept_content=["json"],
         result_serializer="json",
@@ -200,6 +280,7 @@ def create_celery():
         task_soft_time_limit=240,  # 4 minutes (soft limit)
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
+        worker_pool="solo",  # Use solo pool (single-threaded) to avoid SIGSEGV with native libraries
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
     )
@@ -236,6 +317,15 @@ def create_celery():
                 "expires": 3600,  # Task expires after 1 hour
             },
         },
+        "import-zendesk-articles-to-kb": {
+            "task": "app.tasks.zendesk_article_sync_tasks.import_zendesk_articles_to_kb",
+            # Run every 15 minutes to check for knowledge bases due for sync
+            # The task itself has cron-based scheduling logic, so this just checks periodically
+            "schedule": crontab(minute="*/1"),
+            "options": {
+                "expires": 900,  # Task expires after 15 minutes
+            },
+        },
         "import-sharepoint-files-to-kb": {
             "task": "app.tasks.sharepoint_tasks.import_sharepoint_files_to_kb",
             "schedule": crontab(hour="*/1"),  # Run every 1 hours
@@ -249,24 +339,20 @@ def create_celery():
             },
         },
         # Sync active fine-tuning jobs every 2 minutes
-        'sync-active-fine-tuning-jobs': {
-            'task': 'app.tasks.fine_tune_job_sync_tasks.sync_active_fine_tuning_jobs',
-            'schedule': 120.0,  # Every 2 minutes (120 seconds)
-            },
+        "sync-active-fine-tuning-jobs": {
+            "task": "app.tasks.fine_tune_job_sync_tasks.sync_active_fine_tuning_jobs",
+            "schedule": 120.0,  # Every 2 minutes (120 seconds)
+        },
         # Check for scheduled ML model pipeline runs every minute
-        'check-scheduled-pipeline-runs': {
-            'task': 'app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs',
-            'schedule': 60.0,  # Every minute (60 seconds)
-            },
-        
-
-        
+        "check-scheduled-pipeline-runs": {
+            "task": "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs",
+            "schedule": 60.0,  # Every minute (60 seconds)
+        },
         # Sync active KB's jobs every 5 minutes
-        'summarize-files-from-azure': {
-            'task': 'app.tasks.kb_batch_tasks.batch_process_files_kb',
-            'schedule': 300.0,  # Every 5 minutes (300 seconds)
-            },
-
+        "summarize-files-from-azure": {
+            "task": "app.tasks.kb_batch_tasks.batch_process_files_kb",
+            "schedule": 300.0,  # Every 5 minutes (300 seconds)
+        },
     }
 
     return celery_app

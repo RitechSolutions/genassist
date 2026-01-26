@@ -102,7 +102,7 @@ export interface GenAgentChatProps {
   placeholder?: string;
   agentName?: string; // Custom agent name to display instead of "Agent"
   logoUrl?: string; // Custom logo URL to display in header instead of default logo
-  mode?: "embedded" | "floating";
+  mode?: "embedded" | "floating" | "fullscreen";
   floatingConfig?: {
     position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
     offset?: { x?: number; y?: number };
@@ -112,6 +112,7 @@ export interface GenAgentChatProps {
   language?: string; // Language code (e.g., 'en', 'es', 'fr'). If not provided, will use browser language
   translations?: Partial<Translations>; // Custom translations. If not provided, will use default English translations
   reCaptchaKey?: string; // ReCaptcha key for the chat
+  widget?: boolean; // If true, opens chat in fullscreen mode on desktop (similar to mobile behavior)
 }
 
 export type { Translations } from '../utils/i18n';
