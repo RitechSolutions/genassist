@@ -333,8 +333,16 @@ async def set_url_content_if_no_rag(item: KBBase):
     if not vector_db.get("enabled", False):
         if not item.url:
             raise AppException(error_key=ErrorKey.MISSING_URL)
-        html = await fetch_from_url(item.url)
-        item.content = html2text(html)
+        headers = item.extra_metadata.get("http_headers") or item.extra_metadata.get(
+            "headers", {}
+        )
+        headers_lower = {str(k).lower(): v for k, v in headers.items()}
+        use_http_request = bool(item.extra_metadata.get("use_http_request"))
+        content = await fetch_from_url(item.url, headers, use_http_request)
+        if headers_lower.get("content-type") == "application/json":
+            item.content = content
+        else:
+            item.content = html2text(content)
 
 
 async def set_url_content_if_has_rag(item: KBBase):
@@ -343,9 +351,16 @@ async def set_url_content_if_has_rag(item: KBBase):
     if vector_db.get("enabled", False):
         if not item.url:
             raise AppException(error_key=ErrorKey.MISSING_URL)
-        html = await fetch_from_url(item.url)
-        item.content = html2text(html)
-
+        headers = item.extra_metadata.get("http_headers") or item.extra_metadata.get(
+            "headers", {}
+        )
+        headers_lower = {str(k).lower(): v for k, v in headers.items()}
+        use_http_request = bool(item.extra_metadata.get("use_http_request"))
+        content = await fetch_from_url(item.url, headers, use_http_request)
+        if headers_lower.get("content-type") == "application/json":
+            item.content = content
+        else:
+            item.content = html2text(content)
 
 def extract_sub_messages(transcript: str, num_messages_to_extract: int = 2) -> str:
     import json

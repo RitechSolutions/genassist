@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Optional
@@ -17,7 +18,6 @@ from app.schemas.conversation_transcript import ConversationTranscriptCreate
 from app.services.audio import AudioService
 from app.core.utils.bi_utils import validate_upload_file_size
 from app.core.utils.file_system_utils import get_safe_file_path
-
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
