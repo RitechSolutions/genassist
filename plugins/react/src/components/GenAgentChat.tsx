@@ -369,7 +369,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     try {
       // Include FAQ query in metadata if one was previously selected
       const extraMetadata = selectedFaqQuery ? { faq_query: selectedFaqQuery } : undefined;
-      await sendMessage(textToSend, filesToUpload, extraMetadata);
+      await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
     }
@@ -386,7 +386,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     try {
       // Include FAQ query in metadata if one was previously selected
       const extraMetadata = selectedFaqQuery ? { faq_query: selectedFaqQuery } : undefined;
-      await sendMessage(text, [], extraMetadata);
+      await sendMessage(text, [], extraMetadata, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore quick action errors to avoid interrupting the flow
     }
@@ -395,7 +395,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const handleScheduleConfirm = async (schedule: ScheduleItem) => {
     const summary = `Schedule confirmed with ${schedule.restaurants.length} restaurants`;
     try {
-      await sendMessage(summary, [], { confirmSchedule: JSON.stringify(schedule) });
+      await sendMessage(summary, [], { confirmSchedule: JSON.stringify(schedule) }, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
     }
@@ -459,7 +459,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     setSelectedFaqQuery(query);
     
     try {
-      await sendMessage(query, [], { faq_query: query });
+      await sendMessage(query, [], { faq_query: query }, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
     }
