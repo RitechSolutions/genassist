@@ -9369,6 +9369,27 @@
         }
       }
     },
+    "/api/playground/health/redis": {
+      "get": {
+        "tags": [
+          "v1",
+          "Playground"
+        ],
+        "summary": "Redis Health",
+        "description": "Redis connection health check endpoint.\nReturns detailed information about all Redis connection pools.",
+        "operationId": "redis_health_api_playground_health_redis_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/playground/mock/{endpoint}": {
       "get": {
         "tags": [
@@ -14551,6 +14572,17 @@
               }
             ],
             "title": "Recorded At"
+          },
+          "recaptcha_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Token"
           }
         },
         "type": "object",

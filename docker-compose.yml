@@ -1,4 +1,14 @@
 services:
+  # Init container to set up volume permissions
+  volume-init:
+    image: busybox:latest
+    container_name: genassist-volume-init
+    volumes:
+      - app_data_volume:/data
+    command: sh -c "mkdir -p /data/logs /data/uploads /data/recordings && chown -R 1000:1000 /data"
+    networks:
+      - genassist-network
+
   # Database
   db:
     image: postgres:17
@@ -28,14 +38,25 @@ services:
       - VECTOR_DB_TYPE=chroma
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
       - CHROMA_COLLECTION_NAME=default
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
       - DB_HOST=db
       - DB_PORT=5432
-      - CHROMA_HOST=chroma
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QDRANT_HOST=http://qdrant
+      - QDRANT_PORT=6333
     depends_on:
-      - chroma
-      - db
-      - redis
-      - whisper
+      volume-init:
+        condition: service_completed_successfully
+      chroma:
+        condition: service_started
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      whisper:
+        condition: service_started
     volumes:
       - app_data_volume:/src/datavolume
     networks:

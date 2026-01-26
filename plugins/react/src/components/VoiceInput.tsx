@@ -13,6 +13,7 @@ interface VoiceInputProps {
     backgroundColor?: string;
     fontFamily?: string;
   };
+  disabled?: boolean;
 }
 
 export const VoiceInput: React.FC<VoiceInputProps> = ({
@@ -20,7 +21,8 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
   onError,
   baseUrl,
   apiKey,
-  theme
+  theme,
+  disabled = false
 }) => {
   const { isRecording, isLoading, toggleRecording } = useVoiceInput({
     baseUrl,
@@ -32,6 +34,7 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (disabled) return;
     toggleRecording();
   };
 
@@ -47,6 +50,7 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
 
   const idleBg = theme?.primaryColor || '#2962FF';
   const activeBg = '#FF3B30'; // red when recording
+  const isDisabled = disabled || isLoading;
   const buttonStyle: React.CSSProperties = {
     backgroundColor: isRecording ? activeBg : idleBg,
     color: '#ffffff',
@@ -57,12 +61,12 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: isLoading ? 'not-allowed' : 'pointer',
+    cursor: isDisabled ? 'not-allowed' : 'pointer',
     outline: 'none',
     transition: 'all 0.2s ease',
     flexShrink: 0,
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
-    opacity: isLoading ? 0.9 : 1,
+    opacity: isDisabled ? 0.6 : 1,
   };
 
   return (
@@ -72,7 +76,7 @@ export const VoiceInput: React.FC<VoiceInputProps> = ({
         style={buttonStyle}
         onClick={handleClick}
         title={getTitle()}
-        disabled={isLoading}
+        disabled={isDisabled}
       >
         {getButtonContent()}
       </button>

@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 import json
 from redis.asyncio import Redis
-from app.cache.redis_connection_manager import RedisConnectionManager
+from app.dependencies.dependency_injection import RedisString
 from app.core.config.settings import settings
 
 
@@ -167,8 +167,7 @@ class RedisConversationMemory(BaseConversationMemory):
         if self.redis_client is None:
             from app.dependencies.injector import injector
 
-            manager = injector.get(RedisConnectionManager)
-            self.redis_client = await manager.get_redis()
+            self.redis_client = injector.get(RedisString)
         return self.redis_client
 
     async def _initialize_conversation(self) -> None:

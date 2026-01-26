@@ -7,12 +7,13 @@ export interface UseChatProps {
   apiKey: string;
   tenant?: string | undefined;
   metadata?: Record<string, any>;
+  language?: string;
   onError?: (error: Error) => void;
   onTakeover?: () => void;
   onFinalize?: () => void;
 }
 
-export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover, onFinalize }: UseChatProps) => {
+export const useChat = ({ baseUrl, apiKey, tenant, metadata, language, onError, onTakeover, onFinalize }: UseChatProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [preloadedAttachments, setPreloadedAttachments] = useState<Attachment[]>([]);
@@ -68,14 +69,15 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
     const apiKeyChanged = prevApiKeyRef.current !== apiKey;
     const tenantChanged = prevTenantRef.current !== tenant;
     
-    const needsReinit = !chatServiceRef.current || baseUrlChanged || apiKeyChanged || tenantChanged || metadataChanged;
+    // Only re-initialize for connection-related changes, NOT for metadata changes
+    const needsReinit = !chatServiceRef.current || baseUrlChanged || apiKeyChanged || tenantChanged;
 
     if (needsReinit) {
       // Update refs
-      if (metadataChanged) metadataRef.current = metadataString;
       if (baseUrlChanged) prevBaseUrlRef.current = baseUrl;
       if (apiKeyChanged) prevApiKeyRef.current = apiKey;
       if (tenantChanged) prevTenantRef.current = tenant;
+      if (metadataChanged) metadataRef.current = metadataString;
 
       // Clean up existing service if it exists
       if (chatServiceRef.current) {
@@ -83,7 +85,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
         chatServiceRef.current.setWelcomeDataHandler(null);
       }
       
-      chatServiceRef.current = new ChatService(baseUrl, apiKey, metadata, tenant);
+      chatServiceRef.current = new ChatService(baseUrl, apiKey, metadata, tenant, language);
       
       // Set up handlers
       chatServiceRef.current.setMessageHandler((message: ChatMessage) => {
@@ -159,9 +161,12 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
           setThinkingDelayMs(thinking.delayMs || 1000);
         }
       }
-    } else if (chatServiceRef.current && metadata) {
+    } else if (chatServiceRef.current) {
       // Just update metadata without re-initializing
-      (chatServiceRef.current as any).metadata = metadata;
+      if (metadataChanged) {
+        metadataRef.current = metadataString;
+        chatServiceRef.current.setMetadata(metadata);
+      }
     }
 
     // Always update handlers when callbacks change (without re-initializing)
@@ -187,7 +192,14 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
     return () => {
       // Only cleanup on unmount, not on every dependency change
     };
-  }, [baseUrl, apiKey, tenant, metadataString]);
+  }, [baseUrl, apiKey, tenant, metadataString, language]);
+
+  // Update language when it changes (without re-initializing the service)
+  useEffect(() => {
+    if (chatServiceRef.current) {
+      chatServiceRef.current.setLanguage(language);
+    }
+  }, [language]);
 
   // Load messages for current pair when available
   useEffect(() => {

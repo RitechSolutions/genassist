@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { GenAgentChat } from "../../src";
-import { ChatBubble } from "../../src/components/ChatBubble";
 import {
   ChevronDown,
   ChevronUp,
@@ -35,12 +34,12 @@ function App() {
   });
 
   const [chatSettings, setChatSettings] = useState({
-    name: "Genassist",
+    name: "Genassist Support",
     description: "Support",
     agentName: "Agent",
-    logoUrl: "",
+    logoUrl: "http://example.com/",
     baseUrl: "http://localhost:8000/",
-    apiKey: "genagent123",
+    apiKey: "genagent",
     // reCaptchaKey: "xx-yy-zz",
   });
 
@@ -57,7 +56,6 @@ function App() {
   const [showAppearance, setShowAppearance] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
-  const [showChat, setShowChat] = useState(false);
 
   // Metadata builder state
   const [params, setParams] = useState<MetadataParam[]>([]);
@@ -150,10 +148,6 @@ function App() {
   // Memoize callbacks to prevent unnecessary re-renders of GenAgentChat
   const handleError = useCallback(() => {}, []);
 
-  const toggleChat = () => {
-    setShowChat(!showChat);
-  };
-
   const containerStyle: React.CSSProperties = {
     display: "flex",
     padding: "20px",
@@ -175,17 +169,6 @@ function App() {
     flexDirection: "column",
   };
 
-  const chatWidgetStyle: React.CSSProperties = {
-    position: "fixed",
-    bottom: "100px",
-    right: "20px",
-    width: "400px",
-    height: "600px",
-    borderRadius: "32px",
-    backgroundColor: "transparent",
-    zIndex: 999,
-    display: showChat ? "block" : "none",
-  };
 
   const sectionHeaderStyle: React.CSSProperties = {
     padding: "16px",
@@ -933,27 +916,23 @@ function App() {
         </div>
       </div>
 
-      {/* Chat Widget Bubble */}
-      <ChatBubble
-        showChat={showChat}
-        onClick={toggleChat}
-        primaryColor={theme.primaryColor}
+      {/* Chat Widget - Floating Mode */}
+      <GenAgentChat
+        baseUrl={chatSettings.baseUrl}
+        apiKey={chatSettings.apiKey}
+        tenant=""
+        metadata={metadata}
+        theme={theme}
+        headerTitle={chatSettings.name}
+        agentName={chatSettings.agentName}
+        logoUrl={chatSettings.logoUrl}
+        onError={handleError}
+        mode="floating"
+        floatingConfig={{
+          position: "bottom-right",
+          offset: { x: 20, y: 20 },
+        }}
       />
-
-      {/* Chat Widget Popup */}
-      <div style={chatWidgetStyle}>
-        <GenAgentChat
-          baseUrl={chatSettings.baseUrl}
-          apiKey={chatSettings.apiKey}
-          tenant=""
-          metadata={metadata}
-          theme={theme}
-          headerTitle={chatSettings.name}
-          agentName={chatSettings.agentName}
-          logoUrl={chatSettings.logoUrl}
-          onError={handleError}
-        />
-      </div>
 
       {/* Add Parameter Modal */}
       {showAddParamModal && (
