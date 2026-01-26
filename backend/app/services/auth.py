@@ -3,7 +3,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from injector import inject
-from jose import ExpiredSignatureError, JWTError, jwt
+import jwt
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from app.auth.utils import verify_password
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -93,7 +94,7 @@ class AuthService:
                 error_key=ErrorKey.EXPIRED_TOKEN,
                 error_detail=f"Expired token: {error}",
             )
-        except JWTError as error:
+        except InvalidTokenError as error:
             raise AppException(
                 status_code=401,
                 error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
@@ -221,7 +222,7 @@ class AuthService:
                 error_key=ErrorKey.EXPIRED_TOKEN,
                 error_detail=f"Expired token: {error}",
             )
-        except JWTError as error:
+        except InvalidTokenError as error:
             raise AppException(
                 status_code=401,
                 error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
