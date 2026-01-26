@@ -263,21 +263,32 @@ class SnowflakeManager:
                     # Categorical sampler for text-like columns
                     if include_categorical_values and data_type in ('TEXT', 'VARCHAR', 'CHAR'):
                         try:
+                            # Validate identifiers to prevent SQL injection
+                            safe_col = self._validate_identifier(col_name)
+                            safe_schema = self._validate_identifier(table_schema)
+                            safe_table = self._validate_identifier(table_name)
+
+                            if not all([safe_col, safe_schema, safe_table]):
+                                logger.warning(f"Invalid identifier detected, skipping categorical probe for {table_schema}.{table_name}.{col_name}")
+                                continue
+
+                            # Use quoted identifiers for safety
                             count_query = f"""
-                            SELECT COUNT(DISTINCT {col_name})
-                            FROM {table_schema}.{table_name}
-                            WHERE {col_name} IS NOT NULL
+                            SELECT COUNT(DISTINCT "{safe_col}")
+                            FROM "{safe_schema}"."{safe_table}"
+                            WHERE "{safe_col}" IS NOT NULL
                             """
                             cur.execute(count_query)
                             total_distinct = cur.fetchone()[0]
                             col_info["total_distinct_count"] = total_distinct
 
                             if total_distinct <= 50:
+                                # max_categorical_values is an int from function parameter, safe to use
                                 categorical_query = f"""
-                                SELECT DISTINCT {col_name}
-                                FROM {table_schema}.{table_name}
-                                WHERE {col_name} IS NOT NULL
-                                LIMIT {max_categorical_values}
+                                SELECT DISTINCT "{safe_col}"
+                                FROM "{safe_schema}"."{safe_table}"
+                                WHERE "{safe_col}" IS NOT NULL
+                                LIMIT {int(max_categorical_values)}
                                 """
                                 cur.execute(categorical_query)
                                 sample_vals = cur.fetchall()
@@ -306,6 +317,23 @@ class SnowflakeManager:
 
         finally:
             cur.close()
+
+    def _validate_identifier(self, identifier: str) -> Optional[str]:
+        """
+        Validate and sanitize a SQL identifier to prevent SQL injection.
+        Returns the sanitized identifier or None if invalid.
+        Snowflake identifiers must start with a letter or underscore and contain only
+        alphanumeric characters, underscores, and dollar signs.
+        """
+        import re
+        if not identifier:
+            return None
+        # Remove any double quotes that might be present
+        identifier = identifier.strip('"')
+        # Snowflake identifier pattern: starts with letter/underscore, followed by alphanumeric/underscore/dollar
+        if re.match(r'^[A-Za-z_][A-Za-z0-9_$]*$', identifier):
+            return identifier
+        return None
 
     def _is_categorical_column(self, data_type: str, column_name: str) -> bool:
         categorical_types = {'VARCHAR', 'CHAR', 'STRING', 'TEXT'}
