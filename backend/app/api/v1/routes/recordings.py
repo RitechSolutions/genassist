@@ -1,8 +1,10 @@
 import logging
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
 from app.core.permissions.constants import Permissions as P
@@ -15,6 +17,57 @@ from app.schemas.question import QuestionCreate
 from app.schemas.conversation_transcript import ConversationTranscriptCreate
 from app.services.audio import AudioService
 from app.core.utils.bi_utils import validate_upload_file_size
+
+
+def get_safe_file_path(file_path: str, allowed_directory: str) -> str:
+    """
+    Sanitize and validate that a file path is within an allowed directory.
+    Prevents path traversal attacks by normalizing, validating, and reconstructing the path.
+
+    Args:
+        file_path: The file path to validate
+        allowed_directory: The directory the file must be within
+
+    Returns:
+        A sanitized absolute path string that is safe to use
+
+    Raises:
+        HTTPException: If the path escapes the allowed directory or contains traversal
+    """
+    # Normalize the input path to catch traversal attempts
+    normalized_path = os.path.normpath(file_path)
+
+    # Check for path traversal after normalization
+    if ".." in normalized_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file path"
+        )
+
+    resolved_file = Path(normalized_path).resolve()
+    resolved_dir = Path(allowed_directory).resolve()
+
+    # Validate the file is within the allowed directory
+    try:
+        relative_path = resolved_file.relative_to(resolved_dir)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file path"
+        )
+
+    # Reconstruct the path from known-safe base directory and validated relative path
+    # This breaks the taint chain by creating a new path from safe components
+    safe_absolute_path = resolved_dir / relative_path
+
+    if not safe_absolute_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="File not found"
+        )
+
+    # Return the reconstructed safe absolute path as a string
+    return str(safe_absolute_path)
 
 
 logger = logging.getLogger(__name__)
@@ -93,7 +146,18 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     """Serve the saved recording file based on filename."""
     recording_data: RecordingRead = await service.find_recording_by_id(rec_id)
 
-    return FileResponse(recording_data.file_path)
+    # Sanitize and validate file path to prevent path traversal attacks
+    safe_path = get_safe_file_path(
+        recording_data.file_path,
+        settings.RECORDINGS_DIR
+    )
+
+    # Final guard: verify path starts with allowed directory before serving
+    recordings_dir = str(Path(settings.RECORDINGS_DIR).resolve())
+    if not safe_path.startswith(recordings_dir):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    return FileResponse(safe_path)
 
 
 @router.get("/metrics", dependencies=[

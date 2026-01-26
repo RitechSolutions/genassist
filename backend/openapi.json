@@ -3785,13 +3785,13 @@
           "Conversations"
         ],
         "summary": "Start",
-        "description": "Create a new in-progress conversation and store the partial transcript.\nIf agent.token_based_auth is true, returns a JWT token for secure frontend access.",
+        "description": "Create a new in-progress conversation and store the partial transcript.\nIf agent.security_settings.token_based_auth is true, returns a JWT token for secure frontend access.",
         "operationId": "start_api_conversations_in_progress_start_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConversationTranscriptCreate"
+                "$ref": "#/components/schemas/ConversationStartWithRecaptchaToken"
               }
             }
           },
@@ -3895,7 +3895,7 @@
           "Conversations"
         ],
         "summary": "Update",
-        "description": "Append segments to an existing in-progress conversation.\nIf agent.token_based_auth is true, only accepts JWT tokens (rejects API keys).",
+        "description": "Append segments to an existing in-progress conversation.\nIf agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).",
         "operationId": "update_api_conversations_in_progress_update__conversation_id__patch",
         "security": [
           {
@@ -3922,7 +3922,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/InProgConvTranscrUpdate"
+                "$ref": "#/components/schemas/ConversationUpdateWithRecaptchaToken"
               }
             }
           }
@@ -12950,11 +12950,16 @@
             "title": "Thinking Phrase Delay",
             "description": "Delay in seconds before showing thinking phrases."
           },
-          "token_based_auth": {
-            "type": "boolean",
-            "title": "Token Based Auth",
-            "description": "If true, requires JWT token for conversation updates instead of API key.",
-            "default": false
+          "security_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentSecuritySettingsCreate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Security settings for this agent. If null, uses global defaults."
           },
           "workflow_id": {
             "anyOf": [
@@ -13062,11 +13067,15 @@
             "title": "Thinking Phrase Delay",
             "description": "Delay in seconds before showing thinking phrases."
           },
-          "token_based_auth": {
-            "type": "boolean",
-            "title": "Token Based Auth",
-            "description": "If true, requires JWT token for conversation updates instead of API key.",
-            "default": false
+          "security_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentSecuritySettingsRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "workflow_id": {
             "type": "string",
@@ -13141,6 +13150,467 @@
           "operator_id"
         ],
         "title": "AgentRead"
+      },
+      "AgentSecuritySettingsCreate": {
+        "properties": {
+          "token_based_auth": {
+            "type": "boolean",
+            "title": "Token Based Auth",
+            "description": "If true, requires JWT token for conversation updates instead of API key.",
+            "default": false
+          },
+          "token_expiration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expiration Minutes",
+            "description": "JWT token expiration time in minutes. If null, uses global default."
+          },
+          "cors_allowed_origins": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cors Allowed Origins",
+            "description": "Comma-separated list of allowed CORS origins. If null, uses global default."
+          },
+          "rate_limit_conversation_start_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Minute",
+            "description": "Rate limit for conversation start per minute. If null, uses global default."
+          },
+          "rate_limit_conversation_start_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Hour",
+            "description": "Rate limit for conversation start per hour. If null, uses global default."
+          },
+          "rate_limit_conversation_update_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Minute",
+            "description": "Rate limit for conversation update per minute. If null, uses global default."
+          },
+          "rate_limit_conversation_update_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Hour",
+            "description": "Rate limit for conversation update per hour. If null, uses global default."
+          },
+          "recaptcha_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Enabled",
+            "description": "Enable reCAPTCHA for this agent. If null, uses global default."
+          },
+          "recaptcha_project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Project Id",
+            "description": "reCAPTCHA project ID. If null, uses global default."
+          },
+          "recaptcha_site_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Site Key",
+            "description": "reCAPTCHA site key. If null, uses global default."
+          },
+          "recaptcha_min_score": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Min Score",
+            "description": "reCAPTCHA minimum score (0.0-1.0). If null, uses global default."
+          },
+          "gcp_svc_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gcp Svc Account",
+            "description": "GCP service account JSON in base64. If null, uses global default."
+          }
+        },
+        "type": "object",
+        "title": "AgentSecuritySettingsCreate"
+      },
+      "AgentSecuritySettingsRead": {
+        "properties": {
+          "token_based_auth": {
+            "type": "boolean",
+            "title": "Token Based Auth",
+            "description": "If true, requires JWT token for conversation updates instead of API key.",
+            "default": false
+          },
+          "token_expiration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expiration Minutes",
+            "description": "JWT token expiration time in minutes. If null, uses global default."
+          },
+          "cors_allowed_origins": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cors Allowed Origins",
+            "description": "Comma-separated list of allowed CORS origins. If null, uses global default."
+          },
+          "rate_limit_conversation_start_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Minute",
+            "description": "Rate limit for conversation start per minute. If null, uses global default."
+          },
+          "rate_limit_conversation_start_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Hour",
+            "description": "Rate limit for conversation start per hour. If null, uses global default."
+          },
+          "rate_limit_conversation_update_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Minute",
+            "description": "Rate limit for conversation update per minute. If null, uses global default."
+          },
+          "rate_limit_conversation_update_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Hour",
+            "description": "Rate limit for conversation update per hour. If null, uses global default."
+          },
+          "recaptcha_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Enabled",
+            "description": "Enable reCAPTCHA for this agent. If null, uses global default."
+          },
+          "recaptcha_project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Project Id",
+            "description": "reCAPTCHA project ID. If null, uses global default."
+          },
+          "recaptcha_site_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Site Key",
+            "description": "reCAPTCHA site key. If null, uses global default."
+          },
+          "recaptcha_min_score": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Min Score",
+            "description": "reCAPTCHA minimum score (0.0-1.0). If null, uses global default."
+          },
+          "gcp_svc_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gcp Svc Account",
+            "description": "GCP service account JSON in base64. If null, uses global default."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agent_id"
+        ],
+        "title": "AgentSecuritySettingsRead"
+      },
+      "AgentSecuritySettingsUpdate": {
+        "properties": {
+          "token_based_auth": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Based Auth"
+          },
+          "token_expiration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expiration Minutes"
+          },
+          "cors_allowed_origins": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cors Allowed Origins"
+          },
+          "rate_limit_conversation_start_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Minute"
+          },
+          "rate_limit_conversation_start_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Hour"
+          },
+          "rate_limit_conversation_update_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Minute"
+          },
+          "rate_limit_conversation_update_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Hour"
+          },
+          "recaptcha_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Enabled"
+          },
+          "recaptcha_project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Project Id"
+          },
+          "recaptcha_site_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Site Key"
+          },
+          "recaptcha_min_score": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Min Score"
+          },
+          "gcp_svc_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gcp Svc Account"
+          }
+        },
+        "type": "object",
+        "title": "AgentSecuritySettingsUpdate"
       },
       "AgentUpdate": {
         "properties": {
@@ -13250,17 +13720,6 @@
             ],
             "title": "Thinking Phrase Delay"
           },
-          "token_based_auth": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Token Based Auth"
-          },
           "workflow_id": {
             "anyOf": [
               {
@@ -13272,6 +13731,16 @@
               }
             ],
             "title": "Workflow Id"
+          },
+          "security_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentSecuritySettingsUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -14461,6 +14930,117 @@
         ],
         "title": "ConversationRead"
       },
+      "ConversationStartWithRecaptchaToken": {
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegmentInput"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "operator_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Id"
+          },
+          "data_source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Source Id"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "recaptcha_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "ConversationStartWithRecaptchaToken"
+      },
       "ConversationStatus": {
         "type": "string",
         "enum": [
@@ -14572,6 +15152,46 @@
               }
             ],
             "title": "Recorded At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "ConversationTranscriptCreate"
+      },
+      "ConversationUpdateWithRecaptchaToken": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegmentInput"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
           },
           "recaptcha_token": {
             "anyOf": [
@@ -14589,7 +15209,7 @@
         "required": [
           "messages"
         ],
-        "title": "ConversationTranscriptCreate"
+        "title": "ConversationUpdateWithRecaptchaToken"
       },
       "CreateFineTuningJobRequest": {
         "properties": {
@@ -15558,7 +16178,8 @@
               "sharepoint",
               "smb_share_folder",
               "azure_blob",
-              "google_bucket"
+              "google_bucket",
+              "zendesk"
             ],
             "title": "Type",
             "default": "file"
@@ -15813,7 +16434,8 @@
               "sharepoint",
               "smb_share_folder",
               "azure_blob",
-              "google_bucket"
+              "google_bucket",
+              "zendesk"
             ],
             "title": "Type",
             "default": "file"

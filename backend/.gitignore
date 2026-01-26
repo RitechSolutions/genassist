@@ -51,3 +51,4 @@ infra/.terraform/
 /logs/
 env.*
 legra_data/
+/*.db

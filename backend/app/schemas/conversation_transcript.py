@@ -51,8 +51,6 @@ class ConversationTranscriptBase(BaseModel):
 
 class ConversationTranscriptCreate(ConversationTranscriptBase):
     operator_id: Optional[UUID] = None
-    recaptcha_token: Optional[str] = None
-
 
 class InProgConvTranscrUpdate(BaseModel):
     """
@@ -63,6 +61,12 @@ class InProgConvTranscrUpdate(BaseModel):
     metadata: Optional[dict] = None
     llm_analyst_id: Optional[UUID] = None
 
+# add generic type to allow for both ConversationTranscriptCreate and InProgConvTranscrUpdate   
+class ConversationStartWithRecaptchaToken(ConversationTranscriptCreate):
+    recaptcha_token: Optional[str] = None
+
+class ConversationUpdateWithRecaptchaToken(InProgConvTranscrUpdate):
+    recaptcha_token: Optional[str] = None
 
 class InProgressConversationTranscriptFinalize(BaseModel):
     llm_analyst_id: Optional[UUID] = None

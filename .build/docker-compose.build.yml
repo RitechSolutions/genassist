@@ -109,7 +109,7 @@ services:
       - genassist-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/login"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
       interval: 30s
       timeout: 10s
       retries: 3
