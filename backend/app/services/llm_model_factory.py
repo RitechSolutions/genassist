@@ -53,9 +53,12 @@ class LlmModelFactory:
             # vLLM uses OpenAI-compatible API
             base_url = connection_data.get("base_url", "http://localhost:8976/v1")
 
+            # vLLM uses OpenAI-compatible API, so we need to decrypt the API key
+            api_key = decrypt_key(connection_data.get("api_key"))
+
             return ChatOpenAI(
                     model=model,
-                    api_key="EMPTY",
+                    api_key=api_key,
                     openai_api_base=base_url,
                     temperature=temperature,
                     )
