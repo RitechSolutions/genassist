@@ -20,6 +20,8 @@ from app.db.models.conversation import ConversationModel
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
 from app.db.base import generate_sequential_uuid
+from app.services.file_manager import FileManagerService
+from app.core.config.settings import file_storage_settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -219,6 +221,79 @@ async def get_or_create_conversation(
         )
 
     return open_conversation
+
+async def process_attachments_from_metadata(
+    conversation_id: UUID,
+    model: InProgConvTranscrUpdate,
+    file_manager_service: FileManagerService,
+    tenant_id: str,
+    current_user_id: UUID,
+) -> None:
+    """
+    Process attachments from conversation metadata.
+    Handles file retrieval, OpenAI upload, and file processing.
+    """
+    # Check for attachments on metadata
+    if model.metadata and model.metadata.get("attachments"):
+        # supported_file_extensions = ["pdf", "docx", "txt"]
+        supported_file_extensions = ["pdf"]
+
+        # process attachments
+        for attachment in model.metadata.get("attachments"):
+            if not attachment.get("type"):
+                attachment["file_local_path"] = attachment.get("url")
+                attachment["file_mime_type"] = attachment.get("mime_type")
+            else:
+                file_type = attachment.get("type")
+
+                # get file by file_id
+                file = await file_manager_service.get_file_by_id(attachment.get("file_id"))
+                if not file:
+                    pass
+                else:
+                    base_url = file_storage_settings.APP_URL
+                    file_url = f"{base_url}/api/file-manager/files/{file.id}/source"
+
+                    # add to attachments
+                    attachment["file_local_path"] = f"{file.path}/{file.storage_path}"
+                    attachment["file_mime_type"] = file.mime_type
+                    
+                    # Check if file has OpenAI file_id stored or upload if needed
+                    if not attachment.get("openai_file_id"):
+                        # Get file extension from filename or file_extension attribute
+                        file_extension = ""
+                        if hasattr(file, 'file_extension') and file.file_extension:
+                            file_extension = file.file_extension.lower()
+                        elif file.name and '.' in file.name:
+                            file_extension = file.name.split('.')[-1].lower()
+                        
+                        # Optionally upload to OpenAI if it's a PDF, DOCX, or TXT and not already uploaded
+                        if file_extension in supported_file_extensions:
+                            try:
+                                from app.services.open_ai_fine_tuning import OpenAIFineTuningService
+                                openai_service = injector.get(OpenAIFineTuningService)
+                                full_file_path = f"{file.path}/{file.storage_path}"
+                                openai_file_id = await openai_service.upload_file_for_chat(
+                                    file_path=full_file_path,
+                                    filename=file.name,
+                                    purpose="user_data"
+                                )
+                                attachment["openai_file_id"] = openai_file_id
+                                logger.info(f"Uploaded file to OpenAI: {openai_file_id}")
+                            except Exception as e:
+                                logger.warning(f"Failed to upload file to OpenAI: {str(e)}")
+
+                    # process the file upload from chat
+                    await process_file_upload_from_chat(
+                        conversation_id=conversation_id,
+                        file_id=file.id,
+                        file_url=file_url,
+                        file_name=file.name,
+                        file_type=file_type,
+                        tenant_id=tenant_id,
+                        current_user_id=current_user_id,
+                    )
+
 
 async def process_file_upload_from_chat(
     conversation_id: UUID,
