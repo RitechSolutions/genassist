@@ -7,18 +7,31 @@ from fastapi_injector import Injected
 from starlette.websockets import WebSocketDisconnect
 from app.core.exceptions.exception_handler import send_socket_error
 from app.core.utils.enums.message_feedback_enum import Feedback
-from app.auth.dependencies import auth, permissions, socket_auth, auth_for_conversation_update
+from app.auth.dependencies import (
+    auth,
+    permissions,
+    socket_auth,
+    auth_for_conversation_update,
+)
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
-from app.core.rate_limit_utils import (
-    RATE_LIMIT_CONVERSATION_START_MINUTE,
-    RATE_LIMIT_CONVERSATION_START_HOUR,
-    RATE_LIMIT_CONVERSATION_UPDATE_MINUTE,
-    RATE_LIMIT_CONVERSATION_UPDATE_HOUR,
+from app.middlewares.rate_limit_middleware import (
+    limiter,
+    get_conversation_identifier,
+    get_agent_rate_limit_start,
+    get_agent_rate_limit_start_hour,
+    get_agent_rate_limit_update,
+    get_agent_rate_limit_update_hour,
 )
-from app.middlewares.rate_limit_middleware import limiter, get_conversation_identifier
+from app.auth.dependencies_agent_security import (
+    get_agent_for_start,
+    get_agent_for_update,
+)
+from app.core.agent_security_utils import apply_agent_cors_headers
+from fastapi import Response
+from fastapi.responses import JSONResponse
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.websockets.socket_room_enum import SocketRoomType
 from app.schemas.agent import AgentRead
@@ -69,23 +82,33 @@ async def get(
     dependencies=[
         Depends(auth),
         Depends(permissions(P.Conversation.CREATE_IN_PROGRESS)),
+        Depends(get_agent_for_start),  # Get agent early for rate limiting and CORS
     ],
 )
-@limiter.limit(RATE_LIMIT_CONVERSATION_START_MINUTE)
-@limiter.limit(RATE_LIMIT_CONVERSATION_START_HOUR)
+@limiter.limit(get_agent_rate_limit_start)
+@limiter.limit(get_agent_rate_limit_start_hour)
 async def start(
     request: Request,
     model: ConversationTranscriptCreate,
+    response: Response,
     service: ConversationService = Injected(ConversationService),
     agent_config_service: AgentConfigService = Injected(AgentConfigService),
     auth_service: AuthService = Injected(AuthService),
 ):
     """
     Create a new in-progress conversation and store the partial transcript.
-    If agent.token_based_auth is true, returns a JWT token for secure frontend access.
+    If agent.security_settings.token_based_auth is true, returns a JWT token for secure frontend access.
     """
-    # Verify reCAPTCHA token if it is present
-    is_valid, score, reason = verify_recaptcha_token(model.recaptcha_token)
+    # Get agent from request.state (set by get_agent_for_start dependency)
+    agent = getattr(request.state, "agent", None)
+    if not agent:
+        logger.debug("agent not found")
+        raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
+
+    logger.debug(f"agent: {agent.name}")
+
+    # Verify reCAPTCHA token if it is present, using agent-specific settings
+    is_valid, score, reason = verify_recaptcha_token(model.recaptcha_token, agent=agent)
     if not is_valid:
         logger.warning(f"reCAPTCHA verification failed: {reason}")
         raise AppException(
@@ -99,45 +122,66 @@ async def start(
 
     if model.conversation_id:
         raise AppException(error_key=ErrorKey.ID_CANT_BE_SPECIFIED)
-    userid = get_current_user_id()
-    logger.debug("userid:" + str(userid))
-
-    agent = await agent_config_service.get_by_user_id(userid)
-    if not agent:
-        logger.debug("agent not found")
-    else:
-        logger.debug("agent:" + agent.name)
 
     agent_read = AgentRead.model_validate(agent)
     model.operator_id = agent.operator_id
     conversation = await service.start_in_progress_conversation(model)
     logger.info("conversation:" + str(conversation))
 
+    # Use model_dump with json mode to ensure all values are JSON-serializable (UUIDs converted to strings)
+    agent_data = agent_read.model_dump(mode="json")
+
     response = {
         "message": "Conversation started",
-        "conversation_id": conversation.id,
-        "agent_id": agent.id,
-        "agent_welcome_message": agent_read.welcome_message,
-        "agent_welcome_title": agent_read.welcome_title,
-        "agent_possible_queries": agent_read.possible_queries,
-        "agent_thinking_phrases": agent_read.thinking_phrases,
-        "agent_thinking_phrase_delay": agent_read.thinking_phrase_delay,
-        "agent_has_welcome_image": agent_read.welcome_image is not None,
+        "conversation_id": str(conversation.id),
+        "agent_id": str(agent.id),
+        "agent_welcome_message": agent_data.get("welcome_message"),
+        "agent_welcome_title": agent_data.get("welcome_title"),
+        "agent_possible_queries": agent_data.get("possible_queries"),
+        "agent_thinking_phrases": agent_data.get("thinking_phrases"),
+        "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
+        "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
     }
 
     # If agent requires authentication, generate and return a guest JWT token
-    if agent_read.token_based_auth:
+    token_based_auth = (
+        agent_read.security_settings.token_based_auth
+        if agent_read.security_settings
+        and agent_read.security_settings.token_based_auth
+        else False
+    )
+    if token_based_auth:
         tenant_id = get_tenant_context()
+        # Use agent-specific token expiration if set, otherwise use default (24 hours)
+        from datetime import timedelta
+
+        expires_delta = None
+        if agent.security_settings and agent.security_settings.token_expiration_minutes:
+            expires_delta = timedelta(
+                minutes=agent.security_settings.token_expiration_minutes
+            )
         # Include user_id from the API key used to start the conversation
+        userid = get_current_user_id()
         guest_token = auth_service.create_guest_token(
             tenant_id=tenant_id,
             agent_id=str(agent.id),
             conversation_id=str(conversation.id),
-            user_id=str(userid) if userid else None
+            user_id=str(userid) if userid else None,
+            expires_delta=expires_delta,
         )
         response["guest_token"] = guest_token
 
-    return response
+    # Apply agent-specific CORS headers
+    agent_security_settings = (
+        agent.security_settings
+        if agent and hasattr(agent, "security_settings")
+        else None
+    )
+
+    json_response = JSONResponse(content=response)
+    apply_agent_cors_headers(request, json_response, agent_security_settings)
+
+    return json_response
 
 
 @router.patch(
@@ -145,14 +189,16 @@ async def start(
     dependencies=[
         Depends(auth),
         Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(get_agent_for_update),  # Get agent early for rate limiting and CORS
     ],
 )
-@limiter.limit(RATE_LIMIT_CONVERSATION_UPDATE_MINUTE, key_func=get_conversation_identifier)
-@limiter.limit(RATE_LIMIT_CONVERSATION_UPDATE_HOUR, key_func=get_conversation_identifier)
+@limiter.limit(get_agent_rate_limit_update, key_func=get_conversation_identifier)
+@limiter.limit(get_agent_rate_limit_update_hour, key_func=get_conversation_identifier)
 async def update_no_agent(
     request: Request,
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
+    response: Response,
     service: ConversationService = Injected(ConversationService),
     socket_connection_manager: SocketConnectionManager = Injected(
         SocketConnectionManager
@@ -163,14 +209,18 @@ async def update_no_agent(
     Append segments to an existing in-progress conversation or create it if it doesn't exist.
     """
 
+    # Get agent from request.state (set by get_agent_for_update dependency)
+    agent = getattr(request.state, "agent", None)
+
     # create if not exists
     conversation = await service.get_conversation_by_id(
         conversation_id, raise_not_found=False
     )
     if not conversation:
-        userid = get_current_user_id()
-
-        agent = await agent_config_service.get_by_user_id(userid)
+        if not agent:
+            userid = get_current_user_id()
+            agent = await agent_config_service.get_by_user_id(userid)
+            request.state.agent = agent
 
         new_conversation_model = ConversationTranscriptCreate(
             conversation_id=conversation_id,
@@ -248,7 +298,17 @@ async def update_no_agent(
         )
     )
 
-    return updated_conversation
+    # Apply agent-specific CORS headers
+    agent_security_settings = (
+        agent.security_settings
+        if agent and hasattr(agent, "security_settings")
+        else None
+    )
+
+    json_response = JSONResponse(content=upd_conv_pyd.model_dump())
+    apply_agent_cors_headers(request, json_response, agent_security_settings)
+
+    return json_response
 
 
 @router.patch(
@@ -256,10 +316,11 @@ async def update_no_agent(
     dependencies=[
         Depends(auth_for_conversation_update),
         Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+        Depends(get_agent_for_update),
     ],
 )
-@limiter.limit(RATE_LIMIT_CONVERSATION_UPDATE_MINUTE, key_func=get_conversation_identifier)
-@limiter.limit(RATE_LIMIT_CONVERSATION_UPDATE_HOUR, key_func=get_conversation_identifier)
+@limiter.limit(get_agent_rate_limit_update, key_func=get_conversation_identifier)
+@limiter.limit(get_agent_rate_limit_update_hour, key_func=get_conversation_identifier)
 async def update(
     request: Request,
     conversation_id: UUID,
@@ -267,16 +328,32 @@ async def update(
 ):
     """
     Append segments to an existing in-progress conversation.
-    If agent.token_based_auth is true, only accepts JWT tokens (rejects API keys).
+    If agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).
     """
     tenant_id = get_tenant_context()
 
-    return await process_conversation_update_with_agent(
+    updated_conversation = await process_conversation_update_with_agent(
         conversation_id=conversation_id,
         model=model,
         tenant_id=tenant_id,
         current_user_id=get_current_user_id(),
     )
+
+    upd_conv_pyd: ConversationRead = ConversationRead.model_validate(
+        updated_conversation
+    )
+
+    agent = getattr(request.state, "agent", None)
+    agent_security_settings = (
+        agent.security_settings
+        if agent and hasattr(agent, "security_settings")
+        else None
+    )
+
+    json_response = JSONResponse(content=upd_conv_pyd.model_dump(mode="json"))
+    apply_agent_cors_headers(request, json_response, agent_security_settings)
+
+    return json_response
 
 
 @router.patch(
@@ -442,8 +519,7 @@ async def add_conversation_feedback(
 async def websocket_endpoint(
     websocket: WebSocket,
     conversation_id: UUID,
-    principal: SocketPrincipal = socket_auth(
-        ["read:in_progress_conversation"]),
+    principal: SocketPrincipal = socket_auth(["read:in_progress_conversation"]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
     socket_connection_manager: SocketConnectionManager = Injected(
@@ -488,8 +564,7 @@ async def websocket_endpoint(
 @router.websocket("/ws/dashboard/list")
 async def websocket_dashboard_endpoint(
     websocket: WebSocket,
-    principal: SocketPrincipal = socket_auth(
-        ["read:in_progress_conversation"]),
+    principal: SocketPrincipal = socket_auth(["read:in_progress_conversation"]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
     socket_connection_manager: SocketConnectionManager = Injected(
@@ -514,8 +589,7 @@ async def websocket_dashboard_endpoint(
             data = await websocket.receive_text()
             logger.debug("Received data: %s", data)
     except WebSocketDisconnect:
-        logger.debug(
-            f"WebSocket disconnected for dashboard (tenant: {tenant_id})")
+        logger.debug(f"WebSocket disconnected for dashboard (tenant: {tenant_id})")
         await socket_connection_manager.disconnect(
             websocket, SocketRoomType.DASHBOARD, tenant_id
         )

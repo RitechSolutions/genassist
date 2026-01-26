@@ -20,8 +20,13 @@ class AgentModel(Base):
     thinking_phrases: Mapped[str] = mapped_column(String(500), server_default="Thinking...")
     thinking_phrase_delay: Mapped[Integer] = mapped_column(Integer, nullable=True)
     workflow_id: Mapped[UUID] = mapped_column(ForeignKey("workflows.id"), nullable=True)
-    token_based_auth: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     # Relationships
     operator = relationship("OperatorModel", back_populates="agent", uselist=False)
     workflow = relationship("WorkflowModel", back_populates="agent", uselist=False)
+    security_settings = relationship(
+        "AgentSecuritySettingsModel",
+        back_populates="agent",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )

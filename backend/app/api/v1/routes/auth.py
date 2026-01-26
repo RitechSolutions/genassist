@@ -28,8 +28,11 @@ async def auth_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     auth_service: AuthService = Injected(AuthService),
 ):
+    from app.core.tenant_scope import get_tenant_context
+    
     user = await auth_service.authenticate_user(form_data.username, form_data.password)
-    token_data = {"sub": user.username, "user_id": str(user.id)}
+    tenant_id = get_tenant_context()
+    token_data = {"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}
     access_token = auth_service.create_access_token(data=token_data)
     refresh_token = auth_service.create_refresh_token(data=token_data)
     return {
@@ -49,9 +52,12 @@ async def refresh_token(
     refresh_token: Annotated[str, Form(...)],
     auth_service: AuthService = Injected(AuthService),
 ):
+    from app.core.tenant_scope import get_tenant_context
+    
     user = await auth_service.decode_jwt(refresh_token)  # Decode user
+    tenant_id = get_tenant_context()
     access_token = auth_service.create_access_token(
-        data={"sub": user.username, "user_id": str(user.id)}
+        data={"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}
     )
 
     return {"access_token": access_token, "token_type": "bearer"}

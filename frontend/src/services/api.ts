@@ -13,9 +13,25 @@ export interface AgentConfig {
   thinking_phrase_delay?: number;
   possible_queries?: string[];
   thinking_phrases?: string[];
-  token_based_auth?: boolean;
   workflow_id: string;
   user_id: string;
+  // Security settings (nested object)
+  security_settings?: {
+    id?: string;
+    agent_id?: string;
+    token_based_auth?: boolean;
+    token_expiration_minutes?: number | null;
+    cors_allowed_origins?: string | null;
+    rate_limit_conversation_start_per_minute?: number | null;
+    rate_limit_conversation_start_per_hour?: number | null;
+    rate_limit_conversation_update_per_minute?: number | null;
+    rate_limit_conversation_update_per_hour?: number | null;
+    recaptcha_enabled?: boolean | null;
+    recaptcha_project_id?: string | null;
+    recaptcha_site_key?: string | null;
+    recaptcha_min_score?: string | null;
+    gcp_svc_account?: string | null;
+  } | null;
   [key: string]: unknown;
 }
 type AgentConfigCreate = Omit<AgentConfig, "id" | "user_id" | "workflow_id">;

@@ -13,6 +13,7 @@ from starlette_context.plugins import RequestIdPlugin
 
 from app.middlewares.tenant_middleware import TenantMiddleware
 from app.middlewares.tenant_scope_middleware import TenantScopeMiddleware
+from app.middlewares.rate_limit_middleware import _request_context
 from app import settings
 from app.core.config.logging import (
     duration_ctx,
@@ -36,23 +37,23 @@ def get_allowed_origins() -> list[str]:
         "http://127.0.0.1:8080",
         "http://127.0.0.1:3000",
     ]
-    
+
     # Start with default origins
     allowed_origins = default_origins.copy()
-    
+
     # Add additional origins from environment variable if provided
     if settings.CORS_ALLOWED_ORIGINS:
         # Parse comma-separated origins and strip whitespace
         additional_origins = [
-            origin.strip() 
-            for origin in settings.CORS_ALLOWED_ORIGINS.split(",") 
+            origin.strip()
+            for origin in settings.CORS_ALLOWED_ORIGINS.split(",")
             if origin.strip()
         ]
         # Add unique origins only
         for origin in additional_origins:
             if origin not in allowed_origins:
                 allowed_origins.append(origin)
-    
+
     return allowed_origins
 
 
@@ -81,19 +82,21 @@ def build_middlewares() -> list[Middleware]:
         # Add tenant scope middleware after tenant middleware
         middlewares.append(Middleware(TenantScopeMiddleware))
 
-    middlewares.extend([
-        # 3️⃣  Fills Loguru context vars, measures duration, etc.
-        Middleware(RequestContextMiddleware),
-        # 4️⃣  CORS
-        Middleware(
-            CORSMiddleware,
-            allow_origins=get_allowed_origins(),
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        ),
-        Middleware(VersionHeaderMiddleware),
-    ])
+    middlewares.extend(
+        [
+            # 3️⃣  Fills Loguru context vars, measures duration, etc.
+            Middleware(RequestContextMiddleware),
+            # 4️⃣  CORS
+            Middleware(
+                CORSMiddleware,
+                allow_origins=get_allowed_origins(),
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            ),
+            Middleware(VersionHeaderMiddleware),
+        ]
+    )
 
     return middlewares
 
@@ -107,6 +110,9 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
     """Logs start/end of every request and populates Loguru ContextVars."""
 
     async def dispatch(self, request: Request, call_next):
+        # Set request in context for rate limit functions
+        _request_context.set(request)
+
         start = time.perf_counter()
 
         # ------------------------------------------------------------------ #
@@ -196,8 +202,12 @@ class VersionHeaderMiddleware(BaseHTTPMiddleware):
 
         # If behind a proxy that terminates TLS, ensure redirects use https
         # this might not be the right place for this logic, but it's convenient
-        if response.status_code == 307 and request.headers.get("x-forwarded-proto") == "https":
+        if (
+            response.status_code == 307
+            and request.headers.get("x-forwarded-proto") == "https"
+        ):
             response.headers["Location"] = response.headers["Location"].replace(
-                'http://', 'https://')
+                "http://", "https://"
+            )
 
         return response

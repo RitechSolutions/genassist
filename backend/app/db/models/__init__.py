@@ -18,6 +18,7 @@ from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
 from app.db.utils.event_hooks_config import auto_register_updated_by
 from .agent import AgentModel
+from .agent_security_settings import AgentSecuritySettingsModel
 from .tool import ToolModel
 from .knowledge_base import KnowledgeBaseModel
 from .workflow import WorkflowModel
@@ -60,6 +61,7 @@ __all__ = [
     "ToolModel",
     "KnowledgeBaseModel",
     "AgentModel",
+    "AgentSecuritySettingsModel",
     "WorkflowModel",
     "MLModel",
     "MLModelPipelineConfig",
@@ -100,6 +102,7 @@ models = [
     UserRoleModel,
     KnowledgeBaseModel,
     AgentModel,
+    AgentSecuritySettingsModel,
     WorkflowModel,
     MLModel,
     MLModelPipelineConfig,

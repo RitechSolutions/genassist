@@ -201,17 +201,21 @@ async def _get_conversation_with_agent(conversation_id: UUID):
     """
     from sqlalchemy import select
     from sqlalchemy.orm import joinedload
-    from app.db.models import ConversationModel, OperatorModel
+    from app.db.models import ConversationModel, OperatorModel, AgentModel
     from app.dependencies.injector import injector
     from app.repositories.conversations import ConversationRepository
 
     conversation_repo = injector.get(ConversationRepository)
 
-    # Single query with eager loading of operator and agent
+    # Single query with eager loading of operator, agent, and agent.security_settings
     query = (
         select(ConversationModel)
         .where(ConversationModel.id == conversation_id)
-        .options(joinedload(ConversationModel.operator).joinedload(OperatorModel.agent))
+        .options(
+            joinedload(ConversationModel.operator)
+            .joinedload(OperatorModel.agent)
+            .joinedload(AgentModel.security_settings)
+        )
     )
 
     result = await conversation_repo.db.execute(query)
@@ -281,7 +285,7 @@ async def _handle_authenticated_agent(
     user: Optional[UserReadAuth],
     auth_service: AuthService,
 ):
-    """Handle authentication when agent.token_based_auth is true (JWT only)."""
+    """Handle authentication when agent.security_settings.token_based_auth is true (JWT only)."""
     # Reject API keys for token_based_auth agents
     if getattr(request.state, "api_key", None):
         raise AppException(
@@ -325,8 +329,8 @@ async def auth_for_conversation_update(
 ):
     """
     Custom authentication for conversation update endpoint.
-    If agent.token_based_auth is true, only accepts JWT tokens (rejects API keys).
-    If agent.token_based_auth is false, accepts both API keys and JWT tokens.
+    If agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).
+    If agent.security_settings.token_based_auth is false, accepts both API keys and JWT tokens.
 
     Optimized to fetch conversation with agent in a single database query.
     """
@@ -338,8 +342,14 @@ async def auth_for_conversation_update(
         await auth(request, api_key, user)
         return
 
-    # Route to appropriate auth handler based on agent.token_based_auth flag
-    if agent.token_based_auth:
+    # Route to appropriate auth handler based on agent.security_settings.token_based_auth flag
+    # Check if security_settings exists and token_based_auth is enabled
+    token_based_auth = (
+        agent.security_settings.token_based_auth 
+        if agent.security_settings and agent.security_settings.token_based_auth 
+        else False
+    )
+    if token_based_auth:
         await _handle_authenticated_agent(
             request, conversation_id, agent, api_key, user, auth_service
         )

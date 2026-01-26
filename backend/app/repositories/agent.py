@@ -22,7 +22,8 @@ class AgentRepository(DbRepository[AgentModel]):
             select(AgentModel)
             .options(
                 joinedload(AgentModel.operator).joinedload(OperatorModel.user),
-                joinedload(AgentModel.workflow)
+                joinedload(AgentModel.workflow),
+                joinedload(AgentModel.security_settings)
             )
             .where(AgentModel.id == agent_id)
         )
@@ -38,7 +39,8 @@ class AgentRepository(DbRepository[AgentModel]):
             select(AgentModel)
             .options(
                 joinedload(AgentModel.operator).joinedload(OperatorModel.user),
-                joinedload(AgentModel.workflow)
+                joinedload(AgentModel.workflow),
+                joinedload(AgentModel.security_settings)
             )
             .order_by(AgentModel.created_at.asc())
         )
@@ -54,6 +56,7 @@ class AgentRepository(DbRepository[AgentModel]):
             .where(OperatorModel.user_id == user_id)
             .options(
                 joinedload(AgentModel.operator).joinedload(OperatorModel.user),
+                joinedload(AgentModel.security_settings),
             )
         )
         result = await self.db.execute(stmt)
