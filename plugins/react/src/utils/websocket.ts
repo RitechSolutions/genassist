@@ -31,17 +31,20 @@ export function createWebSocket(
 export function redactUrl(url: string): string {
   try {
     const urlObj = new URL(url);
-    // Redact api_key and access_token query params
+    // Redact api_key, access_token, and access_token query params
     if (urlObj.searchParams.has('api_key')) {
       urlObj.searchParams.set('api_key', '[REDACTED]');
     }
     if (urlObj.searchParams.has('access_token')) {
       urlObj.searchParams.set('access_token', '[REDACTED]');
     }
+    if (urlObj.searchParams.has('guest_token')) {
+      urlObj.searchParams.set('guest_token', '[REDACTED]');
+    }
     return urlObj.toString();
   } catch {
     // If URL parsing fails, return a safe redacted version
-    return url.replace(/[?&](api_key|access_token)=[^&]*/g, (match) => {
+    return url.replace(/[?&](api_key|access_token|guest_token)=[^&]*/g, (match) => {
       const param = match.split('=')[0];
       return `${param}=[REDACTED]`;
     });
