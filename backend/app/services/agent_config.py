@@ -15,6 +15,8 @@ from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.agent import AgentRepository
 from app.repositories.user_types import UserTypesRepository
 from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
+from app.schemas.agent_security_settings import AgentSecuritySettingsCreate, AgentSecuritySettingsUpdate
+from app.db.models import AgentSecuritySettingsModel
 from app.schemas.workflow import WorkflowUpdate, get_base_workflow
 from app.services.operators import OperatorService
 from app.services.workflow import WorkflowService
@@ -93,6 +95,9 @@ class AgentConfigService:
         agent_data = agent_create.model_dump(
             exclude_unset=True,
         )
+        
+        # Extract security_settings if present
+        security_settings_data = agent_data.pop("security_settings", None)
 
         if not agent_create.workflow_id:
             workflow_data = get_base_workflow(name=agent_data.get("name"))
@@ -118,7 +123,23 @@ class AgentConfigService:
         orm_agent = AgentModel(**agent_data)
 
         created_agent = await self.repository.create(orm_agent)
-        await self.db.refresh(created_agent, attribute_names=['operator'])
+        
+        # Create security settings (always create with defaults if not provided)
+        if security_settings_data:
+            security_settings = AgentSecuritySettingsModel(
+                agent_id=created_agent.id,
+                **AgentSecuritySettingsCreate(**security_settings_data).model_dump(exclude_unset=True)
+            )
+        else:
+            # Create with default token_based_auth=false
+            security_settings = AgentSecuritySettingsModel(
+                agent_id=created_agent.id,
+                token_based_auth=False
+            )
+        self.db.add(security_settings)
+        await self.db.flush()
+        
+        await self.db.refresh(created_agent, attribute_names=['operator', 'security_settings'])
 
         old_workflow = await self.workflow_service.get_by_id(created_agent.workflow_id)
         await self.workflow_service.update(created_agent.workflow_id, WorkflowUpdate(name=old_workflow.name,
@@ -143,14 +164,19 @@ class AgentConfigService:
     ) -> AgentModel:
         agent: AgentModel | None = await self.repository.get_by_id_full(agent_id)
 
-        await invalidate_agent_cache(agent_id, agent.operator.user.id)
-
         if not agent:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
+        
+        # Store user_id before any changes
+        user_id = agent.operator.user.id
 
         scalar_changes = agent_update.model_dump(
             exclude_unset=True,
         )
+        
+        # Handle security_settings separately
+        security_settings_update = scalar_changes.pop("security_settings", None)
+        
         if "is_active" in scalar_changes:
             scalar_changes["is_active"] = int(scalar_changes["is_active"])
         # Store as semi-colon separated string
@@ -169,10 +195,32 @@ class AgentConfigService:
         for field, value in scalar_changes.items():
             setattr(agent, field, value)
 
+        # Update or create security settings
+        if security_settings_update is not None:
+            if agent.security_settings:
+                # Update existing security settings
+                security_update_data = AgentSecuritySettingsUpdate(**security_settings_update).model_dump(exclude_unset=True)
+                for field, value in security_update_data.items():
+                    setattr(agent.security_settings, field, value)
+            else:
+                # Create new security settings
+                security_settings = AgentSecuritySettingsModel(
+                    agent_id=agent.id,
+                    **AgentSecuritySettingsCreate(**security_settings_update).model_dump(exclude_unset=True)
+                )
+                self.db.add(security_settings)
+                agent.security_settings = security_settings
+
         updated = await self.repository.update(
             agent
         )
-        null_unloaded_attributes(agent)
+        
+        # Refresh the agent with security_settings relationship loaded
+        await self.db.refresh(updated, ["security_settings"])
+        null_unloaded_attributes(updated)
+        
+        # Invalidate cache after update to ensure fresh data on next fetch
+        await invalidate_agent_cache(agent_id, user_id)
 
         return updated
 

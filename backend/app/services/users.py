@@ -1,6 +1,7 @@
 from uuid import UUID
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
+from fastapi_injector import Injected
 from injector import inject
 from app.auth.utils import get_password_hash
 from app.cache.redis_cache import make_key_builder
@@ -10,7 +11,10 @@ from app.core.utils.date_time_utils import shift_datetime
 from app.repositories.users import UserRepository
 from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserCreate, UserRead, UserReadAuth, UserUpdate
+from app.core.tenant_scope import get_tenant_context
+import logging
 
+logger = logging.getLogger(__name__)
 
 userid_key_builder = make_key_builder("user_id")
 
@@ -19,7 +23,7 @@ userid_key_builder = make_key_builder("user_id")
 class UserService:
     """Handles user-related business logic."""
 
-    def __init__(self, repository: UserRepository):
+    def __init__(self, repository: UserRepository = Injected(UserRepository)):
         # repository
         self.repository = repository
 
@@ -50,10 +54,17 @@ class UserService:
     )
     async def get_by_id_for_auth(self, user_id: UUID) -> UserReadAuth | None:
         """Retrieve a user by ID."""
+        tenant_id = get_tenant_context()
+        logger.debug(f"get_by_id_for_auth: tenant_id={tenant_id}, user_id={user_id}")
         user = await self.repository.get_full(user_id)
         if not user:
+            logger.warning(
+                f"User not found: user_id={user_id}, tenant_id={tenant_id}. "
+                f"This may indicate the user exists in a different tenant's database."
+            )
             return None
         user_auth = UserReadAuth.model_validate(user)
+        logger.debug(f"User found: user_id={user_id}, tenant_id={tenant_id}, username={user_auth.username}")
         # if user.user_type.name == 'console':
         #     raise AppException(error_key=ErrorKey.LOGIN_ERROR_CONSOLE_USER)
         return user_auth
