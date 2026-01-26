@@ -1,3 +1,4 @@
+import os
 import re
 from fastapi import APIRouter, Query, Depends, UploadFile, HTTPException
 from typing import Optional, List, Union
@@ -8,43 +9,49 @@ from app.services.smb_share_service import SMBShareFSService
 from app.tasks.share_folder_tasks import transcribe_audio_files_async_with_scope
 
 
-def validate_path_no_traversal(path: str) -> str:
+def get_safe_path(user_path: str) -> str:
     """
-    Validate that a path doesn't contain path traversal sequences.
-    Raises HTTPException if path traversal is detected.
+    Sanitize and validate a user-provided path to prevent path traversal attacks.
 
     Args:
-        path: The path to validate
+        user_path: The user-provided path to validate
 
     Returns:
-        The validated path
+        A sanitized path string that is safe to use
 
     Raises:
         HTTPException: If path contains traversal sequences
     """
-    if not path:
-        return path
+    if not user_path:
+        return ""
 
-    # Check for common path traversal patterns
-    traversal_patterns = [
-        r'\.\.',           # Parent directory reference
-        r'\.\./',          # Unix-style parent traversal
-        r'\.\.\\',         # Windows-style parent traversal
-        r'%2e%2e',         # URL-encoded ..
-        r'%252e%252e',     # Double URL-encoded ..
-        r'\.%2e',          # Mixed encoding
-        r'%2e\.',          # Mixed encoding
-    ]
+    # Normalize the path to resolve any . or .. components
+    normalized = os.path.normpath(user_path)
 
-    path_lower = path.lower()
-    for pattern in traversal_patterns:
-        if re.search(pattern, path_lower):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid path: path traversal not allowed"
-            )
+    # After normalization, check if it still contains parent directory references
+    # or starts with absolute path indicators
+    if ".." in normalized:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid path: path traversal not allowed"
+        )
 
-    return path
+    # Reject absolute paths - all paths should be relative to root
+    if os.path.isabs(normalized) or normalized.startswith("/") or normalized.startswith("\\"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid path: absolute paths not allowed"
+        )
+
+    # Check for URL-encoded traversal attempts
+    user_path_lower = user_path.lower()
+    if "%2e" in user_path_lower or "%252e" in user_path_lower:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid path: encoded traversal not allowed"
+        )
+
+    return normalized
 
 router = APIRouter()
 router = APIRouter(prefix="/smb", tags=["SMB Share / Local FS"])
@@ -136,10 +143,8 @@ async def read_file(
     dependencies=[Depends(auth)]
 ):
     """Read file content."""
-    # Validate filepath to prevent path traversal attacks
-    if ".." in filepath or filepath.startswith("/") or filepath.startswith("\\"):
-        raise HTTPException(status_code=400, detail="Invalid path: path traversal not allowed")
-    validate_path_no_traversal(filepath)
+    # Sanitize filepath to prevent path traversal attacks
+    safe_filepath = get_safe_path(filepath)
 
     try:
         async with SMBShareFSService(
@@ -151,7 +156,7 @@ async def read_file(
             use_local_fs=use_local_fs,
             local_root=local_root,
         ) as svc:
-            return await svc.read_file(filepath, binary=binary)
+            return await svc.read_file(safe_filepath, binary=binary)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -159,10 +164,8 @@ async def read_file(
 @router.post("/write")
 async def write_file(req: FileRequest, dependencies=[Depends(auth)]):
     """Write or update a file."""
-    # Validate filepath to prevent path traversal attacks
-    if ".." in req.filepath or req.filepath.startswith("/") or req.filepath.startswith("\\"):
-        raise HTTPException(status_code=400, detail="Invalid path: path traversal not allowed")
-    validate_path_no_traversal(req.filepath)
+    # Sanitize filepath to prevent path traversal attacks
+    safe_filepath = get_safe_path(req.filepath)
 
     try:
         async with SMBShareFSService(
@@ -175,12 +178,12 @@ async def write_file(req: FileRequest, dependencies=[Depends(auth)]):
             local_root=req.local_root,
         ) as svc:
             await svc.write_file(
-                filepath=req.filepath,
+                filepath=safe_filepath,
                 content=req.content or "",
                 binary=req.binary,
                 overwrite=req.overwrite,
             )
-        return {"status": "success", "message": f"File '{req.filepath}' written."}
+        return {"status": "success", "message": f"File '{safe_filepath}' written."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -226,10 +229,8 @@ async def create_folder(req: FolderRequest, dependencies=[Depends(auth)]):
 @router.delete("/folder")
 async def delete_folder(req: FolderRequest, dependencies=[Depends(auth)]):
     """Delete a folder and its contents."""
-    # Validate folderpath to prevent path traversal attacks
-    if ".." in req.folderpath or req.folderpath.startswith("/") or req.folderpath.startswith("\\"):
-        raise HTTPException(status_code=400, detail="Invalid path: path traversal not allowed")
-    validate_path_no_traversal(req.folderpath)
+    # Sanitize folderpath to prevent path traversal attacks
+    safe_folderpath = get_safe_path(req.folderpath)
 
     try:
         async with SMBShareFSService(
@@ -241,8 +242,8 @@ async def delete_folder(req: FolderRequest, dependencies=[Depends(auth)]):
             use_local_fs=req.use_local_fs,
             local_root=req.local_root,
         ) as svc:
-            await svc.delete_folder(req.folderpath)
-        return {"status": "success", "message": f"Folder '{req.folderpath}' deleted."}
+            await svc.delete_folder(safe_folderpath)
+        return {"status": "success", "message": f"Folder '{safe_folderpath}' deleted."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -19,38 +19,55 @@ from app.services.audio import AudioService
 from app.core.utils.bi_utils import validate_upload_file_size
 
 
-def validate_file_path_within_directory(file_path: str, allowed_directory: str) -> Path:
+def get_safe_file_path(file_path: str, allowed_directory: str) -> str:
     """
-    Validate that a file path is within an allowed directory to prevent path traversal attacks.
+    Sanitize and validate that a file path is within an allowed directory.
+    Prevents path traversal attacks by normalizing, validating, and reconstructing the path.
 
     Args:
         file_path: The file path to validate
         allowed_directory: The directory the file must be within
 
     Returns:
-        The resolved Path if valid
+        A sanitized absolute path string that is safe to use
 
     Raises:
-        HTTPException: If the path escapes the allowed directory
+        HTTPException: If the path escapes the allowed directory or contains traversal
     """
-    resolved_file = Path(file_path).resolve()
+    # Normalize the input path to catch traversal attempts
+    normalized_path = os.path.normpath(file_path)
+
+    # Check for path traversal after normalization
+    if ".." in normalized_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file path"
+        )
+
+    resolved_file = Path(normalized_path).resolve()
     resolved_dir = Path(allowed_directory).resolve()
 
+    # Validate the file is within the allowed directory
     try:
-        resolved_file.relative_to(resolved_dir)
+        relative_path = resolved_file.relative_to(resolved_dir)
     except ValueError:
         raise HTTPException(
             status_code=400,
             detail="Invalid file path"
         )
 
-    if not resolved_file.exists():
+    # Reconstruct the path from known-safe base directory and validated relative path
+    # This breaks the taint chain by creating a new path from safe components
+    safe_absolute_path = resolved_dir / relative_path
+
+    if not safe_absolute_path.exists():
         raise HTTPException(
             status_code=404,
             detail="File not found"
         )
 
-    return resolved_file
+    # Return the reconstructed safe absolute path as a string
+    return str(safe_absolute_path)
 
 
 logger = logging.getLogger(__name__)
@@ -129,22 +146,16 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     """Serve the saved recording file based on filename."""
     recording_data: RecordingRead = await service.find_recording_by_id(rec_id)
 
-    # Validate file path to prevent path traversal attacks
-    file_path = recording_data.file_path
-    if ".." in file_path:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file path"
-        )
-
-    # Validate file path is within allowed recordings directory to prevent path traversal
-    validated_path = validate_file_path_within_directory(
-        file_path,
+    # Sanitize and validate file path to prevent path traversal attacks
+    safe_path = get_safe_file_path(
+        recording_data.file_path,
         settings.RECORDINGS_DIR
     )
 
-    # Get safe path string for response
-    safe_path = str(validated_path)
+    # Final guard: verify path starts with allowed directory before serving
+    recordings_dir = str(Path(settings.RECORDINGS_DIR).resolve())
+    if not safe_path.startswith(recordings_dir):
+        raise HTTPException(status_code=400, detail="Invalid file path")
 
     return FileResponse(safe_path)
 
