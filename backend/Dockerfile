@@ -64,8 +64,7 @@ RUN apt-get update && \
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HF_HOME="/home/genassist/.cache" \
-    TRANSFORMERS_CACHE="/home/genassist/.cache"
+    HF_HOME="/home/genassist/.cache"
 
 RUN useradd -m -u 1000 genassist
 

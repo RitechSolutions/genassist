@@ -1,17 +1,16 @@
 import json
 import logging
 from typing import List
-import asyncio
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.utils.enums.conversation_topic_enum import ConversationTopic
 from app.core.utils.enums.negative_conversation_reason import NegativeConversationReason
+from app.modules.workflow.llm.provider import LLMProvider
 from app.schemas.conversation_analysis import AnalysisResult
 from app.schemas.conversation_transcript import TranscriptSegment
 from app.schemas.llm import LlmAnalyst
 from app.core.utils.bi_utils import clean_gpt_json_response
-from app.services.llm_model_factory import LlmModelFactory
 
 
 logger = logging.getLogger(__name__)
@@ -20,16 +19,24 @@ logger = logging.getLogger(__name__)
 class GptKpiAnalyzer:
 
     async def analyze_transcript(
-            self,
-            transcript: str,
-            llm_analyst: LlmAnalyst,
-            max_attempts=3,
-            ) -> AnalysisResult:
+        self,
+        transcript: str,
+        llm_analyst: LlmAnalyst,
+        max_attempts=3,
+    ) -> AnalysisResult:
         """Analyze transcript using ChatGPT (LangChain) with retry on failure."""
 
-        self.llm = LlmModelFactory.switch_model(llm_analyst)
+        from app.dependencies.injector import injector
 
-        if transcript is None or transcript.strip() == "" or len(transcript) == 0 or transcript == "[]":
+        llm_provider = injector.get(LLMProvider)
+        llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
+
+        if (
+            transcript is None
+            or transcript.strip() == ""
+            or len(transcript) == 0
+            or transcript == "[]"
+        ):
             raise ValueError("Transcript is empty! Nothing to analyze!")
         else:
             logger.debug(f"analyzing transcript: {transcript}")
@@ -44,16 +51,14 @@ class GptKpiAnalyzer:
                 if attempt == 1:
                     user_prompt = self._create_user_prompt(transcript)
                 else:
-                    user_prompt = self._create_user_prompt(transcript, error_hint=last_error_msg,
-                                                           attempt=attempt)
+                    user_prompt = self._create_user_prompt(
+                        transcript, error_hint=last_error_msg, attempt=attempt
+                    )
 
                 system_msg = SystemMessage(content=llm_analyst.prompt)
                 user_msg = HumanMessage(content=user_prompt)
 
-                response = await asyncio.to_thread(
-                    self.llm.invoke,
-                    [system_msg, user_msg]
-                )
+                response = await llm.ainvoke([system_msg, user_msg])
                 response_text = response.content.strip()
                 last_response = response_text
 
@@ -63,22 +68,29 @@ class GptKpiAnalyzer:
                 customer_speaker = summary_data.get("customer_speaker")
                 metrics = self._extract_metrics(response_text)
 
-                if summary and title and customer_speaker and isinstance(metrics, dict) and metrics:
+                if (
+                    summary
+                    and title
+                    and customer_speaker
+                    and isinstance(metrics, dict)
+                    and metrics
+                ):
                     return AnalysisResult(
-                            summary=summary,
-                            title=title,
-                            kpi_metrics=metrics,
-                            customer_speaker=customer_speaker
-                            )
+                        summary=summary,
+                        title=title,
+                        kpi_metrics=metrics,
+                        customer_speaker=customer_speaker,
+                    )
 
                 raise ValueError("Parsing returned incomplete or invalid result.")
 
             except Exception as e:
                 last_error_msg = str(e)
-                logger.error(f"Attempt {attempt}: Failed to parse GPT response as JSON. Error: {last_error_msg} - LastResponse: {last_response} - Prompt: {user_prompt}")
+                logger.error(
+                    f"Attempt {attempt}: Failed to parse GPT response as JSON. Error: {last_error_msg} - LastResponse: {last_response} - Prompt: {user_prompt}"
+                )
 
-        #raise AppException(error_key=ErrorKey.GPT_RETURNED_INCOMPLETE_RESULT)
-
+        # raise AppException(error_key=ErrorKey.GPT_RETURNED_INCOMPLETE_RESULT)
 
     def _format_transcript(self, segments: List[TranscriptSegment]) -> str:
         """Format transcript segments into a readable string."""
@@ -87,8 +99,9 @@ class GptKpiAnalyzer:
             for seg in segments
         )
 
-
-    def _create_user_prompt(self, transcript_text: str, error_hint: str = None, attempt: int = 1) -> str:
+    def _create_user_prompt(
+        self, transcript_text: str, error_hint: str = None, attempt: int = 1
+    ) -> str:
         """Create the analysis prompt for ChatGPT, optionally appending retry hints."""
         retry_instruction = ""
         if error_hint and attempt > 1:
@@ -148,13 +161,14 @@ class GptKpiAnalyzer:
         llm_analyst: LlmAnalyst,
     ) -> dict:
 
-        self.llm = LlmModelFactory.switch_model(llm_analyst)
+        from app.dependencies.injector import injector
+
+        llm_provider = injector.get(LLMProvider)
+        llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
 
         # Create a short prompt for hostility detection
         # We'll ask for a JSON response with "sentiment" and "hostile_score"
-        system_msg = SystemMessage(
-            content=llm_analyst.prompt
-        )
+        system_msg = SystemMessage(content=llm_analyst.prompt)
 
         user_prompt = f"""
         You are an impartial conversation analyst.
@@ -213,7 +227,7 @@ class GptKpiAnalyzer:
 
         try:
             # Call the LLM synchronously in a background thread
-            response = await asyncio.to_thread(self.llm.invoke, [system_msg, user_msg])
+            response = await llm.ainvoke([system_msg, user_msg])
             response_text = response.content.strip()
 
             # Remove json ticks
@@ -233,18 +247,14 @@ class GptKpiAnalyzer:
                 return analysis_data
 
             # If the JSON doesn't match the expected structure
-            raise ValueError("partial_hostility_analysis: Missing or invalid fields in JSON output.")
+            raise ValueError(
+                "partial_hostility_analysis: Missing or invalid fields in JSON output."
+            )
 
         except Exception as e:
             logger.warning(f"Hostility analysis failed: {e}")
             # Fallback to a safe default or re-raise
-            return {
-            "topic": "Other",
-            "hostile_score": 0,
-            "negative_reason": "Other"
-        }
-
-
+            return {"topic": "Other", "hostile_score": 0, "negative_reason": "Other"}
 
     def _extract_summary_and_title(self, text: str) -> dict:
         """Extract the title, summary, and customer speaker section from the response."""
@@ -253,12 +263,15 @@ class GptKpiAnalyzer:
         customer_start = text.find("**C) Identify the Customer:**")
         kpi_start = text.find("**D) KPI Metrics")
 
-        raw_title = title = text[title_start + 13:summary_start].strip()
+        raw_title = title = text[title_start + 13 : summary_start].strip()
         title = raw_title.lstrip("- ").strip()
-        summary = text[summary_start + 15:customer_start].strip()
-        customer_speaker = text[customer_start + 32:kpi_start].strip()
-        return {"title": title, "summary": summary, "customer_speaker": customer_speaker}
-
+        summary = text[summary_start + 15 : customer_start].strip()
+        customer_speaker = text[customer_start + 32 : kpi_start].strip()
+        return {
+            "title": title,
+            "summary": summary,
+            "customer_speaker": customer_speaker,
+        }
 
     def _extract_metrics(self, text: str) -> dict:
         """Extract and parse the KPI metrics JSON from the response."""
@@ -268,4 +281,3 @@ class GptKpiAnalyzer:
             metrics_json = text[json_start:json_end]
             return json.loads(metrics_json)
         return {}
-
