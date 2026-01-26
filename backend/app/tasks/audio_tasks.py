@@ -6,12 +6,10 @@ from app.dependencies.injector import injector
 from app.core.utils.s3_utils import S3Client
 from app.services.datasources import DataSourceService
 from celery import shared_task
-from fastapi_injector import RequestScopeFactory
 from io import BytesIO
 from app.services.audio import AudioService
 from app.db.seed.seed_data_config import SeedTestData
 from app.schemas.recording import RecordingCreate
-from app.tasks.base import run_task_for_all_tenants
 
 from fastapi import UploadFile
 
@@ -33,23 +31,12 @@ def transcribe_audio_files_from_s3():
 
 async def transcribe_audio_files_async_with_scope(ds_id: Optional[str] = None):
     """Wrapper to run transcription for all tenants"""
-    try:
-        logger.info("Starting S3 audio transcription task for all tenants...")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await transcribe_audio_files_async(ds_id)
-
-        results = await run_task_for_all_tenants(run_with_scope, ds_id=ds_id)
-
-        logger.info(f"Transcription completed for {len(results)} tenant(s)")
-        return {"status": "success", "results": results}
-    except Exception as e:
-        logger.error(f"Error in transcription task: {str(e)}")
-        return {"status": "failed", "error": str(e)}
-    finally:
-        logger.info("S3 audio transcription task finished.")
+    from app.tasks.base import run_task_with_tenant_support
+    return await run_task_with_tenant_support(
+        transcribe_audio_files_async,
+        "S3 audio transcription",
+        ds_id=ds_id
+    )
 
 
 async def transcribe_audio_files_async(ds_id: Optional[str] = None):

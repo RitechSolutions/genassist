@@ -12,6 +12,7 @@ from app.services.agent_config import AgentConfigService
 
 router = APIRouter()
 
+
 # TODO set permission validation
 @router.get(
     "/configs",
@@ -95,8 +96,10 @@ async def update_config(
 ):
     """Update an existing agent configuration"""
 
-    result = await agent_config_service.update(agent_id, agent_update)
-    return AgentRead.model_validate(result)
+    await agent_config_service.update(agent_id, agent_update)
+    # Fetch the updated agent with all relationships to ensure security_settings is included
+    agent_read = await agent_config_service.get_by_id_full(agent_id)
+    return agent_read
 
 
 @router.delete(

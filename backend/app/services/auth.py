@@ -13,82 +13,129 @@ from app.services.api_keys import ApiKeysService
 from app.services.users import UserService
 
 
-
 logger = logging.getLogger(__name__)
+
 
 @inject
 class AuthService:
-    def __init__(self, user_service: UserService, api_keys_service: ApiKeysService):
-        self.user_service = user_service
-        self.api_keys_service = api_keys_service
+    def __init__(self):
+
         self.secret_key = os.environ.get("JWT_SECRET_KEY")
         self.algorithm = "HS256"
         self.access_token_expire_minutes = 60
         self.refresh_token_expire_days = 2
 
-
-    def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    def create_access_token(
+        self, data: dict, expires_delta: Optional[timedelta] = None
+    ) -> str:
         try:
             to_encode = data.copy()
-            expire = datetime.now() + (expires_delta or timedelta(minutes=self.access_token_expire_minutes))
+            expire = datetime.now() + (
+                expires_delta or timedelta(minutes=self.access_token_expire_minutes)
+            )
             to_encode.update({"exp": expire})
             return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
         except Exception as error:
-            raise AppException(error_key=ErrorKey.ERROR_CREATE_TOKEN,
-                               error_detail="Error while creating access token", error_obj=error, status_code=401)
+            raise AppException(
+                error_key=ErrorKey.ERROR_CREATE_TOKEN,
+                error_detail="Error while creating access token",
+                error_obj=error,
+                status_code=401,
+            )
 
-
-    def create_refresh_token(self, data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    def create_refresh_token(
+        self, data: dict, expires_delta: Optional[timedelta] = None
+    ) -> str:
         to_encode = data.copy()
-        expire = datetime.now() + (expires_delta or timedelta(days=self.refresh_token_expire_days))
+        expire = datetime.now() + (
+            expires_delta or timedelta(days=self.refresh_token_expire_days)
+        )
         to_encode.update({"exp": expire})
         return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
 
-
     async def decode_jwt(self, token: str) -> UserReadAuth:
         try:
+            from app.core.tenant_scope import get_tenant_context
+
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             username = payload.get("sub")
             user_id = payload.get("user_id")
+            token_tenant_id = payload.get("tenant_id")  # Get tenant_id from token
 
             if username is None or user_id is None:
-                raise AppException(status_code=401, error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
-                                   error_detail="JWT error: Username is None")
-            user: UserReadAuth | None  =  await self.user_service.get_by_id_for_auth(user_id)
+                raise AppException(
+                    status_code=401,
+                    error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
+                    error_detail="JWT error: Username is None",
+                )
+
+            # Validate tenant_id if present in token (for backward compatibility, allow tokens without tenant_id)
+            from app.dependencies.injector import injector
+
+            user_service = injector.get(UserService)
+            user: UserReadAuth | None = await user_service.get_by_id_for_auth(user_id)
 
             if user is None or not user.is_active:
+                logger.warning(f"User not found or inactive: user_id={user_id}")
                 raise AppException(error_key=ErrorKey.INVALID_USER, status_code=401)
             # I not set there is no expiry
-            if user.force_upd_pass_date and user.force_upd_pass_date < datetime.now(timezone.utc):
-                raise AppException(error_key=ErrorKey.FORCE_PASSWORD_UPDATE, status_code=401)
+            if user.force_upd_pass_date and user.force_upd_pass_date < datetime.now(
+                timezone.utc
+            ):
+                raise AppException(
+                    error_key=ErrorKey.FORCE_PASSWORD_UPDATE, status_code=401
+                )
 
             return user
         except ExpiredSignatureError as error:
-            raise AppException(status_code=401, error_key=ErrorKey.EXPIRED_TOKEN,
-                               error_detail=f"Expired token: {error}")
+            raise AppException(
+                status_code=401,
+                error_key=ErrorKey.EXPIRED_TOKEN,
+                error_detail=f"Expired token: {error}",
+            )
         except JWTError as error:
-            raise AppException(status_code=401, error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
-                               error_detail=f"JWT error: {error}", error_obj=error)
-
+            raise AppException(
+                status_code=401,
+                error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
+                error_detail=f"JWT error: {error}",
+                error_obj=error,
+            )
 
     async def authenticate_api_key(self, api_key: str) -> ApiKeyInternal:
         """Authenticate and return API key object if valid."""
-        api_key = await self.api_keys_service.validate_and_get_api_key(api_key)
-        if api_key.user.force_upd_pass_date and api_key.user.force_upd_pass_date < datetime.now(timezone.utc):
-            raise AppException(error_key=ErrorKey.FORCE_PASSWORD_UPDATE, status_code=401)
-        return api_key
+        from app.dependencies.injector import injector
 
+        api_keys_service = injector.get(ApiKeysService)
+        api_key = await api_keys_service.validate_and_get_api_key(api_key)
+        if (
+            api_key.user.force_upd_pass_date
+            and api_key.user.force_upd_pass_date < datetime.now(timezone.utc)
+        ):
+            raise AppException(
+                error_key=ErrorKey.FORCE_PASSWORD_UPDATE, status_code=401
+            )
+        return api_key
 
     async def authenticate_user(self, username_or_email: str, password: str):
         """Authenticate user by username or email and password."""
-        user = await self.user_service.get_by_username(username_or_email, throw_not_found=False)
+        from app.dependencies.injector import injector
+
+        user_service = injector.get(UserService)
+        user = await user_service.get_by_username(
+            username_or_email, throw_not_found=False
+        )
         # Check by email if not found by username
         if not user:
-            user = await self.user_service.get_user_by_email(username_or_email, throw_not_found=False)
+            user = await user_service.get_user_by_email(
+                username_or_email, throw_not_found=False
+            )
 
         if not user:
-            raise AppException(error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD, status_code=401,
-                               error_detail="Username not found.")
+            raise AppException(
+                error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD,
+                status_code=401,
+                error_detail="Username not found.",
+            )
 
         if not user.is_active:
             raise AppException(error_key=ErrorKey.INVALID_USER, status_code=401)
@@ -97,8 +144,11 @@ class AuthService:
             raise AppException(error_key=ErrorKey.INVALID_USER_CONSOLE, status_code=401)
 
         if not verify_password(password, user.hashed_password):
-            raise AppException(error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD, status_code=401,
-                               error_detail="Incorrect password.")
+            raise AppException(
+                error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD,
+                status_code=401,
+                error_detail="Incorrect password.",
+            )
 
         return user
 
@@ -108,7 +158,7 @@ class AuthService:
         agent_id: str,
         conversation_id: str,
         user_id: Optional[str] = None,
-        expires_delta: Optional[timedelta] = None
+        expires_delta: Optional[timedelta] = None,
     ) -> str:
         """
         Create a guest JWT token with limited permissions for conversation updates.
@@ -117,7 +167,7 @@ class AuthService:
         """
         try:
             from app.core.permissions.constants import Permissions as P
-            
+
             to_encode = {
                 "sub": f"guest:{conversation_id}",
                 "user_id": user_id,  # User ID from the API key used to start conversation
@@ -125,9 +175,13 @@ class AuthService:
                 "tenant_id": tenant_id,
                 "agent_id": agent_id,
                 "conversation_id": conversation_id,
-                "permissions": [P.Conversation.UPDATE_IN_PROGRESS],  # Limited permission
+                "permissions": [
+                    P.Conversation.UPDATE_IN_PROGRESS
+                ],  # Limited permission
             }
-            expire = datetime.now() + (expires_delta or timedelta(hours=24))  # Default 24 hours for guest tokens
+            expire = datetime.now() + (
+                expires_delta or timedelta(hours=24)
+            )  # Default 24 hours for guest tokens
             to_encode.update({"exp": expire})
             return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
         except Exception as error:
@@ -135,7 +189,7 @@ class AuthService:
                 error_key=ErrorKey.ERROR_CREATE_TOKEN,
                 error_detail="Error while creating guest token",
                 error_obj=error,
-                status_code=401
+                status_code=401,
             )
 
     async def decode_guest_token(self, token: str) -> dict:
@@ -146,14 +200,14 @@ class AuthService:
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             token_type = payload.get("type")
-            
+
             if token_type != "guest":
                 raise AppException(
                     status_code=401,
                     error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
-                    error_detail="Token is not a guest token"
+                    error_detail="Token is not a guest token",
                 )
-            
+
             return {
                 "tenant_id": payload.get("tenant_id"),
                 "agent_id": payload.get("agent_id"),
@@ -165,12 +219,12 @@ class AuthService:
             raise AppException(
                 status_code=401,
                 error_key=ErrorKey.EXPIRED_TOKEN,
-                error_detail=f"Expired token: {error}"
+                error_detail=f"Expired token: {error}",
             )
         except JWTError as error:
             raise AppException(
                 status_code=401,
                 error_key=ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS,
                 error_detail=f"JWT error: {error}",
-                error_obj=error
+                error_obj=error,
             )

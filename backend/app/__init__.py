@@ -72,6 +72,7 @@ def validate_env():
 # Lifespan handler helpers                                                    #
 # --------------------------------------------------------------------------- #
 
+
 async def _initialize_redis_services(app: FastAPI):
     """
     Initialize all Redis-related services.
@@ -209,6 +210,7 @@ async def _lifespan(app: FastAPI):
     await pre_wormup_tenant_singleton()
 
     from app.core.permissions import sync_permissions_on_startup
+
     await sync_permissions_on_startup()
 
     logger.info("Application startup complete")
@@ -247,13 +249,13 @@ def create_celery():
             "app.tasks.s3_tasks",
             "app.tasks.conversations_tasks",
             "app.tasks.zendesk_tasks",
+            "app.tasks.zendesk_article_sync_tasks",
             "app.tasks.audio_tasks",
             "app.tasks.sharepoint_tasks",
             "app.tasks.fine_tune_job_sync_tasks",
             "app.tasks.share_folder_tasks",
             "app.tasks.ml_model_pipeline_tasks",
             "app.tasks.kb_batch_tasks",
-
         ],
     )
 
@@ -278,6 +280,7 @@ def create_celery():
         task_soft_time_limit=240,  # 4 minutes (soft limit)
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
+        worker_pool="solo",  # Use solo pool (single-threaded) to avoid SIGSEGV with native libraries
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
     )
@@ -314,6 +317,15 @@ def create_celery():
                 "expires": 3600,  # Task expires after 1 hour
             },
         },
+        "import-zendesk-articles-to-kb": {
+            "task": "app.tasks.zendesk_article_sync_tasks.import_zendesk_articles_to_kb",
+            # Run every 15 minutes to check for knowledge bases due for sync
+            # The task itself has cron-based scheduling logic, so this just checks periodically
+            "schedule": crontab(minute="*/1"),
+            "options": {
+                "expires": 900,  # Task expires after 15 minutes
+            },
+        },
         "import-sharepoint-files-to-kb": {
             "task": "app.tasks.sharepoint_tasks.import_sharepoint_files_to_kb",
             "schedule": crontab(hour="*/1"),  # Run every 1 hours
@@ -327,24 +339,20 @@ def create_celery():
             },
         },
         # Sync active fine-tuning jobs every 2 minutes
-        'sync-active-fine-tuning-jobs': {
-            'task': 'app.tasks.fine_tune_job_sync_tasks.sync_active_fine_tuning_jobs',
-            'schedule': 120.0,  # Every 2 minutes (120 seconds)
-            },
+        "sync-active-fine-tuning-jobs": {
+            "task": "app.tasks.fine_tune_job_sync_tasks.sync_active_fine_tuning_jobs",
+            "schedule": 120.0,  # Every 2 minutes (120 seconds)
+        },
         # Check for scheduled ML model pipeline runs every minute
-        'check-scheduled-pipeline-runs': {
-            'task': 'app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs',
-            'schedule': 60.0,  # Every minute (60 seconds)
-            },
-        
-
-        
+        "check-scheduled-pipeline-runs": {
+            "task": "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs",
+            "schedule": 60.0,  # Every minute (60 seconds)
+        },
         # Sync active KB's jobs every 5 minutes
-        'summarize-files-from-azure': {
-            'task': 'app.tasks.kb_batch_tasks.batch_process_files_kb',
-            'schedule': 300.0,  # Every 5 minutes (300 seconds)
-            },
-
+        "summarize-files-from-azure": {
+            "task": "app.tasks.kb_batch_tasks.batch_process_files_kb",
+            "schedule": 300.0,  # Every 5 minutes (300 seconds)
+        },
     }
 
     return celery_app

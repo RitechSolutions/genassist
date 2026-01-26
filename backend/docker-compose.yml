@@ -155,7 +155,7 @@ services:
   celery_worker:
     image: genassist-app-image
     container_name: genassist-celery-worker
-    command: python /src/run_celery.py worker --loglevel=info
+    command: python /src/run_celery.py worker --loglevel=info --pool=solo
     env_file:
       - .env
     environment:

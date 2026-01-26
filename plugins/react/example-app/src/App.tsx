@@ -37,9 +37,9 @@ function App() {
     name: "Genassist Support",
     description: "Support",
     agentName: "Agent",
-    logoUrl: "http://example.com/",
+    logoUrl: "",
     baseUrl: "http://localhost:8000/",
-    apiKey: "genagent",
+    apiKey: "genagent123",
     // reCaptchaKey: "xx-yy-zz",
   });
 

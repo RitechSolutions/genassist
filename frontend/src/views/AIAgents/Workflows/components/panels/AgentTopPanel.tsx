@@ -21,7 +21,7 @@ const AgentTopPanel = ({data, onUpdated}: {data?: AgentConfig, onUpdated?: () =>
                 setIsEditDialogOpen(false)
                 onUpdated?.()
             }}
-            data={{id: data?.id, name: data?.name, description: data?.description, welcome_message: data?.welcome_message, welcome_title: data?.welcome_title, thinking_phrase_delay: data?.thinking_phrase_delay, possible_queries: data?.possible_queries, thinking_phrases: data?.thinking_phrases, token_based_auth: data?.token_based_auth}}
+            data={{id: data?.id, name: data?.name, description: data?.description, welcome_message: data?.welcome_message, welcome_title: data?.welcome_title, thinking_phrase_delay: data?.thinking_phrase_delay, possible_queries: data?.possible_queries, thinking_phrases: data?.thinking_phrases}}
           />
         </>
       );
