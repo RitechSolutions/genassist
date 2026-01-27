@@ -8415,14 +8415,14 @@
       }
     },
     "/api/file-manager/files/{file_id}/download": {
-      "head": {
+      "get": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Download File",
         "description": "Download a file by ID.",
-        "operationId": "download_file_api_file_manager_files__file_id__download_head",
+        "operationId": "download_file_api_file_manager_files__file_id__download_get",
         "parameters": [
           {
             "name": "file_id",
@@ -8456,14 +8456,14 @@
           }
         }
       },
-      "get": {
+      "head": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Download File",
         "description": "Download a file by ID.",
-        "operationId": "download_file_api_file_manager_files__file_id__download_head",
+        "operationId": "download_file_api_file_manager_files__file_id__download_get",
         "parameters": [
           {
             "name": "file_id",
@@ -8499,13 +8499,13 @@
       }
     },
     "/api/file-manager/files/{file_id}/source": {
-      "head": {
+      "get": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Get File Source",
-        "operationId": "get_file_source_api_file_manager_files__file_id__source_head",
+        "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
         "parameters": [
           {
             "name": "file_id",
@@ -8539,13 +8539,13 @@
           }
         }
       },
-      "get": {
+      "head": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Get File Source",
-        "operationId": "get_file_source_api_file_manager_files__file_id__source_head",
+        "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
         "parameters": [
           {
             "name": "file_id",
