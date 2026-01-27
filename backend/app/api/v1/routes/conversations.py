@@ -59,10 +59,8 @@ from app.core.permissions.constants import Permissions as P
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
 from app.services.file_manager import FileManagerService
 
-
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
 
 @router.get(
     "/{conversation_id}",
@@ -329,6 +327,7 @@ async def update(
     request: Request,
     conversation_id: UUID,
     model: ConversationUpdateWithRecaptchaToken,
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Append segments to an existing in-progress conversation.
@@ -350,6 +349,15 @@ async def update(
         raise AppException(
             error_key=ErrorKey.RECAPTCHA_VERIFICATION_FAILED, status_code=403
         )
+
+    # process attachments from metadata
+    await process_attachments_from_metadata(
+        conversation_id=conversation_id,
+        model=model,
+        tenant_id=tenant_id,
+        current_user_id=get_current_user_id(),
+        file_manager_service=file_manager_service,
+    )
 
     updated_conversation = await process_conversation_update_with_agent(
         conversation_id=conversation_id,

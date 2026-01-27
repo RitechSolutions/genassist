@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import json
 from typing import List
 from uuid import UUID
+
 from app.dependencies.injector import injector
 from app.api.v1.routes.agents import run_query_agent_logic
 from app.core.exceptions.error_messages import ErrorKey
@@ -225,9 +226,9 @@ async def get_or_create_conversation(
 async def process_attachments_from_metadata(
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
-    file_manager_service: FileManagerService,
     tenant_id: str,
     current_user_id: UUID,
+    file_manager_service: FileManagerService
 ) -> None:
     """
     Process attachments from conversation metadata.
