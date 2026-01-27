@@ -8415,14 +8415,14 @@
       }
     },
     "/api/file-manager/files/{file_id}/download": {
-      "get": {
+      "head": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Download File",
         "description": "Download a file by ID.",
-        "operationId": "download_file_api_file_manager_files__file_id__download_get",
+        "operationId": "download_file",
         "parameters": [
           {
             "name": "file_id",
@@ -8456,14 +8456,14 @@
           }
         }
       },
-      "head": {
+      "get": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Download File",
         "description": "Download a file by ID.",
-        "operationId": "download_file_api_file_manager_files__file_id__download_get",
+        "operationId": "download_file",
         "parameters": [
           {
             "name": "file_id",
@@ -8499,13 +8499,13 @@
       }
     },
     "/api/file-manager/files/{file_id}/source": {
-      "get": {
+      "head": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Get File Source",
-        "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
+        "operationId": "get_file_source",
         "parameters": [
           {
             "name": "file_id",
@@ -8539,13 +8539,13 @@
           }
         }
       },
-      "head": {
+      "get": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Get File Source",
-        "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
+        "operationId": "get_file_source",
         "parameters": [
           {
             "name": "file_id",
@@ -14919,7 +14919,6 @@
           },
           "password": {
             "type": "string",
-            "format": "password",
             "title": "Password"
           },
           "scope": {
@@ -14947,7 +14946,6 @@
                 "type": "null"
               }
             ],
-            "format": "password",
             "title": "Client Secret"
           }
         },
