@@ -30,7 +30,10 @@ class ProjectSettings(BaseSettings):
 
     # Celery Redis connection pool settings
     CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
-    
+    # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
+    # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
+    CELERY_WORKER_POOL: str = "solo"
+
     FERNET_KEY: Optional[str]
 
     # === LLM Keys ===
@@ -205,3 +208,37 @@ class ProjectSettings(BaseSettings):
 
 
 settings = ProjectSettings()
+
+# === File Storage Settings ===
+
+class FileStorageSettings(BaseSettings):
+    DEFAULT_STORAGE_PROVIDER: str = "local"
+
+    AZURE_CONNECTION_STRING: Optional[str] = None
+    AZURE_ACCOUNT_NAME: Optional[str] = None
+    AZURE_ACCOUNT_KEY: Optional[str] = None
+    AZURE_CONTAINER_NAME: Optional[str] = None
+
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = None
+    GOOGLE_STORAGE_BUCKET: Optional[str] = None
+
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_STORAGE_BUCKET: Optional[str] = None
+    AWS_REGION: Optional[str] = None
+    AWS_S3_ENDPOINT_URL: Optional[str] = None
+    AWS_BUCKET_NAME: Optional[str] = None
+
+    GCP_PROJECT_ID: Optional[str] = None
+    GCP_REGION: Optional[str] = None
+
+    APP_URL: Optional[str] = "http://localhost:8000"
+
+
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",  # ignore unknown fields instead of raising an error
+    )
+
+file_storage_settings = FileStorageSettings()

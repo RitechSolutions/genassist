@@ -18,6 +18,7 @@ export interface ChatMessage {
   // Optional metadata
   message_id?: string;
   feedback?: MessageFeedback[];
+  type?: string;
 }
 
 // Attachment type
@@ -26,6 +27,12 @@ export interface Attachment {
   type: string;
   size: number;
   url: string;
+  file_id?: string;
+}
+
+export interface AttachmentWithFile {
+  file: File;
+  attachment: Attachment | null;
 }
 
 // API Response types
@@ -75,11 +82,19 @@ export interface ScheduleItem {
   restaurants: DynamicChatItem[];
 }
 
+export interface FileItem {
+  url: string;
+  type: string;
+  name: string;
+  id: string;
+}
+
 export type ChatContentBlock =
   | { kind: "text"; text: string }
   | { kind: "items"; items: DynamicChatItem[] }
   | { kind: "schedule"; schedule: ScheduleItem }
-  | { kind: "options"; options: string[] };
+  | { kind: "options"; options: string[] }
+  | { kind: "file"; data: FileItem };
 
 // Props for the GenAgentChat component
 export interface GenAgentChatProps {
@@ -87,6 +102,7 @@ export interface GenAgentChatProps {
   apiKey: string;
   tenant: string | undefined;
   metadata?: Record<string, any>; // For passing user information or other metadata
+  useWs?: boolean;
   onError?: (error: Error) => void;
   onTakeover?: () => void;
   onFinalize?: () => void;
@@ -116,3 +132,12 @@ export interface GenAgentChatProps {
 }
 
 export type { Translations } from '../utils/i18n';
+
+export interface FileUploadResponse {
+  filename: string;
+  original_filename: string;
+  storage_path: string;
+  file_path: string;
+  file_url: string;
+  file_id?: string;
+}

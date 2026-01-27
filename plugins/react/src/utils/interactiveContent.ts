@@ -1,9 +1,9 @@
-import { ChatContentBlock, DynamicChatItem, ScheduleItem } from "../types";
+import { ChatContentBlock, DynamicChatItem, FileItem, ScheduleItem } from "../types";
 
 type MatchRecord = {
   start: number;
   end: number;
-  type: "json" | "options";
+  type: "json" | "options" | "file";
   content: string;
 };
 
@@ -28,6 +28,17 @@ const isScheduleItem = (value: any): value is ScheduleItem => {
   );
 };
 
+const isFileItem = (value: any): value is FileItem => {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    typeof value.url === "string" &&
+    typeof value.type === "string" &&
+    typeof value.name === "string" &&
+    typeof value.id === "string"
+  );
+};
+
 const parseJsonBlock = (jsonString: string): ChatContentBlock | null => {
   try {
     const parsed = JSON.parse(jsonString);
@@ -44,9 +55,16 @@ const parseJsonBlock = (jsonString: string): ChatContentBlock | null => {
 };
 
 export const parseInteractiveContentBlocks = (
-  text: string
+  text: string,
+  messageType?: 'message' | 'file'
 ): ChatContentBlock[] => {
   const matches: MatchRecord[] = [];
+
+  // case: file item or message type is file
+  if (isFileItem(text) || messageType && messageType === 'file') {
+    const cleanJson = text.replace(/\\/g, '');
+    return [{ kind: "file", data: JSON.parse(cleanJson) as FileItem }];
+  }
 
   jsonBlockRegex.lastIndex = 0;
   let jsonMatch: RegExpExecArray | null;
