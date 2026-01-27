@@ -1,22 +1,35 @@
 """Download sentence-transformer models for offline deployment."""
 
+import os
+from pathlib import Path
 from huggingface_hub import snapshot_download
 
 MODELS = [
     'sentence-transformers/all-MiniLM-L6-v2',
-    'sentence-transformers/all-mpnet-base-v2',
-    'sentence-transformers/multi-qa-MiniLM-L6-cos-v1',
-    'sentence-transformers/all-distilroberta-v1',
-    'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+    # 'sentence-transformers/all-mpnet-base-v2',
+    # 'sentence-transformers/multi-qa-MiniLM-L6-cos-v1',
+    # 'sentence-transformers/all-distilroberta-v1',
+    # 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
 ]
 
 def main():
-    cache_dir = '/root/.cache/huggingface'
+    # Use HF_HOME if set (Docker), otherwise use huggingface_hub's default (~/.cache/huggingface)
+    hf_home = os.getenv('HF_HOME')
 
-    print('=' * 60)
-    print('Downloading sentence-transformer models for offline deployment')
-    print('=' * 60)
-    print(f'Cache directory: {cache_dir}\n')
+    if hf_home:
+        cache_dir = f'{hf_home}/huggingface'
+        print('=' * 60)
+        print('Downloading models for offline deployment (Docker/Production)')
+        print('=' * 60)
+        print(f'HF_HOME: {hf_home}')
+        print(f'Cache directory: {cache_dir}\n')
+    else:
+        cache_dir = None  # Let huggingface_hub use default location
+        default_cache = Path.home() / '.cache' / 'huggingface'
+        print('=' * 60)
+        print('Downloading models for offline deployment (Local Development)')
+        print('=' * 60)
+        print(f'Cache directory: {default_cache} (default)\n')
 
     for i, model in enumerate(MODELS, 1):
         print(f'[{i}/{len(MODELS)}] Downloading {model}...')

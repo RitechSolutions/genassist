@@ -38,7 +38,7 @@ RUN pip install --upgrade pip setuptools wheel && \
     # C. Re-install strictly CPU-only versions
     pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# Download Hugging Face models for offline/firewalled deployments
+# 4. Download Hugging Face models for offline/firewalled deployments
 COPY scripts/download_models.py /tmp/download_models.py
 RUN python /tmp/download_models.py && rm /tmp/download_models.py
 
