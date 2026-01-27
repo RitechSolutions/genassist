@@ -1,7 +1,7 @@
 """add file manager tables
 
 Revision ID: c7f8d9e0f123
-Revises: b6ebad5ee662
+Revises: b0866dc731f9
 Create Date: 2025-01-XX XX:XX:XX.XXXXXX
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'c7f8d9e0f123'
-down_revision: Union[str, None] = 'b6ebad5ee664'
+down_revision: Union[str, None] = 'b0866dc731f9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
