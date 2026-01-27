@@ -27,6 +27,7 @@ from app.services.ml_model_pipeline import (
 )
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.file_system_utils import get_safe_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -348,8 +349,11 @@ async def download_artifact(
         elif artifact.artifact_type.value == "logs":
             media_type = "text/plain"
 
+        # get safe path from safe_file_path
+        verified_safe_path = get_safe_file_path(safe_path, DATA_VOLUME)
+
         return FileResponse(
-            path=safe_path,
+            path=verified_safe_path,
             filename=artifact.artifact_name,
             media_type=media_type
         )
