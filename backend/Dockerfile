@@ -64,7 +64,8 @@ RUN apt-get update && \
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HF_HOME="/home/genassist/.cache"
+    HF_HOME="/home/genassist/.cache" \
+    PLAYWRIGHT_BROWSERS_PATH="/opt/playwright"
 
 RUN useradd -m -u 1000 genassist
 
@@ -72,7 +73,8 @@ RUN useradd -m -u 1000 genassist
 COPY --from=builder /opt/venv /opt/venv
 
 # 4. Install Playwright with Chromium
-RUN playwright install --with-deps chromium
+RUN playwright install --with-deps chromium && \
+    chown -R genassist:genassist "/opt/playwright"
 
 # 5. Copy Application Code
 COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alembic.ini /src/
