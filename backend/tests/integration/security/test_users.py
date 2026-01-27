@@ -1,17 +1,24 @@
 import pytest
 import logging
+import os
 
 from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserRead, UserCreate, UserUpdate
 
 logger = logging.getLogger(__name__)
 
+# Test-only credentials - these are intentionally simple for integration testing
+# and are never used in production. They can be overridden via environment variables.
+TEST_USER_USERNAME = os.environ.get('TEST_INT_USER_USERNAME', 'test_user')
+TEST_USER_EMAIL = os.environ.get('TEST_INT_USER_EMAIL', 'test@test.com')
+TEST_USER_PASSWORD = os.environ.get('TEST_INT_USER_PASSWORD', 'test_password')  # nosec B105 - test credential
+
 @pytest.fixture(scope="module")
 def new_user_data():
     return {
-        "username": "test_user",
-        "email": "test@test.com",
-        "password": "test_password",
+        "username": TEST_USER_USERNAME,
+        "email": TEST_USER_EMAIL,
+        "password": TEST_USER_PASSWORD,
         "notes": "Test user for API testing",
         "is_active": True,
         "user_type_id": "",

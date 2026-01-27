@@ -169,36 +169,50 @@ async def seed_data(session: AsyncSession, injector: Injector):
     session.add_all([console_user_type, interactive_user_type])
     await session.commit()
 
-    # Create users
+    # Create users - passwords from environment variables with secure defaults for development
+    # In production, these should be set via environment variables
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    admin = UserModel(username='admin', email='admin@genassist.ritech.io', is_active=1,
-                      hashed_password=pwd_context.hash('genadmin'), user_type_id=interactive_user_type.id,
+    seed_admin_password = os.environ.get('SEED_ADMIN_PASSWORD', 'genadmin')
+    seed_supervisor_password = os.environ.get('SEED_SUPERVISOR_PASSWORD', 'gensupervisor1')
+    seed_operator_password = os.environ.get('SEED_OPERATOR_PASSWORD', 'genoperator1')
+    seed_apiuser_password = os.environ.get('SEED_APIUSER_PASSWORD', 'genapiuser1')
+    seed_transcribe_operator_password = os.environ.get('SEED_TRANSCRIBE_OPERATOR_PASSWORD', 'gentranscribeoperator1')
+
+    # Seed usernames from environment variables with defaults for development
+    seed_admin_username = os.environ.get('SEED_ADMIN_USERNAME', 'admin')
+    seed_supervisor_username = os.environ.get('SEED_SUPERVISOR_USERNAME', 'supervisor1')
+    seed_operator_username = os.environ.get('SEED_OPERATOR_USERNAME', 'operator1')
+    seed_apiuser_username = os.environ.get('SEED_APIUSER_USERNAME', 'apiuser1')
+    seed_transcribe_operator_username = os.environ.get('SEED_TRANSCRIBE_OPERATOR_USERNAME', 'transcribeoperator1')
+
+    admin = UserModel(username=seed_admin_username, email='admin@genassist.ritech.io', is_active=1,
+                      hashed_password=pwd_context.hash(seed_admin_password), user_type_id=interactive_user_type.id,
                       id=seed_test_data.admin_user_id,
                       force_upd_pass_date=shift_datetime(
                           unit="months", amount=3)
                       )
-    supervisor = UserModel(username='supervisor1', email='supervisor1@genassist.ritech.io', is_active=1,
-                           hashed_password=pwd_context.hash('gensupervisor1'), user_type_id=interactive_user_type.id,
+    supervisor = UserModel(username=seed_supervisor_username, email='supervisor1@genassist.ritech.io', is_active=1,
+                           hashed_password=pwd_context.hash(seed_supervisor_password), user_type_id=interactive_user_type.id,
                            force_upd_pass_date=shift_datetime(
                                unit="months", amount=3)
                            )
-    operator = UserModel(id=UUID(seed_test_data.operator_user_id), username='operator1',
+    operator = UserModel(id=UUID(seed_test_data.operator_user_id), username=seed_operator_username,
                          email='operator1@genassist.ritech.io',
                          is_active=1,
-                         hashed_password=pwd_context.hash('genoperator1'), user_type_id=interactive_user_type.id,
+                         hashed_password=pwd_context.hash(seed_operator_password), user_type_id=interactive_user_type.id,
                          force_upd_pass_date=shift_datetime(
                              unit="months", amount=3)
                          )
-    apiuser = UserModel(username='apiuser1', email='apiuser1@genassist.ritech.io', is_active=1,
-                        hashed_password=pwd_context.hash('genapiuser1'), user_type_id=console_user_type.id,
+    apiuser = UserModel(username=seed_apiuser_username, email='apiuser1@genassist.ritech.io', is_active=1,
+                        hashed_password=pwd_context.hash(seed_apiuser_password), user_type_id=console_user_type.id,
                         force_upd_pass_date=shift_datetime(
                             unit="months", amount=3)
                         )
 
-    transcribe_operator_user = UserModel(id=UUID(seed_test_data.transcribe_operator_user_id), username='transcribeoperator1',
+    transcribe_operator_user = UserModel(id=UUID(seed_test_data.transcribe_operator_user_id), username=seed_transcribe_operator_username,
                                          email='transcribeoperator1@genassist.ritech.io',
                                          is_active=1,
-                                         hashed_password=pwd_context.hash('gentranscribeoperator1'), user_type_id=console_user_type.id,
+                                         hashed_password=pwd_context.hash(seed_transcribe_operator_password), user_type_id=console_user_type.id,
                                          force_upd_pass_date=shift_datetime(
                                              unit="months", amount=3)
                                          )
