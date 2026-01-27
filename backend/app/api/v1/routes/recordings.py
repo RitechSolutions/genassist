@@ -1,8 +1,10 @@
 import logging
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
 from app.core.permissions.constants import Permissions as P
@@ -15,7 +17,7 @@ from app.schemas.question import QuestionCreate
 from app.schemas.conversation_transcript import ConversationTranscriptCreate
 from app.services.audio import AudioService
 from app.core.utils.bi_utils import validate_upload_file_size
-
+from app.core.utils.file_system_utils import get_safe_file_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -93,7 +95,18 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     """Serve the saved recording file based on filename."""
     recording_data: RecordingRead = await service.find_recording_by_id(rec_id)
 
-    return FileResponse(recording_data.file_path)
+    # Sanitize and validate file path to prevent path traversal attacks
+    safe_path = get_safe_file_path(
+        recording_data.file_path,
+        settings.RECORDINGS_DIR
+    )
+
+    # Final guard: verify path starts with allowed directory before serving
+    recordings_dir = str(Path(settings.RECORDINGS_DIR).resolve())
+    if not safe_path.startswith(recordings_dir):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    return FileResponse(safe_path)
 
 
 @router.get("/metrics", dependencies=[

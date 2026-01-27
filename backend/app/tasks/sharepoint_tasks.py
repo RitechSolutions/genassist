@@ -6,7 +6,6 @@ from typing import Optional
 from uuid import UUID
 from croniter import croniter, CroniterBadCronError
 from celery import shared_task
-from fastapi_injector import RequestScopeFactory
 from app.modules.data.utils import FileTextExtractor
 from app.dependencies.injector import injector
 from app.modules.data.manager import AgentRAGServiceManager
@@ -16,7 +15,6 @@ from app.services.datasources import DataSourceService
 from app.modules.integration.office365_connector import Office365Connector
 from app.services.app_settings import AppSettingsService
 from app.core.utils.encryption_utils import decrypt_key
-from app.tasks.base import run_task_for_all_tenants
 
 logger = logging.getLogger(__name__)
 
@@ -56,24 +54,11 @@ def import_sharepoint_files_to_kb():
 
 async def import_sharepoint_files_to_kb_async_with_scope():
     """Wrapper to run SharePoint import for all tenants"""
-    try:
-        logger.info("Starting SharePoint file import task for all tenants...")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await import_sharepoint_files_to_kb_async()
-
-        results = await run_task_for_all_tenants(run_with_scope)
-
-        logger.info(
-            f"SharePoint import completed for {len(results)} tenant(s)")
-        return {"status": "success", "results": results}
-    except Exception as e:
-        logger.error(f"Error in SharePoint file import task: {str(e)}")
-        return {"status": "failed", "error": str(e)}
-    finally:
-        logger.info("SharePoint file import task completed.")
+    from app.tasks.base import run_task_with_tenant_support
+    return await run_task_with_tenant_support(
+        import_sharepoint_files_to_kb_async,
+        "SharePoint file import"
+    )
 
 
 async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):

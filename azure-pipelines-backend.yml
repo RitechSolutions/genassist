@@ -81,7 +81,7 @@ steps:
       sed -i 's/DB_HOST=db/DB_HOST=genassist_db/g' "$ENV_FILE"
 
       echo -e "\nCHROMA_HOST=chroma" >> "$ENV_FILE"
-      echo -e "\nCHROMA_PORT=8000" >> "$ENV_FILE"
+      echo -e "\nCHROMA_PORT=8005" >> "$ENV_FILE"
 
       echo "starting fresh db"
       docker compose -f docker-compose.cicd.yml -p genassist_cicd up --force-recreate -d db

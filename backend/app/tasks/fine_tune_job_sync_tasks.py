@@ -7,8 +7,6 @@ from app.core.utils.date_time_utils import utc_now
 from app.dependencies.injector import injector
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
-from app.tasks.base import run_task_for_all_tenants
-from fastapi_injector import RequestScopeFactory
 
 
 logger = logging.getLogger(__name__)
@@ -23,32 +21,11 @@ def sync_active_fine_tuning_jobs():
 
 async def sync_active_fine_tuning_jobs_async_with_scope():
     """Wrapper to run sync for all tenants"""
-    try:
-        logger.info("Starting sync of active fine-tuning jobs for all tenants...")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await sync_active_fine_tuning_jobs_async()
-
-
-        results = await run_task_for_all_tenants(run_with_scope)
-
-        logger.info(f"Sync completed for {len(results)} tenant(s)")
-        return {
-            "status": "success",
-            "results": results,
-            }
-
-    except Exception as e:
-        logger.error(f"Error in sync fine-tuning jobs task: {str(e)}")
-        return {
-            "status": "failed",
-            "error": str(e),
-            }
-    finally:
-        logger.info("Sync of fine-tuning jobs task completed.")
+    from app.tasks.base import run_task_with_tenant_support
+    return await run_task_with_tenant_support(
+        sync_active_fine_tuning_jobs_async,
+        "sync of active fine-tuning jobs"
+    )
 
 
 async def sync_active_fine_tuning_jobs_async():
@@ -136,32 +113,11 @@ def sync_all_fine_tuning_jobs():
 
 async def sync_all_fine_tuning_jobs_async_with_scope():
     """Wrapper to run full sync for all tenants"""
-    try:
-        logger.info("Starting full sync of all fine-tuning jobs for all tenants...")
-        request_scope_factory = injector.get(RequestScopeFactory)
-
-
-        async def run_with_scope():
-            async with request_scope_factory.create_scope():
-                return await sync_all_fine_tuning_jobs_async()
-
-
-        results = await run_task_for_all_tenants(run_with_scope)
-
-        logger.info(f"Full sync completed for {len(results)} tenant(s)")
-        return {
-            "status": "success",
-            "results": results,
-            }
-
-    except Exception as e:
-        logger.error(f"Error in full sync fine-tuning jobs task: {str(e)}")
-        return {
-            "status": "failed",
-            "error": str(e),
-            }
-    finally:
-        logger.info("Full sync of fine-tuning jobs task completed.")
+    from app.tasks.base import run_task_with_tenant_support
+    return await run_task_with_tenant_support(
+        sync_all_fine_tuning_jobs_async,
+        "full sync of all fine-tuning jobs"
+    )
 
 
 async def sync_all_fine_tuning_jobs_async():

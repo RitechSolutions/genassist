@@ -26,7 +26,7 @@ class LlmAnalystRepository:
             .options(
                     joinedload(LlmAnalystModel.llm_provider)
                     )
-            .where(LlmAnalystModel.id == llm_analyst_id)
+            .where(LlmAnalystModel.id == llm_analyst_id and LlmAnalystModel.is_active == 1)
         )
         result = await self.db.execute(query)
         return result.scalars().first()

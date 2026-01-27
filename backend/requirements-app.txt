@@ -6,12 +6,12 @@ sshtunnel==0.4.0
 simplejson==3.20.1
 sqlparse==0.5.3
 google-auth-oauthlib==1.2.2
-google-api-python-client==2.171.0
+google-api-python-client>=2.171.0
 sqlglot==26.33.0
 twilio==9.6.3
 msal==1.32.3
 langchain-google-genai==4.1.2
-google-generativeai==0.8.5
+google-generativeai>=0.8.5
 python-docx==1.2.0
 pytesseract==0.3.13
 paramiko==3.5.1

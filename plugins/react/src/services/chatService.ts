@@ -420,7 +420,8 @@ export class ChatService {
   async sendMessage(
     message: string,
     attachments?: Attachment[],
-    extraMetadata?: Record<string, any>
+    extraMetadata?: Record<string, any>,
+    reCaptchaToken?: string
   ): Promise<void> {
     if (!this.conversationId || !this.conversationCreateTime) {
       throw new Error("Conversation not started");
@@ -445,6 +446,10 @@ export class ChatService {
         messages: [chatMessage],
         recorded_at: new Date().toISOString(),
       };
+
+      if (reCaptchaToken) {
+        requestBody.recaptcha_token = reCaptchaToken;
+      }
 
       // Include metadata
       const mergedMetadata = {

@@ -6,6 +6,7 @@ It supports both Redis and in-memory storage backends.
 """
 
 import logging
+from contextvars import ContextVar
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -16,6 +17,9 @@ from app.core.config.settings import settings
 from app.core.rate_limit_utils import RATE_LIMIT_GLOBAL_HOUR, RATE_LIMIT_GLOBAL_MINUTE
 
 logger = logging.getLogger(__name__)
+
+# Context variable to store the current request for rate limit functions
+_request_context: ContextVar[Request] = ContextVar('request_context', default=None)
 
 
 def get_user_identifier(request: Request) -> str:
@@ -45,6 +49,98 @@ def get_conversation_identifier(request: Request) -> str:
 
     # Fall back to user identifier if conversation_id not found
     return get_user_identifier(request)
+
+
+def get_agent_rate_limit_start(request: Request = None) -> str:
+    """
+    Get agent-specific rate limit for conversation start.
+    Falls back to global default if agent not found or no agent-specific limit.
+    Can be called with or without request parameter (uses context if not provided).
+    """
+    from app.core.agent_security_utils import get_agent_rate_limit_start as get_rate_limits
+
+    # Get request from parameter or context
+    if request is None:
+        request = _request_context.get()
+    
+    if request is None:
+        return f"{settings.RATE_LIMIT_CONVERSATION_START_PER_MINUTE}/minute"
+
+    agent = getattr(request.state, "agent", None)
+    if agent and hasattr(agent, "security_settings") and agent.security_settings:
+        per_minute, _ = get_rate_limits(agent.security_settings)
+        return per_minute
+
+    return f"{settings.RATE_LIMIT_CONVERSATION_START_PER_MINUTE}/minute"
+
+
+def get_agent_rate_limit_start_hour(request: Request = None) -> str:
+    """
+    Get agent-specific rate limit per hour for conversation start.
+    Falls back to global default if agent not found or no agent-specific limit.
+    Can be called with or without request parameter (uses context if not provided).
+    """
+    from app.core.agent_security_utils import get_agent_rate_limit_start as get_rate_limits
+
+    # Get request from parameter or context
+    if request is None:
+        request = _request_context.get()
+    
+    if request is None:
+        return f"{settings.RATE_LIMIT_CONVERSATION_START_PER_HOUR}/hour"
+
+    agent = getattr(request.state, "agent", None)
+    if agent and hasattr(agent, "security_settings") and agent.security_settings:
+        _, per_hour = get_rate_limits(agent.security_settings)
+        return per_hour
+
+    return f"{settings.RATE_LIMIT_CONVERSATION_START_PER_HOUR}/hour"
+
+
+def get_agent_rate_limit_update(request: Request = None) -> str:
+    """
+    Get agent-specific rate limit for conversation update.
+    Falls back to global default if agent not found or no agent-specific limit.
+    Can be called with or without request parameter (uses context if not provided).
+    """
+    from app.core.agent_security_utils import get_agent_rate_limit_update as get_rate_limits
+
+    # Get request from parameter or context
+    if request is None:
+        request = _request_context.get()
+    
+    if request is None:
+        return f"{settings.RATE_LIMIT_CONVERSATION_UPDATE_PER_MINUTE}/minute"
+
+    agent = getattr(request.state, "agent", None)
+    if agent and hasattr(agent, "security_settings") and agent.security_settings:
+        per_minute, _ = get_rate_limits(agent.security_settings)
+        return per_minute
+
+    return f"{settings.RATE_LIMIT_CONVERSATION_UPDATE_PER_MINUTE}/minute"
+
+
+def get_agent_rate_limit_update_hour(request: Request = None) -> str:
+    """
+    Get agent-specific rate limit per hour for conversation update.
+    Falls back to global default if agent not found or no agent-specific limit.
+    Can be called with or without request parameter (uses context if not provided).
+    """
+    from app.core.agent_security_utils import get_agent_rate_limit_update as get_rate_limits
+
+    # Get request from parameter or context
+    if request is None:
+        request = _request_context.get()
+    
+    if request is None:
+        return f"{settings.RATE_LIMIT_CONVERSATION_UPDATE_PER_HOUR}/hour"
+
+    agent = getattr(request.state, "agent", None)
+    if agent and hasattr(agent, "security_settings") and agent.security_settings:
+        _, per_hour = get_rate_limits(agent.security_settings)
+        return per_hour
+
+    return f"{settings.RATE_LIMIT_CONVERSATION_UPDATE_PER_HOUR}/hour"
 
 
 # Initialize limiter with custom key function

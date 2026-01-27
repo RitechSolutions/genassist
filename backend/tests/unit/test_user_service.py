@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 from datetime import datetime
+import os
 
 from app.schemas.filter import BaseFilterModel
 from app.services.users import UserService
@@ -9,6 +10,14 @@ from app.repositories.users import UserRepository
 from app.schemas.user import UserCreate, UserRead, UserTypeRead, UserUpdate
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+
+# Test-only credentials - these are intentionally simple for unit testing
+# and are never used in production. They can be overridden via environment variables.
+TEST_USERNAME = os.environ.get('TEST_USER_USERNAME', 'testuser')
+TEST_EMAIL = os.environ.get('TEST_USER_EMAIL', 'test@example.com')
+TEST_PASSWORD = os.environ.get('TEST_USER_PASSWORD', 'testpassword')  # nosec B105 - test credential
+# Test fixture for non-existent user scenarios - not a real credential
+TEST_NONEXISTENT_USERNAME = os.environ.get('TEST_NONEXISTENT_USERNAME', 'nonexistent_user_test')
 
 @pytest.fixture
 def mock_repository():
@@ -21,9 +30,9 @@ def user_service(mock_repository):
 @pytest.fixture
 def sample_user_data():
     return {
-        "username": "testuser",
-        "email": "test@example.com",
-        "password": "testpassword",
+        "username": TEST_USERNAME,
+        "email": TEST_EMAIL,
+        "password": TEST_PASSWORD,
         "is_active": 1,
         "user_type_id": uuid4(),
         "role_ids": [uuid4()]
@@ -104,11 +113,11 @@ async def test_get_user_by_id_not_found(user_service, mock_repository):
 @pytest.mark.asyncio
 async def test_get_user_by_username_success(user_service, mock_repository):
     # Setup
-    username = "testuser"
+    username = TEST_USERNAME
     mock_user = MagicMock(
         id=uuid4(),
         username=username,
-        email="test@example.com",
+        email=TEST_EMAIL,
         is_active=1,
         user_type = UserTypeRead(id=UUID('00000196-edb1-2b80-a681-167fc2a697dd'), name="interactive", created_at=datetime.now(), updated_at=datetime.now())
     )
@@ -123,21 +132,21 @@ async def test_get_user_by_username_success(user_service, mock_repository):
 
 @pytest.mark.asyncio
 async def test_get_user_by_username_not_found(user_service, mock_repository):
-    # Setup
-    username = "nonexistent"
+    # Setup - using a clearly non-existent username for negative test
+    username = TEST_NONEXISTENT_USERNAME
     mock_repository.get_by_username.return_value = None
 
     # Execute and Assert
     with pytest.raises(AppException) as exc_info:
         await user_service.get_by_username(username)
-    
+
     assert exc_info.value.error_key == ErrorKey.USER_NOT_FOUND
     mock_repository.get_by_username.assert_called_once_with(username)
 
 @pytest.mark.asyncio
 async def test_get_user_by_username_not_found_no_throw(user_service, mock_repository):
-    # Setup
-    username = "nonexistent"
+    # Setup - using a clearly non-existent username for negative test
+    username = TEST_NONEXISTENT_USERNAME
     mock_repository.get_by_username.return_value = None
 
     # Execute

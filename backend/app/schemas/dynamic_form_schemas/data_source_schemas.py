@@ -243,5 +243,50 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
             ),
         ],
     ),
+    "Zendesk": TypeSchema(
+        name="Zendesk",
+        fields=[
+            FieldSchema(
+                name="subdomain",
+                type="text",
+                label="Zendesk Subdomain",
+                required=True,
+                description="Your Zendesk subdomain (e.g., 'yourcompany' for yourcompany.zendesk.com)",
+                placeholder="yourcompany",
+            ),
+            FieldSchema(
+                name="email",
+                type="text",
+                label="Email",
+                required=True,
+                description="Zendesk account email address",
+                placeholder="user@example.com",
+            ),
+            FieldSchema(
+                name="api_token",
+                type="password",
+                label="API Token",
+                required=True,
+                description="Zendesk API token for authentication",
+            ),
+            FieldSchema(
+                name="locale",
+                type="text",
+                label="Locale",
+                required=False,
+                description="Locale for articles (e.g., 'en-us'). Leave empty to sync all locales.",
+                placeholder="en-us",
+                advanced=True,
+            ),
+            FieldSchema(
+                name="section_id",
+                type="number",
+                label="Section ID",
+                required=False,
+                description="Optional: Only sync articles from a specific section. Leave empty to sync all sections.",
+                advanced=True,
+            ),
+        ],
+    ),
 }
 DATA_SOURCE_SCHEMAS_DICT = convert_typed_schemas_to_dict(DATA_SOURCE_SCHEMAS)

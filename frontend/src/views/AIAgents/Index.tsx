@@ -6,6 +6,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import ChatAsCustomer from "@/views/AIAgents/components/Customer/ChatAsCustomer"; 
+import SecurityPage from "@/views/AIAgents/components/Customer/SecurityPage";
 import AgentStudioPage from './Workflows/Index';
 // import Tools from '../Tools/Index';
 
@@ -27,6 +28,7 @@ const AIAgentsView: React.FC = () => {
                 <Route path="new" element={<AgentStudioPage />} />
                 <Route path="workflow/:agentId" element={<AgentStudioPage />} />
                 <Route path="integration/:agentId" element={<ChatAsCustomer />} />
+                <Route path="security/:agentId" element={<SecurityPage />} />
               </Routes>
           </div>
         </main>

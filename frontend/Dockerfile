@@ -36,7 +36,7 @@ RUN npm install
 RUN npm run build
 
 # Use a lightweight web server to serve the built files
-FROM nginx:stable-alpine AS production
+FROM nginx:1.29.4-alpine3.23-slim AS production
 
 # Set working directory to nginx asset directory
 WORKDIR /usr/share/nginx/html

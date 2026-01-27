@@ -1,0 +1,60 @@
+name: SonarQube analysis
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  pull-requests: read
+
+jobs:
+  Analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Use Java 17 for modern SonarScanner + SonarQube
+      - name: Set up Java 17 (for SonarScanner)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: (debug) Show Java version
+        run: java -version
+
+      # Quick connectivity/health check (helps diagnose LB/proxy timeouts quickly)
+      - name: (debug) Check SonarQube reachability
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          set -euo pipefail
+          echo "SonarQube: $SONAR_HOST_URL"
+          curl -I --max-time 20 "$SONAR_HOST_URL/api/system/status" || true
+
+      # (Optional) Clear scanner cache to avoid stale artifacts (safe on hosted runners)
+      - name: Clear Sonar cache
+        run: rm -rf ~/.sonar/cache || true
+
+      - name: Analyze with SonarQube
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          # GITHUB_TOKEN is not required for self-hosted SonarQube scanning,
+          # but harmless if you want PR decoration / metadata in GH.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=GenAssist
+            -Dsonar.ws.timeout=300
+            -Dsonar.scanner.connectTimeout=60000
+            -Dsonar.scanner.socketTimeout=300000
+            -Dsonar.exclusions=**/node_modules/**,**/.venv/**,**/venv/**,**/dist/**,**/build/**,**/.next/**,**/out/**,**/coverage/**,**/.pytest_cache/**,**/__pycache__/**,**/*.pyc,**/*.pyo,**/*.map,**/.git/**,**/.DS_Store
+            -Dsonar.coverage.exclusions=**/node_modules/**,**/.venv/**,**/venv/**,**/dist/**,**/build/**,**/.next/**,**/out/**,**/coverage/**

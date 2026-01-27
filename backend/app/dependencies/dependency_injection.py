@@ -267,7 +267,15 @@ class Dependencies(Module):
         # Note: SocketConnectionManager and Redis clients use @provider methods
         # so they don't need binder.bind() here - providers handle the singleton scope automatically
         binder.bind(RequestScopeFactory, scope=singleton)
-
+        binder.bind(
+            RedisString,
+            to=self.provide_redis_string,
+            scope=singleton,
+        )
+        binder.bind(RedisBinary,
+            to=self.provide_redis_binary,
+            scope=singleton,
+        )
         binder.bind(logging.Logger, to=lambda: logging.getLogger(), scope=request_scope)
 
         # Multi-tenant services

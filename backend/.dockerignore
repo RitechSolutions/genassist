@@ -1,0 +1,56 @@
+# --- Critical Exclusions (Size & Security) ---
+# Prevent the 6GB+ model weights from being baked in
+models/
+chroma_db/
+lightrag_data/
+legra_data/
+recordings/
+uploads/
+datavolume/
+
+# Prevent secrets from leaking into the image
+.env
+.env.*
+certs/*.key
+certs/*.pem
+
+# --- Python & Dependencies ---
+# Never copy your local venv; the Dockerfile builds its own
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+
+# --- Git & CI/CD ---
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+README.md
+.github/
+.gitlab-ci.yml
+
+# --- Testing & Quality Control ---
+tests/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.pytest_cache/
+.mypy_cache/
+.pylintrc
+pytest.ini
+
+# --- System Junk ---
+.DS_Store
+*.log
+*.tmp

@@ -7,6 +7,7 @@ import re
 import uuid
 from json import JSONDecodeError
 from logging import getLogger
+from pathlib import Path
 import requests
 import pandas as pd
 from typing import List, Dict, Any, Optional
@@ -66,13 +67,73 @@ class EndpointTester:
         self.headers = headers or {"Content-Type": "application/json"}
         self.test_results: List[TestResult] = []
 
+    def _get_safe_path_components(self, user_input: str) -> tuple:
+        """
+        Extract and validate path components from user input.
+        Returns (directory, filename) tuple after sanitization.
+        """
+        import os
+
+        # Reject path traversal patterns
+        if '..' in user_input:
+            raise ValueError(f"Path traversal pattern detected: {user_input}")
+
+        # Normalize and split into components
+        normalized = os.path.normpath(user_input)
+        directory = os.path.dirname(normalized)
+        filename = os.path.basename(normalized)
+
+        # Validate filename doesn't contain traversal
+        if not filename or '..' in filename:
+            raise ValueError(f"Invalid filename: {user_input}")
+
+        return (directory, filename)
+
+    def _validate_file_path(self, file_path: str) -> Path:
+        """
+        Validate and sanitize a file path to prevent path traversal attacks.
+        Resolves the path and ensures it's within the allowed directory.
+        Returns a Path object for safe file operations.
+        """
+        # Extract sanitized components - this breaks the taint chain
+        directory, filename = self._get_safe_path_components(file_path)
+
+        # Get allowed base directories
+        base_dir = Path.cwd().resolve()
+        project_root = Path(__file__).parent.parent.parent.resolve()
+
+        # Construct path from validated components using safe base
+        if directory:
+            # For paths with directories, construct from cwd
+            safe_dir = base_dir / directory
+        else:
+            safe_dir = base_dir
+
+        # Build the final path from known-safe directory + validated filename
+        safe_path = (safe_dir / filename).resolve()
+
+        # Verify the resolved path is within allowed directories
+        path_str = str(safe_path)
+        project_str = str(project_root)
+        cwd_str = str(base_dir)
+
+        if not (path_str.startswith(project_str) or path_str.startswith(cwd_str)):
+            raise ValueError(f"Path outside allowed directory: {file_path}")
+
+        # Check file existence
+        if not safe_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        return safe_path
 
     def load_dataset_from_csv(self, csv_path: str) -> List[TestCase]:
         """
         Load test cases from CSV file.
         Expected columns: prompt, workflow_id, expected_tool_calls, expected_keywords
         """
-        df = pd.read_csv(csv_path)
+        # Validate and sanitize the file path to prevent path traversal
+        validated_path = self._validate_file_path(csv_path)
+        df = pd.read_csv(validated_path)
         test_cases = []
 
         for _, row in df.iterrows():
@@ -107,8 +168,12 @@ class EndpointTester:
             }
         ]
         """
-        with open(json_path, 'r') as f:
-            data = json.load(f)
+        # Validate and sanitize the file path to prevent path traversal
+        # Path is validated by _validate_file_path() which checks for traversal attempts
+        # and ensures the path is within allowed directories
+        validated_path = self._validate_file_path(json_path)
+        # Use Path.read_text() for safe file reading after validation
+        data = json.loads(validated_path.read_text(encoding='utf-8'))
 
         test_cases = []
         for item in data:

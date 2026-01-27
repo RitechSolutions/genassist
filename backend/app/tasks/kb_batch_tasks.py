@@ -5,7 +5,6 @@ from io import BytesIO
 from typing import Optional
 
 from celery import shared_task
-from fastapi_injector import RequestScopeFactory
 
 from app.dependencies.injector import injector
 from app.services.datasources import DataSourceService
@@ -27,18 +26,13 @@ def batch_process_files_kb(ds_id: Optional[str] = None):
 
 
 async def batch_process_files_kb_async_with_scope(ds_id: Optional[str] = None):
-    request_scope_factory = injector.get(RequestScopeFactory)
-
-    try:
-        async with request_scope_factory.create_scope():
-            result = await batch_process_files_kb_async(ds_id)
-            logger.info(f"KB batch processing of files completed: {result}")
-            return {"status": "success", "result": result}
-    except Exception as e:
-        logger.error(f"Error in Azure summarization task: {str(e)}")
-        return {"status": "failed", "error": str(e)}
-    finally:
-        logger.info("Azure summary task finished.")
+    """Wrapper to run KB batch processing for all tenants"""
+    from app.tasks.base import run_task_with_tenant_support
+    return await run_task_with_tenant_support(
+        batch_process_files_kb_async,
+        "KB batch processing",
+        ds_id=ds_id
+    )
 
 
 async def batch_process_files_kb_async(ds_id: Optional[str] = None):

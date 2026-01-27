@@ -1,23 +1,22 @@
 import logging
 from typing import Any, Dict, Optional
 from uuid import UUID
-import httpx
+from datetime import datetime
 
-from app.core.config.settings import settings
+from app.modules.integration.zendesk import ZendeskConnector
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = f"https://{settings.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
-AUTH = (f"{settings.ZENDESK_EMAIL}/token", settings.ZENDESK_API_TOKEN)
 
 class ZendeskClient:
     """
+    Wrapper around ZendeskConnector for backward compatibility.
     Minimal Zendesk v2 API client for creating or updating tickets,
     embedding a custom field=self.conversation_id so that the webhook can match later.
     """
+
     def __init__(self):
-        self.base_url = settings._zendesk_base
-        self.auth     = settings._zendesk_auth
+        self.connector = ZendeskConnector()
 
     async def create_ticket(
         self,
@@ -25,7 +24,7 @@ class ZendeskClient:
         description: str,
         requester_email: str,
         conversation_id: str,
-        tags: list[str] = [],
+        tags: Optional[list[str]] = None,
     ) -> Optional[int]:
         """
         Creates a new Zendesk ticket. Returns the Zendesk ticket ID on success.
@@ -35,97 +34,29 @@ class ZendeskClient:
           - requester_email  (customer email)
           - custom_fields → list of { "id": settings.ZENDESK_CUSTOM_FIELD_CONVERSATION_ID, "value": conversation_id }
         """
-        url = f"{self.base_url}/tickets.json"
-        payload = {
-            "ticket": {
-                "subject": subject,
-                "comment": { "body": description, "public": True },
-                "requester": {  "name": requester_email.split("@")[0] or "Unknown", "email": requester_email },
-                "tags": tags,
-                "custom_fields": [
-                    {
-                        "id": settings.ZENDESK_CUSTOM_FIELD_CONVERSATION_ID,
-                        "value": conversation_id
-                    }
-                ]
-            }
-        }
-
-        async with httpx.AsyncClient(auth=self.auth, timeout=10.0) as client:
-            resp = await client.post(url, json=payload)
-
-        if resp.status_code not in (200, 201):
-            logger.error(f"Zendesk create_ticket failed [{resp.status_code}]: {resp.text}")
-            return None
-
-        ticket = resp.json().get("ticket", {})
-        return ticket.get("id")
+        return await self.connector.create_ticket(
+            subject=subject,
+            description=description,
+            requester_email=requester_email,
+            conversation_id=conversation_id,
+            tags=tags or [],
+        )
 
     async def update_ticket(
         self,
         ticket_id: int,
         comment: Optional[str] = None,
-        custom_field_updates: Optional[dict[int, Any]] = None
+        custom_field_updates: Optional[dict[int, Any]] = None,
     ) -> bool:
         """
         Update an existing Zendesk ticket. Optionally add a new private comment,
         and/or adjust custom_fields. Returns True on HTTP 200, else False.
         """
-        url = f"{self.base_url}/tickets/{ticket_id}.json"
-        ticket_obj: dict[str, Any] = {}
-
-        if comment is not None:
-            ticket_obj["comment"] = { "body": comment, "public": False }
-
-        if custom_field_updates:
-            cf_list = []
-            for fld_id, val in custom_field_updates.items():
-                cf_list.append({ "id": fld_id, "value": val })
-            ticket_obj["custom_fields"] = cf_list
-
-        payload = { "ticket": ticket_obj }
-
-        async with httpx.AsyncClient(auth=self.auth, timeout=10.0) as client:
-            resp = await client.put(url, json=payload)
-
-        if resp.status_code != 200:
-            logger.error(f"Zendesk update_ticket({ticket_id}) failed [{resp.status_code}]: {resp.text}")
-            return False
-
-        return True
-
-
-async def fetch_ticket_details(ticket_id: int) -> Dict[str, Any]:
-    url = f"{BASE_URL}/tickets/{ticket_id}.json?include=comments"
-    logger.debug(f"Fetching Zendesk ticket: {url}")
-
-    async with httpx.AsyncClient(auth=AUTH, timeout=10.0) as client:
-        resp = await client.get(url)
-
-    if resp.status_code != 200:
-        logger.error(f"Failed to fetch ticket [{resp.status_code}]: {resp.text}")
-        raise HTTPException(status_code=502, detail="Zendesk fetch failed")
-
-    return resp.json()["ticket"]
-
-async def post_private_comment(ticket_id: int, body: str):
-    url = f"{BASE_URL}/tickets/{ticket_id}.json"
-    payload = {
-        "ticket": {
-            "comment": {
-                "body": body,
-                "public": False
-            }
-        }
-    }
-
-    async with httpx.AsyncClient(auth=AUTH, timeout=10.0) as client:
-        resp = await client.put(url, json=payload)
-
-    if resp.status_code != 200:
-        logger.error(f"Failed to post comment to ticket {ticket_id}: {resp.status_code} {resp.text}")
-    else:
-        logger.info(f"Posted analysis comment to ticket #{ticket_id}")
+        return await self.connector.update_ticket(
+            ticket_id=ticket_id,
+            comment=comment,
+            custom_field_updates=custom_field_updates,
+        )
 
 def analyze_ticket_for_db(
     ticket: Dict[str, Any],
@@ -162,7 +93,7 @@ def analyze_ticket_for_db(
 
     negative_sentiment = int(neg_sent or 0)
     positive_sentiment = int(pos_sent or 0)
-    neutral_sentiment  = int(neu_sent or 0)
+    neutral_sentiment = int(neu_sent or 0)
 
     tone: Optional[str] = None
     for cf in ticket.get("custom_fields", []):
@@ -201,7 +132,7 @@ def analyze_ticket_for_db(
             if first_agent:
                 dt_first = datetime.fromisoformat(first_agent["created_at"].replace("Z", "+00:00"))
                 response_time = int((dt_first - dt_created).total_seconds() / 60)
-        except Exception:
+        except (ValueError, KeyError, TypeError):
             response_time = None
     response_time = int(response_time or 0)
 

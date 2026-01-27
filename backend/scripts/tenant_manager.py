@@ -19,31 +19,51 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.core.config.settings import settings
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.services.tenant import TenantService
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def validate_db_identifier(identifier: str) -> str:
+    """
+    Validate and sanitize a PostgreSQL database identifier to prevent SQL injection.
+    PostgreSQL identifiers must start with a letter or underscore and contain only
+    alphanumeric characters and underscores.
+    Raises ValueError if the identifier is invalid.
+    """
+    if not identifier:
+        raise ValueError("Database identifier cannot be empty")
+
+    # PostgreSQL identifier pattern: starts with letter/underscore, followed by alphanumeric/underscore
+    # Max length is 63 characters
+    if not re.match(r'^[A-Za-z_][A-Za-z0-9_]{0,62}$', identifier):
+        raise ValueError(f"Invalid database identifier: {identifier}. Must start with a letter or underscore and contain only alphanumeric characters and underscores.")
+
+    return identifier
+
+
 async def create_master_database():
     """Create the master database for tenant management"""
     try:
-        # Create master database
-        master_db_name = settings.DB_NAME
+        # Create master database - validate the name from settings
+        master_db_name = validate_db_identifier(settings.DB_NAME)
 
         # Connect to postgres database to create the master database
         postgres_url = settings.POSTGRES_URL
         engine = create_engine(postgres_url, isolation_level="AUTOCOMMIT")
 
         with engine.connect() as conn:
-            # Check if database exists
+            # Check if database exists using parameterized query
             result = conn.execute(
-                text(f"SELECT 1 FROM pg_database WHERE datname = '{master_db_name}'")
+                text("SELECT 1 FROM pg_database WHERE datname = :db_name"),
+                {"db_name": master_db_name}
             )
             if result.fetchone():
                 logger.info(f"Master database '{master_db_name}' already exists")
             else:
-                # Create database
-                conn.execute(text(f"CREATE DATABASE {master_db_name}"))
+                # Create database - DDL doesn't support parameters, but name is validated
+                conn.execute(text(f'CREATE DATABASE "{master_db_name}"'))
                 logger.info(f"Created master database: {master_db_name}")
 
         # Initialize multi-tenant manager
@@ -75,6 +95,9 @@ async def create_tenant(
 ):
     """Create a new tenant"""
     try:
+        # Validate tenant_slug to prevent SQL injection in downstream database operations
+        validated_slug = validate_db_identifier(tenant_slug)
+
         # Ensure settings are properly loaded
         from app.core.config.settings import settings
 
@@ -97,13 +120,13 @@ async def create_tenant(
         tenant_service = TenantService()
         tenant = await tenant_service.create_tenant(
             name=tenant_name,
-            slug=tenant_slug,
+            slug=validated_slug,
             description=description,
             injector=injector,
         )
 
         if tenant:
-            logger.info(f"Successfully created tenant: {tenant_name} ({tenant_slug})")
+            logger.info(f"Successfully created tenant: {tenant_name} ({validated_slug})")
             if seed_data and injector:
                 logger.info(f"Tenant database seeded with initial data")
             return True
@@ -139,33 +162,40 @@ async def list_tenants():
 async def create_tenant_database(tenant_slug: str):
     """Create database for an existing tenant"""
     try:
+        # Validate tenant_slug to prevent SQL injection
+        validated_slug = validate_db_identifier(tenant_slug)
+        validated_db_name = validate_db_identifier(settings.DB_NAME)
+
         await multi_tenant_manager.initialize()
 
-        # Create the tenant database first
-        tenant_db_name = f"{settings.DB_NAME}_tenant_{tenant_slug}"
+        # Create the tenant database first - validate the combined name
+        tenant_db_name = validate_db_identifier(f"{validated_db_name}_tenant_{validated_slug}")
         postgres_url = settings.POSTGRES_URL
         engine = create_engine(postgres_url, isolation_level="AUTOCOMMIT")
 
         with engine.connect() as conn:
-            # Check if database exists
+            # Check if database exists using parameterized query
             result = conn.execute(
-                text(f"SELECT 1 FROM pg_database WHERE datname = '{tenant_db_name}'")
+                text("SELECT 1 FROM pg_database WHERE datname = :db_name"),
+                {"db_name": tenant_db_name}
             )
             if result.fetchone():
                 logger.info(f"Tenant database '{tenant_db_name}' already exists")
             else:
-                # Create database
-                conn.execute(text(f"CREATE DATABASE {tenant_db_name}"))
+                # Create database - DDL doesn't support parameters, but name is validated
+                conn.execute(text(f'CREATE DATABASE "{tenant_db_name}"'))
                 logger.info(f"Created tenant database: {tenant_db_name}")
 
         # Now create the schema in the tenant database
+        # Input is validated via validate_db_identifier() at the start of this function
+        # snyk-ignore: CWE-89 - Input validated via validate_db_identifier() above
         success = await multi_tenant_manager.create_tenant_database(
-            tenant_slug, tenant_slug
+            validated_slug, validated_slug  # nosec B608 - input validated above
         )
         if success:
-            logger.info(f"Successfully created database for tenant: {tenant_slug}")
+            logger.info(f"Successfully created database for tenant: {validated_slug}")
         else:
-            logger.error(f"Failed to create database for tenant: {tenant_slug}")
+            logger.error(f"Failed to create database for tenant: {validated_slug}")
 
     except Exception as e:
         logger.error(f"Error creating tenant database: {e}")

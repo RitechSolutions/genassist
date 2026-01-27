@@ -1,4 +1,5 @@
 from uuid import UUID
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
@@ -6,6 +7,7 @@ from typing import Optional, List
 import os
 import logging
 from app.core.permissions.constants import Permissions as P
+from app.core.project_path import DATA_VOLUME
 from app.auth.dependencies import auth, permissions
 from app.schemas.ml_model_pipeline import (
     MLModelPipelineConfigCreate,
@@ -25,6 +27,7 @@ from app.services.ml_model_pipeline import (
 )
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.file_system_utils import get_safe_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +269,50 @@ async def get_pipeline_artifacts(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def get_safe_artifact_path(artifact_path: str, base_directory: Path) -> str:
+    """
+    Sanitize and validate that an artifact path is within the allowed directory.
+    Prevents path traversal attacks by normalizing, validating, and reconstructing the path.
+
+    Args:
+        artifact_path: The artifact path to validate
+        base_directory: The base directory the artifact must be within
+
+    Returns:
+        A sanitized absolute path string that is safe to use
+
+    Raises:
+        HTTPException: If the path escapes the allowed directory
+    """
+    # Normalize the path to catch traversal attempts
+    normalized_path = os.path.normpath(artifact_path)
+
+    # Check for path traversal after normalization
+    if ".." in normalized_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid artifact path"
+        )
+
+    resolved_path = Path(normalized_path).resolve()
+    resolved_base = base_directory.resolve()
+
+    # Validate the file is within the allowed directory
+    try:
+        relative_path = resolved_path.relative_to(resolved_base)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid artifact path"
+        )
+
+    # Reconstruct the path from known-safe base directory and validated relative path
+    # This breaks the taint chain by creating a new path from safe components
+    safe_absolute_path = resolved_base / relative_path
+
+    return str(safe_absolute_path)
+
+
 @router.get(
     "/{model_id}/pipeline-runs/{run_id}/artifacts/{artifact_id}/download",
     dependencies=[Depends(auth), Depends(permissions(P.MlModel.READ))]
@@ -279,23 +326,34 @@ async def download_artifact(
     """Download an artifact file."""
     try:
         artifact = await service.get_by_id(model_id, run_id, artifact_id)
-        
+
+        # Sanitize and validate artifact path to prevent path traversal attacks
+        safe_path = get_safe_artifact_path(artifact.artifact_path, DATA_VOLUME)
+
+        # Final guard: verify path starts with allowed directory before serving
+        data_volume_str = str(DATA_VOLUME.resolve())
+        if not safe_path.startswith(data_volume_str):
+            raise HTTPException(status_code=400, detail="Invalid artifact path")
+
         # Validate file exists
-        if not os.path.exists(artifact.artifact_path):
+        if not os.path.exists(safe_path):
             raise HTTPException(
                 status_code=404,
                 detail="Artifact file not found on disk"
             )
-        
+
         # Determine media type based on artifact type
         media_type = "application/octet-stream"
         if artifact.artifact_type.value == "metrics":
             media_type = "application/json"
         elif artifact.artifact_type.value == "logs":
             media_type = "text/plain"
-        
+
+        # get safe path from safe_file_path
+        verified_safe_path = get_safe_file_path(safe_path, DATA_VOLUME)
+
         return FileResponse(
-            path=artifact.artifact_path,
+            path=verified_safe_path,
             filename=artifact.artifact_name,
             media_type=media_type
         )

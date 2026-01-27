@@ -102,7 +102,21 @@ class SMBShareFSService:
     # Internal helpers
     # --------------------------------------------------------------------------
     def _local_abspath(self, subpath: str) -> Path:
-        return (self.local_root / subpath).resolve()
+        """
+        Resolve a subpath relative to local_root and validate it stays within local_root.
+        Raises ValueError if the path would escape the root directory (path traversal attempt).
+        """
+        # Resolve both paths to absolute canonical paths
+        resolved_root = self.local_root.resolve()
+        resolved_path = (self.local_root / subpath).resolve()
+
+        # Validate the resolved path is within the root directory
+        try:
+            resolved_path.relative_to(resolved_root)
+        except ValueError:
+            raise ValueError(f"Path traversal attempt detected: '{subpath}' escapes root directory")
+
+        return resolved_path
 
     def _smb_abspath(self, subpath: str) -> str:
         """

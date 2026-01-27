@@ -320,7 +320,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, language, onError, 
   }, []);
 
   // Send message
-  const sendMessage = useCallback(async (text: string, files: File[] = [], extraMetadata?: Record<string, any>) => {
+  const sendMessage = useCallback(async (text: string, files: File[] = [], extraMetadata?: Record<string, any>, reCaptchaToken?: string) => {
     if (!chatServiceRef.current) {
       throw new Error('Chat service not initialized');
     }
@@ -339,7 +339,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, language, onError, 
       if (!isTakenOver) {
         setIsAgentTyping(true);
       }
-      await chatServiceRef.current.sendMessage(text, newAttachments, extraMetadata);
+      await chatServiceRef.current.sendMessage(text, newAttachments, extraMetadata, reCaptchaToken);
 
       setPreloadedAttachments([]);
 
