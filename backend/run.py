@@ -34,7 +34,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("FASTAPI_RUN_PORT", 8000))
     debug_mode = os.environ.get("RELOAD", "False").lower() == "true"
 
-    workers = int(os.environ.get("WORKERS", 2))
+    workers = int(os.environ.get("WORKERS", 1))
     # The app imports transformers/sentence-transformers via legra; each worker loads
     # that stack. Too many workers can cause OOM or child process crashes. Prefer
     # scaling via more replicas (containers/pods) with workers=1 or workers=2.
