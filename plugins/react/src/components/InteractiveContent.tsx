@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChatContentBlock, DynamicChatItem, FileItem, ScheduleItem } from '../types';
 import { getFileIcon } from './FileTypeIcon';
+import { X } from 'lucide-react';
 
 // Utility function to parse markdown bold syntax (**text**) and convert to React elements
 export const parseBoldText = (input: string): React.ReactNode[] => {
