@@ -394,7 +394,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         extraMetadata.attachments = attachments.map(a => a.attachment);
       }
       
-      await sendMessage(textToSend, filesToUpload, extraMetadata);
+      // send message with attachments
       await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
