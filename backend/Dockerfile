@@ -71,7 +71,10 @@ RUN useradd -m -u 1000 genassist
 # 3. Copy LEAN Virtual Environment from Builder
 COPY --from=builder /opt/venv /opt/venv
 
-# 4. Copy Application Code
+# 4. Install Playwright with Chromium
+RUN playwright install --with-deps chromium
+
+# 5. Copy Application Code
 COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alembic.ini /src/
 COPY --chown=genassist:genassist ./app /src/app
 COPY --chown=genassist:genassist ./alembic /src/alembic
@@ -89,7 +92,7 @@ RUN mkdir -p /src/.cache && \
     mkdir -p /src/datavolume/logs && \
     chown -R genassist:genassist /src
 
-# 5. Set User and Entrypoint
+# 6. Set User and Entrypoint
 USER genassist
 
 EXPOSE 8000
