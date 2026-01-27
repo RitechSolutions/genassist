@@ -40,9 +40,12 @@ RUN pip install --upgrade pip setuptools wheel && \
 
 # 4. Download Hugging Face models for offline/firewalled deployments
 COPY scripts/download_models.py /tmp/download_models.py
-RUN python /tmp/download_models.py && rm /tmp/download_models.py
+ENV HF_HOME="/opt/hf_cache"
+RUN mkdir -p /opt/hf_cache && \
+    python /tmp/download_models.py && \
+    rm /tmp/download_models.py
 
-# RUN playwright install to donwload the browser of the library
+# 5. RUN playwright install to download the browser of the library
 RUN playwright install --with-deps chromium
 
 # ==========================================
@@ -77,6 +80,8 @@ RUN useradd -m -u 1000 genassist
 
 # 3. Copy LEAN Virtual Environment from Builder
 COPY --from=builder /opt/venv /opt/venv
+# Copy hugging face cache from builder
+COPY --from=builder --chown=genassist:genassist /opt/hf_cache /home/genassist/.cache
 
 # 4. Copy Application Code
 COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alembic.ini /src/

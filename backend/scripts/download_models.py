@@ -13,30 +13,11 @@ MODELS = [
 ]
 
 def main():
-    # Use HF_HOME if set (Docker), otherwise use huggingface_hub's default (~/.cache/huggingface)
-    hf_home = os.getenv('HF_HOME')
-
-    if hf_home:
-        cache_dir = f'{hf_home}/huggingface'
-        print('=' * 60)
-        print('Downloading models for offline deployment (Docker/Production)')
-        print('=' * 60)
-        print(f'HF_HOME: {hf_home}')
-        print(f'Cache directory: {cache_dir}\n')
-    else:
-        cache_dir = None  # Let huggingface_hub use default location
-        default_cache = Path.home() / '.cache' / 'huggingface'
-        print('=' * 60)
-        print('Downloading models for offline deployment (Local Development)')
-        print('=' * 60)
-        print(f'Cache directory: {default_cache} (default)\n')
-
     for i, model in enumerate(MODELS, 1):
         print(f'[{i}/{len(MODELS)}] Downloading {model}...')
         try:
             snapshot_download(
                 repo_id=model,
-                cache_dir=cache_dir,
                 repo_type='model'
             )
             print(f'[{i}/{len(MODELS)}] ✅ Successfully downloaded {model}\n')
