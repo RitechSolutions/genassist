@@ -1,13 +1,16 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import { ChatMessageComponent, AttachmentPreview } from './ChatMessage';
 import { useChat } from '../hooks/useChat';
-import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
+import { ChatMessage, GenAgentChatProps, ScheduleItem, Attachment, AttachmentWithFile } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
 import { Send, Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2 } from 'lucide-react';
 import { ChatBubble } from './ChatBubble';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
+
+// Type for attachment with file reference
+
 import {
   resolveLanguage,
   mergeTranslations,
@@ -95,8 +98,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [showMenu, setShowMenu] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [isFloatingOpen, setIsFloatingOpen] = useState(mode === 'fullscreen');
-  const [attachments, setAttachments] = useState<File[]>([]);
+  const [isFloatingOpen, setIsFloatingOpen] = useState(false);
+  const [attachments, setAttachments] = useState<AttachmentWithFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -368,16 +371,30 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     if (inputValue.trim() === '' && attachments.length === 0) return;
     if (isAgentTyping) return; // Prevent sending while agent is thinking/typing
     const textToSend = inputValue;
-    const filesToUpload = [...attachments];
+    // NOTES: we don't upload files anymore, we just send the content blocks
+    const filesToUpload = attachments.map(a => a.file);
+    // const fileAttachments = attachments.map(a => a.attachment);
+
     setInputValue('');
     setAttachments([]);
     // Reset the file input value so the same file can be selected again
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+
     try {
       // Include FAQ query in metadata if one was previously selected
-      const extraMetadata = selectedFaqQuery ? { faq_query: selectedFaqQuery } : undefined;
+      const extraMetadata: Record<string, any> = {};
+
+      if (selectedFaqQuery) {
+        extraMetadata.faq_query = selectedFaqQuery;
+      }
+
+      if (filesToUpload.length > 0) {
+        extraMetadata.attachments = attachments.map(a => a.attachment);
+      }
+      
+      // send message with attachments
       await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
@@ -411,32 +428,67 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
+    if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files);
-      setAttachments(prev => [...prev, ...newFiles]);
+      
+      // Initialize attachments with files (attachment reference will be null initially)
+      const newAttachments: AttachmentWithFile[] = newFiles.map(file => ({file, attachment: null}));
+      setAttachments(prev => [...prev, ...newAttachments]);
 
       const newUploadingFiles = new Set(uploadingFiles);
       newFiles.forEach(file => newUploadingFiles.add(file.name));
       setUploadingFiles(newUploadingFiles);
 
       try {
-        await Promise.all(newFiles.map(file => uploadFile(file)));
+        // Upload files and get attachment references
+        const uploadResults = await Promise.all(
+          newFiles.map(async (file, index) => ({
+            file,
+            index,
+            attachment: await uploadFile(file),
+          }))
+        );
+
+        // Create a map of file reference (name + size + lastModified) to uploaded attachment
+        const fileToAttachmentMap = new Map<string, Attachment | null>();
+        uploadResults.forEach(({ file, attachment }) => {
+          const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
+          fileToAttachmentMap.set(fileKey, attachment);
+        });
+
+        // Update attachments with the uploaded file references
+        setAttachments(prev => {
+          return prev.map(att => {
+            const fileKey = `${att.file.name}:${att.file.size}:${att.file.lastModified}`;
+            const uploadedAttachment = fileToAttachmentMap.get(fileKey);
+            
+            // If this attachment matches one of the newly uploaded files, update it
+            if (uploadedAttachment !== undefined) {
+              return {
+                ...att,
+                attachment: uploadedAttachment,
+              };
+            }
+            return att;
+          });
+        });
       } catch (error) {
         // ignore
+        console.error('Error uploading file', error);
       } finally {
         const finalUploadingFiles = new Set(uploadingFiles);
         newFiles.forEach(file => finalUploadingFiles.delete(file.name));
         setUploadingFiles(finalUploadingFiles);
         // Reset the file input value so the same file can be selected again
         if (fileInputRef.current) {
-          fileInputRef.current.value = '';
+          fileInputRef.current!.value = '';
         }
       }
     }
   };
 
   const handleRemoveAttachment = (fileName: string) => {
-    setAttachments(prev => prev.filter(f => f.name !== fileName));
+    setAttachments(prev => prev.filter(att => att.file.name !== fileName));
   };
 
   const handleVoiceError = (error: Error) => {
@@ -1250,10 +1302,17 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           })()}
           {(() => {
             const firstAgentIndex = messages.findIndex(m => m.speaker === 'agent');
-            return messages.map((message, index) => {
+
+            const applyMessageFilter = (message: any) => {
+              // filter out file messages added by the agent
+              return message.type !== 'file';
+            }
+
+            return messages.filter(applyMessageFilter).map((message, index) => {
               const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
               const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
               const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
+
               return (
                 <ChatMessageComponent 
                   key={index} 
@@ -1334,12 +1393,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         
         {attachments.length > 0 && (
           <div style={{ padding: '0 16px', marginBottom: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {attachments.map((file, index) => (
+            {attachments.map((att, index) => (
               <AttachmentPreview 
                 key={index} 
-                file={file} 
-                onRemove={() => handleRemoveAttachment(file.name)}
-                uploading={uploadingFiles.has(file.name)}
+                file={att.file} 
+                onRemove={() => handleRemoveAttachment(att.file.name)}
+                uploading={uploadingFiles.has(att.file.name)}
               />
             ))}
           </div>

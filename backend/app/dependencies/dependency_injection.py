@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi_injector import request_scope
 from fastapi_injector import RequestScopeFactory
-from app.core.tenant_scope import tenant_scope
 from app.repositories.transcript_message import TranscriptMessageRepository
 from app.repositories.tenant import TenantRepository
 from app.services.tenant import TenantService
@@ -57,11 +56,15 @@ from app.repositories.audit_logs import AuditLogRepository
 from app.repositories.app_settings import AppSettingsRepository
 from app.repositories.api_keys import ApiKeysRepository
 from app.repositories.agent import AgentRepository
-from app.db.multi_tenant_session import multi_tenant_manager
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.workflow.llm.provider import LLMProvider
 from redis.asyncio import Redis
 from app.modules.data.manager import AgentRAGServiceManager
+from app.repositories.file_manager import FileManagerRepository
+# Multi-tenant session manager
+from app.core.tenant_scope import tenant_scope
+from app.db.multi_tenant_session import multi_tenant_manager
+# Settings
 from app.core.config.settings import settings
 
 
@@ -281,3 +284,6 @@ class Dependencies(Module):
         # Multi-tenant services
         binder.bind(TenantService, scope=request_scope)
         binder.bind(TenantRepository, scope=request_scope)
+
+        # File Manager services
+        binder.bind(FileManagerRepository, scope=request_scope)
