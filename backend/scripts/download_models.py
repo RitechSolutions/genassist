@@ -6,10 +6,10 @@ from huggingface_hub import snapshot_download
 
 MODELS = [
     'sentence-transformers/all-MiniLM-L6-v2',
-    # 'sentence-transformers/all-mpnet-base-v2',
-    # 'sentence-transformers/multi-qa-MiniLM-L6-cos-v1',
-    # 'sentence-transformers/all-distilroberta-v1',
-    # 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+    'sentence-transformers/all-mpnet-base-v2',
+    'sentence-transformers/multi-qa-MiniLM-L6-cos-v1',
+    'sentence-transformers/all-distilroberta-v1',
+    'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
 ]
 
 def main():
