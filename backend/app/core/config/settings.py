@@ -30,7 +30,10 @@ class ProjectSettings(BaseSettings):
 
     # Celery Redis connection pool settings
     CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
-    
+    # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
+    # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
+    CELERY_WORKER_POOL: str = "solo"
+
     FERNET_KEY: Optional[str]
 
     # === LLM Keys ===

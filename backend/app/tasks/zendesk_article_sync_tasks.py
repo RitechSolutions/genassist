@@ -183,25 +183,56 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
                 f"Found {len(deleted_article_ids)} deleted articles to remove for knowledge base {kb.id}"
             )
 
-            # Find updated articles (exist in both)
+            # Load last-known updated_at per article from KB extra_metadata (for skip-if-unchanged)
+            article_updated_at_key = "zendesk_article_updated_at"
+            stored_updated_at: dict = (kb.extra_metadata or {}).get(
+                article_updated_at_key
+            ) or {}
+            # Work on a copy so we can persist it after add/update/delete
+            article_updated_at_map = dict(stored_updated_at)
+
+            def _is_article_edited(article: dict) -> bool:
+                """True if we have no stored updated_at or Zendesk's is newer."""
+                aid = str(article["id"])
+                zendesk_updated = article.get("updated_at") or ""
+                if not zendesk_updated:
+                    return True  # unknown freshness, treat as edited to be safe
+                stored = stored_updated_at.get(aid)
+                if not stored:
+                    return True  # first time we've seen it in stored state
+                # ISO8601 strings compare correctly as strings
+                return zendesk_updated > stored
+
+            # Find updated articles (exist in both AND edited in Zendesk since last sync)
             updated_articles = []
             for article in articles:
                 article_id = f"KB:{str(kb.id)}#article_{article['id']}"
-                if article_id in existing_articles:
-                    # Check if article was updated (compare updated_at)
-                    # For now, we'll update all existing articles to ensure they're current
-                    # In a more sophisticated implementation, we could track updated_at timestamps
+                if article_id in existing_articles and _is_article_edited(article):
                     updated_articles.append(article)
+            skipped_unchanged = sum(
+                1
+                for a in articles
+                if f"KB:{str(kb.id)}#article_{a['id']}" in existing_articles
+                and not _is_article_edited(a)
+            )
+            if skipped_unchanged:
+                logger.info(
+                    f"Skipping {skipped_unchanged} existing articles (unchanged) for knowledge base {kb.id}"
+                )
 
-            # Delete removed articles from RAG
+            # Delete removed articles from RAG and from our updated_at map
+            article_id_prefix = f"KB:{str(kb.id)}#article_"
             if deleted_article_ids:
-                for article_id in deleted_article_ids:
+                for doc_id in deleted_article_ids:
                     try:
-                        logger.info(f"Deleting article {article_id} from RAG...")
-                        await rag_manager.delete_document(kb, article_id)
+                        logger.info(f"Deleting article {doc_id} from RAG...")
+                        await rag_manager.delete_document(kb, doc_id)
                         articles_deleted += 1
+                        if doc_id.startswith(article_id_prefix):
+                            zendesk_id = doc_id[len(article_id_prefix) :]
+                            article_updated_at_map.pop(zendesk_id, None)
                     except Exception as e:
-                        error_msg = f"Error deleting article {article_id}: {str(e)}"
+                        error_msg = f"Error deleting article {doc_id}: {str(e)}"
                         logger.error(error_msg)
                         kb_errors.append(error_msg)
                         continue
@@ -233,6 +264,10 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
                     )
                     logger.info(f"Article {article_title} processed with result: {res}")
                     articles_added += 1
+                    if article.get("updated_at"):
+                        article_updated_at_map[str(article["id"])] = article[
+                            "updated_at"
+                        ]
 
                     # Track last file date
                     updated_at = article.get("updated_at")
@@ -279,6 +314,10 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
                     )
                     logger.info(f"Article {article_title} updated with result: {res}")
                     articles_updated += 1
+                    if article.get("updated_at"):
+                        article_updated_at_map[str(article["id"])] = article[
+                            "updated_at"
+                        ]
 
                     # Track last file date
                     updated_at = article.get("updated_at")
@@ -298,12 +337,15 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
                     kb_errors.append(error_msg)
                     continue
 
-            # Update last synced time
+            # Update last synced time and persist article updated_at map (skip unchanged next run)
             logger.info(f"Updating knowledge base {kb.id} last synced time...")
             kb_update = json.loads(kb.model_dump_json())
             kb_update["last_synced"] = datetime.now()
             if last_file_date:
                 kb_update["last_file_date"] = last_file_date
+            extra = dict(kb_update.get("extra_metadata") or {})
+            extra[article_updated_at_key] = article_updated_at_map
+            kb_update["extra_metadata"] = extra
             await kb_service.update(kb.id, KBCreate(**kb_update))
 
             articles_added_tot += articles_added
