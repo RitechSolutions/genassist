@@ -152,15 +152,27 @@ class Dependencies(Module):
         Provide tenant-aware session based on tenant context.
 
         Returns an AsyncSession instance managed by fastapi-injector's request scope.
+
+        IMPORTANT: This session is registered with AsyncSessionCleanupMiddleware
+        which ensures it is properly closed at the end of the request, returning
+        the connection to the pool.
+
+        If you need manual session management outside of request context,
+        use multi_tenant_manager.get_tenant_session_factory() directly with
+        'async with session_factory() as session:' pattern.
         """
         from app.core.tenant_scope import get_tenant_context
+        from app.middlewares.session_cleanup_middleware import register_session_for_cleanup
 
         tenant_id = get_tenant_context()
         logger.debug(f"DI: Tenant context: {tenant_id}")
 
         session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
 
-        return session_factory()
+        # Create session and register for cleanup at end of request
+        session = session_factory()
+        register_session_for_cleanup(session)
+        return session
 
     def configure(self, binder):
         binder.bind(ToolService, scope=request_scope)

@@ -77,10 +77,12 @@ class ProjectSettings(BaseSettings):
     CREATE_DB: bool = False
     DB_ASYNC: bool = True
     # SQLAlchemy async engine pool settings
-    DB_POOL_SIZE: int = 100
-    DB_MAX_OVERFLOW: int = 100
-    DB_POOL_TIMEOUT: int = 30  # seconds
-    DB_POOL_RECYCLE: int = 1800  # seconds
+    # Note: PostgreSQL default max_connections is typically 100.
+    # Pool size + max_overflow should stay well below this limit per tenant.
+    DB_POOL_SIZE: int = 10  # Base number of persistent connections per tenant
+    DB_MAX_OVERFLOW: int = 20  # Additional connections allowed during peak load
+    DB_POOL_TIMEOUT: int = 30  # seconds to wait for a connection from pool
+    DB_POOL_RECYCLE: int = 1800  # seconds before recycling connections
 
     # === Multi-Tenancy ===
     MULTI_TENANT_ENABLED: bool = False

@@ -94,15 +94,16 @@ class MultiTenantSessionManager:
 
     async def create_tenant_database(self, tenant: str = "master") -> bool:
         """Create a new tenant database with the same schema as master using Alembic (async version)"""
+        sync_engine = None
         try:
             # First create the database (sanitize tenant_id for database name)
             tenant_db_name = settings.get_tenant_database_name(tenant)
 
             # Use sync engine for database creation (still needed for CREATE DATABASE)
             postgres_url = settings.POSTGRES_URL
-            engine = create_engine(postgres_url, isolation_level="AUTOCOMMIT")
+            sync_engine = create_engine(postgres_url, isolation_level="AUTOCOMMIT")
 
-            with engine.connect() as conn:
+            with sync_engine.connect() as conn:
                 # Check if database exists
                 result = conn.execute(
                     text(
@@ -164,6 +165,12 @@ class MultiTenantSessionManager:
         except Exception as e:
             logger.error(f"Failed to create database for tenant {tenant}: {e}")
             return False
+
+        finally:
+            # Always dispose the sync engine to release connections
+            if sync_engine is not None:
+                sync_engine.dispose()
+                logger.debug("Disposed sync engine used for tenant database creation")
 
     async def seed_tenant_database(self, tenant: str = "master") -> bool:
         """Seed a tenant database with initial data"""

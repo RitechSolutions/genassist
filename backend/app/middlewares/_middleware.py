@@ -13,6 +13,7 @@ from starlette_context.plugins import RequestIdPlugin
 
 from app.middlewares.tenant_middleware import TenantMiddleware
 from app.middlewares.tenant_scope_middleware import TenantScopeMiddleware
+from app.middlewares.session_cleanup_middleware import AsyncSessionCleanupMiddleware
 from app.middlewares.rate_limit_middleware import _request_context
 from app import settings
 from app.core.config.logging import (
@@ -69,6 +70,9 @@ def build_middlewares() -> list[Middleware]:
     4. CORS – normal cross-origin checks.
     """
     middlewares = [
+        # 0️⃣  AsyncSession cleanup - ensures DB connections are returned to pool
+        #     Placed first (outermost) so it runs cleanup AFTER all other middleware
+        Middleware(AsyncSessionCleanupMiddleware),
         # 1️⃣  Generates a request-scoped UUID and puts it in `request.headers`
         Middleware(
             RawContextMiddleware,
