@@ -87,6 +87,7 @@ export interface GenAgentChatProps {
   apiKey: string;
   tenant: string | undefined;
   metadata?: Record<string, any>; // For passing user information or other metadata
+  useWs?: boolean;
   onError?: (error: Error) => void;
   onTakeover?: () => void;
   onFinalize?: () => void;
