@@ -424,6 +424,56 @@ class OpenAIFineTuningService:
             raise AppException(error_key=ErrorKey.ERROR_CANCEL_JOB_OPEN_AI)
 
 
+    async def upload_file_for_chat(
+        self,
+        file_path: str,
+        filename: str,
+        purpose: str = "user_data"
+    ) -> str:
+        """
+        Upload a file to OpenAI for use in chat completions.
+        
+        Args:
+            file_path: Local path to the file
+            filename: Original filename
+            purpose: File purpose (default: "user_data" for chat inputs)
+        
+        Returns:
+            OpenAI file ID (e.g., "file-abc123")
+        """
+        try:
+            logger.info(f"Uploading file {filename} from {file_path} to OpenAI for chat")
+            
+            # Read file content
+            with open(file_path, "rb") as f:
+                file_content = f.read()
+            
+            # Upload to OpenAI
+            response = await self.client.files.create(
+                file=(filename, file_content),
+                purpose=purpose
+            )
+            
+            logger.info(f"Successfully uploaded file to OpenAI. File ID: {response.id}")
+            
+            # Optionally store in database for tracking
+            try:
+                await self.repository.create_file_record(
+                    openai_file_id=response.id,
+                    filename=response.filename,
+                    purpose=response.purpose,
+                    bytes=response.bytes,
+                )
+            except Exception as db_error:
+                # Log but don't fail if DB storage fails
+                logger.warning(f"Failed to store file record in DB: {str(db_error)}")
+            
+            return response.id
+            
+        except Exception as e:
+            logger.error(f"Error uploading file to OpenAI: {str(e)}")
+            raise AppException(error_key=ErrorKey.ERROR_UPLOAD_FILE_OPEN_AI)
+
     async def delete_file(self, file_id: str):
         """
         Delete a file from OpenAI and update database.

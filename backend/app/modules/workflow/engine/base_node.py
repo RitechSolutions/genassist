@@ -118,6 +118,10 @@ class BaseNode(ABC):
         """Get the conversation memory."""
         return self.state.get_memory()
 
+    def get_session_context(self) -> dict:
+        """Get the session context (session data) from workflow state."""
+        return self.state.get_session()
+
     def get_source_nodes(self) -> List[str]:
         """Get all source nodes connected to this next node."""
         target_edges = self.state.target_edges

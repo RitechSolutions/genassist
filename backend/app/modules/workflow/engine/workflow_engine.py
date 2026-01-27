@@ -304,7 +304,6 @@ class WorkflowEngine:
         visited.add(node_id)
 
         # _, node_type = self.get_node_config(workflow_id, node_id=node_id)
-
         node_output: Optional[dict] = None
 
         # if "aggregator" in node_type.lower():

@@ -51,9 +51,16 @@ class RegistryItem:
             )
 
         thread_id = metadata.get("thread_id", None)
+
+        # add the content blocks to the input data
+        input_data = {
+            "message": session_message,
+            **metadata,
+        }
+
         state = await self.workflow_engine.execute_from_node(
             self.workflow_model["id"],
-            input_data={"message": session_message, **metadata},
+            input_data=input_data,
             thread_id=thread_id,
         )
         return state.format_state_as_response()

@@ -292,21 +292,23 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, language, onError, 
   }, []);
 
   const uploadFile = useCallback(async (file: File): Promise<Attachment | null> => {
-    if (!chatServiceRef.current || !chatServiceRef.current.getConversationId()) {
+    const conversationId = chatServiceRef.current?.getConversationId(); 
+    if (!conversationId) {
       return null;
     }
 
     try {
-      const { fileUrl } = await chatServiceRef.current.uploadFile(
-        chatServiceRef.current.getConversationId() as string,
-        file
-      );
+      const uploadResult = await chatServiceRef.current?.uploadFile(conversationId, file);
+
+      // construct the file url with the base url
+      const file_url = new URL(uploadResult!.file_url!, baseUrl).href;
       
       const attachment: Attachment = {
         name: file.name,
         type: file.type,
         size: file.size,
-        url: fileUrl,
+        url: file_url,
+        file_id: uploadResult?.file_id,
       };
 
       setPreloadedAttachments(prev => [...prev, attachment]);
@@ -339,6 +341,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, language, onError, 
       if (!isTakenOver) {
         setIsAgentTyping(true);
       }
+      
       await chatServiceRef.current.sendMessage(text, newAttachments, extraMetadata, reCaptchaToken);
 
       setPreloadedAttachments([]);

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form, Request
 from typing import List, Dict, Optional
 import os
 import uuid
@@ -27,6 +28,14 @@ from app.tasks.s3_tasks import import_s3_files_to_kb_async
 from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.agents.rag import ThreadScopedRAG
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
+# File manager service
+from app.services.file_manager import FileManagerService
+from app.repositories.file_manager import FileManagerRepository
+from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
+from app.schemas.file import FileCreate, FileUploadResponse
+from app.auth.utils import get_current_user_id
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.tenant_scope import get_tenant_context
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -249,14 +258,15 @@ async def upload_file(
 
 @router.post(
     "/upload-chat-file",
-    response_model=Dict[str, str],
+    response_model=FileUploadResponse,
     dependencies=[
         Depends(auth),
-    ],
+    ]
 )
 async def upload_file_to_chat(
     chat_id: str = Form(...),
     file: UploadFile = File(...),
+    db: AsyncSession = Injected(AsyncSession),
 ):
     """
     Upload a file, extract its text content, and return both the saved filename and extracted text file
@@ -266,25 +276,44 @@ async def upload_file_to_chat(
             f"Received file upload: {file.filename}, size: {file.size}, content_type: {file.content_type}"
         )
 
-        # Generate a unique filename
-        file_extension = file.filename.split(
-            ".")[-1] if "." in file.filename else ""
-        if file_extension.lower() not in ["pdf", "docx", "txt", "jpg", "jpeg", "png"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Unsupported file type. Only PDF, DOCX, TXT, JPG, JPEG, and PNG are allowed.",
+        # Introduce file manager service
+        file_manager_service = FileManagerService(repository=FileManagerRepository(db))
+        await file_manager_service.set_storage_provider(LocalFileSystemProvider(config={"base_path": UPLOAD_DIR}))
+
+
+        user_id = get_current_user_id()
+        tenant_id = get_tenant_context()
+
+        # file storage path
+        file_name = f"{uuid.uuid4()}.{file.filename.split('.')[-1]}"
+        relative_storage_path = file_name
+
+        try:
+            # create file in file manager service
+            created_file = await file_manager_service.create_file(
+                file_data=FileCreate(
+                    name=file.filename,
+                    mime_type=file.content_type,
+                    size=file.size,
+                    storage_provider="local",
+                    storage_path=relative_storage_path,
+                ),
+                file_content=await file.read(),
+                user_id=user_id,
+                allowed_extensions=["pdf", "docx", "txt", "jpg", "jpeg", "png"],
             )
+        except Exception as e:
+            logger.error(f"Error creating file: {str(e)}")
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported file type. Only PDF, DOCX, TXT, JPG, JPEG, and PNG are allowed.") from e
 
-        unique_filename = (
-            f"{uuid.uuid4()}.{file_extension}" if file_extension else f"{uuid.uuid4()}"
-        )
-        file_path = os.path.join(UPLOAD_DIR, unique_filename)
+        # get file id from created file
+        file_id = created_file.id
+        file_extension = created_file.file_extension
+        storage_path = created_file.storage_path
+        file_path = f"{UPLOAD_DIR}/{storage_path}"
 
-        logger.info(f"Saving file to: {file_path}")
-
-        # Save the file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        logger.info(f"File Id: {file_id}")
 
         # Extract text from the file
         try:
@@ -298,23 +327,30 @@ async def upload_file_to_chat(
                 extracted_text = FileExtractor.extract_from_txt(file_path)
             from app.dependencies.injector import injector
 
+            # add file content to thread rag using workflow engine
             thread_rag = injector.get(ThreadScopedRAG)
             await thread_rag.add_file_content(
                 chat_id=chat_id,
                 file_content=extracted_text,
                 file_name=file.filename or "unknown",
-                file_id=unique_filename,
+                file_id=file_id,
             )
 
         except Exception as e:
             logger.warning(f"Could not extract text from file: {str(e)}")
 
+        file_relative_url = f"/api/file-manager/files/{file_id}/source"
+        
         # Return the filenames and paths
-        result = {
-            "filename": unique_filename,
-            "original_filename": file.filename,
-            "file_path": file_path,
-        }
+        result = FileUploadResponse(
+            filename=str(file_id),
+            original_filename=file.filename,
+            storage_path=storage_path,
+            file_path=file_path,
+            file_url=file_relative_url,
+            file_id=str(file_id),
+        )
+
         logger.info(f"Upload successful: {result}")
         return result
     except Exception as e:
