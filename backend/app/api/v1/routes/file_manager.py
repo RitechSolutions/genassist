@@ -22,38 +22,17 @@ router = APIRouter()
 
 @router.post("/files", response_model=FileResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(auth)])
 async def create_file(
-    file: UploadFile,
-    description: Optional[str] = None,
-    file_metadata: Optional[dict] = None,
-    tags: Optional[List[str]] = None,
-    storage_provider: StorageProvider = StorageProvider.LOCAL,
+    file_create: FileCreate,
     service: FileManagerService = Injected(FileManagerService),
 ):
     """Upload and create a new file."""
     try:
-        # Read file content
-        file_content = await file.read()
+        # if we want check for file extension, we can do it here
+        # allowed_extensions = ["pdf", "docx", "txt", "jpg", "jpeg", "png"];
+        allowed_extensions = None
 
-        # Detect MIME type if not provided
-        mime_type = file.content_type
-        if not mime_type:
-            mime_type, _ = mimetypes.guess_type(file.filename or "")
-
-        # Create file data
-        file_data = FileCreate(
-            name=file.filename or "untitled",
-            mime_type=mime_type,
-            size=len(file_content),
-            description=description,
-            file_metadata=file_metadata or {},
-            tags=tags or [],
-            storage_provider=storage_provider
-        )
-
-        # Create file
-        db_file = await service.create_file(file_data, file_content)
-        return db_file
-
+        # Create file and return the file response
+        return await service.create_file(file_create, allowed_extensions=allowed_extensions)
     except Exception as e:
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
