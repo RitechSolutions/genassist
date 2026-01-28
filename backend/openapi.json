@@ -16386,16 +16386,19 @@
             ],
             "title": "Llm Provider Id"
           },
-          "url": {
+          "urls": {
             "anyOf": [
               {
-                "type": "string"
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Url"
+            "title": "Urls"
           }
         },
         "additionalProperties": true,
@@ -16642,16 +16645,19 @@
             ],
             "title": "Llm Provider Id"
           },
-          "url": {
+          "urls": {
             "anyOf": [
               {
-                "type": "string"
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Url"
+            "title": "Urls"
           },
           "id": {
             "type": "string",
