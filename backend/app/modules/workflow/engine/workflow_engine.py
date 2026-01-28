@@ -107,6 +107,36 @@ class WorkflowEngine:
         self.register_node_type("threadRAGNode", ThreadRAGNode)
         self.register_node_type("mcpNode", MCPNode)
 
+    def _node_needs_db_access(self, node_type: str) -> bool:
+        """
+        Determine if a node type requires database access.
+        
+        This helps optimize connection pool usage by only creating DB connections
+        for nodes that actually need them.
+        
+        Args:
+            node_type: The type identifier of the node
+            
+        Returns:
+            True if the node needs DB access, False otherwise
+        """
+        # Node types that do NOT require database access
+        # All other nodes are assumed to need DB access
+        no_db_nodes = {
+            "templateNode",
+            "routerNode",
+            "chatInputNode",
+            "chatOutputNode",
+            "pythonCodeNode",
+            "apiToolNode",
+            "dataMapperNode",
+            "toolBuilderNode",
+            "aggregatorNode",
+        }
+        
+        # Return True if node is NOT in the no-DB list (i.e., it needs DB)
+        return node_type not in no_db_nodes
+    
     def __init__(self):
         """Initialize the workflow engine."""
         self.initialize_workflow_engine()
@@ -304,7 +334,6 @@ class WorkflowEngine:
         visited.add(node_id)
 
         # _, node_type = self.get_node_config(workflow_id, node_id=node_id)
-
         node_output: Optional[dict] = None
 
         # if "aggregator" in node_type.lower():
@@ -332,8 +361,6 @@ class WorkflowEngine:
 
         # Find and execute next nodes in parallel
         if next_nodes:
-            # Get request scope factory for creating separate scopes for parallel tasks
-            request_scope_factory = injector.get(RequestScopeFactory)
             # Capture tenant context from the main request scope
             tenant_id = get_tenant_context()
 
@@ -343,20 +370,35 @@ class WorkflowEngine:
                 # Create a copy of visited set for each task to avoid conflicts
                 task_visited = visited.copy()
 
-                # Create a wrapper function that runs in its own request scope
-                async def execute_node_with_scope(
-                    node_id: str, visited_set: Set[str], tenant: str
+                # Check if this node needs DB access to determine if we need a separate scope
+                _, next_node_type = self.get_node_config(workflow_id, next_node_id)
+                needs_db = self._node_needs_db_access(next_node_type)
+
+                # Create a wrapper function that conditionally uses a request scope
+                async def execute_node_conditionally(
+                    node_id: str, visited_set: Set[str], tenant: str, requires_db: bool
                 ):
-                    """Execute a node in its own request scope to avoid session conflicts."""
-                    async with request_scope_factory.create_scope():
-                        # Set tenant context in the new scope to match the main request
-                        set_tenant_context(tenant)
+                    """
+                    Execute a node, creating a request scope only if it needs DB access.
+                    This avoids creating unnecessary database connections for nodes that don't need them.
+                    """
+                    if requires_db:
+                        # Only create scope for nodes that need DB access
+                        request_scope_factory = injector.get(RequestScopeFactory)
+                        async with request_scope_factory.create_scope():
+                            # Set tenant context in the new scope to match the main request
+                            set_tenant_context(tenant)
+                            return await self._execute_from_node_recursive(
+                                node_id, state, workflow_id, visited_set
+                            )
+                    else:
+                        # No DB needed, execute directly without creating a scope
                         return await self._execute_from_node_recursive(
                             node_id, state, workflow_id, visited_set
                         )
 
                 task = asyncio.create_task(
-                    execute_node_with_scope(next_node_id, task_visited, tenant_id)
+                    execute_node_conditionally(next_node_id, task_visited, tenant_id, needs_db)
                 )
                 next_tasks.append(task)
 
@@ -381,6 +423,8 @@ class WorkflowEngine:
             next_nodes.append(edge["target"])
 
         return next_nodes
+
+   
 
     def get_node_config(self, workflow_id: str, node_id: str):
         """Get the node config and type."""
@@ -407,7 +451,13 @@ class WorkflowEngine:
     async def _execute_single_node(
         self, node_id: str, state: WorkflowState, workflow_id: str
     ) -> Any:
-
+        """
+        Execute a single node.
+        
+        Note: Request scope creation is handled at the parallel execution level
+        to optimize connection pool usage. This method executes within the
+        existing scope (either from the main request or from parallel execution).
+        """
         try:
             node = self.executable_node(node_id, state, workflow_id)
             # Execute the node

@@ -9,6 +9,11 @@ All schemas use the unified TypeSchema structure from base.py.
 from typing import Dict
 from .base import FieldSchema, SectionSchema, TypeSchema
 from .base import convert_typed_schemas_to_dict
+from app.constants.embedding_models import (
+    FORM_OPTIONS_VECTOR,
+    FORM_OPTIONS_LEGRA,
+    DEFAULT_MODEL
+)
 
 # Define RAG schemas using direct Pydantic models
 AGENT_RAG_FORM_SCHEMAS_VECTOR_AND_LEGRA: Dict[str, TypeSchema] = {
@@ -257,29 +262,8 @@ AGENT_RAG_FORM_SCHEMAS_VECTOR_AND_LEGRA: Dict[str, TypeSchema] = {
                         type="select",
                         label="Embedding Model",
                         required=True,
-                        default="all-MiniLM-L6-v2",
-                        options=[
-                            {
-                                "value": "all-MiniLM-L6-v2",
-                                "label": "all-MiniLM-L6-v2 (Fast, 384 dim)",
-                            },
-                            {
-                                "value": "all-mpnet-base-v2",
-                                "label": "all-mpnet-base-v2 (High quality, 768 dim)",
-                            },
-                            {
-                                "value": "multi-qa-MiniLM-L6-cos-v1",
-                                "label": "multi-qa-MiniLM-L6-cos-v1 (Q&A optimized)",
-                            },
-                            {
-                                "value": "all-distilroberta-v1",
-                                "label": "all-distilroberta-v1 (Balanced)",
-                            },
-                            {
-                                "value": "paraphrase-multilingual-MiniLM-L12-v2",
-                                "label": "paraphrase-multilingual-MiniLM-L12-v2 (Multilingual)",
-                            },
-                        ],
+                        default=DEFAULT_MODEL,
+                        options=FORM_OPTIONS_VECTOR,
                         description="HuggingFace model for generating embeddings",
                     ),
                     FieldSchema(
@@ -331,25 +315,8 @@ AGENT_RAG_FORM_SCHEMAS_VECTOR_AND_LEGRA: Dict[str, TypeSchema] = {
                         type="select",
                         label="Embedding Model",
                         required=True,
-                        default="sentence-transformers/all-MiniLM-L6-v2",
-                        options=[
-                            {
-                                "value": "sentence-transformers/all-MiniLM-L6-v2",
-                                "label": "all-MiniLM-L6-v2 (Fast)",
-                            },
-                            {
-                                "value": "sentence-transformers/all-mpnet-base-v2",
-                                "label": "all-mpnet-base-v2 (High quality)",
-                            },
-                            {
-                                "value": "sentence-transformers/multi-qa-MiniLM-L6-cos-v1",
-                                "label": "multi-qa-MiniLM-L6-cos-v1 (Q&A)",
-                            },
-                            {
-                                "value": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-                                "label": "Multilingual MiniLM",
-                            },
-                        ],
+                        default=f"sentence-transformers/{DEFAULT_MODEL}",
+                        options=FORM_OPTIONS_LEGRA,
                         description="Sentence transformer model for LEGRA embeddings",
                     )
                 ],

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 import numpy as np
 
 from ....schema_utils import VECTOR_DEFAULTS
+from app.constants.embedding_models import ALLOWED_MODEL_NAMES
 
 
 class EmbeddingConfig(BaseModel):
@@ -28,6 +29,13 @@ class EmbeddingConfig(BaseModel):
         default=None, description="API key for external services")
     base_url: Optional[str] = Field(
         default=None, description="Base URL for API endpoints")
+
+    @field_validator('model_name')
+    @classmethod
+    def validate_model_name(cls, v):
+        if v not in ALLOWED_MODEL_NAMES:
+            raise ValueError(f'model_name must be one of {ALLOWED_MODEL_NAMES}')
+        return v
 
     @field_validator('batch_size')
     @classmethod

@@ -74,7 +74,8 @@ RUN apt-get update && \
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HF_HOME="/home/genassist/.cache"
+    HF_HOME="/home/genassist/.cache" \
+    PLAYWRIGHT_BROWSERS_PATH="/opt/playwright"
 
 RUN useradd -m -u 1000 genassist
 
@@ -83,7 +84,11 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy hugging face cache from builder
 COPY --from=builder --chown=genassist:genassist /opt/hf_cache /home/genassist/.cache
 
-# 4. Copy Application Code
+# 4. Install Playwright with Chromium
+RUN playwright install --with-deps chromium && \
+    chown -R genassist:genassist "/opt/playwright"
+
+# 5. Copy Application Code
 COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alembic.ini /src/
 COPY --chown=genassist:genassist ./app /src/app
 COPY --chown=genassist:genassist ./alembic /src/alembic
@@ -101,7 +106,7 @@ RUN mkdir -p /src/.cache && \
     mkdir -p /src/datavolume/logs && \
     chown -R genassist:genassist /src
 
-# 5. Set User and Entrypoint
+# 6. Set User and Entrypoint
 USER genassist
 
 EXPOSE 8000

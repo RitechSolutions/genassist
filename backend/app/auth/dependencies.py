@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import WebSocket, status
 from starlette_context import context
 from typing import Callable, Awaitable
-from jose import ExpiredSignatureError, JWTError
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from typing import Optional
 from fastapi import Depends, Query, Request, WebSocketException
 from fastapi_injector import Injected
@@ -188,7 +188,7 @@ def socket_auth(required_permissions: list[str]):
 
         except ExpiredSignatureError:
             raise WebSocketException(code=4401, reason="Token expired")
-        except JWTError:
+        except InvalidTokenError:
             raise WebSocketException(code=4401, reason="Invalid token")
 
     return Depends(_auth_dependency)

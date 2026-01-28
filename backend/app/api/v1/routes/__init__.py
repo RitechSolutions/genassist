@@ -40,7 +40,8 @@ from app.api.v1.routes import (
     workflow_manager,
     mcp,
     mcp_servers,
-    customers
+    customers,
+    file_manager
 )
 
 
@@ -95,6 +96,9 @@ router.include_router(
 )
 router.include_router(
     webhook_execute.router, prefix="/webhook/execute", tags=["Webhook Execution"]
+)
+router.include_router(
+    file_manager.router, prefix="/file-manager", tags=["FileManager"]
 )
 
 

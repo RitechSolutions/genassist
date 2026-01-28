@@ -207,6 +207,7 @@ import { GenAgentChat } from 'genassist-chat-react';
   placeholder="Ask us anything..."
   tenant={process.env.REACT_APP_TENANT_ID || undefined}
   mode="floating"
+  useWs={true}
   theme={{
     primaryColor: '#2962FF',
     backgroundColor: '#ffffff',

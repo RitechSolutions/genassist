@@ -14,6 +14,7 @@ from starlette_context.plugins import RequestIdPlugin
 from app.middlewares.tenant_middleware import TenantMiddleware
 from app.middlewares.tenant_scope_middleware import TenantScopeMiddleware
 from app.middlewares.rate_limit_middleware import _request_context
+from app.middlewares.session_cleanup_middleware import SessionCleanupMiddleware
 from app import settings
 from app.core.config.logging import (
     duration_ctx,
@@ -86,7 +87,9 @@ def build_middlewares() -> list[Middleware]:
         [
             # 3️⃣  Fills Loguru context vars, measures duration, etc.
             Middleware(RequestContextMiddleware),
-            # 4️⃣  CORS
+            # 4️⃣  Ensures database sessions are closed after each request
+            # Middleware(SessionCleanupMiddleware),
+            # 5️⃣  CORS
             Middleware(
                 CORSMiddleware,
                 allow_origins=get_allowed_origins(),

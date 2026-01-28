@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock
+from urllib.parse import quote
 from app.services.datasources import DataSourceService
 from app.repositories.datasources import DataSourcesRepository
 
@@ -30,13 +31,15 @@ def data_source_service(mock_repository):
 
 @pytest.fixture
 def sample_data_source_data():
+    user = quote(settings.DB_USER or "", safe="")
+    password = quote(settings.DB_PASS or "", safe="")
     return {
         "name": "test_sql_source",
         "source_type": "sql",
         "connection_data": {
             "id": 1,
             "database_type": "postgresql",
-            "connection_string": f"postgresql://{settings.DB_USER}:{settings.DB_PASS}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}",
+            "connection_string": f"postgresql://{user}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}",
             "allowed_tables": ["conversations", "operators"],
         },
         "is_active": 1,

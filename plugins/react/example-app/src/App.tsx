@@ -926,6 +926,7 @@ function App() {
         headerTitle={chatSettings.name}
         agentName={chatSettings.agentName}
         logoUrl={chatSettings.logoUrl}
+        useWs={true}
         onError={handleError}
         mode="floating"
         floatingConfig={{
