@@ -115,6 +115,7 @@ export interface GenAgentChatProps {
     textColor?: string;
   };
   headerTitle?: string;
+  description?: string;
   placeholder?: string;
   agentName?: string; // Custom agent name to display instead of "Agent"
   logoUrl?: string; // Custom logo URL to display in header instead of default logo
@@ -131,6 +132,8 @@ export interface GenAgentChatProps {
   widget?: boolean; // If true, opens chat in fullscreen mode on desktop (similar to mobile behavior)
   useAudio?: boolean; // If false, hides the mic component and voice input. Defaults to false.
   useFile?: boolean; // If false, hides the file attach icon and file upload. Defaults to false.
+  noColorAnimation?: boolean; // If true, hides the color animation (backlight) below the chat header. Defaults to false.
+  showWelcomeBeforeStart?: boolean;
 }
 
 export type { Translations } from '../utils/i18n';

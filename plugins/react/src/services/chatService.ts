@@ -269,6 +269,18 @@ export class ChatService {
     }
   }
 
+  // Check if an error is a token expiration error
+  private isTokenExpiredError(error: any): boolean {
+    return (
+      error.response &&
+      error.response.status === 401 &&
+      error.response.data &&
+      (error.response.data.error === "Token has expired." ||
+        error.response.data.message === "Token has expired." ||
+        (typeof error.response.data === "string" && error.response.data.includes("Token has expired")))
+    );
+  }
+
   /**
    * Reset the current conversation by clearing the ID and websocket
    */
@@ -418,7 +430,10 @@ export class ChatService {
         this.connectWebSocket();
       }
       return response.data.conversation_id;
-    } catch (error) {
+    } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetConversation();
+      }
       throw error;
     }
   }
@@ -516,6 +531,12 @@ export class ChatService {
         }
       }
     } catch (error: any) {
+      // Check if this is a token expiration error
+      if (this.isTokenExpiredError(error)) {
+        this.resetConversation();
+        throw error;
+      }
+
       // Check if this is the agent inactive error
       if (
         error.response &&
@@ -560,7 +581,10 @@ export class ChatService {
       );
 
       return response.data as FileUploadResponse;
-    } catch (error) {
+    } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetConversation();
+      }
       throw error;
     }
   }
@@ -734,7 +758,10 @@ export class ChatService {
       if (this.welcomeDataHandler) {
         this.welcomeDataHandler(this.welcomeData);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (this.isTokenExpiredError(err)) {
+        this.resetConversation();
+      }
       // ignore
     }
   }
@@ -769,6 +796,9 @@ export class ChatService {
       });
       
     } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetConversation();
+      }
       console.error('Feedback API call failed:', {
         message: error.message,
         response: error.response?.data,
