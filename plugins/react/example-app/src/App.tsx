@@ -923,6 +923,8 @@ function App() {
         tenant=""
         metadata={metadata}
         theme={theme}
+        useAudio={true}
+        useFile={true}
         headerTitle={chatSettings.name}
         agentName={chatSettings.agentName}
         logoUrl={chatSettings.logoUrl}
