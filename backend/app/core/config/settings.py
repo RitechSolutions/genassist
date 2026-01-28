@@ -1,4 +1,6 @@
 from typing import Optional, Tuple
+from urllib.parse import quote
+
 from pydantic import computed_field, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
@@ -9,13 +11,11 @@ class ProjectSettings(BaseSettings):
 
     def __init__(self, **values):
         super().__init__(**values)
-        if self.REDIS_HOST is None:
-            self.REDIS_HOST = "127.0.0.1" if self.DEV else "redis"
-
     # === Redis Configuration ===
     REDIS_HOST: Optional[str] = None
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_PASSWORD: Optional[str] = None  # Auth; included in REDIS_URL when set
     REDIS_FOR_CONVERSATION: bool = True
     # Memory efficiency settings for Redis conversations
     CONVERSATION_MAX_MEMORY_MESSAGES: int = 50  # Max messages kept in memory
@@ -166,22 +166,33 @@ class ProjectSettings(BaseSettings):
     @computed_field
     @property
     def REDIS_URL(self) -> str:
-        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        host = self.REDIS_HOST or "localhost"
+        if self.REDIS_PASSWORD:
+            auth = f":{quote(self.REDIS_PASSWORD, safe='')}@"
+        else:
+            auth = ""
+        return f"redis://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
     @computed_field
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}/{self.DB_NAME}"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}"
 
     @computed_field
     @property
     def DATABASE_URL_SYNC(self) -> str:
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}/{self.DB_NAME}"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}"
 
     @computed_field
     @property
     def POSTGRES_URL(self) -> str:
-        return f"postgresql://{settings.DB_USER}:{settings.DB_PASS}@{settings.DB_HOST}/postgres"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return f"postgresql://{user}:{password}@{self.DB_HOST}/postgres"
 
     def get_tenant_database_name(self, tenant: str = "master") -> str:
         if tenant == "master":
@@ -193,12 +204,16 @@ class ProjectSettings(BaseSettings):
         """Generate database URL for a specific tenant"""
         # Sanitize tenant_id for database name (replace hyphens with underscores)
         tenant_db = self.get_tenant_database_name(tenant)
-        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}/{tenant_db}"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{tenant_db}"
 
     def get_tenant_database_url_sync(self, tenant: str = "master") -> str:
         """Generate SYNC database URL for a specific tenant (psycopg2)"""
         tenant_db = self.get_tenant_database_name(tenant)
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}/{tenant_db}"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{tenant_db}"
 
     model_config = ConfigDict(
         env_file=".env",
