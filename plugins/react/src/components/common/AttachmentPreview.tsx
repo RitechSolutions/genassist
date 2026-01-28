@@ -1,6 +1,6 @@
 import React from 'react';
-import { Spinner } from './Spinner';
-import { getFileIcon } from './FileTypeIcon';
+import { Spinner } from '../Spinner';
+import { getFileIcon } from '../FileTypeIcon';
 
 interface AttachmentPreviewProps {
   file: File;

@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
-import { ChatMessageComponent, AttachmentPreview } from './ChatMessage';
+import { ChatMessageComponent } from './ChatMessage';
+import { AttachmentPreview } from './common/AttachmentPreview';
 import { useChat } from '../hooks/useChat';
 import { ChatMessage, GenAgentChatProps, ScheduleItem, Attachment, AttachmentWithFile } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
-import { Send, Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2 } from 'lucide-react';
+import { Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2 } from 'lucide-react';
 import { ChatBubble } from './ChatBubble';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
@@ -19,6 +20,7 @@ import {
   getTranslationsForLanguage,
 } from '../utils/i18n';
 import { GoogleReCaptcha, GoogleReCaptchaProvider } from 'react-google-recaptcha-v3';
+
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
@@ -45,6 +47,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   useFile = false,
   noColorAnimation = false,
   showWelcomeBeforeStart = true,
+  allowedExtensions = [],
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -1459,6 +1462,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     ref={fileInputRef}
                     style={{ display: 'none' }}
                     onChange={handleFileChange}
+                    accept={allowedExtensions.join(',') || '*/*'}
                   />
                 </>
               )}

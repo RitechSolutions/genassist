@@ -134,7 +134,11 @@ export interface GenAgentChatProps {
   useFile?: boolean; // If false, hides the file attach icon and file upload. Defaults to false.
   noColorAnimation?: boolean; // If true, hides the color animation (backlight) below the chat header. Defaults to false.
   showWelcomeBeforeStart?: boolean;
+  allowedExtensions?: AllowedExtension[]; // If provided, only show file attachments with these extensions. Defaults to all extensions.
 }
+
+// NOTE: These are the only file extensions that are supported by the chat.
+export type AllowedExtension = 'image/*' | 'image/png' | 'image/jpeg' | 'image/jpg' | 'image/gif' | 'application/pdf' | 'application/msword' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export type { Translations } from '../utils/i18n';
 

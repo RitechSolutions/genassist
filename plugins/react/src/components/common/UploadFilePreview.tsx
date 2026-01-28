@@ -1,5 +1,4 @@
 import React from 'react';
-import { Spinner } from '../Spinner';
 import { getFileIcon } from '../FileTypeIcon';
 import { Attachment } from '../../types';
 
@@ -9,9 +8,13 @@ interface UploadFilePreviewProps {
 }
 
 export const UploadFilePreview: React.FC<UploadFilePreviewProps> = ({ file, index }) => {
-  const fileType = file?.type;
-  // const baseUrl = process.env.REACT_APP_BASE_URL;
 
+  let fileType = file?.type;
+
+  // override file type for word processing documents
+  if (file?.type?.startsWith('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+    fileType = 'application/msword';
+  }
 
   const containerStyle: React.CSSProperties = {
     cursor: 'pointer',
