@@ -89,6 +89,8 @@ export default App;
 | headerTitle | string | No | 'Chat' | Title displayed in the chat header |
 | placeholder | string | No | 'Type a message...' | Placeholder text for the input |
 | useWS | boolean | false | true | 'Enable or disable websocket...' |
+| useAudio | boolean | false | false | 'Enable or disable audio on chat input...' |
+| useFile | boolean | false | false | 'Enable or disable file attachments on chat input...' |
 | reCaptchaKey | string | false | undefined | 'Use google reCaptchaV3 site-key...' |
 
 
