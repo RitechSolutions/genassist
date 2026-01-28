@@ -68,7 +68,7 @@ class KBBase(BaseModel):
     sync_active: Optional[bool] = None
     sync_source_id: Optional[UUID] = None
     llm_provider_id: Optional[UUID] = None
-    url: Optional[str] = None
+    urls: Optional[List[str]] = None
 
 
 class KBCreate(KBBase):
