@@ -58,7 +58,7 @@ async def get_file(
         )
 
 
-@router.api_route("/files/{file_id}/download", methods=["GET", "HEAD"], operation_id="download_file")
+@router.get("/files/{file_id}/download", response_model=FileResponse)
 async def download_file(
     file_id: UUID,
     service: FileManagerService = Injected(FileManagerService),
@@ -81,7 +81,7 @@ async def download_file(
             detail=f"File not found: {str(e)}"
         )
 
-@router.api_route("/files/{file_id}/source", methods=["GET", "HEAD"], operation_id="get_file_source")
+@router.get("/files/{file_id}/source", response_model=FileResponse)
 async def get_file_source(
     file_id: UUID,
     request: Request,

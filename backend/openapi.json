@@ -8388,47 +8388,6 @@
       }
     },
     "/api/file-manager/files/{file_id}/download": {
-      "head": {
-        "tags": [
-          "v1",
-          "FileManager"
-        ],
-        "summary": "Download File",
-        "description": "Download a file by ID.",
-        "operationId": "download_file",
-        "parameters": [
-          {
-            "name": "file_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "File Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
       "get": {
         "tags": [
           "v1",
@@ -8436,7 +8395,7 @@
         ],
         "summary": "Download File",
         "description": "Download a file by ID.",
-        "operationId": "download_file",
+        "operationId": "download_file_api_file_manager_files__file_id__download_get",
         "parameters": [
           {
             "name": "file_id",
@@ -8454,7 +8413,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
               }
             }
           },
@@ -8472,47 +8433,6 @@
       }
     },
     "/api/file-manager/files/{file_id}/source": {
-      "head": {
-        "tags": [
-          "v1",
-          "FileManager"
-        ],
-        "summary": "Get File Source",
-        "description": "Get file source content for inline display.",
-        "operationId": "get_file_source",
-        "parameters": [
-          {
-            "name": "file_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "File Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
       "get": {
         "tags": [
           "v1",
@@ -8520,7 +8440,7 @@
         ],
         "summary": "Get File Source",
         "description": "Get file source content for inline display.",
-        "operationId": "get_file_source",
+        "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
         "parameters": [
           {
             "name": "file_id",
@@ -8538,7 +8458,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
               }
             }
           },
