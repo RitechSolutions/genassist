@@ -40,6 +40,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   translations: customTranslations,
   reCaptchaKey,
   widget = false,
+  useAudio = false,
+  useFile = false,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -1393,7 +1395,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           </div>
         )}
         
-        {attachments.length > 0 && (
+        {useFile && attachments.length > 0 && (
           <div style={{ padding: '0 16px', marginBottom: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {attachments.map((att, index) => (
               <AttachmentPreview 
@@ -1420,22 +1422,26 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         ) : (
           <form onSubmit={handleSubmit} style={inputContainerStyle}>
             <div style={inputWrapperStyle}>
-              <button 
-                type="button" 
-                style={attachButtonStyle}
-                title="Attach"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isAgentTyping}
-              >
-                <Paperclip size={22} color={isAgentTyping ? "#b0b0b0" : "#757575"} />
-              </button>
-              <input
-                type="file"
-                multiple
-                ref={fileInputRef}
-                style={{ display: 'none' }}
-                onChange={handleFileChange}
-              />
+              {useFile && (
+                <>
+                  <button 
+                    type="button" 
+                    style={attachButtonStyle}
+                    title="Attach"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isAgentTyping}
+                  >
+                    <Paperclip size={22} color={isAgentTyping ? "#b0b0b0" : "#757575"} />
+                  </button>
+                  <input
+                    type="file"
+                    multiple
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    onChange={handleFileChange}
+                  />
+                </>
+              )}
               <textarea
                 ref={textAreaRef}
                 style={textAreaStyle}
@@ -1455,7 +1461,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 rows={1}
               />
               <div style={rightActionContainerStyle}>
-                {inputValue.trim() === '' && attachments.length === 0 ? (
+                {useAudio && inputValue.trim() === '' && attachments.length === 0 ? (
                   <VoiceInput
                     onTranscription={(text: string) => setInputValue(text)}
                     onError={handleVoiceError}
