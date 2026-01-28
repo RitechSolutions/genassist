@@ -138,7 +138,7 @@ export interface GenAgentChatProps {
 }
 
 // NOTE: These are the only file extensions that are supported by the chat.
-export type AllowedExtension = 'image/*' | 'application/pdf' | 'application/msword' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+export type AllowedExtension = 'image/*' | 'image/png' | 'image/jpeg' | 'image/jpg' | 'image/gif' | 'application/pdf' | 'application/msword' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export type { Translations } from '../utils/i18n';
 
