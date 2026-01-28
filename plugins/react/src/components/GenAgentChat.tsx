@@ -31,6 +31,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   onFinalize,
   theme,
   headerTitle = 'Genassist',
+  description,
   placeholder,
   agentName,
   logoUrl,
@@ -42,6 +43,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   widget = false,
   useAudio = false,
   useFile = false,
+  noColorAnimation = false,
+  showWelcomeBeforeStart = true,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -533,6 +536,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const handleStartConversation = async () => {
     if (isLoading) return;
 
+    // Clear input text and file attachments when starting a conversation
+    setInputValue('');
+    setAttachments([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
     try {
       await startConversation(reCaptchaTokenRef.current);
     } catch (error) {
@@ -550,6 +560,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   };
 
   const handleConfirmReset = async () => {
+    // Clear input text and file attachments when restarting
+    setInputValue('');
+    setAttachments([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
     await resetConversation(reCaptchaTokenRef.current);
     setSelectedFaqQuery(null); // Clear FAQ query on reset
     setShowResetConfirm(false);
@@ -1114,7 +1131,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           <img src={logoUrl?.trim() || chatLogo} alt="Logo" style={logoStyle} />
           <div style={headerTitleContainerStyle}>
             <div style={headerTitleStyle}>{headerTitle}</div>
-            <div style={headerSubtitleStyle}>{t('header.subtitle')}</div>
+            <div style={headerSubtitleStyle}>
+              {description ?? t('header.subtitle')}
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1136,7 +1155,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           )}
         </div>
       </div>
-      {showBacklight && (
+      {!noColorAnimation && showBacklight && (
         <div
           style={{
             position: 'absolute',
@@ -1266,8 +1285,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             return null;
           })()}
           {(() => {
-            // show welcome card
+            // show welcome card (only when showWelcomeBeforeStart is true)
             const shouldShowSyntheticWelcome =
+              showWelcomeBeforeStart &&
               !hasUserMessages &&
               (messages.length === 0 || messages[0].speaker !== 'agent') &&
               (Boolean(welcomeTitle) || Boolean(welcomeImageUrl) || Boolean(welcomeMessage));
@@ -1369,7 +1389,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           )}
           <div ref={messagesEndRef} />
         </div>
-        {(() => {
+        {showWelcomeBeforeStart && (() => {
           const showingSyntheticWelcome =
             !hasUserMessages &&
             (messages.length === 0 || messages[0].speaker !== 'agent') &&
