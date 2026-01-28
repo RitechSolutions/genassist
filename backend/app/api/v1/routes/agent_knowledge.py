@@ -1,5 +1,4 @@
-from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form, Request
+from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form
 from typing import List, Dict, Optional
 import os
 import uuid
@@ -30,11 +29,9 @@ from app.modules.workflow.agents.rag import ThreadScopedRAG
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 # File manager service
 from app.services.file_manager import FileManagerService
-from app.repositories.file_manager import FileManagerRepository
 from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
 from app.schemas.file import FileCreate, FileUploadResponse
 from app.auth.utils import get_current_user_id
-from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant_scope import get_tenant_context
 
 router = APIRouter()
@@ -266,7 +263,7 @@ async def upload_file(
 async def upload_file_to_chat(
     chat_id: str = Form(...),
     file: UploadFile = File(...),
-    db: AsyncSession = Injected(AsyncSession),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Upload a file, extract its text content, and return both the saved filename and extracted text file
@@ -277,12 +274,10 @@ async def upload_file_to_chat(
         )
 
         # Introduce file manager service
-        file_manager_service = FileManagerService(repository=FileManagerRepository(db))
         await file_manager_service.set_storage_provider(LocalFileSystemProvider(config={"base_path": UPLOAD_DIR}))
 
-
+        # get current user id
         user_id = get_current_user_id()
-        tenant_id = get_tenant_context()
 
         # file storage path
         file_name = f"{uuid.uuid4()}.{file.filename.split('.')[-1]}"
@@ -313,7 +308,7 @@ async def upload_file_to_chat(
         storage_path = created_file.storage_path
         file_path = f"{UPLOAD_DIR}/{storage_path}"
 
-        logger.info(f"File Id: {file_id}")
+        logger.debug(f"File Id: {file_id}")
 
         # Extract text from the file
         try:
@@ -351,7 +346,7 @@ async def upload_file_to_chat(
             file_id=str(file_id),
         )
 
-        logger.info(f"Upload successful: {result}")
+        logger.debug(f"Upload successful: {result}")
         return result
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")

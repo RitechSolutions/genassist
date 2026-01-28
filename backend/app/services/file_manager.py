@@ -1,9 +1,9 @@
 from uuid import UUID
 from injector import inject
-from typing import Optional, BinaryIO, List
+from typing import Optional, List
 import logging
-from pathlib import Path
 import base64
+from urllib.parse import quote
 
 from app.modules.filemanager.providers.base import BaseStorageProvider
 from app.db.models.file import FileModel
@@ -30,7 +30,6 @@ class FileManagerService:
         self.storage_provider = provider
         await self.storage_provider.initialize()
 
-
     def get_storage_provider_by_name(self, name: str, config: Optional[dict] = None) -> BaseStorageProvider:
         """Get storage provider by name."""
         storage_provider_class = init_by_name(name, config=config)
@@ -38,6 +37,64 @@ class FileManagerService:
             raise ValueError(f"Storage provider {name} not found")
 
         return storage_provider_class
+
+    async def _get_default_storage_provider(self) -> BaseStorageProvider:
+        """Get and initialize the default storage provider."""
+        if self.storage_provider and self.storage_provider.is_initialized():
+            return self.storage_provider
+
+        from app.modules.filemanager.manager import get_file_manager_manager
+        from app.modules.filemanager.config import FileManagerConfig, LocalStorageConfig
+        from app.core.config.settings import settings
+
+        manager = get_file_manager_manager()
+        config = manager._config
+
+        if not config:
+            config = FileManagerConfig(
+                default_storage_provider="local",
+                local=LocalStorageConfig(
+                    base_path=str(settings.UPLOAD_FOLDER) if hasattr(settings, 'UPLOAD_FOLDER') else "/tmp/filemanager"
+                )
+            )
+
+        provider = await manager._get_or_create_provider(config.default_storage_provider, config)
+        if provider:
+            self.storage_provider = provider
+        return provider
+
+    def build_file_headers(self, file: FileModel, content: Optional[bytes] = None, disposition_type: str = "inline") -> tuple[dict, str]:
+        """Build HTTP headers for file responses."""
+        media_type = file.mime_type or "application/octet-stream"
+
+        # Properly encode filename for Content-Disposition header
+        # Use RFC 5987 encoding for non-ASCII characters to avoid latin-1 encoding errors
+        # Percent-encode the filename for safe ASCII representation
+        filename_encoded = quote(file.name, safe='')
+
+        # For UTF-8 version (RFC 5987), percent-encode UTF-8 bytes
+        filename_utf8_bytes = file.name.encode('utf-8')
+        filename_utf8_encoded = ''.join(f'%{b:02X}' for b in filename_utf8_bytes)
+
+        # Build Content-Disposition header with both ASCII fallback and UTF-8 version
+        content_disposition = f'{disposition_type};filename="{filename_encoded}";filename*=UTF-8\'\'{filename_utf8_encoded}'
+
+        headers = {
+            "content-type": media_type,
+            "content-disposition": content_disposition,
+            "x-content-type-options": "nosniff",
+            "access-control-allow-origin": "*",
+            "access-control-expose-headers": "Age, Date, Content-Length, Content-Range, X-Content-Duration, X-Cache",
+            "cache-control": "public, max-age=31536000"
+        }
+
+        # Add Content-Length if content is provided
+        if content is not None:
+            headers["content-length"] = str(len(content))
+        elif hasattr(file, 'size') and file.size:
+            headers["content-Length"] = str(file.size)
+
+        return headers, media_type
 
     # ==================== File Methods ====================
 
@@ -50,13 +107,17 @@ class FileManagerService:
     ) -> FileModel:
         """
         Create a file metadata record and upload file content to storage.
-        
+
         Args:
             file_data: File metadata
             file_content: Optional file content bytes
             user_id: Optional user ID (defaults to current user)
             allowed_extensions: Optional list of allowed file extensions
         """
+        # Get or initialize the storage provider
+        if not self.storage_provider or not self.storage_provider.is_initialized():
+            await self._get_default_storage_provider()
+
         if not self.storage_provider:
             raise ValueError("Storage provider not configured")
 
