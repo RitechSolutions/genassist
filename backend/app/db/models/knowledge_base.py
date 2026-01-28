@@ -21,7 +21,7 @@ class KnowledgeBaseModel(Base):
     file_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     file_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     files: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
-    url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    urls: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
     # ─────────────────────────────── configs (JSONB) ──────────────────────────
     vector_store: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

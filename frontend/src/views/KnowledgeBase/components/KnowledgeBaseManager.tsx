@@ -61,7 +61,7 @@ interface KnowledgeItem {
   sync_active?: boolean;
   files?: string[];
   rag_config?: LegacyRagConfig;
-  url?: string;
+  urls?: string[];
   use_http_request?: boolean;
   extra_metadata?: Record<string, any>;
   processing_filter?: string | null;
@@ -92,7 +92,7 @@ const DEFAULT_FORM_DATA: KnowledgeItem = {
   sync_source_id: null,
   llm_provider_id: null,
   files: [],
-  url: null,
+  urls: [],
   use_http_request: false,
   rag_config: DEFAULT_LEGACY_RAG_CONFIG,
   processing_filter: "",
@@ -142,6 +142,7 @@ const KnowledgeBaseManager: React.FC = () => {
   const [formData, setFormData] = useState<KnowledgeItem>(DEFAULT_FORM_DATA);
   const [dynamicRagConfig, setDynamicRagConfig] = useState<RagConfigValues>({});
   const [isDataSourceDialogOpen, setIsDataSourceDialogOpen] = useState(false);
+  const [urls, setUrls] = useState<string[]>([""]);
   const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
 
   useEffect(() => {
@@ -203,7 +204,8 @@ const KnowledgeBaseManager: React.FC = () => {
         const targetType = targetTypes[formData.type];
 
         const filtered = allSources.filter(
-          (source) => source.source_type.toLowerCase() === targetType.toLowerCase(),
+          (source) =>
+            source.source_type.toLowerCase() === targetType.toLowerCase(),
         );
         setAvailableSources(filtered);
       }
@@ -220,6 +222,22 @@ const KnowledgeBaseManager: React.FC = () => {
       ...prev,
       [name]: value,
     }));
+  };
+
+  const handleUrlChange = (index: number, value: string) => {
+    setUrls((prev) => {
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  };
+
+  const addUrl = () => {
+    setUrls((prev) => [...prev, ""]);
+  };
+
+  const removeUrl = (index: number) => {
+    setUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleRagConfigChange = (updatedRagConfig: RagConfigValues) => {
@@ -282,7 +300,7 @@ const KnowledgeBaseManager: React.FC = () => {
 
     if (formData.type === "file") {
       requiredFields.push({
-        label: "file",
+        label: "files",
         isEmpty:
           selectedFiles.length === 0 &&
           (!formData.files || formData.files.length === 0),
@@ -318,7 +336,9 @@ const KnowledgeBaseManager: React.FC = () => {
     }
 
     if (formData.type === "url") {
-      requiredFields.push({ label: "url", isEmpty: !formData.url });
+      const hasValidUrl = urls.some((url) => url.trim() !== "");
+      requiredFields.push({ label: "urls", isEmpty: !hasValidUrl });
+
       if (urlHeaders.length > 0) {
         urlHeaders.forEach((header) => {
           const hasKey = header.key.trim().length > 0;
@@ -333,9 +353,10 @@ const KnowledgeBaseManager: React.FC = () => {
       }
     }
     if (formData.type === "sharepoint") {
+      const hasValidUrl = urls.some((url) => url.trim() !== "");
       requiredFields.push(
         { label: "source", isEmpty: !formData.sync_source_id },
-        { label: "url", isEmpty: !formData.url },
+        { label: "url", isEmpty: !hasValidUrl },
       );
 
       if (formData.sync_active) {
@@ -366,6 +387,10 @@ const KnowledgeBaseManager: React.FC = () => {
       .map((label) => {
         if (label === "url") {
           return "URL";
+        } else if (label === "urls") {
+          return "URLs";
+        } else if (label === "files") {
+          return "Files";
         } else {
           return label.charAt(0).toUpperCase() + label.slice(1);
         }
@@ -373,7 +398,13 @@ const KnowledgeBaseManager: React.FC = () => {
 
     if (missingFields.length > 0) {
       if (missingFields.length === 1) {
-        toast.error(`${missingFields[0]} is required.`);
+        if (missingFields[0] === "URLs") {
+          toast.error("At least one URL is required.");
+        } else if (missingFields[0] === "Files") {
+          toast.error("At least one file is required.");
+        } else {
+          toast.error(`${missingFields[0]} is required.`);
+        }
       } else {
         toast.error(`Please provide: ${missingFields.join(", ")}.`);
       }
@@ -386,9 +417,13 @@ const KnowledgeBaseManager: React.FC = () => {
       setSuccess(null);
 
       if (
-        ["s3", "sharepoint", "smb_share_folder", "azure_blob", "zendesk"].includes(
-          formData.type
-        ) &&
+        [
+          "s3",
+          "sharepoint",
+          "smb_share_folder",
+          "azure_blob",
+          "zendesk",
+        ].includes(formData.type) &&
         formData.sync_active &&
         !isValidCron(formData.sync_schedule)
       ) {
@@ -404,7 +439,7 @@ const KnowledgeBaseManager: React.FC = () => {
           acc[key] = header.value;
           return acc;
         },
-        {}
+        {},
       );
       const hasUrlHeaders = Object.keys(normalizedUrlHeaders).length > 0;
 
@@ -450,7 +485,7 @@ const KnowledgeBaseManager: React.FC = () => {
       //////////////////////////
 
       if (formData.type === "file" && selectedFiles.length > 0) {
-        const uploadResults = await uploadFiles();
+        const uploadResults = (await uploadFiles()) as Array<[]>;
 
         if (!uploadResults || uploadResults.length === 0) {
           throw new Error("File upload failed");
@@ -462,6 +497,14 @@ const KnowledgeBaseManager: React.FC = () => {
         dataToSubmit.content = `Files: ${uploadResults
           .map((r: any) => r.original_filename)
           .join(", ")}`;
+      }
+
+      // For URL and SharePoint types, set the urls array with non-empty URLs
+      if (formData.type === "url" || formData.type === "sharepoint") {
+        dataToSubmit.urls = urls.filter((url) => url.trim() !== "");
+      } else {
+        // Remove urls from other types
+        delete dataToSubmit.urls;
       }
 
       if (editingItem) {
@@ -483,6 +526,7 @@ const KnowledgeBaseManager: React.FC = () => {
       setFormData(DEFAULT_FORM_DATA);
       setDynamicRagConfig({});
       setSelectedFiles([]);
+      setUrls([""]);
       setUrlHeaders([]);
       setEditingItem(null);
       setShowForm(false);
@@ -508,6 +552,7 @@ const KnowledgeBaseManager: React.FC = () => {
     setFormData(DEFAULT_FORM_DATA);
     setDynamicRagConfig({});
     setSelectedFiles([]);
+    setUrls([""]);
     setUrlHeaders([]);
     setEditingItem(null);
     setError(null);
@@ -525,7 +570,6 @@ const KnowledgeBaseManager: React.FC = () => {
       content: item.content,
       type: item.type || DEFAULT_FORM_DATA.type,
       sync_source_id: item.sync_source_id,
-      url: item.url,
       use_http_request: item.extra_metadata?.use_http_request ?? false,
       llm_provider_id:
         item.llm_provider_id || DEFAULT_FORM_DATA.llm_provider_id,
@@ -564,6 +608,17 @@ const KnowledgeBaseManager: React.FC = () => {
     setDynamicRagConfig(
       (item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues,
     );
+
+    // Populate urls state from stored data
+    if (
+      (item.type === "url" || item.type === "sharepoint") &&
+      item.urls &&
+      item.urls.length > 0
+    ) {
+      setUrls(item.urls);
+    } else {
+      setUrls([""]);
+    }
 
     setSelectedFiles([]);
     setShowForm(true);
@@ -701,8 +756,8 @@ const KnowledgeBaseManager: React.FC = () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="text">Text</SelectItem>
-                            <SelectItem value="file">File</SelectItem>
-                            <SelectItem value="url">Url</SelectItem>
+                            <SelectItem value="file">Files</SelectItem>
+                            <SelectItem value="url">URLs</SelectItem>
                             <SelectItem value="s3">S3</SelectItem>
                             <SelectItem value="sharepoint">
                               Sharepoint
@@ -738,16 +793,44 @@ const KnowledgeBaseManager: React.FC = () => {
                           />
                         </div>
                       ) : formData.type === "url" ? (
-                        <div>
-                          <div className="mb-1">URL</div>
-                          <Input
-                            id="url"
-                            name="url"
-                            value={formData.url}
-                            onChange={handleInputChange}
-                            placeholder="Enter URL (e.g., https://example.com)"
-                            type="url"
-                          />
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="mb-1">URLs</div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={addUrl}
+                            >
+                              <Plus className="w-4 h-4 mr-1" />
+                              Add URL
+                            </Button>
+                          </div>
+                          {urls.map((url, index) => (
+                            <div key={index} className="flex gap-2 items-end">
+                              <div className="flex-1">
+                                <Input
+                                  id={`url-${index}`}
+                                  value={url}
+                                  onChange={(e) =>
+                                    handleUrlChange(index, e.target.value)
+                                  }
+                                  placeholder="Enter URL (e.g., https://example.com)"
+                                  type="url"
+                                />
+                              </div>
+                              {urls.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeUrl(index)}
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
                           <div className="mt-4 rounded-lg border bg-white p-4">
                             <div className="flex items-center justify-between">
                               <div className="flex-1 pr-4">
@@ -816,14 +899,15 @@ const KnowledgeBaseManager: React.FC = () => {
                                               ? {
                                                   ...row,
                                                   key: e.target.value,
-                                                  keyType: KNOWN_HTTP_HEADERS.includes(
-                                                    e.target.value
-                                                  )
-                                                    ? "known"
-                                                    : "custom",
+                                                  keyType:
+                                                    KNOWN_HTTP_HEADERS.includes(
+                                                      e.target.value,
+                                                    )
+                                                      ? "known"
+                                                      : "custom",
                                                 }
-                                              : row
-                                          )
+                                              : row,
+                                          ),
                                         )
                                       }
                                       list="known-url-headers"
@@ -840,8 +924,8 @@ const KnowledgeBaseManager: React.FC = () => {
                                                   ...row,
                                                   value: e.target.value,
                                                 }
-                                              : row
-                                          )
+                                              : row,
+                                          ),
                                         )
                                       }
                                       className="flex-1 text-xs min-w-0 w-full"
@@ -854,8 +938,8 @@ const KnowledgeBaseManager: React.FC = () => {
                                       onClick={() =>
                                         setUrlHeaders((prev) =>
                                           prev.filter(
-                                            (row) => row.id !== header.id
-                                          )
+                                            (row) => row.id !== header.id,
+                                          ),
                                         )
                                       }
                                     >
@@ -990,11 +1074,12 @@ const KnowledgeBaseManager: React.FC = () => {
                               <div className="mt-4">
                                 <div className="mb-1">SharePoint Site Link</div>
                                 <Input
-                                  id="url"
-                                  name="url"
+                                  id="sharepoint-url"
                                   type="url"
-                                  value={formData.url || ""}
-                                  onChange={handleInputChange}
+                                  value={urls[0] || ""}
+                                  onChange={(e) =>
+                                    handleUrlChange(0, e.target.value)
+                                  }
                                   placeholder="https://yourcompany.sharepoint.com/sites/..."
                                 />
                               </div>
@@ -1294,8 +1379,8 @@ const KnowledgeBaseManager: React.FC = () => {
                     <SelectContent>
                       <SelectItem value="all">(Show all)</SelectItem>
                       <SelectItem value="text">Text</SelectItem>
-                      <SelectItem value="file">File</SelectItem>
-                      <SelectItem value="url">URL</SelectItem>
+                      <SelectItem value="file">Files</SelectItem>
+                      <SelectItem value="url">URLs</SelectItem>
                       <SelectItem value="s3">S3</SelectItem>
                       <SelectItem value="sharepoint">Sharepoint</SelectItem>
                       <SelectItem
@@ -1400,19 +1485,29 @@ const KnowledgeBaseManager: React.FC = () => {
                               {item.content.length > 100 ? "..." : ""}
                             </p>
                           )}
-                          {item.type === "url" && (
-                            <div className="flex items-center text-sm text-gray-500 mt-1">
-                              <span>URL: </span>
-                              <a
-                                href={item.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800 underline ml-1 truncate"
-                              >
-                                {item.url}
-                              </a>
-                            </div>
-                          )}
+                          {item.type === "url" &&
+                            item.urls &&
+                            item.urls.length > 0 && (
+                              <div className="text-sm text-gray-500 mt-1">
+                                {item.urls.length === 1 ? (
+                                  <div className="flex items-center">
+                                    <span>URL: </span>
+                                    <a
+                                      href={item.urls[0]}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:text-blue-800 underline ml-1 truncate"
+                                    >
+                                      {item.urls[0]}
+                                    </a>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center">
+                                    <span>{item.urls.length} URLs</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                         </div>
                         <div className="flex gap-2 justify-center md:justify-end w-full md:w-auto">
                           <Button

@@ -87,7 +87,7 @@ async def get_knowledge_item_by_id(
     ],
 )
 async def create_knowledge_item(
-    item: KBBase = Body(...),
+    item: KBCreate = Body(...),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
 ):
@@ -318,7 +318,7 @@ async def upload_file_to_chat(
             logger.warning(f"Could not extract text from file: {str(e)}")
 
         file_relative_url = f"/api/file-manager/files/{file_id}/source"
-        
+
         # Return the filenames and paths
         result = FileUploadResponse(
             filename=str(file_id),
