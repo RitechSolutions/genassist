@@ -131,7 +131,10 @@ export interface GenAgentChatProps {
   widget?: boolean; // If true, opens chat in fullscreen mode on desktop (similar to mobile behavior)
   useAudio?: boolean; // If false, hides the mic component and voice input. Defaults to false.
   useFile?: boolean; // If false, hides the file attach icon and file upload. Defaults to false.
+  allowedExtensions?: AllowedExtension[]; // If provided, only show file attachments with these extensions. Defaults to all extensions.
 }
+
+export type AllowedExtension = 'image/*' | 'application/pdf' | 'application/msword' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export type { Translations } from '../utils/i18n';
 

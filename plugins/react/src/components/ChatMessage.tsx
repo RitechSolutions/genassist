@@ -3,13 +3,10 @@ import { WelcomeCard } from './WelcomeCard';
 import { ChatMessage, ScheduleItem, Translations } from '../types';
 import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { formatTimestamp } from '../utils/time';
-import { getFileIcon } from './FileTypeIcon';
 import { InteractiveContent } from './InteractiveContent';
 import { parseInteractiveContentBlocks } from '../utils/interactiveContent';
 import { defaultTranslations, getTranslationString, mergeTranslations } from '../utils/i18n';
-import { AttachmentPreview } from './AttachmentPreview';
 import { UploadFilePreview } from './common/UploadFilePreview';
-export { AttachmentPreview } from './AttachmentPreview';
 
 interface ChatMessageProps {
   message: ChatMessage;
