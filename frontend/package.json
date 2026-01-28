@@ -50,7 +50,7 @@
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
-    "genassist-chat-react": "^1.0.22",
+    "genassist-chat-react": "^1.0.23",
     "input-otp": "^1.2.4",
     "jwt-decode": "^4.0.0",
     "lodash": "^4.17.21",

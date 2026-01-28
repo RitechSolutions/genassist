@@ -68,6 +68,10 @@ function App() {
         placeholder="Ask a question..."
         onError={() => {}}
         onTakeover={handleTakeover}
+        noColorAnimation={false}
+        useFile={false}
+        useAudio={false}
+        allowedExtensions={['image/*']}
       />
     </div>
   );
@@ -92,6 +96,8 @@ export default App;
 | useAudio | boolean | false | false | 'Enable or disable audio on chat input...' |
 | useFile | boolean | false | false | 'Enable or disable file attachments on chat input...' |
 | reCaptchaKey | string | false | undefined | 'Use google reCaptchaV3 site-key...' |
+| allowedExtensions | string[] | false | undefined | 'Look for type AllowedExtension and see the supported list of extensions' |
+
 
 
 ## Theme Options

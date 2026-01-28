@@ -38,6 +38,40 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     return `genassist_conversation_messages:${apiKeyVal}:${convId}`;
   }, []);
 
+  // Check if an error is a token expiration error (401 + "Token has expired.")
+  const isTokenExpiredError = useCallback((error: any): boolean => {
+    return !!(
+      error?.response?.status === 401 &&
+      error?.response?.data &&
+      (error.response.data.error === "Token has expired." ||
+        error.response.data.message === "Token has expired." ||
+        (typeof error.response.data === "string" && error.response.data.includes("Token has expired")))
+    );
+  }, []);
+
+  // Reset conversation state to initial (e.g. after token expiration)
+  const resetToInitialState = useCallback(() => {
+    setConversationId(null);
+    setIsFinalized(false);
+    setIsTakenOver(false);
+    setConnectionState('disconnected');
+    setWelcomeTitle(null);
+    setWelcomeImageUrl(null);
+    setWelcomeMessage(null);
+    setPossibleQueries([]);
+    setThinkingPhrases([]);
+    setThinkingDelayMs(1000);
+    setMessages([]);
+    const key = buildMessagesKey(apiKey, conversationId);
+    if (key) {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [apiKey, conversationId, buildMessagesKey]);
+
   // Deep compare metadata to prevent unnecessary re-initializations
   // Only re-initialize if metadata actually changes (by value, not reference)
   const metadataString = useMemo(() => JSON.stringify(metadata || {}), [metadata]);
@@ -318,13 +352,16 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
 
       setPreloadedAttachments(prev => [...prev, attachment]);
       return attachment;
-    } catch (error) {
+    } catch (error: any) {
+      if (isTokenExpiredError(error)) {
+        resetToInitialState();
+      }
       if (onErrorRef.current) {
         onErrorRef.current(error as Error);
       }
       return null;
     }
-  }, []);
+  }, [apiKey, conversationId, buildMessagesKey, isTokenExpiredError, resetToInitialState]);
 
   // Send message
   const sendMessage = useCallback(async (text: string, files: File[] = [], extraMetadata?: Record<string, any>, reCaptchaToken?: string) => {
@@ -351,8 +388,11 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
 
       setPreloadedAttachments([]);
 
-    } catch (error) {
+    } catch (error: any) {
       setIsAgentTyping(false);
+      if (isTokenExpiredError(error)) {
+        resetToInitialState();
+      }
       if (onErrorRef.current && error instanceof Error) {
         onErrorRef.current(error);
       } else {
@@ -361,7 +401,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     } finally {
       setIsLoading(false);
     }
-  }, [preloadedAttachments, isTakenOver]);
+  }, [preloadedAttachments, isTakenOver, isTokenExpiredError, resetToInitialState]);
 
   const startConversation = useCallback(async (reCaptchaToken: string | undefined) => {
     if (!chatServiceRef.current) {
