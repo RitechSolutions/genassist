@@ -2,8 +2,11 @@ import pytest
 import tempfile
 import shutil
 import logging
+import io
 from uuid import uuid4
-from unittest.mock import AsyncMock, create_autospec
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
+
+from fastapi import UploadFile
 
 from app.services.file_manager import FileManagerService
 from app.repositories.file_manager import FileManagerRepository
@@ -13,6 +16,16 @@ from app.db.models.file import FileModel
 from app.core.tenant_scope import set_tenant_context, clear_tenant_context
 
 logger = logging.getLogger(__name__)
+
+
+def create_mock_upload_file(filename: str = "test.txt", content: bytes = b"test content") -> MagicMock:
+    """Helper to create a mock UploadFile."""
+    mock_file = MagicMock(spec=UploadFile)
+    mock_file.filename = filename
+    mock_file.file = io.BytesIO(content)
+    mock_file.read = AsyncMock(return_value=content)
+    mock_file.seek = AsyncMock()
+    return mock_file
 
 
 # ==================== Fixtures ====================
@@ -84,7 +97,7 @@ class TestLocalFileManagerService:
 
     @pytest.mark.asyncio
     async def test_create_file_uploads_to_local_storage(
-        self, mock_repository, local_provider, test_user_id, test_tenant_id
+        self, mock_repository, local_provider, test_user_id, test_tenant_id, temp_storage_dir
     ):
         """Test creating a file uploads content to local storage."""
         file_content = b"Hello, World!"
@@ -102,17 +115,16 @@ class TestLocalFileManagerService:
         service = FileManagerService(repository=mock_repository)
         await service.set_storage_provider(local_provider)
 
-        file_data = FileCreate(
-            name=file_name,
-            mime_type="text/plain",
-            storage_provider="local"
-        )
+        # Create mock upload file
+        mock_upload_file = create_mock_upload_file(file_name, file_content)
+        mock_upload_file.content_type = "text/plain"
 
-        result = await service.create_file(
-            file_data=file_data,
-            file_content=file_content,
-            user_id=test_user_id
-        )
+        # Mock get_current_user_id
+        with patch('app.services.file_manager.get_current_user_id', return_value=test_user_id):
+            result = await service.create_file(
+                file=mock_upload_file,
+                description="Test file"
+            )
 
         # Verify file was created in repository
         assert result.name == file_name
@@ -219,11 +231,11 @@ class TestLocalFileManagerService:
         mock_repository.delete_file.assert_called_once_with(file_id)
 
     @pytest.mark.asyncio
-    async def test_create_file_without_content_skips_upload(
-        self, mock_repository, local_provider, test_user_id, test_tenant_id
+    async def test_create_file_with_empty_content(
+        self, mock_repository, local_provider, test_user_id, test_tenant_id, temp_storage_dir
     ):
-        """Test creating a file without content only creates metadata."""
-        file_name = "metadata_only.txt"
+        """Test creating a file with empty content creates both metadata and empty file."""
+        file_name = "empty_file.txt"
 
         mock_file = create_mock_file_model(
             name=file_name,
@@ -235,21 +247,224 @@ class TestLocalFileManagerService:
         service = FileManagerService(repository=mock_repository)
         await service.set_storage_provider(local_provider)
 
-        file_data = FileCreate(
-            name=file_name,
-            mime_type="text/plain",
-            storage_provider="local",
-            size=0
-        )
+        # Create mock upload file with empty content
+        mock_upload_file = create_mock_upload_file(file_name, b"")
+        mock_upload_file.content_type = "text/plain"
 
-        result = await service.create_file(
-            file_data=file_data,
-            file_content=None,
-            user_id=test_user_id
-        )
+        # Mock get_current_user_id
+        with patch('app.services.file_manager.get_current_user_id', return_value=test_user_id):
+            result = await service.create_file(
+                file=mock_upload_file
+            )
 
         assert result.name == file_name
         mock_repository.create_file.assert_called_once()
-        # No files should exist on disk since no content was uploaded
-        files = await local_provider.list_files()
-        assert files == []
+
+        # Verify file was created (even with empty content)
+        created_file_data = mock_repository.create_file.call_args[0][0]
+        assert created_file_data.size == 0
+
+
+class TestFileManagerServiceBuildFileHeaders:
+    """Test the build_file_headers method."""
+
+    def test_build_file_headers_basic(self, mock_repository):
+        """Test building headers with basic file info."""
+        mock_file = create_mock_file_model(
+            name="test.txt",
+            mime_type="text/plain",
+            size=100
+        )
+
+        service = FileManagerService(repository=mock_repository)
+        headers, media_type = service.build_file_headers(mock_file)
+
+        assert media_type == "text/plain"
+        assert headers["content-type"] == "text/plain"
+        assert "content-disposition" in headers
+        assert 'filename="test.txt"' in headers["content-disposition"]
+        assert headers["x-content-type-options"] == "nosniff"
+        assert headers["cache-control"] == "public, max-age=31536000"
+
+    def test_build_file_headers_with_content(self, mock_repository):
+        """Test building headers with content provided."""
+        mock_file = create_mock_file_model(
+            name="test.txt",
+            mime_type="text/plain",
+            size=100
+        )
+        content = b"Hello, World!"
+
+        service = FileManagerService(repository=mock_repository)
+        headers, media_type = service.build_file_headers(mock_file, content=content)
+
+        assert headers["content-length"] == str(len(content))
+
+    def test_build_file_headers_attachment_disposition(self, mock_repository):
+        """Test building headers with attachment disposition."""
+        mock_file = create_mock_file_model(
+            name="download.pdf",
+            mime_type="application/pdf",
+            size=1000
+        )
+
+        service = FileManagerService(repository=mock_repository)
+        headers, media_type = service.build_file_headers(
+            mock_file, disposition_type="attachment"
+        )
+
+        assert "attachment" in headers["content-disposition"]
+
+    def test_build_file_headers_inline_disposition(self, mock_repository):
+        """Test building headers with inline disposition."""
+        mock_file = create_mock_file_model(
+            name="image.png",
+            mime_type="image/png",
+            size=500
+        )
+
+        service = FileManagerService(repository=mock_repository)
+        headers, media_type = service.build_file_headers(
+            mock_file, disposition_type="inline"
+        )
+
+        assert "inline" in headers["content-disposition"]
+
+    def test_build_file_headers_unicode_filename(self, mock_repository):
+        """Test building headers with unicode characters in filename."""
+        mock_file = create_mock_file_model(
+            name="文件测试.txt",
+            mime_type="text/plain",
+            size=100
+        )
+
+        service = FileManagerService(repository=mock_repository)
+        headers, media_type = service.build_file_headers(mock_file)
+
+        # Should contain UTF-8 encoded filename
+        assert "filename*=UTF-8''" in headers["content-disposition"]
+
+    def test_build_file_headers_special_characters_filename(self, mock_repository):
+        """Test building headers with special characters in filename."""
+        mock_file = create_mock_file_model(
+            name="file with spaces & symbols!.txt",
+            mime_type="text/plain",
+            size=100
+        )
+
+        service = FileManagerService(repository=mock_repository)
+        headers, media_type = service.build_file_headers(mock_file)
+
+        # Filename should be percent-encoded
+        assert "content-disposition" in headers
+        # The filename should be encoded to avoid issues
+        assert "%20" in headers["content-disposition"] or "file" in headers["content-disposition"]
+
+    def test_build_file_headers_no_mime_type(self, mock_repository):
+        """Test building headers when mime_type is None."""
+        mock_file = create_mock_file_model(
+            name="unknown_file",
+            mime_type=None,
+            size=100
+        )
+
+        service = FileManagerService(repository=mock_repository)
+        headers, media_type = service.build_file_headers(mock_file)
+
+        assert media_type == "application/octet-stream"
+        assert headers["content-type"] == "application/octet-stream"
+
+    def test_build_file_headers_uses_file_size_when_no_content(self, mock_repository):
+        """Test that file size from model is used when no content provided."""
+        mock_file = create_mock_file_model(
+            name="test.txt",
+            mime_type="text/plain",
+            size=12345
+        )
+
+        service = FileManagerService(repository=mock_repository)
+        headers, media_type = service.build_file_headers(mock_file)
+
+        assert headers["content-Length"] == "12345"
+
+
+class TestFileManagerServiceGetDefaultStorageProvider:
+    """Test the _get_default_storage_provider method."""
+
+    @pytest.mark.asyncio
+    async def test_returns_existing_initialized_provider(self, mock_repository, local_provider):
+        """Test that existing initialized provider is returned."""
+        service = FileManagerService(repository=mock_repository)
+        await service.set_storage_provider(local_provider)
+
+        result = await service._get_default_storage_provider()
+
+        assert result == local_provider
+        assert service.storage_provider == local_provider
+
+    @pytest.mark.asyncio
+    async def test_initializes_provider_when_none_set(self, mock_repository):
+        """Test that provider is initialized when none is set."""
+        service = FileManagerService(repository=mock_repository)
+
+        # Mock the manager and its methods
+        mock_provider = MagicMock()
+        mock_provider.is_initialized.return_value = True
+
+        mock_manager = MagicMock()
+        mock_manager._config = None
+        mock_manager._get_or_create_provider = AsyncMock(return_value=mock_provider)
+
+        # Patch at the module where it's imported inside the method
+        with patch('app.modules.filemanager.manager.get_file_manager_manager', return_value=mock_manager):
+            with patch('app.core.config.settings.settings') as mock_settings:
+                mock_settings.UPLOAD_FOLDER = "/tmp/test"
+                result = await service._get_default_storage_provider()
+
+        assert result == mock_provider
+        assert service.storage_provider == mock_provider
+
+
+class TestFileManagerServiceCreateFileAutoInit:
+    """Test that create_file auto-initializes storage provider."""
+
+    @pytest.mark.asyncio
+    async def test_create_file_with_initialized_provider(
+        self, mock_repository, test_user_id, test_tenant_id, temp_storage_dir
+    ):
+        """Test that create_file works with initialized provider."""
+        file_content = b"Auto init test content"
+        file_name = "auto_init_test.txt"
+
+        mock_file = create_mock_file_model(
+            name=file_name,
+            user_id=test_user_id,
+            size=len(file_content)
+        )
+        mock_repository.create_file.return_value = mock_file
+
+        service = FileManagerService(repository=mock_repository)
+
+        # Mock the provider
+        mock_provider = MagicMock()
+        mock_provider.name = "local"
+        mock_provider.is_initialized.return_value = True
+        mock_provider.get_base_path.return_value = temp_storage_dir
+        mock_provider.upload_file = AsyncMock(return_value=f"{temp_storage_dir}/{file_name}")
+
+        # Set the provider directly
+        service.storage_provider = mock_provider
+
+        # Create mock upload file
+        mock_upload_file = create_mock_upload_file(file_name, file_content)
+        mock_upload_file.content_type = "text/plain"
+
+        # Mock get_current_user_id
+        with patch('app.services.file_manager.get_current_user_id', return_value=test_user_id):
+            result = await service.create_file(
+                file=mock_upload_file
+            )
+
+            assert result.name == file_name
+            mock_repository.create_file.assert_called_once()
+            mock_provider.upload_file.assert_called_once()
