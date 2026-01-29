@@ -4,6 +4,7 @@ from typing import Any, Callable, cast
 from uuid import UUID
 
 from redis.asyncio import Redis
+from redis.exceptions import ResponseError
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from starlette.datastructures import State
@@ -26,7 +27,24 @@ async def init_fastapi_cache_with_redis(app, redis_binary: Redis):
     app.state.redis = redis_binary  # type: ignore[attr-defined]
 
     FastAPICache.init(RedisBackend(redis_binary), prefix="auth")
-    await FastAPICache.clear()  # clean cache on start
+
+    # Clean cache on start
+    # Note: In Redis Cluster mode, Lua scripts without keys are not supported.
+    # FastAPICache.clear() may use a Lua script without keys, so we catch this error.
+    try:
+        await FastAPICache.clear()
+    except ResponseError as e:
+        if "Lua scripts without any input keys are not supported" in str(e):
+            logger.warning(
+                "Cannot clear cache on startup: Redis Cluster mode detected. "
+                "Lua scripts without keys are not supported in cluster mode. "
+                "This is safe to ignore - cache will be populated as needed."
+            )
+        else:
+            # Re-raise other ResponseError exceptions
+            raise
+    except Exception as e:
+        logger.warning(f"Failed to clear cache on startup: {e}. This is safe to ignore.")
 
     logger.info("FastAPI cache initialized")
 
@@ -57,7 +75,7 @@ def make_key_builder(param: str | int = 1) -> Callable[[Any, str, Any], str]:
         # 1) Because fastapi-cache sometimes passes (args, kwargs) inside kwargs
         #    we normalise them first.
         pos_args = kwargs.get("args", args)
-        kw_args  = kwargs.get("kwargs", kwargs)
+        kw_args = kwargs.get("kwargs", kwargs)
 
         # 2) Extract the chosen argument
         if isinstance(param, int):
@@ -132,6 +150,15 @@ async def invalidate_cache(namespace: str, value: Any) -> bool:
         else:
             logger.warning("FastAPICache backend not initialized")
             return False
+    except ResponseError as e:
+        if "Lua scripts without any input keys are not supported" in str(e):
+            logger.warning(
+                "Cache invalidation skipped (Redis Cluster): %s. Key: %s",
+                str(e),
+                cache_key,
+            )
+            return False
+        raise
     except Exception as e:
         logger.error(f"Failed to invalidate cache key {cache_key}: {e}")
         return False
