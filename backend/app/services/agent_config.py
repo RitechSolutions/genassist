@@ -293,3 +293,12 @@ class AgentConfigService:
 
         agent.welcome_image = None
         return await self.repository.update(agent)
+
+    async def get_by_operator_id(self, operator_id: UUID) -> AgentModel:
+        """Get agent by operator ID with security_settings eagerly loaded."""
+        agent = await self.repository.get_by_operator_id(
+            operator_id, eager=("security_settings",)
+        )
+        if not agent:
+            raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
+        return agent
