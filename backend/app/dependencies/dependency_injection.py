@@ -61,6 +61,7 @@ from app.modules.workflow.llm.provider import LLMProvider
 from redis.asyncio import Redis
 from app.modules.data.manager import AgentRAGServiceManager
 from app.repositories.file_manager import FileManagerRepository
+from app.services.file_manager import FileManagerService
 # Multi-tenant session manager
 from app.core.tenant_scope import tenant_scope
 from app.db.multi_tenant_session import multi_tenant_manager
@@ -289,3 +290,4 @@ class Dependencies(Module):
 
         # File Manager services
         binder.bind(FileManagerRepository, scope=request_scope)
+        binder.bind(FileManagerService, scope=request_scope)
