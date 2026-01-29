@@ -92,7 +92,7 @@ async def get_knowledge_item_by_id(
     ],
 )
 async def create_knowledge_item(
-    item: KBBase = Body(...),
+    item: KBCreate = Body(...),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
 ):
@@ -277,9 +277,9 @@ async def upload_file_to_chat(
         )
 
         # Introduce file manager service
-        file_manager_service = FileManagerService(repository=FileManagerRepository(db))
+        file_manager_service = FileManagerService(
+            repository=FileManagerRepository(db))
         await file_manager_service.set_storage_provider(LocalFileSystemProvider(config={"base_path": UPLOAD_DIR}))
-
 
         user_id = get_current_user_id()
         tenant_id = get_tenant_context()
@@ -300,7 +300,8 @@ async def upload_file_to_chat(
                 ),
                 file_content=await file.read(),
                 user_id=user_id,
-                allowed_extensions=["pdf", "docx", "txt", "jpg", "jpeg", "png"],
+                allowed_extensions=["pdf", "docx",
+                                    "txt", "jpg", "jpeg", "png"],
             )
         except Exception as e:
             logger.error(f"Error creating file: {str(e)}")
@@ -340,7 +341,7 @@ async def upload_file_to_chat(
             logger.warning(f"Could not extract text from file: {str(e)}")
 
         file_relative_url = f"/api/file-manager/files/{file_id}/source"
-        
+
         # Return the filenames and paths
         result = FileUploadResponse(
             filename=str(file_id),

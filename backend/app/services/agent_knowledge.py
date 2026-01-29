@@ -12,6 +12,7 @@ from app.schemas.agent_knowledge import KBCreate, KBRead
 import logging
 logger = logging.getLogger(__name__)
 
+
 @inject
 class KnowledgeBaseService:
     """
@@ -30,7 +31,8 @@ class KnowledgeBaseService:
     async def get_by_id(self, kb_id: UUID) -> KBRead:
         obj = await self.repository.get_by_id(kb_id)
         if not obj:
-            raise AppException(status_code=404, error_key=ErrorKey.KB_NOT_FOUND)
+            raise AppException(
+                status_code=404, error_key=ErrorKey.KB_NOT_FOUND)
         return KBRead.model_validate(obj, from_attributes=True)
 
     async def get_by_ids(self, ids: List[UUID]) -> List[KBRead]:
@@ -39,16 +41,17 @@ class KnowledgeBaseService:
 
     # ─────────────── WRITE ───────────────
     async def create(self, data: KBCreate) -> KBRead:
-        orm_obj = KnowledgeBaseModel(**data.model_dump())
+        orm_obj = KnowledgeBaseModel(**data.model_dump(exclude_none=True))
         created = await self.repository.create(orm_obj)
         return KBRead.model_validate(created, from_attributes=True)
 
     async def update(self, kb_id: UUID, data: KBCreate) -> KBRead:
         orm_obj = await self.repository.get_by_id(kb_id)
         if not orm_obj:
-            raise AppException(status_code=404, error_key=ErrorKey.KB_NOT_FOUND)
+            raise AppException(
+                status_code=404, error_key=ErrorKey.KB_NOT_FOUND)
 
-        for field, value in data.model_dump().items():
+        for field, value in data.model_dump(exclude_none=True).items():
             setattr(orm_obj, field, value)
 
         updated = await self.repository.update(orm_obj)
@@ -57,5 +60,6 @@ class KnowledgeBaseService:
     async def delete(self, kb_id: UUID) -> None:
         orm_obj = await self.repository.get_by_id(kb_id)
         if not orm_obj:
-            raise AppException(status_code=404, error_key=ErrorKey.KB_NOT_FOUND)
+            raise AppException(
+                status_code=404, error_key=ErrorKey.KB_NOT_FOUND)
         await self.repository.delete(orm_obj)

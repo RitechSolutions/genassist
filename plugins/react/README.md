@@ -62,10 +62,16 @@ function App() {
         tenant="your-tenant-id"
         userData={userData}
         theme={theme}
+        useWS={true}
+        reCaptchaKey={your-recaptcha-site-key}
         headerTitle="Customer Support"
         placeholder="Ask a question..."
         onError={() => {}}
         onTakeover={handleTakeover}
+        noColorAnimation={false}
+        useFile={false}
+        useAudio={false}
+        allowedExtensions={['image/*']}
       />
     </div>
   );
@@ -86,6 +92,13 @@ export default App;
 | theme | object | No | - | Custom theme options |
 | headerTitle | string | No | 'Chat' | Title displayed in the chat header |
 | placeholder | string | No | 'Type a message...' | Placeholder text for the input |
+| useWS | boolean | false | true | 'Enable or disable websocket...' |
+| useAudio | boolean | false | false | 'Enable or disable audio on chat input...' |
+| useFile | boolean | false | false | 'Enable or disable file attachments on chat input...' |
+| reCaptchaKey | string | false | undefined | 'Use google reCaptchaV3 site-key...' |
+| allowedExtensions | string[] | false | undefined | 'Look for type AllowedExtension and see the supported list of extensions' |
+
+
 
 ## Theme Options
 
