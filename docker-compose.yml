@@ -44,6 +44,7 @@ services:
       - DB_PORT=5432
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - QDRANT_HOST=http://qdrant
       - QDRANT_PORT=6333
     depends_on:
@@ -54,7 +55,7 @@ services:
       db:
         condition: service_started
       redis:
-        condition: service_started
+        condition: service_healthy
       whisper:
         condition: service_started
     volumes:
@@ -111,8 +112,21 @@ services:
   redis:
     image: redis:7-alpine
     container_name: genassist-redis
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        exec redis-server --requirepass "$$REDIS_PASSWORD";
+      else
+        exec redis-server;
+      fi'
     ports:
       - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - genassist-network
     restart: unless-stopped
@@ -125,10 +139,15 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     depends_on:
-      - redis
-      - db
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_started
     networks:
       - genassist-network
     restart: unless-stopped
@@ -141,10 +160,15 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     depends_on:
-      - redis
-      - db
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_started
     networks:
       - genassist-network
     restart: unless-stopped
@@ -159,11 +183,17 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     depends_on:
-      - redis
-      - celery_worker
-      - db
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+      db:
+        condition: service_started
     networks:
       - genassist-network
     restart: unless-stopped
