@@ -52,6 +52,38 @@ EMBEDDING_MODELS: List[EmbeddingModelInfo] = [
     },
 ]
 
+# Bedrock embedding models
+BEDROCK_EMBEDDING_MODELS: List[EmbeddingModelInfo] = [
+    {
+        "value": "amazon.titan-embed-text-v2:0",
+        "label": "Amazon Titan Text Embeddings v2 (1024 dim)",
+        "dimensions": 1024,
+        "description": "Latest Titan model, configurable dimensions"
+    },
+    {
+        "value": "amazon.titan-embed-text-v1",
+        "label": "Amazon Titan Text Embeddings v1 (1536 dim)",
+        "dimensions": 1536,
+        "description": "Original Titan model"
+    },
+    {
+        "value": "cohere.embed-english-v3",
+        "label": "Cohere Embed English v3 (1024 dim)",
+        "dimensions": 1024,
+        "description": "Cohere English-only embeddings"
+    },
+    {
+        "value": "cohere.embed-multilingual-v3",
+        "label": "Cohere Embed Multilingual v3 (1024 dim)",
+        "dimensions": 1024,
+        "description": "Cohere multilingual embeddings"
+    },
+]
+
+# Default Bedrock configuration
+DEFAULT_BEDROCK_MODEL = "amazon.titan-embed-text-v2:0"
+DEFAULT_BEDROCK_REGION = "ca-central-1"
+
 # Derived constants for different use cases
 
 # List of allowed model names (short names without 'sentence-transformers/' prefix)
@@ -72,6 +104,12 @@ FORM_OPTIONS_VECTOR: List[Dict[str, str]] = [
 FORM_OPTIONS_LEGRA: List[Dict[str, str]] = [
     {"value": f'sentence-transformers/{model["value"]}', "label": model["label"]}
     for model in EMBEDDING_MODELS
+]
+
+# For form schemas - Bedrock options
+FORM_OPTIONS_BEDROCK: List[Dict[str, str]] = [
+    {"value": model["value"], "label": model["label"]}
+    for model in BEDROCK_EMBEDDING_MODELS
 ]
 
 # Default model
