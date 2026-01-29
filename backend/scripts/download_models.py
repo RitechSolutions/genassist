@@ -1,7 +1,4 @@
 """Download sentence-transformer models for offline deployment."""
-
-import os
-from pathlib import Path
 from huggingface_hub import snapshot_download
 
 MODELS = [
