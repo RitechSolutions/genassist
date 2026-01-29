@@ -270,33 +270,3 @@ class GoogleTranscribeService:
         }
 
         return return_result
-
-##############################################
-# usage
-##############################################
-# #Initialize Service
-# google_json_config = {
-#         "type": "service_account",
-#         "project_id": "genassist-stt",
-#         ....
-#         "client_email": "stt-service@genassist-stt.iam.gserviceaccount.com",
-#         "token_uri": "https://oauth2.googleapis.com/token"
-#     }
-#
-# gsc = GoogleStorageService(
-#     config_json=json.dumps(google_json_config ),
-#     storage_bucket="genassist-stt-audio-bucket"
-# )
-# gts = GoogleTranscribeService(
-#     config_json=json.dumps(google_json_config),
-#     storage_bucket="genassist-stt-audio-bucket",
-#     storage_service = gsc,
-#     sst_region=_region
-# )
-
-
-# # Transcribe File
-# result= gts.transcribe_long_audio(file_name=local_file)
-
-# # Convert result in wisper compatibile format
-# result_whisper = gts.get_merged_transcripts(result)
