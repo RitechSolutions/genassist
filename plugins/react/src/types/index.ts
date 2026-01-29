@@ -115,6 +115,7 @@ export interface GenAgentChatProps {
     textColor?: string;
   };
   headerTitle?: string;
+  description?: string;
   placeholder?: string;
   agentName?: string; // Custom agent name to display instead of "Agent"
   logoUrl?: string; // Custom logo URL to display in header instead of default logo
@@ -129,7 +130,15 @@ export interface GenAgentChatProps {
   translations?: Partial<Translations>; // Custom translations. If not provided, will use default English translations
   reCaptchaKey?: string; // ReCaptcha key for the chat
   widget?: boolean; // If true, opens chat in fullscreen mode on desktop (similar to mobile behavior)
+  useAudio?: boolean; // If false, hides the mic component and voice input. Defaults to false.
+  useFile?: boolean; // If false, hides the file attach icon and file upload. Defaults to false.
+  noColorAnimation?: boolean; // If true, hides the color animation (backlight) below the chat header. Defaults to false.
+  showWelcomeBeforeStart?: boolean;
+  allowedExtensions?: AllowedExtension[]; // If provided, only show file attachments with these extensions. Defaults to all extensions.
 }
+
+// NOTE: These are the only file extensions that are supported by the chat.
+export type AllowedExtension = 'image/*' | 'image/png' | 'image/jpeg' | 'image/jpg' | 'image/gif' | 'application/pdf' | 'application/msword' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export type { Translations } from '../utils/i18n';
 

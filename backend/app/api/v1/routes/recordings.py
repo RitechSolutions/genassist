@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
 from app.core.permissions.constants import Permissions as P
@@ -104,7 +104,7 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     # Final guard: verify path starts with allowed directory before serving
     recordings_dir = str(Path(settings.RECORDINGS_DIR).resolve())
     if not safe_path.startswith(recordings_dir):
-        raise HTTPException(status_code=400, detail="Invalid file path")
+        raise AppException(error_key=ErrorKey.INVALID_FILE_PATH, status_code=400)
 
     return FileResponse(safe_path)
 

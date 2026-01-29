@@ -6045,7 +6045,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/KBBase"
+                "$ref": "#/components/schemas/KBCreate"
               }
             }
           },
@@ -8092,39 +8092,12 @@
             "OAuth2PasswordBearer": []
           }
         ],
-        "parameters": [
-          {
-            "name": "description",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Description"
-            }
-          },
-          {
-            "name": "storage_provider",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/StorageProvider",
-              "default": "local"
-            }
-          }
-        ],
         "requestBody": {
           "required": true,
           "content": {
-            "multipart/form-data": {
+            "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Body_create_file_api_file_manager_files_post"
+                "$ref": "#/components/schemas/FileCreate"
               }
             }
           }
@@ -8415,47 +8388,6 @@
       }
     },
     "/api/file-manager/files/{file_id}/download": {
-      "head": {
-        "tags": [
-          "v1",
-          "FileManager"
-        ],
-        "summary": "Download File",
-        "description": "Download a file by ID.",
-        "operationId": "download_file",
-        "parameters": [
-          {
-            "name": "file_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "File Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
       "get": {
         "tags": [
           "v1",
@@ -8463,7 +8395,7 @@
         ],
         "summary": "Download File",
         "description": "Download a file by ID.",
-        "operationId": "download_file",
+        "operationId": "download_file_api_file_manager_files__file_id__download_get",
         "parameters": [
           {
             "name": "file_id",
@@ -8481,7 +8413,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
               }
             }
           },
@@ -8499,53 +8433,14 @@
       }
     },
     "/api/file-manager/files/{file_id}/source": {
-      "head": {
-        "tags": [
-          "v1",
-          "FileManager"
-        ],
-        "summary": "Get File Source",
-        "operationId": "get_file_source",
-        "parameters": [
-          {
-            "name": "file_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "File Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
       "get": {
         "tags": [
           "v1",
           "FileManager"
         ],
         "summary": "Get File Source",
-        "operationId": "get_file_source",
+        "description": "Get file source content for inline display.",
+        "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
         "parameters": [
           {
             "name": "file_id",
@@ -8563,7 +8458,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
               }
             }
           },
@@ -14956,46 +14853,6 @@
         ],
         "title": "Body_auth_token_api_auth_token_post"
       },
-      "Body_create_file_api_file_manager_files_post": {
-        "properties": {
-          "file": {
-            "type": "string",
-            "format": "binary",
-            "title": "File"
-          },
-          "file_metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Metadata"
-          },
-          "tags": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tags"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file"
-        ],
-        "title": "Body_create_file_api_file_manager_files_post"
-      },
       "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post": {
         "properties": {
           "workflow_name": {
@@ -16400,6 +16257,146 @@
         ],
         "title": "Feedback"
       },
+      "FileCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Name",
+            "description": "File name"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Path",
+            "description": "File path"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size",
+            "description": "File size in bytes"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type",
+            "description": "MIME type"
+          },
+          "storage_provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "s3",
+              "azure",
+              "gcs",
+              "sharepoint"
+            ],
+            "title": "Storage Provider",
+            "description": "Storage provider",
+            "default": "local"
+          },
+          "storage_path": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Storage Path",
+            "description": "Path in storage provider"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "File description"
+          },
+          "file_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Metadata",
+            "description": "File metadata"
+          },
+          "file_extension": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Extension",
+            "description": "File extension"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "File tags"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions",
+            "description": "File permissions"
+          },
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File",
+            "description": "File to upload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "storage_path",
+          "file"
+        ],
+        "title": "FileCreate"
+      },
       "FileResponse": {
         "properties": {
           "name": {
@@ -16467,7 +16464,8 @@
                 "type": "null"
               }
             ],
-            "title": "Description"
+            "title": "Description",
+            "description": "File description"
           },
           "file_metadata": {
             "anyOf": [
@@ -16479,7 +16477,21 @@
                 "type": "null"
               }
             ],
-            "title": "File Metadata"
+            "title": "File Metadata",
+            "description": "File metadata"
+          },
+          "file_extension": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Extension",
+            "description": "File extension"
           },
           "tags": {
             "anyOf": [
@@ -16493,7 +16505,8 @@
                 "type": "null"
               }
             ],
-            "title": "Tags"
+            "title": "Tags",
+            "description": "File tags"
           },
           "permissions": {
             "anyOf": [
@@ -16505,7 +16518,8 @@
                 "type": "null"
               }
             ],
-            "title": "Permissions"
+            "title": "Permissions",
+            "description": "File permissions"
           },
           "id": {
             "type": "string",
@@ -16554,28 +16568,16 @@
       "FileUpdate": {
         "properties": {
           "name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
+            "type": "string",
+            "maxLength": 500,
+            "title": "Name",
+            "description": "File name"
           },
           "path": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Path"
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Path",
+            "description": "File path"
           },
           "size": {
             "anyOf": [
@@ -16586,7 +16588,8 @@
                 "type": "null"
               }
             ],
-            "title": "Size"
+            "title": "Size",
+            "description": "File size in bytes"
           },
           "mime_type": {
             "anyOf": [
@@ -16598,37 +16601,27 @@
                 "type": "null"
               }
             ],
-            "title": "Mime Type"
+            "title": "Mime Type",
+            "description": "MIME type"
           },
           "storage_provider": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "local",
-                  "s3",
-                  "azure",
-                  "gcs",
-                  "sharepoint"
-                ]
-              },
-              {
-                "type": "null"
-              }
+            "type": "string",
+            "enum": [
+              "local",
+              "s3",
+              "azure",
+              "gcs",
+              "sharepoint"
             ],
-            "title": "Storage Provider"
+            "title": "Storage Provider",
+            "description": "Storage provider",
+            "default": "local"
           },
           "storage_path": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage Path"
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Storage Path",
+            "description": "Path in storage provider"
           },
           "description": {
             "anyOf": [
@@ -16639,7 +16632,8 @@
                 "type": "null"
               }
             ],
-            "title": "Description"
+            "title": "Description",
+            "description": "File description"
           },
           "file_metadata": {
             "anyOf": [
@@ -16651,7 +16645,21 @@
                 "type": "null"
               }
             ],
-            "title": "File Metadata"
+            "title": "File Metadata",
+            "description": "File metadata"
+          },
+          "file_extension": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Extension",
+            "description": "File extension"
           },
           "tags": {
             "anyOf": [
@@ -16665,7 +16673,8 @@
                 "type": "null"
               }
             ],
-            "title": "Tags"
+            "title": "Tags",
+            "description": "File tags"
           },
           "permissions": {
             "anyOf": [
@@ -16677,10 +16686,29 @@
                 "type": "null"
               }
             ],
-            "title": "Permissions"
+            "title": "Permissions",
+            "description": "File permissions"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File",
+            "description": "File to upload"
           }
         },
         "type": "object",
+        "required": [
+          "name",
+          "path",
+          "storage_path"
+        ],
         "title": "FileUpdate"
       },
       "FolderRequest": {
@@ -17233,16 +17261,19 @@
             ],
             "title": "Llm Provider Id"
           },
-          "url": {
+          "urls": {
             "anyOf": [
               {
-                "type": "string"
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Url"
+            "title": "Urls"
           }
         },
         "additionalProperties": true,
@@ -17251,6 +17282,266 @@
           "name"
         ],
         "title": "KBBase"
+      },
+      "KBCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "url",
+              "text",
+              "datasource",
+              "s3",
+              "database",
+              "sharepoint",
+              "smb_share_folder",
+              "azure_blob",
+              "google_bucket",
+              "zendesk"
+            ],
+            "title": "Type",
+            "default": "file"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          },
+          "vector_store": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Store"
+          },
+          "rag_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rag Config"
+          },
+          "extra_metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra Metadata"
+          },
+          "embeddings_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embeddings Model"
+          },
+          "legra_finalize": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legra Finalize",
+            "default": false
+          },
+          "last_synced": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced"
+          },
+          "last_sync_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync Status"
+          },
+          "last_sync_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync Error"
+          },
+          "last_file_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last File Date"
+          },
+          "sync_schedule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Schedule"
+          },
+          "sync_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Active"
+          },
+          "sync_source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Source Id"
+          },
+          "llm_provider_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Provider Id"
+          },
+          "urls": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "KBCreate",
+        "description": "Body model for POST / PUT (no id)"
       },
       "KBRead": {
         "properties": {
@@ -17489,16 +17780,19 @@
             ],
             "title": "Llm Provider Id"
           },
-          "url": {
+          "urls": {
             "anyOf": [
               {
-                "type": "string"
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Url"
+            "title": "Urls"
           },
           "id": {
             "type": "string",
@@ -20127,18 +20421,6 @@
           "id"
         ],
         "title": "SortField"
-      },
-      "StorageProvider": {
-        "type": "string",
-        "enum": [
-          "local",
-          "s3",
-          "azure",
-          "gcs",
-          "sharepoint",
-          "database"
-        ],
-        "title": "StorageProvider"
       },
       "TenantCreate": {
         "properties": {

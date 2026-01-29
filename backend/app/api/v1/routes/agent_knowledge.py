@@ -1,5 +1,4 @@
-from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form, Request
+from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form
 from typing import List, Dict, Optional
 import os
 import uuid
@@ -30,12 +29,8 @@ from app.modules.workflow.agents.rag import ThreadScopedRAG
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 # File manager service
 from app.services.file_manager import FileManagerService
-from app.repositories.file_manager import FileManagerRepository
 from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
-from app.schemas.file import FileCreate, FileUploadResponse
-from app.auth.utils import get_current_user_id
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.tenant_scope import get_tenant_context
+from app.schemas.file import FileUploadResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -92,7 +87,7 @@ async def get_knowledge_item_by_id(
     ],
 )
 async def create_knowledge_item(
-    item: KBBase = Body(...),
+    item: KBCreate = Body(...),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
 ):
@@ -266,7 +261,7 @@ async def upload_file(
 async def upload_file_to_chat(
     chat_id: str = Form(...),
     file: UploadFile = File(...),
-    db: AsyncSession = Injected(AsyncSession),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Upload a file, extract its text content, and return both the saved filename and extracted text file
@@ -276,30 +271,13 @@ async def upload_file_to_chat(
             f"Received file upload: {file.filename}, size: {file.size}, content_type: {file.content_type}"
         )
 
-        # Introduce file manager service
-        file_manager_service = FileManagerService(repository=FileManagerRepository(db))
+        # Introduce file manager service and set the storage provider to local file system
         await file_manager_service.set_storage_provider(LocalFileSystemProvider(config={"base_path": UPLOAD_DIR}))
-
-
-        user_id = get_current_user_id()
-        tenant_id = get_tenant_context()
-
-        # file storage path
-        file_name = f"{uuid.uuid4()}.{file.filename.split('.')[-1]}"
-        relative_storage_path = file_name
 
         try:
             # create file in file manager service
             created_file = await file_manager_service.create_file(
-                file_data=FileCreate(
-                    name=file.filename,
-                    mime_type=file.content_type,
-                    size=file.size,
-                    storage_provider="local",
-                    storage_path=relative_storage_path,
-                ),
-                file_content=await file.read(),
-                user_id=user_id,
+                file,
                 allowed_extensions=["pdf", "docx", "txt", "jpg", "jpeg", "png"],
             )
         except Exception as e:
@@ -313,7 +291,7 @@ async def upload_file_to_chat(
         storage_path = created_file.storage_path
         file_path = f"{UPLOAD_DIR}/{storage_path}"
 
-        logger.info(f"File Id: {file_id}")
+        logger.debug(f"File Id: {file_id}")
 
         # Extract text from the file
         try:
@@ -340,7 +318,7 @@ async def upload_file_to_chat(
             logger.warning(f"Could not extract text from file: {str(e)}")
 
         file_relative_url = f"/api/file-manager/files/{file_id}/source"
-        
+
         # Return the filenames and paths
         result = FileUploadResponse(
             filename=str(file_id),
@@ -351,7 +329,7 @@ async def upload_file_to_chat(
             file_id=str(file_id),
         )
 
-        logger.info(f"Upload successful: {result}")
+        logger.debug(f"Upload successful: {result}")
         return result
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")
