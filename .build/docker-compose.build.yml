@@ -138,7 +138,12 @@ services:
   redis:
     image: redis:7-alpine
     container_name: genassist_redis
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        exec redis-server --requirepass "$$REDIS_PASSWORD";
+      else
+        exec redis-server;
+      fi'
     ports:
       - "6379:6379"
     environment:
@@ -147,7 +152,7 @@ services:
       - genassist-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
       interval: 5s
       timeout: 3s
       retries: 5
