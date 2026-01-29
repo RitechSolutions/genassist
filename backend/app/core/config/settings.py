@@ -18,7 +18,7 @@ class ProjectSettings(BaseSettings):
     REDIS_PASSWORD: Optional[str] = None  # Auth; included in REDIS_URL when set
     REDIS_FOR_CONVERSATION: bool = True
     REDIS_SSL: Optional[bool] = False
-
+    REDIS_OVERRIDE_URL: Optional[str] = None
     # Memory efficiency settings for Redis conversations
     CONVERSATION_MAX_MEMORY_MESSAGES: int = 50  # Max messages kept in memory
     CONVERSATION_REDIS_EXPIRY_DAYS: int = 30  # Redis data expiration
@@ -168,16 +168,15 @@ class ProjectSettings(BaseSettings):
     @computed_field
     @property
     def REDIS_URL(self) -> str:
+        if self.REDIS_OVERRIDE_URL:
+            return self.REDIS_OVERRIDE_URL
         host = self.REDIS_HOST or "localhost"
         if self.REDIS_PASSWORD:
             auth = f":{quote(self.REDIS_PASSWORD, safe='')}@"
         else:
             auth = ""
-        
         # use rediss for ssl
         redis_scheme = "rediss" if self.REDIS_SSL else "redis"
-        
-        # url encode the password
         return unquote(f"{redis_scheme}://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}")
 
     @computed_field
