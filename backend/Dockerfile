@@ -45,8 +45,6 @@ RUN mkdir -p /opt/hf_cache && \
     python /tmp/download_models.py && \
     rm /tmp/download_models.py
 
-# 5. RUN playwright install to download the browser of the library
-RUN playwright install --with-deps chromium
 
 # ==========================================
 # Stage 2: Runtime (Minimal & Secure)
