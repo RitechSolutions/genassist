@@ -117,4 +117,7 @@ export interface Transcript {
   in_progress_hostility_score?: number;
   supervisor_id?: string | null;
   feedback?: ConversationFeedbackEntry[];
+
+  // NOTE: used to avoid parsing issues
+  transcript?: TranscriptEntry[] | string | null;
 }
