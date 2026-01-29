@@ -453,7 +453,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 type="text",
                 label="Region",
                 required=False,
-                default="us-east-1",
+                default="ca-central-1",
                 description="AWS region name",
             ),
             FieldSchema(

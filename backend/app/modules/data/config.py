@@ -95,10 +95,15 @@ class KbRAGConfig(BaseModel):
 
         # Extract embedding config with schema defaults
         embedding_data = {
+            "type": vector_data.get("embedding_type", get_schema_default("vector", "embedding_type", "bedrock")),
             "model_name": vector_data.get("embedding_model_name", get_schema_default("vector", "embedding_model_name", "all-MiniLM-L6-v2")),
+            "model_id": vector_data.get("embedding_model_id", get_schema_default("vector", "embedding_model_id", "amazon.titan-embed-text-v2:0")),
+            "region_name": vector_data.get("embedding_region_name", get_schema_default("vector", "embedding_region_name", "ca-central-1")),
             "device": vector_data.get("embedding_device_type", get_schema_default("vector", "embedding_device_type", "cpu")),
             "batch_size": vector_data.get("embedding_batch_size", get_schema_default("vector", "embedding_batch_size", 32)),
-            "normalize_embeddings": vector_data.get("embedding_normalize_embeddings", get_schema_default("vector", "embedding_normalize_embeddings", True))
+            "normalize_embeddings": vector_data.get("embedding_normalize_embeddings", get_schema_default("vector", "embedding_normalize_embeddings", True)),
+            "api_key": vector_data.get("embedding_api_key"),  # For OpenAI provider
+            "base_url": vector_data.get("embedding_base_url"),  # For OpenAI provider
         }
 
         # Extract vector_db config with schema defaults
