@@ -1,5 +1,0 @@
-fastapi
-uvicorn[standard]
-openai-whisper @ git+https://github.com/openai/whisper.git@517a43ecd132a2089d85f4ebc044728a71d49f6e
-python-multipart
-aiofiles==24.1.0
