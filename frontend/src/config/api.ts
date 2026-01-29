@@ -1,9 +1,6 @@
 import axios, { Method, AxiosRequestConfig, AxiosError } from "axios";
 import { setServerDown, setServerUp } from "@/config/serverStatus";
 
-let cachedApiUrl: string | null = null;
-const API_URL_STORAGE_KEY = "cachedApiUrl";
-
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (value?: unknown) => void;
@@ -146,77 +143,15 @@ api.interceptors.response.use(
   }
 );
 
-export const clearCachedApiUrl = (): void => {
-  cachedApiUrl = null;
-  try {
-    localStorage.removeItem(API_URL_STORAGE_KEY);
-  } catch (error) {
-    // ignore
-  }
-};
+const API_URL = import.meta.env.VITE_PUBLIC_API_URL
+const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_PUBLIC_URL
 
 export const getApiUrl = async (): Promise<string> => {
-  // Try to load from localStorage first
-  try {
-    const storedApiUrl = localStorage.getItem(API_URL_STORAGE_KEY);
-    if (storedApiUrl) {
-      cachedApiUrl = storedApiUrl;
-      return storedApiUrl;
-    }
-  } catch (error) {
-    // ignore
-  }
-
-  if (cachedApiUrl) {
-    return cachedApiUrl;
-  }
-
-  const privateApi = import.meta.env.VITE_PRIVATE_API_URL;
-  const publicApi = import.meta.env.VITE_PUBLIC_API_URL;
-
-  try {
-    await axios.get(privateApi, { timeout: 1000 });
-    cachedApiUrl = ensureTrailingSlash(privateApi);
-    try {
-      localStorage.setItem(API_URL_STORAGE_KEY, cachedApiUrl);
-    } catch (error) {
-      // ignore
-    }
-    return cachedApiUrl;
-  } catch (err) {
-    if (
-      err.code != "ECONNABORTED" &&
-      err.response &&
-      err.response.status == 404
-    ) {
-      cachedApiUrl = ensureTrailingSlash(privateApi);
-      try {
-        localStorage.setItem(API_URL_STORAGE_KEY, cachedApiUrl);
-      } catch (error) {
-        // ignore
-      }
-      return cachedApiUrl;
-    } else {
-      cachedApiUrl = ensureTrailingSlash(publicApi);
-      try {
-        localStorage.setItem(API_URL_STORAGE_KEY, cachedApiUrl);
-      } catch (error) {
-        // ignore
-      }
-      return cachedApiUrl;
-    }
-  }
+  return ensureTrailingSlash(API_URL);
 };
 
-const WEBSOCKET_URL_PUBLIC = import.meta.env.VITE_WEBSOCKET_PUBLIC_URL
-const WEBSOCKET_URL_PRIVATE = import.meta.env.VITE_WEBSOCKET_PRIVATE_URL
-
 export const getWsUrl = async (): Promise<string> => {
-    const url = await getApiUrl();
-    if(url.indexOf(import.meta.env.VITE_PRIVATE_API_URL) >= 0)
-      return WEBSOCKET_URL_PRIVATE;
-    else  
-      return WEBSOCKET_URL_PUBLIC; 
+  return WEBSOCKET_URL;
 };
 
 export const apiRequest = async <T>(
