@@ -35,7 +35,7 @@ from app.db.seed.seed_data_config import seed_test_data
 from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.conversations import ConversationRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
-from app.schemas.conversation import ConversationCreate
+from app.schemas.conversation import ConversationCreate, ConversationWithOperatorAgentRead
 from app.schemas.conversation_analysis import ConversationAnalysisRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
@@ -577,14 +577,18 @@ class ConversationService:
         )
         return updated_conversation
 
-    # @cache(
-    #     expire=300,
-    #     namespace="conversations:get_conversation_by_id_with_operator_agent",
-    #     key_builder=conversation_id_key_builder_full,
-    #     coder=PickleCoder
-    # )
-    async def get_conversation_by_id_with_operator_agent(self, conversation_id: UUID) -> Optional[ConversationModel]:
-        """Get conversation with operator and agent eager-loaded (avoids async lazy-load / MissingGreenlet)."""
-        return await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
+    @cache(
+        expire=300,
+        namespace="conversations:get_conversation_by_id_with_operator_agent",
+        key_builder=conversation_id_key_builder_full,
+        coder=PickleCoder
+    )
+    async def get_conversation_by_id_with_operator_agent(
+        self, conversation_id: UUID
+    ) -> Optional[ConversationWithOperatorAgentRead]:
+        model = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
             conversation_id
         )
+        if model is None:
+            return None
+        return ConversationWithOperatorAgentRead.model_validate(model)

@@ -50,14 +50,16 @@ async def get_agent_for_update(
 
         # get conversation with operator and agent eager-loaded
         conversation = await conversation_service.get_conversation_by_id_with_operator_agent(conversation_id)
+        if conversation is None:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
+
+        operator = conversation.operator
+        agent = conversation.operator.agent
         
-        # check if conversation operator has the agent in it
-        if conversation and conversation.operator and conversation.operator.agent:
-            agent = conversation.operator.agent
-        else:
-            operator_id = conversation.operator_id
-            agent = await agent_config_service.get_by_operator_id(operator_id)
-            if not agent:
+        # if agent is not set, get it from the operator
+        if agent is None:
+            agent = await agent_config_service.get_by_operator_id(operator.id)
+            if agent is None:
                 raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
         request.state.agent = agent
