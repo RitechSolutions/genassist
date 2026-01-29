@@ -18,7 +18,9 @@ from app.core.utils.bi_utils import (
     calculate_duration_from_transcript,
     calculate_incremental_word_counts,
 )
-
+from app.cache.redis_cache import make_key_builder
+from fastapi_cache.coder import PickleCoder
+from fastapi_cache.decorator import cache
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
 from app.core.utils.enums.message_feedback_enum import Feedback
@@ -49,6 +51,9 @@ from app.services.zendesk import ZendeskClient
 
 
 logger = logging.getLogger(__name__)
+
+# cache key builder for conversation by id with operator and agent eager-loaded
+conversation_id_key_builder_full = make_key_builder("conversation_id_full")
 
 
 @inject
@@ -571,3 +576,15 @@ class ConversationService:
             conversation
         )
         return updated_conversation
+
+    # @cache(
+    #     expire=300,
+    #     namespace="conversations:get_conversation_by_id_with_operator_agent",
+    #     key_builder=conversation_id_key_builder_full,
+    #     coder=PickleCoder
+    # )
+    async def get_conversation_by_id_with_operator_agent(self, conversation_id: UUID) -> Optional[ConversationModel]:
+        """Get conversation with operator and agent eager-loaded (avoids async lazy-load / MissingGreenlet)."""
+        return await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
+            conversation_id
+        )
