@@ -177,7 +177,8 @@ class ProjectSettings(BaseSettings):
         # use rediss for ssl
         redis_scheme = "rediss" if self.REDIS_SSL else "redis"
         
-        return f"{redis_scheme}://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        # url encode the password
+        return unquote(f"{redis_scheme}://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}")
 
     @computed_field
     @property
