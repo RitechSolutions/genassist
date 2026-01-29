@@ -94,7 +94,7 @@ async def create_knowledge_item(
     """Create a new knowledge base item"""
     # store url content as text in content field if all rag stores are False
     if item.type == "url":
-        await set_url_content_if_no_rag(item)\
+        await set_url_content_if_no_rag(item)
 
     result = await knowledge_service.create(item)
 
