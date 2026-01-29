@@ -6,6 +6,33 @@ from typing import Optional
 from app.schemas.conversation_analysis import ConversationAnalysisRead
 from app.schemas.recording import RecordingRead
 from app.schemas.transcript_message import TranscriptMessageRead
+from app.schemas.agent_security_settings import AgentSecuritySettingsUpdate
+
+
+class AgentMinimalForCache(BaseModel):
+    """Minimal agent schema for caching - contains only fields needed for security checks."""
+    id: UUID
+    name: str
+    is_active: bool = False
+    security_settings: Optional[AgentSecuritySettingsUpdate] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OperatorWithAgentForCache(BaseModel):
+    """Operator schema with nested agent for caching."""
+    id: UUID
+    agent: Optional[AgentMinimalForCache] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConversationWithOperatorAgentRead(BaseModel):
+    """Conversation schema with operator and agent for caching in security dependencies."""
+    id: UUID
+    operator_id: UUID
+    operator: Optional[OperatorWithAgentForCache] = None
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationBase(BaseModel):

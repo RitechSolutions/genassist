@@ -4,6 +4,8 @@ import base64
 import logging
 from google.cloud import recaptchaenterprise_v1
 from google.oauth2 import service_account
+from app.db.models import AgentModel
+from typing import Optional
 
 
 logger = logging.getLogger(__name__)
@@ -13,7 +15,7 @@ RECAPTCHA_ACTION = "genassist_chat"
 
 def verify_recaptcha_token(
     token: str | None,
-    agent=None
+    agent: Optional[AgentModel] = None
 ) -> tuple[bool, float, str]:
     """
     Verify a reCAPTCHA Enterprise token.
