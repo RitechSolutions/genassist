@@ -41,8 +41,6 @@ async def get_current_user(
 
 
 # Checks for api key header or user JWT token
-
-
 async def auth(
     request: Request,
     api_key: Optional[str] = Depends(api_key_header),
@@ -193,40 +191,6 @@ def socket_auth(required_permissions: list[str]):
 
     return Depends(_auth_dependency)
 
-
-async def _get_conversation_with_agent(conversation_id: UUID):
-    """
-    Fetch conversation with operator and agent relationships loaded in a single query.
-    Returns (conversation, agent) tuple, or (None, None) if not found.
-    """
-    from sqlalchemy import select
-    from sqlalchemy.orm import joinedload
-    from app.db.models import ConversationModel, OperatorModel, AgentModel
-    from app.dependencies.injector import injector
-    from app.repositories.conversations import ConversationRepository
-
-    conversation_repo = injector.get(ConversationRepository)
-
-    # Single query with eager loading of operator, agent, and agent.security_settings
-    query = (
-        select(ConversationModel)
-        .where(ConversationModel.id == conversation_id)
-        .options(
-            joinedload(ConversationModel.operator)
-            .joinedload(OperatorModel.agent)
-            .joinedload(AgentModel.security_settings)
-        )
-    )
-
-    result = await conversation_repo.db.execute(query)
-    conversation = result.unique().scalars().first()
-
-    if not conversation or not conversation.operator or not conversation.operator.agent:
-        return None, None
-
-    return conversation, conversation.operator.agent
-
-
 async def _handle_guest_token(
     request: Request,
     token_str: str,
@@ -334,15 +298,15 @@ async def auth_for_conversation_update(
 
     Optimized to fetch conversation with agent in a single database query.
     """
-    # Fetch conversation with operator and agent in a single query
-    conversation, agent = await _get_conversation_with_agent(conversation_id)
+    # check if agent exists set in the state
+    agent = request.state.agent if hasattr(request.state, "agent") else None
 
-    # If conversation or agent not found, fall back to standard auth
-    if not conversation or not agent:
+    if not agent:
+        # fallback to standard auth
         await auth(request, api_key, user)
         return
 
-    # Route to appropriate auth handler based on agent.security_settings.token_based_auth flag
+    # check if agent.security_settings.token_based_auth is true
     # Check if security_settings exists and token_based_auth is enabled
     token_based_auth = (
         agent.security_settings.token_based_auth 

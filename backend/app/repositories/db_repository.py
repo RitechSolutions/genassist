@@ -140,6 +140,12 @@ class DbRepository(Generic[OrmModelT]):
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
+    async def get_by_operator_id(self, operator_id: UUID, eager: Sequence[str] | None = None) -> Optional[OrmModelT]:
+        stmt = select(self.model).where(self.model.operator_id == operator_id)
+        stmt = self._apply_eager_options(stmt, eager)
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
 
     # ---------- WRITE ----------
     async def create(self, obj: OrmModelT) -> OrmModelT:

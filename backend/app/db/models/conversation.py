@@ -13,6 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import datetime
+from app.db.models.message_model import TranscriptMessageModel
 
 
 class ConversationAnalysisModel(Base):
