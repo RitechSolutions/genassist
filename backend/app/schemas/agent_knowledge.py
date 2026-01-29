@@ -1,7 +1,7 @@
 from uuid import UUID
 from typing import Any, Dict, Optional, Literal, List
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class KBBase(BaseModel):
@@ -22,6 +22,44 @@ class KBBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True, extra="allow")
 
+    @model_validator(mode='after')
+    def validate_rag_config(self) -> 'KBBase':
+        """Validate rag_config structure and embedding model names"""
+        if not self.rag_config:
+            return self
+
+        # Import here to avoid circular dependency
+        from app.constants.embedding_models import ALLOWED_MODEL_NAMES, MODELS_FOR_DOWNLOAD
+
+        # Validate vector config embedding model
+        if vector_config := self.rag_config.get('vector'):
+            if vector_config.get('enabled') and (model := vector_config.get('embedding_model_name')):
+                if model not in ALLOWED_MODEL_NAMES:
+                    raise ValueError(
+                        f'Invalid embedding_model_name: "{model}". '
+                        f'Must be one of: {", ".join(ALLOWED_MODEL_NAMES)}'
+                    )
+
+        # Validate LEGRA config embedding model
+        if legra_config := self.rag_config.get('legra'):
+            if legra_config.get('enabled') and (model := legra_config.get('embedding_model')):
+                # LEGRA uses full paths like 'sentence-transformers/all-MiniLM-L6-v2'
+                if model not in MODELS_FOR_DOWNLOAD:
+                    # Try stripping the prefix to give a better error message
+                    model_name = model.replace('sentence-transformers/', '')
+                    if model_name in ALLOWED_MODEL_NAMES:
+                        raise ValueError(
+                            f'Invalid embedding_model: "{model}". '
+                            f'LEGRA requires the full path: "sentence-transformers/{model_name}"'
+                        )
+                    else:
+                        raise ValueError(
+                            f'Invalid embedding_model: "{model}". '
+                            f'Must be one of: {", ".join(MODELS_FOR_DOWNLOAD)}'
+                        )
+
+        return self
+
     last_synced: Optional[datetime] = None
     last_sync_status: Optional[str] = None
     last_sync_error: Optional[str] = None
@@ -30,7 +68,7 @@ class KBBase(BaseModel):
     sync_active: Optional[bool] = None
     sync_source_id: Optional[UUID] = None
     llm_provider_id: Optional[UUID] = None
-    url: Optional[str] = None
+    urls: Optional[List[str]] = None
 
 
 class KBCreate(KBBase):

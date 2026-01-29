@@ -50,7 +50,7 @@ services:
       - VECTOR_DB_TYPE=chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma_cicd
-      - CHROMA_PORT=8000
+      - CHROMA_PORT=8005
       - DB_HOST=genassist_db_cicd
       - DB_PORT=5432
       - REDIS_HOST=redis
@@ -173,7 +173,7 @@ services:
       - VECTOR_DB_TYPE=chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma_cicd
-      - CHROMA_PORT=8000
+      - CHROMA_PORT=8005
     depends_on:
       redis:
         condition: service_healthy

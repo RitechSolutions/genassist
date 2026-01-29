@@ -135,7 +135,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
             # ---- SharePoint client ----
             try:
                 sp_client = Office365Connector(
-                    sharepoint_url=kb.url,
+                    sharepoint_url=kb.urls[0] if kb.urls else "",
                     client_id=o365_client_id,
                     tenant_id=o365_tenant_id,
                     client_secret=o365_client_secret,

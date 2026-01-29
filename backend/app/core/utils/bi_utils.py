@@ -32,15 +32,18 @@ def update_agent_average_sentiment(
         }
     else:
         agent_data["averageSentiment"]["positive"] = (
-            agent_data["averageSentiment"]["positive"] * (agent_data["callCount"] - 1)
+            agent_data["averageSentiment"]["positive"] *
+            (agent_data["callCount"] - 1)
             + positive_sentiment
         ) / agent_data["callCount"]
         agent_data["averageSentiment"]["neutral"] = (
-            agent_data["averageSentiment"]["neutral"] * (agent_data["callCount"] - 1)
+            agent_data["averageSentiment"]["neutral"] *
+            (agent_data["callCount"] - 1)
             + neutral_sentiment
         ) / agent_data["callCount"]
         agent_data["averageSentiment"]["negative"] = (
-            agent_data["averageSentiment"]["negative"] * (agent_data["callCount"] - 1)
+            agent_data["averageSentiment"]["negative"] *
+            (agent_data["callCount"] - 1)
             + negative_sentiment
         ) / agent_data["callCount"]
     # Round the averages to 2 decimal places
@@ -218,8 +221,10 @@ def calculate_word_count(
 def calculate_speaker_ratio_from_segments(
     transcript_segments: list[TranscriptSegmentInput],
 ) -> Tuple[int, int, int]:
-    customer_word_count = calculate_word_count(transcript_segments, target="customer")
-    agent_word_count = calculate_word_count(transcript_segments, target="agent")
+    customer_word_count = calculate_word_count(
+        transcript_segments, target="customer")
+    agent_word_count = calculate_word_count(
+        transcript_segments, target="agent")
     total_word_count = customer_word_count + agent_word_count
     if total_word_count == 0:
         customer_ratio = agent_ratio = 0
@@ -248,8 +253,10 @@ def calculate_incremental_word_counts(
         Tuple of (new_agent_ratio, new_customer_ratio, new_total_word_count)
     """
     # Calculate incremental word counts from new segments
-    incremental_customer_words = calculate_word_count(new_segments, target="customer")
-    incremental_agent_words = calculate_word_count(new_segments, target="agent")
+    incremental_customer_words = calculate_word_count(
+        new_segments, target="customer")
+    incremental_agent_words = calculate_word_count(
+        new_segments, target="agent")
     incremental_total = incremental_customer_words + incremental_agent_words
 
     # Calculate new total
@@ -271,7 +278,8 @@ def calculate_incremental_word_counts(
     total_customer_words = existing_customer_words + incremental_customer_words
 
     # Calculate new ratios
-    new_customer_ratio = round((total_customer_words / new_total_word_count) * 100)
+    new_customer_ratio = round(
+        (total_customer_words / new_total_word_count) * 100)
     new_agent_ratio = 100 - new_customer_ratio  # Ensures total is 100
 
     return new_agent_ratio, new_customer_ratio, new_total_word_count
@@ -331,36 +339,47 @@ async def set_url_content_if_no_rag(item: KBBase):
 
     vector_db: dict = item.rag_config.get("vector_db", {})
     if not vector_db.get("enabled", False):
-        if not item.url:
+        if not item.urls or len(item.urls) == 0:
             raise AppException(error_key=ErrorKey.MISSING_URL)
         headers = item.extra_metadata.get("http_headers") or item.extra_metadata.get(
             "headers", {}
         )
         headers_lower = {str(k).lower(): v for k, v in headers.items()}
         use_http_request = bool(item.extra_metadata.get("use_http_request"))
-        content = await fetch_from_url(item.url, headers, use_http_request)
-        if headers_lower.get("content-type") == "application/json":
-            item.content = content
-        else:
-            item.content = html2text(content)
+
+        # Fetch content from all URLs and combine
+        all_content = []
+        for url in item.urls:
+            html = await fetch_from_url(url, headers, use_http_request)
+            if headers_lower.get("content-type") == "application/json":
+                all_content.append(html)
+            else:
+                all_content.append(html2text(html))
+        item.content = "\n\n---\n\n".join(all_content)
 
 
 async def set_url_content_if_has_rag(item: KBBase):
 
     vector_db: dict = item.rag_config.get("vector_db", {})
     if vector_db.get("enabled", False):
-        if not item.url:
+        if not item.urls or len(item.urls) == 0:
             raise AppException(error_key=ErrorKey.MISSING_URL)
         headers = item.extra_metadata.get("http_headers") or item.extra_metadata.get(
             "headers", {}
         )
         headers_lower = {str(k).lower(): v for k, v in headers.items()}
         use_http_request = bool(item.extra_metadata.get("use_http_request"))
-        content = await fetch_from_url(item.url, headers, use_http_request)
-        if headers_lower.get("content-type") == "application/json":
-            item.content = content
-        else:
-            item.content = html2text(content)
+
+        # Fetch content from all URLs and combine
+        all_content = []
+        for url in item.urls:
+            html = await fetch_from_url(url, headers, use_http_request)
+            if headers_lower.get("content-type") == "application/json":
+                all_content.append(html)
+            else:
+                all_content.append(html2text(html))
+        item.content = "\n\n---\n\n".join(all_content)
+
 
 def extract_sub_messages(transcript: str, num_messages_to_extract: int = 2) -> str:
     import json

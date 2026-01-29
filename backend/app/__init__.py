@@ -280,7 +280,7 @@ def create_celery():
         task_soft_time_limit=240,  # 4 minutes (soft limit)
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
-        worker_pool="solo",  # Use solo pool (single-threaded) to avoid SIGSEGV with native libraries
+        worker_pool=settings.CELERY_WORKER_POOL,
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
     )

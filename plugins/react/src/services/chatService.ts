@@ -5,6 +5,7 @@ import {
   Attachment,
   AgentThinkingConfig,
   AgentWelcomeData,
+  FileUploadResponse,
 } from "../types";
 import {
   createWebSocket,
@@ -35,19 +36,22 @@ export class ChatService {
   private tenant: string | undefined;
   private agentId: string | undefined;
   private language: string | undefined;
+  private useWs: boolean;
 
   constructor(
     baseUrl: string,
     apiKey: string,
     metadata?: Record<string, any>,
     tenant?: string,
-    language?: string
+    language?: string,
+    useWs: boolean = true
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
     this.language = language;
+    this.useWs = useWs;
     // Try to load a saved conversation for this apiKey from localStorage
     this.loadSavedConversation();
   }
@@ -265,6 +269,18 @@ export class ChatService {
     }
   }
 
+  // Check if an error is a token expiration error
+  private isTokenExpiredError(error: any): boolean {
+    return (
+      error.response &&
+      error.response.status === 401 &&
+      error.response.data &&
+      (error.response.data.error === "Token has expired." ||
+        error.response.data.message === "Token has expired." ||
+        (typeof error.response.data === "string" && error.response.data.includes("Token has expired")))
+    );
+  }
+
   /**
    * Reset the current conversation by clearing the ID and websocket
    */
@@ -410,9 +426,14 @@ export class ChatService {
       }
 
       this.saveConversation();
-      this.connectWebSocket();
+      if (this.useWs) {
+        this.connectWebSocket();
+      }
       return response.data.conversation_id;
-    } catch (error) {
+    } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetConversation();
+      }
       throw error;
     }
   }
@@ -460,14 +481,62 @@ export class ChatService {
         requestBody.metadata = mergedMetadata;
       }
 
-      await axios.patch(
+      const response = await axios.patch(
         `${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`,
         requestBody,
         {
           headers: this.getHeaders(),
         }
       );
+
+      // If not using WebSocket, try to retrieve the response message from the update conversation response
+      if (!this.useWs && this.messageHandler) {
+        try {
+          const responseData = response.data as any;
+          
+          if (responseData.messages && Array.isArray(responseData.messages)) {
+            // Look for the latest agent message in the response
+            for (let i = responseData.messages.length - 1; i >= 0; i--) {
+              const messageData = responseData.messages[i];
+              
+              if (
+                messageData.speaker === "agent" &&
+                messageData.text &&
+                messageData.create_time !== undefined &&
+                messageData.start_time !== undefined &&
+                messageData.end_time !== undefined
+              ) {
+                const agentMessage: ChatMessage = {
+                  create_time: messageData.create_time,
+                  start_time: this.conversationCreateTime
+                    ? messageData.start_time - this.conversationCreateTime
+                    : messageData.start_time,
+                  end_time: this.conversationCreateTime
+                    ? messageData.end_time - this.conversationCreateTime
+                    : messageData.end_time,
+                  speaker: "agent",
+                  text: messageData.text,
+                  message_id: messageData.message_id || messageData.id,
+                };
+                
+                // Only process if this is a new message we haven't seen before
+                // We can't easily check here, so we'll let the handler manage duplicates
+                this.messageHandler(agentMessage);
+                break;
+              }
+            }
+          }
+        } catch (parseError) {
+          console.error("Failed to parse update conversation response:", parseError);
+        }
+      }
     } catch (error: any) {
+      // Check if this is a token expiration error
+      if (this.isTokenExpiredError(error)) {
+        this.resetConversation();
+        throw error;
+      }
+
       // Check if this is the agent inactive error
       if (
         error.response &&
@@ -493,7 +562,7 @@ export class ChatService {
     }
   }
 
-  async uploadFile(chatId: string, file: File): Promise<{ fileUrl: string }> {
+  async uploadFile(chatId: string, file: File): Promise<FileUploadResponse | null> {
     if (!this.conversationId) {
       throw new Error("Conversation not started");
     }
@@ -503,20 +572,28 @@ export class ChatService {
     formData.append("file", file);
 
     try {
-      const response = await axios.post<{ fileUrl: string }>(
+      const response = await axios.post<FileUploadResponse>(
         `${this.baseUrl}/api/genagent/knowledge/upload-chat-file`,
         formData,
         {
           headers: this.getHeaders("multipart/form-data"),
         }
       );
-      return response.data;
-    } catch (error) {
+
+      return response.data as FileUploadResponse;
+    } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetConversation();
+      }
       throw error;
     }
   }
 
   connectWebSocket(): void {
+    if (!this.useWs) {
+      return;
+    }
+
     if (this.webSocket) {
       this.webSocket.close();
     }
@@ -555,6 +632,7 @@ export class ChatService {
     this.webSocket.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data as string);
+
         if (data.type === "message" && this.messageHandler) {
           if (Array.isArray(data.payload)) {
             const messages = data.payload as ChatMessage[];
@@ -680,7 +758,10 @@ export class ChatService {
       if (this.welcomeDataHandler) {
         this.welcomeDataHandler(this.welcomeData);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (this.isTokenExpiredError(err)) {
+        this.resetConversation();
+      }
       // ignore
     }
   }
@@ -715,6 +796,9 @@ export class ChatService {
       });
       
     } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetConversation();
+      }
       console.error('Feedback API call failed:', {
         message: error.message,
         response: error.response?.data,

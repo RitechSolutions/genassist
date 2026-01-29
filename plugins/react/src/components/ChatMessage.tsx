@@ -3,11 +3,10 @@ import { WelcomeCard } from './WelcomeCard';
 import { ChatMessage, ScheduleItem, Translations } from '../types';
 import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { formatTimestamp } from '../utils/time';
-import { getFileIcon } from './FileTypeIcon';
 import { InteractiveContent } from './InteractiveContent';
 import { parseInteractiveContentBlocks } from '../utils/interactiveContent';
 import { defaultTranslations, getTranslationString, mergeTranslations } from '../utils/i18n';
-export { AttachmentPreview } from './AttachmentPreview';
+import { UploadFilePreview } from './common/UploadFilePreview';
 
 interface ChatMessageProps {
   message: ChatMessage;
@@ -75,7 +74,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   const [editingFeedback] = React.useState(false);
   const [displayText] = React.useState<string>(message.text);
   const contentBlocks = React.useMemo(
-    () => parseInteractiveContentBlocks(displayText),
+    () => parseInteractiveContentBlocks(displayText, message?.type as 'file' | 'message' | undefined),
     [displayText]
   );
 
@@ -346,40 +345,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
       {message.attachments && message.attachments.length > 0 && (
         <div style={{ ...attachmentsContainerStyle, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
           {message.attachments.map((attachment, index) => (
-            <div
-              key={index}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 14px',
-                backgroundColor: isUser ? 'rgba(255,255,255,0.12)' : '#f5f5f5',
-                border: isUser ? '1px solid rgba(255,255,255,0.18)' : '1px solid #e5e5e5',
-                borderRadius: '12px',
-                minWidth: '260px',
-                maxWidth: '360px',
-                pointerEvents: 'none',
-              }}
-            >
-              {attachment.type.startsWith('image/') ? (
-                <img
-                  src={attachment.url}
-                  alt={attachment.name}
-                  style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }}
-                />
-              ) : (
-                <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {getFileIcon(attachment.type)}
-                </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{attachment.name}</div>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>
-                  {attachment.type.includes('/') ? attachment.type.split('/')[1].toUpperCase() : attachment.type}
-                  {attachment.size ? ` · ${(attachment.size / 1024).toFixed(1)} KB` : ''}
-                </div>
-              </div>
-            </div>
+            <UploadFilePreview key={index} file={attachment} />
           ))}
         </div>
       )}

@@ -1,6 +1,6 @@
 import React from 'react';
-import { Spinner } from './Spinner';
-import { getFileIcon } from './FileTypeIcon';
+import { Spinner } from '../Spinner';
+import { getFileIcon } from '../FileTypeIcon';
 
 interface AttachmentPreviewProps {
   file: File;
@@ -46,11 +46,16 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({ file, onRe
     overflow: 'hidden',
     whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
+    width: '100%',
   };
 
   const fileNameStyle: React.CSSProperties = {
+    width: '90%',
     fontWeight: 'bold',
     fontSize: '14px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   };
 
   const fileSizeStyle: React.CSSProperties = {
@@ -90,7 +95,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({ file, onRe
       )}
       <div style={fileInfoStyle}>
         <div style={fileNameStyle} title={file.name}>{file.name}</div>
-        <div style={fileSizeStyle}>{(file.size / 1024).toFixed(2)} KB</div>
+        <div style={fileSizeStyle}>{(file.size ? file.size / 1024 : 0).toFixed(2)} KB</div>
       </div>
       {!uploading && (
         <button onClick={onRemove} style={removeButtonStyle} title="Remove file">
