@@ -1,5 +1,6 @@
 from typing import Optional, Dict, List, Literal
 from uuid import UUID
+from fastapi import UploadFile
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 
@@ -13,40 +14,20 @@ class FileBase(BaseModel):
     mime_type: Optional[str] = Field(None, max_length=255, description="MIME type")
     storage_provider: StorageProviderType = Field(default="local", description="Storage provider")
     storage_path: str = Field(..., max_length=1000, description="Path in storage provider")
-    description: Optional[str] = None
-    file_metadata: Optional[Dict] = Field(default_factory=dict)
-    tags: Optional[List[str]] = Field(default_factory=list)
-    permissions: Optional[Dict] = Field(default_factory=dict)
+    description: Optional[str] = Field(None, description="File description")
+    file_metadata: Optional[Dict] = Field(default_factory=dict, description="File metadata")
+    file_extension: Optional[str] = Field(None, max_length=10, description="File extension")
+    tags: Optional[List[str]] = Field(default_factory=list, description="File tags")
+    permissions: Optional[Dict] = Field(default_factory=dict, description="File permissions")
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class FileCreate(BaseModel):
-    name: str = Field(..., max_length=500, description="File name")
-    size: Optional[int] = None
-    mime_type: Optional[str] = Field(None, max_length=255)
-    path: Optional[str] = Field(None, max_length=1000, description="File path (auto-generated if not provided)")
-    storage_path: Optional[str] = Field(None, max_length=1000, description="Path in storage provider (auto-generated if not provided)")
-    storage_provider: StorageProviderType = Field(default="local")
-    description: Optional[str] = None
-    file_extension: Optional[str] = Field(None, max_length=10, description="File extension")
-    file_metadata: Optional[Dict] = Field(default_factory=dict)
-    tags: Optional[List[str]] = Field(default_factory=list)
-    permissions: Optional[Dict] = Field(default_factory=dict)
+class FileCreate(FileBase):
+    file: UploadFile = Field(..., description="File to upload", alias="file")
 
-
-class FileUpdate(BaseModel):
-    name: Optional[str] = Field(None, max_length=500)
-    path: Optional[str] = Field(None, max_length=1000)
-    size: Optional[int] = None
-    mime_type: Optional[str] = Field(None, max_length=255)
-    storage_provider: Optional[StorageProviderType] = None
-    storage_path: Optional[str] = Field(None, max_length=1000)
-    description: Optional[str] = None
-    file_metadata: Optional[Dict] = None
-    tags: Optional[List[str]] = None
-    permissions: Optional[Dict] = None
-
+class FileUpdate(FileBase):
+    file: Optional[UploadFile] = Field(None, description="File to upload", alias="file")
 
 class FileResponse(FileBase):
     id: UUID
