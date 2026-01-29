@@ -1,5 +1,5 @@
 from typing import Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, unquote 
 
 from pydantic import computed_field, ConfigDict, Field
 from pydantic_settings import BaseSettings
@@ -178,21 +178,21 @@ class ProjectSettings(BaseSettings):
     def DATABASE_URL(self) -> str:
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}"
+        return  unquote(f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}")
 
     @computed_field
     @property
     def DATABASE_URL_SYNC(self) -> str:
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}"
+        return unquote(f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}")
 
     @computed_field
     @property
     def POSTGRES_URL(self) -> str:
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return f"postgresql://{user}:{password}@{self.DB_HOST}/postgres"
+        return unquote(f"postgresql://{user}:{password}@{self.DB_HOST}/postgres")
 
     def get_tenant_database_name(self, tenant: str = "master") -> str:
         if tenant == "master":
@@ -206,14 +206,14 @@ class ProjectSettings(BaseSettings):
         tenant_db = self.get_tenant_database_name(tenant)
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{tenant_db}"
+        return unquote(f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{tenant_db}")
 
     def get_tenant_database_url_sync(self, tenant: str = "master") -> str:
         """Generate SYNC database URL for a specific tenant (psycopg2)"""
         tenant_db = self.get_tenant_database_name(tenant)
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{tenant_db}"
+        return unquote(f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{tenant_db}")
 
     model_config = ConfigDict(
         env_file=".env",
