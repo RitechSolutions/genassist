@@ -4,6 +4,7 @@ interface ParsedTranscriptEntry {
   text: string;
   speaker: string;
   start_time: number;
+  type?: string;
 }
 
 /**
@@ -21,7 +22,8 @@ export const parseTranscription = (transcript: Transcript): ParsedTranscriptEntr
       return transcription.map(entry => ({
         speaker: entry.speaker || "Unknown",
         start_time: typeof entry.start_time === 'number' ? entry.start_time : 0,
-        text: entry.text || ""
+        text: entry.text || "",
+        type: entry.type || "message",
       }));
     }
     
@@ -63,7 +65,7 @@ export const parseTranscription = (transcript: Transcript): ParsedTranscriptEntr
 export const getTranscriptPreview = (
   transcript: Transcript, 
   maxLength: number = 100
-): string => {
+): string | React.ReactNode => {
   if (!transcript) return "No transcription available";
   
   const parsedTranscript = parseTranscription(transcript);
@@ -73,6 +75,20 @@ export const getTranscriptPreview = (
   }
   
   for (const entry of parsedTranscript) {
+    // NOTE: handle file attachments
+    if (entry.type === 'file') {
+      const fileInfo = JSON.parse(entry.text);
+
+      let content = '';
+      if (fileInfo?.type.startsWith('image/')) {
+        content += `<img src="${fileInfo?.url}" alt="${fileInfo?.name}" style="width: 30px; height: 30px;" />`;
+      } else {
+        content += `<a href="${fileInfo?.url}" target="_blank" rel="noopener noreferrer" style="color: #6b7280; text-decoration: underline;">${fileInfo?.name}</a>`;
+      }
+
+      return  `<div style="color: #6b7280; flex-direction: row; display: flex; align-items: center; gap: 4px;">File attached ${content}</div>`;
+    }
+
     if (entry.text && entry.text.trim().length > 0) {
       return entry.text.slice(0, maxLength) + (entry.text.length > maxLength ? "..." : "");
     }
