@@ -9,7 +9,7 @@ from app.core.permissions.constants import Permissions as P
 
 router = APIRouter()
 
-@router.post("/", response_model=RolePermissionRead, dependencies=[
+@router.post("", response_model=RolePermissionRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.RolePermission.CREATE))
 ])
@@ -19,7 +19,7 @@ async def create(
 ):
     return await service.create(data)
 
-@router.get("/", response_model=List[RolePermissionRead], dependencies=[
+@router.get("", response_model=List[RolePermissionRead], dependencies=[
     Depends(auth),
     Depends(permissions(P.RolePermission.READ))
 ])

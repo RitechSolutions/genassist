@@ -405,7 +405,7 @@ async def finalize_legra_knowledgebase(
 
 
 @router.post(
-    "/process-files/",
+    "/process-files",
     dependencies=[Depends(auth), Depends(
         permissions("update:knowledge_base"))],
 )
