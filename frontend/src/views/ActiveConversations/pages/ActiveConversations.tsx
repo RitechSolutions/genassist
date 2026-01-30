@@ -199,7 +199,7 @@ export const ActiveConversations = () => {
     };
     fetchCount();
 
-    const interval = setInterval(fetchCount, 5000);
+    const interval = setInterval(fetchCount, 25000);
     return () => {
       isCancelled = true;
       clearInterval(interval);

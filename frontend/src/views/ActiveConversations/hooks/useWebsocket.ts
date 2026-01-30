@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { TranscriptEntry } from "@/interfaces/transcript.interface";
-import { getWsUrl } from "@/config/api";
+import { getWsUrl, isWsEnabled } from "@/config/api";
 import { UseWebSocketTranscriptOptions, StatisticsPayload, TakeoverPayload } from "@/interfaces/websocket.interface";
 import { getTenantId } from "@/services/auth";
 
@@ -17,7 +17,7 @@ export function useWebSocketTranscript({
   const lastConversationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!conversationId || !token) return;
+    if (!isWsEnabled || !conversationId || !token) return;
 
     if (lastConversationIdRef.current === conversationId) return;
 
@@ -29,6 +29,7 @@ export function useWebSocketTranscript({
     const tenantParam = tenant ? `&x-tenant-id=${tenant}` : "";
     
     getWsUrl().then(wsBaseUrl => {
+      if (!isWsEnabled) return;
       const wsUrl = `${wsBaseUrl}/conversations/ws/${conversationId}?access_token=${token}&lang=en&${queryString}${tenantParam}`;
 
       const socket = new WebSocket(wsUrl);
@@ -95,6 +96,8 @@ export function useWebSocketTranscript({
       return () => {
         socket.close();
       };
+    }).catch(() => {
+      // getWsUrl rejects when VITE_WS=false; no socket to clean up
     });
   }, [conversationId, token, transcriptInitial]);
 
