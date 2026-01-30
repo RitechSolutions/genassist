@@ -475,7 +475,7 @@ async def takeover_supervisor(
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[ConversationRead],
     dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
 )

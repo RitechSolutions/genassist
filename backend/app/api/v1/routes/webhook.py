@@ -11,7 +11,7 @@ from fastapi_injector import Injected
 router = APIRouter(tags=["Webhooks"], dependencies=[Depends(auth)])
 
 
-@router.post("/", response_model=WebhookResponse)
+@router.post("", response_model=WebhookResponse)
 async def create_webhook(
     data: WebhookCreate,
     request: Request,
@@ -62,7 +62,7 @@ async def read_webhook(
     return webhook
 
 
-@router.get("/", response_model=list[WebhookResponse], dependencies=[Depends(auth)])
+@router.get("", response_model=list[WebhookResponse], dependencies=[Depends(auth)])
 async def list_webhooks(service: WebhookService = Injected(WebhookService)):
     return await service.get_all_webhooks()
 

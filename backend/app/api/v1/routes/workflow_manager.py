@@ -119,7 +119,7 @@ async def get_available_node_types():
     return list(NODE_DIALOG_SCHEMAS.keys())
 
 # @router.get(
-#     "/",
+#     "",
 #     response_model=List[Workflow],
 #     dependencies=[Depends(auth), Depends(permissions("read:workflow"))],
 # )
