@@ -353,7 +353,7 @@ async def handle_jsonrpc_jsonrpc(
     return await _handle_jsonrpc_internal(request, authorization, mcp_server_service)
 
 
-@router.get("/")
+@router.get("")
 async def handle_root_get(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
