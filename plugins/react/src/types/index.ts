@@ -14,11 +14,13 @@ export interface ChatMessage {
   end_time: number;
   speaker: "customer" | "agent" | "special";
   text: string;
-  attachments?: Attachment[];
   // Optional metadata
+  attachments?: Attachment[];
   message_id?: string;
   feedback?: MessageFeedback[];
   type?: string;
+  linkUrl?: string;
+  linkLabel?: string;
 }
 
 // Attachment type
@@ -135,6 +137,9 @@ export interface GenAgentChatProps {
   noColorAnimation?: boolean; // If true, hides the color animation (backlight) below the chat header. Defaults to false.
   showWelcomeBeforeStart?: boolean;
   allowedExtensions?: AllowedExtension[]; // If provided, only show file attachments with these extensions. Defaults to all extensions.
+  serverUnavailableMessage?: string; // Custom message when server is down
+  serverUnavailableContactUrl?: string; // Optional URL for a contact/support
+  serverUnavailableContactLabel?: string; // Label for the contact link
 }
 
 // NOTE: These are the only file extensions that are supported by the chat.
