@@ -929,6 +929,9 @@ function App() {
         agentName={chatSettings.agentName}
         logoUrl={chatSettings.logoUrl}
         useWs={true}
+        serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
+        serverUnavailableContactUrl="https://www.ritech.co/"
+        serverUnavailableContactLabel="Contact Support"
         onError={handleError}
         mode="floating"
         floatingConfig={{
