@@ -1,7 +1,7 @@
 name: PR Title Check
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions:
@@ -36,9 +36,9 @@ jobs:
               "release"
             ];
 
-            // Accept either:
-            //   "<type>: <subject>"  OR  "<type> - <subject>"
-            // Require a subject (at least 1 non-space char).
+            // Accept:
+            // "<type>: subject"
+            // "<type> - subject"
             const match = title.match(/^([a-zA-Z]+)\s*[:\-]\s*(\S.+)$/);
             const type = match?.[1]?.toLowerCase();
             const subject = match?.[2];
@@ -46,61 +46,60 @@ jobs:
             const valid = Boolean(type && allowedTypes.includes(type) && subject);
 
             const guidance = `
-                PR title must start with one of the allowed types, followed by **":"** or **"-"**, then a short description.
-                
-                Allowed types:
-                ${allowedTypes.map(t => `- \`${t}\``).join("\n")}
-                
-                Accepted formats:
-                - \`feat: add user onboarding\`
-                - \`chore - bump dependencies\`
-                - \`fix: handle null pointer\`
-                - \`docs - update README\`
-                `.trim();
-                
-                            async function upsertComment(body) {
-                              const { data: comments } = await github.rest.issues.listComments({
+              PR title must start with one of the allowed types, followed by ":" or "-", then a short description.
+              
+              Allowed types:
+              ${allowedTypes.map(t => `- ${t}`).join("\n")}
+              
+              Accepted formats:
+              - feat: add login
+              - chore - bump dependencies
+              - fix: handle edge case
+              - docs - update README
+              `.trim();
+              
+                          async function upsertComment(body) {
+                            const { data: comments } = await github.rest.issues.listComments({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              issue_number: prNumber,
+                              per_page: 100,
+                            });
+              
+                            const marker = "<!-- pr-title-check -->";
+                            const existing = comments.find(
+                              c => c.user?.type === "Bot" && c.body?.includes(marker)
+                            );
+              
+                            const fullBody = `${marker}\n${body}`;
+              
+                            if (existing) {
+                              await github.rest.issues.updateComment({
+                                owner: context.repo.owner,
+                                repo: context.repo.repo,
+                                comment_id: existing.id,
+                                body: fullBody,
+                              });
+                            } else {
+                              await github.rest.issues.createComment({
                                 owner: context.repo.owner,
                                 repo: context.repo.repo,
                                 issue_number: prNumber,
-                                per_page: 100,
+                                body: fullBody,
                               });
-                
-                              const marker = "<!-- pr-title-check -->";
-                              const existing = comments.find(
-                                c => c.user?.type === "Bot" && c.body?.includes(marker)
-                              );
-                
-                              const fullBody = `${marker}\n${body}`;
-                
-                              if (existing) {
-                                await github.rest.issues.updateComment({
-                                  owner: context.repo.owner,
-                                  repo: context.repo.repo,
-                                  comment_id: existing.id,
-                                  body: fullBody,
-                                });
-                              } else {
-                                await github.rest.issues.createComment({
-                                  owner: context.repo.owner,
-                                  repo: context.repo.repo,
-                                  issue_number: prNumber,
-                                  body: fullBody,
-                                });
-                              }
                             }
-                
-                            if (!valid) {
-                              await upsertComment(
-                                `❌ **PR title check failed**\n\nCurrent title: \`${title || "(empty)"}\`\n\n${guidance}`
-                              );
-                              core.setFailed(`Invalid PR title: "${title}"`);
-                              return;
-                            }
+                          }
+              
+                          if (!valid) {
+                            await upsertComment(
+                              `❌ **PR title check failed**\n\nCurrent title: \`${title || "(empty)"}\`\n\n${guidance}`
+                            );
+                            core.setFailed(`Invalid PR title: "${title}"`);
+                            return;
+                          }
 
             await upsertComment(
               `✅ **PR title check passed**\n\nCurrent title: \`${title}\``
             );
 
             core.info(`PR title valid: ${title}`);
-
