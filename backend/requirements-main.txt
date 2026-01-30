@@ -131,7 +131,7 @@ opentelemetry-proto==1.36.0
 opentelemetry-sdk==1.36.0
 opentelemetry-semantic-conventions==0.57b0
 opentelemetry-util-http==0.57b0
-orjson==3.10.18
+orjson==3.11.6
 ormsgpack==1.12.1
 overrides==7.7.0
 packaging==24.2
@@ -160,7 +160,7 @@ Pygments==2.19.1
 pylint==3.3.6
 pylint-fail-under==0.3.0
 pylint_junit==0.3.5
-pypdf==6.6.0
+pypdf==6.6.2
 PyPika==0.48.9
 pyproject_hooks==1.2.0
 pytest==8.3.5
@@ -170,7 +170,7 @@ pytest-env==1.1.5
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 PyJWT[crypto]==2.10.1
-python-multipart==0.0.20
+python-multipart==0.0.22
 python-pptx==0.6.23
 pytz==2025.1
 PyYAML==6.0.2

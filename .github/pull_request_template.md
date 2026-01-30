@@ -35,9 +35,7 @@
 
 - [ ] My code follows GenAssist's style guidelines (see [CONTRIBUTING.md](../CONTRIBUTING.md))
 - [ ] I have performed a self-review of my code
-- [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
 - [ ] I have added tests that prove my fix/feature works
 - [ ] New and existing unit tests pass locally with my changes
 - [ ] Any dependent changes have been merged and published

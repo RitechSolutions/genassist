@@ -153,14 +153,14 @@
         }
       }
     },
-    "/api/user/": {
+    "/api/user": {
       "post": {
         "tags": [
           "v1",
           "User"
         ],
         "summary": "Create",
-        "operationId": "create_api_user__post",
+        "operationId": "create_api_user_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -208,7 +208,7 @@
           "User"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_user__get",
+        "operationId": "get_all_api_user_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -337,7 +337,7 @@
                   "items": {
                     "$ref": "#/components/schemas/UserRead"
                   },
-                  "title": "Response Get All Api User  Get"
+                  "title": "Response Get All Api User Get"
                 }
               }
             }
@@ -627,14 +627,14 @@
         }
       }
     },
-    "/api/user-type/": {
+    "/api/user-type": {
       "get": {
         "tags": [
           "v1",
           "UserTypes"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_user_type__get",
+        "operationId": "get_all_api_user_type_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -645,7 +645,7 @@
                     "$ref": "#/components/schemas/UserTypeRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api User Type  Get"
+                  "title": "Response Get All Api User Type Get"
                 }
               }
             }
@@ -666,7 +666,7 @@
           "UserTypes"
         ],
         "summary": "Create",
-        "operationId": "create_api_user_type__post",
+        "operationId": "create_api_user_type_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -709,14 +709,14 @@
         ]
       }
     },
-    "/api/roles/": {
+    "/api/roles": {
       "get": {
         "tags": [
           "v1",
           "Roles"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_roles__get",
+        "operationId": "get_all_api_roles_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -845,7 +845,7 @@
                   "items": {
                     "$ref": "#/components/schemas/RoleRead"
                   },
-                  "title": "Response Get All Api Roles  Get"
+                  "title": "Response Get All Api Roles Get"
                 }
               }
             }
@@ -868,7 +868,7 @@
           "Roles"
         ],
         "summary": "Create",
-        "operationId": "create_api_roles__post",
+        "operationId": "create_api_roles_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -1071,7 +1071,7 @@
         }
       }
     },
-    "/api/api-keys/": {
+    "/api/api-keys": {
       "post": {
         "tags": [
           "v1",
@@ -1079,7 +1079,7 @@
         ],
         "summary": "Create",
         "description": "Create an API key with a given list of 'role_ids'.\nNOTE: The user must actually possess those roles, or creation will fail.",
-        "operationId": "create_api_api_keys__post",
+        "operationId": "create_api_api_keys_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -1127,7 +1127,7 @@
           "ApiKeys"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_api_keys__get",
+        "operationId": "get_all_api_api_keys_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -1273,7 +1273,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ApiKeyRead"
                   },
-                  "title": "Response Get All Api Api Keys  Get"
+                  "title": "Response Get All Api Api Keys Get"
                 }
               }
             }
@@ -1451,14 +1451,14 @@
         }
       }
     },
-    "/api/permissions/": {
+    "/api/permissions": {
       "post": {
         "tags": [
           "v1",
           "Permissions"
         ],
         "summary": "Create",
-        "operationId": "create_api_permissions__post",
+        "operationId": "create_api_permissions_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -1506,7 +1506,7 @@
           "Permissions"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_permissions__get",
+        "operationId": "get_all_api_permissions_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -1635,7 +1635,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PermissionRead"
                   },
-                  "title": "Response Get All Api Permissions  Get"
+                  "title": "Response Get All Api Permissions Get"
                 }
               }
             }
@@ -1813,14 +1813,14 @@
         }
       }
     },
-    "/api/role-permissions/": {
+    "/api/role-permissions": {
       "get": {
         "tags": [
           "v1",
           "RolePermissions"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_role_permissions__get",
+        "operationId": "get_all_api_role_permissions_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1831,7 +1831,7 @@
                     "$ref": "#/components/schemas/RolePermissionRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Role Permissions  Get"
+                  "title": "Response Get All Api Role Permissions Get"
                 }
               }
             }
@@ -1852,7 +1852,7 @@
           "RolePermissions"
         ],
         "summary": "Create",
-        "operationId": "create_api_role_permissions__post",
+        "operationId": "create_api_role_permissions_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2055,14 +2055,14 @@
         }
       }
     },
-    "/api/app-settings/": {
+    "/api/app-settings": {
       "get": {
         "tags": [
           "v1",
           "AppSettings"
         ],
         "summary": "List Settings",
-        "operationId": "list_settings_api_app_settings__get",
+        "operationId": "list_settings_api_app_settings_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2073,7 +2073,7 @@
                     "$ref": "#/components/schemas/AppSettingsRead"
                   },
                   "type": "array",
-                  "title": "Response List Settings Api App Settings  Get"
+                  "title": "Response List Settings Api App Settings Get"
                 }
               }
             }
@@ -2094,7 +2094,7 @@
           "AppSettings"
         ],
         "summary": "Create Setting",
-        "operationId": "create_setting_api_app_settings__post",
+        "operationId": "create_setting_api_app_settings_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2325,14 +2325,14 @@
         }
       }
     },
-    "/api/feature-flags/": {
+    "/api/feature-flags": {
       "get": {
         "tags": [
           "v1",
           "FeatureFlags"
         ],
         "summary": "List Feature Flags",
-        "operationId": "list_feature_flags_api_feature_flags__get",
+        "operationId": "list_feature_flags_api_feature_flags_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2343,7 +2343,7 @@
                     "$ref": "#/components/schemas/FeatureFlagRead"
                   },
                   "type": "array",
-                  "title": "Response List Feature Flags Api Feature Flags  Get"
+                  "title": "Response List Feature Flags Api Feature Flags Get"
                 }
               }
             }
@@ -2364,7 +2364,7 @@
           "FeatureFlags"
         ],
         "summary": "Create Feature Flag",
-        "operationId": "create_feature_flag_api_feature_flags__post",
+        "operationId": "create_feature_flag_api_feature_flags_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2754,14 +2754,14 @@
         }
       }
     },
-    "/api/datasources/": {
+    "/api/datasources": {
       "get": {
         "tags": [
           "v1",
           "Datasources"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_datasources__get",
+        "operationId": "get_all_api_datasources_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2772,7 +2772,7 @@
                     "$ref": "#/components/schemas/DataSourceRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Datasources  Get"
+                  "title": "Response Get All Api Datasources Get"
                 }
               }
             }
@@ -2793,7 +2793,7 @@
           "Datasources"
         ],
         "summary": "Create",
-        "operationId": "create_api_datasources__post",
+        "operationId": "create_api_datasources_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3308,14 +3308,14 @@
         ]
       }
     },
-    "/api/operators/": {
+    "/api/operators": {
       "get": {
         "tags": [
           "v1",
           "Operators"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_operators__get",
+        "operationId": "get_all_api_operators_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3326,7 +3326,7 @@
                     "$ref": "#/components/schemas/OperatorRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Operators  Get"
+                  "title": "Response Get All Api Operators Get"
                 }
               }
             }
@@ -3347,7 +3347,7 @@
           "Operators"
         ],
         "summary": "Create",
-        "operationId": "create_api_operators__post",
+        "operationId": "create_api_operators_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4061,14 +4061,14 @@
         }
       }
     },
-    "/api/conversations/": {
+    "/api/conversations": {
       "get": {
         "tags": [
           "v1",
           "Conversations"
         ],
         "summary": "Get",
-        "operationId": "get_api_conversations__get",
+        "operationId": "get_api_conversations_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -4373,7 +4373,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ConversationRead"
                   },
-                  "title": "Response Get Api Conversations  Get"
+                  "title": "Response Get Api Conversations Get"
                 }
               }
             }
@@ -4955,14 +4955,14 @@
         }
       }
     },
-    "/api/llm-providers/": {
+    "/api/llm-providers": {
       "get": {
         "tags": [
           "v1",
           "LlmProviders"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_llm_providers__get",
+        "operationId": "get_all_api_llm_providers_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4973,7 +4973,7 @@
                     "$ref": "#/components/schemas/LlmProviderRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Llm Providers  Get"
+                  "title": "Response Get All Api Llm Providers Get"
                 }
               }
             }
@@ -4994,7 +4994,7 @@
           "LlmProviders"
         ],
         "summary": "Create",
-        "operationId": "create_api_llm_providers__post",
+        "operationId": "create_api_llm_providers_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5225,14 +5225,14 @@
         }
       }
     },
-    "/api/llm-analyst/": {
+    "/api/llm-analyst": {
       "get": {
         "tags": [
           "v1",
           "LlmAnalyst"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_llm_analyst__get",
+        "operationId": "get_all_api_llm_analyst_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5243,7 +5243,7 @@
                     "$ref": "#/components/schemas/LlmAnalyst"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Llm Analyst  Get"
+                  "title": "Response Get All Api Llm Analyst Get"
                 }
               }
             }
@@ -5264,7 +5264,7 @@
           "LlmAnalyst"
         ],
         "summary": "Create",
-        "operationId": "create_api_llm_analyst__post",
+        "operationId": "create_api_llm_analyst_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6599,19 +6599,19 @@
         }
       }
     },
-    "/api/genagent/knowledge/process-files/": {
+    "/api/genagent/knowledge/process-files": {
       "post": {
         "tags": [
           "v1",
           "Knowledge Base"
         ],
         "summary": "Process Files",
-        "operationId": "process_files_api_genagent_knowledge_process_files__post",
+        "operationId": "process_files_api_genagent_knowledge_process_files_post",
         "requestBody": {
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_process_files_api_genagent_knowledge_process_files__post"
+                "$ref": "#/components/schemas/Body_process_files_api_genagent_knowledge_process_files_post"
               }
             }
           },
@@ -6676,7 +6676,7 @@
         ]
       }
     },
-    "/api/genagent/workflow/": {
+    "/api/genagent/workflow": {
       "get": {
         "tags": [
           "v1",
@@ -6684,7 +6684,7 @@
         ],
         "summary": "Get Workflows",
         "description": "Get all workflows for the current user",
-        "operationId": "get_workflows_api_genagent_workflow__get",
+        "operationId": "get_workflows_api_genagent_workflow_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6695,7 +6695,7 @@
                     "$ref": "#/components/schemas/Workflow"
                   },
                   "type": "array",
-                  "title": "Response Get Workflows Api Genagent Workflow  Get"
+                  "title": "Response Get Workflows Api Genagent Workflow Get"
                 }
               }
             }
@@ -6717,7 +6717,7 @@
         ],
         "summary": "Create Workflow",
         "description": "Create a new workflow",
-        "operationId": "create_workflow_api_genagent_workflow__post",
+        "operationId": "create_workflow_api_genagent_workflow_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7546,14 +7546,14 @@
         ]
       }
     },
-    "/api/twilio/": {
+    "/api/twilio": {
       "get": {
         "tags": [
           "v1",
           "Twilio Agents"
         ],
         "summary": "Twilio Voice API Root Endpoint",
-        "operationId": "sample_api_twilio__get",
+        "operationId": "sample_api_twilio_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7623,7 +7623,7 @@
         }
       }
     },
-    "/api/webhooks/": {
+    "/api/webhooks": {
       "get": {
         "tags": [
           "v1",
@@ -7631,7 +7631,7 @@
           "Webhooks"
         ],
         "summary": "List Webhooks",
-        "operationId": "list_webhooks_api_webhooks__get",
+        "operationId": "list_webhooks_api_webhooks_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7642,7 +7642,7 @@
                     "$ref": "#/components/schemas/WebhookResponse"
                   },
                   "type": "array",
-                  "title": "Response List Webhooks Api Webhooks  Get"
+                  "title": "Response List Webhooks Api Webhooks Get"
                 }
               }
             }
@@ -7664,7 +7664,7 @@
           "Webhooks"
         ],
         "summary": "Create Webhook",
-        "operationId": "create_webhook_api_webhooks__post",
+        "operationId": "create_webhook_api_webhooks_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -8520,7 +8520,7 @@
         }
       }
     },
-    "/api/ml-models/": {
+    "/api/ml-models": {
       "get": {
         "tags": [
           "v1",
@@ -8528,7 +8528,7 @@
         ],
         "summary": "Get All Ml Models",
         "description": "Get all ML models.",
-        "operationId": "get_all_ml_models_api_ml_models__get",
+        "operationId": "get_all_ml_models_api_ml_models_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -8539,7 +8539,7 @@
                     "$ref": "#/components/schemas/MLModelRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Ml Models Api Ml Models  Get"
+                  "title": "Response Get All Ml Models Api Ml Models Get"
                 }
               }
             }
@@ -8561,7 +8561,7 @@
         ],
         "summary": "Create Ml Model",
         "description": "Create a new ML model.",
-        "operationId": "create_ml_model_api_ml_models__post",
+        "operationId": "create_ml_model_api_ml_models_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11069,7 +11069,7 @@
         }
       }
     },
-    "/api/tenants/": {
+    "/api/tenants": {
       "get": {
         "tags": [
           "v1",
@@ -11077,7 +11077,7 @@
         ],
         "summary": "List Tenants",
         "description": "List all active tenants",
-        "operationId": "list_tenants_api_tenants__get",
+        "operationId": "list_tenants_api_tenants_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -11088,7 +11088,7 @@
                     "$ref": "#/components/schemas/TenantResponse"
                   },
                   "type": "array",
-                  "title": "Response List Tenants Api Tenants  Get"
+                  "title": "Response List Tenants Api Tenants Get"
                 }
               }
             }
@@ -11110,7 +11110,7 @@
         ],
         "summary": "Create Tenant",
         "description": "Create a new tenant",
-        "operationId": "create_tenant_api_tenants__post",
+        "operationId": "create_tenant_api_tenants_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12554,7 +12554,9 @@
             }
           }
         }
-      },
+      }
+    },
+    "/api/mcp": {
       "post": {
         "tags": [
           "v1",
@@ -12562,7 +12564,7 @@
         ],
         "summary": "Handle Jsonrpc Root",
         "description": "Handle JSON-RPC requests at root endpoint.",
-        "operationId": "handle_jsonrpc_root_api_mcp__post",
+        "operationId": "handle_jsonrpc_root_api_mcp_post",
         "parameters": [
           {
             "name": "Authorization",
@@ -12782,7 +12784,7 @@
         }
       }
     },
-    "/api/mcp-servers/": {
+    "/api/mcp-servers": {
       "get": {
         "tags": [
           "v1",
@@ -12791,7 +12793,7 @@
         ],
         "summary": "List Mcp Servers",
         "description": "Get all MCP servers for the current user.",
-        "operationId": "list_mcp_servers_api_mcp_servers__get",
+        "operationId": "list_mcp_servers_api_mcp_servers_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12802,7 +12804,7 @@
                     "$ref": "#/components/schemas/MCPServerResponse"
                   },
                   "type": "array",
-                  "title": "Response List Mcp Servers Api Mcp Servers  Get"
+                  "title": "Response List Mcp Servers Api Mcp Servers Get"
                 }
               }
             }
@@ -12825,7 +12827,7 @@
         ],
         "summary": "Create Mcp Server",
         "description": "Create a new MCP server.",
-        "operationId": "create_mcp_server_api_mcp_servers__post",
+        "operationId": "create_mcp_server_api_mcp_servers_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -13029,7 +13031,7 @@
         }
       }
     },
-    "/api/customers/": {
+    "/api/customers": {
       "post": {
         "tags": [
           "v1",
@@ -13037,7 +13039,7 @@
         ],
         "summary": "Create",
         "description": "Create a customer.",
-        "operationId": "create_api_customers__post",
+        "operationId": "create_api_customers_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -13085,7 +13087,7 @@
           "Customers"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_customers__get",
+        "operationId": "get_all_api_customers_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -13126,7 +13128,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CustomerRead"
                   },
-                  "title": "Response Get All Api Customers  Get"
+                  "title": "Response Get All Api Customers Get"
                 }
               }
             }
@@ -14871,7 +14873,7 @@
         ],
         "title": "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
       },
-      "Body_process_files_api_genagent_knowledge_process_files__post": {
+      "Body_process_files_api_genagent_knowledge_process_files_post": {
         "properties": {
           "files": {
             "items": {
@@ -14886,7 +14888,7 @@
         "required": [
           "files"
         ],
-        "title": "Body_process_files_api_genagent_knowledge_process_files__post"
+        "title": "Body_process_files_api_genagent_knowledge_process_files_post"
       },
       "Body_refresh_token_api_auth_refresh_token_post": {
         "properties": {

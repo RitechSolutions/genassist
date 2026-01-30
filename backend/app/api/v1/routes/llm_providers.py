@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[LlmProviderRead],
     dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.READ))],
 )
@@ -43,7 +43,7 @@ async def get(
 
 
 @router.post(
-    "/",
+    "",
     response_model=LlmProviderRead,
     dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.CREATE))],
 )

@@ -16,7 +16,7 @@ from app.core.permissions.constants import Permissions as P
 router = APIRouter()
 
 @router.get(
-    "/", response_model=List[FeatureFlagRead],
+    "", response_model=List[FeatureFlagRead],
     dependencies=[Depends(auth), Depends(permissions(P.FeatureFlag.READ))]
 )
 async def list_feature_flags(svc: FeatureFlagService = Injected(FeatureFlagService)):
@@ -30,7 +30,7 @@ async def get_feature_flag(flag_id: UUID, svc: FeatureFlagService = Injected(Fea
     return await svc.get_by_id(flag_id)
 
 @router.post(
-    "/", response_model=FeatureFlagRead,
+    "", response_model=FeatureFlagRead,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(auth), Depends(permissions(P.FeatureFlag.CREATE))]
 )

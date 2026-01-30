@@ -14,7 +14,7 @@ from app.services.roles import RolesService
 router = APIRouter()
 
 
-@router.get("/", response_model=List[RoleRead], dependencies=[
+@router.get("", response_model=List[RoleRead], dependencies=[
     Depends(auth),
     Depends(permissions(P.Role.READ))
     ])
@@ -30,7 +30,7 @@ async def get(role_id: UUID, service: RolesService = Injected(RolesService)):
     return await service.get_by_id(role_id)
 
 
-@router.post("/", response_model=RoleRead, dependencies=[
+@router.post("", response_model=RoleRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.Role.CREATE))
     ])

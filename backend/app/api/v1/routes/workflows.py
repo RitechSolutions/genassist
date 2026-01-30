@@ -56,7 +56,7 @@ SUPPORTED_NODE_TYPES = [
 
 
 @router.post(
-    "/",
+    "",
     response_model=Workflow,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(auth), Depends(permissions(P.Workflow.CREATE))],
@@ -93,7 +93,7 @@ async def get_node_dialog_schemas():
 
 
 @router.get(
-    "/",
+    "",
     response_model=List[Workflow],
     dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
 )

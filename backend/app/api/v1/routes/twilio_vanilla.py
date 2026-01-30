@@ -41,7 +41,7 @@ if not OPENAI_API_KEY:
     raise ValueError('Missing the OpenAI API key. Please set it in the .env file.')
 
 
-@router.get("/", summary="Twilio Voice API Root Endpoint")
+@router.get("", summary="Twilio Voice API Root Endpoint")
 async def sample():
     """Root endpoint for Twilio Voice API."""
     return JSONResponse(

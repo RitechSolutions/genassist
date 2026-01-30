@@ -44,8 +44,12 @@ from app.api.v1.routes import (
     file_manager
 )
 
+# Disable redirect slashes for all routes
+default_router_options = {
+    "redirect_slashes": False
+}
 
-router = APIRouter()
+router = APIRouter(**default_router_options)
 
 router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 router.include_router(users.router, prefix="/user", tags=["User"])

@@ -9,7 +9,7 @@ from app.services.customers import CustomersService
 router = APIRouter()
 
 
-@router.post("/", response_model=CustomerRead, dependencies=[
+@router.post("", response_model=CustomerRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.Customer.CREATE))
 ])
@@ -20,7 +20,7 @@ async def create(customer: CustomerCreate, service: CustomersService = Injected(
     return await service.create(customer)
 
 
-@router.get("/", response_model=list[CustomerRead], dependencies=[
+@router.get("", response_model=list[CustomerRead], dependencies=[
     Depends(auth),
     Depends(permissions(P.Customer.READ))
 ])

@@ -377,7 +377,7 @@ async def handle_root_get(
         )
 
 
-@router.post("/", response_model=JSONRPCResponse)
+@router.post("", response_model=JSONRPCResponse)
 async def handle_jsonrpc_root(
     request: JSONRPCRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
@@ -499,7 +499,7 @@ async def handle_sse(
     return None
 
 
-@router.post("/messages/", include_in_schema=False)
+@router.post("/messages", include_in_schema=False)
 async def handle_sse_messages(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
@@ -539,7 +539,7 @@ async def handle_sse_messages(
     # Extract root_path from request path - if request is to /api/mcp/messages/, root_path should be /api/mcp
     request_path = request.url.path
     # Remove the endpoint path (/messages/) to get the root_path
-    root_path = request_path.rsplit("/messages/", 1)[0] if "/messages/" in request_path else "/api/mcp"
+    root_path = request_path.rsplit("/messages", 1)[0] if "/messages/" in request_path else "/api/mcp"
     scope = ensure_root_path_in_scope(request.scope, root_path)
     
     # Call the ASGI app directly - it handles sending the response itself

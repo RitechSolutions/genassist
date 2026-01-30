@@ -1,7 +1,7 @@
 ---
 name: Feature
 about: Add a new feature or enhancement to GenAssist
-title: '[FEATURE] '
+title: 'feat: '
 labels: enhancement
 assignees: ''
 ---

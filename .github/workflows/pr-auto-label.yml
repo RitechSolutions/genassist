@@ -1,4 +1,4 @@
-name: PR labels (area + size + type)
+name: PR Labels (area + size + type)
 
 on:
   pull_request_target:

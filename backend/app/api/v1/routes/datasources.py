@@ -11,7 +11,7 @@ from app.core.permissions.constants import Permissions as P
 router = APIRouter()
 
 
-@router.post("/", response_model=DataSourceRead, dependencies=[
+@router.post("", response_model=DataSourceRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.DataSource.CREATE))
 ])
@@ -40,7 +40,7 @@ async def get(
     return await service.get_by_id(datasource_id, decrypt_sensitive)
 
 
-@router.get("/", response_model=list[DataSourceRead], dependencies=[
+@router.get("", response_model=list[DataSourceRead], dependencies=[
     Depends(auth),
     Depends(permissions(P.DataSource.READ))
 ])

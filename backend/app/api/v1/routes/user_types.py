@@ -18,7 +18,7 @@ async def get(user_type_id: UUID, service: UserTypesService = Injected(UserTypes
     return await service.get_by_id(user_type_id)
 
 
-@router.get("/", response_model=list[UserTypeRead],dependencies=[
+@router.get("", response_model=list[UserTypeRead],dependencies=[
     Depends(auth),
     Depends(permissions(P.UserType.READ))
     ])
@@ -26,7 +26,7 @@ async def get_all(service: UserTypesService = Injected(UserTypesService)):
     return await service.get_all()
 
 
-@router.post("/", response_model=UserTypeRead, dependencies=[
+@router.post("", response_model=UserTypeRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.UserType.CREATE))
     ])
