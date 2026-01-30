@@ -1,7 +1,7 @@
 ---
 name: Bug Fix
 about: Fix a bug or resolve an issue in GenAssist
-title: '[BUGFIX] '
+title: 'fix: '
 labels: bug
 assignees: ''
 ---
