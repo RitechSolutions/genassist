@@ -85,8 +85,8 @@ async def get(
     "/in-progress/start",
     dependencies=[
         Depends(auth),
-        Depends(permissions(P.Conversation.CREATE_IN_PROGRESS)),
         Depends(get_agent_for_start),  # Get agent early for rate limiting and CORS
+        Depends(permissions(P.Conversation.CREATE_IN_PROGRESS)),
     ],
 )
 @limiter.limit(get_agent_rate_limit_start)
@@ -316,9 +316,9 @@ async def update_no_agent(
 @router.patch(
     "/in-progress/update/{conversation_id}",
     dependencies=[
+        Depends(get_agent_for_update),
         Depends(auth_for_conversation_update),
         Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
-        Depends(get_agent_for_update),
     ],
 )
 @limiter.limit(get_agent_rate_limit_update, key_func=get_conversation_identifier)

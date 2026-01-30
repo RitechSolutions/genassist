@@ -32,7 +32,7 @@ import { formatDuration, formatMessageTime } from "../helpers/format";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { Textarea } from "@/components/textarea";
 import { submitConversationFeedback } from "@/services/transcripts";
-import { apiRequest } from "@/config/api";
+import { apiRequest, isWsEnabled } from "@/config/api";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
 import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
@@ -167,7 +167,7 @@ function TranscriptDialogContent({
     }
   }, [userInitiatedTakeOver]);
 
-  const shouldInitWebSocket = transcript?.id && token;
+  const shouldInitWebSocket = isWsEnabled && transcript?.id && token;
 
   const {
     messages: wsMessages,

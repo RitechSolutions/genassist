@@ -14,6 +14,7 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    HnswConfigDiff,
 )
 
 from .base import BaseVectorDB, VectorDBConfig, SearchResult
@@ -147,7 +148,7 @@ class QdrantVectorDB(BaseVectorDB):
                 if self.config.index_type == "hnsw":
                     # Qdrant uses hnsw_config parameter
                     extra_params = self.config.extra_params or {}
-                    vector_params.hnsw_config = extra_params.get(
+                    hnsw_config_dict = extra_params.get(
                         "hnsw_config",
                         {
                             "m": self.config.hnsw_m,
@@ -155,6 +156,8 @@ class QdrantVectorDB(BaseVectorDB):
                             "full_scan_threshold": 10000,
                         },
                     )
+                    # Create proper HnswConfigDiff object to avoid Pydantic serialization warnings
+                    vector_params.hnsw_config = HnswConfigDiff(**hnsw_config_dict)
 
                 logger.info(
                     f"Creating Qdrant collection '{self.collection_name}' with dimension {dimension} and distance metric {self.config.distance_metric}"

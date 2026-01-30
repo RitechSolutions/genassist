@@ -4,12 +4,14 @@ Dependencies for agent-specific security (CORS and rate limiting)
 
 import logging
 from uuid import UUID
-from fastapi import Depends, Request
+from fastapi import Request
 from fastapi_injector import Injected
 
 from app.auth.utils import get_current_user_id
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
+from app.core.exceptions.exception_classes import AppException
+from app.core.exceptions.error_messages import ErrorKey
 
 logger = logging.getLogger(__name__)
 
@@ -32,26 +34,36 @@ async def get_agent_for_update(
     request: Request,
     conversation_id: UUID,
     agent_config_service: AgentConfigService = Injected(AgentConfigService),
-    # conversation_service: ConversationService = Injected(ConversationService),
+    conversation_service: ConversationService = Injected(ConversationService),
 ):
     """
     Dependency to get agent for conversation update endpoint.
     Gets agent from conversation's operator.
     Stores agent in request.state for use in rate limiting and CORS.
     """
-    # Get conversation with operator and agent eager-loaded (avoids async lazy-load)
-    # conversation = await conversation_service.get_conversation_by_id_with_operator_agent(
-    #     conversation_id, raise_not_found=False
-    # )
 
-    # if conversation and conversation.operator and conversation.operator.agent:
-    #     agent = conversation.operator.agent
-    # else:
-    #     # Fallback: get agent from user_id (for new conversations)
-    #     userid = get_current_user_id()
-    #     agent = await agent_config_service.get_by_user_id(userid)
+    try:
+        # check if agent exists set in the state
+        state_agent = request.state.agent if hasattr(request.state, "agent") else None
+        if state_agent:
+            return state_agent
 
-    userid = get_current_user_id()
-    agent = await agent_config_service.get_by_user_id(userid)
-    request.state.agent = agent
-    return agent
+        # get conversation with operator and agent eager-loaded
+        conversation = await conversation_service.get_conversation_by_id_with_operator_agent(conversation_id)
+        if conversation is None:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
+
+        operator = conversation.operator
+        agent = conversation.operator.agent
+        
+        # if agent is not set, get it from the operator
+        if agent is None:
+            agent = await agent_config_service.get_by_operator_id(operator.id)
+            if agent is None:
+                raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
+
+        request.state.agent = agent
+        return agent
+    except AppException:
+        raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
+    

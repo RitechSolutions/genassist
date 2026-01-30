@@ -21,6 +21,7 @@ from app.schemas.user import UserCreate, UserUpdate
 from app.db.models.user import UserModel
 import logging
 from fastapi_cache import FastAPICache
+from redis.exceptions import ResponseError
 
 logger = logging.getLogger(__name__)
 
@@ -158,9 +159,14 @@ class UserRepository:
         await self.db.commit()
         await self.db.refresh(user)
 
-        # Invalidate the cache for this user
+        # Invalidate the cache for this user (safe for Redis Cluster: Lua scripts without keys not supported)
         cache_key = f"auth:users:get_full:{user_id}"
-        await FastAPICache.get_backend().clear(key=cache_key)
+        try:
+            await FastAPICache.get_backend().clear(key=cache_key)
+        except ResponseError as e:
+            if "Lua scripts without any input keys are not supported" not in str(e):
+                raise
+            # Redis Cluster: ignore; cache will expire or be overwritten
 
         return user
 

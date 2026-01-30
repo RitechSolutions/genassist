@@ -10,6 +10,7 @@ from app.schemas.file import FileCreate, FileUpdate
 from app.cache.redis_cache import make_key_builder
 from starlette_context import context
 from fastapi_cache import FastAPICache
+from redis.exceptions import ResponseError
 
 file_manager_key_builder = make_key_builder("file_manager")
 
@@ -107,10 +108,15 @@ class FileManagerRepository:
         await self.db.commit()
         await self.db.refresh(file)
         
-        # Invalidate cache
+        # Invalidate cache (safe for Redis Cluster: Lua scripts without keys not supported)
         cache_key = f"file_manager:file:{file_id}"
-        await FastAPICache.get_backend().clear(key=cache_key)
-        
+        try:
+            await FastAPICache.get_backend().clear(key=cache_key)
+        except ResponseError as e:
+            if "Lua scripts without any input keys are not supported" not in str(e):
+                raise
+            # Redis Cluster: ignore; cache will expire or be overwritten
+
         return file
 
     async def delete_file(self, file_id: UUID) -> None:
@@ -120,6 +126,11 @@ class FileManagerRepository:
         file.updated_by = context.get("user_id")
         await self.db.commit()
         
-        # Invalidate cache
+        # Invalidate cache (safe for Redis Cluster: Lua scripts without keys not supported)
         cache_key = f"file_manager:file:{file_id}"
-        await FastAPICache.get_backend().clear(key=cache_key)
+        try:
+            await FastAPICache.get_backend().clear(key=cache_key)
+        except ResponseError as e:
+            if "Lua scripts without any input keys are not supported" not in str(e):
+                raise
+            # Redis Cluster: ignore; cache will expire or be overwritten

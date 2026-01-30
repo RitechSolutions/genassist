@@ -54,9 +54,14 @@ VECTOR_DEFAULTS = {
     "chunk_separators": get_vector_default("chunk_separators", ""),
     "chunk_keep_separator": get_vector_default("chunk_keep_separator", True),
     "chunk_strip_whitespace": get_vector_default("chunk_strip_whitespace", True),
+    "embedding_type": get_vector_default("embedding_type", "bedrock"),
     "embedding_model_name": get_vector_default(
         "embedding_model_name", "all-MiniLM-L6-v2"
     ),
+    "embedding_model_id": get_vector_default(
+        "embedding_model_id", "amazon.titan-embed-text-v2:0"
+    ),
+    "embedding_region_name": get_vector_default("embedding_region_name", "ca-central-1"),
     "embedding_device_type": get_vector_default("embedding_device_type", "cpu"),
     "embedding_batch_size": get_vector_default("embedding_batch_size", 32),
     "embedding_normalize_embeddings": get_vector_default(

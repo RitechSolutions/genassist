@@ -10,15 +10,15 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
-from app.core.utils.enums.sort_direction_enum import SortDirection
-from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination, resolve_sort_column
-from app.db.base import Base
+from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination
 from app.db.models.conversation import ConversationModel
 from app.db.models.message_model import TranscriptMessageModel
 from app.schemas.conversation import ConversationCreate
-from app.schemas.filter import BaseFilterModel, ConversationFilter
+from app.schemas.filter import ConversationFilter
 from app.core.utils.bi_utils import filter_conversation_date, filter_conversation_messages_create_time
 from app.db.models.conversation import ConversationAnalysisModel
+from app.db.models.operator import OperatorModel
+from app.db.models import AgentModel
 
 
 @inject
@@ -72,6 +72,7 @@ class ConversationRepository:
         query = select(ConversationModel).where(ConversationModel.id == conversation_id).options(
             joinedload(ConversationModel.analysis),
             joinedload(ConversationModel.recording),
+            joinedload(ConversationModel.operator),
         )
 
         # Build message loading with optional filtering
@@ -380,3 +381,23 @@ class ConversationRepository:
                 ConversationModel.id == conversation_id)
         )
         return result.scalar_one_or_none()
+
+    async def fetch_conversation_by_id_with_operator_agent(
+        self, conversation_id: UUID
+    ) -> Optional[ConversationModel]:
+        """
+        Fetch conversation by ID with operator and agent eager-loaded.
+        Use this when you need to access conversation.operator.agent without triggering
+        async lazy load (which would cause MissingGreenlet).
+        """
+        query = (
+            select(ConversationModel)
+            .where(ConversationModel.id == conversation_id)
+            .options(
+                joinedload(ConversationModel.operator)
+                .joinedload(OperatorModel.agent)
+                .joinedload(AgentModel.security_settings)
+            )
+        )
+        result = await self.db.execute(query)
+        return result.unique().scalars().first()
