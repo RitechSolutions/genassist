@@ -98,8 +98,4 @@ jobs:
                             return;
                           }
 
-            await upsertComment(
-              `✅ **PR title check passed**\n\nCurrent title: \`${title}\``
-            );
-
             core.info(`PR title valid: ${title}`);
