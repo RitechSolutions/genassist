@@ -267,11 +267,16 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
     };
 
     // Determine icon and style based on message content
+    // Agent off & server down
+    const isAgentOffOrServerDown =
+      message.text.toLowerCase().includes('offline') ||
+      message.text.toLowerCase().includes('inactive') ||
+      message.text.toLowerCase().includes('unavailable') ||
+      (message.linkUrl && message.linkLabel);
     let icon;
     let backgroundColor = '#E3F2FD';
     let textColor = '#1976D2';
-    
-    if (message.text.toLowerCase().includes('offline') || message.text.toLowerCase().includes('inactive')) {
+    if (isAgentOffOrServerDown) {
       icon = <AlertCircle size={18} />;
       backgroundColor = '#FFF3E0';
       textColor = '#F57C00';
@@ -290,15 +295,38 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
       fontFamily,
       fontWeight: '500',
       display: 'flex',
-      alignItems: 'center',
+      flexDirection: 'column',
+      alignItems: 'flex-start',
       gap: '8px',
+    };
+
+    const linkStyle: React.CSSProperties = {
+      color: textColor,
+      textDecoration: 'underline',
+      cursor: 'pointer',
+      fontSize: '14px',
+      fontFamily,
+      fontWeight: '500',
     };
 
     return (
       <div style={specialMessageStyle}>
-        <div style={specialBubbleStyle}>
+        <div style={{ ...specialBubbleStyle, flexDirection: 'row', alignItems: 'center' }}>
           {icon}
-          {message.text}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span>{message.text}</span>
+            {message.linkUrl && message.linkLabel && (
+              <a
+                href={message.linkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={linkStyle}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {message.linkLabel}
+              </a>
+            )}
+          </div>
         </div>
       </div>
     );

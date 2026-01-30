@@ -92,10 +92,15 @@ export default App;
 | theme | object | No | - | Custom theme options |
 | headerTitle | string | No | 'Chat' | Title displayed in the chat header |
 | placeholder | string | No | 'Type a message...' | Placeholder text for the input |
+| description | string | No | 'Support' | A short agent description text below header title |
+| serverUnavailableMessage | string | No | 'The agent is currently offline, please check back later. Thank you!' | Custom message for when agent is offline (Agent is off or server is down) |
+| serverUnavailableContactUrl | string | No | - | Url to redirect user for contact support |
+| serverUnavailableContactLabel | string | No | Contact support | Label for contact support |
 | useWS | boolean | false | true | 'Enable or disable websocket...' |
 | useAudio | boolean | false | false | 'Enable or disable audio on chat input...' |
 | useFile | boolean | false | false | 'Enable or disable file attachments on chat input...' |
 | reCaptchaKey | string | false | undefined | 'Use google reCaptchaV3 site-key...' |
+| mode | string | true | flotaing | 'Chat mode, floating or fullscreen' |
 | allowedExtensions | string[] | false | undefined | 'Look for type AllowedExtension and see the supported list of extensions' |
 
 

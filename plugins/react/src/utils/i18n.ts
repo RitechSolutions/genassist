@@ -56,6 +56,9 @@ export interface Translations {
     editParameter: string;
     defineKeyValue: string;
   };
+  fileUpload?: {
+    fileTypeNotSupported: string;
+  };
 }
 
 // Default English translations loaded from JSON file

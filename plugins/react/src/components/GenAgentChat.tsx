@@ -5,7 +5,7 @@ import { useChat } from '../hooks/useChat';
 import { ChatMessage, GenAgentChatProps, ScheduleItem, Attachment, AttachmentWithFile } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
-import { Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2 } from 'lucide-react';
+import { Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
 import { ChatBubble } from './ChatBubble';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
@@ -48,6 +48,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   noColorAnimation = false,
   showWelcomeBeforeStart = true,
   allowedExtensions = [],
+  serverUnavailableMessage,
+  serverUnavailableContactUrl,
+  serverUnavailableContactLabel,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -110,6 +113,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentWithFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
+  const [fileErrorToast, setFileErrorToast] = useState<string | null>(null);
+  const fileErrorToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -161,7 +166,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     language: resolvedLanguage,
     onError,
     onTakeover,
-    onFinalize
+    onFinalize,
+    serverUnavailableMessage,
+    serverUnavailableContactUrl,
+    serverUnavailableContactLabel,
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioService = useRef<AudioService | null>(null);
@@ -224,6 +232,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   useEffect(() => {
     hasAnchoredHistory.current = false;
   }, [conversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (fileErrorToastTimeoutRef.current) {
+        clearTimeout(fileErrorToastTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Ensure chat is always open when mode is fullscreen
   useEffect(() => {
@@ -450,38 +466,58 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       setUploadingFiles(newUploadingFiles);
 
       try {
-        // Upload files and get attachment references
-        const uploadResults = await Promise.all(
-          newFiles.map(async (file, index) => ({
-            file,
-            index,
-            attachment: await uploadFile(file),
-          }))
+        // Upload files and get attachment references (use allSettled so one failure doesn't skip the rest)
+        const settled = await Promise.allSettled(
+          newFiles.map(async (file) => ({ file, attachment: await uploadFile(file) }))
         );
 
-        // Create a map of file reference (name + size + lastModified) to uploaded attachment
         const fileToAttachmentMap = new Map<string, Attachment | null>();
-        uploadResults.forEach(({ file, attachment }) => {
+        const failedFileKeys = new Set<string>();
+        settled.forEach((result, index) => {
+          const file = newFiles[index];
+          if (!file) return;
           const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
+          if (result.status === 'rejected') {
+            fileToAttachmentMap.set(fileKey, null);
+            failedFileKeys.add(fileKey);
+            return;
+          }
+          const { attachment } = result.value;
           fileToAttachmentMap.set(fileKey, attachment);
+          if (attachment === null) {
+            failedFileKeys.add(fileKey);
+          }
         });
 
-        // Update attachments with the uploaded file references
+        const hasFailedUploads = failedFileKeys.size > 0;
+
+        // Update attachments: remove failed files, set attachment for successful ones
         setAttachments(prev => {
-          return prev.map(att => {
-            const fileKey = `${att.file.name}:${att.file.size}:${att.file.lastModified}`;
-            const uploadedAttachment = fileToAttachmentMap.get(fileKey);
-            
-            // If this attachment matches one of the newly uploaded files, update it
-            if (uploadedAttachment !== undefined) {
-              return {
-                ...att,
-                attachment: uploadedAttachment,
-              };
-            }
-            return att;
-          });
+          return prev
+            .filter(att => {
+              const fileKey = `${att.file.name}:${att.file.size}:${att.file.lastModified}`;
+              return !failedFileKeys.has(fileKey);
+            })
+            .map(att => {
+              const fileKey = `${att.file.name}:${att.file.size}:${att.file.lastModified}`;
+              const uploadedAttachment = fileToAttachmentMap.get(fileKey);
+              if (uploadedAttachment !== undefined) {
+                return { ...att, attachment: uploadedAttachment };
+              }
+              return att;
+            });
         });
+
+        if (hasFailedUploads) {
+          if (fileErrorToastTimeoutRef.current) {
+            clearTimeout(fileErrorToastTimeoutRef.current);
+          }
+          setFileErrorToast(t('fileUpload.fileTypeNotSupported', 'This file type is not supported.'));
+          fileErrorToastTimeoutRef.current = setTimeout(() => {
+            setFileErrorToast(null);
+            fileErrorToastTimeoutRef.current = null;
+          }, 4000);
+        }
       } catch (error) {
         // ignore
         console.error('Error uploading file', error);
@@ -1417,6 +1453,28 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             ))}
           </div>
         )}
+
+        {fileErrorToast && (
+          <div
+            style={{
+              margin: '0 16px 8px',
+              padding: '10px 14px',
+              backgroundColor: '#FFF3E0',
+              color: '#E65100',
+              borderRadius: '12px',
+              fontSize,
+              fontFamily,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              flexShrink: 0,
+            }}
+            role="alert"
+          >
+            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+            <span>{fileErrorToast}</span>
+          </div>
+        )}
         
         {useFile && attachments.length > 0 && (
           <div style={{ padding: '0 16px', marginBottom: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -1475,7 +1533,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    if ((inputValue.trim() !== '' || attachments.length > 0) && connectionState === 'connected' && !isAgentTyping) {
+                    if ((inputValue.trim() !== '' || attachments.length > 0) && !isAgentTyping) {
                       submitMessage();
                     }
                   }
@@ -1498,7 +1556,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   <button 
                     type="submit" 
                     style={sendButtonStyle}
-                    disabled={(inputValue.trim() === '' && attachments.length === 0) || connectionState !== 'connected' || isAgentTyping}
+                    disabled={(inputValue.trim() === '' && attachments.length === 0) || isAgentTyping}
                   >
                     <ArrowUp size={18} strokeWidth={3} color="#ffffff" />
                   </button>

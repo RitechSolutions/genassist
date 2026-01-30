@@ -37,6 +37,9 @@ export class ChatService {
   private agentId: string | undefined;
   private language: string | undefined;
   private useWs: boolean;
+  private serverUnavailableMessage: string | undefined;
+  private serverUnavailableContactUrl: string | undefined;
+  private serverUnavailableContactLabel: string | undefined;
 
   constructor(
     baseUrl: string,
@@ -172,6 +175,16 @@ export class ChatService {
 
   setWelcomeDataHandler(handler: ((data: AgentWelcomeData) => void) | null) {
     this.welcomeDataHandler = handler;
+  }
+
+  setServerUnavailableConfig(
+    message?: string,
+    contactUrl?: string,
+    contactLabel?: string
+  ): void {
+    this.serverUnavailableMessage = message;
+    this.serverUnavailableContactUrl = contactUrl;
+    this.serverUnavailableContactLabel = contactLabel;
   }
 
   getPossibleQueries(): string[] {
@@ -329,6 +342,10 @@ export class ChatService {
    */
   getConversationId(): string | null {
     return this.conversationId;
+  }
+
+  getConversationCreateTime(): number | null {
+    return this.conversationCreateTime;
   }
 
   isConversationFinalized(): boolean {
@@ -550,7 +567,11 @@ export class ChatService {
             start_time: now - this.conversationCreateTime,
             end_time: now - this.conversationCreateTime + 0.01,
             speaker: "special",
-            text: "The agent is currently offline, please check back later. Thank you!",
+            text: this.serverUnavailableMessage ?? "The agent is currently offline, please check back later. Thank you!",
+            ...(this.serverUnavailableContactUrl && {
+              linkUrl: this.serverUnavailableContactUrl,
+              linkLabel: this.serverUnavailableContactLabel ?? "Contact support",
+            }),
           };
           this.messageHandler(errorMessage);
         }
