@@ -12,7 +12,7 @@ def encrypt_key(key: str) -> str:
 def decrypt_key(token: str) -> str:
     try:
         decrypt = fernet.decrypt(token.encode()).decode()
-        print(decrypt)
+        # print(decrypt)
         return decrypt
     except Exception as e:
         print(f"Error decrypting key: {e}")
