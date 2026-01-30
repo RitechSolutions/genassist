@@ -13,9 +13,26 @@ export interface UseChatProps {
   onError?: (error: Error) => void;
   onTakeover?: () => void;
   onFinalize?: () => void;
+  serverUnavailableMessage?: string; // Custom message when server is down
+  serverUnavailableContactUrl?: string; // Optional URL for contact/support
+  serverUnavailableContactLabel?: string; // Label for the contact link
 }
 
-export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, language, onError, onTakeover, onFinalize }: UseChatProps) => {
+const DEFAULT_SERVER_UNAVAILABLE_MESSAGE = 'The service is temporarily unavailable. Please try again later.';
+const DEFAULT_SERVER_UNAVAILABLE_CONTACT_LABEL = 'Contact support';
+
+function isNetworkOrServerError(error: any): boolean {
+  // No response = network error
+  if (!error.response) {
+    const code = error?.code;
+    if (code === 'ERR_NETWORK' || code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ERR_CONNECTION_REFUSED') return true;
+    return true; // any request error without response is treated as server/network issue
+  }
+  const status = error.response?.status;
+  return typeof status === 'number' && status >= 500;
+}
+
+export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, language, onError, onTakeover, onFinalize, serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel }: UseChatProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [preloadedAttachments, setPreloadedAttachments] = useState<Attachment[]>([]);
@@ -120,6 +137,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
 
       // Clean up existing service if it exists
       if (chatServiceRef.current) {
+        chatServiceRef.current.setConnectionStateHandler(() => {});
         chatServiceRef.current.disconnect();
         chatServiceRef.current.setWelcomeDataHandler(null);
       }
@@ -174,6 +192,12 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
         }
       });
 
+      chatServiceRef.current.setServerUnavailableConfig(
+        serverUnavailableMessage,
+        serverUnavailableContactUrl,
+        serverUnavailableContactLabel
+      );
+
       // Check for a saved conversation and connect to it
       const convId = chatServiceRef.current.getConversationId();
       if (convId) {
@@ -182,6 +206,9 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
           setIsFinalized(true);
         } else {
           chatServiceRef.current.connectWebSocket();
+          if (!useWs) {
+            setConnectionState('connected');
+          }
         }
       }
       // Pull initial static data
@@ -225,13 +252,19 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
           onFinalizeRef.current();
         }
       });
+
+      chatServiceRef.current.setServerUnavailableConfig(
+        serverUnavailableMessage,
+        serverUnavailableContactUrl,
+        serverUnavailableContactLabel
+      );
     }
 
     // Cleanup only on unmount
     return () => {
       // Only cleanup on unmount, not on every dependency change
     };
-  }, [baseUrl, apiKey, tenant, metadataString, language, useWs]);
+  }, [baseUrl, apiKey, tenant, metadataString, language, useWs, serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel]);
 
   // Update language when it changes (without re-initializing the service)
   useEffect(() => {
@@ -392,16 +425,32 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
       setIsAgentTyping(false);
       if (isTokenExpiredError(error)) {
         resetToInitialState();
-      }
-      if (onErrorRef.current && error instanceof Error) {
+      } else if (isNetworkOrServerError(error)) {
+        // Show custom server-unavailable message
+        const now = Date.now() / 1000;
+        const createTime = chatServiceRef.current?.getConversationCreateTime();
+        const startTime = createTime != null ? now - createTime : 0;
+        const endTime = startTime + 0.01;
+        const specialMessage: ChatMessage = {
+          create_time: now,
+          start_time: startTime,
+          end_time: endTime,
+          speaker: 'special',
+          text: serverUnavailableMessage ?? DEFAULT_SERVER_UNAVAILABLE_MESSAGE,
+          ...(serverUnavailableContactUrl && {
+            linkUrl: serverUnavailableContactUrl,
+            linkLabel: serverUnavailableContactLabel ?? DEFAULT_SERVER_UNAVAILABLE_CONTACT_LABEL,
+          }),
+        };
+        setMessages(prev => [...prev, specialMessage]);
+        // Don't call onError so the user only sees our custom message
+      } else if (onErrorRef.current && error instanceof Error) {
         onErrorRef.current(error);
-      } else {
-        // ignore
       }
     } finally {
       setIsLoading(false);
     }
-  }, [preloadedAttachments, isTakenOver, isTokenExpiredError, resetToInitialState]);
+  }, [preloadedAttachments, isTakenOver, isTokenExpiredError, resetToInitialState, serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel]);
 
   const startConversation = useCallback(async (reCaptchaToken: string | undefined) => {
     if (!chatServiceRef.current) {
