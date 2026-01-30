@@ -1,7 +1,7 @@
 ---
 name: Core Implementation
 about: Core system changes, refactoring, or architectural improvements to GenAssist
-title: '[CORE] '
+title: 'refactor: '
 labels: core, refactoring
 assignees: ''
 ---

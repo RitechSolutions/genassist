@@ -275,6 +275,8 @@ Follow the [Conventional Commits](https://www.conventionalcommits.org/) specific
 
 - `feat`: New feature
 - `fix`: Bug fix
+- `hotfix`: Critical production fix
+- `bugfix`: Bug fix (alias for fix)
 - `docs`: Documentation changes
 - `style`: Code style changes (formatting, missing semicolons, etc.)
 - `refactor`: Code refactoring
@@ -282,6 +284,9 @@ Follow the [Conventional Commits](https://www.conventionalcommits.org/) specific
 - `chore`: Maintenance tasks (dependencies, build config, etc.)
 - `perf`: Performance improvements
 - `ci`: CI/CD changes
+- `build`: Build system changes
+- `security`: Security-related changes
+- `release`: Release preparation
 
 ### Examples
 
@@ -312,9 +317,31 @@ configuration details.
 
 ## Pull Request Process
 
+### PR Title Format
+
+**Important**: PR titles are validated by an automated workflow. Your PR title must follow this format:
+
+```
+<type>: <description>
+```
+
+or
+
+```
+<type> - <description>
+```
+
+**Allowed types**: `feat`, `fix`, `hotfix`, `bugfix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `build`, `security`, `release`
+
+**Examples**:
+- `feat: add user authentication`
+- `fix: resolve memory leak in conversation service`
+- `docs - update installation instructions`
+- `chore: bump dependencies`
+
 ### PR Requirements
 
-1. **Target Branch**: 
+1. **Target Branch**:
    - Features → `development`
    - Hotfixes → `main`
    - Core changes → `development` (may require special review)
