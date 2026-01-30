@@ -160,7 +160,7 @@ Pygments==2.19.1
 pylint==3.3.6
 pylint-fail-under==0.3.0
 pylint_junit==0.3.5
-pypdf==6.6.0
+pypdf==6.6.2
 PyPika==0.48.9
 pyproject_hooks==1.2.0
 pytest==8.3.5
@@ -236,3 +236,5 @@ google-cloud-speech>=2.34.0
 google-cloud-storage>=3.5.0
 google-cloud-recaptcha-enterprise==1.30.0
 mcp>=1.0.0
+python-multipart>=0.0.22
+orjson>=3.11.6
