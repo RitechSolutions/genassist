@@ -131,7 +131,7 @@ opentelemetry-proto==1.36.0
 opentelemetry-sdk==1.36.0
 opentelemetry-semantic-conventions==0.57b0
 opentelemetry-util-http==0.57b0
-orjson==3.10.18
+orjson==3.11.6
 ormsgpack==1.12.1
 overrides==7.7.0
 packaging==24.2
@@ -170,7 +170,7 @@ pytest-env==1.1.5
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 PyJWT[crypto]==2.10.1
-python-multipart==0.0.20
+python-multipart==0.0.22
 python-pptx==0.6.23
 pytz==2025.1
 PyYAML==6.0.2
@@ -236,5 +236,3 @@ google-cloud-speech>=2.34.0
 google-cloud-storage>=3.5.0
 google-cloud-recaptcha-enterprise==1.30.0
 mcp>=1.0.0
-python-multipart>=0.0.22
-orjson>=3.11.6
