@@ -34,6 +34,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - HF_HUB_OFFLINE=1            # Use cached Hugging Face models only (no network calls)
       - WORKERS=1 # Number of workers
       - VECTOR_DB_TYPE=chroma
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
@@ -139,6 +140,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      - HF_HUB_OFFLINE=1            # Use cached Hugging Face models only (no network calls)
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
@@ -160,6 +162,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      - HF_HUB_OFFLINE=1            # Use cached Hugging Face models only (no network calls)
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0

@@ -38,6 +38,14 @@ RUN pip install --upgrade pip setuptools wheel && \
     # C. Re-install strictly CPU-only versions
     pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
+# 4. Download Hugging Face models for offline/firewalled deployments
+COPY scripts/download_models.py /tmp/download_models.py
+ENV HF_HOME="/opt/hf_cache"
+RUN mkdir -p /opt/hf_cache && \
+    python /tmp/download_models.py && \
+    rm /tmp/download_models.py
+
+
 # ==========================================
 # Stage 2: Runtime (Minimal & Secure)
 # ==========================================
@@ -71,6 +79,8 @@ RUN useradd -m -u 1000 genassist
 
 # 3. Copy LEAN Virtual Environment from Builder
 COPY --from=builder /opt/venv /opt/venv
+# Copy hugging face cache from builder
+COPY --from=builder --chown=genassist:genassist /opt/hf_cache /home/genassist/.cache
 
 # 4. Install Playwright with Chromium
 RUN playwright install --with-deps chromium && \
