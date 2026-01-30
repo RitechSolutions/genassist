@@ -95,9 +95,7 @@ steps:
 
       : > .env
       echo "VITE_UI_VERSION=${branchNo}-$(Build.BuildNumber)" >> .env
-      echo "VITE_PRIVATE_API_URL=https://api.dev.genassist.ritech.io/api" >> .env
       echo "VITE_PUBLIC_API_URL=https://api.dev.genassist.ritech.io/api" >> .env
-      echo "VITE_WEBSOCKET_PRIVATE_URL=wss://api.dev.genassist.ritech.io/api" >> .env
       echo "VITE_WEBSOCKET_PUBLIC_URL=wss://api.dev.genassist.ritech.io/api" >> .env
 
       # Use secret passed via env
@@ -105,7 +103,7 @@ steps:
       echo "VITE_MULTI_TENANT_ENABLED=true" >> .env
 
       echo "current.env (redacted):"
-      grep -E '^(VITE_UI_VERSION|VITE_PRIVATE_API_URL|VITE_PUBLIC_API_URL|VITE_WEBSOCKET_PRIVATE_URL|VITE_WEBSOCKET_PUBLIC_URL|VITE_MULTI_TENANT_ENABLED)=' .env
+      grep -E '^(VITE_UI_VERSION|VITE_PUBLIC_API_URL|VITE_WEBSOCKET_PUBLIC_URL|VITE_MULTI_TENANT_ENABLED)=' .env
       echo "VITE_GENASSIST_CHAT_APIKEY=***hidden***"
 
       echo "building image"
