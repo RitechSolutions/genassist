@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getWsUrl } from "@/config/api";
+import { getWsUrl, isWsEnabled } from "@/config/api";
 import {
   DashboardWebSocketMessage,
   UseWebSocketDashboardOptions,
@@ -27,6 +27,7 @@ export function useWebSocketDashboard({
   const reconnectAttempts = useRef(0);
 
   const connect = async () => {
+    if (!isWsEnabled) return;
     try {
       const wsBaseUrl = await getWsUrl();
       const topicsQuery = topics.map(t => `topics=${t}`).join("&");
@@ -237,6 +238,7 @@ export function useWebSocketDashboard({
   };
 
   useEffect(() => {
+    if (!isWsEnabled) return;
     connect();
     return () => socketRef.current?.close();
   // eslint-disable-next-line react-hooks/exhaustive-deps
