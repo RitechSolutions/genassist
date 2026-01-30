@@ -1,7 +1,7 @@
 name: PR labels (area + size + type)
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize, edited]
 
 permissions:
@@ -12,18 +12,21 @@ jobs:
   label:
     runs-on: ubuntu-latest
     steps:
-      # Area labels by folder changes
+      - name: Checkout base branch (safe)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
       - name: Apply area labels
         uses: actions/labeler@v5
         with:
-          repo-token: "${{ secrets.GITHUB_TOKEN }}"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/labeler.yml
 
-      # Type labels by PR title prefixes (feat/fix/chore/docs/refactor)
       - name: Apply type labels from PR title
         uses: bcoe/conventional-release-labels@v1
         with:
-          token: "${{ secrets.GITHUB_TOKEN }}"
+          token: ${{ secrets.GITHUB_TOKEN }}
           type_labels: |
             {
               "feat": "enhancement",
