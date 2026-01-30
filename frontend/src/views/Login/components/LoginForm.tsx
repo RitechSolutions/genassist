@@ -10,7 +10,7 @@ interface LoginFormProps {
   isLoading: boolean;
 }
 
-const isMultiTenantEnabled = true;//import.meta.env.VITE_MULTI_TENANT_ENABLED === "true";
+const isMultiTenantEnabled = import.meta.env.VITE_MULTI_TENANT_ENABLED === "true";
 
 export const LoginForm = ({ onSubmit, isLoading }: LoginFormProps) => {
   const [username, setUsername] = useState("");
