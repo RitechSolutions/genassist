@@ -11,7 +11,7 @@ from app.services.operators import OperatorService
 router = APIRouter()
 
 
-@router.post("/", status_code=201, response_model=OperatorReadAfterCreate,
+@router.post("", status_code=201, response_model=OperatorReadAfterCreate,
                       dependencies=[
                           Depends(auth),
                           Depends(permissions(P.Operator.UPDATE))
@@ -25,7 +25,7 @@ async def create(operator: OperatorCreate, operator_service: OperatorService = I
     await operator_service.set_operator_latest_call(operator_read_after_create)
     return operator_read_after_create
 
-@router.get("/", response_model=list[OperatorRead],
+@router.get("", response_model=list[OperatorRead],
                      dependencies=[
                          Depends(auth),
                          Depends(permissions(P.Operator.READ))

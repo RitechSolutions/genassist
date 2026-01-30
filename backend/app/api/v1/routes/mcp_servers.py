@@ -15,7 +15,7 @@ from fastapi_injector import Injected
 router = APIRouter(tags=["MCP Servers"], dependencies=[Depends(auth)])
 
 
-@router.post("/", response_model=MCPServerResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=MCPServerResponse, status_code=status.HTTP_201_CREATED)
 async def create_mcp_server(
     data: MCPServerCreate,
     request: Request,
@@ -28,7 +28,7 @@ async def create_mcp_server(
         raise HTTPException(status_code=e.status_code, detail=e.error_detail or str(e.error_key))
 
 
-@router.get("/", response_model=List[MCPServerResponse])
+@router.get("", response_model=List[MCPServerResponse])
 async def list_mcp_servers(
     request: Request,
     service: MCPServerService = Injected(MCPServerService),

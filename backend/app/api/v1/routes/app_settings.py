@@ -13,7 +13,7 @@ from app.core.permissions.constants import Permissions as P
 
 router = APIRouter()
 
-@router.get("/", response_model=List[AppSettingsRead],
+@router.get("", response_model=List[AppSettingsRead],
             dependencies=[Depends(auth), Depends(permissions(P.AppSettings.READ))])
 async def list_settings(svc: AppSettingsService = Injected(AppSettingsService)):
     return await svc.get_all()
@@ -29,7 +29,7 @@ async def get_schemas(svc: AppSettingsService = Injected(AppSettingsService)):
 async def get_setting(setting_id: UUID, svc: AppSettingsService = Injected(AppSettingsService)):
     return await svc.get_by_id(setting_id)
 
-@router.post("/", response_model=AppSettingsRead, status_code=status.HTTP_201_CREATED,
+@router.post("", response_model=AppSettingsRead, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(auth), Depends(permissions(P.AppSettings.CREATE))])
 async def create_setting(dto: AppSettingsCreate, svc: AppSettingsService = Injected(AppSettingsService)):
     return await svc.create(dto)

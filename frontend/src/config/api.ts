@@ -29,6 +29,7 @@ const api = axios.create({
   timeout: 120000, // Increased to 2 minutes for SQL operations
 });
 
+// Interceptor: Request
 api.interceptors.request.use(
   (config) => {
     const accessToken = localStorage.getItem("access_token");
@@ -52,6 +53,7 @@ api.interceptors.request.use(
   }
 );
 
+// Interceptor: Response
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -169,7 +171,10 @@ export const apiRequest = async <T>(
   config: Partial<AxiosRequestConfig> = {}
 ): Promise<T | null> => {
   const baseURL = await getApiUrl();
-  const fullUrl = `${baseURL}${endpoint.replace(/^\//, "")}`;
+  // remove starting slash from endpoint
+  let fullUrl = `${baseURL}${endpoint.replace(/^\//, "")}`
+  // remove last slash && remove last slash also before ? or & or #
+  fullUrl = fullUrl.replace(/\/$/, "").replace(/\/([?&#])/, "$1");
 
   try {
     const response = await api.request<T>({

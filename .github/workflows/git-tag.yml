@@ -1,4 +1,4 @@
-name: Create Git Tag on PR merge
+name: Create & Push Git Tag
 
 on:
   pull_request:

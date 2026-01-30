@@ -1,7 +1,7 @@
 ---
 name: Improvement/Suggestion
 about: Suggest an improvement or enhancement to GenAssist functionality
-title: '[IMPROVEMENT] '
+title: 'refactor: '
 labels: improvement
 assignees: ''
 ---
