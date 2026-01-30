@@ -173,8 +173,8 @@ export const apiRequest = async <T>(
   const baseURL = await getApiUrl();
   // remove starting slash from endpoint
   let fullUrl = `${baseURL}${endpoint.replace(/^\//, "")}`
-  // remove last slash
-  fullUrl = fullUrl.replace(/\/$/, "");
+  // remove last slash && remove last slash also before ? or & or #
+  fullUrl = fullUrl.replace(/\/$/, "").replace(/\/([?&#])/, "$1");
 
   try {
     const response = await api.request<T>({
