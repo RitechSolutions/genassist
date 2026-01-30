@@ -10,7 +10,7 @@ from app.services.api_keys import ApiKeysService
 
 router = APIRouter()
 
-@router.post("/", response_model=ApiKeyRead, dependencies=[
+@router.post("", response_model=ApiKeyRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.ApiKey.CREATE))
 ])
@@ -21,7 +21,7 @@ async def create(api_key: ApiKeyCreate, service: ApiKeysService = Injected(ApiKe
     """
     return await service.create(api_key)
 
-@router.get("/", response_model=list[ApiKeyRead], dependencies=[
+@router.get("", response_model=list[ApiKeyRead], dependencies=[
     Depends(auth),
     Depends(permissions(P.ApiKey.READ))
 ])

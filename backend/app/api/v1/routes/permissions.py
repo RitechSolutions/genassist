@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 @router.post(
-    "/",
+    "",
     response_model=PermissionRead,
     dependencies=[Depends(auth), Depends(permissions(P.Permission.CREATE))],
 )
@@ -26,7 +26,7 @@ async def create(
 
 
 @router.get(
-    "/",
+    "",
     response_model=List[PermissionRead],
     dependencies=[Depends(auth), Depends(permissions(P.Permission.READ))],
 )

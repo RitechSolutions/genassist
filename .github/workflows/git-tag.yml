@@ -1,0 +1,88 @@
+name: Create & Push Git Tag
+
+on:
+  pull_request:
+    branches: ["main"]
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  tag:
+    if: ${{ github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Compute next semver tag from PR labels
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # latest tag vX.Y.Z, default v1.0.0
+          prev_tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)"
+          if [[ -z "$prev_tag" ]]; then
+            prev_tag="v1.0.0"
+          fi
+          echo "prev_tag=$prev_tag" >> "$GITHUB_OUTPUT"
+
+          # extract major/minor/patch
+          if [[ "$prev_tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
+          else
+            major=1; minor=0; patch=0
+          fi
+
+          # collect merged PR labels (lowercased)
+          labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          labels="$(echo "$labels" | tr '[:upper:]' '[:lower:]')"
+          echo "PR labels: $labels"
+
+          # bump rules (customize to your label naming)
+          bump="patch"
+          if echo "$labels" | grep -q '"release:major"\|"breaking"'; then
+            bump="major"
+          elif echo "$labels" | grep -q '"release:minor"\|"feature"\|"enhancement"'; then
+            bump="minor"
+          elif echo "$labels" | grep -q '"release:patch"\|"bug"\|"fix"\|"security"\|"docs"\|"chore"\|"refactor"\|"ci"\|"devops"'; then
+            bump="patch"
+          fi
+
+          case "$bump" in
+            major) major=$((major+1)); minor=0; patch=0 ;;
+            minor) minor=$((minor+1)); patch=0 ;;
+            patch) patch=$((patch+1)) ;;
+          esac
+
+          next_tag="v${major}.${minor}.${patch}"
+          echo "next_tag=$next_tag" >> "$GITHUB_OUTPUT"
+          echo "Next tag: $next_tag"
+
+      - name: Create and push git tag
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.next_tag }}"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists. Skipping."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"

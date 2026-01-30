@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 @router.post(
-    "/",
+    "",
     response_model=UserRead,
     dependencies=[Depends(auth), Depends(permissions(P.User.CREATE))],
 )
@@ -44,7 +44,7 @@ async def get(user_id: UUID, service: UserService = Injected(UserService)):
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[UserRead],
     dependencies=[Depends(auth), Depends(permissions(P.User.READ))],
 )

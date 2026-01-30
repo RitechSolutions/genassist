@@ -157,7 +157,7 @@ async def text_to_speech_openai(text: str) -> bytes:
             return None
 
 
-@router.get("/", summary="Twilio Voice API Root Endpoint", dependencies=[
+@router.get("", summary="Twilio Voice API Root Endpoint", dependencies=[
     Depends(auth),
     ])
 async def sample():
