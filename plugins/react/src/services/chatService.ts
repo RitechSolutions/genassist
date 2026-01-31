@@ -297,7 +297,7 @@ export class ChatService {
   /**
    * Reset the current conversation by clearing the ID and websocket
    */
-  resetConversation(): void {
+  resetChatConversation(): void {
     // Close the current websocket connection if it exists
     if (this.webSocket) {
       this.webSocket.close();
@@ -352,14 +352,17 @@ export class ChatService {
     return this.isFinalized;
   }
 
-  async startConversation(reCaptchaToken: string | undefined): Promise<string> {
+  async startConversation(reCaptchaToken?: string | undefined): Promise<string> {
     try {
       const requestBody: any = {
         messages: [],
         recorded_at: new Date().toISOString(),
         data_source_id: "00000000-0000-0000-0000-000000000000",
-        recaptcha_token: reCaptchaToken,
       };
+
+      if (reCaptchaToken) {
+        requestBody.recaptcha_token = reCaptchaToken;
+      }
 
       if (this.metadata) {
         requestBody.metadata = this.metadata;
@@ -449,7 +452,7 @@ export class ChatService {
       return response.data.conversation_id;
     } catch (error: any) {
       if (this.isTokenExpiredError(error)) {
-        this.resetConversation();
+        this.resetChatConversation();
       }
       throw error;
     }
@@ -550,7 +553,7 @@ export class ChatService {
     } catch (error: any) {
       // Check if this is a token expiration error
       if (this.isTokenExpiredError(error)) {
-        this.resetConversation();
+        this.resetChatConversation();
         throw error;
       }
 
@@ -604,7 +607,7 @@ export class ChatService {
       return response.data as FileUploadResponse;
     } catch (error: any) {
       if (this.isTokenExpiredError(error)) {
-        this.resetConversation();
+        this.resetChatConversation();
       }
       throw error;
     }
@@ -781,7 +784,7 @@ export class ChatService {
       }
     } catch (err: any) {
       if (this.isTokenExpiredError(err)) {
-        this.resetConversation();
+        this.resetChatConversation();
       }
       // ignore
     }
@@ -818,7 +821,7 @@ export class ChatService {
       
     } catch (error: any) {
       if (this.isTokenExpiredError(error)) {
-        this.resetConversation();
+        this.resetChatConversation();
       }
       console.error('Feedback API call failed:', {
         message: error.message,
