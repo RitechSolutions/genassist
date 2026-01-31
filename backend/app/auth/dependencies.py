@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 async def get_current_user(
     request: Request,
-    token: str = Depends(oauth2),
+    token: Optional[str] = Depends(oauth2),
     api_key: Optional[str] = Depends(api_key_header),
     auth_service: AuthService = Injected(AuthService),
 ):
@@ -51,7 +51,7 @@ async def auth(
     """
     if getattr(request.state, "api_key", None):
         # Authenticate API Key if provided
-        logger.debug(f"api key {api_key}")
+        logger.debug(f"[auth] api key {api_key}", extra={"request_id": request.state.request_id})
 
         context["user_id"] = user.id if user else None  # store in context
         context["auth_mode"] = "api_key"
