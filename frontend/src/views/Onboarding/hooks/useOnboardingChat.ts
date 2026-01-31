@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatService, type AgentWelcomeData, type ChatMessage } from "genassist-chat-react";
+import { type RegistrationStatus } from "@/context/RoutesContext";  
 
-export const useOnboardingChat = () => {
+export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: RegistrationStatus }) => {
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<string>("");
   const [agentReply, setAgentReply] = useState<string | null>(null);
@@ -99,7 +100,7 @@ export const useOnboardingChat = () => {
     if (conversationId) return;
     isStartingConversationRef.current = true;
     try {
-      const id = await chat.startConversation();
+      const id = await chat.startConversation(undefined);
       if (!isMountedRef.current) return;
       setConversationId(id);
       const cfg = chat.getThinkingConfig?.();
@@ -120,12 +121,15 @@ export const useOnboardingChat = () => {
     if (!hasConfig || !isChatReady) return;
     if (chatRef.current?.getConversationId?.()) return;
 
+    // if the registration status is existing, skip the conversation
+    if (registrationStatus === "existing") return;
+
     startConversationIfNeeded().catch((err: unknown) => {
       if (!isMountedRef.current) return;
       const message = err instanceof Error ? err.message : "Unable to start onboarding chat.";
       setError(message);
     });
-  }, [hasConfig, isChatReady, startConversationIfNeeded]);
+  }, [hasConfig, isChatReady, startConversationIfNeeded, registrationStatus]);
 
   const sendMessage = useCallback(
     async (text: string) => {
