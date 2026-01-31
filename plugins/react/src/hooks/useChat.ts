@@ -300,7 +300,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
   }, [messages, apiKey, conversationId, buildMessagesKey]);
 
   // Reset conversation
-  const resetConversation = useCallback(async (reCaptchaToken: string | undefined) => {
+  const resetConversation = useCallback(async (reCaptchaToken?: string | undefined) => {
     if (!chatServiceRef.current) {
       return;
     }
@@ -324,7 +324,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     
     try {
       // Reset the conversation in the chat service
-      chatServiceRef.current.resetConversation();
+      chatServiceRef.current.resetChatConversation();
       
       // Start a new conversation
       const convId = await chatServiceRef.current.startConversation(reCaptchaToken);
@@ -452,7 +452,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     }
   }, [preloadedAttachments, isTakenOver, isTokenExpiredError, resetToInitialState, serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel]);
 
-  const startConversation = useCallback(async (reCaptchaToken: string | undefined) => {
+  const startConversation = useCallback(async (reCaptchaToken?: string | undefined) => {
     if (!chatServiceRef.current) {
       return;
     }
