@@ -51,7 +51,7 @@ async def auth(
     """
     if getattr(request.state, "api_key", None):
         # Authenticate API Key if provided
-        logger.debug(f"[auth] api key {api_key}", extra={"request_id": request.state.request_id})
+        # logger.debug(f"[auth] api key {api_key}")
 
         context["user_id"] = user.id if user else None  # store in context
         context["auth_mode"] = "api_key"
