@@ -114,6 +114,8 @@ services:
         condition: service_healthy
     volumes:
       - app_data_volume_ci:/src/datavolume
+      - ../backend/tests:/src/tests:ro      # Mount tests for CI
+      - ../backend/pytest.ini:/src/pytest.ini:ro  # Pytest config
     networks:
       - genassist-network-ci
 
