@@ -180,7 +180,7 @@ class AgentRAGServiceManager:
         final_results = all_results[:limit]
 
         if format_results:
-            return format_search_results(final_results, include_metadata=True)
+            return format_search_results(final_results, include_metadata=False)
 
         return final_results
 

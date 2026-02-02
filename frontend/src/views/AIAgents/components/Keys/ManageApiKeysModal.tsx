@@ -103,7 +103,7 @@ export default function ManageApiKeysModal({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-3xl overflow-hidden">
+        <DialogContent className="sm:max-w-4xl overflow-hidden">
           <DialogHeader className="flex flex-row items-center justify-between">
             <DialogTitle className="text-xl font-semibold">
               Manage API Keys
@@ -113,7 +113,7 @@ export default function ManageApiKeysModal({
                 setEditing(null);
                 setFormOpen(true);
               }}
-              className="flex items-center gap-2"
+              className="flex items-center mr-6"
             >
               <PlusCircle className="h-4 w-4" />
               Add API Key
