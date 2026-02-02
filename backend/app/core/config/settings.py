@@ -143,6 +143,9 @@ class ProjectSettings(BaseSettings):
         None  # Comma-separated list of additional allowed origins
     )
 
+    # === WebSocket Configuration ===
+    USE_WS: bool = True  # Enable/disable WebSocket backend (connect, broadcast, rooms)
+
     # === Rate Limiting Configuration ===
     RATE_LIMIT_ENABLED: bool = False
     # Global rate limit: requests per time window
