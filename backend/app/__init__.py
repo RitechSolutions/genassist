@@ -95,10 +95,10 @@ async def _initialize_redis_services(app: FastAPI):
 
     # Test connections
     await redis_string.ping()
-    logger.info("Redis string client initialized (40 connections)")
+    logger.info(f"Redis string client initialized ({settings.REDIS_MAX_CONNECTIONS} connections)")
 
     await redis_binary.ping()
-    logger.info("Redis binary client initialized (20 connections)")
+    logger.info(f"Redis binary client initialized ({settings.REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE} connections)")
 
     # Initialize FastAPI cache with binary client
     await init_fastapi_cache_with_redis(app, redis_binary)
