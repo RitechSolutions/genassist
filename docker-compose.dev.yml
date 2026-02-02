@@ -32,6 +32,22 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Database migrations init container
+  migrations:
+    image: genassist-app-image
+    container_name: genassist-migrations-dev
+    command: python /src/run_migrations.py
+    env_file:
+      - ./backend/.env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network-dev
+
   # Main application service
   app:
     build:
@@ -44,6 +60,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      - RUN_MIGRATIONS=false
       - VECTOR_DB_TYPE=chroma
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
       - CHROMA_COLLECTION_NAME=default
@@ -65,6 +82,8 @@ services:
       start_period: 40s
     depends_on:
       volume-init:
+        condition: service_completed_successfully
+      migrations:
         condition: service_completed_successfully
       chroma:
         condition: service_started
@@ -98,7 +117,7 @@ services:
     environment:
       CUSTOM_PARAM: 'string'
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/login"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/login"]
       interval: 30s
       timeout: 10s
       retries: 3

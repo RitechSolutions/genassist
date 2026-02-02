@@ -24,6 +24,28 @@ services:
       - "5432:5432"
     networks:
       - genassist-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Database migrations init container
+  migrations:
+    image: ghcr.io/ritechsolutions/genassist-backend:latest
+    container_name: genassist-migrations
+    command: python /src/run_migrations.py
+    env_file:
+      - ./backend/.env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - genassist-network
 
   # Main application service
   app:
@@ -34,6 +56,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - RUN_MIGRATIONS=false
       - WORKERS=1 # Number of workers
       - VECTOR_DB_TYPE=chroma
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
@@ -50,10 +73,12 @@ services:
     depends_on:
       volume-init:
         condition: service_completed_successfully
+      migrations:
+        condition: service_completed_successfully
       chroma:
         condition: service_started
       db:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_healthy
       whisper:

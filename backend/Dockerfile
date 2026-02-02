@@ -77,7 +77,7 @@ RUN playwright install --with-deps chromium && \
     chown -R genassist:genassist "/opt/playwright"
 
 # 5. Copy Application Code
-COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alembic.ini /src/
+COPY --chown=genassist:genassist ./run.py ./run_celery.py ./run_migrations.py ./migrations.py ./alembic.ini /src/
 COPY --chown=genassist:genassist ./app /src/app
 COPY --chown=genassist:genassist ./alembic /src/alembic
 

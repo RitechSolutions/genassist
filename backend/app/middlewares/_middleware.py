@@ -69,6 +69,7 @@ def build_middlewares() -> list[Middleware]:
        times the request.
     4. CORS – normal cross-origin checks.
     """
+    logger.debug("Building middlewares...")
     middlewares = [
         # 1️⃣  Generates a request-scoped UUID and puts it in `request.headers`
         Middleware(

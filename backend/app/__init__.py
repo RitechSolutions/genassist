@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi_injector import InjectorMiddleware, RequestScopeOptions, attach_injector
 from app.core.config.logging import init_logging
-from app.api.v1.routes._routes import register_routers
 from app.core.config.settings import settings
 from app.core.exceptions.exception_handler import init_error_handlers
 from app.dependencies.injector import injector
@@ -30,12 +29,13 @@ def create_app() -> FastAPI:
     Application-factory entry-point.
     Only orchestration happens here – all heavy lifting lives in helpers.
     """
+    logger.info("Creating fast api app")
     app = FastAPI(
         lifespan=_lifespan,
         middleware=build_middlewares(),
     )
 
-    app.celery_app = create_celery()  # new
+    app.celery_app = create_celery()
 
     add_di_middleware(app)
 
@@ -51,6 +51,7 @@ def create_app() -> FastAPI:
     # from fastapi.staticfiles import StaticFiles
     # app.mount("/docu", StaticFiles(directory="docs-site", html=True), name="docu")
 
+    from app.api.v1.routes.routes import register_routers
     register_routers(app)
 
     return app
