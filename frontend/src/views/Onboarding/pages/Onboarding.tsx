@@ -16,8 +16,7 @@ import {
   createWorkflowFromWizard,
   type WorkflowWizardResponse,
 } from "@/services/workflows";
-import { useRoutesContext } from "@/context/RoutesContext";
-import { Link } from "react-router-dom";
+import { useRoutesContext } from "@/context/RoutesContext"; 
 
 type OnboardingScreen = "chat" | "name-agent";
 
@@ -25,12 +24,9 @@ const WORKFLOW_DRAFT_STORAGE_KEY = "onboarding_workflow_draft";
 const AGENT_NAME_STORAGE_KEY = "onboarding_agent_name";
 
 export default function Onboarding() {
+  const { registrationStatus } = useRoutesContext();
   const { login } = useAuth();
   const { refreshFlags } = useFeatureFlag();
-
-  // read the registration status from the routes context
-  const registrationStatus = useRoutesContext().registrationStatus;
-
   const {
     prompt,
     setPrompt,
@@ -233,61 +229,45 @@ export default function Onboarding() {
     }
   };
 
-  const ExistingOnboarding = () => (
-    <main className="flex-1 flex flex-col items-center justify-center">
-      <div className="h-32" />
-      <p className="text-lg font-semibold text-[#0f172a]">🎉 Welcome Back!</p>
-      <div className="w-full max-w-2xl bg-white  relative px-4 py-5 flex flex-col items-center justify-center">
-        <p className="text-md text-[#9ca3af]">You are already registered. Please continue to the <Link to="/dashboard" className="text-[#4f46e5] font-semibold hover:underline">dashboard</Link>.</p>
-      </div>
-    </main>
-  );
-
-  const NewOnboarding = () => (
-    <main className="flex-1 flex flex-col items-center justify-center">
-    {effectiveScreen === "chat" ? (
-      <>
-        <OnboardingHero
-          showCongrats={showCongrats && !agentReply}
-          showQuickActions={showQuickActions && quickActions.length > 0}
-          subtitle={subtitleText}
-          title={titleText}
-          quickActions={quickActions}
-          onQuickAction={sendQuickAction}
-          disableQuickActions={isInputDisabled}
-        />
-
-        <div className="h-32" />
-
-          <OnboardingInput
-            value={prompt}
-            disabled={isInputDisabled}
-            onChange={setPrompt}
-            onSubmit={handleSubmit}
-          />
-      </>
-    ) : (
-      <OnboardingNameAgent
-        value={agentName}
-        disabled={isSending || isLoggingIn || registrationStatus === "existing"}
-        onChange={handleAgentNameChange}
-        onContinue={handleContinue}
-      />
-    )}
-
-    <ErrorBanner message={error} />
-  </main>
-  );
-
   return (
     <div className="min-h-screen flex flex-col bg-white text-[#111827] animate-fade-up">
       <OnboardingHeader />
 
-      {registrationStatus === "existing" ? (
-        <ExistingOnboarding />
-      ) : (
-        <NewOnboarding />
-      )}
+      <main className="flex-1 flex flex-col items-center justify-center">
+        {effectiveScreen === "chat" && registrationStatus === "new" ? (
+          <>
+            <OnboardingHero
+              showCongrats={showCongrats && !agentReply}
+              showQuickActions={showQuickActions && quickActions.length > 0}
+              subtitle={subtitleText}
+              title={titleText}
+              quickActions={quickActions}
+              onQuickAction={sendQuickAction}
+              disableQuickActions={isInputDisabled}
+            />
+
+            <div className="h-32" />
+
+            <OnboardingInput
+              value={prompt}
+              disabled={isInputDisabled}
+              onChange={setPrompt}
+              onSubmit={handleSubmit}
+            />
+          </>
+        ) : (
+          <OnboardingNameAgent
+            value={agentName}
+            disabled={isSending || isLoggingIn}
+            onChange={handleAgentNameChange}
+            onContinue={handleContinue}
+          />
+        )}
+
+        <div className="w-full max-w-2xl pt-2">
+          <ErrorBanner message={error} />
+        </div>
+      </main>
 
       <OnboardingFooter />
     </div>
