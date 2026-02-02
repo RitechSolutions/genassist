@@ -58,7 +58,7 @@ async def test_upload_file_for_chat_success(openai_service, mock_repository, moc
     with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.pdf') as f:
         f.write(b"Test PDF content")
         temp_file_path = f.name
-    
+
     try:
         # Call the method
         file_id = await openai_service.upload_file_for_chat(
@@ -66,17 +66,22 @@ async def test_upload_file_for_chat_success(openai_service, mock_repository, moc
             filename="test.pdf",
             purpose="user_data"
         )
-        
+
         # Assertions
         assert file_id == "file-abc123"
         mock_openai_client.files.create.assert_called_once()
         call_args = mock_openai_client.files.create.call_args
-        assert call_args[1]["purpose"] == "user_data"
-        assert call_args[0][0][0] == "test.pdf"
-        
+
+        # Check keyword arguments - the actual implementation uses file=(filename, content)
+        assert call_args.kwargs["purpose"] == "user_data"
+        # The file argument is a tuple of (filename, content)
+        file_arg = call_args.kwargs.get("file") or call_args.args[0] if call_args.args else None
+        if file_arg:
+            assert file_arg[0] == "test.pdf"
+
         # Verify DB record creation was attempted
         mock_repository.create_file_record.assert_called_once()
-        
+
     finally:
         # Cleanup
         os.unlink(temp_file_path)

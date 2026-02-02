@@ -20,23 +20,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# 3. Install Requirements (Aggressive Cleanup Mode)
+# 3. Install Requirements (Optimized for CPU-only)
 COPY requirements-main.txt .
 COPY requirements-rag.txt .
 COPY requirements-app.txt .
 
-RUN pip install --upgrade pip setuptools wheel && \
-    # A. Install everything normally (might pull heavy GPU versions)
-    pip install --no-cache-dir \
+# Install CPU-only PyTorch FIRST to prevent GPU version downloads
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip setuptools wheel && \
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    pip install \
     -r requirements-main.txt \
     -r requirements-rag.txt \
     -r requirements-app.txt \
-    --extra-index-url https://download.pytorch.org/whl/cpu && \
-    # B. Uninstall Torch and NVIDIA bloat
-    pip uninstall -y torch torchvision torchaudio && \
-    pip freeze | grep nvidia | cut -d= -f1 | xargs -r pip uninstall -y && \
-    # C. Re-install strictly CPU-only versions
-    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
 # ==========================================
 # Stage 2: Runtime (Minimal & Secure)
