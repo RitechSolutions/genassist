@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
 import { Register } from "@/views/Register";
 import { ChangePassword, Login } from "@/views/Login";
@@ -42,6 +42,7 @@ import Privacy from "@/views/Privacy";
 import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
 import { getRegistrationStatus } from "@/services/registration";
+import { RoutesContext } from "@/context/RoutesContext";
 
 const ProtectedLayout = () => {
   const { status, isOffline } = useServerStatus();
@@ -60,38 +61,36 @@ const ProtectedLayout = () => {
   );
 };
 
+export type RegistrationStatus = "loading" | "new" | "existing";
+
 export const RoutesProvider = () => {
   const { isEnabled } = useFeatureFlag();
 
-  const [registrationStatus, setRegistrationStatus] = useState<"loading" | "new" | "existing">("loading");
+  const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("loading");
+  const [skipOnboarding, setSkipOnboarding] = useState(false);
+
+  const checkRegistration = useCallback(async () => {
+    try {
+      const response = await getRegistrationStatus();
+      const isNew = Boolean(response?.is_new);
+      setRegistrationStatus(isNew ? "new" : "existing");
+    } catch (error) {
+      setRegistrationStatus("existing");
+    }
+  }, [setRegistrationStatus]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    // temporary skip handler
+    // check if the user has skipped onboarding
     const skipFlag = localStorage.getItem("skip_onboarding") === "true";
     if (skipFlag) {
+      setSkipOnboarding(true);
       setRegistrationStatus("existing");
       return;
     }
-    const checkRegistration = async () => {
-      try {
-        const response = await getRegistrationStatus();
-        if (cancelled) return;
-        const isNew = Boolean(response?.is_new);
-        setRegistrationStatus(isNew ? "new" : "existing");
-      } catch (error) {
-        if (!cancelled) {
-          setRegistrationStatus("existing");
-        }
-      }
-    };
 
+    // check the registration status
     checkRegistration();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [checkRegistration]);
 
   // temporary skip handler
   useEffect(() => {
@@ -364,5 +363,7 @@ export const RoutesProvider = () => {
 
   const router = registrationStatus === "new" ? organizationRouter : mainRouter;
 
-  return <RouterProvider router={router} />;
+  return <RoutesContext.Provider value={{ registrationStatus, skipOnboarding }}>
+    <RouterProvider router={router} />
+  </RoutesContext.Provider>;
 };
