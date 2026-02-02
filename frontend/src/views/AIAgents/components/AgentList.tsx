@@ -62,7 +62,7 @@ const AgentList: React.FC<AgentListProps> = ({
     const fetchKnowledgeItems = async () => {
       try {
         const items = await getAllKnowledgeItems();
-        setKnowledgeItems(items);
+        setKnowledgeItems(items as KnowledgeItem[]);
       } catch (err) {
         // ignore
       }
