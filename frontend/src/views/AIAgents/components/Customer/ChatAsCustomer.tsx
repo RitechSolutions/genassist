@@ -7,7 +7,7 @@ import {
   type ChatTheme,
 } from "genassist-chat-react";
 import { getAgentIntegrationKey } from "@/services/api";
-import { getApiUrl } from "@/config/api";
+import { getApiUrl, isWsEnabled } from "@/config/api";
 import { Button } from "@/components/button";
 import { ArrowLeft } from "lucide-react";
 import IntegrationCodePanel from "@/views/AIAgents/components/Customer/IntegrationCodePanel";
@@ -117,6 +117,7 @@ export default function ChatAsCustomer() {
             theme={theme}
             headerTitle="Chat as Customer"
             placeholder="Ask a question..."
+            useWs={isWsEnabled}
             onError={(error) => {
               // ignore
             }}

@@ -9768,7 +9768,7 @@
         }
       }
     },
-    "/api/playground/": {
+    "/api/playground": {
       "get": {
         "tags": [
           "v1",
@@ -9776,7 +9776,7 @@
         ],
         "summary": "Playground Root",
         "description": "Root playground endpoint.",
-        "operationId": "playground_root_api_playground__get",
+        "operationId": "playground_root_api_playground_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12507,7 +12507,7 @@
         }
       }
     },
-    "/api/mcp/": {
+    "/api/mcp": {
       "get": {
         "tags": [
           "v1",
@@ -12515,7 +12515,7 @@
         ],
         "summary": "Handle Root Get",
         "description": "Handle GET requests at root endpoint for SSE connections.\n\nThis allows the MCP SDK's SSE client to connect to the base URL.",
-        "operationId": "handle_root_get_api_mcp__get",
+        "operationId": "handle_root_get_api_mcp_get",
         "parameters": [
           {
             "name": "Authorization",
@@ -12554,9 +12554,7 @@
             }
           }
         }
-      }
-    },
-    "/api/mcp": {
+      },
       "post": {
         "tags": [
           "v1",
@@ -14818,6 +14816,7 @@
           },
           "password": {
             "type": "string",
+            "format": "password",
             "title": "Password"
           },
           "scope": {
@@ -14845,6 +14844,7 @@
                 "type": "null"
               }
             ],
+            "format": "password",
             "title": "Client Secret"
           }
         },
