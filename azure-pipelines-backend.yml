@@ -36,9 +36,8 @@ steps:
 
   - script: |
       echo "stopping existing containers of cicd"
-      touch .env
-      docker compose -f docker-compose.cicd.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
-    workingDirectory: backend
+      touch backend/.env
+      docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ci.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
     displayName: 'Stop Test Containers - Before Start'
 
   - task: DownloadSecureFile@1
@@ -50,11 +49,10 @@ steps:
   - script: |
       set -euo pipefail
 
-      BACKEND_DIR="$(System.DefaultWorkingDirectory)/backend"
-      ENV_FILE="$BACKEND_DIR/.env"
+      REPO_ROOT="$(System.DefaultWorkingDirectory)"
+      ENV_FILE="$REPO_ROOT/backend/.env"
 
       cp "$(cicdenv.secureFilePath)" "$ENV_FILE"
-      cd "$BACKEND_DIR"
 
       branch="$(Build.SourceBranch)"
       branchNo="${branch#refs/heads/}"
@@ -78,17 +76,16 @@ steps:
       sed -i 's/DEBUG=false/DEBUG=true/g' "$ENV_FILE"
 
       echo -e "\nCREATE_DB=true" >> "$ENV_FILE"
-      sed -i 's/DB_HOST=db/DB_HOST=genassist_db/g' "$ENV_FILE"
+      sed -i 's/DB_HOST=db/DB_HOST=genassist_db_ci/g' "$ENV_FILE"
 
-      echo -e "\nCHROMA_HOST=chroma" >> "$ENV_FILE"
-      echo -e "\nCHROMA_PORT=8005" >> "$ENV_FILE"
+      echo -e "\nCHROMA_HOST=genassist-chroma-ci" >> "$ENV_FILE"
+      echo -e "\nCHROMA_PORT=8000" >> "$ENV_FILE"
 
       echo "starting fresh db"
-      docker compose -f docker-compose.cicd.yml -p genassist_cicd up --force-recreate -d db
+      docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ci.yml -p genassist_cicd up --force-recreate -d db
 
       echo "starting app and whisper"
-      docker compose -f docker-compose.cicd.yml -p genassist_cicd up --build --force-recreate -d app whisper
-    workingDirectory: backend
+      docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ci.yml -p genassist_cicd up --build --force-recreate -d app whisper
     displayName: 'Build and Start App + Whisper'
     env:
       OAIKEY: $(OAIKEY)
@@ -200,8 +197,7 @@ steps:
     timeoutInMinutes: 3
 
   - script: |
-      docker compose -f docker-compose.cicd.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
-    workingDirectory: backend
+      docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ci.yml -p genassist_cicd down --rmi all --volumes --remove-orphans
     displayName: 'Stop Test Containers - After End'
     condition: always()
 

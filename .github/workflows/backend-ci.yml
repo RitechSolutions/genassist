@@ -1,0 +1,148 @@
+# =============================================================================
+# Backend CI Workflow
+# =============================================================================
+# Triggered on PRs when backend files change.
+# Builds backend services and runs tests.
+# =============================================================================
+
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - development
+    paths:
+      - 'backend/**'
+      - 'docker/docker-compose.base.yml'
+      - 'docker/docker-compose.ci.yml'
+      - '.github/workflows/backend-ci.yml'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same PR
+concurrency:
+  group: backend-ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  COMPOSE_BASE: docker/docker-compose.base.yml
+  COMPOSE_CI: docker/docker-compose.ci.yml
+
+jobs:
+  build-and-test:
+    name: Build & Test Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # For forked PRs, checkout the PR head
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create backend .env file
+        run: |
+          cp backend/.env.example backend/.env
+
+          # Set CI-specific environment variables
+          echo "" >> backend/.env
+          echo "DEBUG=true" >> backend/.env
+          echo "CREATE_DB=true" >> backend/.env
+          echo "DB_HOST=genassist-db-ci" >> backend/.env
+          echo "CHROMA_HOST=genassist-chroma-ci" >> backend/.env
+          echo "CHROMA_PORT=8000" >> backend/.env
+          echo "QDRANT_HOST=http://genassist-qdrant-ci" >> backend/.env
+
+      - name: Start infrastructure services
+        run: |
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} up -d db redis chroma qdrant
+
+          # Wait for services to be healthy
+          echo "Waiting for database to be ready..."
+          timeout 60 bash -c 'until docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} exec -T db pg_isready -U postgres; do sleep 2; done'
+
+          echo "Waiting for Redis to be ready..."
+          timeout 30 bash -c 'until docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} exec -T redis redis-cli ping; do sleep 2; done'
+
+      - name: Build backend image
+        run: |
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} build app
+
+      - name: Start backend application
+        run: |
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} up -d app
+
+          # Override entrypoint for CI to run the app normally
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} exec -d app bash -c "cd /src && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+          # Wait for app to be ready
+          echo "Waiting for backend to be ready..."
+          sleep 10
+
+      - name: Install test dependencies
+        run: |
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} exec -T app pip install \
+            "pytest>=8.2,<9" \
+            "pytest-asyncio>=0.26,<0.27" \
+            pytest-cov \
+            coverage
+
+      - name: Run backend tests
+        id: tests
+        run: |
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} exec -T -w /src app \
+            python -m pytest tests/ -v \
+            --cov=app \
+            --cov-branch \
+            --cov-report=xml \
+            --cov-report=html \
+            --junitxml=test-results.xml \
+            || echo "TESTS_FAILED=true" >> $GITHUB_OUTPUT
+
+      - name: Copy test artifacts
+        if: always()
+        run: |
+          mkdir -p test-artifacts
+          docker cp genassist-app-ci:/src/test-results.xml test-artifacts/ 2>/dev/null || true
+          docker cp genassist-app-ci:/src/coverage.xml test-artifacts/ 2>/dev/null || true
+          docker cp genassist-app-ci:/src/htmlcov test-artifacts/ 2>/dev/null || true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-artifacts/
+          retention-days: 7
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Backend Test Results
+          path: test-artifacts/test-results.xml
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          echo "=== App logs ==="
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} logs app --tail=100
+          echo "=== DB logs ==="
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} logs db --tail=50
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} down -v --remove-orphans
+
+      - name: Check test results
+        if: steps.tests.outputs.TESTS_FAILED == 'true'
+        run: exit 1

@@ -1,0 +1,228 @@
+# =============================================================================
+# GenAssist Docker Compose - Base Configuration
+# =============================================================================
+# Common service definitions shared across all environments.
+# This file should be used with an environment-specific override file:
+#
+#   Development: docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml --profile full up -d
+#   Production:  docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.yml --profile full up -d
+#   CI/CD:       docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ci.yml --profile full up -d
+#
+# Or use Make commands which handle this automatically:
+#   make dev        # Development
+#   make prod       # Production
+#   make ci         # CI/CD
+# =============================================================================
+
+# =============================================================================
+# EXTENSION FIELDS (YAML Anchors for reusable configurations)
+# =============================================================================
+x-healthcheck-db: &healthcheck-db
+  test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+  interval: 5s
+  timeout: 5s
+  retries: 5
+  start_period: 10s
+
+x-healthcheck-redis: &healthcheck-redis
+  test: ["CMD", "sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+  interval: 5s
+  timeout: 3s
+  retries: 5
+
+x-healthcheck-qdrant: &healthcheck-qdrant
+  test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+  interval: 5s
+  timeout: 5s
+  retries: 5
+  start_period: 20s
+
+x-healthcheck-app: &healthcheck-app
+  test: ["CMD", "curl", "-f", "http://localhost:8000/api/playground/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+
+x-healthcheck-ui: &healthcheck-ui
+  test: ["CMD", "curl", "-f", "http://localhost:80/login"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+
+x-redis-command: &redis-command >
+  sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+    exec redis-server --requirepass "$$REDIS_PASSWORD";
+  else
+    exec redis-server;
+  fi'
+
+x-celery-env: &celery-env
+  REDIS_HOST: ${REDIS_HOST:-redis}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  REDIS_DB: ${REDIS_DB:-0}
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+x-restart-policy: &restart-policy
+  restart: unless-stopped
+
+services:
+  # ===========================================================================
+  # INIT SERVICES
+  # ===========================================================================
+  volume-init:
+    image: busybox:latest
+    profiles: ["init", "full", "backend"]
+    command: sh -c "mkdir -p /data/logs /data/uploads /data/recordings && chown -R 1000:1000 /data"
+
+  # ===========================================================================
+  # CORE INFRASTRUCTURE
+  # ===========================================================================
+  db:
+    profiles: ["core", "full", "backend", "services"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-core_db}
+    healthcheck:
+      <<: *healthcheck-db
+    <<: *restart-policy
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["core", "full", "backend", "services"]
+    command: *redis-command
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    healthcheck:
+      <<: *healthcheck-redis
+    <<: *restart-policy
+
+  # ===========================================================================
+  # VECTOR DATABASES
+  # ===========================================================================
+  chroma:
+    profiles: ["vectordb", "full", "backend", "services"]
+    environment:
+      IS_PERSISTENT: "TRUE"
+    <<: *restart-policy
+
+  qdrant:
+    image: qdrant/qdrant:${QDRANT_VERSION:-latest}
+    profiles: ["vectordb", "full", "backend", "services"]
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      <<: *healthcheck-qdrant
+    <<: *restart-policy
+
+  # ===========================================================================
+  # ML SERVICES
+  # ===========================================================================
+  whisper:
+    profiles: ["ml", "full", "backend", "services"]
+    environment:
+      DEFAULT_WHISPER_MODEL: ${WHISPER_MODEL:-base}
+    <<: *restart-policy
+
+  # ===========================================================================
+  # BACKEND APPLICATION
+  # ===========================================================================
+  app:
+    profiles: ["backend", "full"]
+    env_file:
+      - ../backend/.env
+    environment:
+      VECTOR_DB_TYPE: ${VECTOR_DB_TYPE:-chroma}
+      CHROMA_COLLECTION_NAME: ${CHROMA_COLLECTION_NAME:-default}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    healthcheck:
+      <<: *healthcheck-app
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+      chroma:
+        condition: service_started
+      db:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      whisper:
+        condition: service_started
+    <<: *restart-policy
+
+  # ===========================================================================
+  # CELERY WORKERS
+  # ===========================================================================
+  celery_worker:
+    profiles: ["backend", "full", "workers"]
+    env_file:
+      - ../backend/.env
+    environment:
+      <<: *celery-env
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_started
+    <<: *restart-policy
+
+  celery_beat:
+    profiles: ["backend", "full", "workers"]
+    env_file:
+      - ../backend/.env
+    environment:
+      <<: *celery-env
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_started
+    <<: *restart-policy
+
+  # ===========================================================================
+  # FRONTEND
+  # ===========================================================================
+  ui:
+    profiles: ["frontend", "full"]
+    env_file:
+      - ../frontend/.env
+    environment:
+      CUSTOM_PARAM: ${CUSTOM_PARAM:-string}
+    healthcheck:
+      <<: *healthcheck-ui
+    depends_on:
+      - app
+    <<: *restart-policy
+
+  # ===========================================================================
+  # MONITORING
+  # ===========================================================================
+  flower:
+    profiles: ["monitoring", "full"]
+    env_file:
+      - ../backend/.env
+    environment:
+      <<: *celery-env
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+      db:
+        condition: service_started
+    <<: *restart-policy
+
+  metabase:
+    image: metabase/metabase:${METABASE_VERSION:-latest}
+    profiles: ["monitoring", "full"]
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_PORT: ${MB_DB_PORT:-5432}
+      MB_DB_USER: ${MB_DB_USER:-metabase_admin}
+      MB_DB_PASS: ${MB_DB_PASS:-metabase_admin}
+      MB_DB_DBNAME: ${MB_DB_DBNAME:-metabase_db}
+    depends_on:
+      db:
+        condition: service_healthy

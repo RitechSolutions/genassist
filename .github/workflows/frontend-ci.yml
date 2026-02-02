@@ -1,0 +1,113 @@
+# =============================================================================
+# Frontend CI Workflow
+# =============================================================================
+# Triggered on PRs when frontend files change.
+# Builds the frontend UI image.
+# =============================================================================
+
+name: Frontend CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - development
+    paths:
+      - 'frontend/**'
+      - 'plugins/react/**'
+      - 'docker/docker-compose.base.yml'
+      - 'docker/docker-compose.ci.yml'
+      - '.github/workflows/frontend-ci.yml'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same PR
+concurrency:
+  group: frontend-ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  COMPOSE_BASE: docker/docker-compose.base.yml
+  COMPOSE_CI: docker/docker-compose.ci.yml
+
+jobs:
+  build:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # For forked PRs, checkout the PR head
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create frontend .env file
+        run: |
+          cat > frontend/.env << EOF
+          VITE_UI_VERSION=ci-${{ github.run_number }}
+          VITE_PUBLIC_API_URL=http://localhost:8000/api
+          VITE_WEBSOCKET_PUBLIC_URL=ws://localhost:8000/api
+          VITE_MULTI_TENANT_ENABLED=false
+          EOF
+
+          echo "Frontend .env created:"
+          cat frontend/.env
+
+      - name: Build frontend image
+        run: |
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} build ui
+
+      - name: Verify image was built
+        run: |
+          docker images | grep genassist-ui
+
+      - name: Get image size
+        run: |
+          SIZE=$(docker images genassist-ui-image:ci --format "{{.Size}}")
+          echo "Frontend image size: $SIZE"
+          echo "## Frontend Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** genassist-ui-image:ci" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size:** $SIZE" >> $GITHUB_STEP_SUMMARY
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose -f ${{ env.COMPOSE_BASE }} -f ${{ env.COMPOSE_CI }} down -v --remove-orphans 2>/dev/null || true
+
+  lint:
+    name: Lint Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: frontend
+        run: npm run lint --if-present
+        continue-on-error: true
+
+      - name: Run TypeScript check
+        working-directory: frontend
+        run: npm run type-check --if-present || npx tsc --noEmit
+        continue-on-error: true

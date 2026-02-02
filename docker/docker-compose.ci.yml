@@ -1,0 +1,245 @@
+# =============================================================================
+# GenAssist Docker Compose - CI/CD Overrides
+# =============================================================================
+# CI/CD-specific configuration with isolated ports (9xxx range). Use with base file:
+#
+#   docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ci.yml --profile full up -d --build
+#   docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ci.yml down -v --remove-orphans
+#
+# Or use Make: make ci
+# =============================================================================
+
+name: genassist-ci
+
+services:
+  # ===========================================================================
+  # INIT SERVICES
+  # ===========================================================================
+  volume-init:
+    container_name: genassist-volume-init-ci
+    volumes:
+      - app_data_volume_ci:/data
+    networks:
+      - genassist-network-ci
+
+  # ===========================================================================
+  # CORE INFRASTRUCTURE
+  # ===========================================================================
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: genassist-db-ci
+    volumes:
+      - pgdata_ci:/var/lib/postgresql/data
+      - ../backend/scripts/db_init_scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"
+    networks:
+      - genassist-network-ci
+
+  redis:
+    container_name: genassist-redis-ci
+    ports:
+      - "7379:6379"
+    networks:
+      - genassist-network-ci
+
+  # ===========================================================================
+  # VECTOR DATABASES
+  # ===========================================================================
+  chroma:
+    image: ghcr.io/chroma-core/chroma:${CHROMA_VERSION:-0.6.3}
+    container_name: genassist-chroma-ci
+    ports:
+      - "9005:8000"
+    volumes:
+      - chroma_data_ci:/chroma/chroma
+    environment:
+      PERSIST_DIRECTORY: /chroma/chroma
+    networks:
+      - genassist-network-ci
+
+  qdrant:
+    container_name: genassist-qdrant-ci
+    ports:
+      - "9333:6333"
+      - "9334:6334"
+    volumes:
+      - qdrant_data_ci:/qdrant/storage
+    networks:
+      - genassist-network-ci
+
+  # ===========================================================================
+  # ML SERVICES
+  # ===========================================================================
+  whisper:
+    build:
+      context: ../backend
+      dockerfile: ./whisper_ext/Dockerfile.whisper
+    image: genassist-whisper:ci
+    pull_policy: never
+    container_name: genassist-whisper-ci
+    ports:
+      - "9002:8001"
+    networks:
+      - genassist-network-ci
+
+  # ===========================================================================
+  # BACKEND APPLICATION
+  # ===========================================================================
+  app:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: genassist-app-image:ci
+    pull_policy: never
+    container_name: genassist-app-ci
+    ports:
+      - "9000:8000"
+    environment:
+      CHROMA_HOST: genassist-chroma-ci
+      CHROMA_PORT: 8000
+      DB_HOST: genassist-db-ci
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QDRANT_HOST: http://genassist-qdrant-ci
+      QDRANT_PORT: 6333
+    entrypoint: /bin/bash
+    tty: true
+    stdin_open: true
+    depends_on:
+      qdrant:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - app_data_volume_ci:/src/datavolume
+    networks:
+      - genassist-network-ci
+
+  # ===========================================================================
+  # CELERY WORKERS
+  # ===========================================================================
+  celery_worker:
+    image: genassist-app-image:ci
+    pull_policy: never
+    container_name: genassist-celery-worker-ci
+    command: python /src/run_celery.py worker --loglevel=info --pool=solo
+    environment:
+      CELERY_TRACE_APP: 1
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      DB_HOST: genassist-db-ci
+      CHROMA_HOST: genassist-chroma-ci
+      CHROMA_PORT: 8000
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - genassist-network-ci
+
+  celery_beat:
+    image: genassist-app-image:ci
+    pull_policy: never
+    container_name: genassist-celery-beat-ci
+    command: python /src/run_celery.py beat --loglevel=info
+    environment:
+      CELERY_TRACE_APP: 1
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      CHROMA_HOST: genassist-chroma-ci
+      CHROMA_PORT: 8000
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - genassist-network-ci
+
+  # ===========================================================================
+  # FRONTEND
+  # ===========================================================================
+  ui:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      additional_contexts:
+        plugins: ../plugins/react
+    image: genassist-ui-image:ci
+    pull_policy: never
+    container_name: genassist-ui-ci
+    ports:
+      - "9080:8080"
+      - "9081:80"
+    networks:
+      - genassist-network-ci
+
+  # ===========================================================================
+  # MONITORING
+  # ===========================================================================
+  flower:
+    image: genassist-app-image:ci
+    pull_policy: never
+    container_name: genassist-flower-ci
+    command: python /src/run_celery.py flower --port=5555 --persistent=True --db="flower_db" --basic-auth="${FLOWER_USER:-user1}:${FLOWER_PASSWORD:-password1}"
+    ports:
+      - "9555:5555"
+    environment:
+      CELERY_TRACE_APP: 1
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - genassist-network-ci
+
+  metabase:
+    container_name: genassist-metabase-ci
+    volumes:
+      - ../metabase-data:/data
+    ports:
+      - "9003:3000"
+    environment:
+      MB_DB_HOST: genassist-db-ci
+    networks:
+      - genassist-network-ci
+
+  # ===========================================================================
+  # TESTING
+  # ===========================================================================
+  uitests:
+    build:
+      context: ../ui_tests
+      dockerfile: Dockerfile
+    image: genassist-uitests:ci
+    pull_policy: never
+    container_name: genassist-uitests-ci
+    profiles: ["testing"]
+    environment:
+      BASE_URL: http://genassist-ui-ci
+      PLAYWRIGHT_HEADLESS: "true"
+      CI: "true"
+    depends_on:
+      app:
+        condition: service_healthy
+      ui:
+        condition: service_healthy
+    networks:
+      - genassist-network-ci
+
+networks:
+  genassist-network-ci:
+    driver: bridge
+
+volumes:
+  pgdata_ci:
+    name: genassist_pgdata_ci
+  chroma_data_ci:
+    name: genassist_chroma_data_ci
+  qdrant_data_ci:
+    name: genassist_qdrant_data_ci
+  app_data_volume_ci:
+    name: genassist_app_data_ci

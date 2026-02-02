@@ -1,112 +1,174 @@
-# Introduction 
-Backend API for GenAssist
+# GenAssist Backend
 
-# Getting Started
-Create virtual environment and install requirements\
+FastAPI-based backend API for GenAssist.
 
+## Prerequisites
 
-0. Install python and pip (if running on a clean linux machine)
+- Python 3.12+
+- Docker and Docker Compose
+- (Optional) NVIDIA GPU with Container Toolkit for Whisper acceleration
 
-    sudo apt-get update
-    sudo apt-get install software-properties-common
-    apt-get install build-essential
-    sudo apt-get update; sudo apt-get install make build-essential libssl-dev zlib1g-dev \
-    libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
-    libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev ffmpeg
-    
-    install pyenv: `curl -fsSL https://pyenv.run | bash`
-    pyenv install 3.12
+## Quick Start
 
-    *Container toolkit (if needed):
-    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list && sudo apt-get update
-    sudo apt-get install -y nvidia-container-toolkit
+### 1. Setup Virtual Environment
 
+```bash
+# Create and activate virtual environment
+python3.12 -m venv genassist_env
+source genassist_env/bin/activate  # Linux/Mac
+# genassist_env\Scripts\activate   # Windows
+```
 
-1. Install the required dependencies:
-    ```bash
-    Mac/Linux:
-    python3.12 -m venv genassist_env
-    source genassist_env/bin/activate
+### 2. Install Dependencies
 
-    ```
+```bash
+pip install -r requirements-main.txt
+pip install -r requirements-app.txt
+pip install -r requirements-rag.txt
+```
 
-2. Install the required dependencies:
-    ```bash
-    pip install -r requirements-main.txt
-    pip install -r requirements-app.txt
-    pip install -r requirements-rag.txt
-    ```
+### 3. Configure Environment
 
-    create .env file from example and put config values
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
 
-    If using HF model for the first time, go to https://hf.co/pyannote/segmentation to accept license agreeement
+> **Note:** If using HuggingFace models for the first time, accept the license at https://hf.co/pyannote/segmentation
 
-3. Start db and redis and whisper and chroma locally:
-    ```bash
-    docker compose up -d db redis whisper chroma qdrant
-    ```
-   **in development with backend running in IDE you need CHROMA_HOST and CHROMA_PORT in .env (check .env.example)
+### 4. Start Infrastructure Services
 
-3. Run in debug mode:
-    ```bash
-    python run.py
-    ```
-    
-4. Try out APIs using Swagger UI:
-    API key: test123
-    UserRead Auth: admin/genadmin
-    ```
-    http://localhost:8000/docs
-    ```
+```bash
+# From repository root
+make services
 
-5. Lint:
-    ```bash
-    pylint app
-    ```
+# Or using docker compose directly
+docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml up -d db redis chroma qdrant whisper
+```
 
-6. Run tests:
-    ```bash
-    pytest .
-    ```
+> **Important:** When running backend locally (not in Docker), ensure `CHROMA_HOST=localhost` and `CHROMA_PORT=8005` are set in your `.env` file.
 
-7. Debug:
-    Run vscode debug on the main file "run.py"
-    Make sure the correct Python interpreter is selected (pointing to the genassist_env environment)
+### 5. Run the Application
 
-8. Exit:
-    ```bash
-    deactivate
-    ```
+```bash
+python run.py
+```
 
-9. Buid and run docker image:
-    ```bash
-    docker build -f './Dockerfile' -t ritech/genassist-dev-local .
-    docker run ritech/genassist-dev-local
-    ```
+### 6. Access the API
 
-10. Start Monitoring Tools and Dashboard (CPU, Mmemory, ...) for Docker and Host:
-    ```bash
-    cd monitoring
-    docker compose up -d
-    ```
-    Prometeus, cAdvisor and node-exporter will run in background to collect the metrics, while
-    Grafana can be accessed 
-    ```
-    http://localhost:9000/
-    ```
+- **Swagger UI:** http://localhost:8000/docs
+- **API Key:** `test123`
+- **User Auth:** `admin` / `genadmin`
 
-11. Start Centralized Log Collection - ELK Stack
-    ```bash
-    cd elk-logs
-    docker composer up -d
-    ```
-    This will start services:
-    - elasticsearch
-    - logstash
-    - filebeat
-    - kibana
+## Development
 
-    **Kibana** - Open Search Logs UI: 
-    ```bash
-    http://localhost:5601
-    ```
+### Linting
+
+```bash
+pylint app
+```
+
+### Testing
+
+```bash
+# Run all tests
+pytest .
+
+# Run with coverage
+pytest --cov=app --cov-report=html
+```
+
+### Debugging in VSCode
+
+1. Open `run.py` in VSCode
+2. Ensure the Python interpreter is set to `genassist_env`
+3. Press F5 or use the Run/Debug panel
+
+### Deactivate Virtual Environment
+
+```bash
+deactivate
+```
+
+## Docker
+
+### Build and Run Locally
+
+```bash
+# From repository root (recommended)
+make dev-backend
+
+# Or build manually
+docker build -t genassist-backend:local .
+docker run genassist-backend:local
+```
+
+## Monitoring (Optional)
+
+### System Metrics Dashboard
+
+```bash
+cd monitoring
+docker compose up -d
+```
+
+Access Grafana at http://localhost:9000
+
+Services started:
+- Prometheus (metrics collection)
+- cAdvisor (container metrics)
+- node-exporter (host metrics)
+- Grafana (dashboards)
+
+### Centralized Logging (ELK Stack)
+
+```bash
+cd elk-logs
+docker compose up -d
+```
+
+Access Kibana at http://localhost:5601
+
+Services started:
+- Elasticsearch
+- Logstash
+- Filebeat
+- Kibana
+
+## System Setup (Clean Linux Install)
+
+<details>
+<summary>Click to expand installation instructions</summary>
+
+### Install Python via pyenv
+
+```bash
+# Install dependencies
+sudo apt-get update
+sudo apt-get install -y software-properties-common build-essential libssl-dev \
+  zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
+  libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev ffmpeg
+
+# Install pyenv
+curl -fsSL https://pyenv.run | bash
+
+# Install Python 3.12
+pyenv install 3.12
+pyenv global 3.12
+```
+
+### Install NVIDIA Container Toolkit (for GPU support)
+
+```bash
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+  sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+```
+
+</details>

@@ -1,3 +1,15 @@
+# =============================================================================
+# Build Configuration for CI/CD Image Publishing
+# =============================================================================
+# This file is used by the build scripts to create and push images to GHCR.
+# For running the application, use the docker/ directory configurations:
+#
+#   Production:    docker compose -f docker/docker-compose.yml --profile full up -d
+#   Development:   docker compose -f docker/docker-compose.dev.yml --profile full up -d --build
+#
+# See docker/README.md for full documentation.
+# =============================================================================
+
 services:
   # =========================
   # Init container to set up volume permissions
