@@ -8,6 +8,8 @@ from typing import Dict, Hashable, List, Sequence, Set
 from uuid import UUID
 from fastapi.websockets import WebSocket
 
+from app.core.config.settings import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +155,8 @@ class SocketConnectionManager:
         - connections_by_tenant: dict mapping tenant_id to connection count
         - connections_by_user: dict mapping user_id to connection count
         """
+        if not settings.USE_WS:
+            return {"total_connections": 0, "rooms_count": 0, "connections_by_tenant": {}, "connections_by_user": {}}
         async with self._lock:
             connections_by_tenant: Dict[str, int] = {}
             connections_by_user: Dict[UUID, int] = {}
@@ -187,6 +191,8 @@ class SocketConnectionManager:
         If Redis is available, publishes the message to Redis Pub/Sub for delivery
         across all server instances. Otherwise, delivers only to local connections.
         """
+        if not settings.USE_WS:
+            return
         payload = payload or {}
         if msg_type == "takeover":
             payload["takeover_user_id"] = str(current_user_id)
@@ -291,6 +297,8 @@ class SocketConnectionManager:
         Initialize Redis Pub/Sub subscriber for receiving messages from other server instances.
         This should be called during application startup if Redis is available.
         """
+        if not settings.USE_WS:
+            return
         if not self._redis_client:
             logger.info("Redis not configured, running in single-server mode")
             return
@@ -399,6 +407,8 @@ class SocketConnectionManager:
         Cleanup Redis subscriber and close all connections.
         This should be called during application shutdown.
         """
+        if not settings.USE_WS:
+            return
         logger.info("Cleaning up SocketConnectionManager...")
 
         # Signal shutdown to subscriber loop

@@ -11,25 +11,31 @@ class ProjectSettings(BaseSettings):
 
     def __init__(self, **values):
         super().__init__(**values)
+
     # === Redis Configuration ===
     REDIS_HOST: Optional[str] = None
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: Optional[str] = None  # Auth; included in REDIS_URL when set
+    REDIS_USER: Optional[str] = None  # Auth; included in REDIS_URL when set
     REDIS_FOR_CONVERSATION: bool = True
     REDIS_SSL: Optional[bool] = False
     REDIS_OVERRIDE_URL: Optional[str] = None
+    
+    # Redis connection pool settings
+    REDIS_MAX_CONNECTIONS: int = 10  # Max connections in pool
+    REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE: int = 5 # Used to cache agents, etc, in services
+    REDIS_SOCKET_TIMEOUT: int = 10  # Socket timeout in seconds
+    REDIS_SOCKET_CONNECT_TIMEOUT: int = 15 # Socket connect timeout in seconds
+    REDIS_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval in seconds
+
     # Memory efficiency settings for Redis conversations
     CONVERSATION_MAX_MEMORY_MESSAGES: int = 50  # Max messages kept in memory
     CONVERSATION_REDIS_EXPIRY_DAYS: int = 30  # Redis data expiration
     # Redis connection pool settings
     # For 300-500 concurrent WebSocket users, 30-40 connections is optimal
     # Each publish takes ~5ms, so connections are rapidly reused
-    REDIS_MAX_CONNECTIONS: int = 40  # Max connections in pool
-    REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE: int = 20 # Used to cache agents, etc, in services
-    REDIS_SOCKET_TIMEOUT: int = 5  # Socket timeout in seconds
-    REDIS_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval in seconds
-
+    
     # Celery Redis connection pool settings
     CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
     # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
@@ -137,6 +143,9 @@ class ProjectSettings(BaseSettings):
         None  # Comma-separated list of additional allowed origins
     )
 
+    # === WebSocket Configuration ===
+    USE_WS: bool = True  # Enable/disable WebSocket backend (connect, broadcast, rooms)
+
     # === Rate Limiting Configuration ===
     RATE_LIMIT_ENABLED: bool = False
     # Global rate limit: requests per time window
@@ -171,11 +180,12 @@ class ProjectSettings(BaseSettings):
         if self.REDIS_OVERRIDE_URL:
             return self.REDIS_OVERRIDE_URL
         host = self.REDIS_HOST or "localhost"
+
         if self.REDIS_PASSWORD:
-            auth = f":{quote(self.REDIS_PASSWORD, safe='')}@"
+            auth = f"{quote(self.REDIS_USER or "", safe='')}:{quote(self.REDIS_PASSWORD or "", safe='')}@"
         else:
             auth = ""
-        # use rediss for ssl
+        # use rediss for ssl if ssl is enabled
         redis_scheme = "rediss" if self.REDIS_SSL else "redis"
         return unquote(f"{redis_scheme}://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}")
 

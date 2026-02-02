@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/")
+@router.get("")
 async def playground_root():
     """Root playground endpoint."""
     return {"message": "Playground API - No auth required", "status": "active"}
