@@ -285,10 +285,44 @@ def parse_json_response(response: str) -> Optional[Dict[str, Any]]:
 
 
 def extract_direct_response(response: str) -> Optional[str]:
-    """Extract direct response from JSON format"""
+    """Extract direct response from JSON format
+    
+    Returns:
+        - The response text if a valid direct_response JSON is found
+        - None if the response is JSON but not a direct_response (caller should use original)
+        - The original response if it's not JSON format (plain text)
+    """
     parsed_response = parse_json_response(response)
     if parsed_response and parsed_response.get("action") == "direct_response":
-        return parsed_response.get("response", "")
+        # Extract the response field - always return it even if empty
+        response_text = parsed_response.get("response")
+        if response_text is not None:
+            return str(response_text)
+        # If response field is missing, return empty string
+        return ""
+    
+    # If response looks like JSON but wasn't parsed, try harder to parse it
+    response_stripped = response.strip()
+    if response_stripped.startswith('{') and 'direct_response' in response_stripped:
+        # Try to parse more aggressively
+        try:
+            # Try parsing the entire string
+            parsed = json.loads(response_stripped)
+            if parsed.get("action") == "direct_response":
+                response_text = parsed.get("response")
+                if response_text is not None:
+                    return str(response_text)
+        except json.JSONDecodeError:
+            pass
+    
+    # Check if response looks like JSON (starts with {)
+    # If it's JSON but not direct_response, return None so caller uses original
+    # If it's not JSON (plain text), return the original response
+    if response_stripped.startswith('{'):
+        # Looks like JSON but not a direct_response, return None
+        return None
+    
+    # Plain text response, return as-is
     return response
 
 
