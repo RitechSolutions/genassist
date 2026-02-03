@@ -2,9 +2,11 @@
 AWS Bedrock embedding provider implementation
 """
 
+import asyncio
 import logging
 from typing import List
 
+from app.core.config.settings import settings
 from .base import BaseEmbedder, EmbeddingConfig
 
 logger = logging.getLogger(__name__)
@@ -87,7 +89,7 @@ class BedrockEmbedder(BaseEmbedder):
 
     async def embed_query(self, query: str) -> List[float]:
         """
-        Generate embedding for a query
+        Generate embedding for a query with timeout and retry mechanism
 
         Args:
             query: Query text to embed
@@ -99,11 +101,40 @@ class BedrockEmbedder(BaseEmbedder):
             if not await self.initialize():
                 raise RuntimeError("Failed to initialize Bedrock client")
 
-        try:
-            # Use LangChain's embed_query method
-            embedding = await self.client.aembed_query(query)
-            return embedding
+        max_retries = settings.BEDROCK_MAX_RETRY_QUERY_EMBEDDING
+        timeout_seconds = settings.BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS
 
-        except Exception as e:
-            logger.error(f"Failed to generate query embedding: {e}")
-            return []
+        for attempt in range(max_retries):
+            try:
+                # TEST: Using slow operation (15s) instead of actual Bedrock call
+                embedding = await asyncio.wait_for(
+                    self.client.aembed_query(query),
+                    timeout=timeout_seconds
+                )
+                return embedding
+
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"Bedrock embed_query timed out after {timeout_seconds}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                
+                # Reinitialize client after timeout to ensure clean connection
+                # This helps prevent hanging connections from accumulating
+                if attempt < max_retries - 1:
+                    logger.info("Reinitializing Bedrock client after timeout")
+                    self.client = None
+                    if not await self.initialize():
+                        logger.error("Failed to reinitialize Bedrock client")
+                        return []
+                else:
+                    logger.error(
+                        f"Failed to generate query embedding after {max_retries} attempts due to timeout"
+                    )
+                    return []
+
+            except Exception as e:
+                logger.error(f"Failed to generate query embedding: {e}")
+                return []
+
+        return []
