@@ -101,7 +101,7 @@ class BedrockEmbedder(BaseEmbedder):
                 raise RuntimeError("Failed to initialize Bedrock client")
 
         max_retries = 3
-        timeout_seconds = 4
+        timeout_seconds = 8
 
         for attempt in range(max_retries):
             try:
