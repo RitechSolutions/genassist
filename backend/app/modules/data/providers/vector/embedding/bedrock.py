@@ -46,11 +46,13 @@ class BedrockEmbedder(BaseEmbedder):
             # 2. AWS credentials file (~/.aws/credentials)
             # 3. IAM instance profile (EC2/ECS)
             # 4. IAM role (Lambda/ECS with task role)
-            self.client = BedrockEmbeddings(model_id=model_id, region_name=region_name)
+            self.client = BedrockEmbeddings(
+                model_id=model_id,
+                region_name=region_name
+            )
 
             logger.info(
-                f"Initialized Bedrock embeddings with model: {model_id} in region: {region_name}"
-            )
+                f"Initialized Bedrock embeddings with model: {model_id} in region: {region_name}")
             return True
 
         except Exception as e:
