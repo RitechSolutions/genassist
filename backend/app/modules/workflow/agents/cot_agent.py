@@ -79,7 +79,7 @@ class ChainOfThoughtAgent:
         self, query: str, chat_history: List[Dict[str, str]]
     ) -> Dict[str, Any]:
         """Run the chain-of-thought reasoning cycle with enhanced workflow"""
-        logger.info(f"Running Chain-of-Thought for query: {query}")
+        logger.debug(f"Running Chain-of-Thought for query: {query}")
         context = build_conversation_context(chat_history)
         examples = (
             create_task_specific_cot_examples()
@@ -98,13 +98,13 @@ class ChainOfThoughtAgent:
                 response_content = self._extract_response_content(response)
 
                 if self.verbose:
-                    logger.info(
+                    logger.debug(
                         f"Chain-of-Thought iteration {iteration + 1}: {response_content}"
                     )
 
                 # Record reasoning step
                 thought = extract_thought(response_content)
-                logger.info(f"Thought extracted: {thought}")
+                logger.debug(f"Thought extracted: {thought}")
                 reasoning_steps.append(
                     {
                         "iteration": iteration + 1,
@@ -116,7 +116,7 @@ class ChainOfThoughtAgent:
                 # Check for Final Answer
                 final_answer = response_content
                 if final_answer:
-                    logger.info(f"Final answer found: {final_answer}")
+                    logger.debug(f"Final answer found: {final_answer}")
 
                     return create_success_response(
                         final_answer,
@@ -169,7 +169,7 @@ class ChainOfThoughtAgent:
             # Create source header if this is a new source
             if source_name and source_name not in seen_sources:
                 doc_info = f"\n--- From: {source_name} ---\n"
-                logger.info(f"Adding source header: {doc_info.strip()}")
+                logger.debug(f"Adding source header: {doc_info.strip()}")
 
                 # Check if we have room for the header
                 if current_length + len(doc_info) > max_length:
@@ -204,7 +204,7 @@ class ChainOfThoughtAgent:
     def _extract_source_name(self, metadata: Dict) -> str:
         """Extract a readable source name from metadata."""
         # Check for file name in different possible keys
-        logger.info(f"Extracting source name from metadata: {metadata}")
+        logger.debug(f"Extracting source name from metadata: {metadata}")
         if "filename" in metadata:
             return metadata["filename"]
 

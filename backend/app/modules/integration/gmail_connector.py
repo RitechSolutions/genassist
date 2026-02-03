@@ -415,12 +415,12 @@ class GmailConnector:
                             try:
                                 logger.info(
                                     f"Processing attachment: {filename}")
-                                logger.info(
+                                logger.debug(
                                     f"Base64 content length: {len(base64_content)}"
                                 )
 
                                 file_content = base64.b64decode(base64_content)
-                                logger.info(
+                                logger.debug(
                                     f"Decoded content length: {len(file_content)} bytes"
                                 )
 
