@@ -83,7 +83,7 @@ def test_api_endpoints():
         # Skip __init__.py files
         if file_path.endswith('__init__.py'):
             continue
-        if file_path.endswith("routes.py"):
+        if file_path.endswith("_routes.py"):
             continue
             
         with open(file_path, 'r') as f:

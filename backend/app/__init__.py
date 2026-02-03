@@ -51,7 +51,7 @@ def create_app() -> FastAPI:
     # from fastapi.staticfiles import StaticFiles
     # app.mount("/docu", StaticFiles(directory="docs-site", html=True), name="docu")
 
-    from app.api.v1.routes.routes import register_routers
+    from app.api.v1.routes._routes import register_routers
     register_routers(app)
 
     return app
