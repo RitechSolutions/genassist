@@ -6328,15 +6328,35 @@
         "summary": "Upload File",
         "description": "Upload multiple files, extract their text content, and return saved filenames and paths.",
         "operationId": "upload_file_api_genagent_knowledge_upload_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "use_file_manager",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Use File Manager"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_upload_file_api_genagent_knowledge_upload_post"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -6344,13 +6364,13 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
+                    "type": "object",
                     "additionalProperties": {
                       "type": "string"
-                    },
-                    "type": "object"
+                    }
                   },
-                  "type": "array",
                   "title": "Response Upload File Api Genagent Knowledge Upload Post"
                 }
               }
@@ -6366,15 +6386,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/genagent/knowledge/upload-chat-file": {

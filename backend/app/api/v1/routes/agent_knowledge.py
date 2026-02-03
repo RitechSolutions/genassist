@@ -30,11 +30,12 @@ from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 # File manager service
 from app.services.file_manager import FileManagerService
 from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
+from app.modules.filemanager.providers.s3.provider import S3StorageProvider
 from app.schemas.file import FileUploadResponse
+from app.core.config.settings import FileStorageSettings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
 
 # Helper functions removed - now using simplified manager interface
 # Define upload directory
@@ -203,6 +204,8 @@ async def delete_knowledge_doc(
 )
 async def upload_file(
     files: List[UploadFile] = File(...),
+    use_file_manager: bool = True,
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Upload multiple files, extract their text content, and return saved filenames and paths.
@@ -216,30 +219,42 @@ async def upload_file(
             )
 
             # Generate a unique filename
-            file_extension = file.filename.split(
-                ".")[-1] if "." in file.filename else ""
-            unique_filename = (
-                f"{uuid.uuid4()}.{file_extension}" if file_extension else f"{uuid.uuid4()}"
-            )
-            file_path = os.path.join(UPLOAD_DIR, unique_filename)
+            file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
+            unique_filename = (f"{uuid.uuid4()}.{file_extension}" if file_extension else f"{uuid.uuid4()}")
 
-            logger.info(f"Saving file to: {file_path}")
-
-            # Save the file
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-
-            # Extract text from the file
-            extracted_text = FileTextExtractor().extract_from_path(path=file_path)
-            if not extracted_text:
-                raise AppException(ErrorKey.ERROR_EXTRACTING_FROM_FILE)
-
-            # Return the filenames and paths
+            # create the result object
             result = {
                 "filename": unique_filename,
                 "original_filename": file.filename,
-                "file_path": file_path,
             }
+            
+            file_id = None
+            file_url = None
+
+            if use_file_manager:
+                file_settings = FileStorageSettings()
+                await file_manager_service.set_storage_provider(S3StorageProvider(config=file_settings.model_dump()))
+                # use file manager service to upload the file
+                created_file = await file_manager_service.create_file(file)
+                file_id = str(created_file.id)
+                file_url = f"{file_settings.APP_URL}/api/file-manager/files/{file_id}/source"
+                file_path = file_url
+
+                result["file_url"] = file_url
+            else:
+                # save the file to the upload directory
+                file_path = os.path.join(UPLOAD_DIR, unique_filename)
+                logger.info(f"Saving file to: {file_path}")
+
+                # Save the file
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+
+                logger.info(f"Extracting text from file: {file_path}")
+
+            # add the file_path to the result
+            result["file_path"] = file_path
+
             logger.info(f"Upload successful: {result}")
             results.append(result)
         except Exception as e:
@@ -271,8 +286,15 @@ async def upload_file_to_chat(
             f"Received file upload: {file.filename}, size: {file.size}, content_type: {file.content_type}"
         )
 
-        # Introduce file manager service and set the storage provider to local file system
-        await file_manager_service.set_storage_provider(LocalFileSystemProvider(config={"base_path": UPLOAD_DIR}))
+        use_local_provider = True
+        if use_local_provider:
+            # Introduce file manager service and set the storage provider to local file system
+            # Use Local File System
+            await file_manager_service.set_storage_provider(LocalFileSystemProvider(config={"base_path": UPLOAD_DIR}))
+        else:
+            # use S3 storage provider
+            file_settings = FileStorageSettings()
+            await file_manager_service.set_storage_provider(S3StorageProvider(config=file_settings.model_dump()))
 
         try:
             # create file in file manager service

@@ -205,7 +205,7 @@ const KnowledgeBaseManager: React.FC = () => {
 
         const filtered = allSources.filter(
           (source) =>
-            source.source_type.toLowerCase() === targetType.toLowerCase(),
+            source.source_type.toLowerCase() === targetType.toLowerCase()
         );
         setAvailableSources(filtered);
       }
@@ -215,7 +215,7 @@ const KnowledgeBaseManager: React.FC = () => {
   }, [formData.type]);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
@@ -278,7 +278,7 @@ const KnowledgeBaseManager: React.FC = () => {
       setError(
         `Failed to upload files: ${
           error instanceof Error ? error.message : String(error)
-        }`,
+        }`
       );
       return null;
     } finally {
@@ -356,7 +356,7 @@ const KnowledgeBaseManager: React.FC = () => {
       const hasValidUrl = urls.some((url) => url.trim() !== "");
       requiredFields.push(
         { label: "source", isEmpty: !formData.sync_source_id },
-        { label: "url", isEmpty: !hasValidUrl },
+        { label: "url", isEmpty: !hasValidUrl }
       );
 
       if (formData.sync_active) {
@@ -439,7 +439,7 @@ const KnowledgeBaseManager: React.FC = () => {
           acc[key] = header.value;
           return acc;
         },
-        {},
+        {}
       );
       const hasUrlHeaders = Object.keys(normalizedUrlHeaders).length > 0;
 
@@ -484,6 +484,15 @@ const KnowledgeBaseManager: React.FC = () => {
       delete dataToSubmit.use_http_request;
       //////////////////////////
 
+      // For URL and SharePoint types, set the urls array with non-empty URLs
+      if (formData.type === "url" || formData.type === "sharepoint") {
+        dataToSubmit.urls = urls.filter((url) => url.trim() !== "");
+      } else {
+        // Remove urls from other types
+        dataToSubmit.urls = [];
+      }
+
+      // Look for files to upload
       if (formData.type === "file" && selectedFiles.length > 0) {
         const uploadResults = (await uploadFiles()) as Array<[]>;
 
@@ -491,26 +500,29 @@ const KnowledgeBaseManager: React.FC = () => {
           throw new Error("File upload failed");
         }
 
-        dataToSubmit.files = uploadResults.map(
-          (result: any) => result.file_path,
-        );
-        dataToSubmit.content = `Files: ${uploadResults
-          .map((r: any) => r.original_filename)
-          .join(", ")}`;
+        // loop through the upload results and add the file_url to the files array
+        uploadResults.forEach((result: any) => {
+          if (result.file_url) {
+            debugger;
+            dataToSubmit.urls.push(result.file_url);
+          } else {
+            dataToSubmit.files.push(result.file_path);
+          }
+
+          // add the original_filename to the content
+          dataToSubmit.content += ` ${result.original_filename}`;
+        });
       }
 
-      // For URL and SharePoint types, set the urls array with non-empty URLs
-      if (formData.type === "url" || formData.type === "sharepoint") {
-        dataToSubmit.urls = urls.filter((url) => url.trim() !== "");
-      } else {
-        // Remove urls from other types
+      // if the urls array is empty, delete it
+      if (!dataToSubmit.urls && dataToSubmit.urls.length === 0) {
         delete dataToSubmit.urls;
       }
 
       if (editingItem) {
         await updateKnowledgeItem(editingItem.id, dataToSubmit);
         setSuccess(
-          `Knowledge base item "${dataToSubmit.name}" updated successfully`,
+          `Knowledge base item "${dataToSubmit.name}" updated successfully`
         );
       } else {
         //if (!dataToSubmit.id) {
@@ -519,7 +531,7 @@ const KnowledgeBaseManager: React.FC = () => {
 
         await createKnowledgeItem(dataToSubmit);
         setSuccess(
-          `Knowledge base item "${dataToSubmit.name}" created successfully`,
+          `Knowledge base item "${dataToSubmit.name}" created successfully`
         );
       }
 
@@ -541,7 +553,7 @@ const KnowledgeBaseManager: React.FC = () => {
       toast.error(
         `Failed to ${
           editingItem ? "update" : "create"
-        } knowledge base: ${errorMessage}`,
+        } knowledge base: ${errorMessage}`
       );
     } finally {
       setLoading(false);
@@ -606,7 +618,7 @@ const KnowledgeBaseManager: React.FC = () => {
     }
 
     setDynamicRagConfig(
-      (item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues,
+      (item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues
     );
 
     // Populate urls state from stored data
@@ -901,13 +913,13 @@ const KnowledgeBaseManager: React.FC = () => {
                                                   key: e.target.value,
                                                   keyType:
                                                     KNOWN_HTTP_HEADERS.includes(
-                                                      e.target.value,
+                                                      e.target.value
                                                     )
                                                       ? "known"
                                                       : "custom",
                                                 }
-                                              : row,
-                                          ),
+                                              : row
+                                          )
                                         )
                                       }
                                       list="known-url-headers"
@@ -924,8 +936,8 @@ const KnowledgeBaseManager: React.FC = () => {
                                                   ...row,
                                                   value: e.target.value,
                                                 }
-                                              : row,
-                                          ),
+                                              : row
+                                          )
                                         )
                                       }
                                       className="flex-1 text-xs min-w-0 w-full"
@@ -938,8 +950,8 @@ const KnowledgeBaseManager: React.FC = () => {
                                       onClick={() =>
                                         setUrlHeaders((prev) =>
                                           prev.filter(
-                                            (row) => row.id !== header.id,
-                                          ),
+                                            (row) => row.id !== header.id
+                                          )
                                         )
                                       }
                                     >
@@ -965,9 +977,9 @@ const KnowledgeBaseManager: React.FC = () => {
                                   {selectedFiles.length > 0
                                     ? `${selectedFiles.length} file(s) selected`
                                     : formData.files &&
-                                        formData.files.length > 0
-                                      ? "Replace files"
-                                      : "Select files to upload"}
+                                      formData.files.length > 0
+                                    ? "Replace files"
+                                    : "Select files to upload"}
                                 </span>
                                 <input
                                   id="file-upload"
@@ -1000,7 +1012,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                       size="icon"
                                       onClick={() =>
                                         setSelectedFiles((prev) =>
-                                          prev.filter((_, i) => i !== index),
+                                          prev.filter((_, i) => i !== index)
                                         )
                                       }
                                       className="h-8 w-8"
@@ -1335,7 +1347,7 @@ const KnowledgeBaseManager: React.FC = () => {
                   showOnlyRequired={true}
                   knowledgeId={editingItem?.id}
                   initialLegraFinalize={Boolean(
-                    (editingItem as any)?.legra_finalize,
+                    (editingItem as any)?.legra_finalize
                   )}
                 />
               </div>
@@ -1349,8 +1361,8 @@ const KnowledgeBaseManager: React.FC = () => {
                   {loading || isUploading
                     ? "Saving..."
                     : editingItem
-                      ? "Update Knowledge Base"
-                      : "Create Knowledge Base"}
+                    ? "Update Knowledge Base"
+                    : "Create Knowledge Base"}
                 </Button>
               </div>
             </div>
@@ -1561,7 +1573,7 @@ const KnowledgeBaseManager: React.FC = () => {
               if (formData.type === "sharepoint") targetType = "o365";
               if (formData.type === "zendesk") targetType = "zendesk";
               const filtered = allSources.filter(
-                (source) => source.source_type.toLowerCase() === targetType,
+                (source) => source.source_type.toLowerCase() === targetType
               );
               setAvailableSources(filtered);
             })();

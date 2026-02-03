@@ -73,8 +73,6 @@ class KBBase(BaseModel):
 
 class KBCreate(KBBase):
     """Body model for POST / PUT (no id)"""
-
-
 class KBRead(KBBase):
     """Response model"""
     id: UUID
