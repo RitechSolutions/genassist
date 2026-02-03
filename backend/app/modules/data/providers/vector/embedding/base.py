@@ -33,6 +33,10 @@ class EmbeddingConfig(BaseModel):
         default=None, description="Model ID for AWS Bedrock")
     region_name: Optional[str] = Field(
         default=None, description="AWS region for Bedrock service")
+    connect_timeout: Optional[int] = Field(
+        default=None, description="Bedrock connect timeout in seconds")
+    read_timeout: Optional[int] = Field(
+        default=None, description="Bedrock read timeout in seconds")
 
     @field_validator('model_name')
     @classmethod
