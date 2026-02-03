@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import List
 
+from app.core.config.settings import settings
 from .base import BaseEmbedder, EmbeddingConfig
 
 logger = logging.getLogger(__name__)
@@ -100,8 +101,8 @@ class BedrockEmbedder(BaseEmbedder):
             if not await self.initialize():
                 raise RuntimeError("Failed to initialize Bedrock client")
 
-        max_retries = 3
-        timeout_seconds = 8
+        max_retries = settings.BEDROCK_MAX_RETRY_QUERY_EMBEDDING
+        timeout_seconds = settings.BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS
 
         for attempt in range(max_retries):
             try:
