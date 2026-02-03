@@ -38,7 +38,7 @@ class RegistryItem:
         # Only build workflow if one exists
         if self.workflow_model is not None:
             self.workflow_engine.build_workflow(self.workflow_model)
-            logger.info(f"Workflow model: {self.workflow_model}")
+            logger.debug(f"Workflow model: {self.workflow_model}")
         else:
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 

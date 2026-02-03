@@ -81,13 +81,13 @@ async def run_query_agent_logic(
 
     agent = RegistryItem(agent)
 
-    logger.info(f"Workflow Metadata: {metadata}")
+    logger.debug(f"Workflow Metadata: {metadata}")
 
     result = await agent.execute(
             session_message=session_message,
             metadata=metadata
             )
-    logger.info(f"Workflow Final Result: {result}")
+    logger.debug(f"Workflow Final Result: {result}")
     backward_compatibility_result = {
                 "status": result.get("status"),
                 "response": result.get("output"),
@@ -96,8 +96,8 @@ async def run_query_agent_logic(
                 "rag_used": False
 
     }
-    logger.info(f"Result: {result}")
-    logger.info(f"Backward compatibility result: {backward_compatibility_result}")
+    logger.debug(f"Result: {result}")
+    logger.debug(f"Backward compatibility result: {backward_compatibility_result}")
     if backward_compatibility_result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("message"))
     return backward_compatibility_result
