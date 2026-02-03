@@ -92,10 +92,7 @@ export const getApiKeys = async (userId?: string): Promise<ApiKey[]> => {
     url += `?user_id=${encodeURIComponent(userId)}`;
   }
 
-  // no cache header
-  const headers = { "Cache-Control": "no-cache" };
-
-  const data = await apiRequest<ApiKey[]>("GET", url, undefined, { headers });
+  const data = await apiRequest<ApiKey[]>("GET", url);
   if (!data) {
     return [];
   }
