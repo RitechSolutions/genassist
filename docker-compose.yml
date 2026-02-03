@@ -41,6 +41,7 @@ services:
     environment:
       - DB_HOST=db
       - DB_PORT=5432
+      - AUTO_MIGRATE=true
     depends_on:
       db:
         condition: service_healthy
@@ -56,7 +57,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - RUN_MIGRATIONS=false
+      - AUTO_MIGRATE=false
       - WORKERS=1 # Number of workers
       - VECTOR_DB_TYPE=chroma
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma

@@ -42,6 +42,7 @@ services:
     environment:
       - DB_HOST=db
       - DB_PORT=5432
+      - AUTO_MIGRATE=true
     depends_on:
       db:
         condition: service_healthy
@@ -60,7 +61,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - RUN_MIGRATIONS=false
+      - AUTO_MIGRATE=false
       - VECTOR_DB_TYPE=chroma
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
       - CHROMA_COLLECTION_NAME=default

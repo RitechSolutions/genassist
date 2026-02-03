@@ -91,7 +91,7 @@ class ProjectSettings(BaseSettings):
     DB_POOL_RECYCLE: int = 1800  # seconds
 
     # === Multi-Tenancy ===
-    MULTI_TENANT_ENABLED: bool = False
+    MULTI_TENANT_ENABLED: bool = True
     TENANT_HEADER_NAME: str = "x-tenant-id"
     TENANT_SUBDOMAIN_ENABLED: bool = False
 

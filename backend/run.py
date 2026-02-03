@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 app = create_app()
 
 if __name__ == "__main__":
-    # Run migrations based on RUN_MIGRATIONS env var
+    # Run migrations based on AUTO_MIGRATE env var
     # Default: true for local dev, false for Docker (handled by init container)
-    if os.environ.get("RUN_MIGRATIONS", "true").lower() == "true":
+    if os.environ.get("AUTO_MIGRATE", "true").lower() == "true":
         logger.info("Running database migrations...")
         os.environ.setdefault("ALEMBIC_SKIP_FILECONFIG", "1")
         run_migrations(settings.DATABASE_URL_SYNC)
@@ -36,7 +36,7 @@ if __name__ == "__main__":
         run_migrations_for_all_tenants()
         logger.info("Database migrations completed")
     else:
-        logger.info("RUN_MIGRATIONS=false, skipping migrations (handled by init container)")
+        logger.info("AUTO_MIGRATE=false, skipping migrations (handled by init container)")
 
     port = int(os.environ.get("FASTAPI_RUN_PORT", 8000))
     debug_mode = os.environ.get("RELOAD", "False").lower() == "true"
