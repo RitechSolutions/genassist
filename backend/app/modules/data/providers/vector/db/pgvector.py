@@ -21,8 +21,15 @@ class PgVectorDB(BaseVectorDB):
     def __init__(self, config: VectorDBConfig):
         super().__init__(config)
         self.engine: Optional[AsyncEngine] = None
-        self.table_name: str = f"vector_store_{config.collection_name.replace('-', '_').replace('.', '_')}"
+        self.base_collection_name: str = config.collection_name.replace('-', '_').replace('.', '_')
+        self.table_name: Optional[str] = None  # Will be set when dimension is known
         self.dimension: Optional[int] = None
+    
+    def _get_table_name(self, dimension: int) -> str:
+        """Generate table name based on collection name and dimension"""
+        # Include dimension in table name to ensure each model gets its own table
+        sanitized_name = self.base_collection_name
+        return f"vector_store_{sanitized_name}_dim{dimension}"
 
     async def initialize(self) -> bool:
         """Initialize the pgvector connection"""
@@ -44,19 +51,57 @@ class PgVectorDB(BaseVectorDB):
             logger.error(f"Failed to initialize pgvector: {e}")
             return False
 
+    async def _table_exists(self, table_name: str) -> bool:
+        """Check if a table exists"""
+        try:
+            if not self.engine:
+                return False
+            
+            async with self.engine.begin() as conn:
+                check_sql = text("""
+                    SELECT EXISTS (
+                        SELECT FROM pg_class 
+                        WHERE relname = :table_name
+                        AND relkind = 'r'
+                    )
+                """)
+                result = await conn.execute(
+                    check_sql,
+                    {"table_name": table_name}
+                )
+                return result.scalar() or False
+        except Exception as e:
+            logger.debug(f"Could not check if table exists: {e}")
+            return False
+
     async def create_collection(self, dimension: int) -> bool:
-        """Create a new collection (table)"""
+        """
+        Create a new collection (table) with dimension-specific table name.
+        
+        The table name includes the dimension, so each model automatically gets
+        its own table. If the table doesn't exist, it will be created.
+        This approach is scalable and prevents dimension conflicts.
+        """
         try:
             if not self.engine:
                 if not await self.initialize():
                     return False
 
+            # Set dimension and generate dimension-specific table name
             self.dimension = dimension
+            self.table_name = self._get_table_name(dimension)
+            
+            # Check if table already exists
+            table_exists = await self._table_exists(self.table_name)
+            
+            if table_exists:
+                logger.info(f"Table {self.table_name} already exists, reusing it")
+                return True
 
             # Create table with vector column
-            # Table name is sanitized to be a valid PostgreSQL identifier
+            # Table name includes dimension to ensure uniqueness per model
             create_table_sql = f"""
-            CREATE TABLE IF NOT EXISTS {self.table_name} (
+            CREATE TABLE {self.table_name} (
                 id TEXT PRIMARY KEY,
                 embedding vector({dimension}),
                 content TEXT NOT NULL,
@@ -122,10 +167,16 @@ class PgVectorDB(BaseVectorDB):
             if not self.engine:
                 return True  # Nothing to delete
 
+            if not self.table_name:
+                logger.warning("No table name set, nothing to delete")
+                return True
+
             async with self.engine.begin() as conn:
                 await conn.execute(text(f"DROP TABLE IF EXISTS {self.table_name}"))
 
             logger.info(f"Deleted pgvector table: {self.table_name}")
+            self.table_name = None
+            self.dimension = None
             return True
 
         except Exception as e:
@@ -144,6 +195,26 @@ class PgVectorDB(BaseVectorDB):
             if not self.engine:
                 logger.error("Engine not initialized")
                 return False
+
+            if not self.table_name or self.dimension is None:
+                logger.error("Collection not initialized. Call create_collection() first.")
+                return False
+
+            # Validate vector dimensions
+            if not vectors:
+                logger.warning("No vectors provided")
+                return True
+
+            # Validate all vectors have the correct dimension
+            for i, vector in enumerate(vectors):
+                if len(vector) != self.dimension:
+                    error_msg = (
+                        f"Vector dimension mismatch at index {i}: "
+                        f"expected {self.dimension}, got {len(vector)}. "
+                        f"Table {self.table_name} expects dimension {self.dimension}."
+                    )
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
 
             # Prepare data for batch insert
             async with self.engine.begin() as conn:
@@ -223,6 +294,20 @@ class PgVectorDB(BaseVectorDB):
                 logger.error("Engine not initialized")
                 return []
 
+            if not self.table_name or self.dimension is None:
+                logger.error("Collection not initialized. Call create_collection() first.")
+                return []
+
+            # Validate query vector dimension
+            if len(query_vector) != self.dimension:
+                error_msg = (
+                    f"Query vector dimension mismatch: "
+                    f"expected {self.dimension}, got {len(query_vector)}. "
+                    f"Table {self.table_name} expects dimension {self.dimension}."
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
             # Convert query vector to PostgreSQL array format
             vector_str = "[" + ",".join(map(str, query_vector)) + "]"
 
@@ -290,6 +375,10 @@ class PgVectorDB(BaseVectorDB):
                 logger.error("Engine not initialized")
                 return []
 
+            if not self.table_name:
+                logger.error("Collection not initialized. Call create_collection() first.")
+                return []
+
             if not ids:
                 return []
 
@@ -330,6 +419,10 @@ class PgVectorDB(BaseVectorDB):
                 logger.error("Engine not initialized")
                 return []
 
+            if not self.table_name:
+                logger.error("Collection not initialized. Call create_collection() first.")
+                return []
+
             where_clause = ""
             params = {}
 
@@ -363,6 +456,10 @@ class PgVectorDB(BaseVectorDB):
         try:
             if not self.engine:
                 logger.error("Engine not initialized")
+                return 0
+
+            if not self.table_name:
+                logger.error("Collection not initialized. Call create_collection() first.")
                 return 0
 
             where_clause = ""

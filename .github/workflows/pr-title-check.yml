@@ -33,7 +33,10 @@ jobs:
               "bugfix",
               "security",
               "build",
-              "release"
+              "release",
+              "merge",
+              "rebase",
+              "revert"
             ];
 
             // Accept:
