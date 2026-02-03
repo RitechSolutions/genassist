@@ -76,7 +76,6 @@ logger = logging.getLogger(__name__)
 RedisString = Annotated[Redis, 'string']  # For WebSockets, conversations
 RedisBinary = Annotated[Redis, 'binary']  # For FastAPI cache
 
-
 class Dependencies(Module):
 
     # ------------------------------------------------------------------
@@ -97,18 +96,20 @@ class Dependencies(Module):
         Used by:
         - SocketConnectionManager (WebSocket pub/sub)
         - Conversation services
-
-        Connection pool: 40 connections (from settings.REDIS_MAX_CONNECTIONS)
         """
+
         return Redis.from_url(
-            settings.REDIS_URL,
+            settings.REDIS_URL, 
+            auto_close_connection_pool=True,
             decode_responses=True,
             max_connections=settings.REDIS_MAX_CONNECTIONS,
             socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
-            socket_connect_timeout=settings.REDIS_SOCKET_TIMEOUT,
+            socket_connect_timeout=settings.REDIS_SOCKET_CONNECT_TIMEOUT,
             retry_on_timeout=True,
             health_check_interval=settings.REDIS_HEALTH_CHECK_INTERVAL,
+            retry_on_error=[ConnectionError, TimeoutError]
         )
+
 
     @provider
     @singleton
@@ -119,16 +120,17 @@ class Dependencies(Module):
         Used by:
         - FastAPI cache (binary cache data)
 
-        Connection pool: 20 connections (smaller, only cache uses this)
         """
         return Redis.from_url(
             settings.REDIS_URL,
+            auto_close_connection_pool=True,
             decode_responses=False,
             max_connections=settings.REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE,
-            socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
-            socket_connect_timeout=settings.REDIS_SOCKET_TIMEOUT,
+            socket_timeout=settings.REDIS_SOCKET_TIMEOUT, 
+            socket_connect_timeout=settings.REDIS_SOCKET_CONNECT_TIMEOUT,
             retry_on_timeout=True,
             health_check_interval=settings.REDIS_HEALTH_CHECK_INTERVAL,
+            retry_on_error=[ConnectionError, TimeoutError]
         )
 
     @provider

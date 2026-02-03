@@ -1,3 +1,4 @@
+from typing import Optional
 from uuid import UUID
 from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +28,7 @@ class ApiKeysRepository:
         self.db = db
 
 
-    async def get_by_hashed_value(self, hashed_value: str) -> ApiKeyModel:
+    async def get_by_hashed_value(self, hashed_value: str) -> Optional[ApiKeyModel | None]:
         query = (select(ApiKeyModel).where(ApiKeyModel.hashed_value == hashed_value)
         .options(
                 selectinload(ApiKeyModel.user).selectinload(UserModel.operator),
@@ -38,7 +39,7 @@ class ApiKeysRepository:
         )
 
         result = await self.db.execute(query)
-        return result.scalars().first()
+        return result.scalars().first() or None
 
 
 

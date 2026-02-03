@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
 from injector import inject
@@ -28,17 +29,18 @@ class ApiKeysService:
 
 
     @cache(
-            expire=300,
-            namespace="api_keys:validate_and_get_api_key",
-            key_builder=api_key_key_builder,
-            coder=PickleCoder
-            )
+        expire=120,
+        namespace="api_keys:validate_and_get_api_key",
+        key_builder=api_key_key_builder,
+        coder=PickleCoder
+    )
     async def validate_and_get_api_key(self, api_key: str) -> ApiKeyInternal:
         hashed_value = hash_api_key(api_key)
         logger.debug("getting api key for hashed val:"+hashed_value)
-        api_key_model: ApiKeyModel =  await self.repository.get_by_hashed_value(hash_api_key(api_key))
+        api_key_model: Optional[ApiKeyModel] =  await self.repository.get_by_hashed_value(hashed_value=hashed_value)
         if not api_key_model:
             raise AppException(status_code=401, error_key=ErrorKey.INVALID_API_KEY)
+
         api_key_read = ApiKeyInternal.model_validate(api_key_model)
         return api_key_read
 

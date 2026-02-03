@@ -382,7 +382,7 @@ class WorkflowEngine:
                     Execute a node, creating a request scope only if it needs DB access.
                     This avoids creating unnecessary database connections for nodes that don't need them.
                     """
-                    if requires_db:
+                    if requires_db and len(next_nodes) > 1:
                         # Only create scope for nodes that need DB access
                         request_scope_factory = injector.get(RequestScopeFactory)
                         async with request_scope_factory.create_scope():
