@@ -16,6 +16,8 @@ from app.core.tenant_scope import get_tenant_context
 from app.auth.utils import get_current_user_id
 
 from app.modules.filemanager.providers import init_by_name
+from app.core.config.settings import FileStorageSettings
+
 logger = logging.getLogger(__name__)
 
 
@@ -137,7 +139,6 @@ class FileManagerService:
         # Get or initialize the storage provider
         if not self.storage_provider or not self.storage_provider.is_initialized():
             # read from the file
-            file_storage_provider = file.storage_provider
             if not file_storage_provider:
                 file_storage_provider = "local"
                 # get storage provider by name
@@ -168,7 +169,7 @@ class FileManagerService:
 
         # Upload file content if provided
         if file_content is not None:
-            uploaded_file = await self.storage_provider.upload_file(
+            await self.storage_provider.upload_file(
                 file_content=file_content,
                 storage_path=file_data.storage_path,
                 file_metadata={"name": file_data.name, "mime_type": file_data.mime_type}
@@ -189,10 +190,12 @@ class FileManagerService:
         if not file_storage_provider:
             raise ValueError("Storage provider not configured")
 
+
+        # load settings from settings.py
+        file_settings = FileStorageSettings()
+        
         # get storage provider by name
-        provider_config = {
-            "base_path": file.path
-        }
+        provider_config = file_settings.model_dump()
         
         storage_provider_class = self.get_storage_provider_by_name(file_storage_provider, config=provider_config)
         if not storage_provider_class:
@@ -203,8 +206,14 @@ class FileManagerService:
         if not self.storage_provider.is_initialized():
             raise ValueError(f"Storage provider {self.storage_provider} not initialized")
 
-        content = await self.storage_provider.download_file(file.storage_path)
-        return content
+        # storage_path
+        storage_path = f"{file.path}/{file.storage_path}"
+        
+        # override storage path for s3
+        if file.storage_provider == "s3":
+            storage_path = file.storage_path
+
+        return await self.storage_provider.download_file(storage_path)
 
     async def get_file_base64(self, file_id: UUID) -> str:
         """Get file content as base64 encoded string."""

@@ -236,3 +236,4 @@ google-cloud-speech>=2.34.0
 google-cloud-storage>=3.5.0
 google-cloud-recaptcha-enterprise==1.30.0
 mcp>=1.0.0
+aioodbc==0.5.0

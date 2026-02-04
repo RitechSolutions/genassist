@@ -56,9 +56,19 @@ RUN apt-get update && \
     libmagic1 \
     antiword \
     curl \
+    gnupg \
     libpq5 \
     libxml2 \
+    unixodbc \
+    unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# 2. Install Microsoft ODBC Driver 18 for SQL Server (supports both amd64 and arm64)
+RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg && \
+    echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list && \
+    apt-get update && \
+    ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 && \
+    rm -rf /var/lib/apt/lists/*
 
 # 2. Configure Environment & User
 ENV PATH="/opt/venv/bin:$PATH" \

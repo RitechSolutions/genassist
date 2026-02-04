@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.pool import NullPool
 import asyncio
 from app.modules.integration.snowflake import SnowflakeManager
+from app.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,17 +29,18 @@ class DatabaseManager:
         if source_type == "snowflake":
             self.db_type = "snowflake"
         else:
-            self.db_type = self.config.get("database_type") or self.config.get("source_type")
+            self.db_type = self.config.get("database_type") or self.config.get(
+                "source_type"
+            )
 
         ssh_config = {
-            'ssh_tunnel_host': self.config.get('ssh_tunnel_host'),
-            'ssh_tunnel_port': self.config.get('ssh_tunnel_port'),
-            'ssh_tunnel_user': self.config.get('ssh_tunnel_user'),
-            'ssh_tunnel_private_key': self.config.get('ssh_tunnel_private_key')
+            "ssh_tunnel_host": self.config.get("ssh_tunnel_host"),
+            "ssh_tunnel_port": self.config.get("ssh_tunnel_port"),
+            "ssh_tunnel_user": self.config.get("ssh_tunnel_user"),
+            "ssh_tunnel_private_key": self.config.get("ssh_tunnel_private_key"),
         }
         # self.ssh_config will remain empty if no SSH tunneling is configured
-        self.ssh_config = {k: v for k,
-                           v in ssh_config.items() if v is not None}
+        self.ssh_config = {k: v for k, v in ssh_config.items() if v is not None}
 
         self.engine: Optional[AsyncEngine] = None
         self.tunnel = None
@@ -48,8 +50,7 @@ class DatabaseManager:
         if isinstance(allowed_tables, list):
             self.allowed_tables = allowed_tables
         elif allowed_tables and isinstance(allowed_tables, str):
-            self.allowed_tables = [table.strip()
-                                   for table in allowed_tables.split(",")]
+            self.allowed_tables = [table.strip() for table in allowed_tables.split(",")]
         else:
             self.allowed_tables = []
 
@@ -80,9 +81,9 @@ class DatabaseManager:
         try:
             file_extension = os.path.splitext(config_path)[1].lower()
             with open(config_path, "r") as file:
-                if file_extension in ['.yaml', '.yml']:
+                if file_extension in [".yaml", ".yml"]:
                     config = yaml.safe_load(file)
-                elif file_extension in ['.json']:
+                elif file_extension in [".json"]:
                     config = json.load(file)
                 else:
                     # Try to detect format based on content
@@ -96,12 +97,10 @@ class DatabaseManager:
                         # If that fails, try YAML
                         config = yaml.safe_load(file)
 
-                logger.info(
-                    f"Configuration loaded successfully from {config_path}")
+                logger.info(f"Configuration loaded successfully from {config_path}")
                 return config
         except Exception as e:
-            logger.error(
-                f"Error loading configuration from {config_path}: {e}")
+            logger.error(f"Error loading configuration from {config_path}: {e}")
             return {}
 
     async def connect(self):
@@ -114,52 +113,104 @@ class DatabaseManager:
             if self.db_type == "postgresql":
                 # Use asyncpg for PostgreSQL connections
                 if not hasattr(self, "connection_string") or not self.connection_string:
-                    port = self.tunnel.local_bind_port if (hasattr(
-                        self, 'tunnel') and self.tunnel) else self.config.get("database_port", 5432)
-                    host = "127.0.0.1" if (hasattr(self, 'tunnel') and self.tunnel) else self.config.get(
-                        "database_host", "localhost")
-                    connection_string = f"postgresql+asyncpg://{self.config.get('database_user')}:" \
-                        f"{decrypt_key(self.config.get('database_password'))}@{host}:" \
+                    port = (
+                        self.tunnel.local_bind_port
+                        if (hasattr(self, "tunnel") and self.tunnel)
+                        else self.config.get("database_port", 5432)
+                    )
+                    host = (
+                        "127.0.0.1"
+                        if (hasattr(self, "tunnel") and self.tunnel)
+                        else self.config.get("database_host", "localhost")
+                    )
+                    connection_string = (
+                        f"postgresql+asyncpg://{self.config.get('database_user')}:"
+                        f"{decrypt_key(self.config.get('database_password'))}@{host}:"
                         f"{port}/{self.config.get('database_name')}"
+                    )
                 else:
                     connection_string = self.connection_string
                 logger.info(
-                    f"Connecting to PostgreSQL with connection string: {connection_string}")
+                    f"Connecting to PostgreSQL with connection string: {connection_string}"
+                )
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
                     poolclass=NullPool,  # Use NullPool for external database connections
-                    future=True
+                    future=True,
                 )
                 logger.info("Connected to PostgreSQL database")
             elif self.db_type == "mysql":
                 # Use aiomysql for MySQL connections
-                port = self.tunnel.local_bind_port if (hasattr(
-                    self, 'tunnel') and self.tunnel) else self.config.get("database_port", 3306)
-                host = "127.0.0.1" if (hasattr(self, 'tunnel') and self.tunnel) else self.config.get(
-                    "database_host", "localhost")
-                connection_string = f"mysql+aiomysql://{self.config.get('database_user')}:" \
-                    f"{decrypt_key(self.config.get('database_password'))}@{host}:" \
+                port = (
+                    self.tunnel.local_bind_port
+                    if (hasattr(self, "tunnel") and self.tunnel)
+                    else self.config.get("database_port", 3306)
+                )
+                host = (
+                    "127.0.0.1"
+                    if (hasattr(self, "tunnel") and self.tunnel)
+                    else self.config.get("database_host", "localhost")
+                )
+                connection_string = (
+                    f"mysql+aiomysql://{self.config.get('database_user')}:"
+                    f"{decrypt_key(self.config.get('database_password'))}@{host}:"
                     f"{port}/{self.config.get('database_name')}"
+                )
                 logger.info(
-                    f"Connecting to MySQL with connection string: {connection_string}")
+                    f"Connecting to MySQL with connection string: {connection_string}"
+                )
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
                     poolclass=NullPool,  # Use NullPool for external database connections
-                    future=True
+                    future=True,
                 )
                 logger.info("Connected to MySQL database")
+            elif self.db_type == "mssql":
+                # Use aioodbc for MSSQL connections
+                port = (
+                    self.tunnel.local_bind_port
+                    if (hasattr(self, "tunnel") and self.tunnel)
+                    else self.config.get("database_port", 1433)
+                )
+
+                host = (
+                    "127.0.0.1"
+                    if (hasattr(self, "tunnel") and self.tunnel)
+                    else self.config.get("database_host", "localhost")
+                )
+
+                # MSSQL connection string with ODBC driver
+                # ODBC Driver 18 requires explicit SSL settings
+                driver = settings.MSSQL_DRIVER
+
+                connection_string = (
+                    f"mssql+aioodbc://{self.config.get('database_user')}:"
+                    f"{decrypt_key(self.config.get('database_password'))}@{host}:{port}/"
+                    f"{self.config.get('database_name')}?"
+                    f"driver={driver}&Encrypt=yes&TrustServerCertificate=yes"
+                )
+
+                logger.info("Connecting to MSSQL...")
+
+                self.engine = create_async_engine(
+                    connection_string,
+                    echo=False,
+                    poolclass=NullPool,  # Use NullPool for external database connections
+                    future=True,
+                )
+
+                logger.info("Connected to MSSQL database")
             elif self.db_type == "sqlite":
                 # Use aiosqlite for SQLite connections
                 db_path = self.config.get("database_path", ":memory:")
                 connection_string = f"sqlite+aiosqlite:///{db_path}"
                 logger.info(
-                    f"Connecting to SQLite with connection string: {connection_string}")
+                    f"Connecting to SQLite with connection string: {connection_string}"
+                )
                 self.engine = create_async_engine(
-                    connection_string,
-                    echo=False,
-                    future=True
+                    connection_string, echo=False, future=True
                 )
                 logger.info("Connected to SQLite database")
             elif self.db_type and self.db_type.lower() == "snowflake":
@@ -183,14 +234,16 @@ class DatabaseManager:
             ssh_host = self.ssh_config.get("ssh_tunnel_host")
             ssh_port = self.ssh_config.get("ssh_tunnel_port", 22)
             ssh_user = self.ssh_config.get("ssh_tunnel_user")
-            ssh_key_content = decrypt_key(self.ssh_config.get(
-                "ssh_tunnel_private_key"))  # PEM content as string
+            ssh_key_content = decrypt_key(
+                self.ssh_config.get("ssh_tunnel_private_key")
+            )  # PEM content as string
             db_host = self.config.get("database_host")
             db_port = self.config.get("database_port")
 
             current_dir = os.path.dirname(os.path.abspath(__file__))
             ssh_key_path = os.path.join(
-                current_dir, f"{self.config.get('database_name')}_ssh_key.pem")
+                current_dir, f"{self.config.get('database_name')}_ssh_key.pem"
+            )
             logger.info("ssh key path: %s", ssh_key_path)
 
             self._save_key_to_file(ssh_key_content, ssh_key_path)
@@ -201,7 +254,7 @@ class DatabaseManager:
                 ssh_username=ssh_user,
                 ssh_pkey=ssh_key_path,
                 # ssh_pkey=private_key,
-                remote_bind_address=(db_host, int(db_port))
+                remote_bind_address=(db_host, int(db_port)),
             )
 
             await asyncio.to_thread(self.tunnel.start)
@@ -221,8 +274,7 @@ class DatabaseManager:
                     os.remove(ssh_key_path)
                     logger.info(f"SSH key file deleted: {ssh_key_path}")
                 except OSError as e:
-                    logger.warning(
-                        f"Could not delete SSH key file {ssh_key_path}: {e}")
+                    logger.warning(f"Could not delete SSH key file {ssh_key_path}: {e}")
 
     def _save_key_to_file(self, key_content, file_path):
         """
@@ -236,30 +288,37 @@ class DatabaseManager:
             str: The file path where the key was saved
         """
         import re
+
         # Make sure the directory exists
         directory = os.path.dirname(file_path)
         if directory and not os.path.exists(directory):
             os.makedirs(directory)
 
         # First replace all spaces with newlines
-        formatted_key = key_content.replace(' ', '\n')
+        formatted_key = key_content.replace(" ", "\n")
 
         # Fix the header and footer lines using regex
         # Fix: -----BEGIN\nOPENSSH\nPRIVATE\nKEY----- -> -----BEGIN OPENSSH PRIVATE KEY-----
-        formatted_key = re.sub(r'-----BEGIN\nOPENSSH\nPRIVATE\nKEY-----',
-                               '-----BEGIN OPENSSH PRIVATE KEY-----', formatted_key)
+        formatted_key = re.sub(
+            r"-----BEGIN\nOPENSSH\nPRIVATE\nKEY-----",
+            "-----BEGIN OPENSSH PRIVATE KEY-----",
+            formatted_key,
+        )
 
         # Fix: -----END\nOPENSSH\nPRIVATE\nKEY----- -> -----END OPENSSH PRIVATE KEY-----
-        formatted_key = re.sub(r'-----END\nOPENSSH\nPRIVATE\nKEY-----',
-                               '-----END OPENSSH PRIVATE KEY-----', formatted_key)
+        formatted_key = re.sub(
+            r"-----END\nOPENSSH\nPRIVATE\nKEY-----",
+            "-----END OPENSSH PRIVATE KEY-----",
+            formatted_key,
+        )
 
         # Remove any empty lines
-        lines = [line for line in formatted_key.split('\n') if line.strip()]
-        formatted_key = '\n'.join(lines)
+        lines = [line for line in formatted_key.split("\n") if line.strip()]
+        formatted_key = "\n".join(lines)
 
-        if not formatted_key.endswith('\n'):
-            formatted_key += '\n'
-        with open(file_path, 'w') as key_file:
+        if not formatted_key.endswith("\n"):
+            formatted_key += "\n"
+        with open(file_path, "w") as key_file:
             key_file.write(formatted_key)
 
         os.chmod(file_path, 0o600)
@@ -276,7 +335,7 @@ class DatabaseManager:
                 logger.error(f"Error closing database connection: {e}")
             finally:
                 self.engine = None
-        
+
         if self.snowflake_manager:
             try:
                 await self.snowflake_manager.disconnect()
@@ -294,7 +353,9 @@ class DatabaseManager:
             finally:
                 self.tunnel = None
 
-    async def execute_query(self, query: str, parameters: List = None) -> Tuple[List[Dict], Optional[str]]:
+    async def execute_query(
+        self, query: str, parameters: List = None
+    ) -> Tuple[List[Dict], Optional[str]]:
         """
         Executes a database query and returns the results.
 
@@ -314,7 +375,7 @@ class DatabaseManager:
                 if not self.snowflake_manager:
                     await self.connect()
                 return await self.snowflake_manager.execute_query(query, parameters)
-            
+
             # Handle other database types
             if not self.engine:
                 await self.connect()
@@ -342,7 +403,13 @@ class DatabaseManager:
             logger.error(f"Error executing query: {error_msg}")
             return [], error_msg
 
-    async def _get_schema(self, include_samples: bool = True, sample_size: int = 1, include_categorical_values: bool = True, max_categorical_values: int = 10) -> Dict[str, Any]:
+    async def _get_schema(
+        self,
+        include_samples: bool = True,
+        sample_size: int = 1,
+        include_categorical_values: bool = True,
+        max_categorical_values: int = 10,
+    ) -> Dict[str, Any]:
         """
         Retrieves the database schema including tables, columns, relationships,
         and optionally sample data for each table and categorical column values.
@@ -363,20 +430,17 @@ class DatabaseManager:
                 if not self.snowflake_manager:
                     await self.connect()
                 return await self.snowflake_manager.get_schema(
-                    include_samples=include_samples, 
+                    include_samples=include_samples,
                     sample_size=sample_size,
                     include_categorical_values=include_categorical_values,
-                    max_categorical_values=max_categorical_values
+                    max_categorical_values=max_categorical_values,
                 )
-            
+
             # Handle other database types
             if not self.engine:
                 await self.connect()
 
-            schema = {
-                "tables": [],
-                "relationships": []
-            }
+            schema = {"tables": [], "relationships": []}
 
             # Use the configured database type
             db_type = self.db_type
@@ -385,12 +449,14 @@ class DatabaseManager:
             if db_type == "postgresql":
                 # PostgreSQL: Get tables from information_schema
                 async with self.engine.begin() as conn:
-                    result = await conn.execute(text("""
+                    result = await conn.execute(
+                        text("""
                         SELECT table_name
                         FROM information_schema.tables
                         WHERE table_schema = 'public'
                         AND table_type = 'BASE TABLE'
-                    """))
+                    """)
+                    )
                     tables = [row[0] for row in result.fetchall()]
 
                     if self.allowed_tables is None or len(self.allowed_tables) == 0:
@@ -406,7 +472,8 @@ class DatabaseManager:
 
                         table_info = {"name": table, "columns": []}
 
-                        result = await conn.execute(text("""
+                        result = await conn.execute(
+                            text("""
                             SELECT
                                 column_name,
                                 data_type,
@@ -419,12 +486,15 @@ class DatabaseManager:
                             WHERE table_name = :table_name
                             AND table_schema = 'public'
                             ORDER BY ordinal_position
-                        """), {"table_name": table})
+                        """),
+                            {"table_name": table},
+                        )
 
                         columns = result.fetchall()
 
                         # Get primary key information
-                        result = await conn.execute(text("""
+                        result = await conn.execute(
+                            text("""
                             SELECT column_name
                             FROM information_schema.table_constraints tc
                             JOIN information_schema.key_column_usage kcu
@@ -433,7 +503,9 @@ class DatabaseManager:
                             WHERE tc.constraint_type = 'PRIMARY KEY'
                             AND tc.table_name = :table_name
                             AND tc.table_schema = 'public'
-                        """), {"table_name": table})
+                        """),
+                            {"table_name": table},
+                        )
 
                         primary_keys = [pk[0] for pk in result.fetchall()]
 
@@ -446,42 +518,53 @@ class DatabaseManager:
                                 "default": column[3],
                                 "max_length": column[4],
                                 "precision": column[5],
-                                "scale": column[6]
+                                "scale": column[6],
                             }
 
                             # Add categorical values if requested and column appears to be categorical
-                            if include_categorical_values and self._is_categorical_column(column[1], column[4]):
+                            if (
+                                include_categorical_values
+                                and self._is_categorical_column(column[1], column[4])
+                            ):
                                 try:
                                     # Get distinct values for categorical columns
-                                    result = await conn.execute(text(f"""
+                                    result = await conn.execute(
+                                        text(f"""
                                         SELECT DISTINCT "{column[0]}"
                                         FROM "{table}"
                                         WHERE "{column[0]}" IS NOT NULL
                                         ORDER BY "{column[0]}"
                                         LIMIT :limit
-                                    """), {"limit": max_categorical_values})
+                                    """),
+                                        {"limit": max_categorical_values},
+                                    )
 
-                                    distinct_values = [row[0]
-                                                       for row in result.fetchall()]
+                                    distinct_values = [
+                                        row[0] for row in result.fetchall()
+                                    ]
                                     col_info["possible_values"] = distinct_values
 
                                     # Get count of distinct values to know if we hit the limit
-                                    result = await conn.execute(text(f"""
+                                    result = await conn.execute(
+                                        text(f"""
                                         SELECT COUNT(DISTINCT "{column[0]}")
                                         FROM "{table}"
                                         WHERE "{column[0]}" IS NOT NULL
-                                    """))
+                                    """)
+                                    )
                                     total_distinct = result.fetchone()[0]
                                     col_info["total_distinct_count"] = total_distinct
 
                                     if total_distinct > max_categorical_values:
                                         col_info["values_truncated"] = True
                                         logger.info(
-                                            f"Column {column[0]} in {table} has {total_distinct} distinct values, showing first {max_categorical_values}")
+                                            f"Column {column[0]} in {table} has {total_distinct} distinct values, showing first {max_categorical_values}"
+                                        )
 
                                 except Exception as e:
                                     logger.warning(
-                                        f"Could not fetch categorical values for {table}.{column[0]}: {e}")
+                                        f"Could not fetch categorical values for {table}.{column[0]}: {e}"
+                                    )
                                     col_info["possible_values"] = []
 
                             table_info["columns"].append(col_info)
@@ -491,7 +574,9 @@ class DatabaseManager:
                             try:
                                 # Get sample rows (using double quotes for PostgreSQL)
                                 sample_query = f'SELECT * FROM "{table}" LIMIT :limit'
-                                result = await conn.execute(text(sample_query), {"limit": sample_size})
+                                result = await conn.execute(
+                                    text(sample_query), {"limit": sample_size}
+                                )
 
                                 rows = result.fetchall()
                                 columns = list(result.keys())
@@ -506,12 +591,11 @@ class DatabaseManager:
                                         # Handle PostgreSQL-specific data types
                                         if isinstance(val, bytes):
                                             try:
-                                                val = val.decode('utf-8')
+                                                val = val.decode("utf-8")
                                             except UnicodeDecodeError:
                                                 val = f"<binary data, {len(val)} bytes>"
-                                        elif hasattr(val, 'strftime'):
-                                            val = val.strftime(
-                                                '%Y-%m-%d %H:%M:%S')
+                                        elif hasattr(val, "strftime"):
+                                            val = val.strftime("%Y-%m-%d %H:%M:%S")
                                         elif isinstance(val, (list, dict)):
                                             # Handle JSON/array types
                                             val = str(val)
@@ -522,11 +606,13 @@ class DatabaseManager:
                                 table_info["samples"] = samples
 
                                 logger.info(
-                                    f"Samples fetched for table {table}: {samples}")
+                                    f"Samples fetched for table {table}: {samples}"
+                                )
 
                             except Exception as e:
                                 logger.warning(
-                                    f"Could not fetch samples for table {table}: {e}")
+                                    f"Could not fetch samples for table {table}: {e}"
+                                )
                                 table_info["samples"] = []
 
                         schema["tables"].append(table_info)
@@ -536,7 +622,8 @@ class DatabaseManager:
                         if table not in allowed_tables:
                             continue
 
-                        result = await conn.execute(text("""
+                        result = await conn.execute(
+                            text("""
                             SELECT
                                 kcu.column_name,
                                 ccu.table_name AS foreign_table_name,
@@ -551,7 +638,9 @@ class DatabaseManager:
                             WHERE tc.constraint_type = 'FOREIGN KEY'
                             AND tc.table_name = :table_name
                             AND tc.table_schema = 'public'
-                        """), {"table_name": table})
+                        """),
+                            {"table_name": table},
+                        )
 
                         foreign_keys = result.fetchall()
 
@@ -560,7 +649,7 @@ class DatabaseManager:
                                 "table": table,
                                 "column": fk[0],
                                 "referenced_table": fk[1],
-                                "referenced_column": fk[2]
+                                "referenced_column": fk[2],
                             }
                             schema["relationships"].append(relationship)
 
@@ -592,11 +681,14 @@ class DatabaseManager:
                                 "nullable": column[2] == "YES",
                                 "primary_key": column[3] == "PRI",
                                 "default": column[4],
-                                "extra": column[5]
+                                "extra": column[5],
                             }
 
                             # Add categorical values if requested and column appears to be categorical
-                            if include_categorical_values and self._is_categorical_column(column[1]):
+                            if (
+                                include_categorical_values
+                                and self._is_categorical_column(column[1])
+                            ):
                                 try:
                                     # Get distinct values for categorical columns
                                     query = f"""
@@ -608,27 +700,32 @@ class DatabaseManager:
                                     """
                                     result = await conn.execute(text(query))
 
-                                    distinct_values = [row[0]
-                                                       for row in result.fetchall()]
+                                    distinct_values = [
+                                        row[0] for row in result.fetchall()
+                                    ]
                                     col_info["possible_values"] = distinct_values
 
                                     # Get count of distinct values
-                                    result = await conn.execute(text(f"""
+                                    result = await conn.execute(
+                                        text(f"""
                                         SELECT COUNT(DISTINCT `{column[0]}`)
                                         FROM `{table}`
                                         WHERE `{column[0]}` IS NOT NULL
-                                    """))
+                                    """)
+                                    )
                                     total_distinct = result.fetchone()[0]
                                     col_info["total_distinct_count"] = total_distinct
 
                                     if total_distinct > max_categorical_values:
                                         col_info["values_truncated"] = True
                                         logger.info(
-                                            f"Column {column[0]} in {table} has {total_distinct} distinct values, showing first {max_categorical_values}")
+                                            f"Column {column[0]} in {table} has {total_distinct} distinct values, showing first {max_categorical_values}"
+                                        )
 
                                 except Exception as e:
                                     logger.warning(
-                                        f"Could not fetch categorical values for {table}.{column[0]}: {e}")
+                                        f"Could not fetch categorical values for {table}.{column[0]}: {e}"
+                                    )
                                     col_info["possible_values"] = []
 
                             table_info["columns"].append(col_info)
@@ -638,7 +735,9 @@ class DatabaseManager:
                             try:
                                 # Get sample rows
                                 sample_query = f"SELECT * FROM `{table}` LIMIT :limit"
-                                result = await conn.execute(text(sample_query), {"limit": sample_size})
+                                result = await conn.execute(
+                                    text(sample_query), {"limit": sample_size}
+                                )
 
                                 rows = result.fetchall()
                                 columns = list(result.keys())
@@ -654,14 +753,13 @@ class DatabaseManager:
                                         # Convert bytes to strings
                                         if isinstance(val, bytes):
                                             try:
-                                                val = val.decode('utf-8')
+                                                val = val.decode("utf-8")
                                             except UnicodeDecodeError:
                                                 val = f"<binary data, {len(val)} bytes>"
 
                                         # Format dates and datetimes
-                                        elif hasattr(val, 'strftime'):
-                                            val = val.strftime(
-                                                '%Y-%m-%d %H:%M:%S')
+                                        elif hasattr(val, "strftime"):
+                                            val = val.strftime("%Y-%m-%d %H:%M:%S")
 
                                         sample_row[col_name] = val
                                     samples.append(sample_row)
@@ -670,7 +768,8 @@ class DatabaseManager:
 
                             except Exception as e:
                                 logger.warning(
-                                    f"Could not fetch samples for table {table}: {e}")
+                                    f"Could not fetch samples for table {table}: {e}"
+                                )
                                 table_info["samples"] = []
 
                         schema["tables"].append(table_info)
@@ -680,7 +779,8 @@ class DatabaseManager:
                         if table not in allowed_tables:
                             continue
                         # Get foreign key constraints
-                        result = await conn.execute(text("""
+                        result = await conn.execute(
+                            text("""
                             SELECT
                                 COLUMN_NAME,
                                 REFERENCED_TABLE_NAME,
@@ -691,7 +791,9 @@ class DatabaseManager:
                                 TABLE_NAME = :table_name
                                 AND REFERENCED_TABLE_NAME IS NOT NULL
                                 AND TABLE_SCHEMA = DATABASE()
-                        """), {"table_name": table})
+                        """),
+                            {"table_name": table},
+                        )
 
                         foreign_keys = result.fetchall()
 
@@ -700,14 +802,211 @@ class DatabaseManager:
                                 "table": table,
                                 "column": fk[0],
                                 "referenced_table": fk[1],
-                                "referenced_column": fk[2]
+                                "referenced_column": fk[2],
+                            }
+                            schema["relationships"].append(relationship)
+
+            elif db_type == "mssql":
+                async with self.engine.begin() as conn:
+                    result = await conn.execute(
+                        text("""
+                        SELECT TABLE_NAME
+                        FROM INFORMATION_SCHEMA.TABLES
+                        WHERE TABLE_TYPE = 'BASE TABLE'
+                        AND TABLE_CATALOG = DB_NAME()
+                    """)
+                    )
+                    tables = [row[0] for row in result.fetchall()]
+
+                    if not self.allowed_tables or len(self.allowed_tables) == 0:
+                        # If no allowed tables specified, use all tables
+                        allowed_tables = tables
+                    else:
+                        allowed_tables = self.allowed_tables
+
+                    logger.info(f"Allowed tables: {allowed_tables}")
+
+                    # Get column information for each table
+                    for table in tables:
+                        if table not in allowed_tables:
+                            continue
+
+                        table_info = {"name": table, "columns": []}
+
+                        result = await conn.execute(
+                            text("""
+                            SELECT
+                                COLUMN_NAME,
+                                DATA_TYPE,
+                                IS_NULLABLE,
+                                COLUMN_DEFAULT,
+                                CHARACTER_MAXIMUM_LENGTH,
+                                NUMERIC_PRECISION,
+                                NUMERIC_SCALE
+                            FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = :table_name
+                            AND TABLE_CATALOG = DB_NAME()
+                            ORDER BY ORDINAL_POSITION
+                        """),
+                            {"table_name": table},
+                        )
+
+                        columns = result.fetchall()
+
+                        # Get primary key information
+                        result = await conn.execute(
+                            text("""
+                            SELECT COLUMN_NAME
+                            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                            WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + CONSTRAINT_NAME), 'IsPrimaryKey') = 1
+                            AND TABLE_NAME = :table_name
+                            AND TABLE_CATALOG = DB_NAME()
+                        """),
+                            {"table_name": table},
+                        )
+
+                        primary_keys = [pk[0] for pk in result.fetchall()]
+
+                        for column in columns:
+                            col_info = {
+                                "name": column[0],
+                                "type": column[1],
+                                "nullable": column[2] == "YES",
+                                "primary_key": column[0] in primary_keys,
+                                "default": column[3],
+                                "max_length": column[4],
+                                "precision": column[5],
+                                "scale": column[6],
+                            }
+
+                            # Add categorical values if requested and column appears to be categorical
+                            if (
+                                include_categorical_values
+                                and self._is_categorical_column(column[1], column[4])
+                            ):
+                                try:
+                                    # Get distinct values for categorical columns
+                                    result = await conn.execute(
+                                        text(f"""
+                                        SELECT DISTINCT TOP {max_categorical_values} [{column[0]}]
+                                        FROM [{table}]
+                                        WHERE [{column[0]}] IS NOT NULL
+                                        ORDER BY [{column[0]}]
+                                    """)
+                                    )
+
+                                    distinct_values = [
+                                        row[0] for row in result.fetchall()
+                                    ]
+                                    col_info["possible_values"] = distinct_values
+
+                                    # Get count of distinct values to know if we hit the limit
+                                    result = await conn.execute(
+                                        text(f"""
+                                        SELECT COUNT(DISTINCT [{column[0]}])
+                                        FROM [{table}]
+                                        WHERE [{column[0]}] IS NOT NULL
+                                    """)
+                                    )
+                                    total_distinct = result.fetchone()[0]
+                                    col_info["total_distinct_count"] = total_distinct
+
+                                    if total_distinct > max_categorical_values:
+                                        col_info["values_truncated"] = True
+                                        logger.info(
+                                            f"Column {column[0]} in {table} has {total_distinct} distinct values, showing first {max_categorical_values}"
+                                        )
+
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Could not fetch categorical values for {table}.{column[0]}: {e}"
+                                    )
+                                    col_info["possible_values"] = []
+
+                            table_info["columns"].append(col_info)
+
+                        # Add sample data if requested
+                        if include_samples and sample_size > 0:
+                            try:
+                                # Get sample rows (using TOP for MSSQL)
+                                sample_query = (
+                                    f"SELECT TOP {sample_size} * FROM [{table}]"
+                                )
+                                result = await conn.execute(text(sample_query))
+
+                                rows = result.fetchall()
+                                columns_list = list(result.keys())
+
+                                # Convert to list of dicts for better readability
+                                samples = []
+                                for row in rows:
+                                    sample_row = {}
+                                    for i, col_name in enumerate(columns_list):
+                                        val = row[i]
+
+                                        # Handle MSSQL-specific data types
+                                        if isinstance(val, bytes):
+                                            try:
+                                                val = val.decode("utf-8")
+                                            except UnicodeDecodeError:
+                                                val = f"<binary data, {len(val)} bytes>"
+                                        elif hasattr(val, "strftime"):
+                                            val = val.strftime("%Y-%m-%d %H:%M:%S")
+                                        elif isinstance(val, (list, dict)):
+                                            val = str(val)
+
+                                        sample_row[col_name] = val
+                                    samples.append(sample_row)
+
+                                table_info["samples"] = samples
+
+                                logger.info(
+                                    f"Samples fetched for table {table}: {samples}"
+                                )
+
+                            except Exception as e:
+                                logger.warning(
+                                    f"Could not fetch samples for table {table}: {e}"
+                                )
+                                table_info["samples"] = []
+
+                        schema["tables"].append(table_info)
+
+                    # Get foreign key relationships for MSSQL
+                    for table in tables:
+                        if table not in allowed_tables:
+                            continue
+
+                        result = await conn.execute(
+                            text("""
+                            SELECT
+                                COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS column_name,
+                                OBJECT_NAME(fkc.referenced_object_id) AS foreign_table_name,
+                                COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS foreign_column_name
+                            FROM sys.foreign_key_columns AS fkc
+                            INNER JOIN sys.foreign_keys AS fk
+                                ON fkc.constraint_object_id = fk.object_id
+                            WHERE OBJECT_NAME(fkc.parent_object_id) = :table_name
+                        """),
+                            {"table_name": table},
+                        )
+
+                        foreign_keys = result.fetchall()
+
+                        for fk in foreign_keys:
+                            relationship = {
+                                "table": table,
+                                "column": fk[0],
+                                "referenced_table": fk[1],
+                                "referenced_column": fk[2],
                             }
                             schema["relationships"].append(relationship)
 
             elif db_type == "sqlite":
                 async with self.engine.begin() as conn:
-                    result = await conn.execute(text(
-                        "SELECT name FROM sqlite_master WHERE type='table'"))
+                    result = await conn.execute(
+                        text("SELECT name FROM sqlite_master WHERE type='table'")
+                    )
                     tables = [row[0] for row in result.fetchall()]
 
                     if not self.allowed_tables or len(self.allowed_tables) == 0:
@@ -721,7 +1020,9 @@ class DatabaseManager:
                             continue
                         table_info = {"name": table, "columns": []}
 
-                        result = await conn.execute(text(f"PRAGMA table_info(`{table}`)"))
+                        result = await conn.execute(
+                            text(f"PRAGMA table_info(`{table}`)")
+                        )
                         columns = result.fetchall()
 
                         for column in columns:
@@ -731,42 +1032,53 @@ class DatabaseManager:
                                 "type": column[2],
                                 "nullable": not column[3],
                                 "primary_key": bool(column[5]),
-                                "default": column[4]
+                                "default": column[4],
                             }
 
                             # Add categorical values if requested and column appears to be categorical
-                            if include_categorical_values and self._is_categorical_column(column[2]):
+                            if (
+                                include_categorical_values
+                                and self._is_categorical_column(column[2])
+                            ):
                                 try:
                                     # Get distinct values for categorical columns
-                                    result = await conn.execute(text(f"""
+                                    result = await conn.execute(
+                                        text(f"""
                                         SELECT DISTINCT `{column[1]}`
                                         FROM `{table}`
                                         WHERE `{column[1]}` IS NOT NULL
                                         ORDER BY `{column[1]}`
                                         LIMIT :limit
-                                    """), {"limit": max_categorical_values})
+                                    """),
+                                        {"limit": max_categorical_values},
+                                    )
 
-                                    distinct_values = [row[0]
-                                                       for row in result.fetchall()]
+                                    distinct_values = [
+                                        row[0] for row in result.fetchall()
+                                    ]
                                     col_info["possible_values"] = distinct_values
 
                                     # Get count of distinct values
-                                    result = await conn.execute(text(f"""
+                                    result = await conn.execute(
+                                        text(f"""
                                         SELECT COUNT(DISTINCT `{column[1]}`)
                                         FROM `{table}`
                                         WHERE `{column[1]}` IS NOT NULL
-                                    """))
+                                    """)
+                                    )
                                     total_distinct = result.fetchone()[0]
                                     col_info["total_distinct_count"] = total_distinct
 
                                     if total_distinct > max_categorical_values:
                                         col_info["values_truncated"] = True
                                         logger.info(
-                                            f"Column {column[1]} in {table} has {total_distinct} distinct values, showing first {max_categorical_values}")
+                                            f"Column {column[1]} in {table} has {total_distinct} distinct values, showing first {max_categorical_values}"
+                                        )
 
                                 except Exception as e:
                                     logger.warning(
-                                        f"Could not fetch categorical values for {table}.{column[1]}: {e}")
+                                        f"Could not fetch categorical values for {table}.{column[1]}: {e}"
+                                    )
                                     col_info["possible_values"] = []
 
                             table_info["columns"].append(col_info)
@@ -776,7 +1088,9 @@ class DatabaseManager:
                             try:
                                 # Get sample rows
                                 sample_query = f"SELECT * FROM `{table}` LIMIT :limit"
-                                result = await conn.execute(text(sample_query), {"limit": sample_size})
+                                result = await conn.execute(
+                                    text(sample_query), {"limit": sample_size}
+                                )
 
                                 rows = result.fetchall()
                                 columns = list(result.keys())
@@ -793,7 +1107,8 @@ class DatabaseManager:
 
                             except Exception as e:
                                 logger.warning(
-                                    f"Could not fetch samples for table {table}: {e}")
+                                    f"Could not fetch samples for table {table}: {e}"
+                                )
                                 table_info["samples"] = []
 
                         schema["tables"].append(table_info)
@@ -802,7 +1117,9 @@ class DatabaseManager:
                     for table in tables:
                         if table not in allowed_tables:
                             continue
-                        result = await conn.execute(text(f"PRAGMA foreign_key_list(`{table}`)"))
+                        result = await conn.execute(
+                            text(f"PRAGMA foreign_key_list(`{table}`)")
+                        )
                         foreign_keys = result.fetchall()
 
                         for fk in foreign_keys:
@@ -811,12 +1128,13 @@ class DatabaseManager:
                                 "table": table,
                                 "column": fk[3],
                                 "referenced_table": fk[2],
-                                "referenced_column": fk[4]
+                                "referenced_column": fk[4],
                             }
                             schema["relationships"].append(relationship)
 
             logger.info(
-                f"Retrieved schema with {len(schema['tables'])} tables and {len(schema['relationships'])} relationships")
+                f"Retrieved schema with {len(schema['tables'])} tables and {len(schema['relationships'])} relationships"
+            )
 
             return schema
 
@@ -842,18 +1160,23 @@ class DatabaseManager:
         data_type_lower = data_type.lower()
 
         # Explicit categorical types
-        if any(cat_type in data_type_lower for cat_type in ['enum', 'set']):
+        if any(cat_type in data_type_lower for cat_type in ["enum", "set"]):
             return True
 
         # String/character types with reasonable length limits
-        if any(str_type in data_type_lower for str_type in ['varchar', 'char', 'text', 'string']):
+        if any(
+            str_type in data_type_lower
+            for str_type in ["varchar", "char", "text", "string"]
+        ):
             # For PostgreSQL, use max_length if available
             if max_length is not None:
-                return max_length <= 100  # Arbitrary threshold for categorical vs free text
+                return (
+                    max_length <= 100
+                )  # Arbitrary threshold for categorical vs free text
             # For MySQL/SQLite, extract length from type definition
-            elif '(' in data_type_lower:
+            elif "(" in data_type_lower:
                 try:
-                    length_str = data_type_lower.split('(')[1].split(')')[0]
+                    length_str = data_type_lower.split("(")[1].split(")")[0]
                     length = int(length_str)
                     return length <= 100
                 except (ValueError, IndexError):
@@ -862,11 +1185,13 @@ class DatabaseManager:
             return True
 
         # Boolean types
-        if any(bool_type in data_type_lower for bool_type in ['bool', 'boolean', 'bit']):
+        if any(
+            bool_type in data_type_lower for bool_type in ["bool", "boolean", "bit"]
+        ):
             return True
 
         # Small integer types (likely categorical)
-        if any(int_type in data_type_lower for int_type in ['tinyint', 'smallint']):
+        if any(int_type in data_type_lower for int_type in ["tinyint", "smallint"]):
             return True
 
         # Regular integers and large types are typically not categorical
