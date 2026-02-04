@@ -204,7 +204,7 @@ async def delete_knowledge_doc(
 )
 async def upload_file(
     files: List[UploadFile] = File(...),
-    use_file_manager: bool = True,
+    use_file_manager: bool = False,
     file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
@@ -227,9 +227,6 @@ async def upload_file(
                 "filename": unique_filename,
                 "original_filename": file.filename,
             }
-            
-            file_id = None
-            file_url = None
 
             if use_file_manager:
                 file_settings = FileStorageSettings()
@@ -239,8 +236,6 @@ async def upload_file(
                 file_id = str(created_file.id)
                 file_url = f"{file_settings.APP_URL}/api/file-manager/files/{file_id}/source"
                 file_path = file_url
-
-                result["file_url"] = file_url
             else:
                 # save the file to the upload directory
                 file_path = os.path.join(UPLOAD_DIR, unique_filename)
