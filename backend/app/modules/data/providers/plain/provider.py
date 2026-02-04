@@ -154,7 +154,7 @@ class PlainProvider(BaseDataProvider):
                 )
                 results.append(search_result)
 
-            logger.info(f"Plain search returned {len(results)} documents")
+            logger.debug(f"Plain search returned {len(results)} documents")
             return results
 
         except Exception as e:

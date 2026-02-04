@@ -78,7 +78,7 @@ async def cleanup_stale_conversations_async():
         "failed_count": failed_count,
     }
 
-    logger.info(f"Cleanup of stale conversations completed: {result}")
+    logger.debug(f"Cleanup of stale conversations completed: {result}")
     return result
 
 

@@ -21,8 +21,9 @@ class LocalFileSystemProvider(BaseStorageProvider):
     Files are stored in a base directory specified in configuration.
     """
 
-    name = "local"
-    provider_type = "local"
+    name: str = "local"
+    provider_type: str = "local"
+    tmp_folder: str = "/tmp/filemanager"
 
     def __init__(self, config: Dict[str, Any]):
         """
@@ -32,7 +33,7 @@ class LocalFileSystemProvider(BaseStorageProvider):
             config: Configuration dictionary containing 'base_path' key
         """
         super().__init__(config)
-        self.base_path = Path(config.get("base_path", "/tmp/filemanager"))
+        self.base_path = Path(config.get("base_path", self.tmp_folder))
         self.base_path.mkdir(parents=True, exist_ok=True)
 
     async def initialize(self) -> bool:
@@ -70,19 +71,13 @@ class LocalFileSystemProvider(BaseStorageProvider):
         Returns:
             Absolute Path object
         """
-        # Normalize path to prevent directory traversal
-        normalized_path = Path(storage_path).as_posix()
-        # Remove leading slashes and resolve
-        normalized_path = normalized_path.lstrip('/')
-        full_path = (self.base_path / normalized_path).resolve()
         
-        # Ensure resolved path is within base_path
-        try:
-            full_path.relative_to(self.base_path.resolve())
-        except ValueError:
-            raise ValueError(f"Path {storage_path} is outside base_path {self.base_path}")
-        
-        return full_path
+        # when base_path is the tmp_folder, we need to resolve the path to the tmp_folder otherwise return the full path as it is
+        if (str(self.base_path) == self.tmp_folder):
+            return Path(storage_path).resolve()
+        else:
+            return (self.base_path / Path(storage_path)).resolve()
+
 
     async def upload_file(
         self,
