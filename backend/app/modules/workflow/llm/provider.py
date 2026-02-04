@@ -1,15 +1,11 @@
 import json
-from typing import Dict, List
 import os
 import logging
-
 from injector import inject
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
-
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
-from app.db.models.llm import LlmProvidersModel
 from app.services.llm_providers import LlmProviderService
 from app.schemas.dynamic_form_schemas import LLM_FORM_SCHEMAS_DICT
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
@@ -61,7 +57,6 @@ class LLMProvider:
         llm_provider_service = injector.get(LlmProviderService)
 
         if model_id is None:
-            from app.dependencies.injector import injector
             all_providers = await llm_provider_service.get_all()
 
             llm_provider = all_providers[0] # default to the first provider
