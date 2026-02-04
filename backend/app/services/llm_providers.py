@@ -1,3 +1,4 @@
+from typing import List
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
 from injector import inject
@@ -73,3 +74,11 @@ class LlmProviderService:
         obj = await self.repository.get_by_id(llm_provider_id)
         await self.repository.delete(obj)
         return {"message": f"Deleted LLM Provider with ID {llm_provider_id}"}
+
+    async def get_default(self):
+        # Get the default model (first config or default)
+        models: List[LlmProviderRead] = await self.get_all()
+        if not models:
+            raise AppException(error_key=ErrorKey.NO_LLM_PROVIDER_CONFIGURATION_FOUND, status_code=500)
+        default_model = next((m for m in models if m.is_default == 1), models[0])        
+        return default_model

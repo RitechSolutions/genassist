@@ -380,6 +380,8 @@ async def test_individual_node(test_data: Dict[str, Any]):
 @router.post("/generate-python-template", response_model=Dict[str, Any])
 async def generate_python_template(
     test_data: Dict[str, Any],
+    llm_provider_svc: LlmProviderService = Injected(LlmProviderService),
+    llm_provider: LLMProvider = Injected(LLMProvider),
 ):
     """
     Generate a Python function template based on a tool's parameter schema.
@@ -398,20 +400,12 @@ async def generate_python_template(
 
         if prompt:
             # Use LLM to modify the template with the extra logic
-            llm_provider = injector.get(LlmProviderService)
             # Get the default model (first config or default)
-            configs = await llm_provider.get_all()
-            if not configs:
-                raise HTTPException(
-                    status_code=500, detail="No LLM provider configuration found."
-                )
-            default_model_id = str(
-                next(
-                    (c for c in configs if getattr(
-                        c, "is_default", 0) == 1), configs[0]
-                ).id
-            )
-            llm = await llm_provider.get_by_id(default_model_id)
+            default_model = await llm_provider_svc.get_default()
+
+            # get the llm model
+            llm = await llm_provider.get_model(default_model.id)
+
             # Compose the LLM prompt
             llm_prompt = f"""
 You are an expert Python developer. You are given a Python function template below. 
