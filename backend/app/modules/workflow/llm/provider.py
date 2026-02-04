@@ -20,26 +20,9 @@ logger = logging.getLogger(__name__)
 
 @inject
 class LLMProvider:
-    """Tenant-aware singleton class for managing LLM instances.
-
-    Each tenant gets their own instance with isolated LLM configurations and cached models.
-    This ensures that tenant-specific API keys, models, and configurations remain isolated.
-
-    Note: Services are obtained from injector when needed to ensure they use the correct
-    tenant database session, rather than caching stale request-scoped services.
-    """
-
-    llm_instances: Dict[str, BaseChatModel] = {}
-    configurations: List[LlmProvidersModel] = []
-    _loading: bool = False
 
     def __init__(self):
-        self.llm_instances = {}
-        self.configurations = []
-        self._loading = False
         logger.info("LLMProvider initialized")
-        # Don't create background task that can conflict with request cleanup
-        # Configurations will be loaded lazily when needed
 
     async def get_configuration_definitions(self):
         """
@@ -72,124 +55,61 @@ class LLMProvider:
 
         return schemas
 
-    async def reload(self) -> List[LlmProvidersModel]:
-        """
-        Get all LLM configurations
-
-        Returns:
-            List[LlmProvidersModel]: All LLM configurations
-        """
-        # Get fresh service instance to ensure correct tenant database session
-        from app.dependencies.injector import injector
-        llm_provider_service = injector.get(LlmProviderService)
-        self.configurations = await llm_provider_service.get_all()
-        self.llm_instances = {}
-        return self.configurations
-
-    def get_all_configurations(self) -> List[LlmProvidersModel]:
-        """
-        Get all LLM configurations
-
-        Returns:
-            List[LlmProvidersModel]: All LLM configurations
-        """
-        return self.configurations
-
-    async def ensure_loaded(self):
-        """
-        Ensure configurations are loaded. Safe to call multiple times.
-        """
-        if not self.configurations and not self._loading:
-            self._loading = True
-            try:
-                await self.reload()
-            finally:
-                self._loading = False
-
-    def get_configuration(self, model_id: str) -> LlmProvidersModel:
-        """
-        Get an LLM configuration by its ID
-        """
-        default = next(
-            (c for c in self.configurations if c.is_default == 1),
-            self.configurations[0],
-        )
-        return next(
-            (c for c in self.configurations if str(c.id) == str(model_id)), default
-        )
 
     async def get_model(self, model_id: str | None = None) -> BaseChatModel:
-        """
-        Get an LLM instance by its ID
-
-        Args:
-            model_id: ID of the LLM instance to get
-
-        Returns:
-            BaseChatModel: The LLM instance
-
-        Raises:
-            ValueError: If no configuration exists for the given ID
-        """
-        # Ensure configurations are loaded
-        await self.ensure_loaded()
+        from app.dependencies.injector import injector
+        llm_provider_service = injector.get(LlmProviderService)
 
         if model_id is None:
-            model_id = str(self.configurations[0].id)
-        if not model_id:
-            raise ValueError("Model ID is required")
-        model_id = str(model_id)
+            from app.dependencies.injector import injector
+            all_providers = llm_provider_service.get_all()
 
-        if model_id not in self.llm_instances:
-            # Find the configuration
-            config = self.get_configuration(model_id)
-            if not config:
-                raise ValueError(f"No configuration found for model ID: {model_id}")
+            llm_provider = all_providers[0] # default to the first provider
+        else:
+            llm_provider = await llm_provider_service.get_by_id(model_id)
 
-            try:
-                # Validate connection data
-                validated_data = json.loads(
-                    json.dumps(config.connection_data)
-                )  # clone the data
+        try:
+            # Validate connection data
+            validated_data = json.loads(
+                json.dumps(llm_provider.connection_data)
+            )  # clone the data
 
-                validated_data.pop("masked_api_key", None)
+            validated_data.pop("masked_api_key", None)
 
-                # Determine the actual provider to use
-                provider = (config.llm_model_provider or "").lower()
+            # Determine the actual provider to use
+            provider = (llm_provider.llm_model_provider or "").lower()
 
-                # Handle vLLM (uses OpenAI-compatible API)
-                if provider == "vllm":
-                    provider = "openai"  # Translate vLLM to OpenAI provider
-                    validated_data["api_key"] = "EMPTY"  # vLLM doesn't need auth
+            # Handle vLLM (uses OpenAI-compatible API)
+            if provider == "vllm":
+                provider = "openai"  # Translate vLLM to OpenAI provider
+                validated_data["api_key"] = "EMPTY"  # vLLM doesn't need auth
 
-                # Handle API key decryption for providers that need it
-                elif "api_key" in validated_data and provider not in ["ollama"]:
-                    validated_data["api_key"] = decrypt_key(validated_data["api_key"])
+            # Handle API key decryption for providers that need it
+            elif "api_key" in validated_data and provider not in ["ollama"]:
+                validated_data["api_key"] = decrypt_key(validated_data["api_key"])
 
-                # Set up environment variables if needed
-                if (
-                    provider == "openai"
-                    and config.llm_model_provider
-                    and config.llm_model_provider.lower() == "openai"
-                ):
-                    os.environ["OPENAI_API_KEY"] = validated_data["api_key"]
-                    if validated_data.get("organization"):
-                        os.environ["OPENAI_ORG_ID"] = validated_data["organization"]
+            # Set up environment variables if needed
+            if (
+                provider == "openai"
+                and llm_provider.llm_model_provider
+                and llm_provider.llm_model_provider.lower() == "openai"
+            ):
+                os.environ["OPENAI_API_KEY"] = validated_data["api_key"]
+                if validated_data.get("organization"):
+                    os.environ["OPENAI_ORG_ID"] = validated_data["organization"]
 
-                # Single unified flow for all providers
-                model_kwargs = {
-                    "model_provider": provider,
-                    "model": config.llm_model,
-                    **validated_data,
-                }
+            # Single unified flow for all providers
+            model_kwargs = {
+                "model_provider": provider,
+                "model": llm_provider.llm_model,
+                **validated_data,
+            }
 
-                # Initialize the model
-                llm = init_chat_model(**model_kwargs)
+            # Initialize the model
+            llm = init_chat_model(**model_kwargs)
+            logger.info(f"Created LLM with init_chat_model for llm provider with ID: {llm_provider.id}")
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM instance: {str(e)}")
+            raise
 
-                self.llm_instances[model_id] = llm
-                logger.info(f"Created new LLM instance with ID: {model_id}")
-            except Exception as e:
-                logger.error(f"Failed to initialize LLM instance: {str(e)}")
-                raise
-
-        return self.llm_instances[model_id]
+        return llm

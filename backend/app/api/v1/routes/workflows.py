@@ -9,6 +9,7 @@ from app.modules.workflow.utils import generate_python_function_template
 from app.core.permissions.constants import Permissions as P
 from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowUpdate
 from app.auth.dependencies import auth, permissions
+from app.services.llm_providers import LlmProviderService
 
 from app.services.workflow import WorkflowService
 from app.dependencies.injector import injector
@@ -397,9 +398,9 @@ async def generate_python_template(
 
         if prompt:
             # Use LLM to modify the template with the extra logic
-            llm_provider = injector.get(LLMProvider)
+            llm_provider = injector.get(LlmProviderService)
             # Get the default model (first config or default)
-            configs = llm_provider.get_all_configurations()
+            configs = llm_provider.get_all()
             if not configs:
                 raise HTTPException(
                     status_code=500, detail="No LLM provider configuration found."
@@ -410,7 +411,7 @@ async def generate_python_template(
                         c, "is_default", 0) == 1), configs[0]
                 ).id
             )
-            llm = await llm_provider.get_model(default_model_id)
+            llm = await llm_provider.get_by_id(default_model_id)
             # Compose the LLM prompt
             llm_prompt = f"""
 You are an expert Python developer. You are given a Python function template below. 
