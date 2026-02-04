@@ -40,9 +40,9 @@ def flatten_dict(data: dict, prefix: str = "", separator: str = ".") -> dict:
 
 def find_all_vars(obj_str: str) -> list:
     """
-    Find all variables in a string
+    Find all variables in a string (excludes variables with spaces)
     """
-    return re.findall(r"{{.*?}}", obj_str)
+    return re.findall(r"{{[^\s{}]+}}", obj_str)
 
 
 def get_nested_value(obj: Any, path: str) -> Any:
