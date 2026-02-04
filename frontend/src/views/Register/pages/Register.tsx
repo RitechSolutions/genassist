@@ -111,7 +111,7 @@ const RegisterPage = () => {
       </div>
       <div
         style={{
-          backgroundImage: `url('/login-image.jpg')`,
+          backgroundImage: `url('/login-image.png')`,
         }}
         className="hidden md:block bg-cover bg-center bg-no-repeat bg-violet-100"
       />

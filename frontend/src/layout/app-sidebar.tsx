@@ -78,12 +78,12 @@ const mainMenuItems: MenuItem[] = [
     icon: Home,
     url: "/dashboard",
   },
-  {
-    title: "Analytics",
-    icon: LineChart,
-    url: "/analytics",
-    permissionsRequired: ["read:metrics"],
-  },
+  // {
+  //   title: "Analytics",
+  //   icon: LineChart,
+  //   url: "/analytics",
+  //   permissionsRequired: ["read:metrics"],
+  // },
   {
     title: "Conversations",
     icon: MessageSquare,

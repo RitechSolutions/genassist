@@ -122,13 +122,13 @@ export function IntegrationWorkflowsDialog({
   const handleWorkflowClick = (workflow: Workflow) => {
     // Navigate to the workflow editor
     if (workflow.agent_id && workflow.id) {
-      navigate(`/aiagents/${workflow.agent_id}/workflows?workflow=${workflow.id}`);
+      navigate(`/ai-agents/workflow/${workflow.agent_id}`);
       onOpenChange(false);
     }
   };
 
   const handleCreateWorkflow = () => {
-    navigate("/aiagents");
+    navigate("/ai-agents/workflow");
     onOpenChange(false);
   };
 

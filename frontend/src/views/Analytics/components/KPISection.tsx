@@ -4,6 +4,7 @@ import { StatsOverviewCard } from "./StatsOverviewCard";
 import { getAllAgentConfigs } from "@/services/api";
 
 import { usePermissions, useIsLoadingPermissions } from "@/context/PermissionContext";
+import { formatResponseTime } from "../helpers/timeFormatter";
 
 interface KPISectionProps {
   timeFilter: string;
@@ -49,26 +50,9 @@ export function KPISection({ timeFilter }: KPISectionProps) {
 
   const defaultMetrics = {
     "Response Time": "0m",
-    "Customer Satisfaction": "0%",
-    "Quality of Service": "0%",
-    "Resolution Rate": "0%",
-    "Efficiency": "0%",
   };
 
   const formattedData = metrics || defaultMetrics;
-
-  // Format response time from percentage to milliseconds
-  const formatResponseTime = (responseTimeStr: string): string => {
-    // Parse percentage value (e.g., "85.50%" -> 85.50)
-    const percentageMatch = responseTimeStr.match(/(\d+\.?\d*)/);
-    if (!percentageMatch) return "0ms";
-    
-    const percentage = parseFloat(percentageMatch[1]);
-    // Convert percentage to milliseconds (0-100% -> 0-1000ms scale)
-    const milliseconds = Math.round(percentage * 10);
-    
-    return `${milliseconds}ms`;
-  };
 
   // Transform metrics data for the new stats overview card
   const statsMetrics = [
@@ -90,12 +74,12 @@ export function KPISection({ timeFilter }: KPISectionProps) {
       change: 4,
       changeType: "decrease" as const,
     },
-    {
-      label: "Usage",
-      value: "~$48.00",
-      change: 16,
-      changeType: "increase" as const,
-    },
+    // {
+    //   label: "Usage",
+    //   value: "~$48.00",
+    //   change: 16,
+    //   changeType: "increase" as const,
+    // },
   ];
 
   return (

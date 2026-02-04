@@ -1,5 +1,6 @@
 import { ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { Card } from "@/components/card";
+import { getChangeBadgeColor, getChangeIconColor, getChangeTextColor } from "../helpers/badgeColors";
 
 interface StatMetric {
   label: string;
@@ -24,42 +25,9 @@ export const StatsOverviewCard = ({ metrics }: StatsOverviewCardProps) => {
     }
   };
 
-  const getChangeBadgeColor = (changeType: "increase" | "decrease" | "neutral") => {
-    switch (changeType) {
-      case "increase":
-        return "bg-green-200";
-      case "decrease":
-        return "bg-red-200";
-      case "neutral":
-        return "bg-zinc-200";
-    }
-  };
-
-  const getChangeTextColor = (changeType: "increase" | "decrease" | "neutral") => {
-    switch (changeType) {
-      case "increase":
-        return "text-green-600";
-      case "decrease":
-        return "text-red-600";
-      case "neutral":
-        return "text-zinc-600";
-    }
-  };
-
-  const getChangeIconColor = (changeType: "increase" | "decrease" | "neutral") => {
-    switch (changeType) {
-      case "increase":
-        return "text-green-700";
-      case "decrease":
-        return "text-red-700";
-      case "neutral":
-        return "text-zinc-600";
-    }
-  };
-
   return (
     <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
         {metrics.map((metric, index) => {
           const ChangeIcon = getChangeIcon(metric.changeType);
           
@@ -70,14 +38,15 @@ export const StatsOverviewCard = ({ metrics }: StatsOverviewCardProps) => {
                   <div className="text-xl sm:text-2xl font-bold text-foreground leading-tight">
                     {metric.value}
                   </div>
-                  <div className="flex items-center gap-2">
+                  {/* TODO */}
+                  {/* <div className="flex items-center gap-2">
                     <div className={`${getChangeBadgeColor(metric.changeType)} flex items-center p-1 rounded-full`}>
                       <ChangeIcon className={`w-4 h-4 sm:w-5 sm:h-5 ${getChangeIconColor(metric.changeType)}`} />
                     </div>
                     <div className={`text-sm sm:text-base font-medium ${getChangeTextColor(metric.changeType)}`}>
                       {metric.change === 0 ? "No Change" : `${Math.abs(metric.change)}%`}
                     </div>
-                  </div>
+                  </div> */}
                 </div>
                 <div className="text-sm sm:text-base font-medium text-foreground">
                   {metric.label}
