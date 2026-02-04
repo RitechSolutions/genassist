@@ -53,7 +53,7 @@ from app.services.zendesk import ZendeskClient
 logger = logging.getLogger(__name__)
 
 # cache key builder for conversation by id with operator and agent eager-loaded
-conversation_id_key_builder_full = make_key_builder("conversation_id_full")
+conversation_id_key_builder_full = make_key_builder("conversation_id")
 
 
 @inject
