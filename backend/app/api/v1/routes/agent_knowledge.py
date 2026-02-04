@@ -381,13 +381,13 @@ async def search(
     items: List[KBRead] = Body(...),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
 ):
-    logger.info(f"search route : query = {query}")
+    logger.debug(f"search route : query = {query}")
 
     # Search using simplified manager
     results = await rag_manager.search(items, query, limit=5, format_results=True)
 
     if not results:
-        logger.info(f"No results found for query: {query}")
+        logger.debug(f"No results found for query: {query}")
         return []
 
     return results

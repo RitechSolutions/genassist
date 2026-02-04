@@ -229,13 +229,13 @@ class ReActAgentLC(BaseToolAgent):
 
             # Execute the agent
             if self.verbose:
-                logger.info(f"Executing LangGraph ReAct agent with query: {query}")
+                logger.debug(f"Executing LangGraph ReAct agent with query: {query}")
 
             # Execute the agent and get the final result
             result = await self.agent_executor.ainvoke(input_data, config=config)
 
             if self.verbose:
-                logger.info(f"LangGraph agent result: {result}")
+                logger.debug(f"LangGraph agent result: {result}")
 
             # Extract final response and build reasoning steps from all messages
             final_response = None
@@ -285,7 +285,7 @@ class ReActAgentLC(BaseToolAgent):
                                 tool_call_id
                             ]
                             if self.verbose:
-                                logger.info(
+                                logger.debug(
                                     f"Found return_direct tool result from {return_direct_tool_name}: {return_direct_tool_result}"
                                 )
 
@@ -397,7 +397,7 @@ class ReActAgentLC(BaseToolAgent):
                 if return_direct_tool_result is not None:
                     final_response = return_direct_tool_result
                     if self.verbose:
-                        logger.info(
+                        logger.debug(
                             f"Using return_direct tool result as final response: {final_response}"
                         )
                 # Fallback: check if the last message is a ToolMessage (might be return_direct)
@@ -417,7 +417,7 @@ class ReActAgentLC(BaseToolAgent):
                                 )
                                 return_direct_tool_name = tool_name_from_msg
                                 if self.verbose:
-                                    logger.info(
+                                    logger.debug(
                                         f"Found return_direct tool result in last message from {return_direct_tool_name}: {final_response}"
                                     )
                 # Otherwise, identify the final response (last AI message without tool calls)

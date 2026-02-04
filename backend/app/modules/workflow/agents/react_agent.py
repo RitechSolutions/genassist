@@ -86,7 +86,7 @@ class ReActAgent(BaseToolAgent):
                 response_content = self._extract_response_content(response)
 
                 if self.verbose:
-                    logger.info(
+                    logger.debug(
                         f"ReAct iteration {iteration + 1}: {response_content}")
 
                 # Record reasoning step

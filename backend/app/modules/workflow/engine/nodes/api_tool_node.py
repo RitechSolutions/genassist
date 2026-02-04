@@ -36,7 +36,7 @@ class ApiToolNode(BaseNode):
         try:
             # Make the API call
             response = await self._make_api_call(method, endpoint, headers, parameters, request_body)
-            logger.info(f"API Response: {response}")
+            logger.debug(f"API Response: {response}")
             return response
 
         except (aiohttp.ClientError, json.JSONDecodeError, ValueError) as e:
@@ -113,11 +113,11 @@ class ApiToolNode(BaseNode):
             if method not in ["HEAD", "OPTIONS"]:
                 try:
                     data = await response.json()
-                    logger.info("Response: %s", data)
+                    logger.debug("Response: %s", data)
                 except aiohttp.ContentTypeError:
                     # If response is not JSON, get as text
                     data = await response.text()
-                    logger.info("Response (text): %s", data)
+                    logger.debug("Response (text): %s", data)
 
             return {
                 "status": response.status,

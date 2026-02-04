@@ -39,7 +39,7 @@ class LLMModelNode(BaseNode):
         _type = config.get("type", "base")
         memory_enabled = config.get("memory", False)
 
-        logger.info(
+        logger.debug(
             f"Input data: system_prompt={system_prompt}, prompt={prompt}")
 
         try:
