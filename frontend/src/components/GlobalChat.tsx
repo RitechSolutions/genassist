@@ -45,8 +45,6 @@ export const GlobalChat = () => {
       floatingConfig={{
         position: "bottom-right",
       }}
-      useFile={true}
-      allowedExtensions={['image/*', 'application/pdf']}
     />
   );
 };
