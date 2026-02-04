@@ -191,7 +191,7 @@ class BaseNode(ABC):
         if config is None:
             config = {}
         logger.info(f"Dummy process called for node {self.node_id}")
-        logger.info(f"Node input: {node_input}")
+        logger.debug(f"Node input: {node_input}")
         logger.info(f"Node config: {config}")
         return f"Success on node_input: {node_input}"
 

@@ -166,7 +166,7 @@ class ToolAgent(BaseToolAgent):
             response = await self.llm_model.ainvoke(
                 [{"role": "user", "content": prompt}])
             response_content = self._extract_response_content(response)
-            logger.info(f"Response: {response}")
+            logger.debug(f"Response: {response}")
             direct_response = extract_direct_response(response_content)
             # If extract_direct_response returns None, use the original response_content
             # If it returns a string (even empty), use it as it was extracted from JSON
@@ -246,7 +246,7 @@ class ToolAgent(BaseToolAgent):
             {"step": iteration + 1, "response": response_content})
 
         if self.verbose:
-            logger.info(
+            logger.debug(
                 f"Tool workflow step {iteration + 1}: {response_content}")
 
         tool_call = self._parse_tool_call(response_content)
@@ -312,7 +312,7 @@ class ToolAgent(BaseToolAgent):
             })
 
             if self.verbose:
-                logger.info(
+                logger.debug(
                     f"Tool {tool_name} executed successfully with args {validated_args}")
 
             # Check if tool has return_direct=True
