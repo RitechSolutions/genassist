@@ -18,6 +18,7 @@ from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
 from app.db.utils.event_hooks_config import auto_register_updated_by
 from .agent import AgentModel
+from .agent_security_settings import AgentSecuritySettingsModel
 from .tool import ToolModel
 from .knowledge_base import KnowledgeBaseModel
 from .workflow import WorkflowModel
@@ -34,6 +35,7 @@ from .fine_tuning import FineTuningJobModel, OpenAIFileModel, FineTuningEventMod
 from .app_settings import AppSettingsModel
 from .webhook import WebhookModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
+from .file import FileModel, StorageProvider
 __all__ = [
     # Primary model class names
     "OperatorModel",
@@ -60,6 +62,7 @@ __all__ = [
     "ToolModel",
     "KnowledgeBaseModel",
     "AgentModel",
+    "AgentSecuritySettingsModel",
     "WorkflowModel",
     "MLModel",
     "MLModelPipelineConfig",
@@ -74,7 +77,9 @@ __all__ = [
     "WebhookModel",
     "FineTuningEventModel",
     "MCPServerModel",
-    "MCPServerWorkflowModel"
+    "MCPServerWorkflowModel",
+    "FileModel",
+    "StorageProvider"
 ]
 
 models = [
@@ -100,6 +105,7 @@ models = [
     UserRoleModel,
     KnowledgeBaseModel,
     AgentModel,
+    AgentSecuritySettingsModel,
     WorkflowModel,
     MLModel,
     MLModelPipelineConfig,
@@ -109,7 +115,8 @@ models = [
     AppSettingsModel,
     FineTuningEventModel,
     MCPServerModel,
-    MCPServerWorkflowModel
+    MCPServerWorkflowModel,
+    FileModel
 ]
 
 auto_register_updated_by(models)

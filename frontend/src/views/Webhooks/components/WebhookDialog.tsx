@@ -18,6 +18,7 @@ import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Textarea } from "@/components/textarea";
 import { Switch } from "@/components/switch";
+import { Separator } from "@/components/separator";
 import { Button } from "@/components/button";
 import { toast } from "react-hot-toast";
 import { Copy } from "lucide-react";
@@ -34,6 +35,7 @@ import { AppSetting } from "@/interfaces/app-setting.interface";
 import { getApiUrl } from "@/config/api";
 import { AgentFormDialog } from "@/views/AIAgents/components/AgentForm";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { AppSettingDialog } from "@/views/AppSettings/components/AppSettingDialog";
 
 interface Props {
   isOpen: boolean;
@@ -63,12 +65,15 @@ export function WebhookDialog({
   const [headerValue, setHeaderValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [webhookType, setWebhookType] = useState<WebhookType>("generic");
-  const [agentId, setAgentId] = useState<string>("");
-  const [appSettingsId, setAppSettingsId] = useState<string>("");
-  const [agents, setAgents] = useState<AgentConfig[]>([]);
-  const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
+
+  const [agentId, setAgentId] = useState<string>("");
+  const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [isCreateAgentOpen, setIsCreateAgentOpen] = useState(false);
+
+  const [appSettingsId, setAppSettingsId] = useState<string>("");
+  const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
+  const [isCreateSettingOpen, setIsCreateSettingOpen] = useState(false);
 
   const reloadAgents = async () => {
     try {
@@ -155,8 +160,8 @@ export function WebhookDialog({
               ? headers
               : undefined
             : webhookType === "generic" && Object.keys(headers).length > 0
-            ? headers
-            : undefined,
+              ? headers
+              : undefined,
         is_active: isActive ? 1 : 0,
         secret: webhookType === "generic" ? secret || undefined : undefined,
         webhook_type: webhookType,
@@ -193,7 +198,7 @@ export function WebhookDialog({
           error.status === 400
             ? ": A webhook with this name already exists"
             : ""
-        }.`
+        }.`,
       );
     } finally {
       setIsSubmitting(false);
@@ -215,264 +220,295 @@ export function WebhookDialog({
   };
 
   return (
-  <>
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[550px] p-0 overflow-hidden">
-        <DialogHeader className="p-6 pb-4">
-          <DialogTitle>
-            {mode === "create" ? "Add New Webhook" : "Edit Webhook"}
-          </DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[550px] p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-4">
+            <DialogTitle>
+              {mode === "create" ? "Add New Webhook" : "Edit Webhook"}
+            </DialogTitle>
+          </DialogHeader>
 
-        <div className="grid gap-4 px-6 pb-6 max-h-[90vh] overflow-y-auto overflow-x-hidden">
-          <div>
-            <Label htmlFor="name">Webhook Name</Label>
-            <Input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          {mode === "edit" && webhookToEdit?.url && (
+          <div className="grid gap-4 px-6 pb-6 max-h-[90vh] overflow-y-auto overflow-x-hidden">
             <div>
-              <Label htmlFor="url">Webhook URL</Label>
-              <div className="relative">
-                <Input
-                  id="url"
-                  value={url}
-                  readOnly
-                  className="bg-gray-100 cursor-not-allowed pr-20"
-                />
-                <div className="absolute top-1/2 right-2 -translate-y-1/2 flex items-center space-x-1 z-10">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 pointer-events-auto"
-                    onClick={() => {
-                      navigator.clipboard.writeText(url);
-                      toast.success("Copied to clipboard.");
-                    }}
-                    title="Copy to clipboard"
-                    disabled={!url}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Enter name of webhook"
+              />
+            </div>
+            {mode === "edit" && webhookToEdit?.url && (
+              <div>
+                <Label htmlFor="url">Webhook URL</Label>
+                <div className="relative">
+                  <Input
+                    id="url"
+                    value={url}
+                    readOnly
+                    className="bg-gray-100 cursor-not-allowed pr-20"
+                  />
+                  <div className="absolute top-1/2 right-2 -translate-y-1/2 flex items-center space-x-1 z-10">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 pointer-events-auto"
+                      onClick={() => {
+                        navigator.clipboard.writeText(url);
+                        toast.success("Copied to clipboard.");
+                      }}
+                      title="Copy to clipboard"
+                      disabled={!url}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-          <div>
-            <Label htmlFor="webhook-type">Webhook Type</Label>
-            <Select
-              value={webhookType}
-              onValueChange={(value) => {
-                const newType = value as WebhookType;
-                setWebhookType(newType);
-                // Reset app settings ID when type changes (agent stays)
-                setAppSettingsId("");
-                // Clear secret, headers, and method when switching away from generic
-                if (newType !== "generic") {
-                  setSecret("");
-                  setHeaders({});
-                  setHeaderKey("");
-                  setHeaderValue("");
-                  setMethod("POST");
-                }
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select webhook type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="generic">Generic</SelectItem>
-                <SelectItem value="slack">Slack</SelectItem>
-                <SelectItem value="whatsapp">WhatsApp</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="agent-id">Agent *</Label>
-            <Select
-              value={agentId || ""}
-              onValueChange={(value) => {
-                if (value === "__create__") {
-                  setIsCreateAgentOpen(true);
-                  return;
-                }
-                setAgentId(value || "");
-              }}
-              disabled={isLoadingData}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select an agent" />
-              </SelectTrigger>
-              <SelectContent>
-                {agents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </SelectItem>
-                ))}
-                <CreateNewSelectItem />
-              </SelectContent>
-            </Select>
-          </div>
-          {(webhookType === "slack" || webhookType === "whatsapp") && (
+            )}
             <div>
-              <Label htmlFor="app-settings-id">
-                Configuration Vars ({webhookType === "slack" ? "Slack" : "WhatsApp"})
-                (Optional)
-              </Label>
+              <Label htmlFor="agent-id">Agent *</Label>
               <Select
-                value={appSettingsId || ""}
-                onValueChange={(value) => setAppSettingsId(value || "")}
+                value={agentId || ""}
+                onValueChange={(value) => {
+                  if (value === "__create__") {
+                    setIsCreateAgentOpen(true);
+                    return;
+                  }
+                  setAgentId(value || "");
+                }}
                 disabled={isLoadingData}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select configuration (optional)" />
+                  <SelectValue placeholder="Select an agent" />
                 </SelectTrigger>
                 <SelectContent>
-                  {appSettings
-                    .filter((setting) => {
-                      const settingTypeLower = setting.type.toLowerCase();
-                      const webhookTypeLower = webhookType.toLowerCase();
-                      // Map webhook types to app setting types
-                      const typeMatch =
-                        (webhookTypeLower === "slack" &&
-                          settingTypeLower === "slack") ||
-                        (webhookTypeLower === "whatsapp" &&
-                          settingTypeLower === "whatsapp");
-                      return typeMatch && setting.is_active === 1;
-                    })
-                    .map((setting) => (
-                      <SelectItem key={setting.id} value={setting.id}>
-                        {setting.name}
-                      </SelectItem>
-                    ))}
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </SelectItem>
+                  ))}
+                  <CreateNewSelectItem />
                 </SelectContent>
               </Select>
             </div>
-          )}
-          {webhookType === "generic" && (
-            <>
+            <Separator className="my-1" />
+            <div>
+              <Label htmlFor="webhook-type">Type</Label>
+              <Select
+                value={webhookType}
+                onValueChange={(value) => {
+                  const newType = value as WebhookType;
+                  setWebhookType(newType);
+                  // Reset app settings ID when type changes (agent stays)
+                  setAppSettingsId("");
+                  // Clear secret, headers, and method when switching away from generic
+                  if (newType !== "generic") {
+                    setSecret("");
+                    setHeaders({});
+                    setHeaderKey("");
+                    setHeaderValue("");
+                    setMethod("POST");
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select webhook type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="generic">Generic</SelectItem>
+                  <SelectItem value="slack">Slack</SelectItem>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(webhookType === "slack" || webhookType === "whatsapp") && (
               <div>
-                <Label htmlFor="method">HTTP Method</Label>
+                <Label htmlFor="app-settings-id">Configuration Variable</Label>
                 <Select
-                  value={method}
-                  onValueChange={(value) => setMethod(value as "GET" | "POST")}
+                  value={appSettingsId || ""}
+                  onValueChange={(value) => {
+                    if (value === "__create__") {
+                      setIsCreateSettingOpen(true);
+                      return;
+                    }
+                    setAppSettingsId(value || "");
+                  }}
+                  disabled={isLoadingData}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select method" />
+                    <SelectValue placeholder="Select a configuration variable (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="POST">POST</SelectItem>
-                    <SelectItem value="GET">GET</SelectItem>
+                    {appSettings
+                      .filter((setting) => {
+                        const settingTypeLower = setting.type.toLowerCase();
+                        const webhookTypeLower = webhookType.toLowerCase();
+                        // Map webhook types to app setting types
+                        const typeMatch =
+                          (webhookTypeLower === "slack" &&
+                            settingTypeLower === "slack") ||
+                          (webhookTypeLower === "whatsapp" &&
+                            settingTypeLower === "whatsapp");
+                        return typeMatch && setting.is_active === 1;
+                      })
+                      .map((setting) => (
+                        <SelectItem key={setting.id} value={setting.id}>
+                          {setting.name}
+                        </SelectItem>
+                      ))}
+                    <CreateNewSelectItem />
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="secret">Secret *</Label>
-                <Input
-                  id="secret"
-                  type="text"
-                  value={secret}
-                  onChange={(e) => setSecret(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label>Headers</Label>
-                <div className="flex gap-2 mb-2">
-                  <Input
-                    placeholder="Key"
-                    value={headerKey}
-                    onChange={(e) => setHeaderKey(e.target.value)}
-                  />
-                  <Input
-                    placeholder="Value"
-                    value={headerValue}
-                    onChange={(e) => setHeaderValue(e.target.value)}
-                  />
-                  <Button type="button" onClick={addHeader}>
-                    Add
-                  </Button>
+            )}
+            {webhookType === "generic" && (
+              <>
+                <div>
+                  <Label htmlFor="method">HTTP Method</Label>
+                  <Select
+                    value={method}
+                    onValueChange={(value) =>
+                      setMethod(value as "GET" | "POST")
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="POST">POST</SelectItem>
+                      <SelectItem value="GET">GET</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <ul className="space-y-1">
-                  {Object.entries(headers).map(([key, value]) => (
-                    <li
-                      key={key}
-                      className="flex justify-between items-center text-sm border-b pb-1"
-                    >
-                      <span>
-                        {key}: {value}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeHeader(key)}
+                <div>
+                  <Label htmlFor="secret">Secret *</Label>
+                  <Input
+                    id="secret"
+                    type="text"
+                    value={secret}
+                    onChange={(e) => setSecret(e.target.value)}
+                    placeholder="Enter secret"
+                  />
+                </div>
+                <div>
+                  <Label>Headers</Label>
+                  <div className="flex gap-2 mb-2">
+                    <Input
+                      placeholder="Key"
+                      value={headerKey}
+                      onChange={(e) => setHeaderKey(e.target.value)}
+                    />
+                    <Input
+                      placeholder="Value"
+                      value={headerValue}
+                      onChange={(e) => setHeaderValue(e.target.value)}
+                    />
+                    <Button type="button" onClick={addHeader}>
+                      Add
+                    </Button>
+                  </div>
+                  <ul className="space-y-1">
+                    {Object.entries(headers).map(([key, value]) => (
+                      <li
+                        key={key}
+                        className="flex justify-between items-center text-sm border-b pb-1"
                       >
-                        Remove
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </>
-          )}
-          <div>
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-            />
+                        <span>
+                          {key}: {value}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeHeader(key)}
+                        >
+                          Remove
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+            <Separator className="my-1" />
+            <div>
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                placeholder="Enter description (optional)"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="is-active"
+                checked={isActive}
+                onCheckedChange={setIsActive}
+              />
+              <Label htmlFor="is-active">Active</Label>
+            </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="is-active"
-              checked={isActive}
-              onCheckedChange={setIsActive}
-            />
-            <Label htmlFor="is-active">Active</Label>
-          </div>
-        </div>
+          <DialogFooter className="px-6 py-4 border-t">
+            <div className="flex justify-end gap-3 w-full">
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleSubmit} disabled={isSubmitting}>
+                {isSubmitting
+                  ? "Saving..."
+                  : mode === "create"
+                    ? "Create Webhook"
+                    : "Update Webhook"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        <DialogFooter className="px-6 py-4 border-t">
-          <div className="flex justify-end gap-3 w-full">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSubmit} disabled={isSubmitting}>
-              {isSubmitting
-                ? "Saving..."
-                : mode === "create"
-                ? "Create Webhook"
-                : "Update Webhook"}
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-    <AgentFormDialog
-      isOpen={isCreateAgentOpen}
-      onClose={() => setIsCreateAgentOpen(false)}
-      data={null}
-      redirectOnCreate={false}
-      onCreated={async (createdAgentId) => {
-        try {
-          await reloadAgents();
-          setAgentId(createdAgentId);
-        } catch {
-          // ignore
-        }
-      }}
-    />
-  </>
+      {/* Create new agent dialog */}
+      <AgentFormDialog
+        isOpen={isCreateAgentOpen}
+        onClose={() => setIsCreateAgentOpen(false)}
+        data={null}
+        redirectOnCreate={false}
+        onCreated={async (createdAgentId) => {
+          try {
+            await reloadAgents();
+            setAgentId(createdAgentId);
+          } catch {
+            // ignore
+          }
+        }}
+      />
+
+      {/* Create new configuration variable dialog */}
+      <AppSettingDialog
+        isOpen={isCreateSettingOpen}
+        onOpenChange={setIsCreateSettingOpen}
+        mode="create"
+        initialType={webhookType === "slack" ? "Slack" : "WhatsApp"}
+        disableTypeSelect
+        onSettingSaved={async (created) => {
+          try {
+            const settings = await getAllAppSettings();
+            setAppSettings(settings);
+          } catch (e) {
+            // ignore
+          }
+          if (created?.id) setAppSettingsId(created.id);
+        }}
+      />
+    </>
   );
 }

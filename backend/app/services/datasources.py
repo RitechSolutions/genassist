@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 @inject
 class DataSourceService:
     encrypted_fields = ['database_password', 'ssh_tunnel_private_key',
-                        'secret_key', 'access_key', "access_token", "refresh_token", "password"]
+                        'secret_key', 'access_key', "access_token", "refresh_token", "password", "api_token"]
 
     def __init__(self, repository: DataSourcesRepository):
         self.repository = repository

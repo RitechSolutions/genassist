@@ -29,7 +29,7 @@ os.makedirs(ML_MODELS_UPLOAD_DIR, exist_ok=True)
 MAX_PKL_FILE_SIZE = 500 * 1024 * 1024
 
 
-@router.post("/", response_model=MLModelRead, dependencies=[
+@router.post("", response_model=MLModelRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.CREATE))
 ])
@@ -53,7 +53,7 @@ async def get_ml_model(
     return await service.get_by_id(ml_model_id)
 
 
-@router.get("/", response_model=list[MLModelRead], dependencies=[
+@router.get("", response_model=list[MLModelRead], dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.READ))
 ])

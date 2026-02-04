@@ -11,7 +11,7 @@ from app.services.llm_analysts import LlmAnalystService
 router = APIRouter()
 
 
-@router.get("/", response_model=list[LlmAnalyst], dependencies=[
+@router.get("", response_model=list[LlmAnalyst], dependencies=[
     Depends(auth),
     Depends(permissions(P.LlmAnalyst.READ))
 ])
@@ -27,7 +27,7 @@ async def get(llm_analyst_id: UUID, service: LlmAnalystService = Injected(LlmAna
     return await service.get_by_id(llm_analyst_id)
 
 
-@router.post("/", response_model=LlmAnalyst, dependencies=[
+@router.post("", response_model=LlmAnalyst, dependencies=[
     Depends(auth),
     Depends(permissions(P.LlmAnalyst.CREATE))
 ])

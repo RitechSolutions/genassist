@@ -3,8 +3,8 @@ import { ZendeskTicketNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
-import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
+import { Save, Plus, X } from "lucide-react";
 import { BaseNodeDialogProps } from "./base";
 import {
   Select,
@@ -44,6 +44,9 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
   const [appSettings, setAppSettings] = useState<AppSetting[]>([]);
   const [isLoadingAppSettings, setIsLoadingAppSettings] = useState(false);
   const [isCreateSettingOpen, setIsCreateSettingOpen] = useState(false);
+  const [customFields, setCustomFields] = useState<
+    Array<{ id: string; value: string | number }>
+  >(data.custom_fields || []);
 
   const getTagsArr = () => {
     return tagsCsv
@@ -60,6 +63,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
       setRequesterName(data.requester_name || "");
       setRequesterEmail(data.requester_email || "");
       setTagsCsv((data.tags || []).join(", "));
+      setCustomFields(data.custom_fields || []);
 
       setAppSettingsId(data.app_settings_id || "");
 
@@ -88,9 +92,34 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
       requester_name: requesterName,
       requester_email: requesterEmail,
       tags: getTagsArr(),
+      custom_fields: customFields.length > 0 ? customFields : undefined,
       app_settings_id: appSettingsId || undefined,
     });
     onClose();
+  };
+
+  const addCustomField = () => {
+    setCustomFields((prev) => [...prev, { id: "", value: "" }]);
+  };
+
+  const removeCustomField = (index: number) => {
+    setCustomFields((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateCustomField = (
+    index: number,
+    field: "id" | "value",
+    value: string | number
+  ) => {
+    setCustomFields((prev) => {
+      const updated = [...prev];
+      if (field === "id") {
+        updated[index] = { ...updated[index], id: String(value) };
+      } else {
+        updated[index] = { ...updated[index], value };
+      }
+      return updated;
+    });
   };
 
   return (
@@ -117,6 +146,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
             requester_name: requesterName,
             requester_email: requesterEmail,
             tags: getTagsArr(),
+            custom_fields: customFields.length > 0 ? customFields : undefined,
             app_settings_id: appSettingsId || undefined,
           } as ZendeskTicketNodeData
         }

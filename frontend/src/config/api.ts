@@ -1,9 +1,6 @@
 import axios, { Method, AxiosRequestConfig, AxiosError } from "axios";
 import { setServerDown, setServerUp } from "@/config/serverStatus";
 
-let cachedApiUrl: string | null = null;
-const API_URL_STORAGE_KEY = "cachedApiUrl";
-
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (value?: unknown) => void;
@@ -32,6 +29,7 @@ const api = axios.create({
   timeout: 120000, // Increased to 2 minutes for SQL operations
 });
 
+// Interceptor: Request
 api.interceptors.request.use(
   (config) => {
     const accessToken = localStorage.getItem("access_token");
@@ -55,6 +53,7 @@ api.interceptors.request.use(
   }
 );
 
+// Interceptor: Response
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -146,77 +145,23 @@ api.interceptors.response.use(
   }
 );
 
-export const clearCachedApiUrl = (): void => {
-  cachedApiUrl = null;
-  try {
-    localStorage.removeItem(API_URL_STORAGE_KEY);
-  } catch (error) {
-    // ignore
-  }
-};
+const API_URL = import.meta.env.VITE_PUBLIC_API_URL
+const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_PUBLIC_URL
+
+/** Whether WebSocket connections are enabled (VITE_WS=true/false). Defaults to true when unset.
+ *  Note: Vite reads env at dev server start / build time; restart the dev server after changing .env. */
+export const isWsEnabled =
+  (import.meta.env.VITE_WS ?? "true").toString().toLowerCase() === "true";
 
 export const getApiUrl = async (): Promise<string> => {
-  // Try to load from localStorage first
-  try {
-    const storedApiUrl = localStorage.getItem(API_URL_STORAGE_KEY);
-    if (storedApiUrl) {
-      cachedApiUrl = storedApiUrl;
-      return storedApiUrl;
-    }
-  } catch (error) {
-    // ignore
-  }
-
-  if (cachedApiUrl) {
-    return cachedApiUrl;
-  }
-
-  const privateApi = import.meta.env.VITE_PRIVATE_API_URL;
-  const publicApi = import.meta.env.VITE_PUBLIC_API_URL;
-
-  try {
-    await axios.get(privateApi, { timeout: 1000 });
-    cachedApiUrl = ensureTrailingSlash(privateApi);
-    try {
-      localStorage.setItem(API_URL_STORAGE_KEY, cachedApiUrl);
-    } catch (error) {
-      // ignore
-    }
-    return cachedApiUrl;
-  } catch (err) {
-    if (
-      err.code != "ECONNABORTED" &&
-      err.response &&
-      err.response.status == 404
-    ) {
-      cachedApiUrl = ensureTrailingSlash(privateApi);
-      try {
-        localStorage.setItem(API_URL_STORAGE_KEY, cachedApiUrl);
-      } catch (error) {
-        // ignore
-      }
-      return cachedApiUrl;
-    } else {
-      cachedApiUrl = ensureTrailingSlash(publicApi);
-      try {
-        localStorage.setItem(API_URL_STORAGE_KEY, cachedApiUrl);
-      } catch (error) {
-        // ignore
-      }
-      return cachedApiUrl;
-    }
-  }
+  return ensureTrailingSlash(API_URL);
 };
 
-const WEBSOCKET_URL_PUBLIC = import.meta.env.VITE_WEBSOCKET_PUBLIC_URL
-const WEBSOCKET_URL_PRIVATE = import.meta.env.VITE_WEBSOCKET_PRIVATE_URL
-
 export const getWsUrl = async (): Promise<string> => {
-    const url = await getApiUrl();
-    if(url.indexOf(import.meta.env.VITE_PRIVATE_API_URL) >= 0)
-      return WEBSOCKET_URL_PRIVATE;
-    else  
-      return WEBSOCKET_URL_PUBLIC; 
+  if (!isWsEnabled) {
+    return Promise.reject(new Error("WebSocket is disabled (VITE_WS=false)"));
+  }
+  return WEBSOCKET_URL;
 };
 
 export const apiRequest = async <T>(
@@ -226,7 +171,10 @@ export const apiRequest = async <T>(
   config: Partial<AxiosRequestConfig> = {}
 ): Promise<T | null> => {
   const baseURL = await getApiUrl();
-  const fullUrl = `${baseURL}${endpoint.replace(/^\//, "")}`;
+  // remove starting slash from endpoint
+  let fullUrl = `${baseURL}${endpoint.replace(/^\//, "")}`
+  // remove last slash && remove last slash also before ? or & or #
+  fullUrl = fullUrl.replace(/\/$/, "").replace(/\/([?&#])/, "$1");
 
   try {
     const response = await api.request<T>({
@@ -249,7 +197,8 @@ export const apiRequest = async <T>(
       return null;
     }
 
-    if (status === 503) {
+    // Mark server as down for 5xx errors
+    if (status && status >= 500) {
       setServerDown();
     } else if (hasResponse) {
       setServerUp();
@@ -281,22 +230,25 @@ export { api };
 export const probeApiHealth = async (): Promise<boolean> => {
   const baseURL = await getApiUrl();
   const candidates = [
-    `${baseURL.replace(/\/$/, "")}/healthz`,
+    `${baseURL.replace(/\/$/, "")}/playground/health`,
     `${baseURL.replace(/\/$/, "")}/health`,
     baseURL,
   ];
   for (const url of candidates) {
     try {
       const response = await axios.get(url, { timeout: 2000, validateStatus: () => true });
-      if (response.status === 503) {
+      // Treat any 5xx error as server down
+      if (response.status >= 500) {
         setServerDown();
         return false;
       }
       setServerUp();
       return true;
     } catch {
-      setServerDown();
+      // Network error - continue trying other endpoints
     }
   }
+  // All endpoints failed
+  setServerDown();
   return false;
 };

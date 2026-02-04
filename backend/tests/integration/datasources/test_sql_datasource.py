@@ -1,4 +1,5 @@
 import pytest
+from urllib.parse import quote
 from app.core.config.settings import settings
 from app.schemas.agent_knowledge import KBRead
 from app.db.seed.seed_data_config import seed_test_data
@@ -10,12 +11,14 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture(scope="module")
 def new_datasource_data():
+    user = quote(settings.DB_USER or "", safe="")
+    password = quote(settings.DB_PASS or "", safe="")
     data = {
         "name": "Test SQL Data Source provider",
         "source_type": "Database",
        "connection_data": {
                         "database_type": "postgresql",   
-                        "connection_string": f"postgresql://{settings.DB_USER}:{settings.DB_PASS}@{settings.DB_HOST}/{settings.DB_NAME}",
+                        "connection_string": f"postgresql://{user}:{password}@{settings.DB_HOST}/{settings.DB_NAME}",
                         "allowed_tables": ['conversations','operators']},
         "is_active": 1,
     }

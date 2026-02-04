@@ -35,7 +35,6 @@ interface AgentFormData {
   thinking_phrases?: string[];
   is_active?: boolean;
   workflow_id?: string;
-  token_based_auth?: boolean;
 }
 
 interface AgentFormProps {
@@ -78,12 +77,10 @@ const AgentForm: React.FC<AgentFormProps> = ({
       thinking_phrase_delay: 0,
       possible_queries: [],
       thinking_phrases: [],
-      token_based_auth: false,
     }),
     possible_queries: cleanedQueries.length > 0 ? cleanedQueries : [],
     thinking_phrases:
       cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
-    token_based_auth: data?.token_based_auth ?? false,
   });
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -121,12 +118,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
     }));
   };
 
-  const handleSwitchChange = (checked: boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      token_based_auth: checked,
-    }));
-  };
 
   const handlePossibleQueryChange = (index: number, value: string) => {
     setFormData((prev) => {
@@ -576,39 +567,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   placeholder="Enter welcome message"
                 />
               </div>
-
-              <div className="border border-border rounded-lg overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-md bg-background/80">
-                      <svg
-                        className="h-4 w-4 text-muted-foreground"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                        />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium">Token Based Authentication</div>
-                      <p className="text-xs text-muted-foreground">
-                        Enable token based authentication for this agent
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={formData.token_based_auth ?? false}
-                    onCheckedChange={handleSwitchChange}
-                  />
-                </div>
-              </div>
-
               <div className="border border-border rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
                   <div className="flex items-center gap-2">
@@ -788,7 +746,6 @@ export const AgentFormPage: React.FC = () => {
     thinking_phrase_delay: undefined,
     possible_queries: [],
     thinking_phrases: [],
-    token_based_auth: false,
   });
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -812,7 +769,6 @@ export const AgentFormPage: React.FC = () => {
             possible_queries: cleanedQueries.length > 0 ? cleanedQueries : [],
             thinking_phrases:
               cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
-            token_based_auth: config.token_based_auth ?? false,
           });
 
           setError(null);

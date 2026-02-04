@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Context, useContext, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { ErrorBanner } from "@/views/Onboarding/components/ErrorBanner";
 import { OnboardingFooter } from "@/views/Onboarding/components/OnboardingFooter";
@@ -16,6 +16,7 @@ import {
   createWorkflowFromWizard,
   type WorkflowWizardResponse,
 } from "@/services/workflows";
+import { useRoutesContext } from "@/context/RoutesContext"; 
 
 type OnboardingScreen = "chat" | "name-agent";
 
@@ -23,6 +24,7 @@ const WORKFLOW_DRAFT_STORAGE_KEY = "onboarding_workflow_draft";
 const AGENT_NAME_STORAGE_KEY = "onboarding_agent_name";
 
 export default function Onboarding() {
+  const { registrationStatus } = useRoutesContext();
   const { login } = useAuth();
   const { refreshFlags } = useFeatureFlag();
   const {
@@ -38,7 +40,7 @@ export default function Onboarding() {
     hasConfig,
     handleSubmit,
     sendQuickAction,
-  } = useOnboardingChat();
+  } = useOnboardingChat({ registrationStatus });
 
   const [showCongrats, setShowCongrats] = useState(true);
   const [showQuickActions, setShowQuickActions] = useState(false);
@@ -232,7 +234,7 @@ export default function Onboarding() {
       <OnboardingHeader />
 
       <main className="flex-1 flex flex-col items-center justify-center">
-        {effectiveScreen === "chat" ? (
+        {effectiveScreen === "chat" && registrationStatus === "new" ? (
           <>
             <OnboardingHero
               showCongrats={showCongrats && !agentReply}
@@ -262,7 +264,9 @@ export default function Onboarding() {
           />
         )}
 
-        <ErrorBanner message={error} />
+        <div className="w-full max-w-2xl pt-2">
+          <ErrorBanner message={error} />
+        </div>
       </main>
 
       <OnboardingFooter />

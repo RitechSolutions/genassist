@@ -118,6 +118,10 @@ class BaseNode(ABC):
         """Get the conversation memory."""
         return self.state.get_memory()
 
+    def get_session_context(self) -> dict:
+        """Get the session context (session data) from workflow state."""
+        return self.state.get_session()
+
     def get_source_nodes(self) -> List[str]:
         """Get all source nodes connected to this next node."""
         target_edges = self.state.target_edges
@@ -187,7 +191,7 @@ class BaseNode(ABC):
         if config is None:
             config = {}
         logger.info(f"Dummy process called for node {self.node_id}")
-        logger.info(f"Node input: {node_input}")
+        logger.debug(f"Node input: {node_input}")
         logger.info(f"Node config: {config}")
         return f"Success on node_input: {node_input}"
 

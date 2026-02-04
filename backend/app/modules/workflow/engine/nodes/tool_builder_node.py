@@ -34,7 +34,7 @@ class ToolBuilderNode(BaseNode):
         from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
         template_str = config.get("forwardTemplate", "{}")
-        logger.info(f"Template string: {template_str}")
+        logger.debug(f"Template string: {template_str}")
         try:
             template = json.loads(template_str)
         except Exception as e:

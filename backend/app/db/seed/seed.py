@@ -169,36 +169,50 @@ async def seed_data(session: AsyncSession, injector: Injector):
     session.add_all([console_user_type, interactive_user_type])
     await session.commit()
 
-    # Create users
+    # Create users - passwords from environment variables with secure defaults for development
+    # In production, these should be set via environment variables
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    admin = UserModel(username='admin', email='admin@genassist.ritech.io', is_active=1,
-                      hashed_password=pwd_context.hash('genadmin'), user_type_id=interactive_user_type.id,
+    seed_admin_password = os.environ.get('SEED_ADMIN_PASSWORD', 'genadmin')
+    seed_supervisor_password = os.environ.get('SEED_SUPERVISOR_PASSWORD', 'gensupervisor1')
+    seed_operator_password = os.environ.get('SEED_OPERATOR_PASSWORD', 'genoperator1')
+    seed_apiuser_password = os.environ.get('SEED_APIUSER_PASSWORD', 'genapiuser1')
+    seed_transcribe_operator_password = os.environ.get('SEED_TRANSCRIBE_OPERATOR_PASSWORD', 'gentranscribeoperator1')
+
+    # Seed usernames from environment variables with defaults for development
+    seed_admin_username = os.environ.get('SEED_ADMIN_USERNAME', 'admin')
+    seed_supervisor_username = os.environ.get('SEED_SUPERVISOR_USERNAME', 'supervisor1')
+    seed_operator_username = os.environ.get('SEED_OPERATOR_USERNAME', 'operator1')
+    seed_apiuser_username = os.environ.get('SEED_APIUSER_USERNAME', 'apiuser1')
+    seed_transcribe_operator_username = os.environ.get('SEED_TRANSCRIBE_OPERATOR_USERNAME', 'transcribeoperator1')
+
+    admin = UserModel(username=seed_admin_username, email='admin@genassist.ritech.io', is_active=1,
+                      hashed_password=pwd_context.hash(seed_admin_password), user_type_id=interactive_user_type.id,
                       id=seed_test_data.admin_user_id,
                       force_upd_pass_date=shift_datetime(
                           unit="months", amount=3)
                       )
-    supervisor = UserModel(username='supervisor1', email='supervisor1@genassist.ritech.io', is_active=1,
-                           hashed_password=pwd_context.hash('gensupervisor1'), user_type_id=interactive_user_type.id,
+    supervisor = UserModel(username=seed_supervisor_username, email='supervisor1@genassist.ritech.io', is_active=1,
+                           hashed_password=pwd_context.hash(seed_supervisor_password), user_type_id=interactive_user_type.id,
                            force_upd_pass_date=shift_datetime(
                                unit="months", amount=3)
                            )
-    operator = UserModel(id=UUID(seed_test_data.operator_user_id), username='operator1',
+    operator = UserModel(id=UUID(seed_test_data.operator_user_id), username=seed_operator_username,
                          email='operator1@genassist.ritech.io',
                          is_active=1,
-                         hashed_password=pwd_context.hash('genoperator1'), user_type_id=interactive_user_type.id,
+                         hashed_password=pwd_context.hash(seed_operator_password), user_type_id=interactive_user_type.id,
                          force_upd_pass_date=shift_datetime(
                              unit="months", amount=3)
                          )
-    apiuser = UserModel(username='apiuser1', email='apiuser1@genassist.ritech.io', is_active=1,
-                        hashed_password=pwd_context.hash('genapiuser1'), user_type_id=console_user_type.id,
+    apiuser = UserModel(username=seed_apiuser_username, email='apiuser1@genassist.ritech.io', is_active=1,
+                        hashed_password=pwd_context.hash(seed_apiuser_password), user_type_id=console_user_type.id,
                         force_upd_pass_date=shift_datetime(
                             unit="months", amount=3)
                         )
 
-    transcribe_operator_user = UserModel(id=UUID(seed_test_data.transcribe_operator_user_id), username='transcribeoperator1',
+    transcribe_operator_user = UserModel(id=UUID(seed_test_data.transcribe_operator_user_id), username=seed_transcribe_operator_username,
                                          email='transcribeoperator1@genassist.ritech.io',
                                          is_active=1,
-                                         hashed_password=pwd_context.hash('gentranscribeoperator1'), user_type_id=console_user_type.id,
+                                         hashed_password=pwd_context.hash(seed_transcribe_operator_password), user_type_id=console_user_type.id,
                                          force_upd_pass_date=shift_datetime(
                                              unit="months", amount=3)
                                          )
@@ -215,28 +229,28 @@ async def seed_data(session: AsyncSession, injector: Injector):
                     apiuser, transcribe_operator_user])
     await session.commit()
 
-    # Seed s3 DataSource
-    s3_data_source = DataSourceModel(id=UUID(seed_test_data.data_source_id), name="s3 contracts small", source_type="S3",
-                                     connection_data={
-        "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
-        "region": os.environ.get("AWS_REGION"),
-        "access_key": encrypt_key(os.environ.get("AWS_ACCESS_KEY_ID")),
-        "secret_key": encrypt_key(os.environ.get("AWS_SECRET_ACCESS_KEY")),
-        "prefix": "contracts-small/"
-    }, is_active=1)
+    # # Seed s3 DataSource
+    # s3_data_source = DataSourceModel(id=UUID(seed_test_data.data_source_id), name="s3 contracts small", source_type="S3",
+    #                                  connection_data={
+    #     "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
+    #     "region": os.environ.get("AWS_REGION"),
+    #     "access_key": encrypt_key(os.environ.get("AWS_ACCESS_KEY_ID")),
+    #     "secret_key": encrypt_key(os.environ.get("AWS_SECRET_ACCESS_KEY")),
+    #     "prefix": "contracts-small/"
+    # }, is_active=1)
 
-    # Seed s3 AUDIO DataSource
-    s3_audio_data_source = DataSourceModel(id=UUID(seed_test_data.transcribe_data_source_id), name="s3 audio files to transcribe", source_type="S3",
-                                           connection_data={
-        "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
-        "region": os.environ.get("AWS_REGION"),
-        "access_key": os.environ.get("AWS_ACCESS_KEY_ID"),
-        "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY"),
-        "prefix": "sample-recordings/"
-    }, is_active=1)
-    session.add_all([s3_data_source, s3_audio_data_source])
+    # # Seed s3 AUDIO DataSource
+    # s3_audio_data_source = DataSourceModel(id=UUID(seed_test_data.transcribe_data_source_id), name="s3 audio files to transcribe", source_type="S3",
+    #                                        connection_data={
+    #     "bucket_name": os.environ.get("AWS_S3_TEST_BUCKET"),
+    #     "region": os.environ.get("AWS_REGION"),
+    #     "access_key": os.environ.get("AWS_ACCESS_KEY_ID"),
+    #     "secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY"),
+    #     "prefix": "sample-recordings/"
+    # }, is_active=1)
+    # session.add_all([s3_data_source, s3_audio_data_source])
 
-    await session.commit()
+    # await session.commit()
 
     # Seed default Customer
     customer = CustomerModel(source_ref="default",
@@ -386,7 +400,7 @@ async def seed_data(session: AsyncSession, injector: Injector):
     product_docs = await seed_knowledge_base(session, admin.id, injector)
     gen_assist_kb = await seed_knowledge_base_for_gen_agent(session, admin.id, injector)
     db_kb = await seed_knowledge_base_for_sql_database(session, admin.id, injector)
-    s3_kb = await seed_knowledge_base_for_s3(session, admin.id, s3_data_source, injector)
+    # s3_kb = await seed_knowledge_base_for_s3(session, admin.id, s3_data_source, injector)
 
     # Seed agents
     await seed_demo_agent(session, agent_role, injector, [product_docs], admin.id)

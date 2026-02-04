@@ -31,7 +31,7 @@ class ChatInputNode(BaseNode):
         """
         # For chat input nodes, get the message from state or config
         input_schema = config.get("inputSchema", {})
-        logger.info("ChatInputNode %s processed: %s", self.node_id, input_schema.keys())
+        logger.debug("ChatInputNode %s processed: %s", self.node_id, input_schema.keys())
 
         # Validate and get values using the reusable validation function
         try:
@@ -82,7 +82,7 @@ class ChatOutputNode(BaseNode):
         """
         # source_output = self.get_last_node_output()
         source_output = self.get_input_from_source()
-        logger.info(
+        logger.debug(
             "ChatOutputNode %s forwarding output: %s", self.node_id, source_output
         )
 

@@ -10,6 +10,7 @@ import {
   AlertCircle,
   SquareCode,
   KeyRoundIcon,
+  Shield,
 } from "lucide-react";
 import { Switch } from "@/components/switch";
 import {
@@ -61,7 +62,7 @@ const AgentList: React.FC<AgentListProps> = ({
     const fetchKnowledgeItems = async () => {
       try {
         const items = await getAllKnowledgeItems();
-        setKnowledgeItems(items);
+        setKnowledgeItems(items as KnowledgeItem[]);
       } catch (err) {
         // ignore
       }
@@ -174,6 +175,12 @@ const AgentList: React.FC<AgentListProps> = ({
                     }}
                   >
                     <SquareCode className="mr-2 h-4 w-4" /> Integration
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to={`/ai-agents/security/${agent.id}`}>
+                      <Shield className="mr-2 h-4 w-4" />
+                      <span>Security</span>
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem

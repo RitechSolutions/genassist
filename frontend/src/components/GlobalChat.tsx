@@ -1,6 +1,7 @@
 import { GenAgentChat } from "genassist-chat-react";
 import { useEffect, useState } from "react";
 import { getApiUrl } from "@/config/api";
+import { isWsEnabled } from "@/config/api";
 
 export const GlobalChat = () => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export const GlobalChat = () => {
         fontFamily: "Roboto, Arial, sans-serif",
         fontSize: "14px",
       }}
+      useWs={isWsEnabled}
       mode="floating"
       floatingConfig={{
         position: "bottom-right",

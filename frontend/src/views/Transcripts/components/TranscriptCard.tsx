@@ -24,7 +24,7 @@ export function TranscriptCard({ transcript, onClick, className = "" }: Transcri
 
   return (
     <div
-      className={`p-4 rounded-lg bg-secondary/50 cursor-pointer hover:bg-secondary/70 transition-colors ${className}`}
+      className={`p-4 flex flex-col rounded-lg bg-secondary/50 cursor-pointer hover:bg-secondary/70 transition-colors ${className}`}
       onClick={() => onClick(transcript)}
     >
       <div className="flex items-center justify-between mb-2">
@@ -44,7 +44,7 @@ export function TranscriptCard({ transcript, onClick, className = "" }: Transcri
             getEffectiveSentiment(transcript).slice(1)}
         </Badge>
       </div>
-      <p className="text-sm text-muted-foreground">{getTranscriptPreview(transcript)}</p>
+      <div className="text-sm text-muted-foreground truncate" dangerouslySetInnerHTML={{ __html: getTranscriptPreview(transcript) as string }}></div>
     </div>
   );
 }
