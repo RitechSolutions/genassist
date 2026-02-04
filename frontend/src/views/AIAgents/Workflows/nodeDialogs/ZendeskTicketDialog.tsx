@@ -265,6 +265,65 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
             </div>
           </div>
         </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="font-bold">Custom Fields</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addCustomField}
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Field
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {customFields.map((field, index) => (
+              <div key={index} className="flex gap-2 items-end">
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor={`custom-field-id-${index}`}>Field ID</Label>
+                  <DraggableInput
+                    id={`custom-field-id-${index}`}
+                    value={field.id}
+                    onChange={(e) =>
+                      updateCustomField(index, "id", e.target.value)
+                    }
+                    placeholder="e.g., 123456"
+                    className="w-full"
+                  />
+                </div>
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor={`custom-field-value-${index}`}>Value</Label>
+                  <DraggableInput
+                    id={`custom-field-value-${index}`}
+                    value={field.value.toString()}
+                    onChange={(e) =>
+                      updateCustomField(index, "value", e.target.value)
+                    }
+                    placeholder="Enter field value"
+                    className="w-full"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-10 w-10 flex-shrink-0 text-destructive hover:bg-destructive/10"
+                  onClick={() => removeCustomField(index)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            {customFields.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No custom fields added. Click "Add Field" to add one.
+              </p>
+            )}
+          </div>
+        </div>
       </NodeConfigPanel>
 
       <AppSettingDialog
