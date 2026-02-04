@@ -168,9 +168,12 @@ class ToolAgent(BaseToolAgent):
             response_content = self._extract_response_content(response)
             logger.info(f"Response: {response}")
             direct_response = extract_direct_response(response_content)
+            # If extract_direct_response returns None, use the original response_content
+            # If it returns a string (even empty), use it as it was extracted from JSON
+            final_response = direct_response if direct_response is not None else response_content
 
             return create_success_response(
-                direct_response or response_content,
+                final_response,
                 self._get_agent_name(),
                 steps=[{"step": 1, "response": response_content,
                         "note": "Direct response - no tools available"}],
@@ -251,8 +254,12 @@ class ToolAgent(BaseToolAgent):
         if not tool_call:
             # No tool needed, extract direct response
             direct_response = extract_direct_response(response_content)
+            # If extract_direct_response returns None, it means the response is not a direct_response JSON
+            # so we should use the original response_content
+            # If it returns a string (even empty), use it as it was extracted from JSON
+            final_response = direct_response if direct_response is not None else response_content
             return create_success_response(
-                direct_response or response_content,
+                final_response,
                 self._get_agent_name(),
                 steps=workflow_steps,
                 tools_used=tools_used

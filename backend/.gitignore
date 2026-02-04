@@ -7,6 +7,7 @@ __pycache__
 env/
 node_modules/
 /playground*
+/local_playground
 dist/
 build/
 /uploads

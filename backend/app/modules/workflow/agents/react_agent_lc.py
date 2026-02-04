@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional
 import logging
+import uuid
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages.base import BaseMessage
 from langchain_core.tools import StructuredTool
@@ -154,23 +155,27 @@ class ReActAgentLC(BaseToolAgent):
         """Extract text content from a message, handling different formats"""
         if not hasattr(message, "content") or not message.content:
             return ""
-        
+
         content = message.content
-        
+
         # If content is a list (content blocks), extract text
         if isinstance(content, list):
             text_parts = []
             for block in content:
-                if isinstance(block, dict) and block.get('type') == 'text' and 'text' in block:
-                    text_parts.append(block['text'])
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "text"
+                    and "text" in block
+                ):
+                    text_parts.append(block["text"])
                 elif isinstance(block, str):
                     text_parts.append(block)
-            content = '\n'.join(text_parts) if text_parts else str(content)
-        
+            content = "\n".join(text_parts) if text_parts else str(content)
+
         # Convert to string if not already
         if not isinstance(content, str):
             content = str(content)
-        
+
         return content
 
     def _convert_chat_history_to_messages(self, chat_history: List[Dict[str, str]]):
@@ -180,7 +185,7 @@ class ReActAgentLC(BaseToolAgent):
             role = message.get("role", "user")
             content = message.get("content", "")
             if not isinstance(content, str):
-                content = json.dumps(content)   
+                content = json.dumps(content)
 
             if role in ["user", "human"]:
                 messages.append(HumanMessage(content=content))
@@ -194,7 +199,7 @@ class ReActAgentLC(BaseToolAgent):
     ) -> Dict[str, Any]:
         """Execute a query using the LangGraph ReAct agent"""
         chat_history = chat_history or []
-        thread_id = kwargs.get("thread_id", "default")
+        thread_id = kwargs.get("thread_id", str(uuid.uuid4()))
 
         try:
             # Prepare the input for LangGraph
@@ -212,8 +217,12 @@ class ReActAgentLC(BaseToolAgent):
             input_data = {"messages": messages}
 
             # Configure the execution
-            # config = {"configurable": {"thread_id": thread_id}}
-
+            config = {
+                "recursion_limit": self.max_iterations,  # <-- THIS is max_iterations
+                "configurable": {
+                    "thread_id": thread_id  # <-- THIS is thread id for memory
+                },
+            }
             # Track reasoning steps and tools used
             reasoning_steps = []
             tools_used = []
@@ -223,7 +232,7 @@ class ReActAgentLC(BaseToolAgent):
                 logger.info(f"Executing LangGraph ReAct agent with query: {query}")
 
             # Execute the agent and get the final result
-            result = await self.agent_executor.ainvoke(input_data, config={"recursion_limit": self.max_iterations})
+            result = await self.agent_executor.ainvoke(input_data, config=config)
 
             if self.verbose:
                 logger.info(f"LangGraph agent result: {result}")
@@ -236,12 +245,16 @@ class ReActAgentLC(BaseToolAgent):
             if "messages" in result and result["messages"]:
                 # First pass: track tools with return_direct and find their results
                 tool_call_to_name_map = {}  # Map tool_call_id to tool_name
-                
+
                 for message in result["messages"]:
                     # Track tool calls and their names
                     if isinstance(message, AIMessage):
                         if hasattr(message, "tool_calls") and message.tool_calls:
-                            tool_calls_list = message.tool_calls if isinstance(message.tool_calls, list) else [message.tool_calls]
+                            tool_calls_list = (
+                                message.tool_calls
+                                if isinstance(message.tool_calls, list)
+                                else [message.tool_calls]
+                            )
                             for tool_call in tool_calls_list:
                                 if isinstance(tool_call, dict):
                                     tool_name = tool_call.get("name", "unknown")
@@ -249,40 +262,57 @@ class ReActAgentLC(BaseToolAgent):
                                 else:
                                     tool_name = getattr(tool_call, "name", "unknown")
                                     tool_call_id = getattr(tool_call, "id", "")
-                                
+
                                 # Check if this tool has return_direct=True
                                 if tool_name in self.tool_map:
                                     tool = self.tool_map[tool_name]
-                                    if hasattr(tool, "return_direct") and tool.return_direct:
+                                    if (
+                                        hasattr(tool, "return_direct")
+                                        and tool.return_direct
+                                    ):
                                         return_direct_tool_name = tool_name
                                         tool_call_to_name_map[tool_call_id] = tool_name
-                    
+
                     # Check for ToolMessage results from return_direct tools
                     if isinstance(message, ToolMessage):
                         tool_call_id = getattr(message, "tool_call_id", "")
                         if tool_call_id in tool_call_to_name_map:
                             # This is a result from a return_direct tool
-                            return_direct_tool_result = self._extract_message_content(message)
-                            return_direct_tool_name = tool_call_to_name_map[tool_call_id]
+                            return_direct_tool_result = self._extract_message_content(
+                                message
+                            )
+                            return_direct_tool_name = tool_call_to_name_map[
+                                tool_call_id
+                            ]
                             if self.verbose:
-                                logger.info(f"Found return_direct tool result from {return_direct_tool_name}: {return_direct_tool_result}")
-                
+                                logger.info(
+                                    f"Found return_direct tool result from {return_direct_tool_name}: {return_direct_tool_result}"
+                                )
+
                 # Process all messages to extract reasoning steps
                 for message in result["messages"]:
                     if not isinstance(message, AIMessage):
                         continue
-                    
+
                     # Extract content
-                    content = self._extract_message_content(message) if hasattr(message, "content") else ""
-                    
+                    content = (
+                        self._extract_message_content(message)
+                        if hasattr(message, "content")
+                        else ""
+                    )
+
                     # Check for tool calls
                     tool_calls_list = []
                     if hasattr(message, "tool_calls") and message.tool_calls:
-                        tool_calls_list = message.tool_calls if isinstance(message.tool_calls, list) else [message.tool_calls]
-                    
+                        tool_calls_list = (
+                            message.tool_calls
+                            if isinstance(message.tool_calls, list)
+                            else [message.tool_calls]
+                        )
+
                     has_tool_calls = len(tool_calls_list) > 0
                     has_content = bool(content and content.strip())
-                    
+
                     # Process tool calls
                     if has_tool_calls:
                         for tool_call in tool_calls_list:
@@ -293,58 +323,87 @@ class ReActAgentLC(BaseToolAgent):
                             else:
                                 tool_name = getattr(tool_call, "name", "unknown")
                                 tool_args = getattr(tool_call, "args", {})
-                            
+
                             # Add to tools_used
-                            tools_used.append({
-                                "tool_name": tool_name,
-                                "args": tool_args,
-                                "iteration": len(tools_used) + 1,
-                            })
-                            
+                            tools_used.append(
+                                {
+                                    "tool_name": tool_name,
+                                    "args": tool_args,
+                                    "iteration": len(tools_used) + 1,
+                                }
+                            )
+
                             # Create reasoning step with tool call information
-                            thought = content.strip() if content and content.strip() else f"Using tool '{tool_name}' to get information."
-                            
-                            reasoning_steps.append({
-                                "iteration": len(reasoning_steps) + 1,
-                                "thought": thought,
-                                "full_response": thought,
-                                "tool_name": tool_name,
-                                "tool_args": tool_args,
-                            })
-                    
+                            thought = (
+                                content.strip()
+                                if content and content.strip()
+                                else f"Using tool '{tool_name}' to get information."
+                            )
+
+                            reasoning_steps.append(
+                                {
+                                    "iteration": len(reasoning_steps) + 1,
+                                    "thought": thought,
+                                    "full_response": thought,
+                                    "tool_name": tool_name,
+                                    "tool_args": tool_args,
+                                }
+                            )
+
                     # Process non-tool-call messages with content (these are intermediate or final responses)
                     elif has_content and not has_tool_calls:
                         # Try to parse JSON response
                         parsed_json = parse_json_response(content)
                         if parsed_json:
                             # Extract from JSON if available
-                            thought = parsed_json.get("thought") or parsed_json.get("message", content)
+                            thought = parsed_json.get("thought") or parsed_json.get(
+                                "message", content
+                            )
                             # Check if JSON has steps to extract
-                            if "steps" in parsed_json and isinstance(parsed_json["steps"], list):
+                            if "steps" in parsed_json and isinstance(
+                                parsed_json["steps"], list
+                            ):
                                 for step in parsed_json["steps"]:
                                     if isinstance(step, dict):
-                                        reasoning_steps.append({
-                                            "iteration": step.get("iteration", len(reasoning_steps) + 1),
-                                            "thought": step.get("thought", step.get("full_response", "")),
-                                            "full_response": step.get("full_response", step.get("thought", "")),
-                                        })
+                                        reasoning_steps.append(
+                                            {
+                                                "iteration": step.get(
+                                                    "iteration",
+                                                    len(reasoning_steps) + 1,
+                                                ),
+                                                "thought": step.get(
+                                                    "thought",
+                                                    step.get("full_response", ""),
+                                                ),
+                                                "full_response": step.get(
+                                                    "full_response",
+                                                    step.get("thought", ""),
+                                                ),
+                                            }
+                                        )
                         else:
                             thought = content
-                        
+
                         # Add as reasoning step (will identify final response later)
-                        reasoning_steps.append({
-                            "iteration": len(reasoning_steps) + 1,
-                            "thought": thought,
-                            "full_response": content,
-                        })
-                
+                        reasoning_steps.append(
+                            {
+                                "iteration": len(reasoning_steps) + 1,
+                                "thought": thought,
+                                "full_response": content,
+                            }
+                        )
+
                 # If we found a return_direct tool result, use it as the final response
                 if return_direct_tool_result is not None:
                     final_response = return_direct_tool_result
                     if self.verbose:
-                        logger.info(f"Using return_direct tool result as final response: {final_response}")
+                        logger.info(
+                            f"Using return_direct tool result as final response: {final_response}"
+                        )
                 # Fallback: check if the last message is a ToolMessage (might be return_direct)
-                elif result["messages"] and isinstance(result["messages"][-1], ToolMessage):
+                elif result["messages"] and isinstance(
+                    result["messages"][-1], ToolMessage
+                ):
                     last_message = result["messages"][-1]
                     tool_call_id = getattr(last_message, "tool_call_id", "")
                     # Look up the tool name from our mapping
@@ -353,16 +412,26 @@ class ReActAgentLC(BaseToolAgent):
                         if tool_name_from_msg in self.tool_map:
                             tool = self.tool_map[tool_name_from_msg]
                             if hasattr(tool, "return_direct") and tool.return_direct:
-                                final_response = self._extract_message_content(last_message)
+                                final_response = self._extract_message_content(
+                                    last_message
+                                )
                                 return_direct_tool_name = tool_name_from_msg
                                 if self.verbose:
-                                    logger.info(f"Found return_direct tool result in last message from {return_direct_tool_name}: {final_response}")
+                                    logger.info(
+                                        f"Found return_direct tool result in last message from {return_direct_tool_name}: {final_response}"
+                                    )
                 # Otherwise, identify the final response (last AI message without tool calls)
                 elif result["messages"]:
                     for message in reversed(result["messages"]):
                         if isinstance(message, AIMessage):
-                            content = self._extract_message_content(message) if hasattr(message, "content") else ""
-                            has_tool_calls = bool(hasattr(message, "tool_calls") and message.tool_calls)
+                            content = (
+                                self._extract_message_content(message)
+                                if hasattr(message, "content")
+                                else ""
+                            )
+                            has_tool_calls = bool(
+                                hasattr(message, "tool_calls") and message.tool_calls
+                            )
 
                             if content and content.strip() and not has_tool_calls:
                                 parsed_json = parse_json_response(content)
@@ -381,7 +450,7 @@ class ReActAgentLC(BaseToolAgent):
                     "tools_used": tools_used,
                     "thread_id": thread_id,
                 }
-                
+
                 # Add return_direct info if applicable
                 if return_direct_tool_name:
                     response_data["return_direct"] = True
@@ -408,7 +477,7 @@ class ReActAgentLC(BaseToolAgent):
     async def stream(self, query: str, chat_history: Optional[List] = None, **kwargs):
         """Stream the agent's reasoning and action process"""
         chat_history = chat_history or []
-        thread_id = kwargs.get("thread_id", "default")
+        thread_id = kwargs.get("thread_id", str(uuid.uuid4()))
 
         try:
             # Prepare the input for LangGraph

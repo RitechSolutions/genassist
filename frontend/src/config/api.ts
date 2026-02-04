@@ -197,7 +197,8 @@ export const apiRequest = async <T>(
       return null;
     }
 
-    if (status === 503) {
+    // Mark server as down for 5xx errors
+    if (status && status >= 500) {
       setServerDown();
     } else if (hasResponse) {
       setServerUp();
@@ -227,26 +228,27 @@ export { api };
 
 // Simple connectivity probe used by Retry buttons
 export const probeApiHealth = async (): Promise<boolean> => {
-  return true;
-
   const baseURL = await getApiUrl();
   const candidates = [
-    `${baseURL.replace(/\/$/, "")}/healthz`,
+    `${baseURL.replace(/\/$/, "")}/playground/health`,
     `${baseURL.replace(/\/$/, "")}/health`,
     baseURL,
   ];
   for (const url of candidates) {
     try {
       const response = await axios.get(url, { timeout: 2000, validateStatus: () => true });
-      if (response.status === 503) {
+      // Treat any 5xx error as server down
+      if (response.status >= 500) {
         setServerDown();
         return false;
       }
       setServerUp();
       return true;
     } catch {
-      setServerDown();
+      // Network error - continue trying other endpoints
     }
   }
+  // All endpoints failed
+  setServerDown();
   return false;
 };

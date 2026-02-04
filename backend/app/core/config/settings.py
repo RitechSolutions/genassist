@@ -137,6 +137,8 @@ class ProjectSettings(BaseSettings):
 
     # Check if inside celery container
     BACKGROUND_TASK: bool = False
+    BEDROCK_MAX_RETRY_QUERY_EMBEDDING: int = 3
+    BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS: int = 8
 
     # === CORS Configuration ===
     CORS_ALLOWED_ORIGINS: Optional[str] = (
