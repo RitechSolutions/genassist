@@ -63,7 +63,7 @@ def _execute_python_code_sync(
         else:
             executable = code
 
-        logger.info(f"Executable code: {executable}")
+        logger.debug(f"Executable code: {executable}")
 
         # Execute the code with redirected output
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):

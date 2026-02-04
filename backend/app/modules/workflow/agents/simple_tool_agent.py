@@ -65,7 +65,7 @@ class SimpleToolAgent(BaseToolAgent):
                 )
             validated_params = validate_tool_parameters(tool, parameters)
             result = await tool.invoke(**validated_params)
-            logger.info(
+            logger.debug(
                 f"SimpleToolAgent: Invoked {tool.name} with {validated_params}, result: {result}")
 
             # Check if tool has return_direct=True

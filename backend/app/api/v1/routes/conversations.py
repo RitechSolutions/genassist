@@ -129,7 +129,6 @@ async def start(
     agent_read = AgentRead.model_validate(agent)
     model.operator_id = agent.operator_id
     conversation = await service.start_in_progress_conversation(model)
-    logger.info("conversation:" + str(conversation))
 
     # Use model_dump with json mode to ensure all values are JSON-serializable (UUIDs converted to strings)
     agent_data = agent_read.model_dump(mode="json")
