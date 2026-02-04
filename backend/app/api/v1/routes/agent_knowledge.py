@@ -353,6 +353,8 @@ async def upload_file_to_chat(
 
         logger.debug(f"Upload successful: {result}")
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")
         raise HTTPException(
