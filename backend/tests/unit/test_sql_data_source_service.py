@@ -84,7 +84,7 @@ async def test_search_data_source(sample_data_source_data):
         # Get the LLM provider and default model
         llm_provider = injector.get(LlmProviderService)
         await invalidate_llm_provider_cache(provider_id=None)
-        configs = llm_provider.get_all()
+        configs = await llm_provider.get_all()
         if not configs:
             raise HTTPException(
                 status_code=500, detail="No LLM provider configuration found."

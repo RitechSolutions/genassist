@@ -400,7 +400,7 @@ async def generate_python_template(
             # Use LLM to modify the template with the extra logic
             llm_provider = injector.get(LlmProviderService)
             # Get the default model (first config or default)
-            configs = llm_provider.get_all()
+            configs = await llm_provider.get_all()
             if not configs:
                 raise HTTPException(
                     status_code=500, detail="No LLM provider configuration found."

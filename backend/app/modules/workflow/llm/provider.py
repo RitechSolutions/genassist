@@ -62,7 +62,7 @@ class LLMProvider:
 
         if model_id is None:
             from app.dependencies.injector import injector
-            all_providers = llm_provider_service.get_all()
+            all_providers = await llm_provider_service.get_all()
 
             llm_provider = all_providers[0] # default to the first provider
         else:
