@@ -1,11 +1,10 @@
 """
-Integration tests for file upload to chat with OpenAI file_id support.
+Integration tests for file upload to chat.
 """
 import pytest
 import tempfile
 import os
 import logging
-from unittest.mock import patch, AsyncMock, MagicMock
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +23,9 @@ def sample_pdf_file():
         f.write(b"trailer\n")
         f.write(b"%%EOF\n")
         temp_file_path = f.name
-    
+
     yield temp_file_path
-    
+
     # Cleanup
     if os.path.exists(temp_file_path):
         os.unlink(temp_file_path)
@@ -38,25 +37,20 @@ def sample_txt_file():
     with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
         f.write("This is a test text file content.")
         temp_file_path = f.name
-    
+
     yield temp_file_path
-    
+
     # Cleanup
     if os.path.exists(temp_file_path):
         os.unlink(temp_file_path)
 
 
 @pytest.mark.asyncio
-@patch('app.services.open_ai_fine_tuning.OpenAIFineTuningService.upload_file_for_chat')
-async def test_upload_pdf_file_to_chat_with_openai(
-    mock_upload_openai,
+async def test_upload_pdf_file_to_chat(
     authorized_client,
     sample_pdf_file
 ):
-    """Test uploading a PDF file to chat with OpenAI file_id."""
-    # Mock OpenAI upload to return a file_id
-    mock_upload_openai.return_value = "file-test123"
-    
+    """Test uploading a PDF file to chat."""
     # Upload file
     with open(sample_pdf_file, 'rb') as f:
         response = authorized_client.post(
@@ -64,28 +58,26 @@ async def test_upload_pdf_file_to_chat_with_openai(
             data={"chat_id": "test-chat-123"},
             files=[("file", ("test.pdf", f, "application/pdf"))]
         )
-    
+
     assert response.status_code == 200
     data = response.json()
-    
+
     # Verify response structure
     assert "file_id" in data
-    assert "openai_file_id" in data
-    assert data["openai_file_id"] == "file-test123"
+    assert "filename" in data
+    assert "file_path" in data
+    assert "file_url" in data
+    assert "original_filename" in data
+    assert "storage_path" in data
     assert data["original_filename"] == "test.pdf"
-    
-    # Verify OpenAI upload was called
-    mock_upload_openai.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch('app.services.open_ai_fine_tuning.OpenAIFineTuningService.upload_file_for_chat')
-async def test_upload_txt_file_to_chat_no_openai(
-    mock_upload_openai,
+async def test_upload_txt_file_to_chat(
     authorized_client,
     sample_txt_file
 ):
-    """Test uploading a non-PDF file doesn't trigger OpenAI upload."""
+    """Test uploading a text file to chat."""
     # Upload file
     with open(sample_txt_file, 'rb') as f:
         response = authorized_client.post(
@@ -93,46 +85,49 @@ async def test_upload_txt_file_to_chat_no_openai(
             data={"chat_id": "test-chat-123"},
             files=[("file", ("test.txt", f, "text/plain"))]
         )
-    
+
     assert response.status_code == 200
     data = response.json()
-    
+
     # Verify response structure
     assert "file_id" in data
-    assert "openai_file_id" in data
-    assert data["openai_file_id"] is None  # Should be None for non-PDF
+    assert "filename" in data
+    assert "file_path" in data
+    assert "file_url" in data
+    assert "original_filename" in data
     assert data["original_filename"] == "test.txt"
-    
-    # Verify OpenAI upload was NOT called for non-PDF
-    mock_upload_openai.assert_not_called()
 
 
 @pytest.mark.asyncio
-@patch('app.services.open_ai_fine_tuning.OpenAIFineTuningService.upload_file_for_chat')
-async def test_upload_pdf_openai_failure_continues(
-    mock_upload_openai,
+async def test_upload_docx_file_to_chat(
     authorized_client,
-    sample_pdf_file
 ):
-    """Test that OpenAI upload failure doesn't break file upload."""
-    # Make OpenAI upload fail
-    mock_upload_openai.side_effect = Exception("OpenAI API error")
-    
-    # Upload should still succeed
-    with open(sample_pdf_file, 'rb') as f:
-        response = authorized_client.post(
-            "/api/genagent/knowledge/upload-chat-file",
-            data={"chat_id": "test-chat-123"},
-            files=[("file", ("test.pdf", f, "application/pdf"))]
-        )
-    
-    assert response.status_code == 200
-    data = response.json()
-    
-    # File should still be uploaded locally
-    assert "file_id" in data
-    assert data["openai_file_id"] is None  # Should be None on failure
-    assert data["original_filename"] == "test.pdf"
+    """Test uploading a DOCX file to chat."""
+    # Create a minimal DOCX file (just for testing)
+    with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.docx') as f:
+        # Write minimal DOCX content (it's a zip file format)
+        # This is a simplified test - actual DOCX is more complex
+        f.write(b"PK\x03\x04")  # ZIP header
+        temp_file_path = f.name
+
+    try:
+        with open(temp_file_path, 'rb') as f:
+            response = authorized_client.post(
+                "/api/genagent/knowledge/upload-chat-file",
+                data={"chat_id": "test-chat-123"},
+                files=[("file", ("test.docx", f, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))]
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Verify response structure
+        assert "file_id" in data
+        assert "original_filename" in data
+        assert data["original_filename"] == "test.docx"
+    finally:
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
 
 
 @pytest.mark.asyncio
@@ -143,7 +138,7 @@ async def test_upload_file_to_chat_missing_chat_id(authorized_client, sample_pdf
             "/api/genagent/knowledge/upload-chat-file",
             files=[("file", ("test.pdf", f, "application/pdf"))]
         )
-    
+
     assert response.status_code == 422  # Validation error
 
 
@@ -154,7 +149,7 @@ async def test_upload_file_to_chat_invalid_file_type(authorized_client):
     with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.exe') as f:
         f.write(b"binary content")
         temp_file_path = f.name
-    
+
     try:
         with open(temp_file_path, 'rb') as f:
             response = authorized_client.post(
@@ -162,7 +157,7 @@ async def test_upload_file_to_chat_invalid_file_type(authorized_client):
                 data={"chat_id": "test-chat-123"},
                 files=[("file", ("test.exe", f, "application/x-msdownload"))]
             )
-        
+
         assert response.status_code == 400
         assert "Unsupported file type" in response.json()["detail"]
     finally:
