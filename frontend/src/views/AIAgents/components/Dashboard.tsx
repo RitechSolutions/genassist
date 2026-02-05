@@ -14,11 +14,12 @@ import AgentList from "./AgentList";
 import ManageApiKeysModal from "./Keys/ManageApiKeysModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 20;
 
 const Dashboard: React.FC = () => {
   const [agents, setAgents] = useState<AgentListItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [modalContext, setModalContext] = useState<{
     agentId: string;
@@ -31,9 +32,9 @@ const Dashboard: React.FC = () => {
 
   // Pagination state
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
 
   const navigate = useNavigate();
 
@@ -55,25 +56,41 @@ const Dashboard: React.FC = () => {
     );
   };
 
-  const fetchAgents = useCallback(async (currentPage: number, currentPageSize: number) => {
+  const fetchAgents = useCallback(async (currentPage: number, currentPageSize: number, append: boolean = false) => {
     try {
-      setLoading(true);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
       const response = await getAgentConfigsList(currentPage, currentPageSize);
-      setAgents(response.items);
+      if (append) {
+        setAgents(prev => [...prev, ...response.items]);
+      } else {
+        setAgents(response.items);
+      }
       setTotal(response.total);
-      setTotalPages(response.total_pages);
       setPage(response.page);
+      setHasMore(response.page < response.total_pages);
       setError(null);
     } catch (err) {
       setError("Failed to load agent configurations");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchAgents(page, pageSize);
-  }, [page, pageSize, fetchAgents]);
+    fetchAgents(1, pageSize);
+  }, [pageSize, fetchAgents]);
+
+  const loadMore = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      const nextPage = page + 1;
+      fetchAgents(nextPage, pageSize, true);
+    }
+  }, [loadingMore, hasMore, page, pageSize, fetchAgents]);
 
   const handleDeleteClick = async (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
@@ -193,17 +210,6 @@ const Dashboard: React.FC = () => {
     );
   }
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setPage(newPage);
-    }
-  };
-
-  const handlePageSizeChange = (newPageSize: number) => {
-    setPageSize(newPageSize);
-    setPage(1); // Reset to first page when changing page size
-  };
-
   return (
     <div className="flex-1 p-8">
       <div className="max-w-7xl mx-auto">
@@ -214,15 +220,10 @@ const Dashboard: React.FC = () => {
           onUpdate={handleUpdateAgent}
           onManageKeys={handleManageKeys}
           onGetIntegrationCode={handleGetIntegrationCode}
-          onRefresh={() => fetchAgents(page, pageSize)}
-          pagination={{
-            page,
-            pageSize,
-            total,
-            totalPages,
-            onPageChange: handlePageChange,
-            onPageSizeChange: handlePageSizeChange,
-          }}
+          onRefresh={() => fetchAgents(1, pageSize)}
+          loadMore={loadMore}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
         />
 
         {modalContext && (

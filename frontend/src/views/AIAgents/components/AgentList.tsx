@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AgentListItem } from "@/interfaces/ai-agent.interface";
 import { getAllKnowledgeItems } from "@/services/api";
@@ -12,8 +12,7 @@ import {
   SquareCode,
   KeyRoundIcon,
   Shield,
-  ChevronLeft,
-  ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { Switch } from "@/components/switch";
 import {
@@ -26,17 +25,6 @@ import {
 import { AgentFormDialog } from "./AgentForm";
 import { SearchInput } from "@/components/SearchInput";
 
-const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
-
-interface PaginationProps {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (pageSize: number) => void;
-}
-
 interface AgentListProps {
   agents: AgentListItem[];
   total: number;
@@ -45,7 +33,9 @@ interface AgentListProps {
   onManageKeys: (agentId: string) => void;
   onGetIntegrationCode: (agentId: string) => void;
   onRefresh: () => void;
-  pagination: PaginationProps;
+  loadMore: () => void;
+  hasMore: boolean;
+  loadingMore: boolean;
 }
 
 const AgentList: React.FC<AgentListProps> = ({
@@ -56,10 +46,31 @@ const AgentList: React.FC<AgentListProps> = ({
   onManageKeys,
   onGetIntegrationCode,
   onRefresh,
-  pagination,
+  loadMore,
+  hasMore,
+  loadingMore,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Infinite scroll using IntersectionObserver
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loadMore]);
 
   interface KnowledgeItem {
     id: string;
@@ -257,52 +268,14 @@ const AgentList: React.FC<AgentListProps> = ({
           })}
         </div>
 
-        {/* Pagination Controls */}
-        <div className="flex items-center justify-between px-6 py-4 border-t">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Rows per page:</span>
-              <select
-                value={pagination.pageSize}
-                onChange={(e) => pagination.onPageSizeChange(Number(e.target.value))}
-                className="h-8 rounded-md border border-input bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Showing {(pagination.page - 1) * pagination.pageSize + 1}-
-              {Math.min(pagination.page * pagination.pageSize, pagination.total)} of {pagination.total}
-            </div>
+        {/* Infinite scroll sentinel and loading indicator */}
+        {loadingMore && (
+          <div className="flex items-center justify-center py-4 border-t">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading more...</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => pagination.onPageChange(pagination.page - 1)}
-              disabled={pagination.page <= 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Previous
-            </Button>
-            <span className="text-sm text-muted-foreground px-2">
-              Page {pagination.page} of {pagination.totalPages || 1}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => pagination.onPageChange(pagination.page + 1)}
-              disabled={pagination.page >= pagination.totalPages}
-            >
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+        )}
+        <div ref={sentinelRef} className="h-1" />
       </div>
       <AgentFormDialog
         isOpen={openAgentForm}
