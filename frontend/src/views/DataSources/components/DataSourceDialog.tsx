@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,7 @@ import { GmailConnection } from "./GmailConnection";
 import { Office365Connection } from "./Office365Connection";
 import { SmbShareFolderConnection } from "./SmbShareFolderConnection";
 import { AzureBlobConnection } from "./AzureBlobConnection";
+import { FileUploader } from "@/components/FileUploader";
 
 interface DataSourceDialogProps {
   isOpen: boolean;
@@ -170,8 +171,7 @@ export function DataSourceDialog({
 
       if (oauthDataSource.oauth_status !== "connected") {
         toast.error(
-          `Please authorize ${
-            sourceType === "o365" ? "Office 365" : "Gmail"
+          `Please authorize ${sourceType === "o365" ? "Office 365" : "Gmail"
           } access before saving.`,
         );
         return;
@@ -218,9 +218,9 @@ export function DataSourceDialog({
           return;
         }
       } else {
-        // Normal schema validation
+        // Normal schema validation (only validate visible required fields)
         const schemaMissing = schema.fields
-          .filter((field) => field.required && !connectionData[field.name])
+          .filter((field) => field.required && isFieldVisible(field) && !connectionData[field.name])
           .map((field) => field.label);
 
         if (schemaMissing.length > 0) {
@@ -314,6 +314,31 @@ export function DataSourceDialog({
             placeholder={field.label}
           />
         );
+      case "files":
+        return (
+          <FileUploader
+            label=""
+            initialServerFilePath={(value as string) || ""}
+            initialOriginalFileName={
+              (connectionData[`${field.name}_original_filename`] as string) || ""
+            }
+            onUploadComplete={(result) => {
+              setConnectionData((prev) => ({
+                ...prev,
+                [field.name]: result.file_path,
+                [`${field.name}_original_filename`]: result.original_filename,
+              }));
+            }}
+            onRemove={() => {
+              setConnectionData((prev) => ({
+                ...prev,
+                [field.name]: "",
+                [`${field.name}_original_filename`]: "",
+              }));
+            }}
+            placeholder={field.placeholder || `Upload ${field.label}`}
+          />
+        );
       default:
         return (
           <Input
@@ -326,10 +351,19 @@ export function DataSourceDialog({
     }
   };
 
+  const isFieldVisible = (field: DataSourceField): boolean => {
+    if (!field.conditional) return true;
+    return connectionData[field.conditional.field] === field.conditional.value;
+  };
+
   const requiredFields =
-    dataSourceSchemas[sourceType]?.fields.filter((f) => f.required) ?? [];
+    dataSourceSchemas[sourceType]?.fields.filter(
+      (f) => f.required && isFieldVisible(f)
+    ) ?? [];
   const optionalFields =
-    dataSourceSchemas[sourceType]?.fields.filter((f) => !f.required) ?? [];
+    dataSourceSchemas[sourceType]?.fields.filter(
+      (f) => !f.required && isFieldVisible(f)
+    ) ?? [];
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -406,13 +440,13 @@ export function DataSourceDialog({
                       currentDataSource ||
                       (dataSourceId
                         ? ({
-                            id: dataSourceId,
-                            oauth_status: "disconnected",
-                            name,
-                            source_type: sourceType,
-                            connection_data: connectionData,
-                            is_active: 0,
-                          } as DataSource)
+                          id: dataSourceId,
+                          oauth_status: "disconnected",
+                          name,
+                          source_type: sourceType,
+                          connection_data: connectionData,
+                          is_active: 0,
+                        } as DataSource)
                         : undefined)
                     }
                     dataSourceName={name}
@@ -425,13 +459,13 @@ export function DataSourceDialog({
                       currentDataSource ||
                       (dataSourceId
                         ? ({
-                            id: dataSourceId,
-                            oauth_status: "disconnected",
-                            name,
-                            source_type: sourceType,
-                            connection_data: connectionData,
-                            is_active: 0,
-                          } as DataSource)
+                          id: dataSourceId,
+                          oauth_status: "disconnected",
+                          name,
+                          source_type: sourceType,
+                          connection_data: connectionData,
+                          is_active: 0,
+                        } as DataSource)
                         : undefined)
                     }
                     dataSourceName={name}
@@ -444,12 +478,12 @@ export function DataSourceDialog({
                       currentDataSource ||
                       (dataSourceId
                         ? ({
-                            id: dataSourceId,
-                            name,
-                            source_type: sourceType,
-                            connection_data: connectionData,
-                            is_active: 0,
-                          } as DataSource)
+                          id: dataSourceId,
+                          name,
+                          source_type: sourceType,
+                          connection_data: connectionData,
+                          is_active: 0,
+                        } as DataSource)
                         : undefined)
                     }
                     dataSourceName={name}
@@ -472,25 +506,25 @@ export function DataSourceDialog({
                 {!["gmail", "o365", "smb_share_folder"].includes(
                   sourceType,
                 ) && (
-                  <div className="space-y-4">
-                    {requiredFields.map((field) => (
-                      <div key={field.name} className="space-y-2">
-                        <Label htmlFor={field.name}>
-                          {field.label}
-                          {field.required && (
-                            <span className="text-red-500 ml-1">*</span>
+                    <div className="space-y-4">
+                      {requiredFields.map((field) => (
+                        <div key={field.name} className="space-y-2">
+                          <Label htmlFor={field.name}>
+                            {field.label}
+                            {field.required && (
+                              <span className="text-red-500 ml-1">*</span>
+                            )}
+                          </Label>
+                          {renderField(field)}
+                          {field.description && (
+                            <p className="text-sm text-muted-foreground">
+                              {field.description}
+                            </p>
                           )}
-                        </Label>
-                        {renderField(field)}
-                        {field.description && (
-                          <p className="text-sm text-muted-foreground">
-                            {field.description}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                 <div className="flex items-center justify-between pt-4 border-t">
                   <div className="flex items-center gap-2">
