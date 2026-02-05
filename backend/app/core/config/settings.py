@@ -262,7 +262,8 @@ settings = ProjectSettings()
 
 
 class FileStorageSettings(BaseSettings):
-    DEFAULT_STORAGE_PROVIDER: str = "local"
+    FILE_MANAGER_ENABLED: bool = True
+    FILE_MANAGER_PROVIDER: str = "local"
 
     AZURE_CONNECTION_STRING: Optional[str] = None
     AZURE_ACCOUNT_NAME: Optional[str] = None

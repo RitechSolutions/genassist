@@ -49,6 +49,14 @@ import {
 import DynamicRagConfigSection from "./DynamicRagConfigSection";
 import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialog";
 
+interface UploadResult {
+  file_url?: string;
+  file_type?: string;
+  file_path: string;
+  filename: string;
+  original_filename: string;
+}
+
 interface KnowledgeItem {
   id: string;
   name: string;
@@ -266,14 +274,14 @@ const KnowledgeBaseManager: React.FC = () => {
     }));
   };
 
-  const uploadFiles = async () => {
+  const uploadFiles = async (): Promise<UploadResult[] | null> => {
     if (selectedFiles.length === 0) return null;
 
     setIsUploading(true);
 
     try {
       const result = await apiUploadFiles(selectedFiles);
-      return result;
+      return result as unknown as UploadResult[];
     } catch (error) {
       setError(
         `Failed to upload files: ${
@@ -494,20 +502,24 @@ const KnowledgeBaseManager: React.FC = () => {
 
       // Look for files to upload
       if (formData.type === "file" && selectedFiles.length > 0) {
-        const uploadResults = (await uploadFiles()) as Array<[]>;
+        // set file_type
+        dataToSubmit.file_type = "file";
+
+        const uploadResults = await uploadFiles();
 
         if (!uploadResults || uploadResults.length === 0) {
           throw new Error("File upload failed");
         }
 
         // loop through the upload results and add the file_url to the files array
-        uploadResults.forEach((result: any) => {
+        uploadResults.forEach((result: UploadResult) => {
+
           if (result.file_url) {
-            debugger;
             dataToSubmit.urls.push(result.file_url);
-          } else {
-            dataToSubmit.files.push(result.file_path);
           }
+
+          // add the file_url or file_path to the files array
+          dataToSubmit.files.push(result.file_path);
 
           // add the original_filename to the content
           dataToSubmit.content += ` ${result.original_filename}`;
@@ -519,6 +531,7 @@ const KnowledgeBaseManager: React.FC = () => {
         delete dataToSubmit.urls;
       }
 
+      // Mode: Edit or Create
       if (editingItem) {
         await updateKnowledgeItem(editingItem.id, dataToSubmit);
         setSuccess(
@@ -679,6 +692,25 @@ const KnowledgeBaseManager: React.FC = () => {
     const cronRegex =
       /^(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*$/;
     return cronRegex.test(cron.trim());
+  };
+
+  const maskFileName = (fileName: string): string => {
+    const maxLength = 100;
+
+    // format: "File xx.pdf " if length is more than maxLength, mask the file name
+    if (fileName.length > maxLength) {
+      return fileName.substring(0, maxLength / 2 - 10) + "......" + fileName.substring(fileName.length - (maxLength / 2 - 10));
+    } else {
+      return fileName;
+    }
+  };
+
+  const getFilesFromContent = (content: string): string[] => {
+    if (content.includes("Files:")) {
+      return content.split("Files:")[1].split(",").map((filePath) => filePath.trim());
+    }
+    
+    return content.includes(",") ? content.split(",").map((filePath) => filePath.trim()) : [];
   };
 
   return (
@@ -1030,7 +1062,7 @@ const KnowledgeBaseManager: React.FC = () => {
                               formData.files.length > 0 &&
                               selectedFiles.length === 0 && (
                                 <div className="space-y-2">
-                                  {formData.files.map((filePath, index) => (
+                                  {(formData.content.includes(",") ? getFilesFromContent(formData.content) : formData.files)?.map((filePath, index) => (
                                     <div
                                       key={index}
                                       className="flex items-center justify-between p-2 bg-muted rounded-md"
@@ -1038,7 +1070,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                       <div className="flex items-center gap-2">
                                         <Database className="h-4 w-4" />
                                         <span className="text-sm">
-                                          {filePath}
+                                          {maskFileName(filePath)}
                                         </span>
                                       </div>
                                     </div>

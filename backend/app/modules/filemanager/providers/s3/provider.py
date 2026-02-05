@@ -6,13 +6,10 @@ TODO: Implement full S3 storage operations using boto3.
 
 import logging
 from typing import List, Dict, Any, Optional
-
 from app.core.utils.s3_utils import S3Client
-
 from ..base import BaseStorageProvider
 
 logger = logging.getLogger(__name__)
-
 
 class S3StorageProvider(BaseStorageProvider):
     """
@@ -24,9 +21,9 @@ class S3StorageProvider(BaseStorageProvider):
     name = "s3"
     provider_type = "s3"
     aws_bucket_name: str
-    aws_access_key_id: str
-    aws_secret_access_key: str
-    aws_region_name: str
+    aws_access_key_id: Optional[str]
+    aws_secret_access_key: Optional[str]
+    aws_region_name: Optional[str]
 
     def __init__(self, config: Dict[str, Any]):
         """
@@ -37,9 +34,9 @@ class S3StorageProvider(BaseStorageProvider):
         """
         super().__init__(config)
         self.aws_bucket_name = config.get("AWS_BUCKET_NAME", "")
-        self.aws_access_key_id = config.get("AWS_ACCESS_KEY_ID", "")
-        self.aws_secret_access_key = config.get("AWS_SECRET_ACCESS_KEY", "")
-        self.aws_region_name = config.get("AWS_REGION", "us-east-1")
+        self.aws_access_key_id = config.get("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_access_key = config.get("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_region_name = config.get("AWS_REGION", None)
         
         # Initialize S3 client
         self.s3_client = S3Client(
@@ -91,6 +88,17 @@ class S3StorageProvider(BaseStorageProvider):
     ) -> List[str]:
         """List files in S3 bucket."""
         return self.s3_client.list_files(prefix=prefix, limit=limit)
+
+    async def get_file_url(self, bucket_name: str, file_storage_path: str) -> str:
+        """Get the URL of a file in S3."""
+        signed_url_expires_in = 3600
+
+        # get the presigned url for the file
+        params = {
+            'Bucket': bucket_name,
+            'Key': file_storage_path
+        }
+        return self.s3_client.generate_presigned_url('get_object', params, signed_url_expires_in)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get provider statistics."""

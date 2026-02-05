@@ -126,6 +126,20 @@ class BaseStorageProvider(ABC):
         """
         pass
 
+    @abstractmethod
+    async def get_file_url(self, base_path: str, file_storage_path: str) -> str:
+        """
+        Get the URL of a file in the storage provider
+        
+        Args:
+            base_path: Base path of the storage provider
+            file_storage_path: Path to the file in storage
+
+        Returns:
+            URL of the file
+        """
+        pass
+
     async def create_folder(self, folder_path: str) -> bool:
         """
         Create a folder/directory in storage (optional for some providers)

@@ -32,7 +32,7 @@ from app.services.file_manager import FileManagerService
 from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
 from app.modules.filemanager.providers.s3.provider import S3StorageProvider
 from app.schemas.file import FileUploadResponse
-from app.core.config.settings import FileStorageSettings
+from app.core.config.settings import file_storage_settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -204,7 +204,6 @@ async def delete_knowledge_doc(
 )
 async def upload_file(
     files: List[UploadFile] = File(...),
-    use_file_manager: bool = True,
     file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
@@ -231,17 +230,25 @@ async def upload_file(
             # create the file path where the file will be saved
             file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
+            # check if the file manager is enabled
+            use_file_manager = file_storage_settings.FILE_MANAGER_ENABLED
+            file_url = None
+            file_type = "file"
+
             if use_file_manager:
-                file_settings = FileStorageSettings()
-                await file_manager_service.set_storage_provider(S3StorageProvider(config=file_settings.model_dump()))
+                await file_manager_service.set_storage_provider(S3StorageProvider(config=file_storage_settings.model_dump()))
                 # use file manager service to upload the file
                 created_file = await file_manager_service.create_file(file)
                 file_id = str(created_file.id)
-                file_url = f"{file_settings.APP_URL}/api/file-manager/files/{file_id}/source"
+                file_source_url = f"{file_storage_settings.APP_URL}/api/file-manager/files/{file_id}/source"
+                file_type = "url"
 
                 # download the file and save it to the file system if it is a url
-                if file_url.startswith("http") and file_id is not None:
+                if file_source_url.startswith("http") and file_id is not None:
                     await file_manager_service.download_file_to_path(file_id, file_path)
+
+                # get the file url
+                file_url = await file_manager_service.get_file_url(created_file)
             else:
                 # save the file to the upload directory
                 logger.info(f"Saving file to: {file_path}")
@@ -254,7 +261,9 @@ async def upload_file(
 
             # add the file_path to the result
             result["file_path"] = file_path
-
+            result["file_url"] = file_url
+            result["file_type"] = file_type
+            
             logger.info(f"Upload successful: {result}")
             results.append(result)
         except Exception as e:

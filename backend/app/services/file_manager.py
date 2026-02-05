@@ -16,7 +16,7 @@ from app.core.tenant_scope import get_tenant_context
 from app.auth.utils import get_current_user_id
 
 from app.modules.filemanager.providers import init_by_name
-from app.core.config.settings import FileStorageSettings
+from app.core.config.settings import file_storage_settings
 
 logger = logging.getLogger(__name__)
 
@@ -42,31 +42,6 @@ class FileManagerService:
             raise ValueError(f"Storage provider {name} not found")
 
         return storage_provider_class
-
-    async def _get_default_storage_provider(self) -> BaseStorageProvider:
-        """Get and initialize the default storage provider."""
-        if self.storage_provider and self.storage_provider.is_initialized():
-            return self.storage_provider
-
-        from app.modules.filemanager.manager import get_file_manager_manager
-        from app.modules.filemanager.config import FileManagerConfig, LocalStorageConfig
-        from app.core.config.settings import settings
-
-        manager = get_file_manager_manager()
-        config = manager._config
-
-        if not config:
-            config = FileManagerConfig(
-                default_storage_provider="local",
-                local=LocalStorageConfig(
-                    base_path=str(settings.UPLOAD_FOLDER) if hasattr(settings, 'UPLOAD_FOLDER') else "/tmp/filemanager"
-                )
-            )
-
-        provider = await manager._get_or_create_provider(config.default_storage_provider, config)
-        if provider:
-            self.storage_provider = provider
-        return provider
 
     def build_file_headers(self, file: FileModel, content: Optional[bytes] = None, disposition_type: str = "inline") -> tuple[dict, str]:
         """Build HTTP headers for file responses."""
@@ -181,30 +156,17 @@ class FileManagerService:
 
     async def get_file_by_id(self, file_id: UUID) -> FileModel:
         """Get file metadata by ID."""
-        return await self.repository.get_file_by_id(file_id)
+        file = await self.repository.get_file_by_id(file_id)
+        return file
 
     async def get_file_content(self, file: FileModel) -> bytes:
         """Get file content from storage provider."""
-        file_storage_provider = file.storage_provider
-
-        if not file_storage_provider:
-            raise ValueError("Storage provider not configured")
-
-
-        # load settings from settings.py
-        file_settings = FileStorageSettings()
+        # initialize the storage provider
+        await self._initialize_storage_provider(file)
         
-        # get storage provider by name
-        provider_config = file_settings.model_dump()
-        
-        storage_provider_class = self.get_storage_provider_by_name(file_storage_provider, config=provider_config)
-        if not storage_provider_class:
-            raise ValueError(f"Storage provider class {file_storage_provider} not found")
-
-        # initialize storage provider
-        await self.set_storage_provider(storage_provider_class)
+        # make sure the storage provider is initialized
         if not self.storage_provider.is_initialized():
-            raise ValueError(f"Storage provider {self.storage_provider} not initialized")
+            raise ValueError("Storage provider not initialized")
 
         # storage_path
         storage_path = f"{file.path}/{file.storage_path}"
@@ -280,7 +242,38 @@ class FileManagerService:
 
         await self.repository.delete_file(file_id)
 
+    # ==================== File URL Methods ====================
+    async def get_file_url(self, file: FileModel) -> str:
+        """Get the URL of a file."""
+        # initialize the storage provider
+        await self._initialize_storage_provider(file)
+
+        # make sure the storage provider is initialized
+        if not self.storage_provider.is_initialized():
+            raise ValueError("Storage provider not initialized")
+
+        return await self.storage_provider.get_file_url(file.path, file.storage_path)
+
     # ==================== Helper Methods ====================
+
+    async def _initialize_storage_provider(self, file: FileModel) -> BaseStorageProvider:
+        """Initialize the storage provider."""
+        if self.storage_provider and self.storage_provider.is_initialized():
+            return self.storage_provider
+        
+        # make sure the file has a storage provider
+        if not file.storage_provider:
+            raise ValueError("File has no storage provider")
+
+
+        # file storage provider
+        storage_provider_name = file.storage_provider
+
+        # get the storage provider configuration for the file storage provider
+        config = file_storage_settings.model_dump(exclude_none=True)
+
+        # initialize the storage provider
+        await self.set_storage_provider(self.get_storage_provider_by_name(storage_provider_name, config=config))
 
     def _generate_file_path(self, name: str, user_id: Optional[UUID] = None) -> str:
         """Generate a file path based on name and user for file metadata record."""

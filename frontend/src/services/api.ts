@@ -46,6 +46,7 @@ interface KnowledgeItem {
   type: string;
   files?: string[];
   metadata?: Record<string, unknown>;
+  file_type?: string;
   [key: string]: unknown;
 }
 

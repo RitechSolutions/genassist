@@ -224,3 +224,18 @@ class S3Client:
         except ClientError as e:
             logger.error(f"Error deleting file from S3: {str(e)}")
             return False
+
+
+    def generate_presigned_url(self, operation: str, params: Dict[str, Any], expires_in: int) -> str:
+        """
+        Generate a presigned URL for an S3 operation.
+        
+        Args:
+            operation: The S3 operation to generate a presigned URL for
+            params: Parameters for the S3 operation
+            expires_in: The number of seconds the presigned URL should be valid for
+            
+        Returns:
+            A presigned URL for the S3 operation
+        """
+        return self.s3_client.generate_presigned_url(operation, Params=params, ExpiresIn=expires_in)
