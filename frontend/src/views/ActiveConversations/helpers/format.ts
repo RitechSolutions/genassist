@@ -4,6 +4,27 @@ export const formatDuration = (seconds: number | undefined): string => {
 	return sharedFormatDuration(seconds ?? 0);
 };
 
+export const formatDateTime = (timestamp: string): string => {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+
+  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  if (isToday) {
+    return `Today, ${timeStr}`;
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return `Yesterday, ${timeStr}`;
+  }
+
+  const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return `${dateStr}, ${timeStr}`;
+};
+
  export const formatMessageTime = (
     createTime: string | number | undefined
   ): string => {
