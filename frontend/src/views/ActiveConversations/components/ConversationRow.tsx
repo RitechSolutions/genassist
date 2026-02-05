@@ -1,7 +1,8 @@
 import { Badge } from "@/components/badge";
-import { TriangleAlert, Clock } from "lucide-react";
+import { TriangleAlert, Clock, Calendar } from "lucide-react";
 import { cn } from "@/helpers/utils";
 import { formatDuration } from "@/helpers/duration";
+import { formatDateTime } from "../helpers/format";
 import type { NormalizedConversation } from "../helpers/activeConversations.types";
 
 interface RowProps {
@@ -68,11 +69,19 @@ export function ConversationRow({ item, reason, onClick }: RowProps) {
               <TriangleAlert className="w-5 h-5 text-destructive shrink-0" />
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Clock className="w-3 h-3 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground leading-none">
-              {formatDuration(Number(item.duration || 0))}
-            </p>
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <Calendar className="w-3 h-3 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground leading-none">
+                {formatDateTime(item.timestamp)}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Clock className="w-3 h-3 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground leading-none">
+                {formatDuration(Number(item.duration || 0))}
+              </p>
+            </div>
           </div>
         </div>
 

@@ -1,7 +1,10 @@
 import { MessageCircleMore, CircleCheckBig, Clock, DollarSign } from "lucide-react";
 import { Card } from "@/components/card";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AgentDetailsDialog } from "./AgentDetailsDialog";
+import { fetchDashboardAgents } from "@/services/dashboard";
+import type { AgentStatsItem } from "@/interfaces/dashboard.interface";
+import { useNavigate } from "react-router-dom";
 
 interface AgentStats {
   id: string;
@@ -25,88 +28,67 @@ interface YourAgentsCardProps {
   onManageKeys?: (agentId: string) => void;
 }
 
-const mockAgents: AgentStats[] = [
-  {
-    id: "1",
-    name: "Customer Support Agent",
-    conversationsToday: 55,
-    resolutionRate: 98.95,
-    avgResponseTime: "1.1s",
-    costPerConversation: 2.86,
-    description: "Handles customer inquiries and provides support across multiple channels",
-    isActive: true,
-    welcomeMessage: "Hello! I'm here to help you with any questions or issues you may have. How can I assist you today?",
-    possibleQueries: [
-      "How do I reset my password?",
-      "What's the status of my order?",
-      "How can I contact customer support?",
-      "Do you offer refunds?"
-    ],
-    workflowId: "workflow-1",
-  },
-  {
-    id: "2",
-    name: "Sales Assistant",
-    conversationsToday: 55,
-    resolutionRate: 98.95,
-    avgResponseTime: "1.1s",
-    costPerConversation: 2.86,
-    description: "Engages with potential customers and helps them find the right products",
-    isActive: true,
-    welcomeMessage: "Hi there! I'm your sales assistant. Let me help you find the perfect solution for your needs.",
-    possibleQueries: [
-      "What are your pricing plans?",
-      "Can you show me a product demo?",
-      "What features are included?",
-      "Do you offer enterprise solutions?"
-    ],
-    workflowId: "workflow-2",
-  },
-  {
-    id: "3",
-    name: "Data Analyst Agent",
-    conversationsToday: 55,
-    resolutionRate: 98.95,
-    avgResponseTime: "1.1s",
-    costPerConversation: 2.86,
-    description: "Analyzes data and provides insights based on your queries",
-    isActive: false,
-    welcomeMessage: "Welcome! I can help you analyze data and generate insights. What would you like to explore?",
-    possibleQueries: [
-      "Show me last month's sales trends",
-      "What's the customer retention rate?",
-      "Generate a performance report",
-      "Compare Q1 vs Q2 metrics"
-    ],
-    workflowId: "workflow-3",
-  },
-  {
-    id: "4",
-    name: "Email Automation Agent",
-    conversationsToday: 55,
-    resolutionRate: 98.95,
-    avgResponseTime: "1.1s",
-    costPerConversation: 2.86,
-    description: "Automates email workflows and manages customer communications",
-    isActive: true,
-    welcomeMessage: "Hello! I manage email automation workflows. How can I help you set up or manage your email campaigns?",
-    possibleQueries: [
-      "Send a welcome email to new users",
-      "Schedule a follow-up campaign",
-      "Create an abandoned cart email",
-      "Set up a newsletter"
-    ],
-    workflowId: "workflow-4",
-  },
-];
+const formatResponseTime = (ms: number): string => {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+  return `${(ms / 1000).toFixed(1)}s`;
+};
 
-export function YourAgentsCard({ agents = mockAgents, loading, onViewAll, onManageKeys }: YourAgentsCardProps) {
+const transformApiAgent = (agent: AgentStatsItem): AgentStats => ({
+  id: agent.id,
+  name: agent.name,
+  conversationsToday: agent.conversations_today,
+  resolutionRate: Number(agent.resolution_rate) || 0,
+  avgResponseTime: formatResponseTime(agent.avg_response_time_ms),
+  costPerConversation: Number(agent.cost) || 0,
+  isActive: agent.is_active,
+});
+
+export function YourAgentsCard({ agents: propAgents, loading: propLoading, onViewAll, onManageKeys }: YourAgentsCardProps) {
+  const navigate = useNavigate();
   const [selectedAgent, setSelectedAgent] = useState<AgentStats | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [agents, setAgents] = useState<AgentStats[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // If agents are passed as props, use them
+    if (propAgents) {
+      setAgents(propAgents);
+      setLoading(propLoading || false);
+      return;
+    }
+
+    // Otherwise fetch from API
+    const fetchAgents = async () => {
+      setLoading(true);
+      try {
+        const response = await fetchDashboardAgents();
+        if (response?.agents) {
+          setAgents(response.agents.map(transformApiAgent));
+        }
+      } catch (error) {
+        console.error("Error fetching agents:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAgents();
+  }, [propAgents, propLoading]);
 
   const handleAgentClick = (agent: AgentStats) => {
     setSelectedAgent(agent);
     setIsDialogOpen(true);
+  };
+
+  const handleViewAll = () => {
+    if (onViewAll) {
+      onViewAll();
+    } else {
+      navigate("/ai-agents");
+    }
   };
 
   return (
@@ -117,7 +99,7 @@ export function YourAgentsCard({ agents = mockAgents, loading, onViewAll, onMana
           <h3 className="text-lg font-semibold text-foreground">Your Agents</h3>
         </div>
         <button
-          onClick={onViewAll}
+          onClick={handleViewAll}
           className="text-sm font-medium text-foreground hover:underline"
         >
           View all
@@ -132,6 +114,16 @@ export function YourAgentsCard({ agents = mockAgents, loading, onViewAll, onMana
               <div key={i} className="h-16 bg-gray-200 rounded-lg animate-pulse" />
             ))}
           </div>
+        ) : agents.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <p>No agents configured yet.</p>
+            <button
+              onClick={handleViewAll}
+              className="mt-2 text-sm text-primary hover:underline"
+            >
+              Create your first agent
+            </button>
+          </div>
         ) : (
           agents.map((agent) => (
             <div
@@ -143,7 +135,7 @@ export function YourAgentsCard({ agents = mockAgents, loading, onViewAll, onMana
                 <p className="text-sm font-semibold text-accent-foreground truncate">
                   {agent.name}
                 </p>
-                
+
                 {/* Stats Row */}
                 <div className="flex gap-3 items-center flex-wrap">
                   <div className="flex gap-1 items-center">
@@ -152,25 +144,25 @@ export function YourAgentsCard({ agents = mockAgents, loading, onViewAll, onMana
                       {agent.conversationsToday} Today
                     </span>
                   </div>
-                  
+
                   <div className="flex gap-1 items-center">
                     <CircleCheckBig className="w-3.5 h-3.5 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">
-                      {agent.resolutionRate}% resolved
+                      {agent.resolutionRate.toFixed(2)}% resolved
                     </span>
                   </div>
-                  
+
                   <div className="flex gap-1 items-center">
                     <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">
                       {agent.avgResponseTime} avg
                     </span>
                   </div>
-                  
+
                   <div className="flex gap-1 items-center">
                     <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">
-                      ${agent.costPerConversation}
+                      ${agent.costPerConversation.toFixed(2)}
                     </span>
                   </div>
                 </div>

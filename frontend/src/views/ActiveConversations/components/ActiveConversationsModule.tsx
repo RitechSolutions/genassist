@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/card";
 import { ActiveConversation } from "@/interfaces/liveConversation.interface";
@@ -8,7 +8,6 @@ import {
   HOSTILITY_NEUTRAL_MAX,
 } from "@/views/Transcripts/helpers/formatting";
 import type { TranscriptEntry } from "@/interfaces/transcript.interface";
-import { fetchTopicsReport } from "@/services/metrics";
 import ActiveConversationsHeader from "./ActiveConversationsHeader";
 import ActiveConversationsSummary from "./ActiveConversationsSummary";
 import ActiveConversationsList from "./ActiveConversationsList";
@@ -26,6 +25,12 @@ const parseTimestampMs = (value: string | undefined): number => {
   return Number.isFinite(ms) ? ms : 0;
 };
 
+type SentimentCounts = {
+  good: number;
+  neutral: number;
+  bad: number;
+};
+
 type Props = {
   title?: string;
   items: ActiveConversation[];
@@ -34,6 +39,11 @@ type Props = {
   onRetry?: () => void;
   onItemClick?: (item: ActiveConversation) => void;
   totalCount?: number;
+  sentimentCounts?: SentimentCounts;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
+  isLoadingMore?: boolean;
+  displayLimit?: number;
 };
 
 
@@ -45,9 +55,13 @@ export function ActiveConversationsModule({
   onRetry,
   onItemClick,
   totalCount,
+  sentimentCounts,
+  hasMore = false,
+  onLoadMore,
+  isLoadingMore = false,
+  displayLimit = 3,
 }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [categories, setCategories] = useState<string[]>([]);
 
   const rawSentiment = (searchParams.get("sentiment") || "all").toLowerCase();
   const sentimentParam = (rawSentiment === "positive"
@@ -58,20 +72,6 @@ export function ActiveConversationsModule({
   const categoryParam = (searchParams.get("category") || "all");
   const includeFeedbackParam = (searchParams.get("include_feedback") || "false").toLowerCase() === "true";
 
-  useEffect(() => {
-    let mounted = true;
-    fetchTopicsReport()
-      .then((report) => {
-        if (!mounted || !report) return;
-        const topics = Object.keys(report.details || {});
-        if (topics.length > 0) setCategories(["all", ...topics]);
-        else setCategories(["all", "booking", "billing", "tech support"]);
-      })
-      .catch(() => setCategories(["all", "booking", "billing", "tech support"]));
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -113,7 +113,13 @@ export function ActiveConversationsModule({
   }, [items]);
 
   const globalTotal = typeof totalCount === "number" ? totalCount : normalized.length;
+
+  // Use backend counts if provided, otherwise calculate from loaded items
   const globalCounts = useMemo(() => {
+    if (sentimentCounts) {
+      return sentimentCounts;
+    }
+    // Fallback: calculate from loaded items (less accurate for paginated data)
     let good = 0, neutral = 0, bad = 0;
     for (const i of normalized) {
       if (i.effectiveSentiment === "positive") good++;
@@ -121,7 +127,7 @@ export function ActiveConversationsModule({
       else bad++;
     }
     return { bad, neutral, good };
-  }, [normalized]);
+  }, [sentimentCounts, normalized]);
 
   const filtered = useMemo(() => {
     if (sentimentParam === "all") return normalized;
@@ -160,8 +166,8 @@ export function ActiveConversationsModule({
     });
   }, [filtered]);
 
-  // Show only the last 3 conversations
-  const pageItems = ordered.slice(0, 3);
+  // Show conversations up to the display limit
+  const pageItems = displayLimit > 0 ? ordered.slice(0, displayLimit) : ordered;
 
   return (
     <Card className="p-6 mb-5 shadow-sm animate-fade-up bg-white border border-border rounded-xl">
@@ -184,6 +190,19 @@ export function ActiveConversationsModule({
               onClickRow={(row) => onItemClick?.(row as unknown as ActiveConversation)}
             />
           </div>
+
+          {/* Load More Button */}
+          {hasMore && onLoadMore && (
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+                className="px-4 py-2 text-sm font-medium text-primary hover:text-primary/80 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoadingMore ? "Loading..." : "Load More"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </Card>

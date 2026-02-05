@@ -2,6 +2,8 @@ import { useToast } from "@/hooks/useToast";
 import { ActiveConversation } from "@/interfaces/liveConversation.interface";
 import { Transcript, TranscriptEntry } from "@/interfaces/transcript.interface";
 import { conversationService } from "@/services/liveConversations";
+import { fetchDashboardConversations } from "@/services/dashboard";
+import { ActiveConversationItem } from "@/interfaces/dashboard.interface";
 import { apiRequest } from "@/config/api";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
 import { transformTranscript } from "@/views/Transcripts/helpers/transformers";
@@ -13,6 +15,25 @@ import { ActiveConversationDialog } from "../components/ActiveConversationDialog
 import { useWebSocketDashboard } from "../hooks/useWebSocketDashboard";
 import { YourAgentsCard } from "../components/YourAgentsCard";
 import { IntegrationsCard } from "../components/IntegrationsCard";
+
+// Transform dashboard API response to ActiveConversation format
+const transformDashboardConversation = (item: ActiveConversationItem): ActiveConversation => ({
+  id: item.id,
+  type: "chat",
+  status: item.status === "in_progress" ? "in-progress" : item.status,
+  transcript: item.last_message || "",
+  sentiment: item.feedback?.toLowerCase() === "good" ? "positive" :
+             item.feedback?.toLowerCase() === "bad" ? "negative" : "neutral",
+  timestamp: item.created_at,
+  in_progress_hostility_score: item.in_progress_hostility_score || 0,
+  duration: item.duration || 0,
+  word_count: 0,
+  agent_ratio: 0,
+  customer_ratio: 0,
+  supervisor_id: undefined,
+  topic: item.topic || undefined,
+  negative_reason: item.negative_reason || undefined,
+});
 
 const enrichConversationItem = (item: ActiveConversation): Transcript => {
   let transcriptArray: TranscriptEntry[] = [];
@@ -101,8 +122,10 @@ export const ActiveConversations = () => {
   const [isLoadingTranscript, setIsLoadingTranscript] = useState(false);
   const [allConversations, setAllConversations] = useState<ActiveConversation[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
+  const [sentimentCounts, setSentimentCounts] = useState<{good: number; neutral: number; bad: number}>({good: 0, neutral: 0, bad: 0});
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [apiError, setApiError] = useState<Error | null>(null);
+  const DASHBOARD_LIMIT = 3;
 
   // Get access token for WebSocket authentication
   const accessToken = localStorage.getItem("access_token");
@@ -126,22 +149,27 @@ export const ActiveConversations = () => {
     topics: ["message", "statistics", "finalize", "hostile"]
   });
 
-  // Load initial conversations from API with filter support
+  // Load conversations from dashboard API
   useEffect(() => {
-    const loadInitialConversations = async () => {
+    const loadConversations = async () => {
       try {
         setIsLoadingInitial(true);
         setApiError(null);
-        
-        const response = await conversationService.fetchActive({
-          sentiment: sentimentFilter,
-          category: categoryFilter,
-          hostility_positive_max: HOSTILITY_POSITIVE_MAX,
-          hostility_neutral_max: HOSTILITY_NEUTRAL_MAX,
-          include_feedback: includeFeedbackFilter,
-        });
-        setAllConversations(response.conversations || []);
-        // Do not update totalCount here; total comes from polling only
+
+        // Use dashboard API for conversations (limited to 3 for dashboard view)
+        const response = await fetchDashboardConversations(30, 1, DASHBOARD_LIMIT);
+        if (response) {
+          const transformed = response.conversations.map(transformDashboardConversation);
+          setAllConversations(transformed);
+          setTotalCount(response.total);
+          setSentimentCounts({
+            good: response.good_count ?? 0,
+            neutral: response.neutral_count ?? 0,
+            bad: response.bad_count ?? 0,
+          });
+        } else {
+          setAllConversations([]);
+        }
       } catch (error) {
         setApiError(error as Error);
       } finally {
@@ -149,7 +177,7 @@ export const ActiveConversations = () => {
       }
     };
 
-    loadInitialConversations();
+    loadConversations();
   }, [sentimentFilter, categoryFilter]); // Reload when filters change
 
   // Merge WebSocket updates with existing conversations
@@ -166,18 +194,21 @@ export const ActiveConversations = () => {
     }
   }, [wsConversations]);
 
-  // If the dashboard hook suggests resync (e.g., finalize with missing ID), refetch from API
+  // If the dashboard hook suggests resync (e.g., finalize with missing ID), refetch from dashboard API
   useEffect(() => {
     const sync = async () => {
       try {
-        const response = await conversationService.fetchActive({
-          sentiment: sentimentFilter,
-          category: categoryFilter,
-          hostility_positive_max: HOSTILITY_POSITIVE_MAX,
-          hostility_neutral_max: HOSTILITY_NEUTRAL_MAX,
-          include_feedback: includeFeedbackFilter,
-        });
-        setAllConversations(response.conversations || []);
+        const response = await fetchDashboardConversations(30, 1, DASHBOARD_LIMIT);
+        if (response) {
+          const transformed = response.conversations.map(transformDashboardConversation);
+          setAllConversations(transformed);
+          setTotalCount(response.total);
+          setSentimentCounts({
+            good: response.good_count ?? 0,
+            neutral: response.neutral_count ?? 0,
+            bad: response.bad_count ?? 0,
+          });
+        }
       } catch (e) {
         // ignore
       }
@@ -185,23 +216,29 @@ export const ActiveConversations = () => {
     if (resyncHint > 0) sync();
   }, [resyncHint, sentimentFilter, categoryFilter]);
 
-  // Poll backend every 5s
+  // Poll dashboard API for updates
   useEffect(() => {
     let isCancelled = false;
 
-    const fetchCount = async () => {
+    const fetchData = async () => {
       try {
-        const count = await conversationService.fetchInProgressCount();
-        if (!isCancelled && typeof count === "number") {
-          setTotalCount(count);
+        const response = await fetchDashboardConversations(30, 1, DASHBOARD_LIMIT);
+        if (!isCancelled && response) {
+          const transformed = response.conversations.map(transformDashboardConversation);
+          setAllConversations(transformed);
+          setTotalCount(response.total);
+          setSentimentCounts({
+            good: response.good_count ?? 0,
+            neutral: response.neutral_count ?? 0,
+            bad: response.bad_count ?? 0,
+          });
         }
       } catch (e) {
         // ignore
       }
     };
-    fetchCount();
 
-    const interval = setInterval(fetchCount, 25000);
+    const interval = setInterval(fetchData, 25000);
     return () => {
       isCancelled = true;
       clearInterval(interval);
@@ -319,6 +356,7 @@ export const ActiveConversations = () => {
         onRetry={wsRefetch}
         onItemClick={handleItemClick}
         totalCount={totalCount}
+        sentimentCounts={sentimentCounts}
       />
 
       {/* Your Agents and Integrations Cards */}
