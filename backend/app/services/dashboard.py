@@ -128,12 +128,14 @@ class DashboardService:
     async def get_agents_stats(
         self,
         from_date: Optional[datetime] = None,
-        to_date: Optional[datetime] = None
+        to_date: Optional[datetime] = None,
+        limit: int = 5
     ) -> AgentStatsResponse:
         """Get agents with their statistics."""
         agent_stats = await self.dashboard_repo.get_agents_with_stats(
             from_date=from_date,
-            to_date=to_date
+            to_date=to_date,
+            limit=limit
         )
 
         agent_items = [
@@ -174,7 +176,8 @@ class DashboardService:
         self,
         days: int = 30,
         conversations_page: int = 1,
-        conversations_page_size: int = 3
+        conversations_page_size: int = 3,
+        agents_limit: int = 5
     ) -> DashboardResponse:
         """Get complete dashboard data."""
         from_date, to_date = self._get_date_range(days)
@@ -186,7 +189,7 @@ class DashboardService:
             from_date=from_date,
             to_date=to_date
         )
-        agents = await self.get_agents_stats(from_date, to_date)
+        agents = await self.get_agents_stats(from_date, to_date, limit=agents_limit)
         integrations = await self.get_integrations()
 
         return DashboardResponse(

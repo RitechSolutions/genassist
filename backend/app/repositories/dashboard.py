@@ -192,9 +192,10 @@ class DashboardRepository:
     async def get_agents_with_stats(
         self,
         from_date: Optional[datetime] = None,
-        to_date: Optional[datetime] = None
+        to_date: Optional[datetime] = None,
+        limit: int = 5
     ) -> list[dict]:
-        """Get all agents with their statistics."""
+        """Get agents with their statistics (limited for dashboard display)."""
         # Get agents with their operators and statistics
         query = (
             select(AgentModel)
@@ -203,6 +204,7 @@ class DashboardRepository:
                 selectinload(AgentModel.operator).selectinload(OperatorModel.operator_statistics)
             )
             .order_by(AgentModel.name)
+            .limit(limit)
         )
 
         result = await self.db.execute(query)

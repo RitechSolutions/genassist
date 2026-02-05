@@ -41,6 +41,7 @@ async def get_dashboard(
     days: int = Query(default=30, ge=1, le=365, description="Number of days to look back for statistics"),
     conversations_page: int = Query(default=1, ge=1, description="Page number for active conversations"),
     conversations_page_size: int = Query(default=3, ge=1, le=100, description="Number of active conversations per page"),
+    agents_limit: int = Query(default=5, ge=1, le=100, description="Maximum number of agents to return"),
     dashboard_service: DashboardService = Injected(DashboardService),
 ) -> DashboardResponse:
     """
@@ -53,7 +54,8 @@ async def get_dashboard(
     return await dashboard_service.get_full_dashboard(
         days=days,
         conversations_page=conversations_page,
-        conversations_page_size=conversations_page_size
+        conversations_page_size=conversations_page_size,
+        agents_limit=agents_limit
     )
 
 
@@ -121,10 +123,11 @@ async def get_active_conversations(
         Depends(permissions(P.Dashboard.READ)),
     ],
     summary="Get agents with statistics",
-    description="Returns all agents with their performance statistics.",
+    description="Returns agents with their performance statistics (limited for dashboard display).",
 )
 async def get_agents_stats(
     days: int = Query(default=30, ge=1, le=365, description="Number of days to look back"),
+    limit: int = Query(default=5, ge=1, le=100, description="Maximum number of agents to return"),
     dashboard_service: DashboardService = Injected(DashboardService),
 ) -> AgentStatsResponse:
     """
@@ -135,7 +138,7 @@ async def get_agents_stats(
     - Cost (if available)
     """
     from_date, to_date = parse_date_range(days)
-    return await dashboard_service.get_agents_stats(from_date, to_date)
+    return await dashboard_service.get_agents_stats(from_date, to_date, limit=limit)
 
 
 @router.get(
