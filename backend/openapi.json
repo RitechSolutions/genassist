@@ -2812,6 +2812,20 @@
               "title": "Conversations Page Size"
             },
             "description": "Number of active conversations per page"
+          },
+          {
+            "name": "agents_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of agents to return",
+              "default": 5,
+              "title": "Agents Limit"
+            },
+            "description": "Maximum number of agents to return"
           }
         ],
         "responses": {
@@ -2986,7 +3000,7 @@
           "Dashboard"
         ],
         "summary": "Get agents with statistics",
-        "description": "Returns all agents with their performance statistics.",
+        "description": "Returns agents with their performance statistics (limited for dashboard display).",
         "operationId": "get_agents_stats_api_dashboard_agents_get",
         "security": [
           {
@@ -3010,6 +3024,20 @@
               "title": "Days"
             },
             "description": "Number of days to look back"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of agents to return",
+              "default": 5,
+              "title": "Limit"
+            },
+            "description": "Maximum number of agents to return"
           }
         ],
         "responses": {

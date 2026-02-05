@@ -49,15 +49,15 @@ const transformApiIntegration = (item: ApiIntegrationItem): Integration => ({
 
 const getDefaultDescription = (type: string): string => {
   const descriptions: Record<string, string> = {
-    Gmail: "Send via Gmail",
-    Zendesk: "Create support tickets",
-    Slack: "Send Slack messages",
-    WhatsApp: "Send WhatsApp messages",
-    Microsoft: "Microsoft 365 integration",
-    Jira: "Create Jira issues",
-    Other: "Custom integration",
+    gmail: "Send via Gmail",
+    zendesk: "Create support tickets",
+    slack: "Send Slack messages",
+    whatsapp: "Send WhatsApp messages",
+    microsoft: "Microsoft 365 integration",
+    jira: "Create Jira issues",
+    other: "Custom integration",
   };
-  return descriptions[type] || "Custom integration";
+  return descriptions[type.toLowerCase()] || "Custom integration";
 };
 
 const getIcon = (iconType: IconType) => {
@@ -181,7 +181,7 @@ export function IntegrationsCard({
                 {/* Content */}
                 <div className="flex flex-col flex-1 min-w-0">
                   <p className="text-sm font-semibold text-accent-foreground truncate">
-                    {integration.name}
+                    {integration.type}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">
                     {integration.description}
