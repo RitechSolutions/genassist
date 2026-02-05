@@ -115,7 +115,7 @@ class FileManagerService:
 
         # Get or initialize the storage provider
         provider_name = file_storage_provider or "local"
-        await self.initialize_storage_provider(provider_name)
+        await self._initialize_storage_provider(provider_name)
         if not self.storage_provider or not self.storage_provider.is_initialized():
             raise ValueError("Storage provider not initialized")
 
@@ -155,7 +155,7 @@ class FileManagerService:
     async def get_file_content(self, file: FileModel) -> bytes:
         """Get file content from storage provider."""
         # initialize the storage provider
-        await self._initialize_storage_provider(file)
+        await self._initialize_storage_provider(file.storage_provider)
         
         # make sure the storage provider is initialized
         if not self.storage_provider.is_initialized():
@@ -239,7 +239,7 @@ class FileManagerService:
     async def get_file_url(self, file: FileModel) -> str:
         """Get the URL of a file."""
         # initialize the storage provider
-        await self._initialize_storage_provider(file)
+        await self._initialize_storage_provider(file.storage_provider)
 
         # make sure the storage provider is initialized
         if not self.storage_provider.is_initialized():
@@ -249,18 +249,15 @@ class FileManagerService:
 
     # ==================== Helper Methods ====================
 
-    async def _initialize_storage_provider(self, file: FileModel) -> BaseStorageProvider:
+    async def _initialize_storage_provider(self, storage_provider_name: str) -> BaseStorageProvider:
         """Initialize the storage provider."""
         if self.storage_provider and self.storage_provider.is_initialized():
             return self.storage_provider
         
         # make sure the file has a storage provider
-        if not file.storage_provider:
+        if not storage_provider_name:
             raise ValueError("File has no storage provider")
 
-
-        # file storage provider
-        storage_provider_name = file.storage_provider
 
         # get the storage provider configuration for the file storage provider
         config = file_storage_settings.model_dump(exclude_none=True)
