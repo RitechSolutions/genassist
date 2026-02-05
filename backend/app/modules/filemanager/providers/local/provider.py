@@ -313,3 +313,16 @@ class LocalFileSystemProvider(BaseStorageProvider):
     def close(self):
         """Clean up resources (no-op for local file system)."""
         pass
+
+    def get_file_url(self, path: str, storage_path: str) -> str:
+        """
+        Get the URL of a file in local file system.
+        
+        Args:
+            path: Path to the file
+            storage_path: Storage path of the file
+            
+        Returns:
+            URL of the file
+        """
+        return f"{path}/{storage_path}"

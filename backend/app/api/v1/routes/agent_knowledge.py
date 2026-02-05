@@ -211,6 +211,7 @@ async def upload_file(
     """
     results = []
     logger.info(f"Starting upload of {len(files)} files.")
+    
     for file in files:
         try:
             logger.info(
@@ -234,11 +235,19 @@ async def upload_file(
             use_file_manager = file_storage_settings.FILE_MANAGER_ENABLED
             file_url = None
             file_type = "file"
+            file_id = None  
 
             if use_file_manager:
-                await file_manager_service.set_storage_provider(S3StorageProvider(config=file_storage_settings.model_dump()))
+                # Determine provider type
+                provider_name = file_storage_settings.FILE_MANAGER_PROVIDER or "local"
+
+                # Load provider
+                config = { "base_path": UPLOAD_DIR} if provider_name == "local" else file_storage_settings.model_dump(exclude_none=True)
+                provider = file_manager_service.get_storage_provider_by_name(provider_name, config=config)
+                await file_manager_service.set_storage_provider(provider)
+
                 # use file manager service to upload the file
-                created_file = await file_manager_service.create_file(file)
+                created_file = await file_manager_service.create_file(file, sub_folder=UPLOAD_DIR)
                 file_id = str(created_file.id)
                 file_source_url = f"{file_storage_settings.APP_URL}/api/file-manager/files/{file_id}/source"
                 file_type = "url"
@@ -247,8 +256,12 @@ async def upload_file(
                 if file_source_url.startswith("http") and file_id is not None:
                     await file_manager_service.download_file_to_path(file_id, file_path)
 
-                # get the file url
-                file_url = await file_manager_service.get_file_url(created_file)
+                # get the file url (only for remote providers)
+                if provider_name != "local":
+                    file_url = await file_manager_service.get_file_url(created_file)
+
+                if file_id:
+                    result["file_id"] = file_id
             else:
                 # save the file to the upload directory
                 logger.info(f"Saving file to: {file_path}")
@@ -295,20 +308,19 @@ async def upload_file_to_chat(
             f"Received file upload: {file.filename}, size: {file.size}, content_type: {file.content_type}"
         )
 
-        use_local_provider = True
-        if use_local_provider:
-            # Introduce file manager service and set the storage provider to local file system
-            # Use Local File System
-            await file_manager_service.set_storage_provider(LocalFileSystemProvider(config={"base_path": UPLOAD_DIR}))
-        else:
-            # use S3 storage provider
-            file_settings = FileStorageSettings()
-            await file_manager_service.set_storage_provider(S3StorageProvider(config=file_settings.model_dump()))
+        # get the provider type
+        provider_type = file_storage_settings.FILE_MANAGER_PROVIDER or "local"
+
+        # load the storage provider
+        config = { "base_path": UPLOAD_DIR} if provider_type == "local" else file_storage_settings.model_dump(exclude_none=True)
+        provider = file_manager_service.get_storage_provider_by_name(provider_type, config=config)
+        await file_manager_service.set_storage_provider(provider)
 
         try:
             # create file in file manager service
             created_file = await file_manager_service.create_file(
                 file,
+                sub_folder=f"{UPLOAD_DIR}/{chat_id}",
                 allowed_extensions=["pdf", "docx", "txt", "jpg", "jpeg", "png"],
             )
         except Exception as e:
@@ -320,7 +332,7 @@ async def upload_file_to_chat(
         file_id = created_file.id
         file_extension = created_file.file_extension
         storage_path = created_file.storage_path
-        file_path = f"{UPLOAD_DIR}/{storage_path}"
+        file_path = f"{created_file.path}/{storage_path}"
 
         logger.debug(f"File Id: {file_id}")
 
@@ -348,7 +360,7 @@ async def upload_file_to_chat(
         except Exception as e:
             logger.warning(f"Could not extract text from file: {str(e)}")
 
-        file_relative_url = f"/api/file-manager/files/{file_id}/source"
+        file_url = f"/api/file-manager/files/{file_id}/source"
 
         # Return the filenames and paths
         result = FileUploadResponse(
@@ -356,7 +368,7 @@ async def upload_file_to_chat(
             original_filename=file.filename,
             storage_path=storage_path,
             file_path=file_path,
-            file_url=file_relative_url,
+            file_url=file_url,
             file_id=str(file_id),
         )
 

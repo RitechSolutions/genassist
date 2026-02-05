@@ -17114,6 +17114,13 @@
                 "type": "array"
               },
               {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -17369,6 +17376,13 @@
               {
                 "items": {
                   "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
                 },
                 "type": "array"
               },
@@ -17629,6 +17643,13 @@
               {
                 "items": {
                   "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
                 },
                 "type": "array"
               },

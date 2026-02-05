@@ -81,6 +81,7 @@ class FileManagerService:
     async def create_file(
         self,
         file: UploadFile,
+        sub_folder: Optional[str] = None,
         description: Optional[str] = None,
         tags: Optional[List[str]] = None,
         permissions: Optional[Dict] = None,
@@ -105,26 +106,18 @@ class FileManagerService:
         file_path = self.storage_provider.get_base_path()
 
         # generate a unique file name
-        relative_storage_path = f"{uuid.uuid4()}.{file_extension}"
+        unique_file_name = f"{uuid.uuid4()}.{file_extension}"
+        relative_storage_path = f"{sub_folder}/{unique_file_name}" if sub_folder else unique_file_name
 
         # check if file extension is allowed
         if allowed_extensions and file_extension not in allowed_extensions:
             raise ValueError(f"File extension {file_extension} not allowed")
 
         # Get or initialize the storage provider
+        provider_name = file_storage_provider or "local"
+        await self.initialize_storage_provider(provider_name)
         if not self.storage_provider or not self.storage_provider.is_initialized():
-            # read from the file
-            if not file_storage_provider:
-                file_storage_provider = "local"
-                # get storage provider by name
-                provider_config = {
-                    "base_path": file_path
-                }
-                storage_provider_class = self.get_storage_provider_by_name(file_storage_provider, config=provider_config)
-                await self.set_storage_provider(storage_provider_class)
-
-        if not self.storage_provider:
-            raise ValueError("Storage provider not configured")
+            raise ValueError("Storage provider not initialized")
 
         user_id = get_current_user_id()
 

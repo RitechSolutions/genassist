@@ -8,6 +8,10 @@ and connection overhead.
 
 import asyncio
 import logging
+import os
+import tempfile
+import urllib.request
+import urllib.parse
 from typing import Dict, Optional, List, Any
 
 from app.schemas.agent_knowledge import KBRead
@@ -17,6 +21,14 @@ from .providers import SearchResult
 from .utils.doc import bulk_delete_documents, format_search_results
 
 logger = logging.getLogger(__name__)
+
+
+def _url_to_suffix(url: str) -> str:
+    """Return a file suffix from URL path (e.g. .html, .pdf) for temp file extraction."""
+    path = urllib.parse.urlparse(url).path
+    if "." in path:
+        return path[path.rindex(".") :]
+    return ""
 
 
 class AgentRAGServiceManager:
@@ -279,14 +291,64 @@ class AgentRAGServiceManager:
                         doc_ids = []
                         contents = []
 
-                        for idx, file_path in enumerate(item.files):
+                        for idx, file_item in enumerate(item.files):
                             try:
-                                doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
-                                contents.append(FileTextExtractor().extract(path=file_path))
+                                extractor = FileTextExtractor()
+                                # Handle URL string (files stored as list of URLs), path string, or legacy dict
+                                if isinstance(file_item, str):
+                                    doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_item}")
+                                    if file_item.startswith("http://") or file_item.startswith("https://"):
+                                        # Download from URL to temp file and extract
+                                        with tempfile.NamedTemporaryFile(
+                                            delete=False,
+                                            suffix=_url_to_suffix(file_item),
+                                        ) as tmp:
+                                            urllib.request.urlretrieve(file_item, tmp.name)
+                                        try:
+                                            contents.append(extractor.extract(path=tmp.name))
+                                        finally:
+                                            try:
+                                                os.unlink(tmp.name)
+                                            except OSError:
+                                                pass
+                                    else:
+                                        # Local file path
+                                        contents.append(extractor.extract(path=file_item))
+                                elif isinstance(file_item, dict):
+                                    # Legacy format: dict with file_path and/or url/urls
+                                    file_path = file_item.get("file_path")
+                                    file_url = file_item.get("url") or file_item.get("urls")
+                                    if file_path:
+                                        doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
+                                        contents.append(extractor.extract(path=file_path))
+                                    elif file_url and (
+                                        isinstance(file_url, str)
+                                        and (file_url.startswith("http://") or file_url.startswith("https://"))
+                                    ):
+                                        doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_url}")
+                                        with tempfile.NamedTemporaryFile(
+                                            delete=False,
+                                            suffix=_url_to_suffix(file_url),
+                                        ) as tmp:
+                                            urllib.request.urlretrieve(file_url, tmp.name)
+                                        try:
+                                            contents.append(extractor.extract(path=tmp.name))
+                                        finally:
+                                            try:
+                                                os.unlink(tmp.name)
+                                            except OSError:
+                                                pass
+                                    else:
+                                        logger.warning(f"File item {idx} missing file_path or url: {file_item}")
 
                             except Exception as e:
+                                file_path_str = (
+                                    file_item
+                                    if isinstance(file_item, str)
+                                    else file_item.get("file_path") or file_item.get("url") or file_item.get("urls") or "unknown"
+                                )
                                 logger.error(
-                                    f"Error extracting file {file_path}: {e}")
+                                    f"Error extracting file {file_path_str}: {e}")
 
                     # Handle URL content
                     elif getattr(item, "type", "") == "url":

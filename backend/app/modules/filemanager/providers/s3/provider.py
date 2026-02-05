@@ -33,7 +33,7 @@ class S3StorageProvider(BaseStorageProvider):
             config: Configuration dictionary containing S3 credentials and bucket
         """
         super().__init__(config)
-        self.aws_bucket_name = config.get("AWS_BUCKET_NAME", "")
+        self.aws_bucket_name = config.get("AWS_BUCKET_NAME", "") 
         self.aws_access_key_id = config.get("AWS_ACCESS_KEY_ID", None)
         self.aws_secret_access_key = config.get("AWS_SECRET_ACCESS_KEY", None)
         self.aws_region_name = config.get("AWS_REGION", None)
