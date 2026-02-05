@@ -1,6 +1,7 @@
+from typing import Tuple
 from uuid import UUID
 from injector import inject
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from app.db.models import AgentModel, OperatorModel
@@ -61,3 +62,39 @@ class AgentRepository(DbRepository[AgentModel]):
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
+
+    async def get_list_paginated(
+        self, page: int = 1, page_size: int = 10
+    ) -> Tuple[list[AgentModel], int]:
+        """
+        Return minimal agent data for list view with pagination.
+        Only loads columns needed for the list display (no relationships).
+        Returns tuple of (agents, total_count).
+        """
+        offset = (page - 1) * page_size
+
+        # Count query - get total without loading data
+        count_stmt = select(func.count(AgentModel.id)).where(
+            AgentModel.is_deleted == 0
+        )
+        count_result = await self.db.execute(count_stmt)
+        total = count_result.scalar() or 0
+
+        # Data query - only select minimal columns needed for list view
+        data_stmt = (
+            select(
+                AgentModel.id,
+                AgentModel.name,
+                AgentModel.workflow_id,
+                AgentModel.possible_queries,
+                AgentModel.is_active,
+            )
+            .where(AgentModel.is_deleted == 0)
+            .order_by(AgentModel.created_at.asc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        result = await self.db.execute(data_stmt)
+        rows = result.all()
+
+        return rows, total

@@ -1,18 +1,36 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 
+export interface NodeMetadata {
+  [nodeId: string]: {
+    name: string;
+    type: string;
+  };
+}
+
 export interface JsonViewerProps {
   data: Record<string, unknown>;
   level?: number;
   onDragStart?: (e: React.DragEvent, path: string, value: unknown) => void;
   basePath?: string;
+  nodeMetadata?: NodeMetadata;
 }
+
+/**
+ * Checks if a string looks like a UUID (node ID)
+ */
+const isNodeId = (key: string): boolean => {
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidPattern.test(key);
+};
 
 export const JsonViewer: React.FC<JsonViewerProps> = ({
   data,
   level = 0,
   onDragStart,
   basePath = "",
+  nodeMetadata = {},
 }) => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -47,12 +65,23 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
     const isArray = Array.isArray(value);
     const hasArrayChildren = isArray && (value as any[]).length > 0;
 
-    // Make any level draggable, not just leaf values
-    const isDraggable = true; // All levels can be dragged
+    // Get display name from nodeMetadata if this is a node ID
+    const nodeInfo = isNodeId(key) ? nodeMetadata[key] : null;
+    const displayName = nodeInfo ? nodeInfo.name : key;
+    const nodeType = nodeInfo?.type;
+
+    // Build tooltip content
+    const tooltipText = nodeInfo
+      ? `${nodeInfo.name}\nType: ${nodeInfo.type}\nID: ${key}\n\nClick to copy • Drag to input`
+      : `${key}\n\nClick to copy • Drag to input`;
 
     if (hasChildren || hasArrayChildren) {
-      const typeLabel = isArray ? `Array[${(value as any[]).length}]` : "Object";
-      
+      const typeLabel = isArray
+        ? `Array[${(value as any[]).length}]`
+        : nodeType
+          ? nodeType
+          : "Object";
+
       return (
         <div key={key} className="ml-2">
           <div className="flex items-center gap-2 py-1 px-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors">
@@ -66,25 +95,25 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
                 <ChevronRight className="h-3 w-3" />
               )}
             </button>
-            
+
             {/* Draggable key badge */}
             <div
               draggable
               onDragStart={(e) => handleDragStart(e, currentPath, value)}
               onClick={() => copyPath(currentPath)}
-              className="group inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-sm"
-              title="Drag to input field or click to copy path"
+              className="group inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-sm max-w-[140px]"
+              title={tooltipText}
             >
-              <span>{key}</span>
-              <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <span className="truncate">{displayName}</span>
+              <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
             </div>
 
             <span className="text-gray-400 text-xs">{typeLabel}</span>
             {!isExpanded && <span className="text-gray-300 text-xs">...</span>}
           </div>
-          
+
           {isExpanded && (
-            <div className="ml-4 mt-1 border-l border-gray-200 pl-3">
+            <div className="ml-4 mt-1 border-l border-gray-200 pl-3 bg-white">
               {isArray ? (
                 (value as any[]).map((item, index) => (
                   <JsonViewer
@@ -93,6 +122,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
                     level={level + 1}
                     onDragStart={onDragStart}
                     basePath={`${currentPath}[${index}]`}
+                    nodeMetadata={nodeMetadata}
                   />
                 ))
               ) : (
@@ -101,6 +131,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
                   level={level + 1}
                   onDragStart={onDragStart}
                   basePath={currentPath}
+                  nodeMetadata={nodeMetadata}
                 />
               )}
             </div>
@@ -110,9 +141,14 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
     }
 
     // Handle empty objects and arrays
-    if ((isArray && (value as any[]).length === 0) || (typeof value === "object" && value !== null && Object.keys(value as object).length === 0)) {
+    if (
+      (isArray && (value as any[]).length === 0) ||
+      (typeof value === "object" &&
+        value !== null &&
+        Object.keys(value as object).length === 0)
+    ) {
       const typeLabel = isArray ? "Array[]" : "Object{}";
-      
+
       return (
         <div key={key} className="ml-2">
           <div className="flex items-center gap-2 py-1 px-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors">
@@ -121,11 +157,11 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
               draggable
               onDragStart={(e) => handleDragStart(e, currentPath, value)}
               onClick={() => copyPath(currentPath)}
-              className="group inline-flex items-center gap-1 px-2 py-0.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-sm"
-              title="Drag to input field or click to copy path"
+              className="group inline-flex items-center gap-1 px-2 py-0.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-sm max-w-[140px]"
+              title={tooltipText}
             >
-              <span>{key}</span>
-              <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <span className="truncate">{displayName}</span>
+              <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
             </div>
 
             <span className="text-gray-400 text-xs">{typeLabel}</span>
@@ -135,13 +171,26 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
     }
 
     // Leaf value rendering
-    const displayValue = value === null ? "null" : 
-                        value === undefined ? "undefined" :
-                        typeof value === "string" ? `"${value}"` :
-                        typeof value === "number" ? value.toString() :
-                        typeof value === "boolean" ? value.toString() :
-                        Array.isArray(value) ? `[]` :
-                        JSON.stringify(value);
+    const displayValue =
+      value === null
+        ? "null"
+        : value === undefined
+          ? "undefined"
+          : typeof value === "string"
+            ? `"${value}"`
+            : typeof value === "number"
+              ? value.toString()
+              : typeof value === "boolean"
+                ? value.toString()
+                : Array.isArray(value)
+                  ? `[]`
+                  : JSON.stringify(value);
+
+    // Full value for tooltip (untruncated)
+    const fullValueTooltip =
+      typeof value === "string" && value.length > 30
+        ? value
+        : displayValue;
 
     return (
       <div
@@ -154,14 +203,18 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
             draggable
             onDragStart={(e) => handleDragStart(e, currentPath, value)}
             onClick={() => copyPath(currentPath)}
-            className="group inline-flex items-center gap-1 px-2 py-0.5 bg-green-500 hover:bg-green-600 text-white text-xs font-medium rounded cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-sm"
-            title="Drag to input field or click to copy path"
+            className="group inline-flex items-center gap-1 px-2 py-0.5 bg-green-500 hover:bg-green-600 text-white text-xs font-medium rounded cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-sm max-w-[140px] flex-shrink-0"
+            title={tooltipText}
           >
-            <span>{key}</span>
-            <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <span className="truncate">{displayName}</span>
+            <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
           </div>
-          
-          <span className="text-gray-600 text-xs font-mono truncate">
+
+          {/* Value with tooltip for long text */}
+          <span
+            className="text-gray-600 text-xs font-mono truncate cursor-default"
+            title={fullValueTooltip}
+          >
             {displayValue}
           </span>
         </div>
@@ -170,7 +223,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
   };
 
   return (
-    <div className="space-y-1 max-w-full overflow-hidden">
+    <div className="space-y-1 max-w-full bg-white">
       {Object.entries(data).map(([key, value]) => {
         const currentPath = basePath ? `${basePath}.${key}` : key;
         return renderValue(key, value, currentPath);
