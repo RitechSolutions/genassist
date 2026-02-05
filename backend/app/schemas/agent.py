@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -10,6 +10,7 @@ from app.schemas.agent_security_settings import (
     AgentSecuritySettingsCreate,
     AgentSecuritySettingsUpdate,
 )
+from app.schemas.common import PaginatedResponse
 
 
 class AgentBase(BaseModel):
@@ -137,3 +138,32 @@ class AgentImageUpload(BaseModel):
 class QueryRequest(BaseModel):
     query: str
     metadata: Optional[Dict[str, Any]] = None
+
+
+class AgentListItem(BaseModel):
+    """Minimal agent data for list view - optimized for performance"""
+    id: UUID
+    name: str
+    workflow_id: Optional[UUID] = None
+    possible_queries: List[str] = Field(default_factory=list, description="FAQ queries")
+    is_active: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("possible_queries", mode="before")
+    @classmethod
+    def deserialize_possible_queries(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            return v.split(";") if v else []
+        return v if v else []
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def deserialize_is_active(cls, v: Any) -> bool:
+        if isinstance(v, int):
+            return bool(v)
+        return v
+
+
+# Re-export PaginatedResponse for backward compatibility
+__all__ = ["PaginatedResponse"]

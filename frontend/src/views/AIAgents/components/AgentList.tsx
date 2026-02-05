@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AgentConfig, getAllKnowledgeItems } from "@/services/api";
+import { AgentListItem } from "@/interfaces/ai-agent.interface";
+import { getAllKnowledgeItems } from "@/services/api";
 import { Button } from "@/components/button";
 import {
   Search,
@@ -12,6 +13,8 @@ import {
   SquareCode,
   KeyRoundIcon,
   Shield,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Switch } from "@/components/switch";
 import {
@@ -23,20 +26,37 @@ import {
 } from "@/components/dropdown-menu";
 import { AgentFormDialog } from "./AgentForm";
 
+const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
+
+interface PaginationProps {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}
+
 interface AgentListProps {
-  agents: AgentConfig[];
+  agents: AgentListItem[];
+  total: number;
   onDelete: (agentId: string) => void;
   onUpdate: (agentId: string) => void;
   onManageKeys: (agentId: string) => void;
-  onGetIntegrationCode: (agentId: string, userId: string) => void;
+  onGetIntegrationCode: (agentId: string) => void;
+  onRefresh: () => void;
+  pagination: PaginationProps;
 }
 
 const AgentList: React.FC<AgentListProps> = ({
   agents,
+  total,
   onDelete,
   onUpdate,
   onManageKeys,
   onGetIntegrationCode,
+  onRefresh,
+  pagination,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
@@ -51,7 +71,7 @@ const AgentList: React.FC<AgentListProps> = ({
   const activeAgents = agents.filter((agent) => agent.is_active);
   const inactiveAgents = agents.filter((agent) => !agent.is_active);
   const filteredAgents = agents.filter((agent) => {
-    const agentName = agent.name || `${agent.provider}-${agent.model}`;
+    const agentName = agent.name;
     return agentName.toLowerCase().includes(searchTerm.toLowerCase());
   });
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
@@ -101,10 +121,9 @@ const AgentList: React.FC<AgentListProps> = ({
     );
   }
 
-  const renderAgent = (agent: AgentConfig) => {
-    const agentName = agent.name || `${agent.provider}-${agent.model}`;
+  const renderAgent = (agent: AgentListItem) => {
+    const agentName = agent.name;
     const isActive = !!agent.is_active;
-    // Truncate system prompt for display
     const truncatedPrompt = agent.possible_queries?.join(" ") ?? "";
 
     return (
@@ -171,7 +190,7 @@ const AgentList: React.FC<AgentListProps> = ({
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
-                      onGetIntegrationCode(agent.id, agent.user_id!);
+                      onGetIntegrationCode(agent.id);
                     }}
                   >
                     <SquareCode className="mr-2 h-4 w-4" /> Integration
@@ -199,14 +218,16 @@ const AgentList: React.FC<AgentListProps> = ({
     );
   };
 
+  const handleFormClose = () => {
+    setOpenAgentForm(false);
+    onRefresh();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold">
-            Workflows{" "}
-            {/* <span className="text-2xl text-zinc-400 font-normal">({activeAgents.length} Active, {inactiveAgents.length} Inactive)</span> */}
-          </h2>
+          <h2 className="text-3xl font-bold">Workflows</h2>
           <p className="text-zinc-400 font-normal">View and manage workflows</p>
         </div>
         <div className="flex items-center gap-2">
@@ -233,7 +254,7 @@ const AgentList: React.FC<AgentListProps> = ({
       <div className="rounded-md border bg-card">
         <div className="p-6">
           <h3 className="text-xl font-semibold">
-            {filteredAgents.length} Workflows ({activeAgents.length} Active,{" "}
+            {total} Workflows ({activeAgents.length} Active,{" "}
             {inactiveAgents.length} Inactive)
           </h3>
         </div>
@@ -242,10 +263,57 @@ const AgentList: React.FC<AgentListProps> = ({
             return renderAgent(agent);
           })}
         </div>
+
+        {/* Pagination Controls */}
+        <div className="flex items-center justify-between px-6 py-4 border-t">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Rows per page:</span>
+              <select
+                value={pagination.pageSize}
+                onChange={(e) => pagination.onPageSizeChange(Number(e.target.value))}
+                className="h-8 rounded-md border border-input bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Showing {(pagination.page - 1) * pagination.pageSize + 1}-
+              {Math.min(pagination.page * pagination.pageSize, pagination.total)} of {pagination.total}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => pagination.onPageChange(pagination.page - 1)}
+              disabled={pagination.page <= 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground px-2">
+              Page {pagination.page} of {pagination.totalPages || 1}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => pagination.onPageChange(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </div>
       <AgentFormDialog
         isOpen={openAgentForm}
-        onClose={() => setOpenAgentForm(false)}
+        onClose={handleFormClose}
         data={null}
       />
     </div>

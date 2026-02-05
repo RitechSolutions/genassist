@@ -5595,6 +5595,76 @@
         }
       }
     },
+    "/api/genagent/agents/configs/list": {
+      "get": {
+        "tags": [
+          "v1",
+          "agents"
+        ],
+        "summary": "Get Configs List",
+        "description": "Get paginated list of agent configurations with minimal data.\n\nThis endpoint is optimized for performance - it only returns the fields\nneeded for list display (id, name, workflow_id, possible_queries, is_active).\nUse GET /configs/{agent_id} to get full details when clicking on an item.",
+        "operationId": "get_configs_list_api_genagent_agents_configs_list_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed)",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed)"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Items per page (max 100)",
+              "default": 10,
+              "title": "Page Size"
+            },
+            "description": "Items per page (max 100)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_AgentListItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/agents/configs": {
       "get": {
         "tags": [
@@ -13437,6 +13507,51 @@
         ],
         "title": "AgentCreate"
       },
+      "AgentListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "possible_queries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Possible Queries",
+            "description": "FAQ queries"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AgentListItem",
+        "description": "Minimal agent data for list view - optimized for performance"
+      },
       "AgentRead": {
         "properties": {
           "name": {
@@ -14816,7 +14931,6 @@
           },
           "password": {
             "type": "string",
-            "format": "password",
             "title": "Password"
           },
           "scope": {
@@ -14844,7 +14958,6 @@
                 "type": "null"
               }
             ],
-            "format": "password",
             "title": "Client Secret"
           }
         },
@@ -19789,6 +19902,42 @@
         ],
         "title": "OperatorStatisticsRead",
         "description": "Used for returning OperatorRead Statistics"
+      },
+      "PaginatedResponse_AgentListItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "PaginatedResponse[AgentListItem]"
       },
       "PasswordUpdateRequest": {
         "properties": {
