@@ -32,7 +32,7 @@ class SnowflakeManager:
                 - schema: Schema name (default: "PUBLIC")
                 - role: Snowflake role (optional)
                 - auth_method: "private_key" or "password" (default: "password")
-                - private_key: Path to uploaded PEM private key file (for private_key auth)
+                - private_key: PEM private key encrypted and Base64-encoded (for private_key auth)
                 - private_key_passphrase: Encrypted passphrase (optional)
                 - password: Encrypted password (for password auth)
                 - allowed_tables: List of allowed table names (optional)
