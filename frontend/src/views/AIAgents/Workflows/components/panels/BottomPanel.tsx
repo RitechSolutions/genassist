@@ -51,6 +51,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     }
   }, [executionState, onExecutionStateChange]);
 
+  // Sync workflow structure (nodes/edges) to context - needed for getAvailableDataForNode
   useEffect(() => {
     // Always update workflow structure when nodes/edges change
     if (workflow.nodes && workflow.edges) {

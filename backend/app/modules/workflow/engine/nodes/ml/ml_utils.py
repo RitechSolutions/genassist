@@ -78,6 +78,85 @@ def sanitize_for_json(obj: Any) -> Any:
             return f"<{type(obj).__name__}>"
 
 
+def get_schema_signature(value: Any) -> str:
+    """
+    Gets the JSON schema signature of a value for comparison.
+    Returns a string representing the structure/type of the value.
+
+    Args:
+        value: Any value to get schema signature for
+
+    Returns:
+        String representing the structure/type of the value
+    """
+    if value is None:
+        return "null"
+    if isinstance(value, list):
+        if len(value) == 0:
+            return "array:empty"
+        # Get signature of first item to represent array item schema
+        return f"array:{get_schema_signature(value[0])}"
+    if isinstance(value, dict):
+        keys = sorted(value.keys())
+        signatures = [f"{key}:{get_schema_signature(value[key])}" for key in keys]
+        return f"object:{{{','.join(signatures)}}}"
+    return type(value).__name__
+
+
+def has_uniform_schema(arr: List[Any]) -> bool:
+    """
+    Checks if all items in an array have the same schema structure.
+
+    Args:
+        arr: List of items to check
+
+    Returns:
+        True if all items have the same schema, False otherwise
+    """
+    if len(arr) <= 1:
+        return True
+    first_signature = get_schema_signature(arr[0])
+    return all(get_schema_signature(item) == first_signature for item in arr)
+
+
+def optimize_output_for_response(value: Any, array_threshold: int = 2) -> Any:
+    """
+    Optimizes output data for API response by truncating large arrays with uniform schemas.
+    This keeps only the first item as an example, since we only need the structure for
+    schema inference, not all the data.
+
+    Args:
+        value: Any value to optimize
+        array_threshold: Minimum array length before optimization is applied (default: 2)
+
+    Returns:
+        Optimized version of the value with large uniform arrays truncated
+    """
+    if value is None:
+        return value
+
+    if isinstance(value, list):
+        # If array has more items than threshold and all items share the same schema,
+        # keep only the first item as an example
+        if len(value) > array_threshold and has_uniform_schema(value):
+            optimized_first = optimize_output_for_response(value[0], array_threshold)
+            return {
+                "__optimized": True,
+                "__originalLength": len(value),
+                "items": [optimized_first],
+            }
+        # Otherwise, recursively optimize each item
+        return [optimize_output_for_response(item, array_threshold) for item in value]
+
+    if isinstance(value, dict):
+        return {
+            key: optimize_output_for_response(val, array_threshold)
+            for key, val in value.items()
+        }
+
+    return value
+
+
 def get_sample_data(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Get first 3 and last 3 records from data.
