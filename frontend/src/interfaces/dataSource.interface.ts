@@ -8,15 +8,21 @@ export interface DataSource {
   oauth_email?: string;
 }
 
+export interface ConditionalField {
+  field: string;
+  value: string | number | boolean;
+}
+
 export interface DataSourceField {
   name: string;
   label: string;
-  type: "text" | "number" | "password" | "select";
+  type: "text" | "number" | "password" | "select" | "files";
   required: boolean;
   default?: string | number;
   description?: string;
   options?: { value: string; label: string }[];
   placeholder?: string;
+  conditional?: ConditionalField;
 }
 
 export interface DataSourceConfig {
