@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock
 from urllib.parse import quote
+
+from app.cache.redis_cache import invalidate_llm_provider_cache
 from app.services.datasources import DataSourceService
 from app.repositories.datasources import DataSourcesRepository
 
@@ -14,6 +16,8 @@ from app.dependencies.injector import injector
 from app.modules.workflow.llm.provider import LLMProvider
 from fastapi import HTTPException
 from fastapi_injector import RequestScopeFactory
+
+from app.services.llm_providers import LlmProviderService
 
 
 logger = logging.getLogger(__name__)
@@ -78,9 +82,9 @@ async def test_search_data_source(sample_data_source_data):
     async with request_scope_factory.create_scope():
         logger.info("Request scope created successfully.")
         # Get the LLM provider and default model
-        llm_provider = injector.get(LLMProvider)
-        await llm_provider.reload()
-        configs = llm_provider.get_all_configurations()
+        llm_provider = injector.get(LlmProviderService)
+        await invalidate_llm_provider_cache(provider_id=None)
+        configs = await llm_provider.get_all()
         if not configs:
             raise HTTPException(
                 status_code=500, detail="No LLM provider configuration found."
