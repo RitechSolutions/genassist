@@ -227,6 +227,13 @@ class FileManagerService:
         content = await self.get_file_content(file)
         return file, content
 
+    async def download_file_to_path(self, file_id: UUID, path: str) -> None:
+        """Download file to path."""
+        file = await self.get_file_by_id(file_id)
+        content = await self.get_file_content(file)
+        with open(path, "wb") as f:
+            f.write(content)
+
     async def list_files(
         self,
         user_id: Optional[UUID] = None,

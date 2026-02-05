@@ -281,25 +281,8 @@ class AgentRAGServiceManager:
 
                         for idx, file_path in enumerate(item.files):
                             try:
-                                # if file_path is a url, use the file_url to build the url
-                                if file_path.startswith("http"):
-                                    file_url = file_path
-                                else:
-                                    file_url = None
-                                
-                                # if there is a file_id use the file_path to build the url
-                                if file_url:
-                                    from app.core.utils.bi_utils import set_url_content_if_no_rag
-                                    
-                                    override_item = item.model_copy()
-                                    override_item.urls = [file_url]
-                                    # await set_url_content_if_has_rag(override_item)
-                                    await set_url_content_if_no_rag(override_item)
-                                    contents = [getattr(override_item, "content", "")]
-                                else:   
-                                    doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
-                                    contents.append(FileTextExtractor().extract(path=file_path))
-
+                                doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
+                                contents.append(FileTextExtractor().extract(path=file_path))
 
                             except Exception as e:
                                 logger.error(

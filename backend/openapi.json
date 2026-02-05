@@ -6343,7 +6343,7 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "default": false,
+              "default": true,
               "title": "Use File Manager"
             }
           }
