@@ -205,9 +205,9 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 conditional=ConditionalField(field="auth_method", value="password"),
             ),
             FieldSchema(
-                name="private_key",
+                name="private_key_file",
                 type="files",
-                label="Private Key",
+                label="Private Key File",
                 required=True,
                 description="Upload RSA private key file for authentication",
                 conditional=ConditionalField(field="auth_method", value="private_key"),

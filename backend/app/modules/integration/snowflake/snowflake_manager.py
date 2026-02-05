@@ -1,6 +1,7 @@
 # Standard library imports
 import asyncio
 import logging
+import base64
 import os
 from typing import Dict, List, Any, Tuple, Optional
 
@@ -106,24 +107,19 @@ class SnowflakeManager:
 
         # --- Key-pair auth ---
         if auth_method == "private_key":
-            private_key_path = self.config.get("private_key")
-            if not private_key_path:
+            private_key = self.config.get("private_key")
+            if not private_key:
                 raise ValueError(
                     "auth_method='private_key' requires 'private_key' in config."
                 )
 
-            # Read the private key content from the uploaded file
-            if not os.path.exists(private_key_path):
-                raise ValueError(f"Private key file not found: {private_key_path}")
-
-            with open(private_key_path, "r") as f:
-                pem_str = f.read()
+            encrypted_pem_str = base64.b64decode(private_key).decode("utf-8")
+            pem_str = decrypt_key(encrypted_pem_str)
             passphrase = (
                 decrypt_key(self.config["private_key_passphrase"])
                 if self.config.get("private_key_passphrase")
                 else None
             )
-
             der_bytes = self._private_key_der_from_pem(pem_str, passphrase)
             params["private_key"] = der_bytes
             logger.info("Using key-pair authentication.")
