@@ -68,6 +68,8 @@ class AgentRead(AgentBase):
     security_settings: Optional[AgentSecuritySettingsRead] = None
     # Exclude the image blob from serialization
     welcome_image: Optional[bytes] = Field(None, exclude=True)
+    # Flag to indicate if agent has a welcome image (avoids unnecessary fetch)
+    has_welcome_image: bool = False
 
     @model_validator(mode='before')
     @classmethod
@@ -95,9 +97,22 @@ class AgentRead(AgentBase):
                     # Handle security_settings relationship
                     if hasattr(data, 'security_settings') and data.security_settings is not None:
                         data_dict['security_settings'] = data.security_settings
+                    # Set has_welcome_image flag
+                    data_dict['has_welcome_image'] = bool(data_dict.get('welcome_image'))
                     return data_dict
                 else:
                     data['workflow'] = workflow_dict
+
+        # Set has_welcome_image for dict data
+        if isinstance(data, dict):
+            data['has_welcome_image'] = bool(data.get('welcome_image'))
+        elif hasattr(data, 'welcome_image'):
+            # For SQLAlchemy models without workflow
+            if not isinstance(data, dict):
+                data_dict = {k: getattr(data, k) for k in dir(data)
+                           if not k.startswith('_') and not callable(getattr(data, k, None))}
+                data_dict['has_welcome_image'] = bool(data.welcome_image)
+                return data_dict
         return data
 
     @field_validator("possible_queries", mode="before")

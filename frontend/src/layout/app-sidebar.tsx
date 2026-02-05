@@ -484,30 +484,28 @@ export function AppSidebar() {
                       {isConversationsOpen && (
                         <div className="relative ml-6 space-y-1 pt-1">
                           <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
-                          <SidebarGroupContent>
+                          <div>
                             {item.children.map((child, childIndex) => (
-                              <SidebarMenuItem
+                              <div
                                 key={childIndex}
                                 className={`${menuItemClasses} relative`}
                               >
-                                <SidebarMenuButton asChild className="pl-2">
-                                  <Link
-                                    to={child.url}
-                                    className={`${submenuLinkClasses} ${
-                                      child.url === currentPath
-                                        ? activeSubmenuClasses
-                                        : ""
-                                    }`}
-                                  >
-                                    {child.icon && (
-                                      <child.icon className="w-4 h-4 mr-2" />
-                                    )}
-                                    <span>{child.title}</span>
-                                  </Link>
-                                </SidebarMenuButton>
-                              </SidebarMenuItem>
+                                <Link
+                                  to={child.url}
+                                  className={`${submenuLinkClasses} ${
+                                    child.url === currentPath
+                                      ? activeSubmenuClasses
+                                      : ""
+                                  }`}
+                                >
+                                  {child.icon && (
+                                    <child.icon className="w-4 h-4 mr-2" />
+                                  )}
+                                  <span>{child.title}</span>
+                                </Link>
+                              </div>
                             ))}
-                          </SidebarGroupContent>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -529,30 +527,28 @@ export function AppSidebar() {
                       {isGenAgentOpen && (
                         <div className="relative ml-6 space-y-1 pt-1">
                           <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
-                          <SidebarGroupContent>
+                          <div>
                             {item.children.map((child, i) => (
-                              <SidebarMenuItem
+                              <div
                                 key={i}
                                 className={`${menuItemClasses} relative`}
                               >
-                                <SidebarMenuButton asChild className="pl-2">
-                                  <Link
-                                    to={child.url}
-                                    className={`${submenuLinkClasses} ${
-                                      child.url === currentPath
-                                        ? activeSubmenuClasses
-                                        : ""
-                                    }`}
-                                  >
-                                    {child.icon && (
-                                      <child.icon className="w-4 h-4 mr-2" />
-                                    )}
-                                    <span>{child.title}</span>
-                                  </Link>
-                                </SidebarMenuButton>
-                              </SidebarMenuItem>
+                                <Link
+                                  to={child.url}
+                                  className={`${submenuLinkClasses} ${
+                                    child.url === currentPath
+                                      ? activeSubmenuClasses
+                                      : ""
+                                  }`}
+                                >
+                                  {child.icon && (
+                                    <child.icon className="w-4 h-4 mr-2" />
+                                  )}
+                                  <span>{child.title}</span>
+                                </Link>
+                              </div>
                             ))}
-                          </SidebarGroupContent>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -574,30 +570,28 @@ export function AppSidebar() {
                       {isAdminToolsOpen && (
                         <div className="relative ml-6 space-y-1 pt-1">
                           <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
-                          <SidebarGroupContent>
+                          <div>
                             {item.children.map((child, childIndex) => (
-                              <SidebarMenuItem
+                              <div
                                 key={childIndex}
                                 className={`${menuItemClasses} relative`}
                               >
-                                <SidebarMenuButton asChild className="pl-2">
-                                  <Link
-                                    to={child.url}
-                                    className={`${submenuLinkClasses} ${
-                                      child.url === currentPath
-                                        ? activeSubmenuClasses
-                                        : ""
-                                    }`}
-                                  >
-                                    {child.icon && (
-                                      <child.icon className="w-4 h-4 mr-2" />
-                                    )}
-                                    <span>{child.title}</span>
-                                  </Link>
-                                </SidebarMenuButton>
-                              </SidebarMenuItem>
+                                <Link
+                                  to={child.url}
+                                  className={`${submenuLinkClasses} ${
+                                    child.url === currentPath
+                                      ? activeSubmenuClasses
+                                      : ""
+                                  }`}
+                                >
+                                  {child.icon && (
+                                    <child.icon className="w-4 h-4 mr-2" />
+                                  )}
+                                  <span>{child.title}</span>
+                                </Link>
+                              </div>
                             ))}
-                          </SidebarGroupContent>
+                          </div>
                         </div>
                       )}
                     </div>

@@ -75,3 +75,14 @@ class ConversationRead(ConversationBase):
     model_config = ConfigDict(
         from_attributes = True
     )
+
+
+class ConversationPaginatedResponse(BaseModel):
+    """Paginated response for conversations list."""
+    items: list[ConversationRead]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+    model_config = ConfigDict(from_attributes=True)

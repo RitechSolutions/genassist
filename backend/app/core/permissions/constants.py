@@ -183,6 +183,11 @@ class CustomerPermissions:
     DELETE = "delete:customer"
 
 
+class DashboardPermissions:
+    """Dashboard read permissions"""
+    READ = "read:dashboard"
+
+
 class Permissions:
     """
     Centralized access to all permission constants.
@@ -219,6 +224,7 @@ class Permissions:
     Workflow = WorkflowPermissions
     OpenAI = OpenAIPermissions
     Customer = CustomerPermissions
+    Dashboard = DashboardPermissions
 
 
 # Backwards compatibility: support "write:app_settings" style
@@ -245,7 +251,7 @@ def get_all_permission_constants() -> set[str]:
         PermissionPermissions, RecordingPermissions, RolePermissions,
         RolePermissionPermissions, TenantPermissions, UserPermissions,
         UserTypePermissions, WorkflowPermissions, OpenAIPermissions,
-        LegacyPermissions
+        CustomerPermissions, DashboardPermissions, LegacyPermissions
     ]
 
     # Extract all string constants

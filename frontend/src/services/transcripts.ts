@@ -1,5 +1,4 @@
 import { apiRequest, getApiUrl } from "@/config/api";
-import { normalizeTranscriptList } from "@/helpers/pagination";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
 import { UserProfile } from "@/interfaces/user.interface";
 import { getAccessToken } from "@/services/auth";
@@ -18,7 +17,18 @@ const MAX_BACKEND_LIMIT = 100;
 export type FetchTranscriptsResult = {
   items: BackendTranscript[];
   total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
 };
+
+interface PaginatedConversationsResponse {
+  items: BackendTranscript[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
 
 export const fetchTranscripts = async (
   limit?: number,
@@ -29,21 +39,18 @@ export const fetchTranscripts = async (
   include_feedback?: boolean
 ): Promise<FetchTranscriptsResult> => {
   try {
-    const userId = await fetchCurrentUserId();
     let url = "conversations/";
 
     // Clamp limit to backend maximum
     const safeLimit =
       typeof limit === "number" && limit > 0
         ? Math.min(limit, MAX_BACKEND_LIMIT)
-        : undefined;
+        : 20; // Default to 20 if not specified
 
     // Add pagination and filter parameters
     const queryParams = new URLSearchParams();
     if (skip) queryParams.append("skip", String(skip));
-    if (typeof safeLimit === "number") {
-      queryParams.append("limit", String(safeLimit));
-    }
+    queryParams.append("limit", String(safeLimit));
     if (sentiment && sentiment !== "all") queryParams.append("sentiment", sentiment);
     if (hostility_neutral_max !== undefined)
       queryParams.append("hostility_neutral_max", String(hostility_neutral_max));
@@ -51,39 +58,30 @@ export const fetchTranscripts = async (
       queryParams.append("hostility_positive_max", String(hostility_positive_max));
     if (typeof include_feedback === "boolean")
       queryParams.append("include_feedback", String(include_feedback));
-    
+
     if (queryParams.toString()) {
       url += `?${queryParams.toString()}`;
     }
 
-    // if (userId) {
-    //   url = `conversations/?operator_id=${userId}`;
-    // }
-    // fix later
-
-    const data = await apiRequest<unknown>(
+    const response = await apiRequest<PaginatedConversationsResponse>(
       "GET",
       url,
       undefined
     );
 
-    const normalized = normalizeTranscriptList(data);
-    const baseCount =
-      typeof skip === "number" && skip > 0
-        ? skip + normalized.items.length
-        : normalized.items.length;
-    const optimisticTotal =
-      typeof safeLimit === "number" && normalized.items.length === safeLimit
-        ? baseCount + safeLimit
-        : baseCount;
-    const inferredTotal = Math.max(normalized.total, optimisticTotal);
+    if (!response) {
+      return { items: [], total: 0, page: 1, page_size: safeLimit, has_more: false };
+    }
 
     return {
-      items: normalized.items,
-      total: inferredTotal,
+      items: response.items || [],
+      total: response.total || 0,
+      page: response.page || 1,
+      page_size: response.page_size || safeLimit,
+      has_more: response.has_more || false,
     };
   } catch (error) {
-    return { items: [], total: 0 };
+    return { items: [], total: 0, page: 1, page_size: 20, has_more: false };
   }
 };
 

@@ -52,11 +52,15 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   }, [executionState, onExecutionStateChange]);
 
   useEffect(() => {
-    if (workflow.executionState && workflow.nodes && workflow.edges) {
+    // Always update workflow structure when nodes/edges change
+    if (workflow.nodes && workflow.edges) {
       setWorkflowStructure(workflow.nodes, workflow.edges);
+    }
+    // Load execution state if available
+    if (workflow.executionState) {
       loadExecutionState(workflow.executionState);
     }
-  }, [workflow.nodes, workflow.edges]);
+  }, [workflow.nodes, workflow.edges, workflow.executionState]);
 
   // Handle save to server
   const handleSaveToServer = async () => {

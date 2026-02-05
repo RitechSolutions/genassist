@@ -1,90 +1,82 @@
 import { useState, useEffect } from "react";
-import { fetchMetrics, FetchedMetricsData } from "@/services/metrics";
 import { StatsOverviewCard } from "./StatsOverviewCard";
-import { getAllAgentConfigs } from "@/services/api";
 
 import { usePermissions, useIsLoadingPermissions } from "@/context/PermissionContext";
-import { formatResponseTime } from "../helpers/timeFormatter";
+import { fetchDashboardSummary, getFilterDays } from "@/services/dashboard";
+import type { DashboardSummaryStats } from "@/interfaces/dashboard.interface";
 
 interface KPISectionProps {
   timeFilter: string;
 }
 
+const formatResponseTime = (ms: number): string => {
+  if (ms === 0) return "0ms";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.round(ms / 60000)}m`;
+};
+
+const formatNumber = (num: number): string => {
+  return num.toLocaleString();
+};
+
 export function KPISection({ timeFilter }: KPISectionProps) {
   const permissions = usePermissions();
   const isLoadingPermissions = useIsLoadingPermissions();
-  const [metrics, setMetrics] = useState<FetchedMetricsData | null>(null);
-  const [activeAgentsCount, setActiveAgentsCount] = useState<number>(0);
+  const [summaryStats, setSummaryStats] = useState<DashboardSummaryStats | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const getMetrics = async () => {
+    const fetchStats = async () => {
       if (isLoadingPermissions) {
         return;
       }
-      if (permissions.includes("read:metrics") || permissions.includes("*") ) {
+
+      // Check for dashboard permission or wildcard
+      if (permissions.includes("read:dashboard") || permissions.includes("*")) {
+        setLoading(true);
         try {
-          const data = await fetchMetrics();
-          setMetrics(data);
+          const days = getFilterDays(timeFilter);
+          const data = await fetchDashboardSummary(days);
+          setSummaryStats(data);
         } catch (err) {
-          // ignore
+          console.error("Error fetching dashboard summary:", err);
+        } finally {
+          setLoading(false);
         }
-      }
-    };
-  
-    getMetrics();
-  }, [isLoadingPermissions, permissions]);
-
-  useEffect(() => {
-    const getActiveAgentsCount = async () => {
-      try {
-        const agents = await getAllAgentConfigs();
-        const activeCount = agents.filter(agent => agent.is_active).length;
-        setActiveAgentsCount(activeCount);
-      } catch (err) {
-        // ignore error, keep default value
+      } else {
+        setLoading(false);
       }
     };
 
-    getActiveAgentsCount();
-  }, []);
+    fetchStats();
+  }, [isLoadingPermissions, permissions, timeFilter]);
 
-  const defaultMetrics = {
-    "Response Time": "0m",
-  };
-
-  const formattedData = metrics || defaultMetrics;
-
-  // Transform metrics data for the new stats overview card
+  // Transform summary stats for the stats overview card
   const statsMetrics = [
     {
       label: "Active Agents",
-      value: activeAgentsCount.toString(),
+      value: summaryStats?.active_agents?.toString() || "0",
       change: 0,
       changeType: "neutral" as const,
     },
     {
       label: "Workflow Runs",
-      value: "1,847",
-      change: 12,
-      changeType: "decrease" as const,
+      value: formatNumber(summaryStats?.workflow_runs || 0),
+      change: 0,
+      changeType: "neutral" as const,
     },
     {
       label: "Avg Response Time",
-      value: formatResponseTime(formattedData["Response Time"]),
-      change: 4,
-      changeType: "decrease" as const,
+      value: formatResponseTime(summaryStats?.avg_response_time_ms || 0),
+      change: 0,
+      changeType: "neutral" as const,
     },
-    // {
-    //   label: "Usage",
-    //   value: "~$48.00",
-    //   change: 16,
-    //   changeType: "increase" as const,
-    // },
   ];
 
   return (
     <section className="mb-5">
-      <StatsOverviewCard metrics={statsMetrics} />
+      <StatsOverviewCard metrics={statsMetrics} loading={loading} />
     </section>
   );
-} 
+}

@@ -35,6 +35,7 @@ interface AgentFormData {
   thinking_phrases?: string[];
   is_active?: boolean;
   workflow_id?: string;
+  has_welcome_image?: boolean;
 }
 
 interface AgentFormProps {
@@ -67,7 +68,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const cleanedThinkingPhrases =
     data?.thinking_phrases?.filter((p) => p.trim() !== "") ?? [];
 
-    console.log(data);
   const [formData, setFormData] = useState<AgentFormData>({
     ...(data || {
       name: "",
@@ -91,22 +91,23 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const [imageDeleting, setImageDeleting] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
-  // Load existing image when editing
+  // Load existing image when editing (only if agent has one)
   React.useEffect(() => {
     const loadExistingImage = async () => {
-      if (isEditMode && id) {
+      // Only fetch if agent has a welcome image
+      if (isEditMode && id && data?.has_welcome_image) {
         try {
           const imageBlob = await getWelcomeImage(id);
           const imageUrl = URL.createObjectURL(imageBlob);
           setImagePreview(imageUrl);
         } catch (error) {
-          // Image doesn't exist or failed to load, which is fine
+          // Image failed to load
         }
       }
     };
 
     loadExistingImage();
-  }, [isEditMode, id]);
+  }, [isEditMode, id, data?.has_welcome_image]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>

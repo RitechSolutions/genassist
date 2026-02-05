@@ -554,6 +554,9 @@ function TranscriptDialogContent({
 
     setChatInput("");
 
+    // Add message to local state immediately for instant UI feedback
+    setSentMessages((prev) => [...prev, newEntry]);
+
     try {
       await conversationService.updateConversation(transcript.id, {
         messages: [newEntry],
@@ -562,7 +565,9 @@ function TranscriptDialogContent({
 
       if (refetchConversations) refetchConversations();
     } catch (err) {
-      // ignore
+      // Remove the message from sent messages if the API call fails
+      setSentMessages((prev) => prev.filter((m) => m.create_time !== newEntry.create_time));
+      toast.error("Failed to send message");
     }
   };
 
@@ -875,12 +880,14 @@ function TranscriptDialogContent({
                         <div
                           className={`p-2 rounded-lg max-w-[75%] sm:max-w-[90%] leading-tight break-words ${
                             isAgent
-                              ? "bg-black text-white rounded-tl-lg"
+                              ? "bg-blue-600 text-white rounded-tl-lg"
                               : "bg-gray-200 text-gray-900 rounded-tr-lg"
                           }`}
                         >
                           <ConversationEntryWrapper entry={entry} />
-                          <span className="block text-[10px] text-muted-foreground text-right mt-1">
+                          <span className={`block text-[10px] text-right mt-1 ${
+                            isAgent ? "text-white/70" : "text-gray-500"
+                          }`}>
                             {formatMessageTime(entry.create_time)}
                           </span>
                         </div>
@@ -893,7 +900,7 @@ function TranscriptDialogContent({
                     <span className="text-[11px] text-black font-medium mb-1">
                       Agent
                     </span>
-                    <div className="p-3 rounded-lg max-w-[75%] sm:max-w-[90%] leading-tight break-words bg-black text-white rounded-tl-lg">
+                    <div className="p-3 rounded-lg max-w-[75%] sm:max-w-[90%] leading-tight break-words bg-blue-600 text-white rounded-tl-lg">
                       <div className="flex items-center space-x-1">
                         <div
                           className="w-2 h-2 rounded-full bg-white/60 animate-bounce"
