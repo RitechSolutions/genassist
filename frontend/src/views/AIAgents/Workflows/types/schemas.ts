@@ -43,10 +43,6 @@ export const validateSchemaCompatibility = (
   targetSchema: NodeSchema
 ): SchemaValidationResult => {
   const errors: string[] = [];
-  return {
-    isValid: true,
-    errors: []
-  }
 
   // Check if all required fields in target schema are present in source schema
   Object.entries(targetSchema).forEach(([fieldName, fieldSchema]) => {
