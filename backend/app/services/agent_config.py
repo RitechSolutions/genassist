@@ -16,6 +16,7 @@ from app.repositories.agent import AgentRepository
 from app.repositories.user_types import UserTypesRepository
 from app.schemas.agent import AgentCreate, AgentListItem, AgentRead, AgentUpdate
 from app.schemas.common import PaginatedResponse
+from app.schemas.filter import BaseFilterModel
 from app.schemas.agent_security_settings import AgentSecuritySettingsCreate, AgentSecuritySettingsUpdate
 from app.db.models import AgentSecuritySettingsModel
 from app.schemas.workflow import WorkflowUpdate, get_base_workflow
@@ -49,10 +50,10 @@ class AgentConfigService:
         return await self.repository.get_all_full()
 
     async def get_list_paginated(
-        self, page: int = 1, page_size: int = 10
+        self, filter_obj: BaseFilterModel
     ) -> PaginatedResponse[AgentListItem]:
         """Get paginated list of agents with minimal data for list view"""
-        rows, total = await self.repository.get_list_paginated(page, page_size)
+        rows, total = await self.repository.get_list_paginated(filter_obj)
 
         items = [
             AgentListItem(
@@ -65,15 +66,7 @@ class AgentConfigService:
             for row in rows
         ]
 
-        total_pages = (total + page_size - 1) // page_size if total > 0 else 0
-
-        return PaginatedResponse[AgentListItem](
-            items=items,
-            total=total,
-            page=page,
-            page_size=page_size,
-            total_pages=total_pages,
-        )
+        return PaginatedResponse.from_filter(items, total, filter_obj)
 
     @cache(
             expire=300,

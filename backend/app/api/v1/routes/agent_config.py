@@ -8,6 +8,7 @@ from fastapi_injector import Injected
 from app.auth.dependencies import auth
 from app.schemas.agent import AgentCreate, AgentListItem, AgentRead, AgentUpdate
 from app.schemas.common import PaginatedResponse
+from app.schemas.filter import BaseFilterModel
 from app.services.agent_config import AgentConfigService
 
 
@@ -22,8 +23,7 @@ router = APIRouter()
     ],
 )
 async def get_configs_list(
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(10, ge=1, le=100, description="Items per page (max 100)"),
+    filter_obj: BaseFilterModel = Depends(),
     config_service: AgentConfigService = Injected(AgentConfigService),
 ):
     """
@@ -33,7 +33,7 @@ async def get_configs_list(
     needed for list display (id, name, workflow_id, possible_queries, is_active).
     Use GET /configs/{agent_id} to get full details when clicking on an item.
     """
-    return await config_service.get_list_paginated(page, page_size)
+    return await config_service.get_list_paginated(filter_obj)
 
 
 # TODO set permission validation

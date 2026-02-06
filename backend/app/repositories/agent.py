@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 from app.db.models import AgentModel, OperatorModel
 from app.repositories.db_repository import DbRepository
+from app.schemas.filter import BaseFilterModel
 
 @inject
 class AgentRepository(DbRepository[AgentModel]):
@@ -64,15 +65,13 @@ class AgentRepository(DbRepository[AgentModel]):
         return result.scalars().first()
 
     async def get_list_paginated(
-        self, page: int = 1, page_size: int = 10
+        self, filter_obj: BaseFilterModel
     ) -> Tuple[list[AgentModel], int]:
         """
         Return minimal agent data for list view with pagination.
         Only loads columns needed for the list display (no relationships).
         Returns tuple of (agents, total_count).
         """
-        offset = (page - 1) * page_size
-
         # Count query - get total without loading data
         count_stmt = select(func.count(AgentModel.id)).where(
             AgentModel.is_deleted == 0
@@ -81,19 +80,20 @@ class AgentRepository(DbRepository[AgentModel]):
         total = count_result.scalar() or 0
 
         # Data query - only select minimal columns needed for list view
-        data_stmt = (
-            select(
-                AgentModel.id,
-                AgentModel.name,
-                AgentModel.workflow_id,
-                AgentModel.possible_queries,
-                AgentModel.is_active,
-            )
-            .where(AgentModel.is_deleted == 0)
-            .order_by(AgentModel.created_at.asc())
-            .offset(offset)
-            .limit(page_size)
-        )
+        data_stmt = select(
+            AgentModel.id,
+            AgentModel.name,
+            AgentModel.workflow_id,
+            AgentModel.possible_queries,
+            AgentModel.is_active,
+        ).where(AgentModel.is_deleted == 0)
+
+        # Apply sorting using base repository method
+        data_stmt = self._apply_sorting(data_stmt, filter_obj)
+
+        # Apply pagination using base repository method
+        data_stmt = self._apply_pagination(data_stmt, filter_obj)
+
         result = await self.db.execute(data_stmt)
         rows = result.all()
 
