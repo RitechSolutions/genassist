@@ -2581,23 +2581,23 @@
         ],
         "parameters": [
           {
-            "name": "start_date",
+            "name": "date_from",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
               "format": "date-time",
-              "title": "Start Date"
+              "title": "Date From"
             }
           },
           {
-            "name": "end_date",
+            "name": "date_to",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
               "format": "date-time",
-              "title": "End Date"
+              "title": "Date To"
             }
           },
           {
@@ -2629,13 +2629,13 @@
             }
           },
           {
-            "name": "modified_by",
+            "name": "user",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Modified By"
+              "title": "User"
             }
           },
           {
@@ -2682,7 +2682,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AuditLogRead"
+                    "$ref": "#/components/schemas/AuditLogSearchResult"
                   },
                   "title": "Response Search Api Audit Logs Search Get"
                 }
@@ -15288,6 +15288,23 @@
             "type": "string",
             "title": "Action Name"
           },
+          "modified_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Modified At"
+          },
+          "modified_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified By"
+          },
           "json_changes": {
             "anyOf": [
               {
@@ -15298,6 +15315,37 @@
               }
             ],
             "title": "Json Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "table_name",
+          "record_id",
+          "action_name",
+          "modified_at"
+        ],
+        "title": "AuditLogRead",
+        "description": "Schema for individual audit log detail - includes json_changes."
+      },
+      "AuditLogSearchResult": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "table_name": {
+            "type": "string",
+            "title": "Table Name"
+          },
+          "record_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Record Id"
+          },
+          "action_name": {
+            "type": "string",
+            "title": "Action Name"
           },
           "modified_at": {
             "type": "string",
@@ -15325,7 +15373,8 @@
           "action_name",
           "modified_at"
         ],
-        "title": "AuditLogRead"
+        "title": "AuditLogSearchResult",
+        "description": "Schema for audit log search results - excludes json_changes."
       },
       "Body_add_conversation_feedback_api_conversations_feedback__conversation_id__patch": {
         "properties": {
