@@ -82,11 +82,14 @@ export async function getAllAgentConfigs(): Promise<AgentConfig[]> {
 // Paginated list endpoint - optimized for performance
 export async function getAgentConfigsList(
   page: number = 1,
-  pageSize: number = 10
+  pageSize: number = 20
 ): Promise<PaginatedResponse<AgentListItem>> {
+
+  const skip = (page - 1) * pageSize;
+  const limit = pageSize;
   return apiRequest<PaginatedResponse<AgentListItem>>(
     "GET",
-    `genagent/agents/configs/list?page=${page}&page_size=${pageSize}`
+    `genagent/agents/configs/list?skip=${skip}&limit=${limit}`
   );
 }
 
