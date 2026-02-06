@@ -79,6 +79,15 @@ class LLMProvider:
                 provider = "openai"  # Translate vLLM to OpenAI provider
                 validated_data["api_key"] = "EMPTY"  # vLLM doesn't need auth
 
+            # Handle OpenRouter (uses OpenAI-compatible API)
+            elif provider == "openrouter":
+                provider = "openai"  # OpenRouter uses OpenAI-compatible interface
+                if "base_url" not in validated_data:
+                    validated_data["base_url"] = "https://openrouter.ai/api/v1"
+                # Decrypt the API key
+                if "api_key" in validated_data:
+                    validated_data["api_key"] = decrypt_key(validated_data["api_key"])
+
             # Handle API key decryption for providers that need it
             elif "api_key" in validated_data and provider not in ["ollama"]:
                 validated_data["api_key"] = decrypt_key(validated_data["api_key"])
