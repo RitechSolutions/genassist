@@ -64,7 +64,7 @@ interface FileItem {
   file_id?: string;
   file_path: string;
   original_file_name: string;
-  url: string;
+  url?: string;
   file_type?: string;
 }
 
@@ -529,24 +529,35 @@ const KnowledgeBaseManager: React.FC = () => {
             throw new Error("File upload failed");
           }
 
-          // loop through the upload results and store only the URL (or path for local) per file
+          // loop through the upload results and store the full FileItem object per file
           uploadResults.forEach((result: UploadResult) => {
-            const remote_file_url = result.file_url || null;
-            const file_url_to_use = remote_file_url || result.file_path;
+            // Store the full FileItem object with all metadata
+            const fileItem: FileItem = {
+              file_id: result.file_id,
+              file_path: result.file_path,
+              original_file_name: result.original_filename,
+              file_type: result.file_type,
+            };
 
-            // Store only the URL string in files (DB stores files as list of URLs)
-            dataToSubmit.files.push(file_url_to_use);
+            if (result.file_type === "url" || result.file_url) {
+              fileItem.url = result.file_type === "url" ? result.file_url : result.file_path;
+            }
+
+            dataToSubmit.files.push(fileItem);
 
             // add the original_filename to the content
             dataToSubmit.content += ` ${result.original_filename}`;
           });
         } else if (editingItem && formData.files && formData.files.length > 0) {
-          // When updating without new files, preserve existing files as URL strings
-          dataToSubmit.files = formData.files.map((fileItem) =>
-            typeof fileItem === "string"
-              ? fileItem
-              : (fileItem.url ?? (fileItem as { urls?: string }).urls ?? fileItem.file_path)
-          );
+          // When updating without new files, preserve existing files as FileItem objects or strings
+          dataToSubmit.files = formData.files.map((fileItem) => {
+            // If it's already a FileItem object, keep it as-is
+            if (typeof fileItem === "object" && fileItem !== null) {
+              return fileItem;
+            }
+            // If it's a string (legacy format), keep it as string for backward compatibility
+            return fileItem;
+          });
         }
       }
 

@@ -98,7 +98,7 @@ class S3StorageProvider(BaseStorageProvider):
             'Bucket': bucket_name,
             'Key': file_storage_path
         }
-        return self.s3_client.generate_presigned_url('get_object', params, signed_url_expires_in)
+        return await self.s3_client.generate_presigned_url('get_object', params, signed_url_expires_in)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get provider statistics."""

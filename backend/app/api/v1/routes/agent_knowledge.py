@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form, Request
 from typing import List, Dict, Optional
 import os
 import uuid
@@ -203,6 +203,7 @@ async def delete_knowledge_doc(
     ],
 )
 async def upload_file(
+    request: Request,
     files: List[UploadFile] = File(...),
     file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
@@ -233,35 +234,33 @@ async def upload_file(
 
             # check if the file manager is enabled
             use_file_manager = file_storage_settings.FILE_MANAGER_ENABLED
-            file_url = None
-            file_type = "file"
-            file_id = None  
 
             if use_file_manager:
+                # subdir
+                sub_folder = f"agents_config/uploads"
+                
                 # Determine provider type
-                provider_name = file_storage_settings.FILE_MANAGER_PROVIDER or "local"
+                provider_name = file_storage_settings.default_provider_name
 
                 # Load provider
-                config = { "base_path": UPLOAD_DIR} if provider_name == "local" else file_storage_settings.model_dump(exclude_none=True)
+                config = { "base_path": str(DATA_VOLUME)} if provider_name == "local" else file_storage_settings.model_dump(exclude_none=True)
+
+                # Set base_url
+                config["base_url"] = str(request.base_url).rstrip('/')
+
                 provider = file_manager_service.get_storage_provider_by_name(provider_name, config=config)
                 await file_manager_service.set_storage_provider(provider)
 
                 # use file manager service to upload the file
-                created_file = await file_manager_service.create_file(file, sub_folder=UPLOAD_DIR)
+                created_file = await file_manager_service.create_file(file, sub_folder)
                 file_id = str(created_file.id)
-                file_source_url = f"{file_storage_settings.APP_URL}/api/file-manager/files/{file_id}/source"
-                file_type = "url"
 
-                # download the file and save it to the file system if it is a url
-                if file_source_url.startswith("http") and file_id is not None:
-                    await file_manager_service.download_file_to_path(file_id, file_path)
+                await file_manager_service.download_file_to_path(file_id, file_path)
+                file_url = await file_manager_service.get_file_url(created_file)
 
-                # get the file url (only for remote providers)
-                if provider_name != "local":
-                    file_url = await file_manager_service.get_file_url(created_file)
-
-                if file_id:
-                    result["file_id"] = file_id
+                result["file_type"] = "url"
+                result["file_url"] = file_url
+                result["file_id"] = file_id
             else:
                 # save the file to the upload directory
                 logger.info(f"Saving file to: {file_path}")
@@ -274,8 +273,6 @@ async def upload_file(
 
             # add the file_path to the result
             result["file_path"] = file_path
-            result["file_url"] = file_url
-            result["file_type"] = file_type
             
             logger.info(f"Upload successful: {result}")
             results.append(result)
@@ -296,6 +293,7 @@ async def upload_file(
     ]
 )
 async def upload_file_to_chat(
+    request: Request,
     chat_id: str = Form(...),
     file: UploadFile = File(...),
     file_manager_service: FileManagerService = Injected(FileManagerService),
@@ -309,20 +307,24 @@ async def upload_file_to_chat(
         )
 
         # get the provider type
-        provider_type = file_storage_settings.FILE_MANAGER_PROVIDER or "local"
+        provider_name = file_storage_settings.default_provider_name
 
         # load the storage provider
-        config = { "base_path": UPLOAD_DIR} if provider_type == "local" else file_storage_settings.model_dump(exclude_none=True)
-        provider = file_manager_service.get_storage_provider_by_name(provider_type, config=config)
+        config = { "base_path": str(DATA_VOLUME)} if provider_name == "local" else file_storage_settings.model_dump(exclude_none=True)
+        provider = file_manager_service.get_storage_provider_by_name(provider_name, config=config)
         await file_manager_service.set_storage_provider(provider)
+        
+        file_url = None
 
         try:
             # create file in file manager service
             created_file = await file_manager_service.create_file(
                 file,
-                sub_folder=f"{UPLOAD_DIR}/{chat_id}",
+                sub_folder=f"agents_config/upload-chat-files/{chat_id}",
                 allowed_extensions=["pdf", "docx", "txt", "jpg", "jpeg", "png"],
             )
+
+            file_url = await file_manager_service.get_file_url(created_file)
         except Exception as e:
             logger.error(f"Error creating file: {str(e)}")
             raise HTTPException(
@@ -360,7 +362,6 @@ async def upload_file_to_chat(
         except Exception as e:
             logger.warning(f"Could not extract text from file: {str(e)}")
 
-        file_url = f"/api/file-manager/files/{file_id}/source"
 
         # Return the filenames and paths
         result = FileUploadResponse(

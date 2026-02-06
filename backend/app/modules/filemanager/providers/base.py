@@ -18,6 +18,7 @@ class BaseStorageProvider(ABC):
 
     name: str
     provider_type: str
+    base_url: str
 
     def __init__(self, config: Dict[str, Any]):
         """
@@ -28,7 +29,8 @@ class BaseStorageProvider(ABC):
         """
         self.config = config
         self._initialized = False
-
+        self.base_url = config.get("base_url", "")
+        
     @abstractmethod
     async def initialize(self) -> bool:
         """

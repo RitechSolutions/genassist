@@ -314,9 +314,12 @@ class LocalFileSystemProvider(BaseStorageProvider):
         """Clean up resources (no-op for local file system)."""
         pass
 
-    def get_file_url(self, path: str, storage_path: str) -> str:
+    async def get_file_url(self, base_path: str, file_storage_path: str) -> str:
         """
         Get the URL of a file in local file system.
+        
+        This method is asynchronous to comply with the BaseStorageProvider
+        interface and to allow uniform ``await`` usage across providers.
         
         Args:
             path: Path to the file
@@ -325,4 +328,4 @@ class LocalFileSystemProvider(BaseStorageProvider):
         Returns:
             URL of the file
         """
-        return f"{path}/{storage_path}"
+        return f"{base_path}/{file_storage_path}"

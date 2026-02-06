@@ -245,6 +245,12 @@ class FileManagerService:
         if not self.storage_provider.is_initialized():
             raise ValueError("Storage provider not initialized")
 
+        # when used the local file storage provider, use the source url
+        if file.storage_provider == "local":
+            config_base_url = self.storage_provider.base_url
+            return f"{config_base_url}/api/file-manager/files/{file.id}/source"
+
+        # get the file url from the storage provider
         return await self.storage_provider.get_file_url(file.path, file.storage_path)
 
     # ==================== Helper Methods ====================

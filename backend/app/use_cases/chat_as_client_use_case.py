@@ -224,6 +224,7 @@ async def get_or_create_conversation(
     return open_conversation
 
 async def process_attachments_from_metadata(
+    base_url: str,
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
     tenant_id: str,
@@ -252,7 +253,6 @@ async def process_attachments_from_metadata(
                 if not file:
                     pass
                 else:
-                    base_url = file_storage_settings.APP_URL
                     file_url = f"{base_url}/api/file-manager/files/{file.id}/source"
 
                     # add to attachments

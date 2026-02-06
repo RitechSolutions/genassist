@@ -84,14 +84,15 @@ class GoogleCloudStorageProvider(BaseStorageProvider):
             "status": "stub - not implemented",
         }
 
-    def get_file_url(self, file_id: str) -> str:
+    async def get_file_url(self, bucket_name: str, file_storage_path: str) -> str:
         """
         Get the URL of a file in Google Cloud Storage.
         
         Args:
-            file_id: ID of the file
+            bucket_name: Name of the bucket
+            file_storage_path: Path to the file in storage
             
         Returns:
             URL of the file
         """
-        return f"https://storage.googleapis.com/{self.bucket_name}/{file_id}"
+        return f"https://storage.googleapis.com/{bucket_name}/{file_storage_path}"

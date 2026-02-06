@@ -351,6 +351,7 @@ async def update(
 
     # process attachments from metadata
     await process_attachments_from_metadata(
+        base_url=str(request.base_url).rstrip('/'),
         conversation_id=conversation_id,
         model=model,
         tenant_id=tenant_id,
