@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AgentListItem } from "@/interfaces/ai-agent.interface";
-import { getAllKnowledgeItems } from "@/services/api";
 import { Button } from "@/components/button";
 import {
   Plus,
@@ -72,35 +71,14 @@ const AgentList: React.FC<AgentListProps> = ({
     return () => observer.disconnect();
   }, [hasMore, loadingMore, loadMore]);
 
-  interface KnowledgeItem {
-    id: string;
-    rag_config?: {
-      enabled: boolean;
-    };
-  }
-
   const activeAgents = agents.filter((agent) => agent.is_active);
   const inactiveAgents = agents.filter((agent) => !agent.is_active);
   const filteredAgents = agents.filter((agent) => {
     const agentName = agent.name;
     return agentName.toLowerCase().includes(searchTerm.toLowerCase());
   });
-  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
 
   const [openAgentForm, setOpenAgentForm] = useState(false);
-
-  useEffect(() => {
-    const fetchKnowledgeItems = async () => {
-      try {
-        const items = await getAllKnowledgeItems();
-        setKnowledgeItems(items as KnowledgeItem[]);
-      } catch (err) {
-        // ignore
-      }
-    };
-
-    fetchKnowledgeItems();
-  }, []);
 
   const handleOpenWorkflow = (agentId: string) => {
     navigate(`/ai-agents/workflow/${agentId}`);
