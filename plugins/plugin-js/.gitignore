@@ -1,0 +1,17 @@
+# Build
+dist
+
+# Node modules
+node_modules
+example-widget/node_modules
+
+# Example widget
+example-widget/dist
+
+# Fonts
+src/fonts/*
+!src/fonts/README.txt
+
+
+# Config for window.GENASSIST_CONFIG
+src/config/config.js
