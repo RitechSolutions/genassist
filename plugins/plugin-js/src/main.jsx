@@ -9,7 +9,7 @@ import "./font.css";
 // import "./index.css";
 
 // Import the config
-import "./config/config.example.js";
+import "./config/config.js";
 
 function bootstrap() {
   const cfg = window.GENASSIST_CONFIG || {};
