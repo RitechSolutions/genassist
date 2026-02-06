@@ -120,7 +120,20 @@ cd example-app
 npm run dev
 ```
 
-### IOS Integration
+### JavaScript Widget (Standalone)
+
+A self-contained IIFE widget that can be embedded into any website (e.g., help centers, landing pages) without a framework. It bundles React, styles, and fonts into a single JS + CSS pair.
+
+```bash
+cd plugins/plugin-js
+cp src/config/config.example.js src/config/config.js  # create your local config
+npm install
+npm run build
+```
+
+For full setup instructions, configuration options, and custom font usage, see the [plugin-js README](./plugins/plugin-js/README.md).
+
+### iOS Integration
 
 ```bash
 #Build the plugin
