@@ -2,7 +2,11 @@
 # Simple script to serve the example
 # Run from project root: bash example-widget/serve.sh
 
-cd "$(dirname "$0")/.." || exit
+# Copy the dist files to the example-widget folder
+cp -R dist example-widget/dist
+
+# Serve the example-widget folder
+cd example-widget || exit
 
 echo "Serving from: $(pwd)"
 echo "Open: http://localhost:8022/index.html"
