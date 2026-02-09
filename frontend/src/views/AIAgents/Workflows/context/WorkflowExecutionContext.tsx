@@ -317,9 +317,10 @@ export const WorkflowExecutionProvider: React.FC<
         });
 
       // Helper function to filter out keys containing "session.direct_input"
-      const filterOutput = (output: Record<string, unknown>) => {
+      const filterOutput = (output: unknown): unknown => {
+        if (!output || typeof output !== "object" || Array.isArray(output)) return output;
         const filtered: Record<string, unknown> = {};
-        Object.entries(output).forEach(([key, value]) => {
+        Object.entries(output as Record<string, unknown>).forEach(([key, value]) => {
           if (!key.includes("session.direct_input")) {
             filtered[key] = value;
           }
