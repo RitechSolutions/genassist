@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { toast } from "react-hot-toast";
 import {
   getAllKnowledgeItems,
@@ -7,7 +7,7 @@ import {
   deleteKnowledgeItem,
   uploadFiles as apiUploadFiles,
 } from "@/services/api";
-import { getApiUrl } from "@/config/api";
+import { getApiUrlString } from "@/config/api";
 import { getAllDataSources } from "@/services/dataSources";
 
 import { getAllLLMAnalysts } from "@/services/llmAnalyst";
@@ -173,6 +173,9 @@ const KnowledgeBaseManager: React.FC = () => {
   const [urls, setUrls] = useState<string[]>([""]);
   const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
 
+  /* File types that are supported by the file extractor */
+  const acceptedFileTypes = [".pdf", ".docx", ".doc", ".txt", ".csv", ".xls", ".xlsx", ".pptx", ".ppt", ".html", ".htm", ".yaml", ".yml", ".json", ".md"];
+  
   useEffect(() => {
     fetchItems();
   }, []);
@@ -214,24 +217,24 @@ const KnowledgeBaseManager: React.FC = () => {
 
     fetchLLMAnalysts();
   }, []);
+  
+  const fetchSources = useCallback(async () => {
+    if (formData.type && formData.type in targetTypes) {
+      const allSources = await getAllDataSources();
+      console.log(allSources);
+      const targetType = targetTypes[formData.type as keyof typeof targetTypes];
+
+      const filtered = allSources.filter(
+        (source) =>
+          source.source_type.toLowerCase() === targetType.toLowerCase()
+      );
+      setAvailableSources(filtered);
+    }
+  }, [formData.type]);
 
   useEffect(() => {
-    const fetchSources = async () => {
-      if (formData.type in targetTypes) {
-        const allSources = await getAllDataSources();
-        console.log(allSources);
-        const targetType = targetTypes[formData.type as keyof typeof targetTypes];
-
-        const filtered = allSources.filter(
-          (source) =>
-            source.source_type.toLowerCase() === targetType.toLowerCase()
-        );
-        setAvailableSources(filtered);
-      }
-    };
-
     fetchSources();
-  }, [formData.type]);
+  }, [fetchSources]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -275,8 +278,11 @@ const KnowledgeBaseManager: React.FC = () => {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // get the files
     const files = e.target.files ? Array.from(e.target.files) : [];
-    setSelectedFiles(files);
+    
+    // set the selected files
+    setSelectedFiles([...files]);
 
     setFormData((prev) => ({
       ...prev,
@@ -521,7 +527,7 @@ const KnowledgeBaseManager: React.FC = () => {
           dataToSubmit.files = [];
         }
 
-        // If new files are selected, upload them and add to files array
+        // If new files are selected, upload them and set files (replace mode in edit, set in create)
         if (selectedFiles.length > 0) {
           const uploadResults = await uploadFiles();
 
@@ -529,25 +535,22 @@ const KnowledgeBaseManager: React.FC = () => {
             throw new Error("File upload failed");
           }
 
-          // loop through the upload results and store the full FileItem object per file
-          uploadResults.forEach((result: UploadResult) => {
-            // Store the full FileItem object with all metadata
+          // Build the new files array from upload results (replaces existing in edit mode)
+          const newFileItems: FileItem[] = uploadResults.map((result: UploadResult) => {
             const fileItem: FileItem = {
               file_id: result.file_id,
               file_path: result.file_path,
               original_file_name: result.original_filename,
               file_type: result.file_type,
             };
-
             if (result.file_type === "url" || result.file_url) {
               fileItem.url = result.file_type === "url" ? result.file_url : result.file_path;
             }
-
-            dataToSubmit.files.push(fileItem);
-
-            // add the original_filename to the content
-            dataToSubmit.content += ` ${result.original_filename}`;
+            return fileItem;
           });
+
+          dataToSubmit.files = newFileItems;
+          dataToSubmit.content = `Files: ${newFileItems.map((f) => f.original_file_name).join(", ")}`;
         } else if (editingItem && formData.files && formData.files.length > 0) {
           // When updating without new files, preserve existing files as FileItem objects or strings
           dataToSubmit.files = formData.files.map((fileItem) => {
@@ -742,14 +745,6 @@ const KnowledgeBaseManager: React.FC = () => {
     }
   };
 
-  const getFilesFromContent = (content: string): string[] => {
-    if (content.includes("Files:")) {
-      return content.split("Files:")[1].split(",").map((filePath) => filePath.trim());
-    } else {
-      return content.includes(",") ? content.split(",").map((filePath) => filePath.trim()) : [];
-    }
-  };
-
   const getFileDisplayName = (fileItem: string | FileItem): string => {
     if (typeof fileItem === "string") {
       if (fileItem.startsWith("http://") || fileItem.startsWith("https://")) {
@@ -765,81 +760,41 @@ const KnowledgeBaseManager: React.FC = () => {
     return fileItem.original_file_name || fileItem.file_path;
   };
 
-  const getFileDisplayPath = (fileItem: string | FileItem): string => {
+  const getFileUrl = (fileItem: string | FileItem): string => {
+    const addTenantId = (url: string): string => {
+      const tenantId = localStorage.getItem("tenant_id");
+      if (tenantId && url.includes("file-manager")) {
+        return `${url}?X-Tenant-Id=${tenantId}`;
+      }
+
+      return url;
+    };
+
+
     if (typeof fileItem === "string") {
-      return fileItem;
+      return addTenantId(fileItem);
+    }
+
+    if (fileItem.file_id) {
+      const url = new URL(`file-manager/files/${fileItem.file_id}/source`, getApiUrlString).toString();
+      return addTenantId(url);
     } else {
-      return fileItem.file_path;
+      const url = fileItem.url ?? (fileItem as { urls?: string }).urls ?? null;
+      return addTenantId(url);
     }
   };
 
-  const handleDownloadFile = async (fileItem: string | FileItem) => {
-    try {
-      const fileName = typeof fileItem === "string" 
-        ? fileItem.split("/").pop() || fileItem 
-        : fileItem.original_file_name || fileItem.file_path.split("/").pop() || "file";
-
-      // If file has file_id, use the download API endpoint
-      if (typeof fileItem !== "string" && fileItem.file_id) {
-        const baseURL = await getApiUrl();
-        const accessToken = localStorage.getItem("access_token");
-        const tokenType = localStorage.getItem("token_type") || "Bearer";
-        
-        const downloadUrl = `${baseURL}file-manager/files/${fileItem.file_id}/download`;
-        
-        const response = await fetch(downloadUrl, {
-          headers: {
-            Authorization: `${tokenType} ${accessToken}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`Download failed: ${response.statusText}`);
-        }
-
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        
-        toast.success("File downloaded successfully");
-        return;
-      }
-
-      // If file has a URL (for remote files like S3)
-      const fileUrl = typeof fileItem === "string" ? fileItem : (fileItem.url ?? (fileItem as { urls?: string }).urls);
-      
-      if (fileUrl && (fileUrl.startsWith("http://") || fileUrl.startsWith("https://"))) {
-        // Direct download from URL
-        const response = await fetch(fileUrl);
-        if (!response.ok) {
-          throw new Error(`Download failed: ${response.statusText}`);
-        }
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        
-        toast.success("File downloaded successfully");
-        return;
-      }
-
-      // If no file_id or URL, show error
-      toast.error("File download not available. File may not be accessible.");
-    } catch (error) {
-      console.error("Error downloading file:", error);
-      toast.error(`Failed to download file: ${error instanceof Error ? error.message : "Unknown error"}`);
-    }
+  const addNewKnowledgeBase = () => {
+    // clear the form data
+    setFormData(DEFAULT_FORM_DATA);
+    setDynamicRagConfig({});
+    setSelectedFiles([]);
+    setUrls([""]);
+    setUrlHeaders([]);
+    setEditingItem(null);
+    setError(null);
+    setSuccess(null);
+    setShowForm(true);
   };
 
   return (
@@ -1128,12 +1083,10 @@ const KnowledgeBaseManager: React.FC = () => {
                         <div>
                           <div className="mb-1">Upload Files</div>
                           <div className="flex flex-col gap-2">
-                            <div 
-                              onClick={() => document.getElementById("file-upload")?.click()}
-                              className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md p-6 cursor-pointer">
+                            <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md p-6 cursor-pointer">
                               <label
                                 htmlFor="file-upload"
-                                className="flex flex-col items-center gap-2 cursor-pointer"
+                                className="flex flex-col items-center gap-2 cursor-pointer w-full"
                               >
                                 <Upload className="h-10 w-10 text-muted-foreground" />
                                 <span className="text-sm font-medium text-muted-foreground">
@@ -1150,6 +1103,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                   multiple
                                   onChange={handleFileChange}
                                   disabled={isUploading}
+                                  accept={acceptedFileTypes.join(",")}  
                                   className="hidden"
                                 />
                               </label>
@@ -1192,10 +1146,7 @@ const KnowledgeBaseManager: React.FC = () => {
                               selectedFiles.length === 0 && (
                                 <div className="space-y-2">
                                   {formData.files.map((fileItem, index) => {
-                                    const fileLinkUrl =
-                                      typeof fileItem === "string"
-                                        ? fileItem
-                                        : (fileItem.url ?? (fileItem as { urls?: string }).urls ?? (fileItem.file_id ? `/api/file-manager/files/${fileItem.file_id}/source` : null));
+                                    const fileLinkUrl = getFileUrl(fileItem);
                                     const canLink =
                                       fileLinkUrl &&
                                       (fileLinkUrl.startsWith("http://") ||
@@ -1212,21 +1163,43 @@ const KnowledgeBaseManager: React.FC = () => {
                                             {maskFileName(getFileDisplayName(fileItem))}
                                           </span>
                                         </div>
-                                        {canLink ? (
-                                          <a
-                                            href={fileLinkUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md hover:bg-accent hover:text-accent-foreground"
-                                            title="Open file"
-                                          >
-                                            <Download className="h-4 w-4" />
-                                          </a>
-                                        ) : (
-                                          <span className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground">
-                                            <Download className="h-4 w-4" />
-                                          </span>
-                                        )}
+                                        <div className="flex items-center gap-1">
+                                          {canLink ? (
+                                            <a
+                                              href={fileLinkUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md hover:bg-accent hover:text-accent-foreground"
+                                              title="Open file"
+                                            >
+                                              <Download className="h-4 w-4" />
+                                            </a>
+                                          ) : (
+                                            <span className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground">
+                                              <Download className="h-4 w-4" />
+                                            </span>
+                                          )}
+                                          {editingItem && (
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-8 w-8"
+                                              title="Remove file"
+                                              onClick={() =>
+                                                setFormData((prev) => ({
+                                                  ...prev,
+                                                  files:
+                                                    prev.files?.filter(
+                                                      (_, i) => i !== index
+                                                    ) ?? [],
+                                                }))
+                                              }
+                                            >
+                                              <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                          )}
+                                        </div>
                                       </div>
                                     );
                                   })}
@@ -1609,7 +1582,7 @@ const KnowledgeBaseManager: React.FC = () => {
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
-                <Button onClick={() => setShowForm(true)}>
+                <Button onClick={() => addNewKnowledgeBase()}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add New
                 </Button>

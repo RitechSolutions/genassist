@@ -95,11 +95,12 @@ class FileManagerService:
             allowed_extensions: Optional list of allowed file extensions
         """
 
+        file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
+        file_extension = file_extension.lower() if file_extension else "txt"
 
         # read from the file
         file_content = await file.read()
         file_size = len(file_content)
-        file_extension = file.filename.split(".")[-1].lower()
         file_mime_type = file.content_type
         file_name = file.filename
         file_storage_provider = self.storage_provider.name

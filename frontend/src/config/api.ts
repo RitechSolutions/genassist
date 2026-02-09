@@ -157,6 +157,8 @@ export const getApiUrl = async (): Promise<string> => {
   return ensureTrailingSlash(API_URL);
 };
 
+export const getApiUrlString = ensureTrailingSlash(API_URL);
+
 export const getWsUrl = async (): Promise<string> => {
   if (!isWsEnabled) {
     return Promise.reject(new Error("WebSocket is disabled (VITE_WS=false)"));
