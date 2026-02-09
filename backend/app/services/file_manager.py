@@ -266,10 +266,13 @@ class FileManagerService:
 
 
         # get the storage provider configuration for the file storage provider
-        config = file_storage_settings.model_dump(exclude_none=True)
+        # convert pydantic settings object to a plain dict for providers
+        config = file_storage_settings.model_dump()
 
-        # initialize the storage provider
-        await self.set_storage_provider(self.get_storage_provider_by_name(storage_provider_name, config=config))
+        # initialize the storage provider with the resolved configuration
+        await self.set_storage_provider(
+            self.get_storage_provider_by_name(storage_provider_name, config=config)
+        )
 
     def _generate_file_path(self, name: str, user_id: Optional[UUID] = None) -> str:
         """Generate a file path based on name and user for file metadata record."""

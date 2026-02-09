@@ -283,10 +283,7 @@ class FileStorageSettings(BaseSettings):
     GCP_PROJECT_ID: Optional[str] = None
     GCP_REGION: Optional[str] = None
 
-    @computed_field
-    @property
-    def APP_URL(self) -> str:
-        return f"{self.APP_HOST}:{self.APP_PORT}"
+    APP_URL: Optional[str] = "http://localhost:8000"
 
     @computed_field
     @property
