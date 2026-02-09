@@ -494,8 +494,8 @@ class ConversationService:
                     # Use the default KPI analyzer for finalization
                     await self.finalize_in_progress_conversation(
                             conversation_id=conversation.id,
-                            llm_analyst_id=seed_test_data.llm_analyst_kpi_analyzer_id,
-                            )
+                        llm_analyst_id=seed_test_data.llm_analyst_kpi_analyzer_id,
+                    )
                     finalized_count += 1
                     logger.info(
                         f"Finalized conversation {conversation.id} (last updated: {conversation.updated_at})"
