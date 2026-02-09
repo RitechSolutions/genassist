@@ -259,8 +259,16 @@ If you get a 404 error when accessing the example:
 
 1. Check that the root element exists: `<div id="genassist-chat-root"></div>`
 2. Verify the widget script is loading (check browser console)
-3. Ensure `window.GENASSIST_CONFIG` is set before the script loads
+3. Ensure `window.GENASSIST_CONFIG` is set before the script loads (or call `window.GenassistBootstrap()` after setting it)
 4. Check for JavaScript errors in the browser console
+
+### Configuration not updating
+
+If you've updated `window.GENASSIST_CONFIG` but the widget hasn't changed:
+
+1. Make sure you're calling `window.GenassistBootstrap()` after updating the config
+2. Verify the config object is being set correctly: `console.log(window.GENASSIST_CONFIG)`
+3. Check that you're using the correct property names (case-sensitive)
 
 ### Styling conflicts
 

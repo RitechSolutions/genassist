@@ -21,15 +21,9 @@ npm install
 
 ### Configuration
 
-Before running or building, create your local configuration file:
+Configuration is set via `window.GENASSIST_CONFIG` in your HTML page **before** the widget script loads. The widget reads this configuration object at initialization and whenever `window.GenassistBootstrap()` is called.
 
-```bash
-cp src/config/config.example.js src/config/config.js
-```
-
-Then edit `src/config/config.js` with your API credentials and settings. This file is **gitignored** and will not be committed.
-
-> **Note:** `src/config/config.js` is imported in `main.jsx` and sets `window.GENASSIST_CONFIG` at build time, so the configuration is bundled into the widget. For external/runtime configuration, you can comment out the import in `main.jsx` and set `window.GENASSIST_CONFIG` directly in your HTML page instead.
+> **Note:** Configuration should be set before the widget script loads, or you can update it dynamically and call `window.GenassistBootstrap()` to re-render with the new values.
 
 ### Development
 
@@ -174,16 +168,14 @@ To use a **custom font** instead:
 │   ├── main.jsx              # Widget entry point and bootstrap logic
 │   ├── font.css              # @font-face declarations for bundled fonts
 │   ├── index.css             # Optional global style overrides (commented out by default)
-│   ├── fonts/                # Font files (Roboto)
-│   └── config/
-│       ├── config.example.js # Template config (committed to git)
-│       └── config.js         # Your local config (gitignored)
+│   └── fonts/                # Font files (Roboto)
 ├── dist/                     # Build output (generated)
 │   ├── widget.iife.js        # Widget JS bundle
 │   └── widget.css            # Widget styles
 ├── example-widget/           # Integration examples
+|   ├── dist                  # distributed assets {.css | .js}
 │   ├── index.html            # Standalone HTML demo page
-│   └── integration.js        # Dynamic loader for JS render forms
+render forms
 └── vite.config.js            # Vite build configuration
 ```
 
@@ -194,14 +186,46 @@ To use a **custom font** instead:
 3. It renders the `GenAgentChat` React component into the root element
 4. The widget auto-initializes when the script loads, or can be manually triggered via `window.GenassistBootstrap()`
 
+### Dynamic Configuration Updates
+
+The widget supports updating configuration at runtime. After modifying `window.GENASSIST_CONFIG`, call `window.GenassistBootstrap()` to re-render the widget with the new configuration:
+
+```javascript
+// Update configuration
+window.GENASSIST_CONFIG = {
+  ...window.GENASSIST_CONFIG,
+  headerTitle: "New Title",
+  noColorAnimation: false,
+  theme: {
+    primaryColor: "#FF5733"
+  }
+};
+
+// Re-render with new config
+window.GenassistBootstrap();
+```
+
+The bootstrap function safely reuses the existing React root, so you can call it multiple times without performance issues.
+
+> **Note:** Configuration values use nullish coalescing (`??`) for defaults, which means explicit `false` or empty string values will be respected. For example, setting `noColorAnimation: false` will properly disable animations, unlike using logical OR (`||`) which would treat `false` as falsy and use the default.
+
 ## Troubleshooting
 
 ### Widget not appearing
 
 1. Ensure the root element exists: `<div id="genassist-chat-root"></div>`
-2. Verify `window.GENASSIST_CONFIG` is set **before** the widget script loads
+2. Verify `window.GENASSIST_CONFIG` is set **before** the widget script loads (or call `window.GenassistBootstrap()` after setting it)
 3. Check the browser console for errors
 4. Verify the widget script URL is correct and accessible
+
+### Configuration not updating
+
+If you've updated `window.GENASSIST_CONFIG` but the widget hasn't changed:
+
+1. Make sure you're calling `window.GenassistBootstrap()` after updating the config
+2. Verify the config object is being set correctly: `console.log(window.GENASSIST_CONFIG)`
+3. Check that you're using the correct property names (case-sensitive)
+4. Remember that `false` and empty string values are now respected (unlike before with `||` defaults)
 
 ### Build issues
 

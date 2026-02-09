@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "serve": "vite build && npx http-server example-widget -p 8022 -c-1 --cors"
+    "serve": "vite build && bash serve.sh"
   },
   "dependencies": {
     "genassist-chat-react": "^1.0.24",
