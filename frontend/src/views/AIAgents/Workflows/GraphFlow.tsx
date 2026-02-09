@@ -407,6 +407,7 @@ const GraphFlowContent: React.FC = () => {
   // Handle test graph
   const handleTestGraph = (graphData: Workflow) => {
     setCurrentTestConfig(graphData);
+    setShowNodePanel(false);
     setTestDialogOpen(true);
   };
 
@@ -679,6 +680,7 @@ const GraphFlowContent: React.FC = () => {
                     edges: edges,
                     testInput: { message },
                   });
+                  setShowNodePanel(false);
                   setTestDialogOpen(true);
                 }}
                 disabled={!workflow?.nodes?.some((node) => node.type === "chatInputNode")}
