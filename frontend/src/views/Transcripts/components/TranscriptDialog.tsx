@@ -635,7 +635,7 @@ useEffect(() => {
                             <div
                               className={`p-2 rounded-lg leading-tight break-words inline-block ${
                               isAgent
-                                ? "bg-black text-white rounded-tl-lg rounded-tr-none"
+                                ? "bg-blue-500 text-white rounded-tl-lg rounded-tr-none"
                                 : "bg-gray-200 text-gray-900 rounded-tr-lg rounded-tl-none"
                             }`}
                               style={{maxWidth: '400px'}}
