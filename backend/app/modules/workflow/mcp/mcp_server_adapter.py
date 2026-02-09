@@ -27,7 +27,6 @@ class WorkflowMCPServerAdapter:
         self,
         mcp_server,
         workflow_repo,
-        workflow_engine: WorkflowEngine,
     ):
         """
         Initialize the adapter.
@@ -35,11 +34,9 @@ class WorkflowMCPServerAdapter:
         Args:
             mcp_server: MCPServerResponse instance
             workflow_repo: WorkflowRepository instance
-            workflow_engine: WorkflowEngine instance
         """
         self.mcp_server = mcp_server
         self.workflow_repo = workflow_repo
-        self.workflow_engine = workflow_engine
 
     async def list_tools(self) -> List[Tool]:
         """
@@ -122,13 +119,12 @@ class WorkflowMCPServerAdapter:
                 "edges": workflow_model.edges or [],
             }
 
-            # Build workflow
-            self.workflow_engine.build_workflow(workflow_config)
+            # Create workflow engine with the configuration
+            workflow_engine = WorkflowEngine(workflow_config)
 
             # Execute workflow
             thread_id = f"mcp_tool_{uuid.uuid4()}"
-            state = await self.workflow_engine.execute_from_node(
-                str(workflow_mapping.workflow_id),
+            state = await workflow_engine.execute_from_node(
                 input_data=arguments,
                 thread_id=thread_id,
             )
@@ -154,19 +150,18 @@ class WorkflowMCPServerAdapter:
             raise ValueError(f"Workflow execution failed: {str(e)}")
 
 
-def create_mcp_server_instance(mcp_server, workflow_repo, workflow_engine) -> Server:
+def create_mcp_server_instance(mcp_server, workflow_repo) -> Server:
     """
     Create an MCP Server instance configured with workflows as tools.
 
     Args:
         mcp_server: MCPServerResponse instance
         workflow_repo: WorkflowRepository instance
-        workflow_engine: WorkflowEngine instance
 
     Returns:
         Configured MCP Server instance
     """
-    adapter = WorkflowMCPServerAdapter(mcp_server, workflow_repo, workflow_engine)
+    adapter = WorkflowMCPServerAdapter(mcp_server, workflow_repo)
 
     # Create server instance
     server = Server("workflow-mcp-server")
