@@ -243,7 +243,7 @@ async def upload_file(
                 provider_name = file_storage_settings.default_provider_name
 
                 # Load provider
-                config = { "base_path": str(DATA_VOLUME)} if provider_name == "local" else file_storage_settings.model_dump(exclude_none=True)
+                config = { "base_path": str(DATA_VOLUME)} if provider_name == "local" else file_storage_settings.model_dump()
 
                 # Set base_url
                 config["base_url"] = str(request.base_url).rstrip('/')

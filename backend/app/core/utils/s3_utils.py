@@ -182,15 +182,15 @@ class S3Client:
             return False
           
 
-    def upload_content(self, content: str, bucket: str, key: str) -> bool:
+    def upload_content(self, content: bytes | str, bucket: str, key: str) -> bool:
         """
         Upload content to S3.
-        
+
         Args:
-            content: Content to upload
+            content: Content to upload (bytes or str)
             bucket: Bucket name
             key: Key (path) in the bucket
-            
+
         Returns:
             Boolean indicating success
         """
@@ -224,7 +224,6 @@ class S3Client:
         except ClientError as e:
             logger.error(f"Error deleting file from S3: {str(e)}")
             return False
-
 
     def generate_presigned_url(self, operation: str, params: Dict[str, Any], expires_in: int) -> str:
         """

@@ -62,8 +62,8 @@ class S3StorageProvider(BaseStorageProvider):
         file_metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """Upload a file to S3."""
-        # prepend the bucket name to the storage path
-        return self.s3_client.upload_content(file_content, self.aws_bucket_name, storage_path)
+        self.s3_client.upload_content(file_content, self.aws_bucket_name, storage_path)
+        return storage_path
 
     async def download_file(self, storage_path: str) -> bytes:
         """Download a file from S3."""
@@ -79,7 +79,10 @@ class S3StorageProvider(BaseStorageProvider):
 
     async def file_exists(self, storage_path: str) -> bool:
         """Check if a file exists in S3."""
-        return self.s3_client.get_file_content(storage_path) is not None
+        try:
+            return self.s3_client.get_file_content(storage_path) is not None
+        except Exception:
+            return False
 
     async def list_files(
         self,
@@ -87,7 +90,11 @@ class S3StorageProvider(BaseStorageProvider):
         limit: Optional[int] = None
     ) -> List[str]:
         """List files in S3 bucket."""
-        return self.s3_client.list_files(prefix=prefix, limit=limit)
+        result = self.s3_client.list_files(
+            prefix=prefix or "",
+            max_keys=limit or 1000,
+        )
+        return [f["key"] for f in result.get("files", [])]
 
     async def get_file_url(self, bucket_name: str, file_storage_path: str) -> str:
         """Get the URL of a file in S3."""
@@ -98,7 +105,9 @@ class S3StorageProvider(BaseStorageProvider):
             'Bucket': bucket_name,
             'Key': file_storage_path
         }
-        return await self.s3_client.generate_presigned_url('get_object', params, signed_url_expires_in)
+
+        # get the presigned url for the file
+        return self.s3_client.generate_presigned_url('get_object', params, signed_url_expires_in)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get provider statistics."""

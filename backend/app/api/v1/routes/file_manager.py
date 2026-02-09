@@ -87,8 +87,8 @@ async def get_file_source(
 ):
     """Get file source content for inline display."""
     try:
-        # get the file
-        file = await service.get_file_by_id(file_id)# get the filefile = await service.get_file_by_id(file_id)
+        # get the file by id
+        file = await service.get_file_by_id(file_id)
 
         # For HEAD requests, only get metadata (no content download)
         if request.method == "HEAD":
