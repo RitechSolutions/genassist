@@ -215,57 +215,57 @@ theme: { fontFamily: 'YourFont, sans-serif' }
     <!-- Widget Configuration and Auto-initialization -->
      <script async>
        (function() {
-  'use strict';
-  
-  const WIDGET_SCRIPT_URL = './dist/widget.iife.js';
-  const WIDGET_CSS_URL = './dist/widget.css';
+          'use strict';
+          
+          const WIDGET_SCRIPT_URL = './dist/widget.iife.js';
+          const WIDGET_CSS_URL = './dist/widget.css';
 
-  window.GENASSIST_CONFIG = {
-    baseUrl: '_base_url_',
-    apiKey: '_apiKey_',
-    tenant: '',
-    headerTitle: 'GenAssist Example',
-    placeholder: 'Ask anything...',
-    mode: 'floating',
-    floatingConfig: { position: 'bottom-right' },
-    serverUnavailableMessage: 'Support is currently offline. Please try again later or contact us.',
-    noColorAnimation: true,
-    useWs: false,
-    useFiles: false
-};
+          window.GENASSIST_CONFIG = {
+            baseUrl: '_base_url_',
+            apiKey: '_apiKey_',
+            tenant: '',
+            headerTitle: 'GenAssist Example',
+            placeholder: 'Ask anything...',
+            mode: 'floating',
+            floatingConfig: { position: 'bottom-right' },
+            serverUnavailableMessage: 'Support is currently offline. Please try again later or contact us.',
+            noColorAnimation: true,
+            useWs: false,
+            useFiles: false
+        };
 
-  // Get user data from Provider (if available)
-  if (window.Provider && window.Provider.user) {
-    window.GENASSIST_CONFIG.userData = {
-      email: window.HelpCenter.user.email || '',
-      name: window.HelpCenter.user.name || '',
-      userId: window.HelpCenter.user.id || ''
-    };
-  }
+          // Get user data from Provider (if available)
+          if (window.Provider && window.Provider.user) {
+            window.GENASSIST_CONFIG.userData = {
+              email: window.HelpCenter.user.email || '',
+              name: window.HelpCenter.user.name || '',
+              userId: window.HelpCenter.user.id || ''
+            };
+          }
 
-  // Create root container
-  if (!document.getElementById('genassist-chat-root')) {
-    const root = document.createElement('div');
-    root.id = 'genassist-chat-root';
-    document.body.appendChild(root);
-  }
+          // Create root container
+          if (!document.getElementById('genassist-chat-root')) {
+            const root = document.createElement('div');
+            root.id = 'genassist-chat-root';
+            document.body.appendChild(root);
+          }
 
-  // Load widget script
-  if (!document.querySelector('script[src="' + WIDGET_SCRIPT_URL + '"]')) {
-    const script = document.createElement('script');
-    script.src = WIDGET_SCRIPT_URL;
-    script.async = true;
-    document.head.appendChild(script);
-  }
+          // Load widget script
+          if (!document.querySelector('script[src="' + WIDGET_SCRIPT_URL + '"]')) {
+            const script = document.createElement('script');
+            script.src = WIDGET_SCRIPT_URL;
+            script.async = true;
+            document.head.appendChild(script);
+          }
 
-  // Load widget css
-  if (!document.querySelector('link[href="' + WIDGET_CSS_URL + '"]')) {
-    const css = document.createElement('link');
-    css.href = WIDGET_CSS_URL;
-    css.rel = 'stylesheet';
-    document.head.appendChild(css);
-  }
-})();
+          // Load widget css
+          if (!document.querySelector('link[href="' + WIDGET_CSS_URL + '"]')) {
+            const css = document.createElement('link');
+            css.href = WIDGET_CSS_URL;
+            css.rel = 'stylesheet';
+            document.head.appendChild(css);
+          }
+        })();
     </script>
 </body>
 </html>
