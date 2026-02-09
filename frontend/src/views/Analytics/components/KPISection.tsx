@@ -25,8 +25,8 @@ const formatNumber = (num: number): string => {
 export function KPISection({ timeFilter }: KPISectionProps) {
   const permissions = usePermissions();
   const isLoadingPermissions = useIsLoadingPermissions();
-  const hideCostPerConversation = useFeatureFlagVisible(
-    FeatureFlags.ANALYTICS.HIDE_COST_PER_CONVERSATION
+  const showCostPerConversation = useFeatureFlagVisible(
+    FeatureFlags.ANALYTICS.SHOW_COST_PER_CONVERSATION
   );
   const [summaryStats, setSummaryStats] = useState<DashboardSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,7 +77,7 @@ export function KPISection({ timeFilter }: KPISectionProps) {
       change: 0,
       changeType: "neutral" as const,
     },
-    ...(!hideCostPerConversation
+    ...(showCostPerConversation
       ? [
           {
             label: "Usage",

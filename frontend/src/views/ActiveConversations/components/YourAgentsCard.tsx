@@ -49,8 +49,8 @@ const transformApiAgent = (agent: AgentStatsItem): AgentStats => ({
 
 export function YourAgentsCard({ agents: propAgents, loading: propLoading, onViewAll, onManageKeys }: YourAgentsCardProps) {
   const navigate = useNavigate();
-  const hideCostPerConversation = useFeatureFlagVisible(
-    FeatureFlags.ANALYTICS.HIDE_COST_PER_CONVERSATION
+  const showCostPerConversation = useFeatureFlagVisible(
+    FeatureFlags.ANALYTICS.SHOW_COST_PER_CONVERSATION
   );
   const [selectedAgent, setSelectedAgent] = useState<AgentStats | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -164,7 +164,7 @@ export function YourAgentsCard({ agents: propAgents, loading: propLoading, onVie
                     </span>
                   </div>
 
-                  {!hideCostPerConversation && (
+                  {showCostPerConversation && (
                     <div className="flex gap-1 items-center">
                       <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
                       <span className="text-xs text-muted-foreground">

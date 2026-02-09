@@ -66,8 +66,8 @@ export function AgentDetailsDialog({
     workflow: true,
   });
 
-  const hideCostPerConversation = useFeatureFlagVisible(
-    FeatureFlags.ANALYTICS.HIDE_COST_PER_CONVERSATION
+  const showCostPerConversation = useFeatureFlagVisible(
+    FeatureFlags.ANALYTICS.SHOW_COST_PER_CONVERSATION
   );
 
   useEffect(() => {
@@ -261,7 +261,7 @@ export function AgentDetailsDialog({
               </div>
 
               <div
-                className={`bg-muted/50 rounded-lg p-4 border border-border ${hideCostPerConversation ? "col-span-2" : ""}`}
+                className={`bg-muted/50 rounded-lg p-4 border border-border ${!showCostPerConversation ? "col-span-2" : ""}`}
               >
                 <div className="flex items-center gap-2 mb-2">
                   <Clock className="w-4 h-4 text-orange-600" />
@@ -274,7 +274,7 @@ export function AgentDetailsDialog({
                 </p>
               </div>
 
-              {!hideCostPerConversation && (
+              {showCostPerConversation && (
                 <div className="bg-muted/50 rounded-lg p-4 border border-border">
                   <div className="flex items-center gap-2 mb-2">
                     <DollarSign className="w-4 h-4 text-purple-600" />

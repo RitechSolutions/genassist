@@ -20,9 +20,9 @@ export const FeatureFlags = {
       API_KEYS: 'feature.apiKeys'
     },
 
-    // Analytics / agent metrics (e.g. when true, hide cost per conversation card)
+    // Analytics / agent metrics: cost is hidden by default; show when this flag is enabled
     ANALYTICS: {
-      HIDE_COST_PER_CONVERSATION: 'analytics.hideCostPerConversation',
+      SHOW_COST_PER_CONVERSATION: 'analytics.showCostPerConversation',
     },
 
     ADMIN_TOOLS: {
