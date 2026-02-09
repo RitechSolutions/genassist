@@ -5,6 +5,8 @@ import { AgentDetailsDialog } from "./AgentDetailsDialog";
 import { fetchDashboardAgents } from "@/services/dashboard";
 import type { AgentStatsItem } from "@/interfaces/dashboard.interface";
 import { useNavigate } from "react-router-dom";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 
 interface AgentStats {
   id: string;
@@ -47,6 +49,9 @@ const transformApiAgent = (agent: AgentStatsItem): AgentStats => ({
 
 export function YourAgentsCard({ agents: propAgents, loading: propLoading, onViewAll, onManageKeys }: YourAgentsCardProps) {
   const navigate = useNavigate();
+  const hideCostPerConversation = useFeatureFlagVisible(
+    FeatureFlags.ANALYTICS.HIDE_COST_PER_CONVERSATION
+  );
   const [selectedAgent, setSelectedAgent] = useState<AgentStats | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [agents, setAgents] = useState<AgentStats[]>([]);
@@ -159,12 +164,14 @@ export function YourAgentsCard({ agents: propAgents, loading: propLoading, onVie
                     </span>
                   </div>
 
-                  <div className="flex gap-1 items-center">
-                    <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      ${agent.costPerConversation.toFixed(2)}
-                    </span>
-                  </div>
+                  {!hideCostPerConversation && (
+                    <div className="flex gap-1 items-center">
+                      <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        ${agent.costPerConversation.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

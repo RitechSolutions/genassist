@@ -4,6 +4,8 @@ import { StatsOverviewCard } from "./StatsOverviewCard";
 import { usePermissions, useIsLoadingPermissions } from "@/context/PermissionContext";
 import { fetchDashboardSummary, getFilterDays } from "@/services/dashboard";
 import type { DashboardSummaryStats } from "@/interfaces/dashboard.interface";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 
 interface KPISectionProps {
   timeFilter: string;
@@ -23,6 +25,9 @@ const formatNumber = (num: number): string => {
 export function KPISection({ timeFilter }: KPISectionProps) {
   const permissions = usePermissions();
   const isLoadingPermissions = useIsLoadingPermissions();
+  const hideCostPerConversation = useFeatureFlagVisible(
+    FeatureFlags.ANALYTICS.HIDE_COST_PER_CONVERSATION
+  );
   const [summaryStats, setSummaryStats] = useState<DashboardSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -72,6 +77,16 @@ export function KPISection({ timeFilter }: KPISectionProps) {
       change: 0,
       changeType: "neutral" as const,
     },
+    ...(!hideCostPerConversation
+      ? [
+          {
+            label: "Usage",
+            value: "~$48.00",
+            change: 16,
+            changeType: "increase" as const,
+          },
+        ]
+      : []),
   ];
 
   return (

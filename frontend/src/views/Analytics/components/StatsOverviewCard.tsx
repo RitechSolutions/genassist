@@ -49,9 +49,14 @@ export const StatsOverviewCard = ({ metrics, loading = false }: StatsOverviewCar
     );
   }
 
+  const gridColsClass =
+    metrics.length === 4
+      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+      : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
+
   return (
     <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+      <div className={`grid ${gridColsClass} gap-4 sm:gap-6 lg:gap-8`}>
         {metrics.map((metric, index) => {
           const ChangeIcon = getChangeIcon(metric.changeType);
 

@@ -20,6 +20,11 @@ export const FeatureFlags = {
       API_KEYS: 'feature.apiKeys'
     },
 
+    // Analytics / agent metrics (e.g. when true, hide cost per conversation card)
+    ANALYTICS: {
+      HIDE_COST_PER_CONVERSATION: 'analytics.hideCostPerConversation',
+    },
+
     ADMIN_TOOLS: {
       APP_SETTINGS: 'ui.menu.app-settings',
     },

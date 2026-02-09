@@ -26,6 +26,8 @@ import {
 import { getWorkflowById } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { format } from "date-fns";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 
 interface AgentStats {
   id: string;
@@ -63,6 +65,10 @@ export function AgentDetailsDialog({
     queries: true,
     workflow: true,
   });
+
+  const hideCostPerConversation = useFeatureFlagVisible(
+    FeatureFlags.ANALYTICS.HIDE_COST_PER_CONVERSATION
+  );
 
   useEffect(() => {
     if (!open || !agent?.workflowId) {
@@ -254,7 +260,9 @@ export function AgentDetailsDialog({
                 </p>
               </div>
 
-              <div className="bg-muted/50 rounded-lg p-4 border border-border">
+              <div
+                className={`bg-muted/50 rounded-lg p-4 border border-border ${hideCostPerConversation ? "col-span-2" : ""}`}
+              >
                 <div className="flex items-center gap-2 mb-2">
                   <Clock className="w-4 h-4 text-orange-600" />
                   <span className="text-xs text-muted-foreground">
@@ -266,17 +274,19 @@ export function AgentDetailsDialog({
                 </p>
               </div>
 
-              <div className="bg-muted/50 rounded-lg p-4 border border-border">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="w-4 h-4 text-purple-600" />
-                  <span className="text-xs text-muted-foreground">
-                    Cost per Conversation
-                  </span>
+              {!hideCostPerConversation && (
+                <div className="bg-muted/50 rounded-lg p-4 border border-border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <DollarSign className="w-4 h-4 text-purple-600" />
+                    <span className="text-xs text-muted-foreground">
+                      Cost per Conversation
+                    </span>
+                  </div>
+                  <p className="text-2xl font-semibold text-foreground pl-5">
+                    ${agent.costPerConversation}
+                  </p>
                 </div>
-                <p className="text-2xl font-semibold text-foreground pl-5">
-                  ${agent.costPerConversation}
-                </p>
-              </div>
+              )}
             </div>
           </div>
 
