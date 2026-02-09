@@ -3,7 +3,7 @@ from uuid import UUID
 import json
 from datetime import datetime, timezone
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 from fastapi import Depends
 from fastapi_injector import Injected
 from injector import inject
@@ -248,7 +248,7 @@ class ConversationService:
             raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER)
 
     async def finalize_in_progress_conversation(
-        self, llm_analyst_id: UUID, conversation_id: UUID
+        self, conversation_id: UUID, llm_analyst_id: UUID = seed_test_data.llm_analyst_kpi_analyzer_id
     ) -> ConversationAnalysisRead:
         """
         Finalize conversation and run GPT analysis
@@ -282,11 +282,7 @@ class ConversationService:
         if message_type_segments == "[]":
             raise ValueError(f"No messages found for conversation {conversation_id}")
 
-        # Run GPT analysis (rest remains the same)
-        if not llm_analyst_id:
-            from app.db.seed.seed_data_config import seed_test_data
-
-            llm_analyst_id = seed_test_data.llm_analyst_kpi_analyzer_id
+        # Run GPT analysis
 
         llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
 
@@ -462,7 +458,7 @@ class ConversationService:
         models = await self.conversation_repo.count_conversations(conversation_filter)
         return models
 
-    async def get_stale_conversations(self, cutoff_time: datetime):
+    async def get_stale_conversations(self, cutoff_time: datetime) -> Sequence[ConversationModel]:
         models = await self.conversation_repo.get_stale_conversations(cutoff_time)
         return models
 
@@ -487,8 +483,7 @@ class ConversationService:
 
         # Process the stale conversations
         for conversation in stale_conversations:
-            transcript = json.loads(conversation.transcription)
-            if len(transcript) < 3:
+            if len(conversation.messages) < 3:
                 await self.delete_conversation(conversation.id)
                 deleted_count += 1
                 logger.info(
@@ -498,9 +493,9 @@ class ConversationService:
                 try:
                     # Use the default KPI analyzer for finalization
                     await self.finalize_in_progress_conversation(
-                        llm_analyst_id=seed_test_data.llm_analyst_kpi_analyzer_id,
-                        conversation_id=conversation.id,
-                    )
+                            conversation_id=conversation.id,
+                            llm_analyst_id=seed_test_data.llm_analyst_kpi_analyzer_id,
+                            )
                     finalized_count += 1
                     logger.info(
                         f"Finalized conversation {conversation.id} (last updated: {conversation.updated_at})"

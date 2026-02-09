@@ -126,6 +126,12 @@ class ErrorKey(Enum):
     RECAPTCHA_VERIFICATION_FAILED = "RECAPTCHA_VERIFICATION_FAILED"
     INVALID_FILE_PATH = "INVALID_FILE_PATH"
     NO_LLM_PROVIDER_CONFIGURATION_FOUND = "NO_LLM_PROVIDER_CONFIGURATION_FOUND"
+    LLM_CONTEXT_LENGTH_EXCEEDED = "LLM_CONTEXT_LENGTH_EXCEEDED"
+    LLM_RATE_LIMIT_EXCEEDED = "LLM_RATE_LIMIT_EXCEEDED"
+    LLM_QUOTA_EXCEEDED = "LLM_QUOTA_EXCEEDED"
+    LLM_BILLING_LIMIT_REACHED = "LLM_BILLING_LIMIT_REACHED"
+    LLM_INVALID_API_KEY = "LLM_INVALID_API_KEY"
+    LLM_AUTHENTICATION_FAILED = "LLM_AUTHENTICATION_FAILED"
 
 ERROR_MESSAGES = {
     'en': {
@@ -244,6 +250,12 @@ ERROR_MESSAGES = {
         ErrorKey.RECAPTCHA_VERIFICATION_FAILED: "reCAPTCHA verification failed. Please try again.",
         ErrorKey.INVALID_FILE_PATH: "Invalid file path.",
         ErrorKey.NO_LLM_PROVIDER_CONFIGURATION_FOUND: "No LLM provider configuration found.",
+        ErrorKey.LLM_CONTEXT_LENGTH_EXCEEDED: "The input is too long for the model's context window. Please reduce the message length.",
+        ErrorKey.LLM_RATE_LIMIT_EXCEEDED: "Rate limit exceeded for the LLM provider. Please try again later.",
+        ErrorKey.LLM_QUOTA_EXCEEDED: "API quota exceeded for the LLM provider. Please check your usage limits.",
+        ErrorKey.LLM_BILLING_LIMIT_REACHED: "Billing limit reached for the LLM provider. Please update your billing settings.",
+        ErrorKey.LLM_INVALID_API_KEY: "Invalid API key for the LLM provider.",
+        ErrorKey.LLM_AUTHENTICATION_FAILED: "Authentication failed with the LLM provider. Please check your credentials.",
 },
     'fr': {
         ErrorKey.INTERNAL_ERROR: 'Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.',

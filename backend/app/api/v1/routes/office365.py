@@ -13,6 +13,7 @@ from fastapi_injector import Injected
 import requests
 from datetime import datetime, timedelta
 
+from app.tasks.conversations_tasks import cleanup_stale_conversations_async_with_scope
 from app.tasks.sharepoint_tasks import import_sharepoint_files_to_kb_async_with_scope
 from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
 
@@ -241,7 +242,7 @@ async def get_office365_user_email(access_token: str) -> str:
 
 @router.get("/office365-sharepoint-kb", dependencies=[Depends(auth)], summary="Runs the job that sync the KB with Sharepoint Site Content")
 async def run_sharepoint_job_to():
-    return await import_sharepoint_files_to_kb_async_with_scope()
+    return await cleanup_stale_conversations_async_with_scope()
 
 
 @router.get("/kb-batch-tasks", dependencies=[Depends(auth)],summary="Runs the job that sync the KB with files from various sources")
