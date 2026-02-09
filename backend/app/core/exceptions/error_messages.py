@@ -19,6 +19,7 @@ class ErrorKey(Enum):
     INVALID_RECORDED_AT = "invalid_recorded_at"
     RECORDING_NOT_FOUND = "recording_not_found"
     TRANSCRIPT_NOT_FOUND = "transcript_not_found"
+    TRANSCRIPT_EMPTY = "TRANSCRIPT_EMPTY"
     MISSING_TRANSCR_OR_QUEST = "missing_transcr_or_quest"
     FILE_NOT_FOUND = "file_not_found"
     NO_ANALYZED_AUDIO = "no_analyzed_audio"
@@ -144,6 +145,7 @@ ERROR_MESSAGES = {
         ErrorKey.INVALID_RECORDED_AT: "Invalid recorded_at format. Use ISO 8601: YYYY-MM-DDTHH:MM:SSZ",
         ErrorKey.RECORDING_NOT_FOUND: "Recording not found.",
         ErrorKey.TRANSCRIPT_NOT_FOUND: "Transcript not found.",
+        ErrorKey.TRANSCRIPT_EMPTY: "Transcript is empty.",
         ErrorKey.MISSING_TRANSCR_OR_QUEST: "Missing transcror or question.",
         ErrorKey.FILE_NOT_FOUND: "File not found.",
         ErrorKey.NO_ANALYZED_AUDIO: "No analyzed audio data found.",

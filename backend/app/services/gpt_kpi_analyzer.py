@@ -40,7 +40,7 @@ class GptKpiAnalyzer:
             or len(transcript) == 0
             or transcript == "[]"
         ):
-            raise ValueError("Transcript is empty! Nothing to analyze!")
+            raise AppException(ErrorKey.TRANSCRIPT_NOT_FOUND)
         else:
             logger.debug(f"analyzing transcript: {transcript}")
 
@@ -85,7 +85,7 @@ class GptKpiAnalyzer:
                         customer_speaker=customer_speaker,
                     )
 
-                raise ValueError("Parsing returned incomplete or invalid result.")
+                raise AppException(ErrorKey.TRANSCRIPT_PARSE_ERROR)
 
             except Exception as e:
                 # Check if this is a non-retryable error (e.g., context length exceeded, rate limit)
@@ -137,10 +137,7 @@ class GptKpiAnalyzer:
             - Assess the operator's performance and whether the customer was satisfied
             - Identify key points of improvement
 
-            **C) Identify the Customer:**
-            - Indicate which speaker is the customer in this conversation with one word only (e.g., SPEAKER_00).
-
-            **D) KPI Metrics, Tone, and Sentiment Analysis (JSON Format):**
+            **C) KPI Metrics, Tone, and Sentiment Analysis (JSON Format):**
             Provide the following KPI metrics, overall tone, and sentiment percentages as a JSON object:
 
             ```json
@@ -277,7 +274,7 @@ class GptKpiAnalyzer:
         customer_start = text.find("**C) Identify the Customer:**")
         kpi_start = text.find("**D) KPI Metrics")
 
-        raw_title = title = text[title_start + 13 : summary_start].strip()
+        raw_title = text[title_start + 13 : summary_start].strip()
         title = raw_title.lstrip("- ").strip()
         summary = text[summary_start + 15 : customer_start].strip()
         customer_speaker = text[customer_start + 32 : kpi_start].strip()
