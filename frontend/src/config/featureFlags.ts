@@ -24,6 +24,12 @@ export const FeatureFlags = {
       APP_SETTINGS: 'ui.menu.app-settings',
     },
   
+    // Workflow specific flags
+    WORKFLOW: {
+      CHAT_INPUT: 'workflow.chatInput',
+      CONVERSATIONAL_TAB: 'workflow.conversationalTab',
+    },
+
     // Specific UI components within features
     COMPONENTS: {
       CHAT: 'components.chat',

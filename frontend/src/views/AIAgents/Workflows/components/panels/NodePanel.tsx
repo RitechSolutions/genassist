@@ -12,6 +12,8 @@ import { Input } from "@/components/input";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { getNodeColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
 import { renderIcon } from "@/views/AIAgents/Workflows/utils/iconUtils";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 
 interface NodePanelProps {
   isOpen: boolean;
@@ -29,6 +31,8 @@ const NodePanel: React.FC<NodePanelProps> = ({
   const dragPreviewContainerRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<string>("available");
   const [searchQuery, setSearchQuery] = useState<string>("");
+
+  const showConversationalTab = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CONVERSATIONAL_TAB);
 
   // Handle drag start
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
@@ -201,31 +205,35 @@ const NodePanel: React.FC<NodePanelProps> = ({
         <div className="flex flex-col h-full">
           {/* Tabs Header */}
           <div className="p-4">
-            <Tabs
-              value={activeTab}
-              onValueChange={setActiveTab}
-              className="w-full"
-            >
-              <TabsList className="w-full h-10 bg-muted p-1 rounded-full">
-                <TabsTrigger
-                  value="available"
-                  className="flex-1 text-sm font-medium rounded-full"
-                >
-                  Available Nodes
-                </TabsTrigger>
-                <TabsTrigger
-                  value="conversational"
-                  className="flex-1 text-sm font-medium rounded-full"
-                >
-                  Conversational
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {showConversationalTab ? (
+              <Tabs
+                value={activeTab}
+                onValueChange={setActiveTab}
+                className="w-full"
+              >
+                <TabsList className="w-full h-10 bg-muted p-1 rounded-full">
+                  <TabsTrigger
+                    value="available"
+                    className="flex-1 text-sm font-medium rounded-full"
+                  >
+                    Available Nodes
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="conversational"
+                    className="flex-1 text-sm font-medium rounded-full"
+                  >
+                    Conversational
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            ) : (
+              <h3 className="text-sm font-semibold">Available Nodes</h3>
+            )}
           </div>
 
           {/* Tabs Content */}
           <div className="flex-1 overflow-y-auto bg-background rounded-xl">
-            {activeTab === "available" && (
+            {(activeTab === "available" || !showConversationalTab) && (
               <div className="w-full">
                 {/* Search Field */}
                 <div className="px-4 pt-4 pb-2 sticky top-0 bg-background z-10">
@@ -243,7 +251,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 {renderNodeCategories()}
               </div>
             )}
-            {activeTab === "conversational" && (
+            {showConversationalTab && activeTab === "conversational" && (
               <div className="p-4">
                 <p className="text-sm text-muted-foreground">
                   Conversational nodes coming soon...

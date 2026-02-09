@@ -32,6 +32,8 @@ import { getWorkflowById, updateWorkflow } from "@/services/workflows";
 import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
 import { WorkflowProvider } from "./context/WorkflowContext";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 import {
   WorkflowExecutionProvider,
   WorkflowExecutionState,
@@ -52,6 +54,8 @@ const edgeTypes = getEdgeTypes();
 
 const GraphFlowContent: React.FC = () => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+
+  const showChatInput = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CHAT_INPUT);
 
   const [workflow, setWorkflow] = useState<Workflow>();
   const [agent, setAgent] = useState<AgentConfig>();
@@ -665,19 +669,21 @@ const GraphFlowContent: React.FC = () => {
               onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
             />
 
-            <ChatInputBar
-              onSendMessage={(message) => {
-                // Open test dialog with the message pre-filled
-                setCurrentTestConfig({
-                  ...workflow,
-                  nodes: nodes,
-                  edges: edges,
-                  testInput: { message },
-                });
-                setTestDialogOpen(true);
-              }}
-              disabled={!workflow?.nodes?.some((node) => node.type === "chatInputNode")}
-            />
+            {showChatInput && (
+              <ChatInputBar
+                onSendMessage={(message) => {
+                  // Open test dialog with the message pre-filled
+                  setCurrentTestConfig({
+                    ...workflow,
+                    nodes: nodes,
+                    edges: edges,
+                    testInput: { message },
+                  });
+                  setTestDialogOpen(true);
+                }}
+                disabled={!workflow?.nodes?.some((node) => node.type === "chatInputNode")}
+              />
+            )}
           </div>
         </div>
       </WorkflowExecutionProvider>
