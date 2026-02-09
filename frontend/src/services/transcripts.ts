@@ -113,11 +113,16 @@ export const getAudioUrl = async (recordingId: string): Promise<string> => {
     throw new Error("Not authenticated—no access token found");
   }
 
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  const tenantId = localStorage.getItem("tenant_id");
+  if (tenantId) {
+    headers["x-tenant-id"] = tenantId;
+  }
+
+  const res = await fetch(url, { headers });
 
   if (!res.ok) {
     throw new Error(`Audio fetch failed (${res.status})`);
