@@ -6,6 +6,7 @@ import { useAuth } from "../hooks/useAuth";
 import { ForcePasswordUpdateDialog } from "../components/ForcePasswordUpdateDialog";
 import { fetchUserPermissions } from "@/services/auth";
 import { TermsAndPolicyNotice } from "@/components/TermsAndPolicyNotice";
+import { AuthMockupPanel } from "@/components/AuthMockupPanel";
 import { useFeatureFlag } from "@/context/FeatureFlagContext";
 
 interface ForceUpdateInfo {
@@ -218,18 +219,7 @@ const LoginPage = () => {
             <TermsAndPolicyNotice mode="signin" className="mt-2" />
           </div>
         </div>
-        <div className="hidden md:flex items-center justify-center p-8 bg-[#F9FAFB] relative overflow-hidden">
-          <img
-            src="/login-image.png"
-            alt="Dashboard preview"
-            className="w-full max-w-2xl h-auto object-contain"
-            style={{
-              transform: 'perspective(1000px) rotateY(-15deg) rotateX(8deg)',
-              boxShadow: '0 25px 50px rgba(0, 0, 0, 0.2)',
-              transformStyle: 'preserve-3d',
-            }}
-          />
-        </div>
+        <AuthMockupPanel />
       </div>
 
       {forceUpdateInfo && (
