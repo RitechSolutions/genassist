@@ -166,8 +166,13 @@ export function ActiveConversationsModule({
     });
   }, [filtered]);
 
+  // Exclude only conversations we know have no messages (empty array / "[]")
+  const withMessages = useMemo(() => {
+    return ordered.filter((item) => !hasNoMessages(item));
+  }, [ordered]);
+
   // Show conversations up to the display limit
-  const pageItems = displayLimit > 0 ? ordered.slice(0, displayLimit) : ordered;
+  const pageItems = displayLimit > 0 ? withMessages.slice(0, displayLimit) : withMessages;
 
   return (
     <Card className="p-6 mb-5 shadow-sm animate-fade-up bg-white border border-border rounded-xl">
@@ -210,6 +215,32 @@ export function ActiveConversationsModule({
 }
 
 export default ActiveConversationsModule;
+
+function hasNoMessages(item: NormalizedConversation): boolean {
+  const transcript = item.transcript;
+  const duration = item.duration ?? 0;
+  const wordCount = item.word_count ?? 0;
+
+  // Explicit empty transcript
+  if (Array.isArray(transcript)) return transcript.length === 0;
+  if (typeof transcript === "string") {
+    if (transcript.trim() === "") {
+      // No transcript content: treat as no messages only when there's no activity (0 duration, 0 words)
+      return duration === 0 && wordCount === 0;
+    }
+    try {
+      const parsed = JSON.parse(transcript);
+      return Array.isArray(parsed) && parsed.length === 0;
+    } catch {
+      return false;
+    }
+  }
+  // transcript undefined/null and no activity
+  if (transcript === undefined || transcript === null) {
+    return duration === 0 && wordCount === 0;
+  }
+  return false;
+}
 
 function getLatestMessagePreview(transcript: string | TranscriptEntry[] | unknown): string {
   if (!transcript) return "";
