@@ -127,7 +127,7 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
     const before = currentValue.slice(0, safePosition);
     const after = currentValue.slice(safePosition);
 
-    // Add appropriate spacing if needed
+    // Add space separator if needed (let natural text wrapping handle line breaks)
     const needsLeadingSpace =
       safePosition > 0 &&
       !currentValue[safePosition - 1].match(/\s/) &&
@@ -138,8 +138,8 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
       !currentValue[safePosition].match(/\s/) &&
       !currentValue[safePosition].match(/[,;:]/);
 
-    let leadingSpace = needsLeadingSpace ? " " : "";
-    let trailingSpace = needsTrailingSpace ? " " : "";
+    const leadingSpace = needsLeadingSpace ? " " : "";
+    const trailingSpace = needsTrailingSpace ? " " : "";
 
     return before + leadingSpace + newValue + trailingSpace + after;
   };

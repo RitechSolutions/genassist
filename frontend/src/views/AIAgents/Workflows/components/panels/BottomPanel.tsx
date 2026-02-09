@@ -49,12 +49,19 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     }
   }, [executionState, onExecutionStateChange]);
 
+  // Sync workflow structure (nodes/edges) to context - needed for getAvailableDataForNode
   useEffect(() => {
-    if (workflow.executionState && workflow.nodes && workflow.edges) {
+    if (workflow.nodes && workflow.edges) {
       setWorkflowStructure(workflow.nodes, workflow.edges);
+    }
+  }, [workflow.nodes, workflow.edges, setWorkflowStructure]);
+
+  // Load execution state if available
+  useEffect(() => {
+    if (workflow.executionState) {
       loadExecutionState(workflow.executionState);
     }
-  }, [workflow.nodes, workflow.edges]);
+  }, [workflow.executionState, loadExecutionState]);
 
   // Handle save to server
   const handleSaveToServer = async () => {

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { AgentListItem } from "@/interfaces/ai-agent.interface";
 import {
-  AgentConfig,
   deleteAgentConfig,
   getAgentConfig,
-  getAllAgentConfigs,
+  getAgentConfigsList,
   getAgentIntegrationKey,
   initializeAgent,
 } from "@/services/api";
@@ -14,26 +14,37 @@ import AgentList from "./AgentList";
 import ManageApiKeysModal from "./Keys/ManageApiKeysModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
+const DEFAULT_PAGE_SIZE = 20;
+
 const Dashboard: React.FC = () => {
-  const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const [agents, setAgents] = useState<AgentListItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [modalContext, setModalContext] = useState<{
     agentId: string;
     userId: string;
     redirectOnClose?: boolean;
   } | null>(null);
-  const [agentToDelete, setAgentToDelete] = useState<AgentConfig | null>(null);
+  const [agentToDelete, setAgentToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+
   const navigate = useNavigate();
 
-  const handleManageKeys = (agentId: string) => {
-    const agent = agents.find((a) => a.id === agentId);
-    if (agent) {
-      const a = agents.find((a) => a.id === agentId)!;
-      setModalContext({ agentId, userId: a.user_id, redirectOnClose: false });
+  const handleManageKeys = async (agentId: string) => {
+    try {
+      // Fetch full agent data to get user_id
+      const fullAgent = await getAgentConfig(agentId);
+      setModalContext({ agentId, userId: fullAgent.user_id, redirectOnClose: false });
+    } catch (err) {
+      toast.error("Failed to load agent details");
     }
   };
 
@@ -45,27 +56,48 @@ const Dashboard: React.FC = () => {
     );
   };
 
-  const fetchAgents = async () => {
+  const fetchAgents = useCallback(async (currentPage: number, currentPageSize: number, append: boolean = false) => {
     try {
-      setLoading(true);
-      const data = await getAllAgentConfigs();
-      setAgents(data);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      const response = await getAgentConfigsList(currentPage, currentPageSize);
+      if (append) {
+        setAgents(prev => [...prev, ...response.items]);
+      } else {
+        setAgents(response.items);
+      }
+      setTotal(response.total);
+      setPage(response.page);
+      setHasMore(response.page < response.total_pages);
       setError(null);
     } catch (err) {
       setError("Failed to load agent configurations");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAgents();
   }, []);
 
+  useEffect(() => {
+    fetchAgents(1, pageSize);
+  }, [pageSize, fetchAgents]);
+
+  const loadMore = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      const nextPage = page + 1;
+      fetchAgents(nextPage, pageSize, true);
+    }
+  }, [loadingMore, hasMore, page, pageSize, fetchAgents]);
+
   const handleDeleteClick = async (agentId: string) => {
-    const agent = await getAgentConfig(agentId);
-    setAgentToDelete(agent);
-    setIsDeleteDialogOpen(true);
+    const agent = agents.find((a) => a.id === agentId);
+    if (agent) {
+      setAgentToDelete({ id: agent.id, name: agent.name });
+      setIsDeleteDialogOpen(true);
+    }
   };
 
   const handleDeleteAgent = async () => {
@@ -75,7 +107,8 @@ const Dashboard: React.FC = () => {
       setIsDeleting(true);
       await deleteAgentConfig(agentToDelete.id);
       toast.success("Agent deleted successfully.");
-      setAgents((prev) => prev.filter((s) => s.id !== agentToDelete.id));
+      // Refetch to update pagination correctly
+      await fetchAgents(page, pageSize);
     } catch (err) {
       toast.error("Failed to delete agent.");
       setError("Failed to delete agent");
@@ -92,7 +125,7 @@ const Dashboard: React.FC = () => {
       if (agent) {
         await initializeAgent(agentId);
 
-        // Update the local state
+        // Update the local state optimistically
         const updatedAgents = agents.map((a) =>
           a.id === agentId ? { ...a, is_active: !a.is_active } : a
         );
@@ -101,20 +134,23 @@ const Dashboard: React.FC = () => {
     } catch (err) {
       setError("Failed to update agent status");
       // Refetch to ensure UI is in sync with backend
-      await fetchAgents();
+      await fetchAgents(page, pageSize);
     }
   };
 
-  const handleGetIntegrationCode = async (
-    agentId: string,
-    userId: string
-  ) => {
+  const handleGetIntegrationCode = async (agentId: string) => {
     try {
       await getAgentIntegrationKey(agentId);
       navigate(`/ai-agents/integration/${agentId}`);
     } catch (err) {
       if (isMissingApiKeyError(err)) {
-        setModalContext({ agentId, userId, redirectOnClose: true });
+        // Fetch full agent data to get user_id for the modal
+        try {
+          const fullAgent = await getAgentConfig(agentId);
+          setModalContext({ agentId, userId: fullAgent.user_id, redirectOnClose: true });
+        } catch {
+          toast.error("Failed to load agent details");
+        }
         return;
       }
       toast.error("Failed to fetch an API key.");
@@ -179,10 +215,15 @@ const Dashboard: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <AgentList
           agents={agents}
+          total={total}
           onDelete={handleDeleteClick}
           onUpdate={handleUpdateAgent}
           onManageKeys={handleManageKeys}
           onGetIntegrationCode={handleGetIntegrationCode}
+          onRefresh={() => fetchAgents(1, pageSize)}
+          loadMore={loadMore}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
         />
 
         {modalContext && (
