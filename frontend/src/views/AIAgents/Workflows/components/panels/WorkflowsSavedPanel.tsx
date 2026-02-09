@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/button";
-import { Save, Plus, Trash2, Edit, Power, MoreVertical } from "lucide-react";
+import { Save, Plus, Trash2, Pencil, Power, MoreVertical } from "lucide-react";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { getAllWorkflows, deleteWorkflow } from "@/services/workflows";
 import {
@@ -376,7 +376,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                           handleEditClick(workflow);
                         }}
                       >
-                        <Edit className="mr-2 h-4 w-4" />
+                        <Pencil className="mr-2 h-4 w-4" />
                         <span>Edit</span>
                       </DropdownMenuItem>
                       <DropdownMenuItem

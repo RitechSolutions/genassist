@@ -13,7 +13,7 @@ import {
   CircleCheckBig, 
   Clock, 
   DollarSign,
-  Edit,
+  Pencil,
   SquareCode,
   KeyRoundIcon,
   Sparkles,
@@ -485,7 +485,7 @@ export function AgentDetailsDialog({
             onClick={handleEditWorkflow}
             className="gap-2"
           >
-            <Edit className="w-4 h-4" />
+            <Pencil className="w-4 h-4" />
             Edit Workflow
           </Button>
           <Button

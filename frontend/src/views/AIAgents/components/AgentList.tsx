@@ -5,7 +5,7 @@ import { Button } from "@/components/button";
 import {
   Plus,
   MoreVertical,
-  Edit,
+  Pencil,
   Trash2,
   AlertCircle,
   SquareCode,
@@ -165,7 +165,7 @@ const AgentList: React.FC<AgentListProps> = ({
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem asChild>
                     <Link to={`/ai-agents/workflow/${agent.id}`}>
-                      <Edit className="mr-2 h-4 w-4" />
+                      <Pencil className="mr-2 h-4 w-4" />
                       <span>Edit</span>
                     </Link>
                   </DropdownMenuItem>
