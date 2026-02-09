@@ -11,7 +11,7 @@ This project builds a standalone JavaScript widget that can be embedded into any
 ### Prerequisites
 
 - Node.js 16+ and npm
-- A Genassist API account with `baseUrl`, `apiKey`, and `tenant` ID
+- A Genassist API account with `baseUrl`, `apiKey`, and optionally `tenant` ID
 
 ### Installation
 
@@ -91,7 +91,7 @@ This builds the widget and serves the `example-widget/` directory on `http://loc
 
 ### Dynamic Integration (JavaScript Render Form)
 
-For platforms that use JavaScript render forms (e.g., Zendesk Help Center), see `example-widget/integration.js` for a ready-to-use script that dynamically creates the root element and loads the widget.
+For platforms that use JavaScript render forms (e.g., Zendesk Help Center), see `example-widget/index.html` for a ready-to-use example that demonstrates how to dynamically create the root element and load the widget.
 
 ### Configuration
 
@@ -101,20 +101,19 @@ The widget reads its configuration from `window.GENASSIST_CONFIG`:
 |--------|------|----------|-------------|
 | `baseUrl` | string | Yes | Your Genassist API base URL |
 | `apiKey` | string | Yes | Your API key |
-| `tenant` | string | Yes | Your tenant ID |
-| `headerTitle` | string | No | Title displayed in the chat header |
-| `agentName` | string | No | Name of the agent |
-| `description` | string | No | Agent description text |
+| `tenant` | string | No | Your tenant ID |
+| `headerTitle` | string | No | Title displayed in the chat header (default: "GenAssist") |
+| `agentName` | string | No | Name of the agent (default: "GenAssist") |
+| `description` | string | No | Agent description text (default: "Your Virtual Assistant") |
 | `logoUrl` | string | No | URL for the agent logo |
-| `placeholder` | string | No | Placeholder text for the input field |
-| `mode` | string | No | Display mode: `"floating"` or `"embedded"` |
+| `placeholder` | string | No | Placeholder text for the input field (default: "Ask a question") |
+| `mode` | string | No | Display mode: `"floating"` or `"embedded"` (default: "floating") |
 | `floatingConfig` | object | No | Configuration for floating mode (e.g., `{ position: 'bottom-right' }`) |
 | `serverUnavailableMessage` | string | No | Message shown when server is unavailable |
-| `noColorAnimation` | boolean | No | Disable color animation |
-| `useWs` | boolean | Yes | Enable or disable WebSocket connection |
-| `useFiles` | boolean | No | Enable or disable file uploads |
+| `noColorAnimation` | boolean | No | Disable color animation (default: true) |
+| `useWs` | boolean | No | Enable or disable WebSocket connection (default: false) |
+| `useFiles` | boolean | No | Enable or disable file uploads (default: false) |
 | `theme` | object | No | Theme customization (see below) |
-| `userData` | object | No | User information (`email`, `name`, `userId`) |
 
 ### Theme Configuration
 
@@ -173,9 +172,10 @@ To use a **custom font** instead:
 │   ├── widget.iife.js        # Widget JS bundle
 │   └── widget.css            # Widget styles
 ├── example-widget/           # Integration examples
-|   ├── dist                  # distributed assets {.css | .js}
+│   ├── dist                  # Distributed assets (copied from dist/ during serve)
 │   ├── index.html            # Standalone HTML demo page
-render forms
+│   └── README.md             # Example integration guide
+├── serve.sh                  # Script to serve example-widget locally
 └── vite.config.js            # Vite build configuration
 ```
 

@@ -144,58 +144,35 @@ theme: { fontFamily: 'YourFont, sans-serif' }
             <h2>Step 2: Complete Example Integration for JavaScript Render Forms</h2>
             <p>Here's the complete code you can paste into your JavaScript render form:</p>
             <div class="code-block">
-                <code>(function() {
-  'use strict';
-  
-  const WIDGET_SCRIPT_URL = 'https://your-cdn-url.com/widget.iife.js';
-  const WIDGET_CSS_URL = 'https://your-cdn-url.com/widget.css';
+                <code>
+&lt;!-- Root container for the widget --&gt;
+&lt;div id="genassist-chat-root"&gt;&lt;/div&gt;
 
-  window.GENASSIST_CONFIG = {
-    baseUrl: '_base_url_',
-    apiKey: '_apiKey_',
-    tenant: '',
-    headerTitle: 'GenAssist',
-    placeholder: 'Ask anything...',
-    mode: 'floating',
-    floatingConfig: { position: 'bottom-right' },
-    serverUnavailableMessage: 'Support is currently offline. Please try again later or contact us.',
-    noColorAnimation: true,
-    useWs: false,
-    useFiles: false
-};
+&lt;!-- Widget Configuration and Auto-initialization --&gt;
+&lt;script async&gt;
+  (function() {
+    'use strict';
 
-  // Get user data from Provider (if available)
-  if (window.Provider && window.Provider.user) {
-    window.GENASSIST_CONFIG.userData = {
-      email: window.HelpCenter.user.email || '',
-      name: window.HelpCenter.user.name || '',
-      userId: window.HelpCenter.user.id || ''
+    window.GENASSIST_CONFIG = {
+      baseUrl: '_base_url_',
+      apiKey: '_apiKey_',
+      tenant: '',
+      headerTitle: 'GenAssist Demo',
+      placeholder: 'Ask anything...',
+      mode: 'floating',
+      floatingConfig: { position: 'bottom-right' },
+      serverUnavailableMessage: 'Support is currently offline. Please try again later or contact us.',
+      noColorAnimation: true,
+      useWs: false,
+      useFiles: false
     };
-  }
 
-  // Create root container
-  if (!document.getElementById('genassist-chat-root')) {
-    const root = document.createElement('div');
-    root.id = 'genassist-chat-root';
-    document.body.appendChild(root);
-  }
+  })();
+&lt;/script&gt;
 
-  // Load widget script
-  if (!document.querySelector('script[src="' + WIDGET_SCRIPT_URL + '"]')) {
-    const script = document.createElement('script');
-    script.src = WIDGET_SCRIPT_URL;
-    script.async = true;
-    document.head.appendChild(script);
-  }
-
-  // Load widget css
-  if (!document.querySelector('link[href="' + WIDGET_CSS_URL + '"]')) {
-    const css = document.createElement('link');
-    css.href = WIDGET_CSS_URL;
-    css.rel = 'stylesheet';
-    document.head.appendChild(css);
-  }
-})();</code>
+&lt;!-- Widget Script and CSS --&gt;
+&lt;script src="./dist/widget.iife.js"&gt;&lt;/script&gt;
+&lt;link rel="stylesheet" href="_asset_widget.css_" async&gt;</code>
             </div>
         </div>
 
@@ -213,60 +190,29 @@ theme: { fontFamily: 'YourFont, sans-serif' }
     <div id="genassist-chat-root"></div>
 
     <!-- Widget Configuration and Auto-initialization -->
-     <script async>
-       (function() {
-          'use strict';
-          
-          const WIDGET_SCRIPT_URL = './dist/widget.iife.js';
-          const WIDGET_CSS_URL = './dist/widget.css';
-
-          window.GENASSIST_CONFIG = {
-            baseUrl: '_base_url_',
-            apiKey: '_apiKey_',
-            tenant: '',
-            headerTitle: 'GenAssist Example',
-            placeholder: 'Ask anything...',
-            mode: 'floating',
-            floatingConfig: { position: 'bottom-right' },
-            serverUnavailableMessage: 'Support is currently offline. Please try again later or contact us.',
-            noColorAnimation: true,
-            useWs: false,
-            useFiles: false
-        };
-
-          // Get user data from Provider (if available)
-          if (window.Provider && window.Provider.user) {
-            window.GENASSIST_CONFIG.userData = {
-              email: window.HelpCenter.user.email || '',
-              name: window.HelpCenter.user.name || '',
-              userId: window.HelpCenter.user.id || ''
-            };
-          }
-
-          // Create root container
-          if (!document.getElementById('genassist-chat-root')) {
-            const root = document.createElement('div');
-            root.id = 'genassist-chat-root';
-            document.body.appendChild(root);
-          }
-
-          // Load widget script
-          if (!document.querySelector('script[src="' + WIDGET_SCRIPT_URL + '"]')) {
-            const script = document.createElement('script');
-            script.src = WIDGET_SCRIPT_URL;
-            script.async = true;
-            document.head.appendChild(script);
-          }
-
-          // Load widget css
-          if (!document.querySelector('link[href="' + WIDGET_CSS_URL + '"]')) {
-            const css = document.createElement('link');
-            css.href = WIDGET_CSS_URL;
-            css.rel = 'stylesheet';
-            document.head.appendChild(css);
-          }
-        })();
+    <script async>
+      (function() {
+      'use strict';
+  
+      window.GENASSIST_CONFIG = {
+        baseUrl: 'https://api.test.genassist.ritech.io',
+        apiKey: 'genagent123',
+        tenant: '',
+        headerTitle: 'GenAssist Demo',
+        placeholder: 'Ask anything...',
+        mode: 'floating',
+        floatingConfig: { position: 'bottom-right' },
+        serverUnavailableMessage: 'Support is currently offline. Please try again later or contact us.',
+        noColorAnimation: true,
+        useWs: false,
+        useFiles: false
+    };
+  
+    })();
     </script>
+    
+    <script src="./dist/widget.iife.js"></script>
+    <link rel="stylesheet" href="./dist/widget.css" async>
 </body>
 </html>
 
