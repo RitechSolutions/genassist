@@ -4,7 +4,6 @@ from app.dependencies.injector import injector
 from datetime import datetime, timedelta, timezone
 import logging
 from app.services.conversations import ConversationService
-from app.db.seed.seed_data_config import seed_test_data
 
 logger = logging.getLogger(__name__)
 

@@ -48,7 +48,6 @@ class MultiTenantSessionManager:
                         echo=False,
                         poolclass=NullPool,  # Creates fresh connection each time
                         pool_pre_ping=True,
-                        connect_args={"server_settings": {"timezone": "UTC"}},
                         )
 
                 # Print all engines
@@ -68,7 +67,6 @@ class MultiTenantSessionManager:
                         pool_timeout=settings.DB_POOL_TIMEOUT,
                         pool_recycle=settings.DB_POOL_RECYCLE,
                         pool_pre_ping=True,
-                        connect_args={"server_settings": {"timezone": "UTC"}},
                         )
 
                 # Print all engines
