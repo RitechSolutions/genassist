@@ -302,6 +302,13 @@ export interface MCPNodeData extends ToolBaseNodeData {
   whitelistedTools: string[]; // Array of tool names to expose
 }
 
+// Workflow Executor Node Data
+export interface WorkflowExecutorNodeData extends BaseNodeData {
+  workflowId?: string; // ID of the selected workflow to execute
+  workflowName?: string; // Name of the selected workflow (for display)
+  inputParameters: Record<string, string>; // Input parameters for the workflow
+}
+
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
@@ -326,7 +333,8 @@ export type NodeData =
   | PreprocessingNodeData
   | TrainModelNodeData
   | ThreadRAGNodeData
-  | MCPNodeData;
+  | MCPNodeData
+  | WorkflowExecutorNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

@@ -33,6 +33,7 @@ from app.modules.workflow.engine.nodes import (
     TrainModelNode,
     ThreadRAGNode,
     MCPNode,
+    WorkflowExecutorNode,
 )
 from typing import Dict, Any, List, Optional, Set
 import logging
@@ -96,6 +97,7 @@ class WorkflowEngine:
         cls._node_registry["trainModelNode"] = TrainModelNode
         cls._node_registry["threadRAGNode"] = ThreadRAGNode
         cls._node_registry["mcpNode"] = MCPNode
+        cls._node_registry["workflowExecutorNode"] = WorkflowExecutorNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")

@@ -53,6 +53,7 @@ SUPPORTED_NODE_TYPES = [
     "preprocessingNode",
     "trainModelNode",
     "mcpNode",
+    "workflowExecutorNode",
 ]
 
 
