@@ -143,8 +143,6 @@ const LoginPage = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <div className="w-full h-1 bg-[#008080]" />
-      
       <div className="flex-1 grid md:grid-cols-2">
         <div className="flex items-center justify-center p-4 bg-white">
           <div className="w-full max-w-md space-y-6">
