@@ -328,8 +328,8 @@ async def upload_file_to_chat(
 
             file_base = FileBase(
                 name=file.filename,
-                path=file.filename,
-                storage_path=f"agents_config/upload-chat-files/{chat_id}",
+                path=f"agents_config/upload-chat-files/{chat_id}",
+                storage_path=provider.get_base_path(),
                 storage_provider=provider_name,
                 file_extension=file.filename.split(".")[-1] if "." in file.filename else "",
             )
@@ -351,7 +351,7 @@ async def upload_file_to_chat(
         file_id = created_file.id
         file_extension = created_file.file_extension
         storage_path = created_file.storage_path
-        file_path = f"{created_file.path}/{storage_path}"
+        file_path = f"{storage_path}/{created_file.path}"
 
         logger.debug(f"File Id: {file_id}")
 

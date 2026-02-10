@@ -237,7 +237,7 @@ class FileManagerService:
         # when used the local file storage provider, use the source url
         if file.storage_provider == "local":
             config_base_url = self.storage_provider.base_url
-            return f"{config_base_url}/api/file-manager/files/{file.id}/source"
+            return f"{config_base_url}/api/file-manager/files/{file.id}/source?X-Tenant-Id={get_tenant_context()}"
 
         # get the file url from the storage provider
         return await self.storage_provider.get_file_url(file.storage_path, file.path)

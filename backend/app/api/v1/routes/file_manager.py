@@ -77,7 +77,8 @@ async def download_file(
     except Exception as e:
         raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
-@router.get("/files/{file_id}/source", response_model=FileResponse, dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
+# @router.get("/files/{file_id}/source", response_model=FileResponse, dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
+@router.get("/files/{file_id}/source", response_model=FileResponse)
 async def get_file_source(
     file_id: UUID,
     request: Request,

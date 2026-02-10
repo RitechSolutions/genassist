@@ -253,10 +253,11 @@ async def process_attachments_from_metadata(
                 if not file:
                     pass
                 else:
-                    file_url = f"{base_url}/api/file-manager/files/{file.id}/source"
+                    file_url = f"{base_url}/api/file-manager/files/{file.id}/source?X-Tenant-Id={tenant_id}"
 
                     # add to attachments
-                    attachment["file_local_path"] = f"{file.path}/{file.storage_path}"
+                    # attachment["file_local_path"] = f"{file.path}/{file.storage_path}"
+                    attachment["file_local_path"] = f"{file.storage_path}/{file.path}"
                     attachment["file_mime_type"] = file.mime_type
                     
                     # Check if file has OpenAI file_id stored or upload if needed
@@ -273,7 +274,8 @@ async def process_attachments_from_metadata(
                             try:
                                 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
                                 openai_service = injector.get(OpenAIFineTuningService)
-                                full_file_path = f"{file.path}/{file.storage_path}"
+                                # full_file_path = f"{file.path}/{file.storage_path}"
+                                full_file_path = f"{file.storage_path}/{file.path}"
                                 openai_file_id = await openai_service.upload_file_for_chat(
                                     file_path=full_file_path,
                                     filename=file.name,
