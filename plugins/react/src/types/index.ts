@@ -14,10 +14,13 @@ export interface ChatMessage {
   end_time: number;
   speaker: "customer" | "agent" | "special";
   text: string;
-  attachments?: Attachment[];
   // Optional metadata
+  attachments?: Attachment[];
   message_id?: string;
   feedback?: MessageFeedback[];
+  type?: string;
+  linkUrl?: string;
+  linkLabel?: string;
 }
 
 // Attachment type
@@ -26,6 +29,12 @@ export interface Attachment {
   type: string;
   size: number;
   url: string;
+  file_id?: string;
+}
+
+export interface AttachmentWithFile {
+  file: File;
+  attachment: Attachment | null;
 }
 
 // API Response types
@@ -75,11 +84,19 @@ export interface ScheduleItem {
   restaurants: DynamicChatItem[];
 }
 
+export interface FileItem {
+  url: string;
+  type: string;
+  name: string;
+  id: string;
+}
+
 export type ChatContentBlock =
   | { kind: "text"; text: string }
   | { kind: "items"; items: DynamicChatItem[] }
   | { kind: "schedule"; schedule: ScheduleItem }
-  | { kind: "options"; options: string[] };
+  | { kind: "options"; options: string[] }
+  | { kind: "file"; data: FileItem };
 
 // Props for the GenAgentChat component
 export interface GenAgentChatProps {
@@ -87,6 +104,7 @@ export interface GenAgentChatProps {
   apiKey: string;
   tenant: string | undefined;
   metadata?: Record<string, any>; // For passing user information or other metadata
+  useWs?: boolean;
   onError?: (error: Error) => void;
   onTakeover?: () => void;
   onFinalize?: () => void;
@@ -99,10 +117,11 @@ export interface GenAgentChatProps {
     textColor?: string;
   };
   headerTitle?: string;
+  description?: string;
   placeholder?: string;
   agentName?: string; // Custom agent name to display instead of "Agent"
   logoUrl?: string; // Custom logo URL to display in header instead of default logo
-  mode?: "embedded" | "floating";
+  mode?: "embedded" | "floating" | "fullscreen";
   floatingConfig?: {
     position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
     offset?: { x?: number; y?: number };
@@ -112,6 +131,27 @@ export interface GenAgentChatProps {
   language?: string; // Language code (e.g., 'en', 'es', 'fr'). If not provided, will use browser language
   translations?: Partial<Translations>; // Custom translations. If not provided, will use default English translations
   reCaptchaKey?: string; // ReCaptcha key for the chat
+  widget?: boolean; // If true, opens chat in fullscreen mode on desktop (similar to mobile behavior)
+  useAudio?: boolean; // If false, hides the mic component and voice input. Defaults to false.
+  useFile?: boolean; // If false, hides the file attach icon and file upload. Defaults to false.
+  noColorAnimation?: boolean; // If true, hides the color animation (backlight) below the chat header. Defaults to false.
+  showWelcomeBeforeStart?: boolean;
+  allowedExtensions?: AllowedExtension[]; // If provided, only show file attachments with these extensions. Defaults to all extensions.
+  serverUnavailableMessage?: string; // Custom message when server is down
+  serverUnavailableContactUrl?: string; // Optional URL for a contact/support
+  serverUnavailableContactLabel?: string; // Label for the contact link
 }
 
+// NOTE: These are the only file extensions that are supported by the chat.
+export type AllowedExtension = 'image/*' | 'image/png' | 'image/jpeg' | 'image/jpg' | 'image/gif' | 'application/pdf' | 'application/msword' | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
 export type { Translations } from '../utils/i18n';
+
+export interface FileUploadResponse {
+  filename: string;
+  original_filename: string;
+  storage_path: string;
+  file_path: string;
+  file_url: string;
+  file_id?: string;
+}

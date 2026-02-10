@@ -320,6 +320,7 @@ public struct GenassistChat: View {
         .background(configuration.header.backgroundColor)
     }
     
+
     
     private var inputView: some View {
         HStack(spacing: 8) {

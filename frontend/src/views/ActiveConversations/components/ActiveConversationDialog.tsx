@@ -32,9 +32,10 @@ import { formatDuration, formatMessageTime } from "../helpers/format";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { Textarea } from "@/components/textarea";
 import { submitConversationFeedback } from "@/services/transcripts";
-import { apiRequest } from "@/config/api";
+import { apiRequest, isWsEnabled } from "@/config/api";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
+import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
 
 interface Props {
   transcript: Transcript | null;
@@ -166,7 +167,7 @@ function TranscriptDialogContent({
     }
   }, [userInitiatedTakeOver]);
 
-  const shouldInitWebSocket = transcript?.id && token;
+  const shouldInitWebSocket = isWsEnabled && transcript?.id && token;
 
   const {
     messages: wsMessages,
@@ -878,7 +879,7 @@ function TranscriptDialogContent({
                               : "bg-gray-200 text-gray-900 rounded-tr-lg"
                           }`}
                         >
-                          {entry.text}
+                          <ConversationEntryWrapper entry={entry} />
                           <span className="block text-[10px] text-muted-foreground text-right mt-1">
                             {formatMessageTime(entry.create_time)}
                           </span>

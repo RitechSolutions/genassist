@@ -16,6 +16,7 @@ import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Textarea } from "@/components/textarea";
 import { Switch } from "@/components/switch";
+import { Label } from "@/components/label";
 
 import {
   Select,
@@ -60,7 +61,8 @@ interface KnowledgeItem {
   sync_active?: boolean;
   files?: string[];
   rag_config?: LegacyRagConfig;
-  url?: string;
+  urls?: string[];
+  use_http_request?: boolean;
   extra_metadata?: Record<string, any>;
   processing_filter?: string | null;
   llm_analyst_id?: string | null;
@@ -74,6 +76,13 @@ interface KnowledgeItem {
   [key: string]: unknown;
 }
 
+type UrlHeaderRow = {
+  id: string;
+  key: string;
+  value: string;
+  keyType: "known" | "custom";
+};
+
 const DEFAULT_FORM_DATA: KnowledgeItem = {
   id: uuidv4(),
   name: "",
@@ -83,7 +92,8 @@ const DEFAULT_FORM_DATA: KnowledgeItem = {
   sync_source_id: null,
   llm_provider_id: null,
   files: [],
-  url: null,
+  urls: [],
+  use_http_request: false,
   rag_config: DEFAULT_LEGACY_RAG_CONFIG,
   processing_filter: "",
   llm_analyst_id: null,
@@ -94,6 +104,17 @@ const DEFAULT_FORM_DATA: KnowledgeItem = {
   save_output: false,
   save_output_path: "",
 };
+
+const KNOWN_HTTP_HEADERS = [
+  "Authorization",
+  "User-Agent",
+  "Accept",
+  "Accept-Language",
+  "Content-Type",
+  "Cache-Control",
+  "If-None-Match",
+  "If-Modified-Since",
+];
 
 const KnowledgeBaseManager: React.FC = () => {
   const [items, setItems] = useState<KnowledgeItem[]>([]);
@@ -121,6 +142,8 @@ const KnowledgeBaseManager: React.FC = () => {
   const [formData, setFormData] = useState<KnowledgeItem>(DEFAULT_FORM_DATA);
   const [dynamicRagConfig, setDynamicRagConfig] = useState<RagConfigValues>({});
   const [isDataSourceDialogOpen, setIsDataSourceDialogOpen] = useState(false);
+  const [urls, setUrls] = useState<string[]>([""]);
+  const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
 
   useEffect(() => {
     fetchItems();
@@ -164,27 +187,25 @@ const KnowledgeBaseManager: React.FC = () => {
     fetchLLMAnalysts();
   }, []);
 
+  const targetTypes = {
+    s3: "S3",
+    sharepoint: "o365",
+    smb_share_folder: "smb_share_folder",
+    azure_blob: "azure_blob",
+    google_bucket: "gmail",
+    zendesk: "zendesk",
+  };
+
   useEffect(() => {
     const fetchSources = async () => {
-      if (
-        [
-          "s3",
-          "sharepoint",
-          "database",
-          "smb_share_folder",
-          "azure_blob",
-        ].includes(formData.type)
-      ) {
+      if (formData.type in targetTypes) {
         const allSources = await getAllDataSources();
-        let targetType = formData.type;
-        if (formData.type === "sharepoint") targetType = "o365";
-        if (formData.type === "smb_share_folder")
-          targetType = "smb_share_folder";
-        if (formData.type === "azure_blob") targetType = "azure_blob";
-        if (formData.type === "google_bucket") targetType = "google_bucket";
+        console.log(allSources);
+        const targetType = targetTypes[formData.type];
 
         const filtered = allSources.filter(
-          (source) => source.source_type.toLowerCase() === targetType
+          (source) =>
+            source.source_type.toLowerCase() === targetType.toLowerCase(),
         );
         setAvailableSources(filtered);
       }
@@ -194,13 +215,29 @@ const KnowledgeBaseManager: React.FC = () => {
   }, [formData.type]);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
       [name]: value,
     }));
+  };
+
+  const handleUrlChange = (index: number, value: string) => {
+    setUrls((prev) => {
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  };
+
+  const addUrl = () => {
+    setUrls((prev) => [...prev, ""]);
+  };
+
+  const removeUrl = (index: number) => {
+    setUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleRagConfigChange = (updatedRagConfig: RagConfigValues) => {
@@ -241,7 +278,7 @@ const KnowledgeBaseManager: React.FC = () => {
       setError(
         `Failed to upload files: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
       return null;
     } finally {
@@ -263,7 +300,7 @@ const KnowledgeBaseManager: React.FC = () => {
 
     if (formData.type === "file") {
       requiredFields.push({
-        label: "file",
+        label: "files",
         isEmpty:
           selectedFiles.length === 0 &&
           (!formData.files || formData.files.length === 0),
@@ -277,6 +314,20 @@ const KnowledgeBaseManager: React.FC = () => {
       });
     }
 
+    if (formData.type === "zendesk") {
+      requiredFields.push({
+        label: "source",
+        isEmpty: !formData.sync_source_id,
+      });
+
+      if (formData.sync_active) {
+        requiredFields.push({
+          label: "sync schedule",
+          isEmpty: !formData.sync_schedule,
+        });
+      }
+    }
+
     if (["s3", "azure_blob"].includes(formData.type) && formData.sync_active) {
       requiredFields.push({
         label: "sync schedule",
@@ -285,13 +336,27 @@ const KnowledgeBaseManager: React.FC = () => {
     }
 
     if (formData.type === "url") {
-      requiredFields.push({ label: "url", isEmpty: !formData.url });
-    }
+      const hasValidUrl = urls.some((url) => url.trim() !== "");
+      requiredFields.push({ label: "urls", isEmpty: !hasValidUrl });
 
+      if (urlHeaders.length > 0) {
+        urlHeaders.forEach((header) => {
+          const hasKey = header.key.trim().length > 0;
+          const hasValue = header.value.trim().length > 0;
+          if (!hasKey || !hasValue) {
+            requiredFields.push({
+              label: "custom header",
+              isEmpty: true,
+            });
+          }
+        });
+      }
+    }
     if (formData.type === "sharepoint") {
+      const hasValidUrl = urls.some((url) => url.trim() !== "");
       requiredFields.push(
         { label: "source", isEmpty: !formData.sync_source_id },
-        { label: "url", isEmpty: !formData.url }
+        { label: "url", isEmpty: !hasValidUrl },
       );
 
       if (formData.sync_active) {
@@ -322,6 +387,10 @@ const KnowledgeBaseManager: React.FC = () => {
       .map((label) => {
         if (label === "url") {
           return "URL";
+        } else if (label === "urls") {
+          return "URLs";
+        } else if (label === "files") {
+          return "Files";
         } else {
           return label.charAt(0).toUpperCase() + label.slice(1);
         }
@@ -329,7 +398,13 @@ const KnowledgeBaseManager: React.FC = () => {
 
     if (missingFields.length > 0) {
       if (missingFields.length === 1) {
-        toast.error(`${missingFields[0]} is required.`);
+        if (missingFields[0] === "URLs") {
+          toast.error("At least one URL is required.");
+        } else if (missingFields[0] === "Files") {
+          toast.error("At least one file is required.");
+        } else {
+          toast.error(`${missingFields[0]} is required.`);
+        }
       } else {
         toast.error(`Please provide: ${missingFields.join(", ")}.`);
       }
@@ -342,9 +417,13 @@ const KnowledgeBaseManager: React.FC = () => {
       setSuccess(null);
 
       if (
-        ["s3", "sharepoint", "smb_share_folder", "azure_blob"].includes(
-          formData.type
-        ) &&
+        [
+          "s3",
+          "sharepoint",
+          "smb_share_folder",
+          "azure_blob",
+          "zendesk",
+        ].includes(formData.type) &&
         formData.sync_active &&
         !isValidCron(formData.sync_schedule)
       ) {
@@ -353,9 +432,25 @@ const KnowledgeBaseManager: React.FC = () => {
 
       const dataToSubmit = { ...formData };
 
+      const normalizedUrlHeaders = urlHeaders.reduce<Record<string, string>>(
+        (acc, header) => {
+          const key = header.key.trim();
+          if (!key) return acc;
+          acc[key] = header.value;
+          return acc;
+        },
+        {},
+      );
+      const hasUrlHeaders = Object.keys(normalizedUrlHeaders).length > 0;
+
       // Move custom frontend-only fields into extra_metadata
       dataToSubmit.extra_metadata = {
         ...(dataToSubmit.extra_metadata || {}),
+        use_http_request: dataToSubmit.use_http_request || false,
+        http_headers:
+          dataToSubmit.type === "url" && hasUrlHeaders
+            ? normalizedUrlHeaders
+            : null,
         processing_filter: dataToSubmit.processing_filter || null,
         llm_analyst_id: dataToSubmit.llm_analyst_id || null,
         processing_mode: dataToSubmit.processing_mode || null,
@@ -386,27 +481,36 @@ const KnowledgeBaseManager: React.FC = () => {
       delete dataToSubmit.save_in_conversation;
       delete dataToSubmit.save_output;
       delete dataToSubmit.save_output_path;
+      delete dataToSubmit.use_http_request;
       //////////////////////////
 
       if (formData.type === "file" && selectedFiles.length > 0) {
-        const uploadResults = await uploadFiles();
+        const uploadResults = (await uploadFiles()) as Array<[]>;
 
         if (!uploadResults || uploadResults.length === 0) {
           throw new Error("File upload failed");
         }
 
         dataToSubmit.files = uploadResults.map(
-          (result: any) => result.file_path
+          (result: any) => result.file_path,
         );
         dataToSubmit.content = `Files: ${uploadResults
           .map((r: any) => r.original_filename)
           .join(", ")}`;
       }
 
+      // For URL and SharePoint types, set the urls array with non-empty URLs
+      if (formData.type === "url" || formData.type === "sharepoint") {
+        dataToSubmit.urls = urls.filter((url) => url.trim() !== "");
+      } else {
+        // Remove urls from other types
+        delete dataToSubmit.urls;
+      }
+
       if (editingItem) {
         await updateKnowledgeItem(editingItem.id, dataToSubmit);
         setSuccess(
-          `Knowledge base item "${dataToSubmit.name}" updated successfully`
+          `Knowledge base item "${dataToSubmit.name}" updated successfully`,
         );
       } else {
         //if (!dataToSubmit.id) {
@@ -415,13 +519,15 @@ const KnowledgeBaseManager: React.FC = () => {
 
         await createKnowledgeItem(dataToSubmit);
         setSuccess(
-          `Knowledge base item "${dataToSubmit.name}" created successfully`
+          `Knowledge base item "${dataToSubmit.name}" created successfully`,
         );
       }
 
       setFormData(DEFAULT_FORM_DATA);
       setDynamicRagConfig({});
       setSelectedFiles([]);
+      setUrls([""]);
+      setUrlHeaders([]);
       setEditingItem(null);
       setShowForm(false);
       fetchItems();
@@ -435,7 +541,7 @@ const KnowledgeBaseManager: React.FC = () => {
       toast.error(
         `Failed to ${
           editingItem ? "update" : "create"
-        } knowledge base: ${errorMessage}`
+        } knowledge base: ${errorMessage}`,
       );
     } finally {
       setLoading(false);
@@ -446,6 +552,8 @@ const KnowledgeBaseManager: React.FC = () => {
     setFormData(DEFAULT_FORM_DATA);
     setDynamicRagConfig({});
     setSelectedFiles([]);
+    setUrls([""]);
+    setUrlHeaders([]);
     setEditingItem(null);
     setError(null);
     setSuccess(null);
@@ -462,7 +570,7 @@ const KnowledgeBaseManager: React.FC = () => {
       content: item.content,
       type: item.type || DEFAULT_FORM_DATA.type,
       sync_source_id: item.sync_source_id,
-      url: item.url,
+      use_http_request: item.extra_metadata?.use_http_request ?? false,
       llm_provider_id:
         item.llm_provider_id || DEFAULT_FORM_DATA.llm_provider_id,
       sync_schedule: item.sync_schedule || DEFAULT_FORM_DATA.sync_schedule,
@@ -481,9 +589,36 @@ const KnowledgeBaseManager: React.FC = () => {
       save_output_path: item.extra_metadata?.save_output_path ?? "",
     });
 
+    const existingUrlHeaders =
+      item.extra_metadata?.http_headers || item.extra_metadata?.custom_headers;
+    if (existingUrlHeaders && typeof existingUrlHeaders === "object") {
+      const rows = Object.entries(existingUrlHeaders as Record<string, string>)
+        .map(([key, value]) => ({
+          id: uuidv4(),
+          key,
+          value: value ?? "",
+          keyType: KNOWN_HTTP_HEADERS.includes(key) ? "known" : "custom",
+        }))
+        .filter((row) => row.key);
+      setUrlHeaders(rows);
+    } else {
+      setUrlHeaders([]);
+    }
+
     setDynamicRagConfig(
-      (item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues
+      (item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues,
     );
+
+    // Populate urls state from stored data
+    if (
+      (item.type === "url" || item.type === "sharepoint") &&
+      item.urls &&
+      item.urls.length > 0
+    ) {
+      setUrls(item.urls);
+    } else {
+      setUrls([""]);
+    }
 
     setSelectedFiles([]);
     setShowForm(true);
@@ -621,8 +756,8 @@ const KnowledgeBaseManager: React.FC = () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="text">Text</SelectItem>
-                            <SelectItem value="file">File</SelectItem>
-                            <SelectItem value="url">Url</SelectItem>
+                            <SelectItem value="file">Files</SelectItem>
+                            <SelectItem value="url">URLs</SelectItem>
                             <SelectItem value="s3">S3</SelectItem>
                             <SelectItem value="sharepoint">
                               Sharepoint
@@ -639,6 +774,7 @@ const KnowledgeBaseManager: React.FC = () => {
                             <SelectItem value="google_bucket">
                               Google Bucket Storage
                             </SelectItem>
+                            <SelectItem value="zendesk">Zendesk</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -657,16 +793,163 @@ const KnowledgeBaseManager: React.FC = () => {
                           />
                         </div>
                       ) : formData.type === "url" ? (
-                        <div>
-                          <div className="mb-1">URL</div>
-                          <Input
-                            id="url"
-                            name="url"
-                            value={formData.url}
-                            onChange={handleInputChange}
-                            placeholder="Enter URL (e.g., https://example.com)"
-                            type="url"
-                          />
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="mb-1">URLs</div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={addUrl}
+                            >
+                              <Plus className="w-4 h-4 mr-1" />
+                              Add URL
+                            </Button>
+                          </div>
+                          {urls.map((url, index) => (
+                            <div key={index} className="flex gap-2 items-end">
+                              <div className="flex-1">
+                                <Input
+                                  id={`url-${index}`}
+                                  value={url}
+                                  onChange={(e) =>
+                                    handleUrlChange(index, e.target.value)
+                                  }
+                                  placeholder="Enter URL (e.g., https://example.com)"
+                                  type="url"
+                                />
+                              </div>
+                              {urls.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeUrl(index)}
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                          <div className="mt-4 rounded-lg border bg-white p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 pr-4">
+                                <div className="text-sm font-medium text-gray-900">
+                                  Use HTTP request
+                                </div>
+                                <p className="text-sm text-gray-500 mt-1">
+                                  Fetch content via a direct HTTP request
+                                  instead of browser scraping.
+                                </p>
+                              </div>
+                              <Switch
+                                checked={formData.use_http_request || false}
+                                onCheckedChange={(checked) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    use_http_request: checked,
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center">
+                                <Label>Custom Headers (optional)</Label>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-xs"
+                                  onClick={() =>
+                                    setUrlHeaders((prev) => [
+                                      ...prev,
+                                      {
+                                        id: uuidv4(),
+                                        key: "",
+                                        value: "",
+                                        keyType: "known",
+                                      },
+                                    ])
+                                  }
+                                >
+                                  <Plus className="h-3 w-3 mr-1" /> Add Header
+                                </Button>
+                              </div>
+
+                              <div className="space-y-2">
+                                <datalist id="known-url-headers">
+                                  {KNOWN_HTTP_HEADERS.map((key) => (
+                                    <option key={key} value={key} />
+                                  ))}
+                                </datalist>
+                                {urlHeaders.map((header, idx) => (
+                                  <div
+                                    key={`url-header-${idx}`}
+                                    className="flex items-center gap-2 w-full"
+                                  >
+                                    <Input
+                                      placeholder="Header name"
+                                      value={header.key}
+                                      onChange={(e) =>
+                                        setUrlHeaders((prev) =>
+                                          prev.map((row) =>
+                                            row.id === header.id
+                                              ? {
+                                                  ...row,
+                                                  key: e.target.value,
+                                                  keyType:
+                                                    KNOWN_HTTP_HEADERS.includes(
+                                                      e.target.value,
+                                                    )
+                                                      ? "known"
+                                                      : "custom",
+                                                }
+                                              : row,
+                                          ),
+                                        )
+                                      }
+                                      list="known-url-headers"
+                                      className="flex-1 text-xs min-w-0 w-full"
+                                    />
+                                    <Input
+                                      placeholder="Value"
+                                      value={header.value}
+                                      onChange={(e) =>
+                                        setUrlHeaders((prev) =>
+                                          prev.map((row) =>
+                                            row.id === header.id
+                                              ? {
+                                                  ...row,
+                                                  value: e.target.value,
+                                                }
+                                              : row,
+                                          ),
+                                        )
+                                      }
+                                      className="flex-1 text-xs min-w-0 w-full"
+                                    />
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6 flex-shrink-0"
+                                      onClick={() =>
+                                        setUrlHeaders((prev) =>
+                                          prev.filter(
+                                            (row) => row.id !== header.id,
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       ) : formData.type === "file" ? (
                         <div>
@@ -682,9 +965,9 @@ const KnowledgeBaseManager: React.FC = () => {
                                   {selectedFiles.length > 0
                                     ? `${selectedFiles.length} file(s) selected`
                                     : formData.files &&
-                                      formData.files.length > 0
-                                    ? "Replace files"
-                                    : "Select files to upload"}
+                                        formData.files.length > 0
+                                      ? "Replace files"
+                                      : "Select files to upload"}
                                 </span>
                                 <input
                                   id="file-upload"
@@ -717,7 +1000,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                       size="icon"
                                       onClick={() =>
                                         setSelectedFiles((prev) =>
-                                          prev.filter((_, i) => i !== index)
+                                          prev.filter((_, i) => i !== index),
                                         )
                                       }
                                       className="h-8 w-8"
@@ -759,7 +1042,7 @@ const KnowledgeBaseManager: React.FC = () => {
                       ) : (
                         // --- Data source dropdown block ---
                         <div>
-                          <div className="mb-1">Select Source</div>
+                          <div className="mb-1">Data Source</div>
                           <Select
                             value={formData.sync_source_id || ""}
                             onValueChange={(value) => {
@@ -791,11 +1074,12 @@ const KnowledgeBaseManager: React.FC = () => {
                               <div className="mt-4">
                                 <div className="mb-1">SharePoint Site Link</div>
                                 <Input
-                                  id="url"
-                                  name="url"
+                                  id="sharepoint-url"
                                   type="url"
-                                  value={formData.url || ""}
-                                  onChange={handleInputChange}
+                                  value={urls[0] || ""}
+                                  onChange={(e) =>
+                                    handleUrlChange(0, e.target.value)
+                                  }
                                   placeholder="https://yourcompany.sharepoint.com/sites/..."
                                 />
                               </div>
@@ -807,6 +1091,7 @@ const KnowledgeBaseManager: React.FC = () => {
                             "sharepoint",
                             "smb_share_folder",
                             "azure_blob",
+                            "zendesk",
                           ].includes(formData.type) && (
                             <>
                               <div className="col-span-2 space-y-4">
@@ -1050,7 +1335,7 @@ const KnowledgeBaseManager: React.FC = () => {
                   showOnlyRequired={true}
                   knowledgeId={editingItem?.id}
                   initialLegraFinalize={Boolean(
-                    (editingItem as any)?.legra_finalize
+                    (editingItem as any)?.legra_finalize,
                   )}
                 />
               </div>
@@ -1064,8 +1349,8 @@ const KnowledgeBaseManager: React.FC = () => {
                   {loading || isUploading
                     ? "Saving..."
                     : editingItem
-                    ? "Update Knowledge Base"
-                    : "Create Knowledge Base"}
+                      ? "Update Knowledge Base"
+                      : "Create Knowledge Base"}
                 </Button>
               </div>
             </div>
@@ -1094,8 +1379,8 @@ const KnowledgeBaseManager: React.FC = () => {
                     <SelectContent>
                       <SelectItem value="all">(Show all)</SelectItem>
                       <SelectItem value="text">Text</SelectItem>
-                      <SelectItem value="file">File</SelectItem>
-                      <SelectItem value="url">URL</SelectItem>
+                      <SelectItem value="file">Files</SelectItem>
+                      <SelectItem value="url">URLs</SelectItem>
                       <SelectItem value="s3">S3</SelectItem>
                       <SelectItem value="sharepoint">Sharepoint</SelectItem>
                       <SelectItem
@@ -1110,6 +1395,7 @@ const KnowledgeBaseManager: React.FC = () => {
                       <SelectItem value="google_bucket">
                         Google Bucket Storage
                       </SelectItem>
+                      <SelectItem value="zendesk">Zendesk</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1199,19 +1485,29 @@ const KnowledgeBaseManager: React.FC = () => {
                               {item.content.length > 100 ? "..." : ""}
                             </p>
                           )}
-                          {item.type === "url" && (
-                            <div className="flex items-center text-sm text-gray-500 mt-1">
-                              <span>URL: </span>
-                              <a
-                                href={item.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800 underline ml-1 truncate"
-                              >
-                                {item.url}
-                              </a>
-                            </div>
-                          )}
+                          {item.type === "url" &&
+                            item.urls &&
+                            item.urls.length > 0 && (
+                              <div className="text-sm text-gray-500 mt-1">
+                                {item.urls.length === 1 ? (
+                                  <div className="flex items-center">
+                                    <span>URL: </span>
+                                    <a
+                                      href={item.urls[0]}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:text-blue-800 underline ml-1 truncate"
+                                    >
+                                      {item.urls[0]}
+                                    </a>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center">
+                                    <span>{item.urls.length} URLs</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                         </div>
                         <div className="flex gap-2 justify-center md:justify-end w-full md:w-auto">
                           <Button
@@ -1263,17 +1559,17 @@ const KnowledgeBaseManager: React.FC = () => {
               const allSources = await getAllDataSources();
               let targetType = formData.type;
               if (formData.type === "sharepoint") targetType = "o365";
+              if (formData.type === "zendesk") targetType = "zendesk";
               const filtered = allSources.filter(
-                (source) => source.source_type.toLowerCase() === targetType
+                (source) => source.source_type.toLowerCase() === targetType,
               );
               setAvailableSources(filtered);
             })();
           }
         }}
         mode="create"
-        defaultSourceType={
-          formData.type === "sharepoint" ? "o365" : formData.type
-        }
+        defaultSourceType={targetTypes[formData.type]}
+        disableSourceType={true}
       />
     </div>
   );

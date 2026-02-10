@@ -3,11 +3,10 @@ import { WelcomeCard } from './WelcomeCard';
 import { ChatMessage, ScheduleItem, Translations } from '../types';
 import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { formatTimestamp } from '../utils/time';
-import { getFileIcon } from './FileTypeIcon';
 import { InteractiveContent } from './InteractiveContent';
 import { parseInteractiveContentBlocks } from '../utils/interactiveContent';
 import { defaultTranslations, getTranslationString, mergeTranslations } from '../utils/i18n';
-export { AttachmentPreview } from './AttachmentPreview';
+import { UploadFilePreview } from './common/UploadFilePreview';
 
 interface ChatMessageProps {
   message: ChatMessage;
@@ -36,6 +35,7 @@ interface ChatMessageProps {
   translations?: Translations;
   language?: string;
   agentName?: string; // Custom agent name to display instead of translation
+  isAgentTyping?: boolean; // Whether agent is currently typing/thinking
 }
 
 export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
@@ -55,6 +55,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   translations: customTranslations,
   language,
   agentName,
+  isAgentTyping = false,
 }) => {
   // Merge translations with defaults
   const translations = React.useMemo(
@@ -73,7 +74,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   const [editingFeedback] = React.useState(false);
   const [displayText] = React.useState<string>(message.text);
   const contentBlocks = React.useMemo(
-    () => parseInteractiveContentBlocks(displayText),
+    () => parseInteractiveContentBlocks(displayText, message?.type as 'file' | 'message' | undefined),
     [displayText]
   );
 
@@ -266,11 +267,16 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
     };
 
     // Determine icon and style based on message content
+    // Agent off & server down
+    const isAgentOffOrServerDown =
+      message.text.toLowerCase().includes('offline') ||
+      message.text.toLowerCase().includes('inactive') ||
+      message.text.toLowerCase().includes('unavailable') ||
+      (message.linkUrl && message.linkLabel);
     let icon;
     let backgroundColor = '#E3F2FD';
     let textColor = '#1976D2';
-    
-    if (message.text.toLowerCase().includes('offline') || message.text.toLowerCase().includes('inactive')) {
+    if (isAgentOffOrServerDown) {
       icon = <AlertCircle size={18} />;
       backgroundColor = '#FFF3E0';
       textColor = '#F57C00';
@@ -289,15 +295,38 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
       fontFamily,
       fontWeight: '500',
       display: 'flex',
-      alignItems: 'center',
+      flexDirection: 'column',
+      alignItems: 'flex-start',
       gap: '8px',
+    };
+
+    const linkStyle: React.CSSProperties = {
+      color: textColor,
+      textDecoration: 'underline',
+      cursor: 'pointer',
+      fontSize: '14px',
+      fontFamily,
+      fontWeight: '500',
     };
 
     return (
       <div style={specialMessageStyle}>
-        <div style={specialBubbleStyle}>
+        <div style={{ ...specialBubbleStyle, flexDirection: 'row', alignItems: 'center' }}>
           {icon}
-          {message.text}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span>{message.text}</span>
+            {message.linkUrl && message.linkLabel && (
+              <a
+                href={message.linkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={linkStyle}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {message.linkLabel}
+              </a>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -314,6 +343,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
             content={welcomeContent}
             possibleQueries={possibleQueries}
             onQuickQuery={onQuickQuery}
+            isAgentTyping={isAgentTyping}
           />
         </div>
       </div>
@@ -343,40 +373,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
       {message.attachments && message.attachments.length > 0 && (
         <div style={{ ...attachmentsContainerStyle, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
           {message.attachments.map((attachment, index) => (
-            <div
-              key={index}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 14px',
-                backgroundColor: isUser ? 'rgba(255,255,255,0.12)' : '#f5f5f5',
-                border: isUser ? '1px solid rgba(255,255,255,0.18)' : '1px solid #e5e5e5',
-                borderRadius: '12px',
-                minWidth: '260px',
-                maxWidth: '360px',
-                pointerEvents: 'none',
-              }}
-            >
-              {attachment.type.startsWith('image/') ? (
-                <img
-                  src={attachment.url}
-                  alt={attachment.name}
-                  style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }}
-                />
-              ) : (
-                <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {getFileIcon(attachment.type)}
-                </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{attachment.name}</div>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>
-                  {attachment.type.includes('/') ? attachment.type.split('/')[1].toUpperCase() : attachment.type}
-                  {attachment.size ? ` · ${(attachment.size / 1024).toFixed(1)} KB` : ''}
-                </div>
-              </div>
-            </div>
+            <UploadFilePreview key={index} file={attachment} />
           ))}
         </div>
       )}
@@ -389,7 +386,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
                 blocks={contentBlocks}
                 primaryColor={primaryColor}
                 textColor={bubbleTextColor}
-                isActionable={!isUser && isLastMessage}
+                isActionable={!isUser && isLastMessage && !isAgentTyping}
                 onQuickAction={onQuickAction}
                 onScheduleConfirm={onScheduleConfirm}
               />

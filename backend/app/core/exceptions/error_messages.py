@@ -124,6 +124,8 @@ class ErrorKey(Enum):
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
     CUSTOMER_ALREADY_EXISTS = "CUSTOMER_ALREADY_EXISTS"
     RECAPTCHA_VERIFICATION_FAILED = "RECAPTCHA_VERIFICATION_FAILED"
+    INVALID_FILE_PATH = "INVALID_FILE_PATH"
+    NO_LLM_PROVIDER_CONFIGURATION_FOUND = "NO_LLM_PROVIDER_CONFIGURATION_FOUND"
 
 ERROR_MESSAGES = {
     'en': {
@@ -240,6 +242,8 @@ ERROR_MESSAGES = {
         ErrorKey.CUSTOMER_NOT_FOUND: "Customer not found.",
         ErrorKey.CUSTOMER_ALREADY_EXISTS: "A customer with this external ID already exists.",
         ErrorKey.RECAPTCHA_VERIFICATION_FAILED: "reCAPTCHA verification failed. Please try again.",
+        ErrorKey.INVALID_FILE_PATH: "Invalid file path.",
+        ErrorKey.NO_LLM_PROVIDER_CONFIGURATION_FOUND: "No LLM provider configuration found.",
 },
     'fr': {
         ErrorKey.INTERNAL_ERROR: 'Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.',

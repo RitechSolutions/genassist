@@ -8,6 +8,8 @@ from typing import Dict, Hashable, List, Sequence, Set
 from uuid import UUID
 from fastapi.websockets import WebSocket
 
+from app.core.config.settings import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +39,10 @@ class SocketConnectionManager:
     - Maintains backward compatibility with existing deployments
     """
 
-    def __init__(self, redis_manager=None) -> None:
+    def __init__(self, redis_client=None) -> None:
         self._rooms: Dict[Hashable, List[Connection]] = {}
         self._lock = asyncio.Lock()
-        self._redis_manager = redis_manager
+        self._redis_client = redis_client
         self._redis_subscriber_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
@@ -153,6 +155,8 @@ class SocketConnectionManager:
         - connections_by_tenant: dict mapping tenant_id to connection count
         - connections_by_user: dict mapping user_id to connection count
         """
+        if not settings.USE_WS:
+            return {"total_connections": 0, "rooms_count": 0, "connections_by_tenant": {}, "connections_by_user": {}}
         async with self._lock:
             connections_by_tenant: Dict[str, int] = {}
             connections_by_user: Dict[UUID, int] = {}
@@ -187,6 +191,8 @@ class SocketConnectionManager:
         If Redis is available, publishes the message to Redis Pub/Sub for delivery
         across all server instances. Otherwise, delivers only to local connections.
         """
+        if not settings.USE_WS:
+            return
         payload = payload or {}
         if msg_type == "takeover":
             payload["takeover_user_id"] = str(current_user_id)
@@ -194,7 +200,7 @@ class SocketConnectionManager:
         tenant_aware_room_id = self._get_tenant_aware_room_id(room_id, tenant_id)
 
         # Publish to Redis for multi-server broadcasting (if available)
-        if self._redis_manager:
+        if self._redis_client:
             try:
                 redis_channel = self._get_redis_channel(tenant_aware_room_id)
                 message_data = {
@@ -204,8 +210,7 @@ class SocketConnectionManager:
                     "room_id": str(room_id),
                     "tenant_id": tenant_id,
                 }
-                redis_client = await self._redis_manager.get_redis()
-                await redis_client.publish(
+                await self._redis_client.publish(
                     redis_channel,
                     json.dumps(message_data, default=str)
                 )
@@ -292,14 +297,28 @@ class SocketConnectionManager:
         Initialize Redis Pub/Sub subscriber for receiving messages from other server instances.
         This should be called during application startup if Redis is available.
         """
-        if not self._redis_manager:
+        if not settings.USE_WS:
+            return
+        if not self._redis_client:
             logger.info("Redis not configured, running in single-server mode")
             return
 
+        # Clean up any existing subscriber task before creating a new one
         if self._redis_subscriber_task and not self._redis_subscriber_task.done():
-            logger.warning("Redis subscriber already running")
+            logger.warning("Redis subscriber already running, skipping initialization")
             return
+        elif self._redis_subscriber_task and self._redis_subscriber_task.done():
+            # Previous task completed/crashed, check for exceptions
+            try:
+                exc = self._redis_subscriber_task.exception()
+                if exc:
+                    logger.error(f"Previous Redis subscriber task failed with: {exc}")
+            except (asyncio.CancelledError, asyncio.InvalidStateError):
+                pass
+            logger.info("Reinitializing Redis subscriber after previous task completed")
 
+        # Reset shutdown event for new subscriber
+        self._shutdown_event.clear()
         self._redis_subscriber_task = asyncio.create_task(self._redis_subscriber_loop())
         logger.info("Redis subscriber initialized for WebSocket message distribution")
 
@@ -308,9 +327,9 @@ class SocketConnectionManager:
         Background task that subscribes to Redis Pub/Sub channels and delivers messages
         to local WebSocket connections.
         """
+        pubsub = None
         try:
-            redis_client = await self._redis_manager.get_redis()
-            pubsub = redis_client.pubsub()
+            pubsub = self._redis_client.pubsub()
 
             # Subscribe to pattern that matches all websocket channels
             await pubsub.psubscribe("websocket:*")
@@ -328,6 +347,9 @@ class SocketConnectionManager:
 
                 except asyncio.TimeoutError:
                     continue
+                except asyncio.CancelledError:
+                    logger.info("Redis subscriber loop cancelled")
+                    break
                 except Exception as exc:
                     logger.error(f"Error processing Redis message: {exc}")
                     await asyncio.sleep(1)
@@ -335,11 +357,14 @@ class SocketConnectionManager:
         except Exception as exc:
             logger.error(f"Redis subscriber loop error: {exc}")
         finally:
-            try:
-                await pubsub.punsubscribe("websocket:*")
-                await pubsub.close()
-            except Exception as exc:
-                logger.error(f"Error closing Redis pubsub: {exc}")
+            # Ensure pubsub connection is always closed to prevent leaks
+            if pubsub is not None:
+                try:
+                    await pubsub.punsubscribe("websocket:*")
+                    await pubsub.close()
+                    logger.info("Redis pubsub connection closed successfully")
+                except Exception as exc:
+                    logger.error(f"Error closing Redis pubsub: {exc}")
             logger.info("Redis subscriber loop stopped")
 
     async def _handle_redis_message(self, message: dict) -> None:
@@ -382,6 +407,8 @@ class SocketConnectionManager:
         Cleanup Redis subscriber and close all connections.
         This should be called during application shutdown.
         """
+        if not settings.USE_WS:
+            return
         logger.info("Cleaning up SocketConnectionManager...")
 
         # Signal shutdown to subscriber loop

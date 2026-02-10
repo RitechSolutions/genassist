@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,7 @@ import { GmailConnection } from "./GmailConnection";
 import { Office365Connection } from "./Office365Connection";
 import { SmbShareFolderConnection } from "./SmbShareFolderConnection";
 import { AzureBlobConnection } from "./AzureBlobConnection";
+import { FileUploader } from "@/components/FileUploader";
 
 interface DataSourceDialogProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ interface DataSourceDialogProps {
   dataSourceToEdit?: DataSource | null;
   mode?: "create" | "edit";
   defaultSourceType?: string;
+  disableSourceType?: boolean;
 }
 
 export function DataSourceDialog({
@@ -48,6 +50,7 @@ export function DataSourceDialog({
   dataSourceToEdit = null,
   mode = "create",
   defaultSourceType,
+  disableSourceType = false,
 }: DataSourceDialogProps) {
   const [name, setName] = useState("");
   const [sourceType, setSourceType] = useState("");
@@ -129,7 +132,7 @@ export function DataSourceDialog({
 
   const handleConnectionDataChange = (
     field: DataSourceField,
-    value: string | number
+    value: string | number,
   ) => {
     setConnectionData((prev) => ({
       ...prev,
@@ -168,9 +171,8 @@ export function DataSourceDialog({
 
       if (oauthDataSource.oauth_status !== "connected") {
         toast.error(
-          `Please authorize ${
-            sourceType === "o365" ? "Office 365" : "Gmail"
-          } access before saving.`
+          `Please authorize ${sourceType === "o365" ? "Office 365" : "Gmail"
+          } access before saving.`,
         );
         return;
       }
@@ -184,20 +186,20 @@ export function DataSourceDialog({
           if (useLocalFs) {
             if (!connectionData.local_root) {
               toast.error(
-                "Local Root Path is required when using Local Filesystem."
+                "Local Root Path is required when using Local Filesystem.",
               );
               return;
             }
           } else {
             if (!connectionData.smb_host) {
               toast.error(
-                "SMB Host is required when not using Local Filesystem."
+                "SMB Host is required when not using Local Filesystem.",
               );
               return;
             }
             if (!connectionData.smb_share) {
               toast.error(
-                "SMB Share Name is required when not using Local Filesystem."
+                "SMB Share Name is required when not using Local Filesystem.",
               );
               return;
             }
@@ -205,20 +207,20 @@ export function DataSourceDialog({
         } else if (["azure_blob"].includes(sourceType)) {
           if (!connectionData.connectionstring || !connectionData.container) {
             toast.error(
-              "ConnectionString and Container Name are required when using Azure Blob"
+              "ConnectionString and Container Name are required when using Azure Blob",
             );
             return;
           }
         } else {
           toast.error(
-            "Schema not loaded yet. Please wait a moment and try again."
+            "Schema not loaded yet. Please wait a moment and try again.",
           );
           return;
         }
       } else {
-        // Normal schema validation
+        // Normal schema validation (only validate visible required fields)
         const schemaMissing = schema.fields
-          .filter((field) => field.required && !connectionData[field.name])
+          .filter((field) => field.required && isFieldVisible(field) && !connectionData[field.name])
           .map((field) => field.label);
 
         if (schemaMissing.length > 0) {
@@ -312,6 +314,31 @@ export function DataSourceDialog({
             placeholder={field.label}
           />
         );
+      case "files":
+        return (
+          <FileUploader
+            label=""
+            initialServerFilePath={(value as string) || ""}
+            initialOriginalFileName={
+              (connectionData[`${field.name}_original_filename`] as string) || ""
+            }
+            onUploadComplete={(result) => {
+              setConnectionData((prev) => ({
+                ...prev,
+                [field.name]: result.file_path,
+                [`${field.name}_original_filename`]: result.original_filename,
+              }));
+            }}
+            onRemove={() => {
+              setConnectionData((prev) => ({
+                ...prev,
+                [field.name]: "",
+                [`${field.name}_original_filename`]: "",
+              }));
+            }}
+            placeholder={field.placeholder || `Upload ${field.label}`}
+          />
+        );
       default:
         return (
           <Input
@@ -324,10 +351,19 @@ export function DataSourceDialog({
     }
   };
 
+  const isFieldVisible = (field: DataSourceField): boolean => {
+    if (!field.conditional) return true;
+    return connectionData[field.conditional.field] === field.conditional.value;
+  };
+
   const requiredFields =
-    dataSourceSchemas[sourceType]?.fields.filter((f) => f.required) ?? [];
+    dataSourceSchemas[sourceType]?.fields.filter(
+      (f) => f.required && isFieldVisible(f)
+    ) ?? [];
   const optionalFields =
-    dataSourceSchemas[sourceType]?.fields.filter((f) => !f.required) ?? [];
+    dataSourceSchemas[sourceType]?.fields.filter(
+      (f) => !f.required && isFieldVisible(f)
+    ) ?? [];
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -367,7 +403,10 @@ export function DataSourceDialog({
                     setConnectionData({});
                   }}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger
+                    className="w-full"
+                    disabled={disableSourceType}
+                  >
                     <SelectValue placeholder="Select Source Type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -401,13 +440,13 @@ export function DataSourceDialog({
                       currentDataSource ||
                       (dataSourceId
                         ? ({
-                            id: dataSourceId,
-                            oauth_status: "disconnected",
-                            name,
-                            source_type: sourceType,
-                            connection_data: connectionData,
-                            is_active: 0,
-                          } as DataSource)
+                          id: dataSourceId,
+                          oauth_status: "disconnected",
+                          name,
+                          source_type: sourceType,
+                          connection_data: connectionData,
+                          is_active: 0,
+                        } as DataSource)
                         : undefined)
                     }
                     dataSourceName={name}
@@ -420,13 +459,13 @@ export function DataSourceDialog({
                       currentDataSource ||
                       (dataSourceId
                         ? ({
-                            id: dataSourceId,
-                            oauth_status: "disconnected",
-                            name,
-                            source_type: sourceType,
-                            connection_data: connectionData,
-                            is_active: 0,
-                          } as DataSource)
+                          id: dataSourceId,
+                          oauth_status: "disconnected",
+                          name,
+                          source_type: sourceType,
+                          connection_data: connectionData,
+                          is_active: 0,
+                        } as DataSource)
                         : undefined)
                     }
                     dataSourceName={name}
@@ -439,12 +478,12 @@ export function DataSourceDialog({
                       currentDataSource ||
                       (dataSourceId
                         ? ({
-                            id: dataSourceId,
-                            name,
-                            source_type: sourceType,
-                            connection_data: connectionData,
-                            is_active: 0,
-                          } as DataSource)
+                          id: dataSourceId,
+                          name,
+                          source_type: sourceType,
+                          connection_data: connectionData,
+                          is_active: 0,
+                        } as DataSource)
                         : undefined)
                     }
                     dataSourceName={name}
@@ -464,26 +503,28 @@ export function DataSourceDialog({
                   />
                 )}
 
-                {!["gmail", "o365", "smb_share_folder"].includes(sourceType) && (
-                  <div className="space-y-4">
-                    {requiredFields.map((field) => (
-                      <div key={field.name} className="space-y-2">
-                        <Label htmlFor={field.name}>
-                          {field.label}
-                          {field.required && (
-                            <span className="text-red-500 ml-1">*</span>
+                {!["gmail", "o365", "smb_share_folder"].includes(
+                  sourceType,
+                ) && (
+                    <div className="space-y-4">
+                      {requiredFields.map((field) => (
+                        <div key={field.name} className="space-y-2">
+                          <Label htmlFor={field.name}>
+                            {field.label}
+                            {field.required && (
+                              <span className="text-red-500 ml-1">*</span>
+                            )}
+                          </Label>
+                          {renderField(field)}
+                          {field.description && (
+                            <p className="text-sm text-muted-foreground">
+                              {field.description}
+                            </p>
                           )}
-                        </Label>
-                        {renderField(field)}
-                        {field.description && (
-                          <p className="text-sm text-muted-foreground">
-                            {field.description}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                 <div className="flex items-center justify-between pt-4 border-t">
                   <div className="flex items-center gap-2">

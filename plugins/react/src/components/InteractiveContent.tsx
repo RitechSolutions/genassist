@@ -1,6 +1,40 @@
 import React from 'react';
+import { ChatContentBlock, DynamicChatItem, FileItem, ScheduleItem } from '../types';
+import { getFileIcon } from './FileTypeIcon';
 import { X } from 'lucide-react';
-import { ChatContentBlock, DynamicChatItem, ScheduleItem } from '../types';
+
+// Utility function to parse markdown bold syntax (**text**) and convert to React elements
+export const parseBoldText = (input: string): React.ReactNode[] => {
+  const parts: React.ReactNode[] = [];
+  const boldRegex = /\*\*(.*?)\*\*/g;
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+
+  while ((match = boldRegex.exec(input)) !== null) {
+    // Add text before the match
+    if (match.index > lastIndex) {
+      parts.push(input.slice(lastIndex, match.index));
+    }
+    
+    // Add bold text
+    parts.push(
+      <strong key={key++} style={{ fontWeight: 700 }}>
+        {match[1]}
+      </strong>
+    );
+    
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text after the last match
+  if (lastIndex < input.length) {
+    parts.push(input.slice(lastIndex));
+  }
+
+  // If no matches found, return the original text
+  return parts.length > 0 ? parts : [input];
+};
 
 interface InteractiveContentProps {
   blocks: ChatContentBlock[];
@@ -24,7 +58,15 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {blocks.map((block, index) => {
+        
         switch (block.kind) {
+          case 'file':
+            const fileData = block.data;
+            if (fileData && fileData.type && fileData.type.startsWith('image')) {
+              return <ImageBlock key={index} imageData={fileData} />;
+            } else {
+              return <FileBlock key={index} fileData={fileData} />;
+            }
           case 'text':
             return <TextBlock key={index} text={block.text} />;
           case 'options':
@@ -71,7 +113,7 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
 const TextBlock: React.FC<{ text: string }> = ({ text }) => {
   return (
     <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
-      {text}
+      {parseBoldText(text)}
     </div>
   );
 };
@@ -116,12 +158,12 @@ const QuickOptions: React.FC<QuickOptionsProps> = ({
             onQuickAction?.(option);
           }}
           style={{
-            borderRadius: 16,
+            borderRadius: 99,
             border: 'none',
             backgroundColor: primaryColor,
-            padding: '12px 8px',
+            padding: '12px 12px',
             cursor: isActionable ? 'pointer' : 'not-allowed',
-            fontWeight: 600,
+            fontWeight: 500,
             fontSize: 14,
             color: '#ffffff',
             whiteSpace: 'nowrap',
@@ -391,6 +433,23 @@ const ScheduleBlock: React.FC<ScheduleBlockProps> = ({
           </button>
         </div>
       )}
+    </div>
+  );
+};
+
+const ImageBlock: React.FC<{ imageData: FileItem }> = ({ imageData }) => {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => window.open(imageData.url, '_blank')}>
+      <img src={imageData.url} alt="Image" style={{ width: 80, height: 64, borderRadius: 8, objectFit: 'cover' }} />
+    </div>
+  );
+};
+
+const FileBlock: React.FC<{ fileData: FileItem }> = ({ fileData }) => {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => window.open(fileData.url, '_blank')}>
+      {getFileIcon(fileData.type)}
+      <span className="text-xs text-muted-foreground">{fileData.name}</span>
     </div>
   );
 };

@@ -8,11 +8,12 @@ from pydantic import BaseModel, Field, field_validator
 import numpy as np
 
 from ....schema_utils import VECTOR_DEFAULTS
+from app.constants.embedding_models import ALLOWED_MODEL_NAMES
 
 
 class EmbeddingConfig(BaseModel):
     """Configuration for embedding provider"""
-    type: str = Field(default="huggingface",
+    type: str = Field(default="bedrock",
                       description="Type of embedding provider")
     model_name: str = Field(default=VECTOR_DEFAULTS["embedding_model_name"],
                             description="Name of the embedding model")
@@ -28,6 +29,23 @@ class EmbeddingConfig(BaseModel):
         default=None, description="API key for external services")
     base_url: Optional[str] = Field(
         default=None, description="Base URL for API endpoints")
+    model_id: Optional[str] = Field(
+        default=None, description="Model ID for AWS Bedrock")
+    region_name: Optional[str] = Field(
+        default=None, description="AWS region for Bedrock service")
+    connect_timeout: Optional[int] = Field(
+        default=None, description="Bedrock connect timeout in seconds")
+    read_timeout: Optional[int] = Field(
+        default=None, description="Bedrock read timeout in seconds")
+
+    @field_validator('model_name')
+    @classmethod
+    def validate_model_name(cls, v, info):
+        # Only validate HuggingFace model names
+        if info.data.get('type') == 'huggingface':
+            if v not in ALLOWED_MODEL_NAMES:
+                raise ValueError(f'model_name must be one of {ALLOWED_MODEL_NAMES}')
+        return v
 
     @field_validator('batch_size')
     @classmethod
@@ -52,7 +70,10 @@ class EmbeddingConfig(BaseModel):
         return v
 
     def get(self):
-        if self.type == "huggingface":
+        if self.type == "bedrock":
+            from .bedrock import BedrockEmbedder
+            return BedrockEmbedder(self.model_copy())
+        elif self.type == "huggingface":
             from .huggingface import HuggingFaceEmbedder
             return HuggingFaceEmbedder(self.model_copy())
         elif self.type == "openai":

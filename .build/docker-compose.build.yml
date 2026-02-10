@@ -1,5 +1,17 @@
 services:
   # =========================
+  # Init container to set up volume permissions
+  # =========================
+  volume-init:
+    image: busybox:latest
+    container_name: genassist-volume-init
+    volumes:
+      - app_data:/data
+    command: sh -c "mkdir -p /data/logs /data/uploads /data/recordings && chown -R 1000:1000 /data"
+    networks:
+      - genassist-network
+
+  # =========================
   # Database (3rd party)
   # =========================
   db:
@@ -42,13 +54,20 @@ services:
       - CHROMA_PERSIST_DIR=/src/datavolume/chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma
+      - CHROMA_PORT=8005
       - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
       - DB_HOST=db
       - DB_PORT=5432
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - QDRANT_HOST=http://qdrant
+      - QDRANT_PORT=6333
     volumes:
       - app_data:/src/datavolume
     depends_on:
+      volume-init:
+        condition: service_completed_successfully
       chroma:
         condition: service_started
       redis:
@@ -61,7 +80,7 @@ services:
       - genassist-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/playground/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -90,7 +109,7 @@ services:
       - genassist-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/login"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -119,13 +138,21 @@ services:
   redis:
     image: redis:7-alpine
     container_name: genassist_redis
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        exec redis-server --requirepass "$$REDIS_PASSWORD";
+      else
+        exec redis-server;
+      fi'
     ports:
       - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     networks:
       - genassist-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -140,7 +167,9 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - DB_HOST=db
       - DB_PORT=5432
       - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
@@ -163,7 +192,9 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - DB_HOST=db
       - DB_PORT=5432
     depends_on:
@@ -187,7 +218,9 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - DB_HOST=db
       - DB_PORT=5432
     depends_on:

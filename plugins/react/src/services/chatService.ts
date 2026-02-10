@@ -5,6 +5,7 @@ import {
   Attachment,
   AgentThinkingConfig,
   AgentWelcomeData,
+  FileUploadResponse,
 } from "../types";
 import {
   createWebSocket,
@@ -34,17 +35,26 @@ export class ChatService {
   private welcomeObjectUrl: string | null = null; // to revoke on reset
   private tenant: string | undefined;
   private agentId: string | undefined;
+  private language: string | undefined;
+  private useWs: boolean;
+  private serverUnavailableMessage: string | undefined;
+  private serverUnavailableContactUrl: string | undefined;
+  private serverUnavailableContactLabel: string | undefined;
 
   constructor(
     baseUrl: string,
     apiKey: string,
     metadata?: Record<string, any>,
-    tenant?: string
+    tenant?: string,
+    language?: string,
+    useWs: boolean = true
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
+    this.language = language;
+    this.useWs = useWs;
     // Try to load a saved conversation for this apiKey from localStorage
     this.loadSavedConversation();
   }
@@ -52,6 +62,67 @@ export class ChatService {
   private getStorageKey(): string {
     // Pointer to current conversation metadata for this apiKey
     return `${this.storageKeyBase}:${this.apiKey}`;
+  }
+
+  /**
+   * Set the language for Accept-Language header
+   */
+  setLanguage(language: string | undefined): void {
+    this.language = language;
+  }
+
+  /**
+   * Update metadata (useful for updating language or other dynamic metadata)
+   */
+  setMetadata(metadata: Record<string, any> | undefined): void {
+    this.metadata = metadata;
+  }
+
+  /**
+   * Format language code for Accept-Language header
+   * Converts simple language codes (e.g., "en", "es") to proper format (e.g., "en-US,en;q=0.9")
+   * Follows HTTP Accept-Language header standards
+   */
+  private formatAcceptLanguage(langCode: string): string {
+    if (!langCode) return '';
+    
+    // Normalize language code (lowercase, handle common formats)
+    const normalized = langCode.toLowerCase().trim();
+    
+    // Map common language codes to their full locale format
+    const languageMap: Record<string, string> = {
+      'en': 'en-US',
+      'es': 'es-ES',
+      'fr': 'fr-FR',
+      'de': 'de-DE',
+      'it': 'it-IT',
+      'pt': 'pt-PT',
+      'ar': 'ar-SA',
+      'sq': 'sq-AL',
+    };
+    
+    // Check if the code already has a region (e.g., "en-US", "es-ES")
+    const hasRegion = normalized.includes('-');
+    
+    // Get the full locale or use the provided code if it already has a region
+    const fullLocale = hasRegion ? normalized : (languageMap[normalized] || normalized);
+    
+    // Extract base language from the full locale (e.g., "en" from "en-US")
+    const fullBaseLang = fullLocale.split('-')[0].toLowerCase();
+    
+    // Build Accept-Language header: primary locale, base language with quality, English fallback
+    // Format: "locale,base-lang;q=0.9,en;q=0.8"
+    const parts: string[] = [fullLocale];
+    
+    // fallback
+    parts.push(`${fullBaseLang};q=0.9`);
+    
+    // Add English as fallback if not already the primary language
+    if (fullBaseLang !== 'en') {
+      parts.push('en;q=0.8');
+    }
+    
+    return parts.join(', ');
   }
 
   /**
@@ -71,6 +142,14 @@ export class ChatService {
     // Add authorization header if guest token is available
     if (this.guestToken) {
       headers["Authorization"] = `Bearer ${this.guestToken}`;
+    }
+
+    // Add Accept-Language header if language is set
+    if (this.language) {
+      const acceptLanguage = this.formatAcceptLanguage(this.language);
+      if (acceptLanguage) {
+        headers["Accept-Language"] = acceptLanguage;
+      }
     }
 
     return headers;
@@ -96,6 +175,16 @@ export class ChatService {
 
   setWelcomeDataHandler(handler: ((data: AgentWelcomeData) => void) | null) {
     this.welcomeDataHandler = handler;
+  }
+
+  setServerUnavailableConfig(
+    message?: string,
+    contactUrl?: string,
+    contactLabel?: string
+  ): void {
+    this.serverUnavailableMessage = message;
+    this.serverUnavailableContactUrl = contactUrl;
+    this.serverUnavailableContactLabel = contactLabel;
   }
 
   getPossibleQueries(): string[] {
@@ -193,10 +282,22 @@ export class ChatService {
     }
   }
 
+  // Check if an error is a token expiration error
+  private isTokenExpiredError(error: any): boolean {
+    return (
+      error.response &&
+      error.response.status === 401 &&
+      error.response.data &&
+      (error.response.data.error === "Token has expired." ||
+        error.response.data.message === "Token has expired." ||
+        (typeof error.response.data === "string" && error.response.data.includes("Token has expired")))
+    );
+  }
+
   /**
    * Reset the current conversation by clearing the ID and websocket
    */
-  resetConversation(): void {
+  resetChatConversation(): void {
     // Close the current websocket connection if it exists
     if (this.webSocket) {
       this.webSocket.close();
@@ -243,18 +344,25 @@ export class ChatService {
     return this.conversationId;
   }
 
+  getConversationCreateTime(): number | null {
+    return this.conversationCreateTime;
+  }
+
   isConversationFinalized(): boolean {
     return this.isFinalized;
   }
 
-  async startConversation(reCaptchaToken: string | undefined): Promise<string> {
+  async startConversation(reCaptchaToken?: string | undefined): Promise<string> {
     try {
       const requestBody: any = {
         messages: [],
         recorded_at: new Date().toISOString(),
         data_source_id: "00000000-0000-0000-0000-000000000000",
-        recaptcha_token: reCaptchaToken,
       };
+
+      if (reCaptchaToken) {
+        requestBody.recaptcha_token = reCaptchaToken;
+      }
 
       if (this.metadata) {
         requestBody.metadata = this.metadata;
@@ -338,9 +446,14 @@ export class ChatService {
       }
 
       this.saveConversation();
-      this.connectWebSocket();
+      if (this.useWs) {
+        this.connectWebSocket();
+      }
       return response.data.conversation_id;
-    } catch (error) {
+    } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetChatConversation();
+      }
       throw error;
     }
   }
@@ -348,7 +461,8 @@ export class ChatService {
   async sendMessage(
     message: string,
     attachments?: Attachment[],
-    extraMetadata?: Record<string, any>
+    extraMetadata?: Record<string, any>,
+    reCaptchaToken?: string
   ): Promise<void> {
     if (!this.conversationId || !this.conversationCreateTime) {
       throw new Error("Conversation not started");
@@ -374,6 +488,10 @@ export class ChatService {
         recorded_at: new Date().toISOString(),
       };
 
+      if (reCaptchaToken) {
+        requestBody.recaptcha_token = reCaptchaToken;
+      }
+
       // Include metadata
       const mergedMetadata = {
         ...(this.metadata || {}),
@@ -383,14 +501,62 @@ export class ChatService {
         requestBody.metadata = mergedMetadata;
       }
 
-      await axios.patch(
+      const response = await axios.patch(
         `${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`,
         requestBody,
         {
           headers: this.getHeaders(),
         }
       );
+
+      // If not using WebSocket, try to retrieve the response message from the update conversation response
+      if (!this.useWs && this.messageHandler) {
+        try {
+          const responseData = response.data as any;
+          
+          if (responseData.messages && Array.isArray(responseData.messages)) {
+            // Look for the latest agent message in the response
+            for (let i = responseData.messages.length - 1; i >= 0; i--) {
+              const messageData = responseData.messages[i];
+              
+              if (
+                messageData.speaker === "agent" &&
+                messageData.text &&
+                messageData.create_time !== undefined &&
+                messageData.start_time !== undefined &&
+                messageData.end_time !== undefined
+              ) {
+                const agentMessage: ChatMessage = {
+                  create_time: messageData.create_time,
+                  start_time: this.conversationCreateTime
+                    ? messageData.start_time - this.conversationCreateTime
+                    : messageData.start_time,
+                  end_time: this.conversationCreateTime
+                    ? messageData.end_time - this.conversationCreateTime
+                    : messageData.end_time,
+                  speaker: "agent",
+                  text: messageData.text,
+                  message_id: messageData.message_id || messageData.id,
+                };
+                
+                // Only process if this is a new message we haven't seen before
+                // We can't easily check here, so we'll let the handler manage duplicates
+                this.messageHandler(agentMessage);
+                break;
+              }
+            }
+          }
+        } catch (parseError) {
+          console.error("Failed to parse update conversation response:", parseError);
+        }
+      }
     } catch (error: any) {
+      // Check if this is a token expiration error
+      if (this.isTokenExpiredError(error)) {
+        this.resetChatConversation();
+        throw error;
+      }
+
       // Check if this is the agent inactive error
       if (
         error.response &&
@@ -404,7 +570,11 @@ export class ChatService {
             start_time: now - this.conversationCreateTime,
             end_time: now - this.conversationCreateTime + 0.01,
             speaker: "special",
-            text: "The agent is currently offline, please check back later. Thank you!",
+            text: this.serverUnavailableMessage ?? "The agent is currently offline, please check back later. Thank you!",
+            ...(this.serverUnavailableContactUrl && {
+              linkUrl: this.serverUnavailableContactUrl,
+              linkLabel: this.serverUnavailableContactLabel ?? "Contact support",
+            }),
           };
           this.messageHandler(errorMessage);
         }
@@ -416,7 +586,7 @@ export class ChatService {
     }
   }
 
-  async uploadFile(chatId: string, file: File): Promise<{ fileUrl: string }> {
+  async uploadFile(chatId: string, file: File): Promise<FileUploadResponse | null> {
     if (!this.conversationId) {
       throw new Error("Conversation not started");
     }
@@ -426,20 +596,28 @@ export class ChatService {
     formData.append("file", file);
 
     try {
-      const response = await axios.post<{ fileUrl: string }>(
+      const response = await axios.post<FileUploadResponse>(
         `${this.baseUrl}/api/genagent/knowledge/upload-chat-file`,
         formData,
         {
           headers: this.getHeaders("multipart/form-data"),
         }
       );
-      return response.data;
-    } catch (error) {
+
+      return response.data as FileUploadResponse;
+    } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetChatConversation();
+      }
       throw error;
     }
   }
 
   connectWebSocket(): void {
+    if (!this.useWs) {
+      return;
+    }
+
     if (this.webSocket) {
       this.webSocket.close();
     }
@@ -449,11 +627,18 @@ export class ChatService {
     }
 
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
-    let wsUrl = `${this.baseUrl.replace("http", "ws")}/api/conversations/ws/${
-      this.conversationId
-    }?api_key=${
-      this.apiKey
-    }&lang=en&topics=message&topics=takeover&topics=finalize`;
+    
+    // Build WebSocket URL with proper authentication
+    const wsBase = this.baseUrl.replace("http", "ws");
+    const topics = ["message", "takeover", "finalize"];
+    const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
+    
+    // Use guest_token if available, otherwise fall back to api_key
+    const authParam = this.guestToken 
+      ? `access_token=${encodeURIComponent(this.guestToken)}`
+      : `api_key=${encodeURIComponent(this.apiKey)}`;
+    
+    let wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
     
     // Add tenant as query parameter if provided
     if (this.tenant) {
@@ -471,6 +656,7 @@ export class ChatService {
     this.webSocket.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data as string);
+
         if (data.type === "message" && this.messageHandler) {
           if (Array.isArray(data.payload)) {
             const messages = data.payload as ChatMessage[];
@@ -596,7 +782,10 @@ export class ChatService {
       if (this.welcomeDataHandler) {
         this.welcomeDataHandler(this.welcomeData);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (this.isTokenExpiredError(err)) {
+        this.resetChatConversation();
+      }
       // ignore
     }
   }
@@ -631,6 +820,9 @@ export class ChatService {
       });
       
     } catch (error: any) {
+      if (this.isTokenExpiredError(error)) {
+        this.resetChatConversation();
+      }
       console.error('Feedback API call failed:', {
         message: error.message,
         response: error.response?.data,

@@ -6,7 +6,12 @@ All schemas use the unified TypeSchema structure from base.py.
 """
 
 from typing import Dict
-from .base import FieldSchema, TypeSchema, ConditionalField, convert_typed_schemas_to_dict
+from .base import (
+    FieldSchema,
+    TypeSchema,
+    ConditionalField,
+    convert_typed_schemas_to_dict,
+)
 
 # Define field schemas for each data source type
 DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
@@ -200,11 +205,11 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 conditional=ConditionalField(field="auth_method", value="password"),
             ),
             FieldSchema(
-                name="private_key",
-                type="password",
-                label="Private Key",
+                name="private_key_file",
+                type="files",
+                label="Private Key File",
                 required=True,
-                description="Enter RSA private key for authentication",
+                description="Upload RSA private key file for authentication",
                 conditional=ConditionalField(field="auth_method", value="private_key"),
             ),
             FieldSchema(
@@ -239,6 +244,51 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 required=False,
                 description="Comma-separated allowlist",
                 placeholder="ORDERS, CUSTOMERS",
+                advanced=True,
+            ),
+        ],
+    ),
+    "Zendesk": TypeSchema(
+        name="Zendesk",
+        fields=[
+            FieldSchema(
+                name="subdomain",
+                type="text",
+                label="Zendesk Subdomain",
+                required=True,
+                description="Your Zendesk subdomain (e.g., 'yourcompany' for yourcompany.zendesk.com)",
+                placeholder="yourcompany",
+            ),
+            FieldSchema(
+                name="email",
+                type="text",
+                label="Email",
+                required=True,
+                description="Zendesk account email address",
+                placeholder="user@example.com",
+            ),
+            FieldSchema(
+                name="api_token",
+                type="password",
+                label="API Token",
+                required=True,
+                description="Zendesk API token for authentication",
+            ),
+            FieldSchema(
+                name="locale",
+                type="text",
+                label="Locale",
+                required=False,
+                description="Locale for articles (e.g., 'en-us'). Leave empty to sync all locales.",
+                placeholder="en-us",
+                advanced=True,
+            ),
+            FieldSchema(
+                name="section_id",
+                type="number",
+                label="Section ID",
+                required=False,
+                description="Optional: Only sync articles from a specific section. Leave empty to sync all sections.",
                 advanced=True,
             ),
         ],

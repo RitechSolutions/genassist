@@ -3,7 +3,7 @@ import fnmatch
 import os
 import shutil
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple
 
 import aiofiles
 
@@ -102,12 +102,25 @@ class SMBShareFSService:
     # Internal helpers
     # --------------------------------------------------------------------------
     def _local_abspath(self, subpath: str) -> Path:
-        return (self.local_root / subpath).resolve()
+        """
+        Resolve a subpath relative to local_root and validate it stays within local_root.
+        Raises ValueError if the path would escape the root directory (path traversal attempt).
+        """
+        # Resolve both paths to absolute canonical paths
+        resolved_root = self.local_root.resolve()
+        resolved_path = (self.local_root / subpath).resolve()
+
+        # Validate the resolved path is within the root directory
+        try:
+            resolved_path.relative_to(resolved_root)
+        except ValueError:
+            raise ValueError(f"Path traversal attempt detected: '{subpath}' escapes root directory")
+
+        return resolved_path
 
     def _smb_abspath(self, subpath: str) -> str:
         """
-        Build a UNC path like:
-            \\HOST\SHARE\sub\path
+        Build a UNC path like: \host\share\sub\path
         Use smbclient.path.join to be safe across OSes.
         """
         # Normalize any forward slashes from callers into backslashes for UNC
@@ -121,9 +134,6 @@ class SMBShareFSService:
 
     async def _smb_is_dir(self, abs_unc: str) -> bool:
         try:
-            st = await asyncio.to_thread(smbstat, abs_unc)
-            # On Windows-like semantics, directories have st.st_mode with S_IFDIR
-            # We rely on path.isdir (faster) to avoid bit-twiddling here.
             return await asyncio.to_thread(smbpath.isdir, abs_unc)
         except FileNotFoundError:
             return False
@@ -241,9 +251,9 @@ class SMBShareFSService:
         abs_unc = self._smb_abspath(filepath)
 
         # Ensure parent directory exists (create if missing)
-        parent, unc_parent = await self.get_unc_subpath(abs_unc) # smbpath.dirname(abs_unc)
+        _, unc_parent = await self.get_unc_subpath(abs_unc)  # smbpath.dirname(abs_unc)
         if not await self._smb_exists(unc_parent):
-            await asyncio.to_thread(mkdir, parent)
+            await asyncio.to_thread(mkdir, unc_parent)
 
         if (await self._smb_exists(abs_unc)) and not overwrite:
             raise FileExistsError(f"File already exists: {abs_unc}")
@@ -320,17 +330,23 @@ class SMBShareFSService:
         return await self._smb_exists(abs_unc)
 
 
-    async def get_unc_subpath(self, unc_path: str) -> str:
+    async def get_unc_subpath(self, unc_path: str) -> Tuple[str, str]:
         """
-        Given a UNC path like \\host\share\folder\file.txt,
-        return the subpath under the share (e.g., 'folder' or 'folder\\sub').
+        Given a UNC path with a host, share and nested folders
+        (for example: host, share, folder, file.txt),
+        return:
+          - The subpath under the share (e.g., 'folder' or 'folder/sub')
+          - The UNC path string to that sub-directory (e.g., host + share + folder/sub)
         """
         # Normalize and split
         parts = unc_path.strip("\\").split("\\")
         if len(parts) < 2:
             raise ValueError(f"Invalid UNC path: {unc_path}")
-        
+
         # parts[0] = host, parts[1] = share
-        # Everything after that is the subpath
+        # Everything after that up to the final element (the filename)
+        # is the subpath directory
         sub_parts = parts[2:-1] if len(parts) > 2 else []
-        return "\\".join(sub_parts), "\\\\"+parts[0]+"\\"+parts[1]+"\\"+"\\".join(sub_parts)
+        subpath = "\\".join(sub_parts)
+        unc_parent = "\\\\" + parts[0] + "\\" + parts[1] + ("\\" + subpath if subpath else "")
+        return subpath, unc_parent

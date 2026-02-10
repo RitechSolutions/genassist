@@ -106,6 +106,7 @@ struct GenassistChatPreview: PreviewProvider {
                         "version": "1.0.0"
                     ]
                 ),
+
             )
             .preferredColorScheme(.dark)
             .previewDisplayName("Dark Mode")

@@ -40,11 +40,16 @@ from app.api.v1.routes import (
     workflow_manager,
     mcp,
     mcp_servers,
-    customers
+    customers,
+    file_manager
 )
 
+# Disable redirect slashes for all routes
+default_router_options = {
+    "redirect_slashes": False
+}
 
-router = APIRouter()
+router = APIRouter(**default_router_options)
 
 router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 router.include_router(users.router, prefix="/user", tags=["User"])
@@ -95,6 +100,9 @@ router.include_router(
 )
 router.include_router(
     webhook_execute.router, prefix="/webhook/execute", tags=["Webhook Execution"]
+)
+router.include_router(
+    file_manager.router, prefix="/file-manager", tags=["FileManager"]
 )
 
 

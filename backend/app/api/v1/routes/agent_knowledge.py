@@ -27,6 +27,10 @@ from app.tasks.s3_tasks import import_s3_files_to_kb_async
 from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.agents.rag import ThreadScopedRAG
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
+# File manager service
+from app.services.file_manager import FileManagerService
+from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
+from app.schemas.file import FileUploadResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -83,7 +87,7 @@ async def get_knowledge_item_by_id(
     ],
 )
 async def create_knowledge_item(
-    item: KBBase = Body(...),
+    item: KBCreate = Body(...),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
 ):
@@ -249,14 +253,15 @@ async def upload_file(
 
 @router.post(
     "/upload-chat-file",
-    response_model=Dict[str, str],
+    response_model=FileUploadResponse,
     dependencies=[
         Depends(auth),
-    ],
+    ]
 )
 async def upload_file_to_chat(
     chat_id: str = Form(...),
     file: UploadFile = File(...),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Upload a file, extract its text content, and return both the saved filename and extracted text file
@@ -266,25 +271,27 @@ async def upload_file_to_chat(
             f"Received file upload: {file.filename}, size: {file.size}, content_type: {file.content_type}"
         )
 
-        # Generate a unique filename
-        file_extension = file.filename.split(
-            ".")[-1] if "." in file.filename else ""
-        if file_extension.lower() not in ["pdf", "docx", "txt", "jpg", "jpeg", "png"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Unsupported file type. Only PDF, DOCX, TXT, JPG, JPEG, and PNG are allowed.",
+        # Introduce file manager service and set the storage provider to local file system
+        await file_manager_service.set_storage_provider(LocalFileSystemProvider(config={"base_path": UPLOAD_DIR}))
+
+        try:
+            # create file in file manager service
+            created_file = await file_manager_service.create_file(
+                file,
+                allowed_extensions=["pdf", "docx", "txt", "jpg", "jpeg", "png"],
             )
+        except Exception as e:
+            logger.error(f"Error creating file: {str(e)}")
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported file type. Only PDF, DOCX, TXT, JPG, JPEG, and PNG are allowed.") from e
 
-        unique_filename = (
-            f"{uuid.uuid4()}.{file_extension}" if file_extension else f"{uuid.uuid4()}"
-        )
-        file_path = os.path.join(UPLOAD_DIR, unique_filename)
+        # get file id from created file
+        file_id = created_file.id
+        file_extension = created_file.file_extension
+        storage_path = created_file.storage_path
+        file_path = f"{UPLOAD_DIR}/{storage_path}"
 
-        logger.info(f"Saving file to: {file_path}")
-
-        # Save the file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        logger.debug(f"File Id: {file_id}")
 
         # Extract text from the file
         try:
@@ -298,25 +305,34 @@ async def upload_file_to_chat(
                 extracted_text = FileExtractor.extract_from_txt(file_path)
             from app.dependencies.injector import injector
 
+            # add file content to thread rag using workflow engine
             thread_rag = injector.get(ThreadScopedRAG)
             await thread_rag.add_file_content(
                 chat_id=chat_id,
                 file_content=extracted_text,
                 file_name=file.filename or "unknown",
-                file_id=unique_filename,
+                file_id=file_id,
             )
 
         except Exception as e:
             logger.warning(f"Could not extract text from file: {str(e)}")
 
+        file_relative_url = f"/api/file-manager/files/{file_id}/source"
+
         # Return the filenames and paths
-        result = {
-            "filename": unique_filename,
-            "original_filename": file.filename,
-            "file_path": file_path,
-        }
-        logger.info(f"Upload successful: {result}")
+        result = FileUploadResponse(
+            filename=str(file_id),
+            original_filename=file.filename,
+            storage_path=storage_path,
+            file_path=file_path,
+            file_url=file_relative_url,
+            file_id=str(file_id),
+        )
+
+        logger.debug(f"Upload successful: {result}")
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")
         raise HTTPException(
@@ -348,13 +364,13 @@ async def search(
     items: List[KBRead] = Body(...),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
 ):
-    logger.info(f"search route : query = {query}")
+    logger.debug(f"search route : query = {query}")
 
     # Search using simplified manager
     results = await rag_manager.search(items, query, limit=5, format_results=True)
 
     if not results:
-        logger.info(f"No results found for query: {query}")
+        logger.debug(f"No results found for query: {query}")
         return []
 
     return results
@@ -391,7 +407,7 @@ async def finalize_legra_knowledgebase(
 
 
 @router.post(
-    "/process-files/",
+    "/process-files",
     dependencies=[Depends(auth), Depends(
         permissions("update:knowledge_base"))],
 )

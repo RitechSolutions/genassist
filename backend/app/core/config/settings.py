@@ -1,4 +1,6 @@
 from typing import Optional, Tuple
+from urllib.parse import quote, unquote
+
 from pydantic import computed_field, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
@@ -6,25 +8,43 @@ from app.core.project_path import DATA_VOLUME
 
 
 class ProjectSettings(BaseSettings):
-
     def __init__(self, **values):
         super().__init__(**values)
-        if self.REDIS_HOST is None:
-            self.REDIS_HOST = "127.0.0.1" if self.DEV else "redis"
 
     # === Redis Configuration ===
     REDIS_HOST: Optional[str] = None
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_PASSWORD: Optional[str] = None  # Auth; included in REDIS_URL when set
+    REDIS_USER: Optional[str] = None  # Auth; included in REDIS_URL when set
     REDIS_FOR_CONVERSATION: bool = True
+    REDIS_SSL: Optional[bool] = False
+    REDIS_OVERRIDE_URL: Optional[str] = None
+
+    # Redis connection pool settings
+    REDIS_MAX_CONNECTIONS: int = 10  # Max connections in pool
+    REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE: int = (
+        5  # Used to cache agents, etc, in services
+    )
+    REDIS_SOCKET_TIMEOUT: int = 10  # Socket timeout in seconds
+    REDIS_SOCKET_CONNECT_TIMEOUT: int = 15  # Socket connect timeout in seconds
+    REDIS_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval in seconds
+
     # Memory efficiency settings for Redis conversations
     CONVERSATION_MAX_MEMORY_MESSAGES: int = 50  # Max messages kept in memory
     CONVERSATION_REDIS_EXPIRY_DAYS: int = 30  # Redis data expiration
     # Redis connection pool settings
-    REDIS_MAX_CONNECTIONS: int = 20  # Max connections in pool
-    REDIS_SOCKET_TIMEOUT: int = 5  # Socket timeout in seconds
-    REDIS_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval in seconds
-    
+    # For 300-500 concurrent WebSocket users, 30-40 connections is optimal
+    # Each publish takes ~5ms, so connections are rapidly reused
+
+    # Celery Redis connection pool settings
+    CELERY_REDIS_MAX_CONNECTIONS: int = (
+        50  # Max connections for Celery broker & backend
+    )
+    # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
+    # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
+    CELERY_WORKER_POOL: str = "solo"
+
     FERNET_KEY: Optional[str]
 
     # === LLM Keys ===
@@ -68,8 +88,8 @@ class ProjectSettings(BaseSettings):
     CREATE_DB: bool = False
     DB_ASYNC: bool = True
     # SQLAlchemy async engine pool settings
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_SIZE: int = 100
+    DB_MAX_OVERFLOW: int = 100
     DB_POOL_TIMEOUT: int = 30  # seconds
     DB_POOL_RECYCLE: int = 1800  # seconds
 
@@ -120,11 +140,16 @@ class ProjectSettings(BaseSettings):
 
     # Check if inside celery container
     BACKGROUND_TASK: bool = False
+    BEDROCK_MAX_RETRY_QUERY_EMBEDDING: int = 3
+    BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS: int = 8
 
     # === CORS Configuration ===
     CORS_ALLOWED_ORIGINS: Optional[str] = (
         None  # Comma-separated list of additional allowed origins
     )
+
+    # === WebSocket Configuration ===
+    USE_WS: bool = True  # Enable/disable WebSocket backend (connect, broadcast, rooms)
 
     # === Rate Limiting Configuration ===
     RATE_LIMIT_ENABLED: bool = False
@@ -146,6 +171,9 @@ class ProjectSettings(BaseSettings):
     CHROMA_HOST: str = Field(default="localhost", description="Database host")
     CHROMA_PORT: int = Field(default=8005, description="Database port")
 
+    # MSSQL Driver
+    MSSQL_DRIVER: str = "ODBC+Driver+18+for+SQL+Server"
+
     @property
     def _zendesk_base(self) -> str:
         return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
@@ -157,22 +185,44 @@ class ProjectSettings(BaseSettings):
     @computed_field
     @property
     def REDIS_URL(self) -> str:
-        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        if self.REDIS_OVERRIDE_URL:
+            return self.REDIS_OVERRIDE_URL
+        host = self.REDIS_HOST or "localhost"
+
+        if self.REDIS_PASSWORD:
+            auth = f"{quote(self.REDIS_USER or '', safe='')}:{quote(self.REDIS_PASSWORD or '', safe='')}@"
+        else:
+            auth = ""
+        # use rediss for ssl if ssl is enabled
+        redis_scheme = "rediss" if self.REDIS_SSL else "redis"
+        return unquote(
+            f"{redis_scheme}://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        )
 
     @computed_field
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}/{self.DB_NAME}"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return unquote(
+            f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}"
+        )
 
     @computed_field
     @property
     def DATABASE_URL_SYNC(self) -> str:
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}/{self.DB_NAME}"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return unquote(
+            f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}"
+        )
 
     @computed_field
     @property
     def POSTGRES_URL(self) -> str:
-        return f"postgresql://{settings.DB_USER}:{settings.DB_PASS}@{settings.DB_HOST}/postgres"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return unquote(f"postgresql://{user}:{password}@{self.DB_HOST}/postgres")
 
     def get_tenant_database_name(self, tenant: str = "master") -> str:
         if tenant == "master":
@@ -184,12 +234,20 @@ class ProjectSettings(BaseSettings):
         """Generate database URL for a specific tenant"""
         # Sanitize tenant_id for database name (replace hyphens with underscores)
         tenant_db = self.get_tenant_database_name(tenant)
-        return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}/{tenant_db}"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return unquote(
+            f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{tenant_db}"
+        )
 
     def get_tenant_database_url_sync(self, tenant: str = "master") -> str:
         """Generate SYNC database URL for a specific tenant (psycopg2)"""
         tenant_db = self.get_tenant_database_name(tenant)
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}/{tenant_db}"
+        user = quote(self.DB_USER or "", safe="")
+        password = quote(self.DB_PASS or "", safe="")
+        return unquote(
+            f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{tenant_db}"
+        )
 
     model_config = ConfigDict(
         env_file=".env",
@@ -199,3 +257,38 @@ class ProjectSettings(BaseSettings):
 
 
 settings = ProjectSettings()
+
+# === File Storage Settings ===
+
+
+class FileStorageSettings(BaseSettings):
+    DEFAULT_STORAGE_PROVIDER: str = "local"
+
+    AZURE_CONNECTION_STRING: Optional[str] = None
+    AZURE_ACCOUNT_NAME: Optional[str] = None
+    AZURE_ACCOUNT_KEY: Optional[str] = None
+    AZURE_CONTAINER_NAME: Optional[str] = None
+
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = None
+    GOOGLE_STORAGE_BUCKET: Optional[str] = None
+
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_STORAGE_BUCKET: Optional[str] = None
+    AWS_REGION: Optional[str] = None
+    AWS_S3_ENDPOINT_URL: Optional[str] = None
+    AWS_BUCKET_NAME: Optional[str] = None
+
+    GCP_PROJECT_ID: Optional[str] = None
+    GCP_REGION: Optional[str] = None
+
+    APP_URL: Optional[str] = "http://localhost:8000"
+
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",  # ignore unknown fields instead of raising an error
+    )
+
+
+file_storage_settings = FileStorageSettings()

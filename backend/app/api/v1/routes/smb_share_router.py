@@ -1,3 +1,5 @@
+import os
+import re
 from fastapi import APIRouter, Query, Depends, UploadFile, HTTPException
 from typing import Optional, List, Union
 from pydantic import BaseModel
@@ -5,6 +7,51 @@ from app.auth.dependencies import auth, permissions
 
 from app.services.smb_share_service import SMBShareFSService
 from app.tasks.share_folder_tasks import transcribe_audio_files_async_with_scope
+
+
+def get_safe_path(user_path: str) -> str:
+    """
+    Sanitize and validate a user-provided path to prevent path traversal attacks.
+
+    Args:
+        user_path: The user-provided path to validate
+
+    Returns:
+        A sanitized path string that is safe to use
+
+    Raises:
+        HTTPException: If path contains traversal sequences
+    """
+    if not user_path:
+        return ""
+
+    # Normalize the path to resolve any . or .. components
+    normalized = os.path.normpath(user_path)
+
+    # After normalization, check if it still contains parent directory references
+    # or starts with absolute path indicators
+    if ".." in normalized:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid path: path traversal not allowed"
+        )
+
+    # Reject absolute paths - all paths should be relative to root
+    if os.path.isabs(normalized) or normalized.startswith("/") or normalized.startswith("\\"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid path: absolute paths not allowed"
+        )
+
+    # Check for URL-encoded traversal attempts
+    user_path_lower = user_path.lower()
+    if "%2e" in user_path_lower or "%252e" in user_path_lower:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid path: encoded traversal not allowed"
+        )
+
+    return normalized
 
 router = APIRouter()
 router = APIRouter(prefix="/smb", tags=["SMB Share / Local FS"])
@@ -96,6 +143,9 @@ async def read_file(
     dependencies=[Depends(auth)]
 ):
     """Read file content."""
+    # Sanitize filepath to prevent path traversal attacks
+    safe_filepath = get_safe_path(filepath)
+
     try:
         async with SMBShareFSService(
             smb_host=smb_host,
@@ -106,7 +156,7 @@ async def read_file(
             use_local_fs=use_local_fs,
             local_root=local_root,
         ) as svc:
-            return await svc.read_file(filepath, binary=binary)
+            return await svc.read_file(safe_filepath, binary=binary)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -114,6 +164,9 @@ async def read_file(
 @router.post("/write")
 async def write_file(req: FileRequest, dependencies=[Depends(auth)]):
     """Write or update a file."""
+    # Sanitize filepath to prevent path traversal attacks
+    safe_filepath = get_safe_path(req.filepath)
+
     try:
         async with SMBShareFSService(
             smb_host=req.smb_host,
@@ -122,15 +175,15 @@ async def write_file(req: FileRequest, dependencies=[Depends(auth)]):
             smb_pass=req.smb_pass,
             smb_port=req.smb_port,
             use_local_fs=req.use_local_fs,
-            local_root=req.local_root, 
+            local_root=req.local_root,
         ) as svc:
             await svc.write_file(
-                filepath=req.filepath,
+                filepath=safe_filepath,
                 content=req.content or "",
                 binary=req.binary,
                 overwrite=req.overwrite,
             )
-        return {"status": "success", "message": f"File '{req.filepath}' written."}
+        return {"status": "success", "message": f"File '{safe_filepath}' written."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -174,8 +227,11 @@ async def create_folder(req: FolderRequest, dependencies=[Depends(auth)]):
 
 
 @router.delete("/folder")
-async def delete_folder(req: FolderRequest,dependencies=[Depends(auth)]):
+async def delete_folder(req: FolderRequest, dependencies=[Depends(auth)]):
     """Delete a folder and its contents."""
+    # Sanitize folderpath to prevent path traversal attacks
+    safe_folderpath = get_safe_path(req.folderpath)
+
     try:
         async with SMBShareFSService(
             smb_host=req.smb_host,
@@ -184,10 +240,10 @@ async def delete_folder(req: FolderRequest,dependencies=[Depends(auth)]):
             smb_pass=req.smb_pass,
             smb_port=req.smb_port,
             use_local_fs=req.use_local_fs,
-            local_root=req.local_root, 
+            local_root=req.local_root,
         ) as svc:
-            await svc.delete_folder(req.folderpath)
-        return {"status": "success", "message": f"Folder '{req.folderpath}' deleted."}
+            await svc.delete_folder(safe_folderpath)
+        return {"status": "success", "message": f"Folder '{safe_folderpath}' deleted."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

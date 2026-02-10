@@ -1,16 +1,40 @@
 from typing import Dict, List
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Request, UploadFile, File, HTTPException
+from fastapi import APIRouter, Body, Depends, Query, Request, UploadFile, File, HTTPException
 from fastapi.responses import Response
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth
-from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
+from app.schemas.agent import AgentCreate, AgentListItem, AgentRead, AgentUpdate
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import BaseFilterModel
 from app.services.agent_config import AgentConfigService
 
 
 router = APIRouter()
+
+
+@router.get(
+    "/configs/list",
+    response_model=PaginatedResponse[AgentListItem],
+    dependencies=[
+        Depends(auth),
+    ],
+)
+async def get_configs_list(
+    filter_obj: BaseFilterModel = Depends(),
+    config_service: AgentConfigService = Injected(AgentConfigService),
+):
+    """
+    Get paginated list of agent configurations with minimal data.
+
+    This endpoint is optimized for performance - it only returns the fields
+    needed for list display (id, name, workflow_id, possible_queries, is_active).
+    Use GET /configs/{agent_id} to get full details when clicking on an item.
+    """
+    return await config_service.get_list_paginated(filter_obj)
+
 
 # TODO set permission validation
 @router.get(
@@ -95,8 +119,10 @@ async def update_config(
 ):
     """Update an existing agent configuration"""
 
-    result = await agent_config_service.update(agent_id, agent_update)
-    return AgentRead.model_validate(result)
+    await agent_config_service.update(agent_id, agent_update)
+    # Fetch the updated agent with all relationships to ensure security_settings is included
+    agent_read = await agent_config_service.get_by_id_full(agent_id)
+    return agent_read
 
 
 @router.delete(

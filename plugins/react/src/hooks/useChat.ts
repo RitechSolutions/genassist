@@ -7,12 +7,32 @@ export interface UseChatProps {
   apiKey: string;
   tenant?: string | undefined;
   metadata?: Record<string, any>;
+  //  If false, the chat will run in HTTP-only mode (no WebSocket connection).
+  useWs?: boolean;
+  language?: string;
   onError?: (error: Error) => void;
   onTakeover?: () => void;
   onFinalize?: () => void;
+  serverUnavailableMessage?: string; // Custom message when server is down
+  serverUnavailableContactUrl?: string; // Optional URL for contact/support
+  serverUnavailableContactLabel?: string; // Label for the contact link
 }
 
-export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover, onFinalize }: UseChatProps) => {
+const DEFAULT_SERVER_UNAVAILABLE_MESSAGE = 'The service is temporarily unavailable. Please try again later.';
+const DEFAULT_SERVER_UNAVAILABLE_CONTACT_LABEL = 'Contact support';
+
+function isNetworkOrServerError(error: any): boolean {
+  // No response = network error
+  if (!error.response) {
+    const code = error?.code;
+    if (code === 'ERR_NETWORK' || code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ERR_CONNECTION_REFUSED') return true;
+    return true; // any request error without response is treated as server/network issue
+  }
+  const status = error.response?.status;
+  return typeof status === 'number' && status >= 500;
+}
+
+export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, language, onError, onTakeover, onFinalize, serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel }: UseChatProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [preloadedAttachments, setPreloadedAttachments] = useState<Attachment[]>([]);
@@ -35,6 +55,40 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
     return `genassist_conversation_messages:${apiKeyVal}:${convId}`;
   }, []);
 
+  // Check if an error is a token expiration error (401 + "Token has expired.")
+  const isTokenExpiredError = useCallback((error: any): boolean => {
+    return !!(
+      error?.response?.status === 401 &&
+      error?.response?.data &&
+      (error.response.data.error === "Token has expired." ||
+        error.response.data.message === "Token has expired." ||
+        (typeof error.response.data === "string" && error.response.data.includes("Token has expired")))
+    );
+  }, []);
+
+  // Reset conversation state to initial (e.g. after token expiration)
+  const resetToInitialState = useCallback(() => {
+    setConversationId(null);
+    setIsFinalized(false);
+    setIsTakenOver(false);
+    setConnectionState('disconnected');
+    setWelcomeTitle(null);
+    setWelcomeImageUrl(null);
+    setWelcomeMessage(null);
+    setPossibleQueries([]);
+    setThinkingPhrases([]);
+    setThinkingDelayMs(1000);
+    setMessages([]);
+    const key = buildMessagesKey(apiKey, conversationId);
+    if (key) {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [apiKey, conversationId, buildMessagesKey]);
+
   // Deep compare metadata to prevent unnecessary re-initializations
   // Only re-initialize if metadata actually changes (by value, not reference)
   const metadataString = useMemo(() => JSON.stringify(metadata || {}), [metadata]);
@@ -42,6 +96,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
   const prevBaseUrlRef = useRef<string>(baseUrl);
   const prevApiKeyRef = useRef<string>(apiKey);
   const prevTenantRef = useRef<string | undefined>(tenant);
+  const prevUseWsRef = useRef<boolean>(useWs);
 
   // Store callbacks in refs so they don't trigger re-initialization
   const onErrorRef = useRef(onError);
@@ -61,29 +116,33 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
     onFinalizeRef.current = onFinalize;
   }, [onFinalize]);
 
-  // Initialize chat service - only when baseUrl, apiKey, tenant, or metadata actually change
+  // Initialize chat service - only when baseUrl, apiKey, tenant, useWs, or metadata actually change
   useEffect(() => {
     const metadataChanged = metadataRef.current !== metadataString;
     const baseUrlChanged = prevBaseUrlRef.current !== baseUrl;
     const apiKeyChanged = prevApiKeyRef.current !== apiKey;
     const tenantChanged = prevTenantRef.current !== tenant;
+    const useWsChanged = prevUseWsRef.current !== useWs;
     
-    const needsReinit = !chatServiceRef.current || baseUrlChanged || apiKeyChanged || tenantChanged || metadataChanged;
+    // Only re-initialize for connection-related changes, NOT for metadata changes
+    const needsReinit = !chatServiceRef.current || baseUrlChanged || apiKeyChanged || tenantChanged || useWsChanged;
 
     if (needsReinit) {
       // Update refs
-      if (metadataChanged) metadataRef.current = metadataString;
       if (baseUrlChanged) prevBaseUrlRef.current = baseUrl;
       if (apiKeyChanged) prevApiKeyRef.current = apiKey;
       if (tenantChanged) prevTenantRef.current = tenant;
+      if (useWsChanged) prevUseWsRef.current = useWs;
+      if (metadataChanged) metadataRef.current = metadataString;
 
       // Clean up existing service if it exists
       if (chatServiceRef.current) {
+        chatServiceRef.current.setConnectionStateHandler(() => {});
         chatServiceRef.current.disconnect();
         chatServiceRef.current.setWelcomeDataHandler(null);
       }
       
-      chatServiceRef.current = new ChatService(baseUrl, apiKey, metadata, tenant);
+      chatServiceRef.current = new ChatService(baseUrl, apiKey, metadata, tenant, language, useWs);
       
       // Set up handlers
       chatServiceRef.current.setMessageHandler((message: ChatMessage) => {
@@ -133,6 +192,12 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
         }
       });
 
+      chatServiceRef.current.setServerUnavailableConfig(
+        serverUnavailableMessage,
+        serverUnavailableContactUrl,
+        serverUnavailableContactLabel
+      );
+
       // Check for a saved conversation and connect to it
       const convId = chatServiceRef.current.getConversationId();
       if (convId) {
@@ -141,6 +206,9 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
           setIsFinalized(true);
         } else {
           chatServiceRef.current.connectWebSocket();
+          if (!useWs) {
+            setConnectionState('connected');
+          }
         }
       }
       // Pull initial static data
@@ -159,9 +227,12 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
           setThinkingDelayMs(thinking.delayMs || 1000);
         }
       }
-    } else if (chatServiceRef.current && metadata) {
+    } else if (chatServiceRef.current) {
       // Just update metadata without re-initializing
-      (chatServiceRef.current as any).metadata = metadata;
+      if (metadataChanged) {
+        metadataRef.current = metadataString;
+        chatServiceRef.current.setMetadata(metadata);
+      }
     }
 
     // Always update handlers when callbacks change (without re-initializing)
@@ -181,13 +252,26 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
           onFinalizeRef.current();
         }
       });
+
+      chatServiceRef.current.setServerUnavailableConfig(
+        serverUnavailableMessage,
+        serverUnavailableContactUrl,
+        serverUnavailableContactLabel
+      );
     }
 
     // Cleanup only on unmount
     return () => {
       // Only cleanup on unmount, not on every dependency change
     };
-  }, [baseUrl, apiKey, tenant, metadataString]);
+  }, [baseUrl, apiKey, tenant, metadataString, language, useWs, serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel]);
+
+  // Update language when it changes (without re-initializing the service)
+  useEffect(() => {
+    if (chatServiceRef.current) {
+      chatServiceRef.current.setLanguage(language);
+    }
+  }, [language]);
 
   // Load messages for current pair when available
   useEffect(() => {
@@ -216,7 +300,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
   }, [messages, apiKey, conversationId, buildMessagesKey]);
 
   // Reset conversation
-  const resetConversation = useCallback(async (reCaptchaToken: string | undefined) => {
+  const resetConversation = useCallback(async (reCaptchaToken?: string | undefined) => {
     if (!chatServiceRef.current) {
       return;
     }
@@ -240,7 +324,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
     
     try {
       // Reset the conversation in the chat service
-      chatServiceRef.current.resetConversation();
+      chatServiceRef.current.resetChatConversation();
       
       // Start a new conversation
       const convId = await chatServiceRef.current.startConversation(reCaptchaToken);
@@ -280,35 +364,40 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
   }, []);
 
   const uploadFile = useCallback(async (file: File): Promise<Attachment | null> => {
-    if (!chatServiceRef.current || !chatServiceRef.current.getConversationId()) {
+    const conversationId = chatServiceRef.current?.getConversationId(); 
+    if (!conversationId) {
       return null;
     }
 
     try {
-      const { fileUrl } = await chatServiceRef.current.uploadFile(
-        chatServiceRef.current.getConversationId() as string,
-        file
-      );
+      const uploadResult = await chatServiceRef.current?.uploadFile(conversationId, file);
+
+      // construct the file url with the base url
+      const file_url = new URL(uploadResult!.file_url!, baseUrl).href;
       
       const attachment: Attachment = {
         name: file.name,
         type: file.type,
         size: file.size,
-        url: fileUrl,
+        url: file_url,
+        file_id: uploadResult?.file_id,
       };
 
       setPreloadedAttachments(prev => [...prev, attachment]);
       return attachment;
-    } catch (error) {
+    } catch (error: any) {
+      if (isTokenExpiredError(error)) {
+        resetToInitialState();
+      }
       if (onErrorRef.current) {
         onErrorRef.current(error as Error);
       }
       return null;
     }
-  }, []);
+  }, [apiKey, conversationId, buildMessagesKey, isTokenExpiredError, resetToInitialState]);
 
   // Send message
-  const sendMessage = useCallback(async (text: string, files: File[] = [], extraMetadata?: Record<string, any>) => {
+  const sendMessage = useCallback(async (text: string, files: File[] = [], extraMetadata?: Record<string, any>, reCaptchaToken?: string) => {
     if (!chatServiceRef.current) {
       throw new Error('Chat service not initialized');
     }
@@ -327,23 +416,43 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, onError, onTakeover
       if (!isTakenOver) {
         setIsAgentTyping(true);
       }
-      await chatServiceRef.current.sendMessage(text, newAttachments, extraMetadata);
+      
+      await chatServiceRef.current.sendMessage(text, newAttachments, extraMetadata, reCaptchaToken);
 
       setPreloadedAttachments([]);
 
-    } catch (error) {
+    } catch (error: any) {
       setIsAgentTyping(false);
-      if (onErrorRef.current && error instanceof Error) {
+      if (isTokenExpiredError(error)) {
+        resetToInitialState();
+      } else if (isNetworkOrServerError(error)) {
+        // Show custom server-unavailable message
+        const now = Date.now() / 1000;
+        const createTime = chatServiceRef.current?.getConversationCreateTime();
+        const startTime = createTime != null ? now - createTime : 0;
+        const endTime = startTime + 0.01;
+        const specialMessage: ChatMessage = {
+          create_time: now,
+          start_time: startTime,
+          end_time: endTime,
+          speaker: 'special',
+          text: serverUnavailableMessage ?? DEFAULT_SERVER_UNAVAILABLE_MESSAGE,
+          ...(serverUnavailableContactUrl && {
+            linkUrl: serverUnavailableContactUrl,
+            linkLabel: serverUnavailableContactLabel ?? DEFAULT_SERVER_UNAVAILABLE_CONTACT_LABEL,
+          }),
+        };
+        setMessages(prev => [...prev, specialMessage]);
+        // Don't call onError so the user only sees our custom message
+      } else if (onErrorRef.current && error instanceof Error) {
         onErrorRef.current(error);
-      } else {
-        // ignore
       }
     } finally {
       setIsLoading(false);
     }
-  }, [preloadedAttachments, isTakenOver]);
+  }, [preloadedAttachments, isTakenOver, isTokenExpiredError, resetToInitialState, serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel]);
 
-  const startConversation = useCallback(async (reCaptchaToken: string | undefined) => {
+  const startConversation = useCallback(async (reCaptchaToken?: string | undefined) => {
     if (!chatServiceRef.current) {
       return;
     }

@@ -1,10 +1,16 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from fastapi import UploadFile
 
 from app.schemas.operator import OperatorReadMinimal
+from app.schemas.agent_security_settings import (
+    AgentSecuritySettingsRead,
+    AgentSecuritySettingsCreate,
+    AgentSecuritySettingsUpdate,
+)
+from app.schemas.common import PaginatedResponse
 
 
 class AgentBase(BaseModel):
@@ -23,8 +29,10 @@ class AgentBase(BaseModel):
         description="Thinking phrases, suggested when starting a conversation with an agent.", default=[])
     thinking_phrase_delay: Optional[int] = Field(None, ge=0,
                                                  description="Delay in seconds before showing thinking phrases.")
-    token_based_auth: bool = Field(default=False,
-                                description="If true, requires JWT token for conversation updates instead of API key.")
+    security_settings: Optional[AgentSecuritySettingsCreate] = Field(
+        None,
+        description="Security settings for this agent. If null, uses global defaults."
+    )
     model_config = ConfigDict(
         extra='forbid', from_attributes=True)  # shared rules
     workflow_id: Optional[UUID] = None
@@ -44,8 +52,8 @@ class AgentUpdate(BaseModel):
     possible_queries: Optional[list[str]] = None
     thinking_phrases: Optional[list[str]] = None
     thinking_phrase_delay: Optional[int] = None
-    token_based_auth: Optional[bool] = None
     workflow_id: Optional[UUID] = None
+    security_settings: Optional[AgentSecuritySettingsUpdate] = None
     model_config = ConfigDict(extra='forbid', from_attributes=True)
 
 
@@ -58,6 +66,7 @@ class AgentRead(AgentBase):
     workflow_id: UUID
     workflow: Optional[Dict[str, Any]] = None  # Workflow dict (from workflow.to_dict()) - needed for RegistryItem
     test_input: Optional[dict] = None
+    security_settings: Optional[AgentSecuritySettingsRead] = None
     # Exclude the image blob from serialization
     welcome_image: Optional[bytes] = Field(None, exclude=True)
 
@@ -78,12 +87,15 @@ class AgentRead(AgentBase):
                         if not key.startswith('_') and key not in ['metadata', 'registry']:
                             try:
                                 value = getattr(data, key)
-                                # Skip methods and relationships except workflow
+                                # Skip methods and relationships except workflow and security_settings
                                 if not callable(value):
                                     data_dict[key] = value
                             except Exception:
                                 pass
                     data_dict['workflow'] = workflow_dict
+                    # Handle security_settings relationship
+                    if hasattr(data, 'security_settings') and data.security_settings is not None:
+                        data_dict['security_settings'] = data.security_settings
                     return data_dict
                 else:
                     data['workflow'] = workflow_dict
@@ -126,3 +138,32 @@ class AgentImageUpload(BaseModel):
 class QueryRequest(BaseModel):
     query: str
     metadata: Optional[Dict[str, Any]] = None
+
+
+class AgentListItem(BaseModel):
+    """Minimal agent data for list view - optimized for performance"""
+    id: UUID
+    name: str
+    workflow_id: Optional[UUID] = None
+    possible_queries: List[str] = Field(default_factory=list, description="FAQ queries")
+    is_active: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("possible_queries", mode="before")
+    @classmethod
+    def deserialize_possible_queries(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            return v.split(";") if v else []
+        return v if v else []
+
+    @field_validator("is_active", mode="before")
+    @classmethod
+    def deserialize_is_active(cls, v: Any) -> bool:
+        if isinstance(v, int):
+            return bool(v)
+        return v
+
+
+# Re-export PaginatedResponse for backward compatibility
+__all__ = ["PaginatedResponse"]

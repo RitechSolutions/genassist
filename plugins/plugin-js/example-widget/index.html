@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Genassist Widget - Example Help Center Example</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #eef4f8;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .config-section {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 6px;
+            margin-bottom: 30px;
+        }
+        .config-section h2 {
+            margin-top: 0;
+            color: #4F46E5;
+        }
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        .code-block code {
+            display: block;
+            white-space: pre;
+        }
+        .note {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 12px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .note strong {
+            color: #856404;
+        }
+        /* Root container for the widget */
+        #genassist-chat-root {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Genassist Widget - Example Integration</h1>
+        <p class="subtitle">Example implementation for JavaScript render forms</p>
+
+        <div class="config-section">
+            <h2>Step 1: Add the Widget Script & CSS</h2>
+            <p>Include the widget script in your template or via a JavaScript render form:</p>
+            <div class="code-block">
+                <code>
+&lt;!-- For production (CDN): --&gt;
+&lt;link rel="stylesheet" href="https://your-cdn-url.com/widget.css"&gt;
+&lt;script src="https://your-cdn-url.com/widget.iife.js"&gt;&lt;/script&gt;
+
+&lt;!-- For local testing: --&gt;
+&lt;link rel="stylesheet" href="./dist/widget.css"&gt;
+&lt;script src="./dist/widget.iife.js"&gt;&lt;/script&gt;
+                </code>
+            </div>
+        </div>
+
+        <div class="config-section">
+            <h2>Custom Fonts</h2>
+            <p>The widget bundles the <strong>Roboto</strong> font by default via <code>@font-face</code> declarations in <code>src/font.css</code>. The font files are embedded into <code>widget.css</code> during the build.</p>
+
+            <p><strong>Option A: Use a bundled custom font (recommended)</strong></p>
+            <ol>
+                <li>Add your font files to <code>src/fonts/</code></li>
+                <li>Update <code>src/font.css</code> with your <code>@font-face</code> rules</li>
+                <li>Set the <code>fontFamily</code> in the theme config</li>
+                <li>Rebuild with <code>npm run build</code> — fonts will be embedded into <code>widget.css</code></li>
+            </ol>
+            <div class="code-block">
+                <code>
+// In src/font.css:
+@font-face {
+  font-family: "YourFont";
+  src: url("./fonts/YourFont/YourFont-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+
+// In GENASSIST_CONFIG:
+theme: { fontFamily: 'YourFont, sans-serif' }
+                </code>
+            </div>
+
+            <p><strong>Option B: Load fonts externally (e.g., Google Fonts)</strong></p>
+            <p>If you prefer not to bundle fonts, load them via a <code>&lt;link&gt;</code> tag and reference them in the theme config:</p>
+            <div class="code-block">
+                <code>
+&lt;!-- Load font from Google Fonts --&gt;
+&lt;link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap"&gt;
+
+&lt;script&gt;
+  window.GENASSIST_CONFIG = {
+    // ...
+    theme: {
+      fontFamily: 'Inter, sans-serif'
+    }
+  };
+&lt;/script&gt;
+                </code>
+            </div>
+
+            <div class="note">
+                <strong>Note:</strong> When using external fonts, you can remove or empty the <code>@font-face</code> rules in <code>src/font.css</code> to reduce the <code>widget.css</code> bundle size.
+            </div>
+        </div>
+
+        <div class="config-section">
+            <h2>Step 2: Complete Example Integration for JavaScript Render Forms</h2>
+            <p>Here's the complete code you can paste into your JavaScript render form:</p>
+            <div class="code-block">
+                <code>
+&lt;!-- Root container for the widget --&gt;
+&lt;div id="genassist-chat-root"&gt;&lt;/div&gt;
+
+&lt;!-- Widget Configuration and Auto-initialization --&gt;
+&lt;script async&gt;
+  (function() {
+    'use strict';
+
+    window.GENASSIST_CONFIG = {
+      baseUrl: '_base_url_',
+      apiKey: '_apiKey_',
+      tenant: '',
+      headerTitle: 'GenAssist Demo',
+      placeholder: 'Ask anything...',
+      mode: 'floating',
+      floatingConfig: { position: 'bottom-right' },
+      serverUnavailableMessage: 'Support is currently offline. Please try again later or contact us.',
+      noColorAnimation: true,
+      useWs: false,
+      useFiles: false
+    };
+
+  })();
+&lt;/script&gt;
+
+&lt;!-- Widget Script and CSS --&gt;
+&lt;script src="./dist/widget.iife.js"&gt;&lt;/script&gt;
+&lt;link rel="stylesheet" href="_asset_widget.css_" async&gt;</code>
+            </div>
+        </div>
+
+        <div class="note">
+            <strong>Note:</strong> Make sure to replace the placeholder values (your-api-url.com, your-api-key, etc.) with your actual configuration values.
+        </div>
+
+        <div class="config-section">
+            <h2>Live Demo</h2>
+            <p>The widget should automatically appear in the bottom-right corner of this page. Update the configuration above with your API credentials to test.</p>
+        </div>
+    </div>
+
+    <!-- Root container for the widget -->
+    <div id="genassist-chat-root"></div>
+
+    <!-- Widget Configuration and Auto-initialization -->
+    <script async>
+      (function() {
+      'use strict';
+  
+      window.GENASSIST_CONFIG = {
+        baseUrl: 'https://api.test.genassist.ritech.io',
+        apiKey: 'genagent123',
+        tenant: '',
+        headerTitle: 'GenAssist Demo',
+        placeholder: 'Ask anything...',
+        mode: 'floating',
+        floatingConfig: { position: 'bottom-right' },
+        serverUnavailableMessage: 'Support is currently offline. Please try again later or contact us.',
+        noColorAnimation: true,
+        useWs: false,
+        useFiles: false
+    };
+  
+    })();
+    </script>
+    
+    <script src="./dist/widget.iife.js"></script>
+    <link rel="stylesheet" href="./dist/widget.css" async>
+</body>
+</html>
+

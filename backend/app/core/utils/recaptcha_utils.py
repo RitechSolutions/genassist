@@ -4,6 +4,8 @@ import base64
 import logging
 from google.cloud import recaptchaenterprise_v1
 from google.oauth2 import service_account
+from app.db.models import AgentModel
+from typing import Optional
 
 
 logger = logging.getLogger(__name__)
@@ -11,12 +13,17 @@ logger = logging.getLogger(__name__)
 RECAPTCHA_ACTION = "genassist_chat"
 
 
-def verify_recaptcha_token(token: str | None) -> tuple[bool, float, str]:
+def verify_recaptcha_token(
+    token: str | None,
+    agent: Optional[AgentModel] = None
+) -> tuple[bool, float, str]:
     """
     Verify a reCAPTCHA Enterprise token.
 
     Args:
         token: The reCAPTCHA token from the frontend.
+        agent: Optional AgentModel instance. If provided, uses agent-specific settings.
+               Falls back to global settings if agent settings are None.
 
     Returns:
         Tuple of (is_valid, score, reason).
@@ -24,13 +31,43 @@ def verify_recaptcha_token(token: str | None) -> tuple[bool, float, str]:
         - score: The risk score (0.0 = bot, 1.0 = human).
         - reason: Description of why verification failed (if applicable).
     """
-    recaptcha_enabled = os.environ.get("RECAPTCHA_ENABLED")
-    recaptcha_project_id = os.environ.get("RECAPTCHA_PROJECT_ID")
-    recaptcha_site_key = os.environ.get("RECAPTCHA_SITE_KEY")
-    recaptcha_min_score = os.environ.get("RECAPTCHA_MIN_SCORE")
+    # Use agent-specific settings if available, otherwise fall back to global
+    if agent:
+        # Get security settings from relationship
+        security_settings = agent.security_settings if hasattr(agent, 'security_settings') else None
+        
+        if security_settings:
+            # For boolean, check if security_settings has a value, otherwise use global
+            if security_settings.recaptcha_enabled is not None:
+                recaptcha_enabled = security_settings.recaptcha_enabled
+            else:
+                recaptcha_enabled = os.environ.get("RECAPTCHA_ENABLED")
+            recaptcha_project_id = security_settings.recaptcha_project_id or os.environ.get("RECAPTCHA_PROJECT_ID")
+            recaptcha_site_key = security_settings.recaptcha_site_key or os.environ.get("RECAPTCHA_SITE_KEY")
+            recaptcha_min_score = security_settings.recaptcha_min_score or os.environ.get("RECAPTCHA_MIN_SCORE")
+            gcp_svc_account_base64 = security_settings.gcp_svc_account or os.environ.get("GCP_SVC_ACCOUNT")
+        else:
+            # No security settings, use global defaults
+            recaptcha_enabled = os.environ.get("RECAPTCHA_ENABLED")
+            recaptcha_project_id = os.environ.get("RECAPTCHA_PROJECT_ID")
+            recaptcha_site_key = os.environ.get("RECAPTCHA_SITE_KEY")
+            recaptcha_min_score = os.environ.get("RECAPTCHA_MIN_SCORE")
+            gcp_svc_account_base64 = os.environ.get("GCP_SVC_ACCOUNT")
+    else:
+        recaptcha_enabled = os.environ.get("RECAPTCHA_ENABLED")
+        recaptcha_project_id = os.environ.get("RECAPTCHA_PROJECT_ID")
+        recaptcha_site_key = os.environ.get("RECAPTCHA_SITE_KEY")
+        recaptcha_min_score = os.environ.get("RECAPTCHA_MIN_SCORE")
+        gcp_svc_account_base64 = os.environ.get("GCP_SVC_ACCOUNT")
+    
+    # Convert enabled to boolean if it's a string
+    if isinstance(recaptcha_enabled, str):
+        recaptcha_enabled = recaptcha_enabled.lower() == "true"
+    elif recaptcha_enabled is None:
+        recaptcha_enabled = False
+    
     recaptcha_min_score = float(
         recaptcha_min_score) if recaptcha_min_score is not None else 0.5
-    gcp_svc_account_base64 = os.environ.get("GCP_SVC_ACCOUNT")
 
     if gcp_svc_account_base64 is not None:
         base64_bytes = gcp_svc_account_base64.encode("ascii")

@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import aiofiles
 from fastapi import FastAPI, Form, UploadFile, File
 from typing import Literal, Optional, Tuple, Union
@@ -8,6 +9,57 @@ import logging
 import asyncio
 from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
+
+
+import tempfile
+
+
+def sanitize_file_suffix(filename: Optional[str]) -> str:
+    """
+    Extract and sanitize the file suffix from a filename.
+    Only allows alphanumeric characters and dots to prevent path traversal.
+
+    Args:
+        filename: The original filename from the upload
+
+    Returns:
+        A safe suffix string (e.g., ".mp3") or ".tmp" if invalid
+    """
+    if not filename:
+        return ".tmp"
+
+    suffix = Path(filename).suffix
+    # Only allow alphanumeric characters and dots in suffix
+    if suffix and re.match(r'^\.[\w]+$', suffix):
+        return suffix
+    return ".tmp"
+
+
+def safe_remove_temp_file(file_path: str) -> None:
+    """
+    Safely remove a temporary file after validating it's in the system temp directory.
+    This prevents path traversal attacks by ensuring we only delete files in temp locations.
+
+    Args:
+        file_path: The path to the temp file to remove
+
+    Raises:
+        ValueError: If the file is not in a temp directory
+    """
+    if not file_path:
+        return
+
+    resolved_path = Path(file_path).resolve()
+    temp_dir = Path(tempfile.gettempdir()).resolve()
+
+    # Verify the file is within the temp directory
+    try:
+        resolved_path.relative_to(temp_dir)
+    except ValueError:
+        raise ValueError(f"Security error: Attempted to delete file outside temp directory: {file_path}")
+
+    if resolved_path.exists():
+        resolved_path.unlink()
 DEFAULT_WHISPER_MODEL = os.getenv('DEFAULT_WHISPER_MODEL', 'base.en') #load default whisper model from environment or
 
 # Initialize the default model
@@ -108,7 +160,8 @@ async def transcribe_audio_whisper_no_save(file: UploadFile, whisper_options: st
 
         # Read file asynchronously
         file_bytes = await file.read()
-        suffix = Path(file.filename).suffix if file.filename else ".tmp"
+        # Sanitize the suffix to prevent path traversal
+        suffix = sanitize_file_suffix(file.filename)
 
         # Use async temporary file
         async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
@@ -125,10 +178,10 @@ async def transcribe_audio_whisper_no_save(file: UploadFile, whisper_options: st
     except Exception as e:
         return {"error": str(e)}
     finally:
-        # Clean up temp file asynchronously
+        # Clean up temp file with path validation to prevent path traversal
         if temp_file_path:
             try:
-                await aiofiles.os.remove(temp_file_path)
+                safe_remove_temp_file(temp_file_path)
             except Exception as cleanup_error:
                 logger.warning(f"Failed to remove temporary file {temp_file_path}: {cleanup_error}")
 

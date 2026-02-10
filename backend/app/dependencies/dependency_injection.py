@@ -1,11 +1,11 @@
 from contextlib import asynccontextmanager
 from injector import Module, provider, singleton
+from typing import Annotated
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi_injector import request_scope
 from fastapi_injector import RequestScopeFactory
-from app.core.tenant_scope import tenant_scope
 from app.repositories.transcript_message import TranscriptMessageRepository
 from app.repositories.tenant import TenantRepository
 from app.services.tenant import TenantService
@@ -56,16 +56,25 @@ from app.repositories.audit_logs import AuditLogRepository
 from app.repositories.app_settings import AppSettingsRepository
 from app.repositories.api_keys import ApiKeysRepository
 from app.repositories.agent import AgentRepository
-from app.db.multi_tenant_session import multi_tenant_manager
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.workflow.llm.provider import LLMProvider
-from app.cache.redis_connection_manager import RedisConnectionManager
+from redis.asyncio import Redis
 from app.modules.data.manager import AgentRAGServiceManager
+from app.repositories.file_manager import FileManagerRepository
+from app.services.file_manager import FileManagerService
+# Multi-tenant session manager
+from app.core.tenant_scope import tenant_scope
+from app.db.multi_tenant_session import multi_tenant_manager
+# Settings
 from app.core.config.settings import settings
 
 
 logger = logging.getLogger(__name__)
 
+
+# Type annotations for different Redis clients (similar to Spring @Qualifier)
+RedisString = Annotated[Redis, 'string']  # For WebSockets, conversations
+RedisBinary = Annotated[Redis, 'binary']  # For FastAPI cache
 
 class Dependencies(Module):
 
@@ -80,27 +89,62 @@ class Dependencies(Module):
 
     @provider
     @singleton
-    def provide_redis_connection_manager(self) -> RedisConnectionManager:
+    def provide_redis_string(self) -> RedisString:
         """
-        Provide Redis connection manager as a global singleton.
+        Provide Redis client for string data (decode_responses=True).
 
-        Note: Returns uninitialized instance. Async initialization
-        (connection pool setup) happens in the application lifespan.
+        Used by:
+        - SocketConnectionManager (WebSocket pub/sub)
+        - Conversation services
         """
-        return RedisConnectionManager()
+
+        return Redis.from_url(
+            settings.REDIS_URL, 
+            auto_close_connection_pool=True,
+            decode_responses=True,
+            max_connections=settings.REDIS_MAX_CONNECTIONS,
+            socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
+            socket_connect_timeout=settings.REDIS_SOCKET_CONNECT_TIMEOUT,
+            retry_on_timeout=True,
+            health_check_interval=settings.REDIS_HEALTH_CHECK_INTERVAL,
+            retry_on_error=[ConnectionError, TimeoutError]
+        )
+
+
+    @provider
+    @singleton
+    def provide_redis_binary(self) -> RedisBinary:
+        """
+        Provide Redis client for binary data (decode_responses=False).
+
+        Used by:
+        - FastAPI cache (binary cache data)
+
+        """
+        return Redis.from_url(
+            settings.REDIS_URL,
+            auto_close_connection_pool=True,
+            decode_responses=False,
+            max_connections=settings.REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE,
+            socket_timeout=settings.REDIS_SOCKET_TIMEOUT, 
+            socket_connect_timeout=settings.REDIS_SOCKET_CONNECT_TIMEOUT,
+            retry_on_timeout=True,
+            health_check_interval=settings.REDIS_HEALTH_CHECK_INTERVAL,
+            retry_on_error=[ConnectionError, TimeoutError]
+        )
 
     @provider
     @singleton
     def provide_socket_connection_manager(
-        self, redis_manager: RedisConnectionManager
+        self, redis_string: RedisString
     ) -> SocketConnectionManager:
         """
         Provide SocketConnectionManager with Redis support for horizontal scaling.
 
-        The manager is created with Redis dependency injected. Async initialization
+        The manager is created with Redis client injected. Async initialization
         (Redis Pub/Sub subscriber) happens in the application lifespan.
         """
-        return SocketConnectionManager(redis_manager=redis_manager)
+        return SocketConnectionManager(redis_client=redis_string)
 
     @provider
     @request_scope
@@ -111,6 +155,7 @@ class Dependencies(Module):
         Provide tenant-aware session based on tenant context.
 
         Returns an AsyncSession instance managed by fastapi-injector's request scope.
+        Note: Sessions must be properly closed via middleware or cleanup mechanism.
         """
         from app.core.tenant_scope import get_tenant_context
 
@@ -118,8 +163,9 @@ class Dependencies(Module):
         logger.debug(f"DI: Tenant context: {tenant_id}")
 
         session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
-
-        return session_factory()
+        session = session_factory()
+        
+        return session
 
     def configure(self, binder):
         binder.bind(ToolService, scope=request_scope)
@@ -221,15 +267,29 @@ class Dependencies(Module):
         # Global singletons (shared across all tenants)
         # - SocketConnectionManager: Provided by provide_socket_connection_manager (with Redis support)
         #   (Tenant isolation achieved via room ID prefixes: tenant_{id}_room_id)
-        # - RedisConnectionManager: Provided by provide_redis_connection_manager
-        #   (Connection pool is stateless, shared across tenants, tenant isolation via key prefixes)
+        # - RedisString: Provided by provide_redis_string (string mode client, 40 connections)
+        #   (Used for WebSockets, conversations; tenant isolation via key prefixes)
+        # - RedisBinary: Provided by provide_redis_binary (binary mode client, 20 connections)
+        #   (Used for FastAPI cache with binary data)
         # - RequestScopeFactory: Infrastructure for creating request scopes
-        # Note: SocketConnectionManager and RedisConnectionManager use @provider methods (lines 82-104)
+        # Note: SocketConnectionManager and Redis clients use @provider methods
         # so they don't need binder.bind() here - providers handle the singleton scope automatically
         binder.bind(RequestScopeFactory, scope=singleton)
-
+        binder.bind(
+            RedisString,
+            to=self.provide_redis_string,
+            scope=singleton,
+        )
+        binder.bind(RedisBinary,
+            to=self.provide_redis_binary,
+            scope=singleton,
+        )
         binder.bind(logging.Logger, to=lambda: logging.getLogger(), scope=request_scope)
 
         # Multi-tenant services
         binder.bind(TenantService, scope=request_scope)
         binder.bind(TenantRepository, scope=request_scope)
+
+        # File Manager services
+        binder.bind(FileManagerRepository, scope=request_scope)
+        binder.bind(FileManagerService, scope=request_scope)

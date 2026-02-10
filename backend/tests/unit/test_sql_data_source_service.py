@@ -1,5 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock
+from urllib.parse import quote
+
+from app.cache.redis_cache import invalidate_llm_provider_cache
 from app.services.datasources import DataSourceService
 from app.repositories.datasources import DataSourcesRepository
 
@@ -13,6 +16,8 @@ from app.dependencies.injector import injector
 from app.modules.workflow.llm.provider import LLMProvider
 from fastapi import HTTPException
 from fastapi_injector import RequestScopeFactory
+
+from app.services.llm_providers import LlmProviderService
 
 
 logger = logging.getLogger(__name__)
@@ -30,13 +35,15 @@ def data_source_service(mock_repository):
 
 @pytest.fixture
 def sample_data_source_data():
+    user = quote(settings.DB_USER or "", safe="")
+    password = quote(settings.DB_PASS or "", safe="")
     return {
         "name": "test_sql_source",
         "source_type": "sql",
         "connection_data": {
             "id": 1,
             "database_type": "postgresql",
-            "connection_string": f"postgresql://{settings.DB_USER}:{settings.DB_PASS}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}",
+            "connection_string": f"postgresql://{user}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}",
             "allowed_tables": ["conversations", "operators"],
         },
         "is_active": 1,
@@ -75,9 +82,9 @@ async def test_search_data_source(sample_data_source_data):
     async with request_scope_factory.create_scope():
         logger.info("Request scope created successfully.")
         # Get the LLM provider and default model
-        llm_provider = injector.get(LLMProvider)
-        await llm_provider.reload()
-        configs = llm_provider.get_all_configurations()
+        llm_provider = injector.get(LlmProviderService)
+        await invalidate_llm_provider_cache(provider_id=None)
+        configs = await llm_provider.get_all()
         if not configs:
             raise HTTPException(
                 status_code=500, detail="No LLM provider configuration found."

@@ -1,26 +1,17 @@
 import { apiRequest, getApiUrl, api } from "@/config/api";
 import { DynamicFormSchema } from "@/interfaces/dynamicFormSchemas.interface";
+import {
+  AgentConfig,
+  AgentConfigCreate,
+  AgentConfigUpdate,
+  AgentListItem,
+} from "@/interfaces/ai-agent.interface";
+import { PaginatedResponse } from "@/interfaces/common.interface";
 import { getApiKeys, getApiKey } from "@/services/apiKeys";
 import { AxiosError } from "axios";
 
-export interface AgentConfig {
-  id: string;
-  name: string;
-  description: string;
-  is_active?: boolean;
-  welcome_message?: string;
-  welcome_title?: string;
-  thinking_phrase_delay?: number;
-  possible_queries?: string[];
-  thinking_phrases?: string[];
-  token_based_auth?: boolean;
-  workflow_id: string;
-  user_id: string;
-  [key: string]: unknown;
-}
-type AgentConfigCreate = Omit<AgentConfig, "id" | "user_id" | "workflow_id">;
-
-type AgentConfigUpdate = Partial<Omit<AgentConfig, "id" | "user_id">>;
+// Re-export types for backward compatibility
+export type { AgentConfig, AgentListItem, PaginatedResponse };
 
 // Define knowledge item interface
 interface KnowledgeItem {
@@ -86,6 +77,20 @@ async function apiRequestWithFormData<T>(
 // Agent configuration endpoints
 export async function getAllAgentConfigs(): Promise<AgentConfig[]> {
   return apiRequest<AgentConfig[]>("GET", "genagent/agents/configs");
+}
+
+// Paginated list endpoint - optimized for performance
+export async function getAgentConfigsList(
+  page: number = 1,
+  pageSize: number = 20
+): Promise<PaginatedResponse<AgentListItem>> {
+
+  const skip = (page - 1) * pageSize;
+  const limit = pageSize;
+  return apiRequest<PaginatedResponse<AgentListItem>>(
+    "GET",
+    `genagent/agents/configs/list?skip=${skip}&limit=${limit}`
+  );
 }
 
 export async function getAgentConfig(id: string): Promise<AgentConfig> {

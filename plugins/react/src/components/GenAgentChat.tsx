@@ -1,13 +1,17 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
-import { ChatMessageComponent, AttachmentPreview } from './ChatMessage';
+import { ChatMessageComponent } from './ChatMessage';
+import { AttachmentPreview } from './common/AttachmentPreview';
 import { useChat } from '../hooks/useChat';
-import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
+import { ChatMessage, GenAgentChatProps, ScheduleItem, Attachment, AttachmentWithFile } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
-import { Send, Paperclip, MoreVertical, RefreshCw, Globe } from 'lucide-react';
+import { Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
 import { ChatBubble } from './ChatBubble';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
+
+// Type for attachment with file reference
+
 import {
   resolveLanguage,
   mergeTranslations,
@@ -17,16 +21,19 @@ import {
 } from '../utils/i18n';
 import { GoogleReCaptcha, GoogleReCaptchaProvider } from 'react-google-recaptcha-v3';
 
+
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
   apiKey,
   tenant,
   metadata,
+  useWs = true,
   onError,
   onTakeover,
   onFinalize,
   theme,
   headerTitle = 'Genassist',
+  description,
   placeholder,
   agentName,
   logoUrl,
@@ -35,6 +42,15 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   language,
   translations: customTranslations,
   reCaptchaKey,
+  widget = false,
+  useAudio = false,
+  useFile = false,
+  noColorAnimation = false,
+  showWelcomeBeforeStart = true,
+  allowedExtensions = [],
+  serverUnavailableMessage,
+  serverUnavailableContactUrl,
+  serverUnavailableContactLabel,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -51,11 +67,23 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
   }, [selectedLanguage, language]);
 
+  // State for tracking selected FAQ query
+  const [selectedFaqQuery, setSelectedFaqQuery] = useState<string | null>(null);
+
   // Resolve language: prop > selected > browser > 'en'
   const resolvedLanguage = useMemo(() => {
     if (language) return language;
     return selectedLanguage || resolveLanguage() || 'en';
   }, [language, selectedLanguage]);
+
+  // Merge language and FAQ query into metadata
+  const metadataWithLanguage = useMemo(() => {
+    return {
+      ...(metadata || {}),
+      language: resolvedLanguage,
+      ...(selectedFaqQuery ? { faq_query: selectedFaqQuery } : {}),
+    };
+  }, [metadata, resolvedLanguage, selectedFaqQuery]);
 
   // Get translations based on resolved language, then merge with custom translations
   const translations = useMemo(() => {
@@ -83,14 +111,17 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
-  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentWithFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
+  const [fileErrorToast, setFileErrorToast] = useState<string | null>(null);
+  const fileErrorToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(56);
   const [showBacklight, setShowBacklight] = useState(false);
+  const [isFullscreenToggled, setIsFullscreenToggled] = useState(false);
 
   // default thinking messages if none provided by workflow
   const DEFAULT_THINKING_MESSAGES = useMemo(
@@ -130,16 +161,22 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     baseUrl,
     apiKey,
     tenant,
-    metadata,
+    metadata: metadataWithLanguage,
+    useWs,
+    language: resolvedLanguage,
     onError,
     onTakeover,
-    onFinalize
+    onFinalize,
+    serverUnavailableMessage,
+    serverUnavailableContactUrl,
+    serverUnavailableContactLabel,
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioService = useRef<AudioService | null>(null);
   const hasAnchoredHistory = useRef(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const reCaptchaTokenRef = useRef<string | undefined>(undefined);
+  const isUserAtBottomRef = useRef(true);
 
   const anchorHistory = () => {
     const el = chatContainerRef.current;
@@ -147,14 +184,22 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     if (el.clientHeight === 0) return; // hidden, wait for visibility/size
     el.scrollTop = el.scrollHeight;
     hasAnchoredHistory.current = true;
+    isUserAtBottomRef.current = true;
   };
 
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth', force: boolean = false) => {
     const container = chatContainerRef.current;
     const el = messagesEndRef.current;
     if (!container || !el) return;
+    
+    // Only scroll if user is at bottom or if forced (e.g., for agent typing)
+    if (!force && !isUserAtBottomRef.current) {
+      return;
+    }
+    
     const doScroll = () => {
       container.scrollTo({ top: container.scrollHeight, behavior });
+      isUserAtBottomRef.current = true;
     };
     if (behavior === 'auto') {
       doScroll();
@@ -172,7 +217,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   useLayoutEffect(() => {
     if (!messages.length) return;
     if (hasAnchoredHistory.current) {
-      scrollToBottom('smooth');
+      scrollToBottom('smooth', false);
     } else {
       anchorHistory();
     }
@@ -180,12 +225,65 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   useLayoutEffect(() => {
     if (!isAgentTyping) return;
-    scrollToBottom('auto');
+    // Force scroll when agent is typing
+    scrollToBottom('auto', true);
   }, [isAgentTyping, currentThinkingPartIndex, currentThinkingParts.length]);
 
   useEffect(() => {
     hasAnchoredHistory.current = false;
   }, [conversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (fileErrorToastTimeoutRef.current) {
+        clearTimeout(fileErrorToastTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Ensure chat is always open when mode is fullscreen
+  useEffect(() => {
+    if (mode === 'fullscreen' && !isFloatingOpen) {
+      setIsFloatingOpen(true);
+    }
+  }, [mode, isFloatingOpen]);
+
+  // Scroll to bottom when chat is reopened in floating mode
+  const prevIsFloatingOpenRef = useRef(isFloatingOpen);
+  useEffect(() => {
+    // Only trigger when chat transitions from closed to open
+    if ((mode === 'floating' || mode === 'fullscreen') && isFloatingOpen && !prevIsFloatingOpenRef.current && messages.length > 0) {
+      // Reset the anchor flag so it can scroll to bottom
+      hasAnchoredHistory.current = false;
+      isUserAtBottomRef.current = true;
+      
+      // Wait for container to be visible and then scroll
+      const scrollWhenVisible = () => {
+        const container = chatContainerRef.current;
+        if (!container) {
+          requestAnimationFrame(scrollWhenVisible);
+          return;
+        }
+        
+        // Check if container is visible
+        if (container.clientHeight === 0) {
+          requestAnimationFrame(scrollWhenVisible);
+          return;
+        }
+        
+        // Scroll to bottom
+        container.scrollTop = container.scrollHeight;
+        hasAnchoredHistory.current = true;
+        isUserAtBottomRef.current = true;
+      };
+      
+      // Use requestAnimationFrame to wait for render
+      requestAnimationFrame(() => {
+        requestAnimationFrame(scrollWhenVisible);
+      });
+    }
+    prevIsFloatingOpenRef.current = isFloatingOpen;
+  }, [isFloatingOpen, mode]);
 
   useEffect(() => {
     if (!messages.length) return;
@@ -194,7 +292,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
     // Observe size/visibility changes to anchor chat view.
     const resizeObserver = new ResizeObserver(() => {
-      anchorHistory();
+      if (isUserAtBottomRef.current) {
+        anchorHistory();
+      }
     });
     resizeObserver.observe(el);
 
@@ -204,6 +304,26 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       resizeObserver.disconnect();
     };
   }, [messages]);
+
+  useEffect(() => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+
+    const isAtBottom = (threshold: number = 100): boolean => {
+      if (!container) return true;
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      return scrollHeight - scrollTop - clientHeight <= threshold;
+    };
+    const handleScroll = () => {
+      isUserAtBottomRef.current = isAtBottom();
+    };
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const updateHeaderHeight = () => {
@@ -275,16 +395,33 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const submitMessage = async () => {
     if (inputValue.trim() === '' && attachments.length === 0) return;
+    if (isAgentTyping) return; // Prevent sending while agent is thinking/typing
     const textToSend = inputValue;
-    const filesToUpload = [...attachments];
+    // NOTES: we don't upload files anymore, we just send the content blocks
+    const filesToUpload = attachments.map(a => a.file);
+    // const fileAttachments = attachments.map(a => a.attachment);
+
     setInputValue('');
     setAttachments([]);
     // Reset the file input value so the same file can be selected again
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+
     try {
-      await sendMessage(textToSend, filesToUpload);
+      // Include FAQ query in metadata if one was previously selected
+      const extraMetadata: Record<string, any> = {};
+
+      if (selectedFaqQuery) {
+        extraMetadata.faq_query = selectedFaqQuery;
+      }
+
+      if (filesToUpload.length > 0) {
+        extraMetadata.attachments = attachments.map(a => a.attachment);
+      }
+      
+      // send message with attachments
+      await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
     }
@@ -297,8 +434,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const handleQuickAction = async (text: string) => {
     if (!text.trim()) return;
+    if (isAgentTyping) return; // Prevent sending while agent is thinking/typing
     try {
-      await sendMessage(text);
+      // Include FAQ query in metadata if one was previously selected
+      const extraMetadata = selectedFaqQuery ? { faq_query: selectedFaqQuery } : undefined;
+      await sendMessage(text, [], extraMetadata, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore quick action errors to avoid interrupting the flow
     }
@@ -307,39 +447,94 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const handleScheduleConfirm = async (schedule: ScheduleItem) => {
     const summary = `Schedule confirmed with ${schedule.restaurants.length} restaurants`;
     try {
-      await sendMessage(summary, [], { confirmSchedule: JSON.stringify(schedule) });
+      await sendMessage(summary, [], { confirmSchedule: JSON.stringify(schedule) }, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
     }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
+    if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files);
-      setAttachments(prev => [...prev, ...newFiles]);
+      
+      // Initialize attachments with files (attachment reference will be null initially)
+      const newAttachments: AttachmentWithFile[] = newFiles.map(file => ({file, attachment: null}));
+      setAttachments(prev => [...prev, ...newAttachments]);
 
       const newUploadingFiles = new Set(uploadingFiles);
       newFiles.forEach(file => newUploadingFiles.add(file.name));
       setUploadingFiles(newUploadingFiles);
 
       try {
-        await Promise.all(newFiles.map(file => uploadFile(file)));
+        // Upload files and get attachment references (use allSettled so one failure doesn't skip the rest)
+        const settled = await Promise.allSettled(
+          newFiles.map(async (file) => ({ file, attachment: await uploadFile(file) }))
+        );
+
+        const fileToAttachmentMap = new Map<string, Attachment | null>();
+        const failedFileKeys = new Set<string>();
+        settled.forEach((result, index) => {
+          const file = newFiles[index];
+          if (!file) return;
+          const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
+          if (result.status === 'rejected') {
+            fileToAttachmentMap.set(fileKey, null);
+            failedFileKeys.add(fileKey);
+            return;
+          }
+          const { attachment } = result.value;
+          fileToAttachmentMap.set(fileKey, attachment);
+          if (attachment === null) {
+            failedFileKeys.add(fileKey);
+          }
+        });
+
+        const hasFailedUploads = failedFileKeys.size > 0;
+
+        // Update attachments: remove failed files, set attachment for successful ones
+        setAttachments(prev => {
+          return prev
+            .filter(att => {
+              const fileKey = `${att.file.name}:${att.file.size}:${att.file.lastModified}`;
+              return !failedFileKeys.has(fileKey);
+            })
+            .map(att => {
+              const fileKey = `${att.file.name}:${att.file.size}:${att.file.lastModified}`;
+              const uploadedAttachment = fileToAttachmentMap.get(fileKey);
+              if (uploadedAttachment !== undefined) {
+                return { ...att, attachment: uploadedAttachment };
+              }
+              return att;
+            });
+        });
+
+        if (hasFailedUploads) {
+          if (fileErrorToastTimeoutRef.current) {
+            clearTimeout(fileErrorToastTimeoutRef.current);
+          }
+          setFileErrorToast(t('fileUpload.fileTypeNotSupported', 'This file type is not supported.'));
+          fileErrorToastTimeoutRef.current = setTimeout(() => {
+            setFileErrorToast(null);
+            fileErrorToastTimeoutRef.current = null;
+          }, 4000);
+        }
       } catch (error) {
         // ignore
+        console.error('Error uploading file', error);
       } finally {
         const finalUploadingFiles = new Set(uploadingFiles);
         newFiles.forEach(file => finalUploadingFiles.delete(file.name));
         setUploadingFiles(finalUploadingFiles);
         // Reset the file input value so the same file can be selected again
         if (fileInputRef.current) {
-          fileInputRef.current.value = '';
+          fileInputRef.current!.value = '';
         }
       }
     }
   };
 
   const handleRemoveAttachment = (fileName: string) => {
-    setAttachments(prev => prev.filter(f => f.name !== fileName));
+    setAttachments(prev => prev.filter(att => att.file.name !== fileName));
   };
 
   const handleVoiceError = (error: Error) => {
@@ -365,10 +560,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   };
 
   const handleQueryClick = async (query: string) => {
-    if (isLoading) return;
+    if (isAgentTyping || isLoading) return; // Prevent sending while agent is thinking/typing
+    
+    // Store the FAQ query for all subsequent messages
+    setSelectedFaqQuery(query);
     
     try {
-      await sendMessage(query);
+      await sendMessage(query, [], { faq_query: query }, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
     }
@@ -376,6 +574,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const handleStartConversation = async () => {
     if (isLoading) return;
+
+    // Clear input text and file attachments when starting a conversation
+    setInputValue('');
+    setAttachments([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
 
     try {
       await startConversation(reCaptchaTokenRef.current);
@@ -394,7 +599,15 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   };
 
   const handleConfirmReset = async () => {
+    // Clear input text and file attachments when restarting
+    setInputValue('');
+    setAttachments([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
     await resetConversation(reCaptchaTokenRef.current);
+    setSelectedFaqQuery(null); // Clear FAQ query on reset
     setShowResetConfirm(false);
   };
 
@@ -405,6 +618,45 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const handleLanguageChange = (lang: string) => {
     setSelectedLanguage(lang);
   };
+
+  const handleFullscreenToggle = () => {
+    setIsFullscreenToggled(prev => !prev);
+    setShowMenu(false);
+  };
+
+  // Track window resize to update mobile detection
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  
+  // Automatically determine if should be fullscreen (mobile devices or widget mode or manual toggle or fullscreen mode)
+  const isFullscreen = useMemo(() => {
+    // If mode is fullscreen, always fullscreen
+    if (mode === 'fullscreen') return true;
+    // If widget prop is true, always fullscreen
+    if (widget) return true;
+    // If manually toggled, use toggle state
+    if (isFullscreenToggled) return true;
+    // Otherwise, use mobile detection
+    return windowWidth <= 768;
+  }, [windowWidth, widget, isFullscreenToggled, mode]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Lock body scroll when fullscreen is active on mobile
+  useEffect(() => {
+    if (isFullscreen && typeof document !== 'undefined') {
+      const originalStyle = window.getComputedStyle(document.body).overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalStyle;
+      };
+    }
+  }, [isFullscreen]);
 
   const handleReCaptchaVerify = useCallback((token: string) => {
     reCaptchaTokenRef.current = token;
@@ -429,6 +681,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const lineHeightPx = Math.round(fontSizeNumber * 1.5);
   const textAreaMaxHeight = lineHeightPx * 3; // up to 3 lines
 
+  // Helper function to convert hex color to rgba
+  const hexToRgba = (hex: string, alpha: number): string => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
   const position = floatingConfig.position || 'bottom-right';
   const offset = floatingConfig.offset || { x: 20, y: 20 };
   const offsetX = offset.x || 20;
@@ -437,17 +697,24 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const containerStyle: React.CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
-    height: '100%',
-    maxHeight: '600px',
-    width: '100%',
-    maxWidth: '400px',
-    border: '1px solid #e0e0e0',
-    borderRadius: '32px',
+    // When fullscreen, let height be calculated from top/bottom, otherwise use specified height
+    height: isFullscreen ? undefined : '100%',
+    maxHeight: isFullscreen ? undefined : (windowWidth > 768 ? '700px' : '600px'),
+    width: isFullscreen ? '100vw' : '100%',
+    maxWidth: isFullscreen ? '100vw' : '400px',
+    border: isFullscreen ? 'none' : '1px solid #e0e0e0',
+    borderRadius: isFullscreen ? '0' : '32px',
     overflow: 'hidden',
     backgroundColor: theme?.secondaryColor || '#f5f5f5',
     fontFamily,
-    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
-    position: 'relative'
+    boxShadow: isFullscreen ? 'none' : "0 4px 20px rgba(0, 0, 0, 0.2)",
+    position: isFullscreen ? 'fixed' : 'relative',
+    top: isFullscreen ? 0 : undefined,
+    left: isFullscreen ? 0 : undefined,
+    right: isFullscreen ? 0 : undefined,
+    // Position container above browser footer using safe area insets
+    bottom: isFullscreen ? 'env(safe-area-inset-bottom, 0px)' : undefined,
+    zIndex: isFullscreen ? 9999 : undefined,
   };
 
   const headerStyle: React.CSSProperties = {
@@ -549,6 +816,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     backgroundColor: '#ffffff',
     alignItems: 'center',
     gap: '8px',
+    flexShrink: 0,
+    overflowX: 'hidden',
+    minWidth: 0,
   };
 
   const inputWrapperStyle: React.CSSProperties = {
@@ -561,23 +831,47 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     padding: '0 12px',
     minHeight: '50px',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
-    position: 'relative'
+    position: 'relative',
+    overflowX: 'hidden',
+    minWidth: 0,
   };
+
+  // Use at least 16px font size on mobile to prevent zoom
+  const textAreaFontSize = useMemo(() => {
+    if (windowWidth <= 768) {
+      // On mobile, use at least 16px to prevent zoom
+      return Math.max(16, fontSizeNumber) + 'px';
+    }
+    return fontSize;
+  }, [windowWidth, fontSize, fontSizeNumber]);
+
+  const textAreaLineHeight = useMemo(() => {
+    const size = windowWidth <= 768 ? Math.max(16, fontSizeNumber) : fontSizeNumber;
+    return Math.round(size * 1.5);
+  }, [windowWidth, fontSizeNumber]);
+
+  const textAreaMaxHeightCalculated = useMemo(() => {
+    return textAreaLineHeight * 3; // up to 3 lines
+  }, [textAreaLineHeight]);
 
   const textAreaStyle: React.CSSProperties = {
     flex: 1,
     border: 'none',
     outline: 'none',
     background: 'transparent',
-    fontSize,
+    fontSize: textAreaFontSize,
     fontFamily,
     padding: '10px',
     paddingRight: '46px',
     color: textColor,
     resize: 'none',
-    lineHeight: `${lineHeightPx}px`,
-    maxHeight: `${textAreaMaxHeight}px`,
+    lineHeight: `${textAreaLineHeight}px`,
+    maxHeight: `${textAreaMaxHeightCalculated}px`,
     overflowY: 'hidden',
+    overflowX: 'hidden',
+    minWidth: 0,
+    width: '100%',
+    boxSizing: 'border-box',
   };
 
   const attachButtonStyle: React.CSSProperties = {
@@ -622,14 +916,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     const el = textAreaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    const newHeight = Math.min(el.scrollHeight, textAreaMaxHeight);
+    const newHeight = Math.min(el.scrollHeight, textAreaMaxHeightCalculated);
     el.style.height = `${newHeight}px`;
-    el.style.overflowY = el.scrollHeight > textAreaMaxHeight ? 'auto' : 'hidden';
+    el.style.overflowY = el.scrollHeight > textAreaMaxHeightCalculated ? 'auto' : 'hidden';
   };
 
   useEffect(() => {
     autoResizeTextArea();
-  }, [inputValue, fontSizeNumber]);
+  }, [inputValue, textAreaMaxHeightCalculated]);
 
   const possibleQueriesContainerStyle: React.CSSProperties = {
     display: 'flex',
@@ -711,7 +1005,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     boxShadow: '0 -2px 6px rgba(0,0,0,0.03)',
     position: 'relative',
     zIndex: 2,
-    overflow: 'hidden'
+    overflow: 'hidden',
+    minHeight: 0,
   };
 
   // Floating mode styles
@@ -746,31 +1041,31 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       case 'bottom-right':
         return { 
           ...base, 
-          bottom: offsetY + 80,
+          bottom: offsetY,
           right: offsetX 
         };
       case 'bottom-left':
         return { 
           ...base, 
-          bottom: offsetY + 80,
+          bottom: offsetY,
           left: offsetX 
         };
       case 'top-right':
         return { 
           ...base, 
-          top: offsetY + 80,
+          top: offsetY,
           right: offsetX 
         };
       case 'top-left':
         return { 
           ...base, 
-          top: offsetY + 80,
+          top: offsetY,
           left: offsetX 
         };
       default:
         return { 
           ...base, 
-          bottom: offsetY + 80,
+          bottom: offsetY,
           right: offsetX 
         };
     }
@@ -778,18 +1073,37 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const getResponsiveDimensions = () => {
     const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    // If fullscreen on mobile, use full viewport
+    if (isFullscreen) {
+      return { width: '100vw', height: '100vh', borderRadius: '0' };
+    }
     if (screenWidth <= 480) {
       return { width: 'calc(100vw - 40px)', height: '450px' };
     } else if (screenWidth <= 768) {
       return { width: '350px', height: '500px' };
     } else {
-      return { width: '380px', height: '600px' };
+      return { width: '380px', height: '700px' };
     }
   };
 
   const floatingContainerStyle: React.CSSProperties = {
-    ...getChatPositionStyles(),
-    ...getResponsiveDimensions(),
+    ...((mode === 'fullscreen' || (isFullscreen && windowWidth <= 768))
+      ? { 
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 'env(safe-area-inset-bottom, 0px)',
+          width: '100vw',
+          // Height will be automatically calculated from top and bottom
+          borderRadius: '0',
+          zIndex: 9999,
+        }
+      : {
+          ...getChatPositionStyles(),
+          ...getResponsiveDimensions(),
+        }
+    ),
   };
 
   /**
@@ -819,8 +1133,19 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       <style>{`
         @keyframes blink { 0% { opacity: 0.2; } 20% { opacity: 1; } 100% { opacity: 0.2; } }
         /* Hide scrollbars for the expanding textarea but keep scrolling */
-        .ga-textarea-nosb { scrollbar-width: none; -ms-overflow-style: none; }
+        .ga-textarea-nosb { 
+          scrollbar-width: none; 
+          -ms-overflow-style: none; 
+          max-width: 100%;
+          box-sizing: border-box;
+        }
         .ga-textarea-nosb::-webkit-scrollbar { width: 0; height: 0; }
+        /* Prevent zoom on mobile - ensure minimum 16px font size */
+        @media (max-width: 768px) {
+          .ga-textarea-nosb {
+            font-size: 16px !important;
+          }
+        }
         /* Backlight sweep under content edge (GPU-friendly).
            Wider travel to fully reach both corners. */
         @keyframes ga-backlight-sweep2 { 0% { transform: translateX(-35%); } 100% { transform: translateX(105%); } }
@@ -838,25 +1163,38 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           opacity: 0 !important;
           pointer-events: none !important;
         }
+        /* Support for safe area insets - handled via inline styles on input container */
       `}</style>
       <div style={headerStyle} ref={headerRef}>
         <div style={logoContainerStyle}>
           <img src={logoUrl?.trim() || chatLogo} alt="Logo" style={logoStyle} />
           <div style={headerTitleContainerStyle}>
             <div style={headerTitleStyle}>{headerTitle}</div>
-            <div style={headerSubtitleStyle}>{t('header.subtitle')}</div>
+            <div style={headerSubtitleStyle}>
+              {description ?? t('header.subtitle')}
+            </div>
           </div>
         </div>
-        <button
-          style={menuButtonStyle}
-          onClick={handleMenuClick}
-          title={t('menu.title')}
-        >
-          <MoreVertical size={24} color="#111111" />
-        </button>
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            style={menuButtonStyle}
+            onClick={handleMenuClick}
+            title={t('menu.title')}
+          >
+            <MoreVertical size={24} color="#111111" />
+          </button>
+          {mode === 'floating' && (
+            <button
+              style={menuButtonStyle}
+              onClick={() => setIsFloatingOpen(false)}
+              title="Close chat"
+            >
+              <X size={24} color="#111111" />
+            </button>
+          )}
+        </div>
       </div>
-      {showBacklight && (
+      {!noColorAnimation && showBacklight && (
         <div
           style={{
             position: 'absolute',
@@ -879,7 +1217,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               width: '78%',
               filter: 'blur(22px)',
               background:
-                'linear-gradient(90deg, rgba(99,102,241,0.0) 0%, rgba(99,102,241,0.35) 15%, rgba(99,102,241,0.55) 50%, rgba(99,102,241,0.35) 85%, rgba(99,102,241,0.0) 100%)',
+                `linear-gradient(90deg, ${hexToRgba(primaryColor, 0.0)} 0%, ${hexToRgba(primaryColor, 0.35)} 15%, ${hexToRgba(primaryColor, 0.55)} 50%, ${hexToRgba(primaryColor, 0.35)} 85%, ${hexToRgba(primaryColor, 0.0)} 100%)`,
               willChange: 'transform, opacity',
               animation: 'ga-backlight-sweep2 1.2s cubic-bezier(0.4,0.0,0.2,1) infinite alternate, ga-backlight-pulse 2.4s ease-in-out infinite',
               borderRadius: 18,
@@ -894,6 +1232,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             <RefreshCw size={16} />
             {t('menu.resetConversation')}
           </div>
+          {mode !== 'fullscreen' && (
+            <div style={menuItemStyle} onClick={handleFullscreenToggle}>
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              {t('menu.fullscreen')}
+            </div>
+          )}
           <div 
             style={{ ...menuItemStyle, position: 'relative', borderBottom: 'none' }}
             onClick={(e) => {
@@ -980,8 +1324,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             return null;
           })()}
           {(() => {
-            // show welcome card
+            // show welcome card (only when showWelcomeBeforeStart is true)
             const shouldShowSyntheticWelcome =
+              showWelcomeBeforeStart &&
               !hasUserMessages &&
               (messages.length === 0 || messages[0].speaker !== 'agent') &&
               (Boolean(welcomeTitle) || Boolean(welcomeImageUrl) || Boolean(welcomeMessage));
@@ -1014,15 +1359,23 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 translations={translations}
                 language={resolvedLanguage}
                 agentName={agentName}
+                isAgentTyping={isAgentTyping}
               />
             );
           })()}
           {(() => {
             const firstAgentIndex = messages.findIndex(m => m.speaker === 'agent');
-            return messages.map((message, index) => {
+
+            const applyMessageFilter = (message: any) => {
+              // filter out file messages added by the agent
+              return message.type !== 'file';
+            }
+
+            return messages.filter(applyMessageFilter).map((message, index) => {
               const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
               const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
               const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
+
               return (
                 <ChatMessageComponent 
                   key={index} 
@@ -1045,6 +1398,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   translations={translations}
                   language={resolvedLanguage}
                   agentName={agentName}
+                  isAgentTyping={isAgentTyping}
                 />
               );
             });
@@ -1074,7 +1428,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           )}
           <div ref={messagesEndRef} />
         </div>
-        {(() => {
+        {showWelcomeBeforeStart && (() => {
           const showingSyntheticWelcome =
             !hasUserMessages &&
             (messages.length === 0 || messages[0].speaker !== 'agent') &&
@@ -1092,22 +1446,44 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 key={index}
                 style={queryButtonStyle}
                 onClick={() => handleQueryClick(query)}
-                disabled={isLoading}
+                disabled={isLoading || isAgentTyping}
               >
                 {query}
               </button>
             ))}
           </div>
         )}
+
+        {fileErrorToast && (
+          <div
+            style={{
+              margin: '0 16px 8px',
+              padding: '10px 14px',
+              backgroundColor: '#FFF3E0',
+              color: '#E65100',
+              borderRadius: '12px',
+              fontSize,
+              fontFamily,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              flexShrink: 0,
+            }}
+            role="alert"
+          >
+            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+            <span>{fileErrorToast}</span>
+          </div>
+        )}
         
-        {attachments.length > 0 && (
+        {useFile && attachments.length > 0 && (
           <div style={{ padding: '0 16px', marginBottom: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {attachments.map((file, index) => (
+            {attachments.map((att, index) => (
               <AttachmentPreview 
                 key={index} 
-                file={file} 
-                onRemove={() => handleRemoveAttachment(file.name)}
-                uploading={uploadingFiles.has(file.name)}
+                file={att.file} 
+                onRemove={() => handleRemoveAttachment(att.file.name)}
+                uploading={uploadingFiles.has(att.file.name)}
               />
             ))}
           </div>
@@ -1116,7 +1492,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         {!conversationId || isFinalized ? (
           <div style={inputContainerStyle}>
             <button
-              style={{...sendButtonStyle, width: '100%', height: '48px', borderRadius: '16px'}}
+              type="button"
+              style={{...sendButtonStyle, width: '100%', height: '48px', borderRadius: '16px', cursor: 'pointer', fontFamily, fontSize}}
               onClick={handleStartConversation}
               disabled={isLoading}
             >
@@ -1126,21 +1503,27 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         ) : (
           <form onSubmit={handleSubmit} style={inputContainerStyle}>
             <div style={inputWrapperStyle}>
-              <button 
-                type="button" 
-                style={attachButtonStyle}
-                title="Attach"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Paperclip size={22} color="#757575" />
-              </button>
-              <input
-                type="file"
-                multiple
-                ref={fileInputRef}
-                style={{ display: 'none' }}
-                onChange={handleFileChange}
-              />
+              {useFile && (
+                <>
+                  <button 
+                    type="button" 
+                    style={attachButtonStyle}
+                    title="Attach"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isAgentTyping}
+                  >
+                    <Paperclip size={22} color={isAgentTyping ? "#b0b0b0" : "#757575"} />
+                  </button>
+                  <input
+                    type="file"
+                    multiple
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    onChange={handleFileChange}
+                    accept={allowedExtensions.join(',') || '*/*'}
+                  />
+                </>
+              )}
               <textarea
                 ref={textAreaRef}
                 style={textAreaStyle}
@@ -1150,31 +1533,32 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    if ((inputValue.trim() !== '' || attachments.length > 0) && connectionState === 'connected') {
+                    if ((inputValue.trim() !== '' || attachments.length > 0) && !isAgentTyping) {
                       submitMessage();
                     }
                   }
                 }}
                 placeholder={inputPlaceholder}
-                disabled={!conversationId || isFinalized}
+                disabled={!conversationId || isFinalized || isAgentTyping}
                 rows={1}
               />
               <div style={rightActionContainerStyle}>
-                {inputValue.trim() === '' && attachments.length === 0 ? (
+                {useAudio && inputValue.trim() === '' && attachments.length === 0 ? (
                   <VoiceInput
                     onTranscription={(text: string) => setInputValue(text)}
                     onError={handleVoiceError}
                     baseUrl={baseUrl}
                     apiKey={apiKey}
                     theme={theme}
+                    disabled={isAgentTyping}
                   />
                 ) : (
                   <button 
                     type="submit" 
                     style={sendButtonStyle}
-                    disabled={(inputValue.trim() === '' && attachments.length === 0) || connectionState !== 'connected'}
+                    disabled={(inputValue.trim() === '' && attachments.length === 0) || isAgentTyping}
                   >
-                    <Send size={18} color="#ffffff" />
+                    <ArrowUp size={18} strokeWidth={3} color="#ffffff" />
                   </button>
                 )}
               </div>
@@ -1199,12 +1583,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   if (mode === 'floating') {
     return (
       <>
-        <ChatBubble
-          showChat={isFloatingOpen}
-          onClick={() => setIsFloatingOpen(prev => !prev)}
-          primaryColor={primaryColor}
-          style={getPositionStyles()}
-        />
+        {!isFloatingOpen && (
+          <ChatBubble
+            showChat={isFloatingOpen}
+            onClick={() => setIsFloatingOpen(prev => !prev)}
+            primaryColor={primaryColor}
+            style={getPositionStyles()}
+          />
+        )}
         
         {isFloatingOpen && (
           <div style={floatingContainerStyle} data-genassist-container="floating">
@@ -1212,6 +1598,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           </div>
         )}
       </>
+    );
+  }
+
+  if (mode === 'fullscreen') {
+    return (
+      <div style={floatingContainerStyle} data-genassist-container="fullscreen">
+        {renderWithReCaptcha(renderChatComponent())}
+      </div>
     );
   }
 

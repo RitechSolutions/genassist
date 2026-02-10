@@ -1,4 +1,14 @@
 services:
+  # Init container to set up volume permissions
+  volume-init:
+    image: busybox:latest
+    container_name: genassist-volume-init
+    volumes:
+      - app_data_volume:/data
+    command: sh -c "mkdir -p /data/logs /data/uploads /data/recordings && chown -R 1000:1000 /data"
+    networks:
+      - genassist-network
+
   # Database
   db:
     image: pgvector/pgvector:pg17
@@ -39,11 +49,18 @@ services:
     environment:
       - VECTOR_DB_TYPE=chroma
       - CHROMA_COLLECTION_NAME=default
-      - CHROMA_HOST=chroma          # connect to Chroma service over the compose network
-      - CHROMA_PORT=8000            # Chroma server listens on 8000 inside its container
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8005
       - DB_HOST=genassist_db
+      - DB_PORT=5432
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - QDRANT_HOST=http://qdrant
+      - QDRANT_PORT=6333
     depends_on:
+      volume-init:
+        condition: service_completed_successfully
       chroma:
         condition: service_started
       qdrant:
@@ -121,10 +138,18 @@ services:
   redis:
     image: redis:7-alpine
     container_name: genassist-redis
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        exec redis-server --requirepass "$$REDIS_PASSWORD";
+      else
+        exec redis-server;
+      fi'
     ports:
       - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -139,7 +164,7 @@ services:
   celery_worker:
     image: genassist-app-image
     container_name: genassist-celery-worker
-    command: python /src/run_celery.py worker --loglevel=info
+    command: python /src/run_celery.py worker --loglevel=info --pool=solo
     env_file:
       - .env
     environment:
@@ -147,14 +172,12 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - CELERY_TRACE_APP=1
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - VECTOR_DB_TYPE=chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
+      - CHROMA_PORT=8005
     depends_on:
       redis:
         condition: service_healthy
@@ -178,14 +201,12 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - CELERY_TRACE_APP=1
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - VECTOR_DB_TYPE=chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
+      - CHROMA_PORT=8005
     depends_on:
       redis:
         condition: service_healthy
@@ -211,10 +232,8 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - CELERY_TRACE_APP=1
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
       redis:
         condition: service_healthy

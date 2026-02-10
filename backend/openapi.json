@@ -153,14 +153,14 @@
         }
       }
     },
-    "/api/user/": {
+    "/api/user": {
       "post": {
         "tags": [
           "v1",
           "User"
         ],
         "summary": "Create",
-        "operationId": "create_api_user__post",
+        "operationId": "create_api_user_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -208,7 +208,7 @@
           "User"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_user__get",
+        "operationId": "get_all_api_user_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -337,7 +337,7 @@
                   "items": {
                     "$ref": "#/components/schemas/UserRead"
                   },
-                  "title": "Response Get All Api User  Get"
+                  "title": "Response Get All Api User Get"
                 }
               }
             }
@@ -627,14 +627,14 @@
         }
       }
     },
-    "/api/user-type/": {
+    "/api/user-type": {
       "get": {
         "tags": [
           "v1",
           "UserTypes"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_user_type__get",
+        "operationId": "get_all_api_user_type_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -645,7 +645,7 @@
                     "$ref": "#/components/schemas/UserTypeRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api User Type  Get"
+                  "title": "Response Get All Api User Type Get"
                 }
               }
             }
@@ -666,7 +666,7 @@
           "UserTypes"
         ],
         "summary": "Create",
-        "operationId": "create_api_user_type__post",
+        "operationId": "create_api_user_type_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -709,14 +709,14 @@
         ]
       }
     },
-    "/api/roles/": {
+    "/api/roles": {
       "get": {
         "tags": [
           "v1",
           "Roles"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_roles__get",
+        "operationId": "get_all_api_roles_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -845,7 +845,7 @@
                   "items": {
                     "$ref": "#/components/schemas/RoleRead"
                   },
-                  "title": "Response Get All Api Roles  Get"
+                  "title": "Response Get All Api Roles Get"
                 }
               }
             }
@@ -868,7 +868,7 @@
           "Roles"
         ],
         "summary": "Create",
-        "operationId": "create_api_roles__post",
+        "operationId": "create_api_roles_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -1071,7 +1071,7 @@
         }
       }
     },
-    "/api/api-keys/": {
+    "/api/api-keys": {
       "post": {
         "tags": [
           "v1",
@@ -1079,7 +1079,7 @@
         ],
         "summary": "Create",
         "description": "Create an API key with a given list of 'role_ids'.\nNOTE: The user must actually possess those roles, or creation will fail.",
-        "operationId": "create_api_api_keys__post",
+        "operationId": "create_api_api_keys_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -1127,7 +1127,7 @@
           "ApiKeys"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_api_keys__get",
+        "operationId": "get_all_api_api_keys_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -1273,7 +1273,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ApiKeyRead"
                   },
-                  "title": "Response Get All Api Api Keys  Get"
+                  "title": "Response Get All Api Api Keys Get"
                 }
               }
             }
@@ -1451,14 +1451,14 @@
         }
       }
     },
-    "/api/permissions/": {
+    "/api/permissions": {
       "post": {
         "tags": [
           "v1",
           "Permissions"
         ],
         "summary": "Create",
-        "operationId": "create_api_permissions__post",
+        "operationId": "create_api_permissions_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -1506,7 +1506,7 @@
           "Permissions"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_permissions__get",
+        "operationId": "get_all_api_permissions_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -1635,7 +1635,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PermissionRead"
                   },
-                  "title": "Response Get All Api Permissions  Get"
+                  "title": "Response Get All Api Permissions Get"
                 }
               }
             }
@@ -1813,14 +1813,14 @@
         }
       }
     },
-    "/api/role-permissions/": {
+    "/api/role-permissions": {
       "get": {
         "tags": [
           "v1",
           "RolePermissions"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_role_permissions__get",
+        "operationId": "get_all_api_role_permissions_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1831,7 +1831,7 @@
                     "$ref": "#/components/schemas/RolePermissionRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Role Permissions  Get"
+                  "title": "Response Get All Api Role Permissions Get"
                 }
               }
             }
@@ -1852,7 +1852,7 @@
           "RolePermissions"
         ],
         "summary": "Create",
-        "operationId": "create_api_role_permissions__post",
+        "operationId": "create_api_role_permissions_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2055,14 +2055,14 @@
         }
       }
     },
-    "/api/app-settings/": {
+    "/api/app-settings": {
       "get": {
         "tags": [
           "v1",
           "AppSettings"
         ],
         "summary": "List Settings",
-        "operationId": "list_settings_api_app_settings__get",
+        "operationId": "list_settings_api_app_settings_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2073,7 +2073,7 @@
                     "$ref": "#/components/schemas/AppSettingsRead"
                   },
                   "type": "array",
-                  "title": "Response List Settings Api App Settings  Get"
+                  "title": "Response List Settings Api App Settings Get"
                 }
               }
             }
@@ -2094,7 +2094,7 @@
           "AppSettings"
         ],
         "summary": "Create Setting",
-        "operationId": "create_setting_api_app_settings__post",
+        "operationId": "create_setting_api_app_settings_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2325,14 +2325,14 @@
         }
       }
     },
-    "/api/feature-flags/": {
+    "/api/feature-flags": {
       "get": {
         "tags": [
           "v1",
           "FeatureFlags"
         ],
         "summary": "List Feature Flags",
-        "operationId": "list_feature_flags_api_feature_flags__get",
+        "operationId": "list_feature_flags_api_feature_flags_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2343,7 +2343,7 @@
                     "$ref": "#/components/schemas/FeatureFlagRead"
                   },
                   "type": "array",
-                  "title": "Response List Feature Flags Api Feature Flags  Get"
+                  "title": "Response List Feature Flags Api Feature Flags Get"
                 }
               }
             }
@@ -2364,7 +2364,7 @@
           "FeatureFlags"
         ],
         "summary": "Create Feature Flag",
-        "operationId": "create_feature_flag_api_feature_flags__post",
+        "operationId": "create_feature_flag_api_feature_flags_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2754,14 +2754,14 @@
         }
       }
     },
-    "/api/datasources/": {
+    "/api/datasources": {
       "get": {
         "tags": [
           "v1",
           "Datasources"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_datasources__get",
+        "operationId": "get_all_api_datasources_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2772,7 +2772,7 @@
                     "$ref": "#/components/schemas/DataSourceRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Datasources  Get"
+                  "title": "Response Get All Api Datasources Get"
                 }
               }
             }
@@ -2793,7 +2793,7 @@
           "Datasources"
         ],
         "summary": "Create",
-        "operationId": "create_api_datasources__post",
+        "operationId": "create_api_datasources_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3308,14 +3308,14 @@
         ]
       }
     },
-    "/api/operators/": {
+    "/api/operators": {
       "get": {
         "tags": [
           "v1",
           "Operators"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_operators__get",
+        "operationId": "get_all_api_operators_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3326,7 +3326,7 @@
                     "$ref": "#/components/schemas/OperatorRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Operators  Get"
+                  "title": "Response Get All Api Operators Get"
                 }
               }
             }
@@ -3347,7 +3347,7 @@
           "Operators"
         ],
         "summary": "Create",
-        "operationId": "create_api_operators__post",
+        "operationId": "create_api_operators_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3785,13 +3785,13 @@
           "Conversations"
         ],
         "summary": "Start",
-        "description": "Create a new in-progress conversation and store the partial transcript.\nIf agent.token_based_auth is true, returns a JWT token for secure frontend access.",
+        "description": "Create a new in-progress conversation and store the partial transcript.\nIf agent.security_settings.token_based_auth is true, returns a JWT token for secure frontend access.",
         "operationId": "start_api_conversations_in_progress_start_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConversationTranscriptCreate"
+                "$ref": "#/components/schemas/ConversationStartWithRecaptchaToken"
               }
             }
           },
@@ -3895,7 +3895,7 @@
           "Conversations"
         ],
         "summary": "Update",
-        "description": "Append segments to an existing in-progress conversation.\nIf agent.token_based_auth is true, only accepts JWT tokens (rejects API keys).",
+        "description": "Append segments to an existing in-progress conversation.\nIf agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).",
         "operationId": "update_api_conversations_in_progress_update__conversation_id__patch",
         "security": [
           {
@@ -3922,7 +3922,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/InProgConvTranscrUpdate"
+                "$ref": "#/components/schemas/ConversationUpdateWithRecaptchaToken"
               }
             }
           }
@@ -4061,14 +4061,14 @@
         }
       }
     },
-    "/api/conversations/": {
+    "/api/conversations": {
       "get": {
         "tags": [
           "v1",
           "Conversations"
         ],
         "summary": "Get",
-        "operationId": "get_api_conversations__get",
+        "operationId": "get_api_conversations_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -4373,7 +4373,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ConversationRead"
                   },
-                  "title": "Response Get Api Conversations  Get"
+                  "title": "Response Get Api Conversations Get"
                 }
               }
             }
@@ -4955,14 +4955,14 @@
         }
       }
     },
-    "/api/llm-providers/": {
+    "/api/llm-providers": {
       "get": {
         "tags": [
           "v1",
           "LlmProviders"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_llm_providers__get",
+        "operationId": "get_all_api_llm_providers_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4973,7 +4973,7 @@
                     "$ref": "#/components/schemas/LlmProviderRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Llm Providers  Get"
+                  "title": "Response Get All Api Llm Providers Get"
                 }
               }
             }
@@ -4994,7 +4994,7 @@
           "LlmProviders"
         ],
         "summary": "Create",
-        "operationId": "create_api_llm_providers__post",
+        "operationId": "create_api_llm_providers_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5225,14 +5225,14 @@
         }
       }
     },
-    "/api/llm-analyst/": {
+    "/api/llm-analyst": {
       "get": {
         "tags": [
           "v1",
           "LlmAnalyst"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_llm_analyst__get",
+        "operationId": "get_all_api_llm_analyst_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5243,7 +5243,7 @@
                     "$ref": "#/components/schemas/LlmAnalyst"
                   },
                   "type": "array",
-                  "title": "Response Get All Api Llm Analyst  Get"
+                  "title": "Response Get All Api Llm Analyst Get"
                 }
               }
             }
@@ -5264,7 +5264,7 @@
           "LlmAnalyst"
         ],
         "summary": "Create",
-        "operationId": "create_api_llm_analyst__post",
+        "operationId": "create_api_llm_analyst_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5578,6 +5578,157 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Query Agent Api Genagent Agents  Agent Id  Query  Thread Id  Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/agents/configs/list": {
+      "get": {
+        "tags": [
+          "v1",
+          "agents"
+        ],
+        "summary": "Get Configs List",
+        "description": "Get paginated list of agent configurations with minimal data.\n\nThis endpoint is optimized for performance - it only returns the fields\nneeded for list display (id, name, workflow_id, possible_queries, is_active).\nUse GET /configs/{agent_id} to get full details when clicking on an item.",
+        "operationId": "get_configs_list_api_genagent_agents_configs_list_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "name": "operator_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Operator Id"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SortField"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "created_at",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "sort_direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SortDirection"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "desc",
+              "title": "Sort Direction"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_AgentListItem_"
                 }
               }
             }
@@ -6045,7 +6196,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/KBBase"
+                "$ref": "#/components/schemas/KBCreate"
               }
             }
           },
@@ -6402,11 +6553,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Upload File To Chat Api Genagent Knowledge Upload Chat File Post"
+                  "$ref": "#/components/schemas/app__schemas__file__FileUploadResponse"
                 }
               }
             }
@@ -6603,19 +6750,19 @@
         }
       }
     },
-    "/api/genagent/knowledge/process-files/": {
+    "/api/genagent/knowledge/process-files": {
       "post": {
         "tags": [
           "v1",
           "Knowledge Base"
         ],
         "summary": "Process Files",
-        "operationId": "process_files_api_genagent_knowledge_process_files__post",
+        "operationId": "process_files_api_genagent_knowledge_process_files_post",
         "requestBody": {
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_process_files_api_genagent_knowledge_process_files__post"
+                "$ref": "#/components/schemas/Body_process_files_api_genagent_knowledge_process_files_post"
               }
             }
           },
@@ -6680,7 +6827,7 @@
         ]
       }
     },
-    "/api/genagent/workflow/": {
+    "/api/genagent/workflow": {
       "get": {
         "tags": [
           "v1",
@@ -6688,7 +6835,7 @@
         ],
         "summary": "Get Workflows",
         "description": "Get all workflows for the current user",
-        "operationId": "get_workflows_api_genagent_workflow__get",
+        "operationId": "get_workflows_api_genagent_workflow_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6699,7 +6846,7 @@
                     "$ref": "#/components/schemas/Workflow"
                   },
                   "type": "array",
-                  "title": "Response Get Workflows Api Genagent Workflow  Get"
+                  "title": "Response Get Workflows Api Genagent Workflow Get"
                 }
               }
             }
@@ -6721,7 +6868,7 @@
         ],
         "summary": "Create Workflow",
         "description": "Create a new workflow",
-        "operationId": "create_workflow_api_genagent_workflow__post",
+        "operationId": "create_workflow_api_genagent_workflow_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7550,14 +7697,14 @@
         ]
       }
     },
-    "/api/twilio/": {
+    "/api/twilio": {
       "get": {
         "tags": [
           "v1",
           "Twilio Agents"
         ],
         "summary": "Twilio Voice API Root Endpoint",
-        "operationId": "sample_api_twilio__get",
+        "operationId": "sample_api_twilio_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7627,7 +7774,7 @@
         }
       }
     },
-    "/api/webhooks/": {
+    "/api/webhooks": {
       "get": {
         "tags": [
           "v1",
@@ -7635,7 +7782,7 @@
           "Webhooks"
         ],
         "summary": "List Webhooks",
-        "operationId": "list_webhooks_api_webhooks__get",
+        "operationId": "list_webhooks_api_webhooks_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7646,7 +7793,7 @@
                     "$ref": "#/components/schemas/WebhookResponse"
                   },
                   "type": "array",
-                  "title": "Response List Webhooks Api Webhooks  Get"
+                  "title": "Response List Webhooks Api Webhooks Get"
                 }
               }
             }
@@ -7668,7 +7815,7 @@
           "Webhooks"
         ],
         "summary": "Create Webhook",
-        "operationId": "create_webhook_api_webhooks__post",
+        "operationId": "create_webhook_api_webhooks_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -8079,7 +8226,452 @@
         }
       }
     },
-    "/api/ml-models/": {
+    "/api/file-manager/files": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Create File",
+        "description": "Upload and create a new file.",
+        "operationId": "create_file_api_file_manager_files_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "List Files",
+        "description": "List files with optional filtering.",
+        "operationId": "list_files_api_file_manager_files_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "storage_provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Storage Provider"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FileResponse"
+                  },
+                  "title": "Response List Files Api File Manager Files Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/files/{file_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Get File",
+        "description": "Get file metadata by ID.",
+        "operationId": "get_file_api_file_manager_files__file_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Update File",
+        "description": "Update file metadata.",
+        "operationId": "update_file_api_file_manager_files__file_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Delete File",
+        "description": "Delete a file.",
+        "operationId": "delete_file_api_file_manager_files__file_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          },
+          {
+            "name": "delete_from_storage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Delete From Storage"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/files/{file_id}/download": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Download File",
+        "description": "Download a file by ID.",
+        "operationId": "download_file_api_file_manager_files__file_id__download_get",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/files/{file_id}/source": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Get File Source",
+        "description": "Get file source content for inline display.",
+        "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/files/{file_id}/base64": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Get File Base64",
+        "description": "Get file content as base64 encoded string (public endpoint).",
+        "operationId": "get_file_base64_api_file_manager_files__file_id__base64_get",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ml-models": {
       "get": {
         "tags": [
           "v1",
@@ -8087,7 +8679,7 @@
         ],
         "summary": "Get All Ml Models",
         "description": "Get all ML models.",
-        "operationId": "get_all_ml_models_api_ml_models__get",
+        "operationId": "get_all_ml_models_api_ml_models_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -8098,7 +8690,7 @@
                     "$ref": "#/components/schemas/MLModelRead"
                   },
                   "type": "array",
-                  "title": "Response Get All Ml Models Api Ml Models  Get"
+                  "title": "Response Get All Ml Models Api Ml Models Get"
                 }
               }
             }
@@ -8120,7 +8712,7 @@
         ],
         "summary": "Create Ml Model",
         "description": "Create a new ML model.",
-        "operationId": "create_ml_model_api_ml_models__post",
+        "operationId": "create_ml_model_api_ml_models_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -8346,7 +8938,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FileUploadResponse"
+                  "$ref": "#/components/schemas/app__schemas__ml_model__FileUploadResponse"
                 }
               }
             }
@@ -9327,7 +9919,7 @@
         }
       }
     },
-    "/api/playground/": {
+    "/api/playground": {
       "get": {
         "tags": [
           "v1",
@@ -9335,7 +9927,7 @@
         ],
         "summary": "Playground Root",
         "description": "Root playground endpoint.",
-        "operationId": "playground_root_api_playground__get",
+        "operationId": "playground_root_api_playground_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -9357,6 +9949,27 @@
         "summary": "Playground Health",
         "description": "Health check endpoint.",
         "operationId": "playground_health_api_playground_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/playground/health/redis": {
+      "get": {
+        "tags": [
+          "v1",
+          "Playground"
+        ],
+        "summary": "Redis Health",
+        "description": "Redis connection health check endpoint.\nReturns detailed information about all Redis connection pools.",
+        "operationId": "redis_health_api_playground_health_redis_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -10607,7 +11220,7 @@
         }
       }
     },
-    "/api/tenants/": {
+    "/api/tenants": {
       "get": {
         "tags": [
           "v1",
@@ -10615,7 +11228,7 @@
         ],
         "summary": "List Tenants",
         "description": "List all active tenants",
-        "operationId": "list_tenants_api_tenants__get",
+        "operationId": "list_tenants_api_tenants_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -10626,7 +11239,7 @@
                     "$ref": "#/components/schemas/TenantResponse"
                   },
                   "type": "array",
-                  "title": "Response List Tenants Api Tenants  Get"
+                  "title": "Response List Tenants Api Tenants Get"
                 }
               }
             }
@@ -10648,7 +11261,7 @@
         ],
         "summary": "Create Tenant",
         "description": "Create a new tenant",
-        "operationId": "create_tenant_api_tenants__post",
+        "operationId": "create_tenant_api_tenants_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12045,7 +12658,7 @@
         }
       }
     },
-    "/api/mcp/": {
+    "/api/mcp": {
       "get": {
         "tags": [
           "v1",
@@ -12053,7 +12666,7 @@
         ],
         "summary": "Handle Root Get",
         "description": "Handle GET requests at root endpoint for SSE connections.\n\nThis allows the MCP SDK's SSE client to connect to the base URL.",
-        "operationId": "handle_root_get_api_mcp__get",
+        "operationId": "handle_root_get_api_mcp_get",
         "parameters": [
           {
             "name": "Authorization",
@@ -12100,7 +12713,7 @@
         ],
         "summary": "Handle Jsonrpc Root",
         "description": "Handle JSON-RPC requests at root endpoint.",
-        "operationId": "handle_jsonrpc_root_api_mcp__post",
+        "operationId": "handle_jsonrpc_root_api_mcp_post",
         "parameters": [
           {
             "name": "Authorization",
@@ -12320,7 +12933,7 @@
         }
       }
     },
-    "/api/mcp-servers/": {
+    "/api/mcp-servers": {
       "get": {
         "tags": [
           "v1",
@@ -12329,7 +12942,7 @@
         ],
         "summary": "List Mcp Servers",
         "description": "Get all MCP servers for the current user.",
-        "operationId": "list_mcp_servers_api_mcp_servers__get",
+        "operationId": "list_mcp_servers_api_mcp_servers_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12340,7 +12953,7 @@
                     "$ref": "#/components/schemas/MCPServerResponse"
                   },
                   "type": "array",
-                  "title": "Response List Mcp Servers Api Mcp Servers  Get"
+                  "title": "Response List Mcp Servers Api Mcp Servers Get"
                 }
               }
             }
@@ -12363,7 +12976,7 @@
         ],
         "summary": "Create Mcp Server",
         "description": "Create a new MCP server.",
-        "operationId": "create_mcp_server_api_mcp_servers__post",
+        "operationId": "create_mcp_server_api_mcp_servers_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12567,7 +13180,7 @@
         }
       }
     },
-    "/api/customers/": {
+    "/api/customers": {
       "post": {
         "tags": [
           "v1",
@@ -12575,7 +13188,7 @@
         ],
         "summary": "Create",
         "description": "Create a customer.",
-        "operationId": "create_api_customers__post",
+        "operationId": "create_api_customers_post",
         "security": [
           {
             "APIKeyHeader": []
@@ -12623,7 +13236,7 @@
           "Customers"
         ],
         "summary": "Get All",
-        "operationId": "get_all_api_customers__get",
+        "operationId": "get_all_api_customers_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -12664,7 +13277,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CustomerRead"
                   },
-                  "title": "Response Get All Api Customers  Get"
+                  "title": "Response Get All Api Customers Get"
                 }
               }
             }
@@ -12929,11 +13542,16 @@
             "title": "Thinking Phrase Delay",
             "description": "Delay in seconds before showing thinking phrases."
           },
-          "token_based_auth": {
-            "type": "boolean",
-            "title": "Token Based Auth",
-            "description": "If true, requires JWT token for conversation updates instead of API key.",
-            "default": false
+          "security_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentSecuritySettingsCreate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Security settings for this agent. If null, uses global defaults."
           },
           "workflow_id": {
             "anyOf": [
@@ -12969,6 +13587,51 @@
           "possible_queries"
         ],
         "title": "AgentCreate"
+      },
+      "AgentListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "possible_queries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Possible Queries",
+            "description": "FAQ queries"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AgentListItem",
+        "description": "Minimal agent data for list view - optimized for performance"
       },
       "AgentRead": {
         "properties": {
@@ -13041,11 +13704,15 @@
             "title": "Thinking Phrase Delay",
             "description": "Delay in seconds before showing thinking phrases."
           },
-          "token_based_auth": {
-            "type": "boolean",
-            "title": "Token Based Auth",
-            "description": "If true, requires JWT token for conversation updates instead of API key.",
-            "default": false
+          "security_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentSecuritySettingsRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "workflow_id": {
             "type": "string",
@@ -13120,6 +13787,467 @@
           "operator_id"
         ],
         "title": "AgentRead"
+      },
+      "AgentSecuritySettingsCreate": {
+        "properties": {
+          "token_based_auth": {
+            "type": "boolean",
+            "title": "Token Based Auth",
+            "description": "If true, requires JWT token for conversation updates instead of API key.",
+            "default": false
+          },
+          "token_expiration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expiration Minutes",
+            "description": "JWT token expiration time in minutes. If null, uses global default."
+          },
+          "cors_allowed_origins": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cors Allowed Origins",
+            "description": "Comma-separated list of allowed CORS origins. If null, uses global default."
+          },
+          "rate_limit_conversation_start_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Minute",
+            "description": "Rate limit for conversation start per minute. If null, uses global default."
+          },
+          "rate_limit_conversation_start_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Hour",
+            "description": "Rate limit for conversation start per hour. If null, uses global default."
+          },
+          "rate_limit_conversation_update_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Minute",
+            "description": "Rate limit for conversation update per minute. If null, uses global default."
+          },
+          "rate_limit_conversation_update_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Hour",
+            "description": "Rate limit for conversation update per hour. If null, uses global default."
+          },
+          "recaptcha_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Enabled",
+            "description": "Enable reCAPTCHA for this agent. If null, uses global default."
+          },
+          "recaptcha_project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Project Id",
+            "description": "reCAPTCHA project ID. If null, uses global default."
+          },
+          "recaptcha_site_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Site Key",
+            "description": "reCAPTCHA site key. If null, uses global default."
+          },
+          "recaptcha_min_score": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Min Score",
+            "description": "reCAPTCHA minimum score (0.0-1.0). If null, uses global default."
+          },
+          "gcp_svc_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gcp Svc Account",
+            "description": "GCP service account JSON in base64. If null, uses global default."
+          }
+        },
+        "type": "object",
+        "title": "AgentSecuritySettingsCreate"
+      },
+      "AgentSecuritySettingsRead": {
+        "properties": {
+          "token_based_auth": {
+            "type": "boolean",
+            "title": "Token Based Auth",
+            "description": "If true, requires JWT token for conversation updates instead of API key.",
+            "default": false
+          },
+          "token_expiration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expiration Minutes",
+            "description": "JWT token expiration time in minutes. If null, uses global default."
+          },
+          "cors_allowed_origins": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cors Allowed Origins",
+            "description": "Comma-separated list of allowed CORS origins. If null, uses global default."
+          },
+          "rate_limit_conversation_start_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Minute",
+            "description": "Rate limit for conversation start per minute. If null, uses global default."
+          },
+          "rate_limit_conversation_start_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Hour",
+            "description": "Rate limit for conversation start per hour. If null, uses global default."
+          },
+          "rate_limit_conversation_update_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Minute",
+            "description": "Rate limit for conversation update per minute. If null, uses global default."
+          },
+          "rate_limit_conversation_update_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Hour",
+            "description": "Rate limit for conversation update per hour. If null, uses global default."
+          },
+          "recaptcha_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Enabled",
+            "description": "Enable reCAPTCHA for this agent. If null, uses global default."
+          },
+          "recaptcha_project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Project Id",
+            "description": "reCAPTCHA project ID. If null, uses global default."
+          },
+          "recaptcha_site_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Site Key",
+            "description": "reCAPTCHA site key. If null, uses global default."
+          },
+          "recaptcha_min_score": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Min Score",
+            "description": "reCAPTCHA minimum score (0.0-1.0). If null, uses global default."
+          },
+          "gcp_svc_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gcp Svc Account",
+            "description": "GCP service account JSON in base64. If null, uses global default."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agent_id"
+        ],
+        "title": "AgentSecuritySettingsRead"
+      },
+      "AgentSecuritySettingsUpdate": {
+        "properties": {
+          "token_based_auth": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Based Auth"
+          },
+          "token_expiration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expiration Minutes"
+          },
+          "cors_allowed_origins": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cors Allowed Origins"
+          },
+          "rate_limit_conversation_start_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Minute"
+          },
+          "rate_limit_conversation_start_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Start Per Hour"
+          },
+          "rate_limit_conversation_update_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Minute"
+          },
+          "rate_limit_conversation_update_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Conversation Update Per Hour"
+          },
+          "recaptcha_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Enabled"
+          },
+          "recaptcha_project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Project Id"
+          },
+          "recaptcha_site_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Site Key"
+          },
+          "recaptcha_min_score": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Min Score"
+          },
+          "gcp_svc_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gcp Svc Account"
+          }
+        },
+        "type": "object",
+        "title": "AgentSecuritySettingsUpdate"
       },
       "AgentUpdate": {
         "properties": {
@@ -13229,17 +14357,6 @@
             ],
             "title": "Thinking Phrase Delay"
           },
-          "token_based_auth": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Token Based Auth"
-          },
           "workflow_id": {
             "anyOf": [
               {
@@ -13251,6 +14368,16 @@
               }
             ],
             "title": "Workflow Id"
+          },
+          "security_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentSecuritySettingsUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -13940,7 +15067,7 @@
         ],
         "title": "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
       },
-      "Body_process_files_api_genagent_knowledge_process_files__post": {
+      "Body_process_files_api_genagent_knowledge_process_files_post": {
         "properties": {
           "files": {
             "items": {
@@ -13955,7 +15082,7 @@
         "required": [
           "files"
         ],
-        "title": "Body_process_files_api_genagent_knowledge_process_files__post"
+        "title": "Body_process_files_api_genagent_knowledge_process_files_post"
       },
       "Body_refresh_token_api_auth_refresh_token_post": {
         "properties": {
@@ -14440,6 +15567,117 @@
         ],
         "title": "ConversationRead"
       },
+      "ConversationStartWithRecaptchaToken": {
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegmentInput"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "operator_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Id"
+          },
+          "data_source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Source Id"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "recaptcha_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "ConversationStartWithRecaptchaToken"
+      },
       "ConversationStatus": {
         "type": "string",
         "enum": [
@@ -14558,6 +15796,57 @@
           "messages"
         ],
         "title": "ConversationTranscriptCreate"
+      },
+      "ConversationUpdateWithRecaptchaToken": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegmentInput"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
+          },
+          "recaptcha_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recaptcha Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "ConversationUpdateWithRecaptchaToken"
       },
       "CreateFineTuningJobRequest": {
         "properties": {
@@ -15164,25 +16453,459 @@
         ],
         "title": "Feedback"
       },
-      "FileUploadResponse": {
+      "FileCreate": {
         "properties": {
-          "file_path": {
+          "name": {
             "type": "string",
-            "title": "File Path",
-            "description": "Path to the uploaded file"
+            "maxLength": 500,
+            "title": "Name",
+            "description": "File name"
           },
-          "original_filename": {
+          "path": {
             "type": "string",
-            "title": "Original Filename",
-            "description": "Original name of the uploaded file"
+            "maxLength": 1000,
+            "title": "Path",
+            "description": "File path"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size",
+            "description": "File size in bytes"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type",
+            "description": "MIME type"
+          },
+          "storage_provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "s3",
+              "azure",
+              "gcs",
+              "sharepoint"
+            ],
+            "title": "Storage Provider",
+            "description": "Storage provider",
+            "default": "local"
+          },
+          "storage_path": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Storage Path",
+            "description": "Path in storage provider"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "File description"
+          },
+          "file_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Metadata",
+            "description": "File metadata"
+          },
+          "file_extension": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Extension",
+            "description": "File extension"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "File tags"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions",
+            "description": "File permissions"
+          },
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File",
+            "description": "File to upload"
           }
         },
         "type": "object",
         "required": [
-          "file_path",
-          "original_filename"
+          "name",
+          "path",
+          "storage_path",
+          "file"
         ],
-        "title": "FileUploadResponse"
+        "title": "FileCreate"
+      },
+      "FileResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Name",
+            "description": "File name"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Path",
+            "description": "File path"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size",
+            "description": "File size in bytes"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type",
+            "description": "MIME type"
+          },
+          "storage_provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "s3",
+              "azure",
+              "gcs",
+              "sharepoint"
+            ],
+            "title": "Storage Provider",
+            "description": "Storage provider",
+            "default": "local"
+          },
+          "storage_path": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Storage Path",
+            "description": "Path in storage provider"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "File description"
+          },
+          "file_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Metadata",
+            "description": "File metadata"
+          },
+          "file_extension": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Extension",
+            "description": "File extension"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "File tags"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions",
+            "description": "File permissions"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "is_deleted": {
+            "type": "integer",
+            "title": "Is Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "storage_path",
+          "id",
+          "created_at",
+          "updated_at",
+          "is_deleted"
+        ],
+        "title": "FileResponse"
+      },
+      "FileUpdate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Name",
+            "description": "File name"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Path",
+            "description": "File path"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size",
+            "description": "File size in bytes"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type",
+            "description": "MIME type"
+          },
+          "storage_provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "s3",
+              "azure",
+              "gcs",
+              "sharepoint"
+            ],
+            "title": "Storage Provider",
+            "description": "Storage provider",
+            "default": "local"
+          },
+          "storage_path": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Storage Path",
+            "description": "Path in storage provider"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "File description"
+          },
+          "file_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Metadata",
+            "description": "File metadata"
+          },
+          "file_extension": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Extension",
+            "description": "File extension"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "File tags"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions",
+            "description": "File permissions"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File",
+            "description": "File to upload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "storage_path"
+        ],
+        "title": "FileUpdate"
       },
       "FolderRequest": {
         "properties": {
@@ -15526,7 +17249,8 @@
               "sharepoint",
               "smb_share_folder",
               "azure_blob",
-              "google_bucket"
+              "google_bucket",
+              "zendesk"
             ],
             "title": "Type",
             "default": "file"
@@ -15733,16 +17457,19 @@
             ],
             "title": "Llm Provider Id"
           },
-          "url": {
+          "urls": {
             "anyOf": [
               {
-                "type": "string"
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Url"
+            "title": "Urls"
           }
         },
         "additionalProperties": true,
@@ -15751,6 +17478,266 @@
           "name"
         ],
         "title": "KBBase"
+      },
+      "KBCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "url",
+              "text",
+              "datasource",
+              "s3",
+              "database",
+              "sharepoint",
+              "smb_share_folder",
+              "azure_blob",
+              "google_bucket",
+              "zendesk"
+            ],
+            "title": "Type",
+            "default": "file"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "file_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Type"
+          },
+          "files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          },
+          "vector_store": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Store"
+          },
+          "rag_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rag Config"
+          },
+          "extra_metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra Metadata"
+          },
+          "embeddings_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embeddings Model"
+          },
+          "legra_finalize": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legra Finalize",
+            "default": false
+          },
+          "last_synced": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced"
+          },
+          "last_sync_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync Status"
+          },
+          "last_sync_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync Error"
+          },
+          "last_file_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last File Date"
+          },
+          "sync_schedule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Schedule"
+          },
+          "sync_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Active"
+          },
+          "sync_source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Source Id"
+          },
+          "llm_provider_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Provider Id"
+          },
+          "urls": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "KBCreate",
+        "description": "Body model for POST / PUT (no id)"
       },
       "KBRead": {
         "properties": {
@@ -15781,7 +17768,8 @@
               "sharepoint",
               "smb_share_folder",
               "azure_blob",
-              "google_bucket"
+              "google_bucket",
+              "zendesk"
             ],
             "title": "Type",
             "default": "file"
@@ -15988,16 +17976,19 @@
             ],
             "title": "Llm Provider Id"
           },
-          "url": {
+          "urls": {
             "anyOf": [
               {
-                "type": "string"
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Url"
+            "title": "Urls"
           },
           "id": {
             "type": "string",
@@ -17993,6 +19984,42 @@
         "title": "OperatorStatisticsRead",
         "description": "Used for returning OperatorRead Statistics"
       },
+      "PaginatedResponse_AgentListItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "PaginatedResponse[AgentListItem]"
+      },
       "PasswordUpdateRequest": {
         "properties": {
           "username": {
@@ -18894,6 +20921,68 @@
         ],
         "title": "TranscriptMessageRead"
       },
+      "TranscriptSegmentAttachment": {
+        "properties": {
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          }
+        },
+        "type": "object",
+        "title": "TranscriptSegmentAttachment"
+      },
       "TranscriptSegmentFeedback": {
         "properties": {
           "feedback": {
@@ -18963,6 +21052,20 @@
             ],
             "title": "Type",
             "default": "message"
+          },
+          "attachments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TranscriptSegmentAttachment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachments"
           }
         },
         "type": "object",
@@ -20374,6 +22477,70 @@
           "filepath"
         ],
         "title": "FileRequest"
+      },
+      "app__schemas__file__FileUploadResponse": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "File name"
+          },
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename",
+            "description": "Original file name"
+          },
+          "storage_path": {
+            "type": "string",
+            "title": "Storage Path",
+            "description": "Storage path"
+          },
+          "file_path": {
+            "type": "string",
+            "title": "File Path",
+            "description": "File path"
+          },
+          "file_url": {
+            "type": "string",
+            "title": "File Url",
+            "description": "File URL"
+          },
+          "file_id": {
+            "type": "string",
+            "title": "File Id",
+            "description": "File ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "original_filename",
+          "storage_path",
+          "file_path",
+          "file_url",
+          "file_id"
+        ],
+        "title": "FileUploadResponse"
+      },
+      "app__schemas__ml_model__FileUploadResponse": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path",
+            "description": "Path to the uploaded file"
+          },
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename",
+            "description": "Original name of the uploaded file"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_path",
+          "original_filename"
+        ],
+        "title": "FileUploadResponse"
       }
     },
     "securitySchemes": {

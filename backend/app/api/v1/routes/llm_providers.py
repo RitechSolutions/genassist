@@ -2,6 +2,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from fastapi_injector import Injected
+
+from app.cache.redis_cache import invalidate_llm_provider_cache
 from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
 from app.modules.workflow.llm.provider import LLMProvider
@@ -13,7 +15,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[LlmProviderRead],
     dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.READ))],
 )
@@ -43,17 +45,16 @@ async def get(
 
 
 @router.post(
-    "/",
+    "",
     response_model=LlmProviderRead,
     dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.CREATE))],
 )
 async def create(
     data: LlmProviderCreate,
     service: LlmProviderService = Injected(LlmProviderService),
-    llm_provider: LLMProvider = Injected(LLMProvider),
 ):
     res = await service.create(data)
-    await llm_provider.reload()
+    await invalidate_llm_provider_cache(provider_id=None)
     return res
 
 
@@ -66,10 +67,9 @@ async def update(
     llm_provider_id: UUID,
     data: LlmProviderUpdate,
     service: LlmProviderService = Injected(LlmProviderService),
-    llm_provider: LLMProvider = Injected(LLMProvider),
 ):
     res = await service.update(llm_provider_id, data)
-    await llm_provider.reload()
+    await invalidate_llm_provider_cache(provider_id=llm_provider_id)
     return res
 
 
@@ -80,8 +80,7 @@ async def update(
 async def delete(
     llm_provider_id: UUID,
     service: LlmProviderService = Injected(LlmProviderService),
-    llm_provider: LLMProvider = Injected(LLMProvider),
 ):
     res = await service.delete(llm_provider_id)
-    await llm_provider.reload()
+    await invalidate_llm_provider_cache(provider_id=llm_provider_id)
     return res

@@ -20,6 +20,11 @@ const DEFAULT_SUGGESTED_PARAMS: NodeSchema = {
     description: "The conversation history",
     required: false,
   },
+  language: {
+    type: "string",
+    description: "The language of the conversation",
+    required: true,
+  },
 };
 
 const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({

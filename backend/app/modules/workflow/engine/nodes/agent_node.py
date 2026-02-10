@@ -100,7 +100,7 @@ class AgentNode(BaseNode):
 
             # Invoke the agent
             result = await agent.invoke(prompt, chat_history=chat_history)
-            logger.info("Agent result: %s", result)
+            logger.debug("Agent result: %s", result)
 
             # Prepare output
             output = {

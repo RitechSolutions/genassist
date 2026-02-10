@@ -38,7 +38,7 @@ class RegistryItem:
         # Only build workflow if one exists
         if self.workflow_model is not None:
             self.workflow_engine.build_workflow(self.workflow_model)
-            logger.info(f"Workflow model: {self.workflow_model}")
+            logger.debug(f"Workflow model: {self.workflow_model}")
         else:
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
@@ -51,9 +51,16 @@ class RegistryItem:
             )
 
         thread_id = metadata.get("thread_id", None)
+
+        # add the content blocks to the input data
+        input_data = {
+            "message": session_message,
+            **metadata,
+        }
+
         state = await self.workflow_engine.execute_from_node(
             self.workflow_model["id"],
-            input_data={"message": session_message, **metadata},
+            input_data=input_data,
             thread_id=thread_id,
         )
         return state.format_state_as_response()

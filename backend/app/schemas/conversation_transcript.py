@@ -15,6 +15,13 @@ class TranscriptSegment:
     end_time: float = 0.0
 
 
+class TranscriptSegmentAttachment(BaseModel):
+    file_id: Optional[UUID] = None
+    type: Optional[str] = None
+    url: Optional[str] = None
+    name: Optional[str] = None
+    size: Optional[int] = None
+
 class TranscriptSegmentInput(BaseModel):
     id: Optional[UUID] = None
     create_time: Optional[datetime] = None
@@ -23,7 +30,7 @@ class TranscriptSegmentInput(BaseModel):
     speaker: str
     text: str
     type: Optional[str] = "message"
-
+    attachments: Optional[List[TranscriptSegmentAttachment]] = None
     model_config = ConfigDict(
             from_attributes=True,
             )
@@ -51,8 +58,6 @@ class ConversationTranscriptBase(BaseModel):
 
 class ConversationTranscriptCreate(ConversationTranscriptBase):
     operator_id: Optional[UUID] = None
-    recaptcha_token: Optional[str] = None
-
 
 class InProgConvTranscrUpdate(BaseModel):
     """
@@ -63,6 +68,12 @@ class InProgConvTranscrUpdate(BaseModel):
     metadata: Optional[dict] = None
     llm_analyst_id: Optional[UUID] = None
 
+# add generic type to allow for both ConversationTranscriptCreate and InProgConvTranscrUpdate   
+class ConversationStartWithRecaptchaToken(ConversationTranscriptCreate):
+    recaptcha_token: Optional[str] = None
+
+class ConversationUpdateWithRecaptchaToken(InProgConvTranscrUpdate):
+    recaptcha_token: Optional[str] = None
 
 class InProgressConversationTranscriptFinalize(BaseModel):
     llm_analyst_id: Optional[UUID] = None

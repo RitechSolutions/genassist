@@ -73,7 +73,7 @@ class AggregatorNode(BaseNode):
             "count": len(aggregated_outputs)
         }
 
-        logger.info(
+        logger.debug(
             f"Sync aggregator node {self.node_id} completed with {len(aggregated_outputs)} outputs")
         return result
 
