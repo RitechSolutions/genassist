@@ -259,10 +259,8 @@ async def upload_file(
                     file_extension=file_extension,
                 )
 
-                allowed_extensions = ["pdf", "docx", "txt", "jpg", "jpeg", "png"]
-
                 # use file manager service to upload the file
-                created_file = await file_manager_service.create_file(file, file_base=file_base, allowed_extensions=allowed_extensions)
+                created_file = await file_manager_service.create_file(file, file_base=file_base)
                 file_id = str(created_file.id)
 
                 # await file_manager_service.download_file_to_path(file_id, file_path)
