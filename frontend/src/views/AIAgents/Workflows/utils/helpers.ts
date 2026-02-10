@@ -223,9 +223,9 @@ export const extractDynamicVariables = (text: string): Set<string> => {
   // const atMatches = text.match(/@\w+/g) || [];
   // atMatches.forEach((v) => variables.add(v.slice(1)));
 
-  // Match {{variable}} format
-  const curlyMatches = text.match(/{{([^}]+)}}/g) || [];
-  curlyMatches.forEach((v) => variables.add(v.slice(2, -2).trim()));
+  // Match {{variable}} format (without spaces inside braces)
+  const curlyMatches = text.match(/{{([^\s{}]+)}}/g) || [];
+  curlyMatches.forEach((v) => variables.add(v.slice(2, -2)));
 
   return variables;
 };

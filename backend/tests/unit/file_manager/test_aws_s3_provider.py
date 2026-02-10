@@ -10,10 +10,10 @@ from app.modules.filemanager.providers.s3.provider import S3StorageProvider
 def s3_config():
     """Create a test S3 configuration."""
     return {
-        "aws_bucket_name": "test-bucket",
-        "aws_access_key_id": "test-access-key",
-        "aws_secret_access_key": "test-secret-key",
-        "aws_region_name": "us-east-1"
+        "AWS_BUCKET_NAME": "test-bucket",
+        "AWS_ACCESS_KEY_ID": "test-access-key",
+        "AWS_SECRET_ACCESS_KEY": "test-secret-key",
+        "AWS_REGION": "us-east-1"
     }
 
 

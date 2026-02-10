@@ -138,7 +138,7 @@ class VectorProvider(BaseDataProvider):
             )
 
             if success:
-                logger.info(
+                logger.debug(
                     f"Added document {doc_id} with {len(chunks)} chunks")
             else:
                 logger.error(

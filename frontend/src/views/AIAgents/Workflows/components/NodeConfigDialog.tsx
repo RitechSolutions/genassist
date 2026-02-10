@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-import { JsonViewer } from "./custom/JsonViewer";
+import { JsonViewer, NodeMetadata } from "./custom/JsonViewer";
 import { GenericTestDialog } from "./GenericTestDialog";
 import { Button } from "@/components/button";
 import { Play } from "lucide-react";
@@ -72,8 +72,20 @@ export const NodeConfigDialog: React.FC<WorkflowNodesDialogProps> = ({
   const [initialNodeName, setInitialNodeName] = useState<string | undefined>(
     undefined
   );
-  const { getAvailableDataForNode, hasNodeBeenExecuted } =
+  const { getAvailableDataForNode, hasNodeBeenExecuted, nodes: workflowNodes } =
     useWorkflowExecution();
+
+  // Build node metadata for JsonViewer to display node names instead of IDs
+  const nodeMetadata: NodeMetadata = React.useMemo(() => {
+    const metadata: NodeMetadata = {};
+    workflowNodes.forEach((node) => {
+      metadata[node.id] = {
+        name: node.data?.name || node.type || "Unknown",
+        type: node.type || "unknown",
+      };
+    });
+    return metadata;
+  }, [workflowNodes]);
 
   // Capture the node name when the dialog opens
   useEffect(() => {
@@ -211,12 +223,13 @@ export const NodeConfigDialog: React.FC<WorkflowNodesDialogProps> = ({
                   </div>
                 </div>
 
-                <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden min-h-0">
-                  <div className="p-3 overflow-auto max-h-[calc(85vh-200px)]">
+                <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-y-auto overflow-x-hidden min-h-0 max-h-[calc(85vh-200px)]">
+                  <div className="p-3 bg-white">
                     {jsonStateDisplay.data ? (
                       <JsonViewer
                         data={jsonStateDisplay.data as Record<string, unknown>}
                         onDragStart={handleDragStart}
+                        nodeMetadata={nodeMetadata}
                       />
                     ) : (
                       <div className="text-gray-500 text-sm text-center font-extrabold text-red-500">

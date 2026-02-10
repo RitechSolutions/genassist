@@ -9,6 +9,7 @@ from app.modules.integration.database import DatabaseManager
 @dataclass
 class ValidationResult:
     """Result of query validation."""
+
     is_valid: bool
     error_message: Optional[str] = None
     warnings: List[str] = None
@@ -23,8 +24,9 @@ class AdvancedQueryValidator:
     def __init__(self, db_manager: DatabaseManager, schema: Dict = None):
         self.db_manager = db_manager
         self.schema = schema or db_manager.get_schema()
-        self.schema_tables = {table["name"].lower()
-                              for table in self.schema.get("tables", [])}
+        self.schema_tables = {
+            table["name"].lower() for table in self.schema.get("tables", [])
+        }
         self.schema_columns = self._build_column_mapping()
 
     def _build_column_mapping(self) -> Dict[str, Set[str]]:
@@ -32,8 +34,9 @@ class AdvancedQueryValidator:
         columns = {}
         for table in self.schema.get("tables", []):
             table_name = table["name"].lower()
-            columns[table_name] = {col["name"].lower()
-                                   for col in table.get("columns", [])}
+            columns[table_name] = {
+                col["name"].lower() for col in table.get("columns", [])
+            }
         return columns
 
     def validate_query(self, query: str) -> ValidationResult:
@@ -48,8 +51,9 @@ class AdvancedQueryValidator:
         """
         try:
             # Handle dict input
-            query_text = query.get('formatted_query') if isinstance(
-                query, dict) else query
+            query_text = (
+                query.get("formatted_query") if isinstance(query, dict) else query
+            )
 
             # Parse with sqlparse
             parsed = sqlparse.parse(query_text)
@@ -67,11 +71,10 @@ class AdvancedQueryValidator:
             validation_checks = [
                 self._validate_syntax(statement),
                 self._validate_tables(tables_used),
-                self._validate_columns(
-                    columns_used, tables_used, table_aliases),
+                self._validate_columns(columns_used, tables_used, table_aliases),
                 self._validate_query_type(statement, query_type),
                 self._validate_security(query_text),
-                self._validate_performance(statement, query_text)
+                self._validate_performance(statement, query_text),
             ]
 
             # Collect results
@@ -91,16 +94,11 @@ class AdvancedQueryValidator:
                     warnings,
                     query_type,
                     tables_used,
-                    columns_used
+                    columns_used,
                 )
 
             return ValidationResult(
-                True,
-                None,
-                warnings,
-                query_type,
-                tables_used,
-                columns_used
+                True, None, warnings, query_type, tables_used, columns_used
             )
 
         except Exception as e:
@@ -112,7 +110,12 @@ class AdvancedQueryValidator:
         aliases = {}
 
         def extract_from_token(token):
-            if token.ttype is T.Keyword and token.normalized in ('FROM', 'JOIN', 'UPDATE', 'INTO'):
+            if token.ttype is T.Keyword and token.normalized in (
+                "FROM",
+                "JOIN",
+                "UPDATE",
+                "INTO",
+            ):
                 # Get next non-whitespace token
                 next_token = self._get_next_token(statement, token)
                 if next_token:
@@ -135,19 +138,23 @@ class AdvancedQueryValidator:
 
         def is_column_context(prev_tokens):
             """Check if we're in a context where columns are expected."""
-            keywords = {'SELECT', 'WHERE', 'ORDER',
-                        'GROUP', 'HAVING', 'ON', 'SET'}
-            return any(token.normalized in keywords for token in prev_tokens[-3:]
-                       if hasattr(token, 'normalized'))
+            keywords = {"SELECT", "WHERE", "ORDER", "GROUP", "HAVING", "ON", "SET"}
+            return any(
+                token.normalized in keywords
+                for token in prev_tokens[-3:]
+                if hasattr(token, "normalized")
+            )
 
         tokens_list = list(statement.flatten())
         for i, token in enumerate(tokens_list):
             if token.ttype is T.Name:
                 # Check context
-                prev_tokens = tokens_list[max(0, i-3):i]
+                prev_tokens = tokens_list[max(0, i - 3) : i]
                 if is_column_context(prev_tokens):
                     # Check for qualified column (table.column)
-                    if i + 2 < len(tokens_list) and tokens_list[i + 1].match(T.Punctuation, '.'):
+                    if i + 2 < len(tokens_list) and tokens_list[i + 1].match(
+                        T.Punctuation, "."
+                    ):
                         table_part = token.value.lower()
                         column_part = tokens_list[i + 2].value.lower()
                         columns.add(f"{table_part}.{column_part}")
@@ -161,7 +168,7 @@ class AdvancedQueryValidator:
         try:
             # Check for balanced parentheses
             query_str = str(statement)
-            if query_str.count('(') != query_str.count(')'):
+            if query_str.count("(") != query_str.count(")"):
                 return ValidationResult(False, "Unbalanced parentheses in query")
 
             # Check for basic SQL structure
@@ -179,30 +186,36 @@ class AdvancedQueryValidator:
         if missing_tables:
             return ValidationResult(
                 False,
-                f"Referenced tables not found in schema: {', '.join(missing_tables)}"
+                f"Referenced tables not found in schema: {', '.join(missing_tables)}",
             )
         return ValidationResult(True)
 
-    def _validate_columns(self, columns_used: Set[str], tables_used: Set[str],
-                          table_aliases: Dict[str, str]) -> ValidationResult:
+    def _validate_columns(
+        self,
+        columns_used: Set[str],
+        tables_used: Set[str],
+        table_aliases: Dict[str, str],
+    ) -> ValidationResult:
         """Validate that all referenced columns exist."""
         errors = []
         warnings = []
 
         for column_ref in columns_used:
-            if '.' in column_ref:
+            if "." in column_ref:
                 # Qualified column reference
-                table_part, column_part = column_ref.split('.', 1)
+                table_part, column_part = column_ref.split(".", 1)
 
                 # Resolve alias if present
                 actual_table = table_aliases.get(table_part, table_part)
 
                 if actual_table not in self.schema_columns:
                     errors.append(
-                        f"Table '{table_part}' not found for column '{column_ref}'")
+                        f"Table '{table_part}' not found for column '{column_ref}'"
+                    )
                 elif column_part not in self.schema_columns[actual_table]:
                     errors.append(
-                        f"Column '{column_part}' not found in table '{actual_table}'")
+                        f"Column '{column_part}' not found in table '{actual_table}'"
+                    )
             else:
                 # Unqualified column reference
                 found_in_tables = []
@@ -214,10 +227,12 @@ class AdvancedQueryValidator:
                     # Check if it's a function or special keyword
                     if not self._is_sql_function_or_keyword(column_ref):
                         errors.append(
-                            f"Column '{column_ref}' not found in any referenced table")
+                            f"Column '{column_ref}' not found in any referenced table"
+                        )
                 elif len(found_in_tables) > 1:
                     warnings.append(
-                        f"Ambiguous column '{column_ref}' found in multiple tables: {found_in_tables}")
+                        f"Ambiguous column '{column_ref}' found in multiple tables: {found_in_tables}"
+                    )
 
         if errors:
             return ValidationResult(False, "; ".join(errors), warnings)
@@ -227,25 +242,29 @@ class AdvancedQueryValidator:
         """Validate query type specific rules."""
         warnings = []
 
-        if query_type == 'INSERT':
+        if query_type == "INSERT":
             # Check for INSERT without explicit columns
             query_str = str(statement).upper()
-            if 'INSERT INTO' in query_str and '(' not in query_str.split('VALUES')[0]:
+            if "INSERT INTO" in query_str and "(" not in query_str.split("VALUES")[0]:
                 warnings.append(
-                    "INSERT without explicit column list - consider specifying columns")
+                    "INSERT without explicit column list - consider specifying columns"
+                )
 
-        elif query_type == 'UPDATE':
+        elif query_type == "UPDATE":
             # Check for UPDATE without WHERE clause
             query_str = str(statement).upper()
-            if 'WHERE' not in query_str:
+            if "WHERE" not in query_str:
                 warnings.append(
-                    "UPDATE without WHERE clause - this will update all rows")
+                    "UPDATE without WHERE clause - this will update all rows"
+                )
 
-        elif query_type == 'DELETE':
+        elif query_type == "DELETE":
             # Check for DELETE without WHERE clause
             query_str = str(statement).upper()
-            if 'WHERE' not in query_str:
-                return ValidationResult(False, "DELETE without WHERE clause is not allowed")
+            if "WHERE" not in query_str:
+                return ValidationResult(
+                    False, "DELETE without WHERE clause is not allowed"
+                )
 
         return ValidationResult(True, warnings=warnings)
 
@@ -254,12 +273,13 @@ class AdvancedQueryValidator:
         # Improved SQL injection detection
         suspicious_patterns = [
             (r";\s*DROP\s+", "Potential DROP statement injection"),
-            (r";\s*DELETE\s+FROM\s+(?!.*WHERE)",
-             "Potential mass DELETE injection"),
+            (r";\s*DELETE\s+FROM\s+(?!.*WHERE)", "Potential mass DELETE injection"),
             (r";\s*TRUNCATE\s+", "Potential TRUNCATE injection"),
             (r";\s*ALTER\s+", "Potential schema modification"),
-            (r"UNION\s+(?:ALL\s+)?SELECT.*--",
-             "Potential UNION injection with comment"),
+            (
+                r"UNION\s+(?:ALL\s+)?SELECT.*--",
+                "Potential UNION injection with comment",
+            ),
             (r"'.*OR.*'.*='.*'", "Potential OR injection"),
             (r"1\s*=\s*1", "Potential always-true condition"),
             (r"'.*;\s*--", "Potential comment injection"),
@@ -280,29 +300,54 @@ class AdvancedQueryValidator:
         # Check for SELECT * with potential large result sets
         if re.search(r"SELECT\s+\*", query_text, re.IGNORECASE):
             if not re.search(r"LIMIT\s+\d+", query_text, re.IGNORECASE):
-                warnings.append(
-                    "SELECT * without LIMIT may return large result sets")
+                warnings.append("SELECT * without LIMIT may return large result sets")
 
         # Check for missing WHERE clause in SELECT
         query_upper = query_text.upper()
-        if query_upper.startswith('SELECT') and 'WHERE' not in query_upper and 'LIMIT' not in query_upper:
+        if (
+            query_upper.startswith("SELECT")
+            and "WHERE" not in query_upper
+            and "LIMIT" not in query_upper
+        ):
             warnings.append(
-                "SELECT without WHERE or LIMIT clause may scan entire table")
+                "SELECT without WHERE or LIMIT clause may scan entire table"
+            )
 
         # Check for LIKE patterns starting with wildcard
         if re.search(r"LIKE\s+['\"]%", query_text, re.IGNORECASE):
             warnings.append(
-                "LIKE pattern starting with % cannot use indexes efficiently")
+                "LIKE pattern starting with % cannot use indexes efficiently"
+            )
 
         return ValidationResult(True, warnings=warnings)
 
     def _is_sql_function_or_keyword(self, name: str) -> bool:
         """Check if name is a SQL function or keyword."""
         sql_functions = {
-            'count', 'sum', 'avg', 'max', 'min', 'now', 'current_date',
-            'current_time', 'current_timestamp', 'length', 'upper', 'lower',
-            'substring', 'concat', 'coalesce', 'nullif', 'case', 'when', 'then',
-            'else', 'end', 'distinct', 'all', 'exists'
+            "count",
+            "sum",
+            "avg",
+            "max",
+            "min",
+            "now",
+            "current_date",
+            "current_time",
+            "current_timestamp",
+            "length",
+            "upper",
+            "lower",
+            "substring",
+            "concat",
+            "coalesce",
+            "nullif",
+            "case",
+            "when",
+            "then",
+            "else",
+            "end",
+            "distinct",
+            "all",
+            "exists",
         }
         return name.lower() in sql_functions
 
@@ -320,13 +365,15 @@ class AdvancedQueryValidator:
 
     def _parse_table_reference(self, token) -> Optional[Tuple[str, Optional[str]]]:
         """Parse table reference to extract table name and alias."""
-        if hasattr(token, 'value'):
+        if hasattr(token, "value"):
             # Simple case: just table name
             return token.value, None
         return None
 
 
-def validate_with_sqlglot(query: str, schema: Dict, db_type="mysql") -> ValidationResult:
+def validate_with_sqlglot(
+    query: str, schema: Dict, db_type="mysql"
+) -> ValidationResult:
     """
     SQLGlot is much more accurate for parsing and validation.
     """
@@ -341,10 +388,10 @@ def validate_with_sqlglot(query: str, schema: Dict, db_type="mysql") -> Validati
                 "mysql": "mysql",
                 "postgresql": "postgres",
                 "sqlite": "sqlite",
-                "mssql": "mssql",
-                "snowflake": "snowflake"}
-            parsed = parse_one(
-                query, dialect=dialect_mapping.get(db_type, "mysql"))
+                "mssql": "tsql",
+                "snowflake": "snowflake",
+            }
+            parsed = parse_one(query, dialect=dialect_mapping.get(db_type, "mysql"))
         except (ParseError, TokenError) as e:
             return ValidationResult(False, f"SQL syntax error: {str(e)}")
 
@@ -354,7 +401,7 @@ def validate_with_sqlglot(query: str, schema: Dict, db_type="mysql") -> Validati
 
         for table in parsed.find_all(sqlglot.exp.Table):
             # Handle schema-qualified table names
-            if hasattr(table, 'db') and table.db:
+            if hasattr(table, "db") and table.db:
                 full_table_name = f"{table.db.lower()}.{table.name.lower()}"
             else:
                 full_table_name = table.name.lower()
@@ -367,8 +414,7 @@ def validate_with_sqlglot(query: str, schema: Dict, db_type="mysql") -> Validati
                 columns.add(column.name.lower())
 
         # Validate against schema
-        schema_tables = {table["name"].lower()
-                         for table in schema.get("tables", [])}
+        schema_tables = {table["name"].lower() for table in schema.get("tables", [])}
         missing_tables = tables - schema_tables
 
         if missing_tables:
@@ -377,14 +423,14 @@ def validate_with_sqlglot(query: str, schema: Dict, db_type="mysql") -> Validati
                 f"Tables not found: {', '.join(missing_tables)}",
                 query_type=str(parsed.__class__.__name__),
                 tables_used=tables,
-                columns_used=columns
+                columns_used=columns,
             )
 
         return ValidationResult(
             True,
             query_type=str(parsed.__class__.__name__),
             tables_used=tables,
-            columns_used=columns
+            columns_used=columns,
         )
 
     except ImportError:

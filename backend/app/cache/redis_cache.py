@@ -167,3 +167,9 @@ async def invalidate_cache(namespace: str, value: Any) -> bool:
 async def invalidate_agent_cache(agent_id: UUID, user_id: UUID):
     await invalidate_cache("agents:get_by_id_full", agent_id)
     await invalidate_cache("agents:get_by_user_id", user_id)
+
+async def invalidate_llm_provider_cache(provider_id: UUID | None):
+    if provider_id:
+        await invalidate_cache("llm_providers:get_by_id", str(provider_id))
+
+    await invalidate_cache("llm_providers:get_all", None)

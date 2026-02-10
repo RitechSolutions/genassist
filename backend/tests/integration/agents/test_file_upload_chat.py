@@ -1,6 +1,5 @@
 """
-Integration tests for file upload to chat functionality.
-Tests the /api/genagent/knowledge/upload-chat-file endpoint.
+Integration tests for file upload to chat.
 """
 import pytest
 import tempfile
@@ -47,7 +46,7 @@ def sample_txt_file():
 
 
 @pytest.mark.asyncio
-async def test_upload_pdf_file_to_chat_with_openai(
+async def test_upload_pdf_file_to_chat(
     authorized_client,
     sample_pdf_file
 ):
@@ -63,18 +62,18 @@ async def test_upload_pdf_file_to_chat_with_openai(
     assert response.status_code == 200
     data = response.json()
 
-    # Verify response structure matches FileUploadResponse
+    # Verify response structure
     assert "file_id" in data
     assert "filename" in data
-    assert "original_filename" in data
-    assert "storage_path" in data
     assert "file_path" in data
     assert "file_url" in data
+    assert "original_filename" in data
+    assert "storage_path" in data
     assert data["original_filename"] == "test.pdf"
 
 
 @pytest.mark.asyncio
-async def test_upload_txt_file_to_chat_no_openai(
+async def test_upload_txt_file_to_chat(
     authorized_client,
     sample_txt_file
 ):
@@ -90,32 +89,45 @@ async def test_upload_txt_file_to_chat_no_openai(
     assert response.status_code == 200
     data = response.json()
 
-    # Verify response structure matches FileUploadResponse
+    # Verify response structure
     assert "file_id" in data
+    assert "filename" in data
+    assert "file_path" in data
+    assert "file_url" in data
     assert "original_filename" in data
     assert data["original_filename"] == "test.txt"
 
 
 @pytest.mark.asyncio
-async def test_upload_pdf_openai_failure_continues(
+async def test_upload_docx_file_to_chat(
     authorized_client,
-    sample_pdf_file
 ):
-    """Test uploading a PDF file works even without OpenAI integration."""
-    # Upload should succeed
-    with open(sample_pdf_file, 'rb') as f:
-        response = authorized_client.post(
-            "/api/genagent/knowledge/upload-chat-file",
-            data={"chat_id": "test-chat-123"},
-            files=[("file", ("test.pdf", f, "application/pdf"))]
-        )
+    """Test uploading a DOCX file to chat."""
+    # Create a minimal DOCX file (just for testing)
+    with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.docx') as f:
+        # Write minimal DOCX content (it's a zip file format)
+        # This is a simplified test - actual DOCX is more complex
+        f.write(b"PK\x03\x04")  # ZIP header
+        temp_file_path = f.name
 
-    assert response.status_code == 200
-    data = response.json()
+    try:
+        with open(temp_file_path, 'rb') as f:
+            response = authorized_client.post(
+                "/api/genagent/knowledge/upload-chat-file",
+                data={"chat_id": "test-chat-123"},
+                files=[("file", ("test.docx", f, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))]
+            )
 
-    # File should be uploaded locally
-    assert "file_id" in data
-    assert data["original_filename"] == "test.pdf"
+        assert response.status_code == 200
+        data = response.json()
+
+        # Verify response structure
+        assert "file_id" in data
+        assert "original_filename" in data
+        assert data["original_filename"] == "test.docx"
+    finally:
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
 
 
 @pytest.mark.asyncio
@@ -146,10 +158,8 @@ async def test_upload_file_to_chat_invalid_file_type(authorized_client):
                 files=[("file", ("test.exe", f, "application/x-msdownload"))]
             )
 
-        # Endpoint returns error for unsupported file types
-        # Note: Returns 500 due to exception handling structure, but error message is correct
-        assert response.status_code in [400, 500]
-        assert "Unsupported file type" in response.text or "not allowed" in response.text
+        assert response.status_code == 400
+        assert "Unsupported file type" in response.json()["detail"]
     finally:
         if os.path.exists(temp_file_path):
             os.unlink(temp_file_path)
