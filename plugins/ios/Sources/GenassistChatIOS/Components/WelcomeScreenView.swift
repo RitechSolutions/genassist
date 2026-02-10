@@ -48,8 +48,8 @@ public struct WelcomeScreenView: View {
             
             // Possible Queries Buttons
             if !welcomeScreenData.possibleQueries.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: configuration.welcomeScreen.opionsConfiguration.spacing) {
+                if configuration.welcomeScreen.opionsConfiguration.orientation == .vertical {
+                    VStack(alignment: .leading, spacing: configuration.welcomeScreen.opionsConfiguration.spacing) {
                         ForEach(welcomeScreenData.possibleQueries, id: \.self) { query in
                             Button(action: {
                                 onQueryTap?(query)
@@ -65,9 +65,31 @@ public struct WelcomeScreenView: View {
                                 .cornerRadius(configuration.welcomeScreen.opionsConfiguration.cornerRadius)
                             }
                             .buttonStyle(PlainButtonStyle())
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    .padding(.horizontal, 4)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: configuration.welcomeScreen.opionsConfiguration.spacing) {
+                            ForEach(welcomeScreenData.possibleQueries, id: \.self) { query in
+                                Button(action: {
+                                    onQueryTap?(query)
+                                }) {
+                                    HStack(spacing: 8) {
+                                        Text(query)
+                                            .font(configuration.welcomeScreen.opionsConfiguration.font)
+                                            .foregroundColor(configuration.welcomeScreen.opionsConfiguration.textColor)
+                                    }
+                                    .padding(.horizontal, configuration.welcomeScreen.opionsConfiguration.padding)
+                                    .padding(.vertical, configuration.welcomeScreen.opionsConfiguration.padding / 2)
+                                    .background(configuration.welcomeScreen.opionsConfiguration.backgroundColor)
+                                    .cornerRadius(configuration.welcomeScreen.opionsConfiguration.cornerRadius)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                    }
                 }
             }
         }

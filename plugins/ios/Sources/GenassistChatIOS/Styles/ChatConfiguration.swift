@@ -125,6 +125,11 @@ public struct InputFieldConfiguration {
 //            buttonCornerRadius: CGFloat = 12,
 //            buttonPadding: CGFloat = 16,
 //            buttonSpacing: CGFloat = 12
+public enum OptionsOrientation {
+    case horizontal
+    case vertical
+}
+
 public struct OptionsConfiguration {
     public var font: Font
     public var textColor: Color
@@ -134,7 +139,8 @@ public struct OptionsConfiguration {
     public var spacing: CGFloat
     public var selectedColor: Color
     public var selectedBackgroundColor: Color
-    public init(font: Font = .body, textColor: Color = .white, backgroundColor: Color = Color(red: 187 / 255, green: 39 / 255, blue: 26 / 255), cornerRadius: CGFloat = 12, padding: CGFloat = 16, spacing: CGFloat = 12, selectedColor: Color = .white, selectedBackgroundColor: Color = Color(red: 187 / 255, green: 39 / 255, blue: 26 / 255),) {
+    public var orientation: OptionsOrientation
+    public init(font: Font = .body, textColor: Color = .white, backgroundColor: Color = Color(red: 187 / 255, green: 39 / 255, blue: 26 / 255), cornerRadius: CGFloat = 12, padding: CGFloat = 16, spacing: CGFloat = 12, selectedColor: Color = .white, selectedBackgroundColor: Color = Color(red: 187 / 255, green: 39 / 255, blue: 26 / 255), orientation: OptionsOrientation = .horizontal) {
          self.font = font
          self.textColor = textColor
          self.backgroundColor = backgroundColor
@@ -143,6 +149,7 @@ public struct OptionsConfiguration {
          self.spacing = spacing
          self.selectedColor = selectedColor
          self.selectedBackgroundColor = selectedBackgroundColor
+         self.orientation = orientation
      }
      
 }

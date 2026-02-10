@@ -73,6 +73,20 @@ public struct Message: Codable, Sendable {
     public let endTime: Double
     public let speaker: String
     public let text: String
+    public let id: String?
+    public let type: String?
+    public let feedback: [String]?
+    
+    public init(createTime: String, startTime: Double, endTime: Double, speaker: String, text: String, id: String? = nil, type: String? = nil, feedback: [String]? = nil) {
+        self.createTime = createTime
+        self.startTime = startTime
+        self.endTime = endTime
+        self.speaker = speaker
+        self.text = text
+        self.id = id
+        self.type = type
+        self.feedback = feedback
+    }
     
     enum CodingKeys: String, CodingKey {
         case createTime = "create_time"
@@ -80,6 +94,9 @@ public struct Message: Codable, Sendable {
         case endTime = "end_time"
         case speaker
         case text
+        case id
+        case type
+        case feedback
     }
     
     public var createDate: Date? {
@@ -99,13 +116,71 @@ public struct Message: Codable, Sendable {
     }
 }
 
+public struct ConversationResponse: Codable {
+    public let operatorId: String
+    public let dataSourceId: String
+    public let recordingId: String?
+    public let transcription: String? // Can be null
+    public let conversationDate: String
+    public let customerId: String?
+    public let threadId: String?
+    public let wordCount: Int
+    public let customerRatio: Int
+    public let agentRatio: Int
+    public let duration: Int
+    public let status: String
+    public let conversationType: String
+    public let id: String
+    public let createdAt: String
+    public let updatedAt: String
+    public let recording: String?
+    public let analysis: String?
+    public let inProgressHostilityScore: Int?
+    public let supervisorId: String?
+    public let topic: String?
+    public let negativeReason: String?
+    public let feedback: String?
+    public let messages: [Message]?
+
+    enum CodingKeys: String, CodingKey {
+        case operatorId = "operator_id"
+        case dataSourceId = "data_source_id"
+        case recordingId = "recording_id"
+        case transcription
+        case conversationDate = "conversation_date"
+        case customerId = "customer_id"
+        case threadId = "thread_id"
+        case wordCount = "word_count"
+        case customerRatio = "customer_ratio"
+        case agentRatio = "agent_ratio"
+        case duration
+        case status
+        case conversationType = "conversation_type"
+        case id
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case recording
+        case analysis
+        case inProgressHostilityScore = "in_progress_hostility_score"
+        case supervisorId = "supervisor_id"
+        case topic
+        case negativeReason = "negative_reason"
+        case feedback
+        case messages
+    }
+}
+
 private actor WebSocketManager {
     private var webSocketTask: URLSessionWebSocketTask?
     private var isConnected = false
     
-    func connect(url: URL) {
+    func connect(url: URL, headers: [String: String] = [:]) {
         print("WebSocket: Connecting to \(url)")
-        webSocketTask = URLSession.shared.webSocketTask(with: url)
+        var request = URLRequest(url: url)
+        for (key, value) in headers {
+            request.addValue(value, forHTTPHeaderField: key)
+        }
+        webSocketTask = URLSession.shared.webSocketTask(with: request)
         webSocketTask?.resume()
         isConnected = true
         print("WebSocket: Connected")
@@ -168,11 +243,38 @@ public class ChatService {
     private let baseURL: String
     private let apiKey: String
     private let metadata: ChatMetadata
+    private let tenant: String?
+    private let customerId: String?
     private var conversationId: String?
     private let webSocketManager = WebSocketManager()
     private var messageTask: Task<Void, Never>?
-    private let storageKey = "genassist_conversation_id"
-    private let lastStartTimeKey = "genassist_last_start_conversation_time"
+    
+    private var storageKey: String {
+        return "genassist_conversation_id\(keySuffix)"
+    }
+    
+    private var lastStartTimeKey: String {
+        return "genassist_last_start_conversation_time\(keySuffix)"
+    }
+    
+    private var messagesKey: String {
+        return "genassist_conversation_messages\(keySuffix)"
+    }
+    
+    private var agentConfigKey: String {
+        return "genassist_agent_config\(keySuffix)"
+    }
+    
+    private var keySuffix: String {
+        var components: [String] = []
+        if let tenant = tenant {
+            components.append("_tenant_\(tenant)")
+        }
+        if let customerId = customerId {
+            components.append("_customer_\(customerId)")
+        }
+        return components.joined()
+    }
     
 
     private var agentConfig: AgentConfiguration?
@@ -184,13 +286,15 @@ public class ChatService {
     private var updateConversationPath: String?
     private let useWs: Bool
     
-    public init(baseURL: String, apiKey: String, metadata: ChatMetadata, startConversationPath: String? = nil, updateConversationPath: String? = nil, useWs: Bool = true) {
+    public init(baseURL: String, apiKey: String, metadata: ChatMetadata, startConversationPath: String? = nil, updateConversationPath: String? = nil, useWs: Bool = true, tenant: String? = nil, customerId: String? = nil) {
         self.baseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
         self.apiKey = apiKey
         self.metadata = metadata
         self.startConversationPath = startConversationPath
         self.updateConversationPath = updateConversationPath
         self.useWs = useWs
+        self.tenant = tenant
+        self.customerId = customerId
         loadSavedConversation()
     }
     
@@ -231,12 +335,14 @@ public class ChatService {
         if let savedConversationId = UserDefaults.standard.string(forKey: storageKey) {
             self.conversationId = savedConversationId
             print("Loaded saved conversation:", savedConversationId)
+
+           
         }
         if let lastStartTimeInterval = UserDefaults.standard.object(forKey: lastStartTimeKey) as? Double {
             self.lastStartConversationTime = Date(timeIntervalSince1970: lastStartTimeInterval)
             print("Loaded last startConversation time: \(self.lastStartConversationTime!)")
         }
-        if let messagesData = UserDefaults.standard.data(forKey: "genassist_conversation_messages") {
+        if let messagesData = UserDefaults.standard.data(forKey: messagesKey) {
             do {
                 let decodedMessages = try JSONDecoder().decode([Message].self, from: messagesData)
                 self.messages = decodedMessages
@@ -244,6 +350,56 @@ public class ChatService {
                     self.messageHandler?(message)
                 }
                 print("Loaded saved messages: \(decodedMessages.count)")
+                
+                // Find createTime of last local message, add 1 sec
+                let lastCreateTime: String? = self.messages.last?.createTime
+                if let savedConversationId = self.conversationId, let lastCreateTime = lastCreateTime {
+                    // Try multiple date formats to handle both stored and API formats
+                    var date: Date?
+                    
+                    // Try with fractional seconds first (API format: "2025-10-30T22:27:19.895000Z")
+                    let formatterWithFractional = ISO8601DateFormatter()
+                    formatterWithFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    if let parsedDate = formatterWithFractional.date(from: lastCreateTime) {
+                        date = parsedDate
+                    } else {
+                        // Try without fractional seconds (stored format: "2025-10-30 22:39:31+00:00")
+                        let formatterWithoutFractional = ISO8601DateFormatter()
+                        formatterWithoutFractional.formatOptions = [.withInternetDateTime]
+                        // Replace space with T for ISO8601 parsing
+                        let normalizedTime = lastCreateTime.replacingOccurrences(of: " ", with: "T")
+                        if let parsedDate = formatterWithoutFractional.date(from: normalizedTime) {
+                            date = parsedDate
+                        }
+                    }
+                    
+                    if let parsedDate = date {
+                        // Always output in API format (with fractional seconds)
+                        let outputFormatter = ISO8601DateFormatter()
+                        outputFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                        let plus1sec = parsedDate.addingTimeInterval(1)
+                        let newStr = outputFormatter.string(from: plus1sec)
+                        // Fetch new messages from API
+                        
+                        fetchNewMessages(conversationId: savedConversationId, fromCreateDatetime: newStr) { [weak self] result in
+                            switch result {
+                            case .success(let newMsgs):
+                                DispatchQueue.main.async {
+                                    // Only append truly new
+                                    let existingIds = Set(self?.messages.map { $0.createTime + $0.text } ?? [])
+                                    let filteredMsgs = newMsgs.filter { !existingIds.contains($0.createTime + $0.text) }
+                                    self?.messages.append(contentsOf: filteredMsgs)
+                                    filteredMsgs.forEach { self?.messageHandler?($0) }
+                                    print("Appended \(filteredMsgs.count) new messages from API"); self?.saveConversation()
+                                }
+                            case .failure(let error):
+                                print("Failed to fetch new messages: \(error)")
+                            }
+                        }
+                    }else {
+                        print("Failed to parse lastCreateTime: \(lastCreateTime)")
+                    }
+                }
             } catch {
                 print("Failed to decode saved messages: \(error)")
                 self.messages = []
@@ -253,7 +409,7 @@ public class ChatService {
         }
         
         // Load saved possible queries
-        if let savedConfig = UserDefaults.standard.data(forKey: "genassist_agent_config") {
+        if let savedConfig = UserDefaults.standard.data(forKey: agentConfigKey) {
             do {
             let decodedConfig = try JSONDecoder().decode(AgentConfiguration.self, from: savedConfig)
             
@@ -279,14 +435,14 @@ public class ChatService {
         }
         do {
             let messagesData = try JSONEncoder().encode(messages)
-            UserDefaults.standard.set(messagesData, forKey: "genassist_conversation_messages")
+            UserDefaults.standard.set(messagesData, forKey: messagesKey)
             print("Saved messages: \(messages.count)")
         } catch {
             print("Failed to encode messages: \(error)")
         }
         do {
             let agentConfigData = try JSONEncoder().encode(agentConfig)
-            UserDefaults.standard.set(agentConfigData, forKey: "genassist_agent_config")
+            UserDefaults.standard.set(agentConfigData, forKey: agentConfigKey)
         } catch {
             print("Failed to encode messages: \(error)")
         }
@@ -302,8 +458,8 @@ public class ChatService {
         messages = []
         lastStartConversationTime = nil
         UserDefaults.standard.removeObject(forKey: storageKey)
-        UserDefaults.standard.removeObject(forKey: "genassist_conversation_messages")
-        UserDefaults.standard.removeObject(forKey: "genassist_agent_config")
+        UserDefaults.standard.removeObject(forKey: messagesKey) 
+        UserDefaults.standard.removeObject(forKey: agentConfigKey)
         UserDefaults.standard.removeObject(forKey: lastStartTimeKey)
     }
     
@@ -344,6 +500,9 @@ public class ChatService {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
+        if let tenant = tenant {
+            request.addValue(tenant, forHTTPHeaderField: "X-Tenant-Id")
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
         let (data, _) = try await URLSession.shared.data(for: request)
@@ -366,7 +525,7 @@ public class ChatService {
         self.agentConfig = AgentConfiguration(agentId: response.agentId, conversationId: response.conversationId, agentWelcomeMessage: response.agentWelcomeMessage, agentWelcomeTitle: response.agentWelcomeTitle, agentWelcomeImage: welcomeImage, agentPossibleQueries: response.agentPossibleQueries, agentThinkingPhrases: response.agentThinkingPhrases)
         do{
             let agentConfigData = try JSONEncoder().encode(agentConfig)
-            UserDefaults.standard.set(agentConfigData, forKey: "genassist_agent_config")
+            UserDefaults.standard.set(agentConfigData, forKey: agentConfigKey)
         }catch{
             print(error)
         }
@@ -424,9 +583,13 @@ public class ChatService {
         request.httpMethod = "PATCH"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
+        if let tenant = tenant {
+            request.addValue(tenant, forHTTPHeaderField: "X-Tenant-Id")
+        }
         
         // Merge base metadata with extra metadata
         var finalMetadata: [String: Any] = self.metadata.getMetadata()
+        if let customerId = customerId { finalMetadata["customerId"] = customerId }
         if let extraMetadata = extraMetadata {
             // Convert Any values to String for consistency with existing metadata structure
             for (key, value) in extraMetadata {
@@ -495,7 +658,10 @@ public class ChatService {
             return
         }
         
-        let urlString = "\(baseURL.replacingOccurrences(of: "http", with: "ws"))/api/conversations/ws/\(conversationId)?api_key=\(apiKey)&lang=en&topics=message"
+        var urlString = "\(baseURL.replacingOccurrences(of: "http", with: "ws"))/api/conversations/ws/\(conversationId)?api_key=\(apiKey)&lang=en&topics=message"
+        if let tenant = tenant, let encodedTenant = tenant.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            urlString += "&X-Tenant-Id=\(encodedTenant)"
+        }
         guard let url = URL(string: urlString) else {
             print("WebSocket: Invalid URL: \(urlString)")
             return
@@ -504,8 +670,13 @@ public class ChatService {
         print("WebSocket: Connecting to URL: \(urlString)")
         messageTask?.cancel()
         
+        var headers: [String: String] = [:]
+        if let tenant = tenant {
+            headers["X-Tenant-Id"] = tenant
+        }
+        
         messageTask = Task {
-            await webSocketManager.connect(url: url)
+            await webSocketManager.connect(url: url, headers: headers)
             
             while !Task.isCancelled {
                 do {
@@ -535,5 +706,54 @@ public class ChatService {
     
     public func getMessages() -> [Message] {
         return messages
+    }
+    
+    // Fetch new messages from server
+    private func fetchNewMessages(conversationId: String, fromCreateDatetime: String, completion: @escaping (Result<[Message], Error>) -> Void) {
+        guard let url = URL(string: "\(baseURL)/api/conversations/\(conversationId)?from_create_datetime_messages=\(fromCreateDatetime)") else {
+            completion(.failure(NSError(domain: "ChatService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
+        if let tenant = tenant {
+            request.addValue(tenant, forHTTPHeaderField: "X-Tenant-Id")
+        }
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+            guard let data = data else {
+                completion(.failure(NSError(domain: "ChatService", code: 500, userInfo: [NSLocalizedDescriptionKey: "No data"])))
+                return
+            }
+            do {
+                let decoder = JSONDecoder()
+                // Make decoder more lenient with unknown keys
+                let conversationResp = try decoder.decode(ConversationResponse.self, from: data)
+                // Use messages array directly if available, otherwise fallback to transcription string
+                if let messages = conversationResp.messages {
+                    completion(.success(messages))
+                } else if let transcription = conversationResp.transcription,
+                          let transcriptionData = transcription.data(using: .utf8) {
+                    // Fallback: parse transcription string for backward compatibility
+                    let newMessages = try decoder.decode([Message].self, from: transcriptionData)
+                    completion(.success(newMessages))
+                } else {
+                    // No messages found
+                    completion(.success([]))
+                }
+            } catch {
+                // Log the actual error for debugging
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("Failed to decode ConversationResponse. Error: \(error)")
+                    print("Response data: \(jsonString.prefix(500))")
+                }
+                completion(.failure(error))
+            }
+        }
+        task.resume()
     }
 } 
