@@ -416,4 +416,3 @@ class AgentRAGServiceManager:
                 os.unlink(tmp.name)
             except OSError:
                 pass
-        return ""
