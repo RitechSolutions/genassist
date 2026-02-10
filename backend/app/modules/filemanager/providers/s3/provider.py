@@ -58,29 +58,29 @@ class S3StorageProvider(BaseStorageProvider):
     async def upload_file(
         self,
         file_content: bytes,
-        storage_path: str,
+        file_path: str,
         file_metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """Upload a file to S3."""
-        self.s3_client.upload_content(file_content, self.aws_bucket_name, storage_path)
-        return storage_path
+        self.s3_client.upload_content(file_content, self.aws_bucket_name, file_path)
+        return file_path
 
-    async def download_file(self, storage_path: str) -> bytes:
+    async def download_file(self, file_path: str) -> bytes:
         """Download a file from S3."""
         try:
-            return self.s3_client.get_file_content(storage_path)
+            return self.s3_client.get_file_content(file_path)
         except Exception as e:
-            logger.error(f"Failed to download file {storage_path}: {e}")
+            logger.error(f"Failed to download file {file_path}: {e}")
             raise
 
-    async def delete_file(self, storage_path: str) -> bool:
+    async def delete_file(self, file_path: str) -> bool:
         """Delete a file from S3."""
-        return self.s3_client.delete_file(storage_path)
+        return self.s3_client.delete_file(file_path)
 
-    async def file_exists(self, storage_path: str) -> bool:
+    async def file_exists(self, file_path: str) -> bool:
         """Check if a file exists in S3."""
         try:
-            return self.s3_client.get_file_content(storage_path) is not None
+            return self.s3_client.get_file_content(file_path) is not None
         except Exception:
             return False
 

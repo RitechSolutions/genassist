@@ -253,8 +253,8 @@ async def upload_file(
 
                 file_base = FileBase(
                     name=unique_filename,
-                    path=f"{sub_folder}/{unique_filename}",
                     storage_path=provider.get_base_path(),
+                    path=sub_folder,
                     storage_provider=provider_name,
                     file_extension=file_extension,
                 )

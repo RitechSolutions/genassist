@@ -310,16 +310,16 @@ class AgentRAGServiceManager:
                                     # Legacy format: dict with file_path and/or url/urls
                                     file_path = file_item.get("file_path")
                                     file_url = file_item.get("url") or file_item.get("urls")
-                                    if file_path:
-                                        doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
-                                        contents.append(extractor.extract(path=file_path))
-                                    elif file_url and (
-                                        isinstance(file_url, str)
-                                        and (file_url.startswith("http://") or file_url.startswith("https://"))
-                                    ):
+                                    file_id = file_item.get("file_id")
+
+                                    # Handle url from file manager and other providers vs local file path
+                                    if file_url and file_id and (file_url.startswith("http://") or file_url.startswith("https://")):
                                         doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_url}")
                                         temp_content = self._download_url_to_temp_file(file_url, extractor)
                                         contents.append(temp_content)
+                                    elif file_path:
+                                        doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
+                                        contents.append(extractor.extract(path=file_path))
                                     else:
                                         logger.warning(f"File item {idx} missing file_path or url: {file_item}")
 

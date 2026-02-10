@@ -104,11 +104,10 @@ class FileManagerService:
         file_mime_type = file.content_type
         file_name = file.filename
         file_storage_provider = file_base.storage_provider or self.storage_provider.name
-        storage_path = self.storage_provider.get_base_path()
-
+        
         # generate a unique file name
         unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
-        relative_file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
+        file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
 
         # Get or initialize the storage provider
         provider_name = file_storage_provider or "local"
@@ -116,6 +115,10 @@ class FileManagerService:
         if not self.storage_provider or not self.storage_provider.is_initialized():
             raise ValueError("Storage provider not initialized")
 
+        # get the base path of the storage provider
+        storage_path = self.storage_provider.get_base_path()
+
+        # create the file data
         file_data = FileBase(
             name=file_name,
             mime_type=file_mime_type,
@@ -123,13 +126,11 @@ class FileManagerService:
             file_extension=file_extension,
             storage_provider=file_storage_provider,
             storage_path=storage_path,
-            path=relative_file_path,
+            path=file_path,
             description=file_base.description,
             tags=file_base.tags,
             permissions=file_base.permissions,
         )
-
-        file_path = f"{storage_path}/{relative_file_path}"
 
         # Upload file content if provided
         if file_content is not None:
