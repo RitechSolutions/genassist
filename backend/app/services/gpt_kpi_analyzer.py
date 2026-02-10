@@ -4,8 +4,11 @@ from typing import List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.exceptions.exception_classes import AppException
+from app.core.exceptions.error_messages import ErrorKey
 from app.core.utils.enums.conversation_topic_enum import ConversationTopic
 from app.core.utils.enums.negative_conversation_reason import NegativeConversationReason
+from app.core.utils.gpt_utils import check_and_raise_if_non_retryable
 from app.modules.workflow.llm.provider import LLMProvider
 from app.schemas.conversation_analysis import AnalysisResult
 from app.schemas.conversation_transcript import TranscriptSegment
@@ -37,7 +40,7 @@ class GptKpiAnalyzer:
             or len(transcript) == 0
             or transcript == "[]"
         ):
-            raise ValueError("Transcript is empty! Nothing to analyze!")
+            raise AppException(ErrorKey.TRANSCRIPT_NOT_FOUND)
         else:
             logger.debug(f"analyzing transcript: {transcript}")
 
@@ -82,15 +85,26 @@ class GptKpiAnalyzer:
                         customer_speaker=customer_speaker,
                     )
 
-                raise ValueError("Parsing returned incomplete or invalid result.")
+                raise AppException(ErrorKey.TRANSCRIPT_PARSE_ERROR)
 
             except Exception as e:
+                # Check if this is a non-retryable error (e.g., context length exceeded, rate limit)
+                # If so, this will raise AppException and exit the retry loop
+                check_and_raise_if_non_retryable(e)
+
+                # If we reach here, it's a retryable error (e.g., parsing failure)
                 last_error_msg = str(e)
                 logger.error(
                     f"Attempt {attempt}: Failed to parse GPT response as JSON. Error: {last_error_msg} - LastResponse: {last_response} - Prompt: {user_prompt}"
                 )
 
-        # raise AppException(error_key=ErrorKey.GPT_RETURNED_INCOMPLETE_RESULT)
+        # If we exhausted all retries without success, raise an appropriate exception
+        logger.error(f"Failed to analyze transcript after {max_attempts} attempts. Last error: {last_error_msg}")
+        raise AppException(
+            error_key=ErrorKey.GPT_FAILED_JSON_PARSING,
+            status_code=500,
+            error_detail=f"Last error: {last_error_msg}. Last response: {last_response}"
+        )
 
     def _format_transcript(self, segments: List[TranscriptSegment]) -> str:
         """Format transcript segments into a readable string."""
@@ -123,10 +137,7 @@ class GptKpiAnalyzer:
             - Assess the operator's performance and whether the customer was satisfied
             - Identify key points of improvement
 
-            **C) Identify the Customer:**
-            - Indicate which speaker is the customer in this conversation with one word only (e.g., SPEAKER_00).
-
-            **D) KPI Metrics, Tone, and Sentiment Analysis (JSON Format):**
+            **C) KPI Metrics, Tone, and Sentiment Analysis (JSON Format):**
             Provide the following KPI metrics, overall tone, and sentiment percentages as a JSON object:
 
             ```json
@@ -263,7 +274,7 @@ class GptKpiAnalyzer:
         customer_start = text.find("**C) Identify the Customer:**")
         kpi_start = text.find("**D) KPI Metrics")
 
-        raw_title = title = text[title_start + 13 : summary_start].strip()
+        raw_title = text[title_start + 13 : summary_start].strip()
         title = raw_title.lstrip("- ").strip()
         summary = text[summary_start + 15 : customer_start].strip()
         customer_speaker = text[customer_start + 32 : kpi_start].strip()

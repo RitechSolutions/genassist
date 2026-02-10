@@ -1,16 +1,19 @@
 import * as React from "react"
 
-import { cn } from "@/helpers/utils"
+import { cn, escapeHtml } from "@/helpers/utils"
 
 const highlightPattern = (text: string) => {
-  if (!text) return text;
-  const parts = text.split(/(\{\{[^}]+\}\})/g);
-  return parts.map(part => {
-    if (part.match(/\{\{[^}]+\}\}/)) {
-      return `<span class="text-blue-500 bg-background ">${part}</span>`;
-    }
-    return `<span class="text-transparent">${part}</span>`;
-  }).join('');
+  if (!text) return text
+  const parts = text.split(/(\{\{[^}]+\}\})/g)
+  return parts
+    .map((part) => {
+      const safePart = escapeHtml(part)
+      if (part.match(/\{\{[^}]+\}\}/)) {
+        return `<span class="text-blue-500 bg-background ">${safePart}</span>`
+      }
+      return `<span class="text-transparent">${safePart}</span>`
+    })
+    .join("")
 }
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(

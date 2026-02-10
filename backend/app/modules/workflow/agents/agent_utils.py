@@ -270,9 +270,15 @@ def remove_tool_from_agent(tools: List[BaseTool], tool_map: Dict[str, BaseTool],
 # ==================== JSON PARSING UTILITIES ====================
 
 def parse_json_response(response: str) -> Optional[Dict[str, Any]]:
-    """Parse JSON formatted response"""
+    """Parse JSON formatted response, handling double curly braces from weak models"""
     try:
         response_clean = response.strip()
+        
+        # Handle double curly braces {{ }} that weak models sometimes return
+        if response_clean.startswith('{{') and response_clean.endswith('}}'):
+            # Strip the outer curly braces
+            response_clean = response_clean[1:-1].strip()
+        
         json_start = response_clean.find('{')
         json_end = response_clean.rfind('}') + 1
         
@@ -306,6 +312,10 @@ def extract_direct_response(response: str) -> Optional[str]:
     if response_stripped.startswith('{') and 'direct_response' in response_stripped:
         # Try to parse more aggressively
         try:
+            # Handle double curly braces {{ }} that weak models sometimes return
+            if response_stripped.startswith('{{') and response_stripped.endswith('}}'):
+                response_stripped = response_stripped[1:-1].strip()
+            
             # Try parsing the entire string
             parsed = json.loads(response_stripped)
             if parsed.get("action") == "direct_response":
