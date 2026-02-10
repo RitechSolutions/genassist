@@ -16,6 +16,7 @@ from typing import Dict, Optional, List, Any
 
 from app.schemas.agent_knowledge import KBRead
 from app.modules.data.utils import FileTextExtractor
+from app.core.config.settings import file_storage_settings
 
 from .service import AgentRAGService
 from .providers import SearchResult
@@ -310,14 +311,14 @@ class AgentRAGServiceManager:
                                     # Legacy format: dict with file_path and/or url/urls
                                     file_path = file_item.get("file_path")
                                     file_url = file_item.get("url") or file_item.get("urls")
-                                    file_id = file_item.get("file_id")
+                                    file_storage_provider = file_storage_settings.FILE_MANAGER_PROVIDER or "local"
 
                                     # Handle url from file manager and other providers vs local file path
-                                    if file_url and file_id and (file_url.startswith("http://") or file_url.startswith("https://")):
+                                    if file_storage_provider != "local" and file_url and (file_url.startswith("http://") or file_url.startswith("https://")):
                                         doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_url}")
                                         temp_content = self._download_url_to_temp_file(file_url, extractor)
                                         contents.append(temp_content)
-                                    elif file_path:
+                                    elif file_storage_provider == "local" and file_path:
                                         doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
                                         contents.append(extractor.extract(path=file_path))
                                     else:
