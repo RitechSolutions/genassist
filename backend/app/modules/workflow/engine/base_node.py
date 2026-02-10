@@ -131,8 +131,10 @@ class BaseNode(ABC):
             source_id = edge.get("source")
             if source_id:
                 _, node_type = self.get_node_config(source_id)
-                if "toolBuilderNode" or "mcpNode" in node_type:
-                    # skip tool builder node because it does not produce output normally
+                if (
+                    "toolBuilderNode" in node_type
+                    or "mcpNode" in node_type
+                ):
                     continue
                 source_nodes.append(source_id)
 
@@ -354,7 +356,7 @@ class BaseNode(ABC):
             error_msg = f"Error executing node {self.node_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
             self.complete_execution(error=error_msg)
-            raise
+            # raise
 
     @abstractmethod
     async def process(self, config: Dict[str, Any]) -> Any:

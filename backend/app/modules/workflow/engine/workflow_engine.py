@@ -41,6 +41,7 @@ import asyncio
 from collections import defaultdict
 import uuid
 from fastapi_injector import RequestScopeFactory
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.injector import injector
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
 
@@ -328,41 +329,58 @@ class WorkflowEngine:
             # Capture tenant context from the main request scope
             tenant_id = get_tenant_context()
 
+            async def execute_node_isolated(
+                next_node_id: str,
+                visited_set: Set[str],
+                tenant: str,
+                run_in_new_scope: bool,
+            ):
+                """
+                Execute a node, optionally inside a fresh request scope.
+
+                Important:
+                - When executing multiple next-nodes in parallel, we MUST isolate request-scoped
+                  dependencies (especially AsyncSession). Sharing a single AsyncSession across
+                  concurrent tasks will raise:
+                  "This session is provisioning a new connection; concurrent operations are not permitted".
+                """
+                if not run_in_new_scope:
+                    return await self._execute_from_node_recursive(
+                        next_node_id, state, visited_set
+                    )
+
+                request_scope_factory = injector.get(RequestScopeFactory)
+                async with request_scope_factory.create_scope():
+                    # Preserve tenant context in the new scope
+                    set_tenant_context(tenant)
+                    try:
+                        return await self._execute_from_node_recursive(
+                            next_node_id, state, visited_set
+                        )
+                    finally:
+                        # Ensure any DI-created session is closed for this scope.
+                        # (AsyncSession usually doesn't open a connection until first use, so this
+                        # is cheap even for "no DB" nodes.)
+                        try:
+                            session = injector.get(AsyncSession)
+                            await session.close()
+                        except Exception:  # pylint: disable=broad-except
+                            pass
+
             # Create tasks for all next nodes
             next_tasks = []
             for next_node_id in next_nodes:
                 # Create a copy of visited set for each task to avoid conflicts
                 task_visited = visited.copy()
 
-                # Check if this node needs DB access to determine if we need a separate scope
-                _, next_node_type = self.get_node_config(next_node_id)
-                needs_db = self._node_needs_db_access(next_node_type)
-
-                # Create a wrapper function that conditionally uses a request scope
-                async def execute_node_conditionally(
-                    node_id: str, visited_set: Set[str], tenant: str, requires_db: bool
-                ):
-                    """
-                    Execute a node, creating a request scope only if it needs DB access.
-                    This avoids creating unnecessary database connections for nodes that don't need them.
-                    """
-                    if requires_db and len(next_nodes) > 1:
-                        # Only create scope for nodes that need DB access
-                        request_scope_factory = injector.get(RequestScopeFactory)
-                        async with request_scope_factory.create_scope():
-                            # Set tenant context in the new scope to match the main request
-                            set_tenant_context(tenant)
-                            return await self._execute_from_node_recursive(
-                                node_id, state, visited_set
-                            )
-                    else:
-                        # No DB needed, execute directly without creating a scope
-                        return await self._execute_from_node_recursive(
-                            node_id, state, visited_set
-                        )
-
                 task = asyncio.create_task(
-                    execute_node_conditionally(next_node_id, task_visited, tenant_id, needs_db)
+                    execute_node_isolated(
+                        next_node_id=next_node_id,
+                        visited_set=task_visited,
+                        tenant=tenant_id,
+                        # Only isolate when we are actually running parallel branches.
+                        run_in_new_scope=(len(next_nodes) > 1),
+                    )
                 )
                 next_tasks.append(task)
 
