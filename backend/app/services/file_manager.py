@@ -10,8 +10,8 @@ from urllib.parse import quote
 
 from app.modules.filemanager.providers.base import BaseStorageProvider
 from app.db.models.file import FileModel
+from app.schemas.file import FileBase
 from app.repositories.file_manager import FileManagerRepository
-from app.schemas.file import FileCreate, FileUpdate
 from app.core.tenant_scope import get_tenant_context
 
 from app.modules.filemanager.providers import init_by_name
@@ -80,12 +80,8 @@ class FileManagerService:
     async def create_file(
         self,
         file: UploadFile,
-        sub_folder: Optional[str] = None,
-        description: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        permissions: Optional[Dict] = None,
-        allowed_extensions: Optional[List[str]] = None,
-        unique_filename: Optional[str] = None,
+        file_base: FileBase,
+        allowed_extensions: Optional[list[str]] = None,
     ) -> FileModel:
         """
         Create a file metadata record and upload file content to storage.
@@ -98,21 +94,21 @@ class FileManagerService:
         file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
         file_extension = file_extension.lower() if file_extension else "txt"
 
+        # check if file extension is allowed
+        if allowed_extensions is not None and str(file_extension).lower() not in allowed_extensions:
+            raise ValueError(f"File extension {file_extension} not allowed") from None
+
         # read from the file
         file_content = await file.read()
         file_size = len(file_content)
         file_mime_type = file.content_type
         file_name = file.filename
-        file_storage_provider = self.storage_provider.name
-        file_path = self.storage_provider.get_base_path()
+        file_storage_provider = file_base.storage_provider or self.storage_provider.name
+        storage_path = self.storage_provider.get_base_path()
 
         # generate a unique file name
-        unique_file_name = f"{uuid.uuid4()}.{file_extension}" if unique_filename is None else unique_filename
-        relative_storage_path = f"{sub_folder}/{unique_file_name}" if sub_folder else unique_file_name
-
-        # check if file extension is allowed
-        if allowed_extensions and file_extension not in allowed_extensions:
-            raise ValueError(f"File extension {file_extension} not allowed")
+        unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
+        relative_file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
 
         # Get or initialize the storage provider
         provider_name = file_storage_provider or "local"
@@ -120,25 +116,26 @@ class FileManagerService:
         if not self.storage_provider or not self.storage_provider.is_initialized():
             raise ValueError("Storage provider not initialized")
 
-        file_data = FileCreate(
-            file=file,
+        file_data = FileBase(
             name=file_name,
             mime_type=file_mime_type,
             size=file_size,
             file_extension=file_extension,
             storage_provider=file_storage_provider,
-            path=file_path,
-            storage_path=relative_storage_path,
-            description=description,
-            tags=tags,
-            permissions=permissions,
+            storage_path=storage_path,
+            path=relative_file_path,
+            description=file_base.description,
+            tags=file_base.tags,
+            permissions=file_base.permissions,
         )
+
+        file_path = f"{storage_path}/{relative_file_path}"
 
         # Upload file content if provided
         if file_content is not None:
             await self.storage_provider.upload_file(
                 file_content=file_content,
-                storage_path=file_data.storage_path,
+                file_path=file_path,
                 file_metadata={"name": file_data.name, "mime_type": file_data.mime_type}
             )
 
@@ -161,11 +158,11 @@ class FileManagerService:
             raise ValueError("Storage provider not initialized")
 
         # storage_path
-        storage_path = f"{file.path}/{file.storage_path}"
+        storage_path = f"{file.storage_path}/{file.path}"
         
         # override storage path for s3
         if file.storage_provider == "s3":
-            storage_path = file.storage_path
+            storage_path = file.path
 
         return await self.storage_provider.download_file(storage_path)
 
@@ -204,18 +201,11 @@ class FileManagerService:
             offset=offset
         )
 
-    async def update_file(self, file_id: UUID, file_update: FileUpdate) -> FileModel:
+    async def update_file(self, file_id: UUID, file: UploadFile, file_base: FileBase) -> FileModel:
         """Update file metadata."""
-        update_data = file_update.model_dump(exclude_unset=True)
-        
-        # Handle path updates
-        if "path" in update_data and update_data["path"]:
-            # If storage path is not explicitly updated, update it to match path
-            if "storage_path" not in update_data:
-                update_data["storage_path"] = update_data["path"]
-
-        file_update_obj = FileUpdate(**update_data)
-        return await self.repository.update_file(file_id, file_update_obj)
+        # update the file
+        file = await self.repository.update_file(file_id, file, **file_base)
+        return file_base
 
     async def delete_file(self, file_id: UUID, delete_from_storage: bool = True) -> None:
         """
@@ -250,7 +240,7 @@ class FileManagerService:
             return f"{config_base_url}/api/file-manager/files/{file.id}/source"
 
         # get the file url from the storage provider
-        return await self.storage_provider.get_file_url(file.path, file.storage_path)
+        return await self.storage_provider.get_file_url(file.storage_path, file.path)
 
     # ==================== Helper Methods ====================
 

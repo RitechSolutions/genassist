@@ -8246,9 +8246,9 @@
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/FileCreate"
+                "$ref": "#/components/schemas/Body_create_file_api_file_manager_files_post"
               }
             }
           }
@@ -8453,9 +8453,9 @@
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/FileUpdate"
+                "$ref": "#/components/schemas/Body_update_file_api_file_manager_files__file_id__put"
               }
             }
           }
@@ -15067,6 +15067,124 @@
         ],
         "title": "Body_auth_token_api_auth_token_post"
       },
+      "Body_create_file_api_file_manager_files_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "storage_provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "s3",
+              "azure",
+              "gcs",
+              "sharepoint"
+            ],
+            "title": "Storage Provider",
+            "default": "local"
+          },
+          "storage_path": {
+            "type": "string",
+            "title": "Storage Path"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "file_metadata": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Metadata"
+          },
+          "file_extension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Extension"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "name",
+          "path",
+          "storage_path"
+        ],
+        "title": "Body_create_file_api_file_manager_files_post"
+      },
       "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post": {
         "properties": {
           "workflow_name": {
@@ -15135,6 +15253,124 @@
           "items"
         ],
         "title": "Body_search_api_genagent_knowledge_search_post"
+      },
+      "Body_update_file_api_file_manager_files__file_id__put": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "storage_provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "s3",
+              "azure",
+              "gcs",
+              "sharepoint"
+            ],
+            "title": "Storage Provider",
+            "default": "local"
+          },
+          "storage_path": {
+            "type": "string",
+            "title": "Storage Path"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "file_metadata": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Metadata"
+          },
+          "file_extension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Extension"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "name",
+          "path",
+          "storage_path"
+        ],
+        "title": "Body_update_file_api_file_manager_files__file_id__put"
       },
       "Body_upload_file_api_azure_blob_storage_upload_post": {
         "properties": {
@@ -16471,146 +16707,6 @@
         ],
         "title": "Feedback"
       },
-      "FileCreate": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 500,
-            "title": "Name",
-            "description": "File name"
-          },
-          "path": {
-            "type": "string",
-            "maxLength": 1000,
-            "title": "Path",
-            "description": "File path"
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size",
-            "description": "File size in bytes"
-          },
-          "mime_type": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mime Type",
-            "description": "MIME type"
-          },
-          "storage_provider": {
-            "type": "string",
-            "enum": [
-              "local",
-              "s3",
-              "azure",
-              "gcs",
-              "sharepoint"
-            ],
-            "title": "Storage Provider",
-            "description": "Storage provider",
-            "default": "local"
-          },
-          "storage_path": {
-            "type": "string",
-            "maxLength": 1000,
-            "title": "Storage Path",
-            "description": "Path in storage provider"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description",
-            "description": "File description"
-          },
-          "file_metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Metadata",
-            "description": "File metadata"
-          },
-          "file_extension": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 10
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Extension",
-            "description": "File extension"
-          },
-          "tags": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tags",
-            "description": "File tags"
-          },
-          "permissions": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Permissions",
-            "description": "File permissions"
-          },
-          "file": {
-            "type": "string",
-            "format": "binary",
-            "title": "File",
-            "description": "File to upload"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "path",
-          "storage_path",
-          "file"
-        ],
-        "title": "FileCreate"
-      },
       "FileResponse": {
         "properties": {
           "name": {
@@ -16625,6 +16721,25 @@
             "title": "Path",
             "description": "File path"
           },
+          "storage_path": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Storage Path",
+            "description": "Path in storage provider"
+          },
+          "storage_provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "s3",
+              "azure",
+              "gcs",
+              "sharepoint"
+            ],
+            "title": "Storage Provider",
+            "description": "Storage provider",
+            "default": "local"
+          },
           "size": {
             "anyOf": [
               {
@@ -16649,25 +16764,6 @@
             ],
             "title": "Mime Type",
             "description": "MIME type"
-          },
-          "storage_provider": {
-            "type": "string",
-            "enum": [
-              "local",
-              "s3",
-              "azure",
-              "gcs",
-              "sharepoint"
-            ],
-            "title": "Storage Provider",
-            "description": "Storage provider",
-            "default": "local"
-          },
-          "storage_path": {
-            "type": "string",
-            "maxLength": 1000,
-            "title": "Storage Path",
-            "description": "Path in storage provider"
           },
           "description": {
             "anyOf": [
@@ -16740,18 +16836,6 @@
             "format": "uuid",
             "title": "Id"
           },
-          "user_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Id"
-          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -16778,152 +16862,6 @@
           "is_deleted"
         ],
         "title": "FileResponse"
-      },
-      "FileUpdate": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 500,
-            "title": "Name",
-            "description": "File name"
-          },
-          "path": {
-            "type": "string",
-            "maxLength": 1000,
-            "title": "Path",
-            "description": "File path"
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size",
-            "description": "File size in bytes"
-          },
-          "mime_type": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mime Type",
-            "description": "MIME type"
-          },
-          "storage_provider": {
-            "type": "string",
-            "enum": [
-              "local",
-              "s3",
-              "azure",
-              "gcs",
-              "sharepoint"
-            ],
-            "title": "Storage Provider",
-            "description": "Storage provider",
-            "default": "local"
-          },
-          "storage_path": {
-            "type": "string",
-            "maxLength": 1000,
-            "title": "Storage Path",
-            "description": "Path in storage provider"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description",
-            "description": "File description"
-          },
-          "file_metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Metadata",
-            "description": "File metadata"
-          },
-          "file_extension": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 10
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Extension",
-            "description": "File extension"
-          },
-          "tags": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tags",
-            "description": "File tags"
-          },
-          "permissions": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Permissions",
-            "description": "File permissions"
-          },
-          "file": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "binary"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File",
-            "description": "File to upload"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "path",
-          "storage_path"
-        ],
-        "title": "FileUpdate"
       },
       "FolderRequest": {
         "properties": {

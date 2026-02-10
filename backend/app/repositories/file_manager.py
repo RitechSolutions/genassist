@@ -6,7 +6,7 @@ from typing import List, Optional
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.file import FileModel
-from app.schemas.file import FileCreate, FileUpdate
+from app.schemas.file import FileBase
 from app.cache.redis_cache import make_key_builder
 from starlette_context import context
 from fastapi_cache import FastAPICache
@@ -24,7 +24,7 @@ class FileManagerRepository:
 
     # ==================== File Methods ====================
 
-    async def create_file(self, file_data: FileCreate) -> FileModel:
+    async def create_file(self, file_data: FileBase) -> FileModel:
         """Create a new file metadata record."""
         new_file = FileModel(
             name=file_data.name,
@@ -101,7 +101,7 @@ class FileManagerRepository:
         result = await self.db.execute(query)
         return result.scalars().all()
 
-    async def update_file(self, file_id: UUID, update_data: FileUpdate) -> FileModel:
+    async def update_file(self, file_id: UUID, update_data: FileBase) -> FileModel:
         """Update file metadata."""
         file = await self.get_file_by_id(file_id)
         

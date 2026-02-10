@@ -1,12 +1,10 @@
-from fastapi import APIRouter, Depends, status, Request
+from fastapi import APIRouter, Depends, Form, status, Request, UploadFile, File
 from fastapi.responses import Response, RedirectResponse
 from uuid import UUID
-from typing import Optional, List
+from typing import Annotated, Optional, List
 import base64
 
-from app.schemas.file import (
-    FileCreate, FileUpdate, FileResponse
-)
+from app.schemas.file import FileBase, FileResponse
 from app.services.file_manager import FileManagerService
 from app.auth.dependencies import auth, permissions
 from fastapi_injector import Injected
@@ -23,17 +21,17 @@ router = APIRouter()
 
 @router.post("/files", response_model=FileResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(auth), Depends(permissions(P.FileManager.CREATE))])
 async def create_file(
-    file_create: FileCreate,
+    file: UploadFile = File(...),
+    file_base: FileBase = Depends(FileBase.as_form),
     service: FileManagerService = Injected(FileManagerService),
 ):
     """Upload and create a new file."""
     try:
-        # if we want check for file extension, we can do it here
-        # allowed_extensions = ["pdf", "docx", "txt", "jpg", "jpeg", "png"];
-        allowed_extensions = None
-
         # Create file and return the file response
-        return await service.create_file(file_create, allowed_extensions=allowed_extensions)
+        return await service.create_file(
+            file,
+            file_base=file_base,
+        )
     except Exception as e:
         raise AppException(ErrorKey.INTERNAL_ERROR,500,f"Failed to create file: {str(e)}")
 
@@ -158,12 +156,14 @@ async def list_files(
 @router.put("/files/{file_id}", response_model=FileResponse, dependencies=[Depends(auth), Depends(permissions(P.FileManager.UPDATE))])
 async def update_file(
     file_id: UUID,
-    file_update: FileUpdate,
+    file: UploadFile = File(...),
+    file_base: FileBase = Depends(FileBase.as_form),
     service: FileManagerService = Injected(FileManagerService),
 ):
     """Update file metadata."""
     try:
-        file = await service.update_file(file_id, file_update)
+        # update the file
+        file = await service.update_file(file_id, file, file_base)
         return file
     except Exception as e:
         raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")

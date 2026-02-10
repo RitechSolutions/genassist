@@ -10,7 +10,7 @@ from fastapi import UploadFile
 
 from app.services.file_manager import FileManagerService
 from app.repositories.file_manager import FileManagerRepository
-from app.schemas.file import FileCreate
+from app.schemas.file import FileBase
 from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
 from app.db.models.file import FileModel
 from app.core.tenant_scope import set_tenant_context, clear_tenant_context
@@ -123,7 +123,13 @@ class TestLocalFileManagerService:
         with patch('app.services.file_manager.get_current_user_id', return_value=test_user_id):
             result = await service.create_file(
                 file=mock_upload_file,
-                description="Test file"
+                file_base=FileBase(
+                    name=file_name,
+                    path=temp_storage_dir,
+                    storage_path=file_name,
+                    storage_provider="local",
+                    file_extension="txt"
+                )
             )
 
         # Verify file was created in repository

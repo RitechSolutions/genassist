@@ -96,14 +96,14 @@ class S3StorageProvider(BaseStorageProvider):
         )
         return [f["key"] for f in result.get("files", [])]
 
-    async def get_file_url(self, bucket_name: str, file_storage_path: str) -> str:
+    async def get_file_url(self, bucket_name: str, file_path: str) -> str:
         """Get the URL of a file in S3."""
         signed_url_expires_in = 3600
 
         # get the presigned url for the file
         params = {
             'Bucket': bucket_name,
-            'Key': file_storage_path
+            'Key': file_path
         }
 
         # get the presigned url for the file

@@ -31,7 +31,7 @@ from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 from app.services.file_manager import FileManagerService
 from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
 from app.modules.filemanager.providers.s3.provider import S3StorageProvider
-from app.schemas.file import FileUploadResponse
+from app.schemas.file import FileBase, FileUploadResponse
 from app.core.config.settings import file_storage_settings
 
 router = APIRouter()
@@ -251,8 +251,18 @@ async def upload_file(
                 provider = file_manager_service.get_storage_provider_by_name(provider_name, config=config)
                 await file_manager_service.set_storage_provider(provider)
 
+                file_base = FileBase(
+                    name=unique_filename,
+                    path=f"{sub_folder}/{unique_filename}",
+                    storage_path=provider.get_base_path(),
+                    storage_provider=provider_name,
+                    file_extension=file_extension,
+                )
+
+                allowed_extensions = ["pdf", "docx", "txt", "jpg", "jpeg", "png"]
+
                 # use file manager service to upload the file
-                created_file = await file_manager_service.create_file(file, sub_folder=sub_folder, unique_filename=unique_filename)
+                created_file = await file_manager_service.create_file(file, file_base=file_base, allowed_extensions=allowed_extensions)
                 file_id = str(created_file.id)
 
                 # await file_manager_service.download_file_to_path(file_id, file_path)
@@ -317,10 +327,19 @@ async def upload_file_to_chat(
         file_url = None
 
         try:
+
+            file_base = FileBase(
+                name=file.filename,
+                path=file.filename,
+                storage_path=f"agents_config/upload-chat-files/{chat_id}",
+                storage_provider=provider_name,
+                file_extension=file.filename.split(".")[-1] if "." in file.filename else "",
+            )
+
             # create file in file manager service
             created_file = await file_manager_service.create_file(
                 file,
-                sub_folder=f"agents_config/upload-chat-files/{chat_id}",
+                file_base=file_base,
                 allowed_extensions=["pdf", "docx", "txt", "jpg", "jpeg", "png"],
             )
 
