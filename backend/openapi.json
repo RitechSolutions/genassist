@@ -8592,6 +8592,14 @@
         "summary": "Get File Source",
         "description": "Get file source content for inline display.",
         "operationId": "get_file_source_api_file_manager_files__file_id__source_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "file_id",
@@ -8637,6 +8645,14 @@
         "summary": "Get File Base64",
         "description": "Get file content as base64 encoded string (public endpoint).",
         "operationId": "get_file_base64_api_file_manager_files__file_id__base64_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "file_id",

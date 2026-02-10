@@ -1,27 +1,27 @@
-from fastapi import APIRouter, Depends, status, UploadFile, Request
+from fastapi import APIRouter, Depends, status, Request
 from fastapi.responses import Response, RedirectResponse
 from uuid import UUID
 from typing import Optional, List
 import base64
-import mimetypes
 
 from app.schemas.file import (
     FileCreate, FileUpdate, FileResponse
 )
 from app.services.file_manager import FileManagerService
-from app.auth.dependencies import auth
+from app.auth.dependencies import auth, permissions
 from fastapi_injector import Injected
-from app.db.models.file import StorageProvider
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
-from app.core.config.settings import file_storage_settings
+
+# permissions
+from app.core.permissions.constants import Permissions as P
 
 router = APIRouter()
 
 
 # ==================== File Endpoints ====================
 
-@router.post("/files", response_model=FileResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(auth)])
+@router.post("/files", response_model=FileResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(auth), Depends(permissions(P.FileManager.CREATE))])
 async def create_file(
     file_create: FileCreate,
     service: FileManagerService = Injected(FileManagerService),
@@ -38,7 +38,7 @@ async def create_file(
         raise AppException(ErrorKey.INTERNAL_ERROR,500,f"Failed to create file: {str(e)}")
 
 
-@router.get("/files/{file_id}", response_model=FileResponse, dependencies=[Depends(auth)])
+@router.get("/files/{file_id}", response_model=FileResponse, dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
 async def get_file(
     file_id: UUID,
     service: FileManagerService = Injected(FileManagerService),
@@ -79,7 +79,7 @@ async def download_file(
     except Exception as e:
         raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
-@router.get("/files/{file_id}/source", response_model=FileResponse)
+@router.get("/files/{file_id}/source", response_model=FileResponse, dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
 async def get_file_source(
     file_id: UUID,
     request: Request,
@@ -113,7 +113,7 @@ async def get_file_source(
         raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
 
-@router.get("/files/{file_id}/base64")
+@router.get("/files/{file_id}/base64", dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
 async def get_file_base64(
     file_id: UUID,
     service: FileManagerService = Injected(FileManagerService),
@@ -136,7 +136,7 @@ async def get_file_base64(
         raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
 
-@router.get("/files", response_model=List[FileResponse], dependencies=[Depends(auth)])
+@router.get("/files", response_model=List[FileResponse], dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
 async def list_files(
     storage_provider: Optional[str] = None,
     limit: Optional[int] = None,
@@ -155,7 +155,7 @@ async def list_files(
         raise AppException(ErrorKey.INTERNAL_ERROR,500,f"Failed to list files: {str(e)}")
 
 
-@router.put("/files/{file_id}", response_model=FileResponse, dependencies=[Depends(auth)])
+@router.put("/files/{file_id}", response_model=FileResponse, dependencies=[Depends(auth), Depends(permissions(P.FileManager.UPDATE))])
 async def update_file(
     file_id: UUID,
     file_update: FileUpdate,
@@ -169,7 +169,7 @@ async def update_file(
         raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
 
-@router.delete("/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(auth)])
+@router.delete("/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(auth), Depends(permissions(P.FileManager.DELETE))])
 async def delete_file(
     file_id: UUID,
     delete_from_storage: bool = True,

@@ -182,6 +182,12 @@ class CustomerPermissions:
     UPDATE = "update:customer"
     DELETE = "delete:customer"
 
+class FileManagerPermissions:
+    """File manager permissions"""
+    READ = "read:file"
+    CREATE = "create:file"
+    UPDATE = "update:file"
+    DELETE = "delete:file"
 
 class Permissions:
     """
@@ -219,6 +225,7 @@ class Permissions:
     Workflow = WorkflowPermissions
     OpenAI = OpenAIPermissions
     Customer = CustomerPermissions
+    FileManager = FileManagerPermissions
 
 
 # Backwards compatibility: support "write:app_settings" style
@@ -245,7 +252,7 @@ def get_all_permission_constants() -> set[str]:
         PermissionPermissions, RecordingPermissions, RolePermissions,
         RolePermissionPermissions, TenantPermissions, UserPermissions,
         UserTypePermissions, WorkflowPermissions, OpenAIPermissions,
-        LegacyPermissions
+        LegacyPermissions, FileManagerPermissions
     ]
 
     # Extract all string constants
