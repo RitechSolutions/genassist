@@ -219,6 +219,18 @@ class PgVectorDB(BaseVectorDB):
             # Prepare data for batch insert
             async with self.engine.begin() as conn:
                 for doc_id, vector, metadata, content in zip(ids, vectors, metadatas, contents):
+                    # Sanitize content to ensure it is valid UTF-8 for PostgreSQL.
+                    # In particular, asyncpg/PostgreSQL reject strings containing the NULL byte (\x00).
+                    if content is not None:
+                        # Remove any NULL bytes that might have come from upstream extractors.
+                        if "\x00" in content:
+                            logger.warning(
+                                "Detected NULL byte in document content for id %s; stripping it "
+                                "before inserting into pgvector.",
+                                doc_id,
+                            )
+                            content = content.replace("\x00", "")
+
                     # Convert vector to PostgreSQL array format
                     vector_str = "[" + ",".join(map(str, vector)) + "]"
                     metadata_json = json.dumps(metadata)
