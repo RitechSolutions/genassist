@@ -124,7 +124,6 @@ async def main():
     
     # Get session factory for workflow operations
     session_factory = multi_tenant_manager.get_tenant_session_factory("master")
-    workflow_engine = WorkflowEngine.get_instance()
     
     # Create MCP server instance using MCP SDK
     server = Server(args.server_name)
@@ -134,7 +133,7 @@ async def main():
         """List available tools."""
         async with session_factory() as session:
             workflow_repo = WorkflowRepository(session)
-            adapter = WorkflowMCPServerAdapter(mcp_server, workflow_repo, workflow_engine)
+            adapter = WorkflowMCPServerAdapter(mcp_server, workflow_repo)
             return await adapter.list_tools()
     
     @server.call_tool()
@@ -142,7 +141,7 @@ async def main():
         """Execute a tool."""
         async with session_factory() as session:
             workflow_repo = WorkflowRepository(session)
-            adapter = WorkflowMCPServerAdapter(mcp_server, workflow_repo, workflow_engine)
+            adapter = WorkflowMCPServerAdapter(mcp_server, workflow_repo)
             return await adapter.call_tool(name, arguments)
     
     # Run stdio server

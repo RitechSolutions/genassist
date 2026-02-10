@@ -36,7 +36,7 @@ class SessionCleanupMiddleware(BaseHTTPMiddleware):
                 # This will only work if a session was created in this request scope
                 try:
                     session = injector.get(AsyncSession)
-                    if session and not session.close():
+                    if session:
                         await session.close()
                         logger.debug("Closed database session after request")
                 except Exception as e:  # pylint: disable=broad-except
