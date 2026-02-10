@@ -25,6 +25,7 @@ from .sql_node import SQLNode
 from .aggregator_node import AggregatorNode
 from .thread_rag_node import ThreadRAGNode
 from .mcp_node import MCPNode
+from .workflow_executor_node import WorkflowExecutorNode
 
 __all__ = [
     "ChatInputNode",
@@ -54,4 +55,5 @@ __all__ = [
     "TrainModelNode",
     "ThreadRAGNode",
     "MCPNode",
+    "WorkflowExecutorNode",
 ]

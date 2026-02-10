@@ -160,15 +160,15 @@ export const WorkflowExecutionProvider: React.FC<
         const newState = { ...prevState };
 
         // Optimize output for storage - truncate large arrays with uniform schemas
-        const optimizedOutput = optimizeOutputForStorage(output) as Record<
+        /* const optimizedOutput = optimizeOutputForStorage(output) as Record<
           string,
           unknown
-        >;
+        >; */
 
         // Update node outputs with optimized data
         newState.nodeOutputs[nodeId] = {
           status: "success",
-          output: optimizedOutput,
+          output: output,
           timestamp: Date.now(),
           nodeType,
           nodeName,
@@ -176,12 +176,11 @@ export const WorkflowExecutionProvider: React.FC<
 
         // Update session data for chat input nodes
         if (nodeType === "chatInputNode") {
-          newState.session = optimizedOutput;
+          newState.session = output;
         }
 
         // Update source data for all nodes
-        newState.source = optimizedOutput;
-
+        newState.source = output;
         return newState;
       });
     },
