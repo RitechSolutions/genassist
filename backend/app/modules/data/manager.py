@@ -15,6 +15,7 @@ import urllib.parse
 from typing import Dict, Optional, List, Any
 
 from app.schemas.agent_knowledge import KBRead
+from app.modules.data.utils import FileTextExtractor
 
 from .service import AgentRAGService
 from .providers import SearchResult
@@ -246,6 +247,9 @@ class AgentRAGServiceManager:
         """
         results = []
 
+        # Initialize the file text extractor
+        extractor = FileTextExtractor()
+
         # Group by KB for efficient processing
         kb_groups = {}
         for item in knowledge_items:
@@ -286,31 +290,19 @@ class AgentRAGServiceManager:
                         and hasattr(item, "files")
                         and item.files
                     ):
-                        from app.modules.data.utils import FileTextExtractor
 
                         doc_ids = []
                         contents = []
 
                         for idx, file_item in enumerate(item.files):
                             try:
-                                extractor = FileTextExtractor()
                                 # Handle URL string (files stored as list of URLs), path string, or legacy dict
                                 if isinstance(file_item, str):
                                     doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_item}")
                                     if file_item.startswith("http://") or file_item.startswith("https://"):
+                                        temp_content = self._download_url_to_temp_file(file_item, extractor)
                                         # Download from URL to temp file and extract
-                                        with tempfile.NamedTemporaryFile(
-                                            delete=False,
-                                            suffix=_url_to_suffix(file_item),
-                                        ) as tmp:
-                                            urllib.request.urlretrieve(file_item, tmp.name)
-                                        try:
-                                            contents.append(extractor.extract(path=tmp.name))
-                                        finally:
-                                            try:
-                                                os.unlink(tmp.name)
-                                            except OSError:
-                                                pass
+                                        contents.append(content)
                                     else:
                                         # Local file path
                                         contents.append(extractor.extract(path=file_item))
@@ -326,18 +318,8 @@ class AgentRAGServiceManager:
                                         and (file_url.startswith("http://") or file_url.startswith("https://"))
                                     ):
                                         doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_url}")
-                                        with tempfile.NamedTemporaryFile(
-                                            delete=False,
-                                            suffix=_url_to_suffix(file_url),
-                                        ) as tmp:
-                                            urllib.request.urlretrieve(file_url, tmp.name)
-                                        try:
-                                            contents.append(extractor.extract(path=tmp.name))
-                                        finally:
-                                            try:
-                                                os.unlink(tmp.name)
-                                            except OSError:
-                                                pass
+                                        temp_content = self._download_url_to_temp_file(file_url, extractor)
+                                        contents.append(temp_content)
                                     else:
                                         logger.warning(f"File item {idx} missing file_path or url: {file_item}")
 
@@ -416,3 +398,21 @@ class AgentRAGServiceManager:
             ),
             "service_ids": list(self._services.keys()),
         }
+
+    def _download_url_to_temp_file(self, url: str, extractor: FileTextExtractor) -> str:
+        """Create a temporary file from a URL"""
+
+        # Download from URL to temp file and extract
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=_url_to_suffix(url),
+        ) as tmp:
+            urllib.request.urlretrieve(url, tmp.name)
+        try:
+            return extractor.extract(path=tmp.name)
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+        return ""

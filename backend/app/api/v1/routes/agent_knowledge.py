@@ -252,10 +252,10 @@ async def upload_file(
                 await file_manager_service.set_storage_provider(provider)
 
                 # use file manager service to upload the file
-                created_file = await file_manager_service.create_file(file, sub_folder)
+                created_file = await file_manager_service.create_file(file, sub_folder=sub_folder, unique_filename=unique_filename)
                 file_id = str(created_file.id)
 
-                await file_manager_service.download_file_to_path(file_id, file_path)
+                # await file_manager_service.download_file_to_path(file_id, file_path)
                 file_url = await file_manager_service.get_file_url(created_file)
 
                 result["file_type"] = "url"

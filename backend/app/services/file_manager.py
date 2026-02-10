@@ -13,7 +13,6 @@ from app.db.models.file import FileModel
 from app.repositories.file_manager import FileManagerRepository
 from app.schemas.file import FileCreate, FileUpdate
 from app.core.tenant_scope import get_tenant_context
-from app.auth.utils import get_current_user_id
 
 from app.modules.filemanager.providers import init_by_name
 from app.core.config.settings import file_storage_settings
@@ -86,6 +85,7 @@ class FileManagerService:
         tags: Optional[List[str]] = None,
         permissions: Optional[Dict] = None,
         allowed_extensions: Optional[List[str]] = None,
+        unique_filename: Optional[str] = None,
     ) -> FileModel:
         """
         Create a file metadata record and upload file content to storage.
@@ -107,7 +107,7 @@ class FileManagerService:
         file_path = self.storage_provider.get_base_path()
 
         # generate a unique file name
-        unique_file_name = f"{uuid.uuid4()}.{file_extension}"
+        unique_file_name = f"{uuid.uuid4()}.{file_extension}" if unique_filename is None else unique_filename
         relative_storage_path = f"{sub_folder}/{unique_file_name}" if sub_folder else unique_file_name
 
         # check if file extension is allowed
@@ -119,8 +119,6 @@ class FileManagerService:
         await self._initialize_storage_provider(provider_name)
         if not self.storage_provider or not self.storage_provider.is_initialized():
             raise ValueError("Storage provider not initialized")
-
-        user_id = get_current_user_id()
 
         file_data = FileCreate(
             file=file,
@@ -145,7 +143,7 @@ class FileManagerService:
             )
 
         # Create file metadata record
-        db_file = await self.repository.create_file(file_data, user_id)
+        db_file = await self.repository.create_file(file_data)
         return db_file
 
     async def get_file_by_id(self, file_id: UUID) -> FileModel:

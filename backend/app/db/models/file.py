@@ -43,3 +43,28 @@ class FileModel(Base):
 
     def __repr__(self):
         return f"<FileModel(id='{self.id}', name='{self.name}', path='{self.path}', provider='{self.storage_provider}')>"
+
+    def model_dump(self, exclude_none: bool = True, **kwargs) -> dict:
+        """Convert to dictionary format compatible with existing code."""
+        # Ignore kwargs for now - we always return the full structure
+        _ = kwargs
+        result: dict = {
+            "id": self.id,
+            "name": self.name,
+            "path": self.path,
+            "size": self.size,
+            "mime_type": self.mime_type,
+            "storage_provider": self.storage_provider,
+            "storage_path": self.storage_path,
+            "description": self.description,
+            "file_extension": self.file_extension,
+            "file_metadata": self.file_metadata,
+            "tags": self.tags,
+            "permissions": self.permissions,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "is_deleted": self.is_deleted,
+        }
+        if exclude_none:
+            result = {k: v for k, v in result.items() if v is not None}
+        return result

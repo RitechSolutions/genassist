@@ -24,7 +24,7 @@ class FileManagerRepository:
 
     # ==================== File Methods ====================
 
-    async def create_file(self, file_data: FileCreate, user_id: Optional[UUID] = None) -> FileModel:
+    async def create_file(self, file_data: FileCreate) -> FileModel:
         """Create a new file metadata record."""
         new_file = FileModel(
             name=file_data.name,
@@ -39,6 +39,11 @@ class FileManagerRepository:
             tags=file_data.tags,
             permissions=file_data.permissions,
         )
+
+        new_file_dict = new_file.model_dump(exclude_none=True)
+        new_file = FileModel(**new_file_dict)
+
+        # avoid null values when creating the file
         self.db.add(new_file)
         await self.db.commit()
         await self.db.refresh(new_file)
