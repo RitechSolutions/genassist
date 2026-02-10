@@ -77,7 +77,7 @@ struct GenassistChatPreview: PreviewProvider {
             // Light mode preview
             GenassistChat(
                 baseURL: "http://localhost:8000",
-                apiKey: "5SggcmHBYXTEFVQD3yL6TxEJRQYl_Gtv9YkEXq_V9xzZK57AbiDZrQ",
+                apiKey: "PREVIEW_PLACEHOLDER", // Never commit real API keys
                 metadata: ChatMetadata(
                     userInfo: [
                         "name": "Preview User",
@@ -95,7 +95,7 @@ struct GenassistChatPreview: PreviewProvider {
             // Dark mode preview
             GenassistChat(
                 baseURL: "http://localhost:8000",
-                apiKey: "5SggcmHBYXTEFVQD3yL6TxEJRQYl_Gtv9YkEXq_V9xzZK57AbiDZrQ",
+                apiKey: "PREVIEW_PLACEHOLDER", // Never commit real API keys
                 metadata: ChatMetadata(
                     userInfo: [
                         "name": "Preview User",
@@ -114,7 +114,7 @@ struct GenassistChatPreview: PreviewProvider {
             // Voice disabled preview
             GenassistChat(
                 baseURL: "http://localhost:8000",
-                apiKey: "5SggcmHBYXTEFVQD3yL6TxEJRQYl_Gtv9YkEXq_V9xzZK57AbiDZrQ",
+                apiKey: "PREVIEW_PLACEHOLDER", // Never commit real API keys
                 metadata: ChatMetadata(
                     userInfo: [
                         "name": "Preview User",
