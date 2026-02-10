@@ -23,6 +23,7 @@ import {
   Bot,
   CircleAlert,
   Search,
+  GitBranch,
 } from "lucide-react";
 import SlackLogo from "@/assets/slack-logo.png";
 import WhatsAppLogo from "@/assets/whatsapp-logo.png";
@@ -74,6 +75,8 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   ArrowRightFromLine: { type: "lucide", source: ArrowRightFromLine },
   ArrowRightToLine: { type: "lucide", source: ArrowRightToLine },
   Bot: { type: "lucide", source: Bot },
+  Workflow: { type: "lucide", source: GitBranch },
+  GitBranch: { type: "lucide", source: GitBranch },
 
   // Custom asset icons
   Slack: { type: "asset", source: SlackLogo },

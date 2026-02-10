@@ -48,7 +48,6 @@ class ToolBuilderNode(BaseNode):
             }
         source_input = self.get_state().get_session_flat()
 
-        workflow_engine = WorkflowEngine.get_instance()
         next_node = self.get_connected_nodes("starter")
 
         if len(next_node) == 0:
@@ -62,8 +61,19 @@ class ToolBuilderNode(BaseNode):
         no_source_template = config.get("forwardTemplate", "{}").replace("source.", "")
         temp_data["node_outputs"][self.node_id] = json.loads(no_source_template)
 
+        # Create a new workflow engine with the current workflow configuration
+        current_workflow = self.get_state().workflow
+        if not current_workflow:
+            raise ValueError("No workflow found in state")
+        
+        workflow_config = {
+            "id": self.get_state().workflow_id,
+            "nodes": current_workflow.get("nodes", []),
+            "edges": current_workflow.get("edges", []),
+        }
+        workflow_engine = WorkflowEngine(workflow_config)
+
         state = await workflow_engine.execute_from_node(
-            self.get_state().workflow_id,
             start_node_id=start_node_id,
             input_data={**template, **source_input, **temp_data},
             thread_id=self.get_state().get_thread_id(),

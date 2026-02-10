@@ -9,6 +9,7 @@ import {
   SQLNodeData,
   MLModelInferenceNodeData,
   ThreadRAGNodeData,
+  WorkflowExecutorNodeData,
 } from "../../types/nodes";
 
 import APIToolNode from "./apiToolNode";
@@ -18,6 +19,7 @@ import PythonCodeNode from "./pythonCodeNode";
 import SQLNode from "./sqlNode";
 import MLModelInferenceNode from "./mlModelInferenceNode";
 import ThreadRAGNode from "./threadRAGNode";
+import WorkflowExecutorNode from "./workflowExecutorNode";
 
 export const API_TOOL_NODE_DEFINITION: NodeTypeDefinition<APIToolNodeData> = {
   type: "apiToolNode",
@@ -312,6 +314,48 @@ export const THREAD_RAG_NODE_DEFINITION: NodeTypeDefinition<ThreadRAGNodeData> =
     createNode: (id, position, data) => ({
       id,
       type: "threadRAGNode",
+      position,
+      data: {
+        ...data,
+      },
+    }),
+  };
+
+export const WORKFLOW_EXECUTOR_NODE_DEFINITION: NodeTypeDefinition<WorkflowExecutorNodeData> =
+  {
+    type: "workflowExecutorNode",
+    label: "Workflow Executor",
+    description:
+      "Executes another workflow as a sub-workflow, allowing you to compose workflows together.",
+    shortDescription: "Execute another workflow",
+    configSubtitle:
+      "Select a workflow to execute and configure its input parameters.",
+    category: "tools",
+    icon: "Workflow",
+    defaultData: {
+      name: "Workflow Executor",
+      workflowId: undefined,
+      workflowName: undefined,
+      inputParameters: {},
+      handlers: [
+        {
+          id: "input",
+          type: "target",
+          compatibility: "any",
+          position: "left",
+        },
+        {
+          id: "output",
+          type: "source",
+          compatibility: "any",
+          position: "right",
+        },
+      ],
+    } as WorkflowExecutorNodeData,
+    component: WorkflowExecutorNode as React.ComponentType<NodeProps<NodeData>>,
+    createNode: (id, position, data) => ({
+      id,
+      type: "workflowExecutorNode",
       position,
       data: {
         ...data,
