@@ -56,30 +56,31 @@ const Transcripts = () => {
     Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1)
   );
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
-  
-  // Calculate hostility parameters based on sentiment
-  const getHostilityParams = (sentiment: string) => {
-    return { 
-      hostility_positive_max: HOSTILITY_POSITIVE_MAX, 
-      hostility_neutral_max: HOSTILITY_NEUTRAL_MAX 
-    };
-  };
-  
-  const hostilityParams = getHostilityParams(activeTab);
-  
-  const { data, total, loading, error, refetch } = useTranscriptData({ 
-    limit: ITEMS_PER_PAGE,
-    skip: (currentPage - 1) * ITEMS_PER_PAGE,
-    sentiment: activeTab,
-    hostility_positive_max: hostilityParams.hostility_positive_max,
-    hostility_neutral_max: hostilityParams.hostility_neutral_max
-  });
-  
+
   // Initialize showLiveOnly based on URL parameters
   const statusParams = searchParams.getAll("status");
   const [showLiveOnly, setShowLiveOnly] = useState(
     statusParams.includes("in_progress") && statusParams.includes("takeover")
   );
+
+  // Calculate hostility parameters based on sentiment
+  const getHostilityParams = (sentiment: string) => {
+    return {
+      hostility_positive_max: HOSTILITY_POSITIVE_MAX,
+      hostility_neutral_max: HOSTILITY_NEUTRAL_MAX
+    };
+  };
+
+  const hostilityParams = getHostilityParams(activeTab);
+
+  const { data, total, loading, error, refetch } = useTranscriptData({
+    limit: ITEMS_PER_PAGE,
+    skip: (currentPage - 1) * ITEMS_PER_PAGE,
+    sentiment: activeTab,
+    hostility_positive_max: hostilityParams.hostility_positive_max,
+    hostility_neutral_max: hostilityParams.hostility_neutral_max,
+    conversation_status: showLiveOnly ? ["in_progress", "takeover"] : undefined,
+  });
   
   const isMobile = useIsMobile();
   const transcripts = Array.isArray(data) ? data : [];
@@ -172,22 +173,18 @@ const Transcripts = () => {
   };
 
   const filteredTranscripts = transcripts.filter((transcript) => {
-    if (showLiveOnly && !isLiveTranscript(transcript)) {
-      return false;
-    }
-    
     const title = transcript?.metadata?.title?.toLowerCase() || "";
     const topic = transcript?.metadata?.topic?.toLowerCase() || "";
     const searchLower = searchQuery.toLowerCase().trim();
-    
+
     const matchesSearch =
       searchQuery.trim() === "" ||
       title.includes(searchLower) ||
       topic.includes(searchLower);
-  
+
     const matchesSupportType =
       supportType === "all" || topic.includes(supportType.toLowerCase());
-  
+
     return matchesSearch && matchesSupportType;
   });
 

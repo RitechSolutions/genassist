@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { fetchTranscript, fetchTranscripts } from "@/services/transcripts";
 import {
   BackendTranscript,
@@ -20,10 +20,13 @@ interface UseTranscriptDataOptions {
   hostility_positive_max?: number;
   include_feedback?: boolean;
   sortNewestFirst?: boolean;
+  conversation_status?: string[];
 }
 
 export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
-  const { id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst = true } = options;
+  const { id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst = true, conversation_status } = options;
+  // Stabilize array reference for useCallback dependency
+  const statusKey = conversation_status?.join(",") ?? "";
 
   const [data, setData] = useState<Transcript | Transcript[]>(id ? null : []);
   const [loading, setLoading] = useState<boolean>(true);
@@ -61,7 +64,7 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
     } else {
       try {
         setLoading(true);
-        const { items: backendData, total: backendTotal } = await fetchTranscripts(limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback);
+        const { items: backendData, total: backendTotal } = await fetchTranscripts(limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, conversation_status);
 
         if (!backendData || !Array.isArray(backendData)) {
           throw new Error("Invalid backend data format");
@@ -112,7 +115,8 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
         setLoading(false);
       }
     }
-  }, [id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst, statusKey]);
 
   const permissions = usePermissions();
 

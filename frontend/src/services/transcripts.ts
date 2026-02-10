@@ -36,7 +36,8 @@ export const fetchTranscripts = async (
   sentiment?: string,
   hostility_neutral_max?: number,
   hostility_positive_max?: number,
-  include_feedback?: boolean
+  include_feedback?: boolean,
+  conversation_status?: string[]
 ): Promise<FetchTranscriptsResult> => {
   try {
     let url = "conversations/";
@@ -58,6 +59,11 @@ export const fetchTranscripts = async (
       queryParams.append("hostility_positive_max", String(hostility_positive_max));
     if (typeof include_feedback === "boolean")
       queryParams.append("include_feedback", String(include_feedback));
+    if (conversation_status && conversation_status.length > 0) {
+      conversation_status.forEach((status) => {
+        queryParams.append("conversation_status", status);
+      });
+    }
 
     if (queryParams.toString()) {
       url += `?${queryParams.toString()}`;
