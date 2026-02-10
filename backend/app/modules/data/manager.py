@@ -301,7 +301,7 @@ class AgentRAGServiceManager:
                                 if isinstance(file_item, str):
                                     doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_item}")
                                     if file_item.startswith("http://") or file_item.startswith("https://"):
-                                        temp_content = self._download_url_to_temp_file(file_item, extractor)
+                                        temp_content = self._download_url_to_temp_file(file_item, extractor, delete_file=True)
                                         # Download from URL to temp file and extract
                                         contents.append(content)
                                     else:
@@ -316,7 +316,7 @@ class AgentRAGServiceManager:
                                     # Handle url from file manager and other providers vs local file path
                                     if file_storage_provider != "local" and file_url and (file_url.startswith("http://") or file_url.startswith("https://")):
                                         doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_url}")
-                                        temp_content = self._download_url_to_temp_file(file_url, extractor)
+                                        temp_content = self._download_url_to_temp_file(file_url, extractor, delete_file=True)
                                         contents.append(temp_content)
                                     elif file_storage_provider == "local" and file_path:
                                         doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
@@ -400,12 +400,12 @@ class AgentRAGServiceManager:
             "service_ids": list(self._services.keys()),
         }
 
-    def _download_url_to_temp_file(self, url: str, extractor: FileTextExtractor) -> str:
+    def _download_url_to_temp_file(self, url: str, extractor: FileTextExtractor, delete_file: bool = False) -> str:
         """Create a temporary file from a URL"""
 
         # Download from URL to temp file and extract
         with tempfile.NamedTemporaryFile(
-            delete=False,
+            delete=delete_file,
             suffix=_url_to_suffix(url),
         ) as tmp:
             urllib.request.urlretrieve(url, tmp.name)
