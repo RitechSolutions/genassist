@@ -37,6 +37,13 @@ import { BackendTranscript } from "@/interfaces/transcript.interface";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
 import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
 
+function toEpochMs(ct: string | number | undefined | null): number {
+  if (ct == null) return 0;
+  if (typeof ct === "number") return ct;
+  const t = new Date(ct).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
 interface Props {
   transcript: Transcript | null;
   isOpen: boolean;
@@ -116,6 +123,7 @@ function TranscriptDialogContent({
     (transcript?.messages ?? transcript?.transcript) || []
   );
   const [sentMessages, setSentMessages] = useState<TranscriptEntry[]>([]);
+  const isSendingRef = useRef(false);
   const [isThinking, setIsThinking] = useState(false);
 
   // Feedback state (conversation-level)
@@ -353,7 +361,7 @@ function TranscriptDialogContent({
           !baseMessages.some(
             (msg) =>
               msg.text === sentMsg.text &&
-              msg.create_time === sentMsg.create_time
+              toEpochMs(msg.create_time) === toEpochMs(sentMsg.create_time)
           )
         ) {
           baseMessages.push(sentMsg);
@@ -386,7 +394,7 @@ function TranscriptDialogContent({
 
         if (
           !currentMsgs.some(
-            (m) => m.text === msg.text && m.create_time === msg.create_time
+            (m) => m.text === msg.text && toEpochMs(m.create_time) === toEpochMs(msg.create_time)
           )
         ) {
           currentMsgs.push(msg);
@@ -398,7 +406,7 @@ function TranscriptDialogContent({
       for (const msg of messages) {
         if (
           !currentMsgs.some(
-            (m) => m.text === msg.text && m.create_time === msg.create_time
+            (m) => m.text === msg.text && toEpochMs(m.create_time) === toEpochMs(msg.create_time)
           )
         ) {
           currentMsgs.push(msg);
@@ -410,7 +418,7 @@ function TranscriptDialogContent({
       if (
         !currentMsgs.some(
           (m) =>
-            m.text === sentMsg.text && m.create_time === sentMsg.create_time
+            m.text === sentMsg.text && toEpochMs(m.create_time) === toEpochMs(sentMsg.create_time)
         )
       ) {
         currentMsgs.push(sentMsg);
@@ -430,7 +438,7 @@ function TranscriptDialogContent({
         text: "", // handled specially in renderer
         start_time: (now - conversationCreateTime) / 1000,
         end_time: (now - conversationCreateTime) / 1000,
-        create_time: now.toString(),
+        create_time: new Date(now).toISOString(),
         type: "takeover",
       } as TranscriptEntry);
     }
@@ -515,7 +523,7 @@ function TranscriptDialogContent({
           text: "",
           start_time: (now - conversationCreateTime) / 1000,
           end_time: (now - conversationCreateTime) / 1000,
-          create_time: now.toString(),
+          create_time: new Date(now).toISOString(),
           type: "takeover",
         };
 
@@ -538,7 +546,9 @@ function TranscriptDialogContent({
       : conversationStats.duration;
 
   const handleSendMessage = async () => {
-    if (!chatInput.trim() || !transcript?.id) return;
+    if (!chatInput.trim() || !transcript?.id || isSendingRef.current) return;
+
+    isSendingRef.current = true;
 
     const now = Date.now();
     const conversationCreateTime = transcript.create_time
@@ -549,7 +559,7 @@ function TranscriptDialogContent({
       text: chatInput.trim(),
       start_time: (now - conversationCreateTime) / 1000,
       end_time: (now - conversationCreateTime) / 1000 + 0.01,
-      create_time: now,
+      create_time: new Date(now).toISOString(),
     };
 
     setChatInput("");
@@ -568,6 +578,8 @@ function TranscriptDialogContent({
       // Remove the message from sent messages if the API call fails
       setSentMessages((prev) => prev.filter((m) => m.create_time !== newEntry.create_time));
       toast.error("Failed to send message");
+    } finally {
+      isSendingRef.current = false;
     }
   };
 

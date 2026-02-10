@@ -4,6 +4,13 @@ import { getWsUrl, isWsEnabled } from "@/config/api";
 import { UseWebSocketTranscriptOptions, StatisticsPayload, TakeoverPayload } from "@/interfaces/websocket.interface";
 import { getTenantId } from "@/services/auth";
 
+function toEpochMs(ct: string | number | undefined | null): number {
+  if (ct == null) return 0;
+  if (typeof ct === "number") return ct;
+  const t = new Date(ct).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
 export function useWebSocketTranscript({
   conversationId,
   token,
@@ -62,7 +69,7 @@ export function useWebSocketTranscript({
                   const exists = combined.some(
                     (msg) =>
                       msg.text === entry.text &&
-                      msg.create_time === entry.create_time
+                      toEpochMs(msg.create_time) === toEpochMs(entry.create_time)
                   );
                   if (!exists) {
                     combined.push(entry);
