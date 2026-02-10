@@ -443,7 +443,17 @@ function TranscriptDialogContent({
       } as TranscriptEntry);
     }
 
-    setLocalMessages(currentMsgs);
+    // Ensure at most one takeover marker (stale closure can cause duplicates)
+    let seenTakeover = false;
+    const dedupedMsgs = currentMsgs.filter((m) => {
+      if (m.type === "takeover") {
+        if (seenTakeover) return false;
+        seenTakeover = true;
+      }
+      return true;
+    });
+
+    setLocalMessages(dedupedMsgs);
 
     if (!userInitiatedTakeOver) {
       setHasTakenOver(
@@ -527,7 +537,11 @@ function TranscriptDialogContent({
           type: "takeover",
         };
 
-        setLocalMessages((prev) => [...prev, takeoverEntry]);
+        setLocalMessages((prev) =>
+          prev.some((m) => m.type === "takeover")
+            ? prev
+            : [...prev, takeoverEntry]
+        );
 
         if (refetchConversations) {
           refetchConversations();
