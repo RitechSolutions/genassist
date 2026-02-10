@@ -221,7 +221,6 @@ const KnowledgeBaseManager: React.FC = () => {
   const fetchSources = useCallback(async () => {
     if (formData.type && formData.type in targetTypes) {
       const allSources = await getAllDataSources();
-      console.log(allSources);
       const targetType = targetTypes[formData.type as keyof typeof targetTypes];
 
       const filtered = allSources.filter(
