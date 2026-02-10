@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/card";
 import { JsonViewerProps } from "@/interfaces/audit-log.interface";
 import { ScrollArea } from "@/components/scroll-area";
@@ -89,6 +89,24 @@ export function JsonViewer({ jsonData, className }: JsonViewerProps) {
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
 
+  const copyTimeoutRef = useRef<number | null>(null);
+  const downloadTimeoutRef = useRef<number | null>(null);
+  const resetDownloadedTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      if (downloadTimeoutRef.current !== null) {
+        clearTimeout(downloadTimeoutRef.current);
+      }
+      if (resetDownloadedTimeoutRef.current !== null) {
+        clearTimeout(resetDownloadedTimeoutRef.current);
+      }
+    };
+  }, []);
+
   if (!jsonData) {
     return <p className="text-muted-foreground">No data available</p>;
   }
@@ -97,7 +115,10 @@ export function JsonViewer({ jsonData, className }: JsonViewerProps) {
     try {
       await navigator.clipboard.writeText(JSON.stringify(jsonData, null, 2));
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = window.setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       // ignore
     }
@@ -116,10 +137,20 @@ export function JsonViewer({ jsonData, className }: JsonViewerProps) {
     link.click();
     URL.revokeObjectURL(url);
 
-    setTimeout(() => {
+    if (downloadTimeoutRef.current !== null) {
+      clearTimeout(downloadTimeoutRef.current);
+    }
+    if (resetDownloadedTimeoutRef.current !== null) {
+      clearTimeout(resetDownloadedTimeoutRef.current);
+    }
+
+    downloadTimeoutRef.current = window.setTimeout(() => {
       setDownloading(false);
       setDownloaded(true);
-      setTimeout(() => setDownloaded(false), 2000); // reset
+      resetDownloadedTimeoutRef.current = window.setTimeout(
+        () => setDownloaded(false),
+        2000
+      ); // reset
     }, 1000);
   };
 

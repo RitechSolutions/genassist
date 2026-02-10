@@ -423,7 +423,7 @@ async def finalize(
     )
 
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
-        finalize.llm_analyst_id, conversation_id
+        conversation_id= conversation_id, llm_analyst_id=finalize.llm_analyst_id,
     )
     return finalized_conversation_analysis
 
