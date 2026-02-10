@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 from injector import inject
 from sqlalchemy import asc, desc, func, and_, or_
@@ -325,11 +325,16 @@ class ConversationRepository:
         result = await self.db.execute(query)
         return result.scalar_one()
 
-    async def get_stale_conversations(self, cutoff_time: datetime):
-        query = select(ConversationModel).where(
-            ConversationModel.status == ConversationStatus.IN_PROGRESS.value,
-            ConversationModel.updated_at < cutoff_time
-        )
+
+    async def get_stale_conversations(self, cutoff_time: datetime.datetime) -> Sequence[ConversationModel]:
+        query = (
+            select(ConversationModel).options(
+                    selectinload(ConversationModel.messages)
+                    )
+            .where(
+                    ConversationModel.status == ConversationStatus.IN_PROGRESS.value,
+                    ConversationModel.updated_at < cutoff_time
+                    ))
         result = await self.db.execute(query)
         return result.scalars().all()
 
