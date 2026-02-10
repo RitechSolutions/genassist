@@ -131,8 +131,10 @@ class BaseNode(ABC):
             source_id = edge.get("source")
             if source_id:
                 _, node_type = self.get_node_config(source_id)
-                if "toolBuilderNode" or "mcpNode" in node_type:
-                    # skip tool builder node because it does not produce output normally
+                if (
+                    "toolBuilderNode" in node_type
+                    or "mcpNode" in node_type
+                ):
                     continue
                 source_nodes.append(source_id)
 
@@ -240,15 +242,31 @@ class BaseNode(ABC):
 
                 source_node_id = edge.get("source")
 
-                workflow_engine = WorkflowEngine.get_instance()
-
-                workflow_id = self.get_state().workflow_id
-                if not workflow_id or not isinstance(workflow_id, str):
-                    logger.warning(
-                        "No workflow id found for node %s", self.node_id)
+                # Get node config directly from the workflow state
+                workflow = self.get_state().workflow
+                if not workflow:
+                    logger.warning("No workflow found in state for node %s", self.node_id)
                     continue
-                node = workflow_engine.executable_node(
-                    source_node_id, self.get_state(), workflow_id)
+                
+                # Find the node configuration in the workflow
+                node_config = None
+                for n in workflow.get("nodes", []):
+                    if n["id"] == source_node_id:
+                        node_config = n
+                        break
+                
+                if not node_config:
+                    logger.warning("Node config not found for node %s", source_node_id)
+                    continue
+                
+                # Get node type and instantiate using the class-level registry
+                node_type = node_config.get("type", "")
+                node_class = WorkflowEngine._node_registry.get(node_type)
+                if not node_class:
+                    logger.warning("Unknown node type: %s for node %s", node_type, source_node_id)
+                    continue
+                
+                node = node_class(source_node_id, node_config, self.get_state())
 
                 if node:
                     # Check if node exposes multiple tools (e.g., MCP node)
@@ -338,7 +356,7 @@ class BaseNode(ABC):
             error_msg = f"Error executing node {self.node_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
             self.complete_execution(error=error_msg)
-            raise
+            # raise
 
     @abstractmethod
     async def process(self, config: Dict[str, Any]) -> Any:

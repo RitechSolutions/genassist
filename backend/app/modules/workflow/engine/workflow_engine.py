@@ -33,6 +33,7 @@ from app.modules.workflow.engine.nodes import (
     TrainModelNode,
     ThreadRAGNode,
     MCPNode,
+    WorkflowExecutorNode,
 )
 from typing import Dict, Any, List, Optional, Set
 import logging
@@ -40,6 +41,7 @@ import asyncio
 from collections import defaultdict
 import uuid
 from fastapi_injector import RequestScopeFactory
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.injector import injector
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
 
@@ -59,53 +61,47 @@ class WorkflowEngine:
     - Parallel execution support
     """
 
-    _instances: Dict[str, "WorkflowEngine"] = {}
+    # Class-level node registry - initialized once when module loads
+    _node_registry: Dict[str, type] = {}
+    _registry_initialized = False
 
     @classmethod
-    def get_instance(cls, workflow_id: str = str(uuid.uuid4())) -> "WorkflowEngine":
-        """Get or create a workflow engine instance for a workflow ID"""
-        if workflow_id not in cls._instances:
-            logger.info(
-                f"Creating new workflow engine instance for workflow ID: {workflow_id}"
-            )
-            cls._instances[workflow_id] = WorkflowEngine()
-        return cls._instances[workflow_id]
+    def _initialize_node_registry(cls):
+        """Initialize the node type registry (called once at class level)."""
+        if cls._registry_initialized:
+            return
 
-    def initialize_workflow_engine(self):
-        """
-        Initialize the workflow engine.
-        """
-        self.node_registry: Dict[str, type] = {}
-        self.workflows: Dict[str, Dict[str, Any]] = {}
-        # Initialize the new workflow engine
+        cls._node_registry["chatInputNode"] = ChatInputNode
+        cls._node_registry["chatOutputNode"] = ChatOutputNode
+        cls._node_registry["routerNode"] = RouterNode
+        cls._node_registry["agentNode"] = AgentNode
+        cls._node_registry["apiToolNode"] = ApiToolNode
+        cls._node_registry["openApiNode"] = OpenAPINode
+        cls._node_registry["templateNode"] = TemplateNode
+        cls._node_registry["llmModelNode"] = LLMModelNode
+        cls._node_registry["knowledgeBaseNode"] = KnowledgeToolNode
+        cls._node_registry["pythonCodeNode"] = PythonToolNode
+        cls._node_registry["dataMapperNode"] = DataMapperNode
+        cls._node_registry["toolBuilderNode"] = ToolBuilderNode
+        cls._node_registry["slackMessageNode"] = SlackToolNode
+        cls._node_registry["calendarEventNode"] = CalendarEventsNode
+        cls._node_registry["readMailsNode"] = ReadMailsToolNode
+        cls._node_registry["gmailNode"] = GmailToolNode
+        cls._node_registry["whatsappToolNode"] = WhatsAppToolNode
+        cls._node_registry["zendeskTicketNode"] = ZendeskToolNode
+        cls._node_registry["sqlNode"] = SQLNode
+        cls._node_registry["aggregatorNode"] = AggregatorNode
+        cls._node_registry["jiraNode"] = JiraNode
+        cls._node_registry["mlModelInferenceNode"] = MLModelInferenceNode
+        cls._node_registry["trainDataSourceNode"] = TrainDataSourceNode
+        cls._node_registry["preprocessingNode"] = TrainPreprocessNode
+        cls._node_registry["trainModelNode"] = TrainModelNode
+        cls._node_registry["threadRAGNode"] = ThreadRAGNode
+        cls._node_registry["mcpNode"] = MCPNode
+        cls._node_registry["workflowExecutorNode"] = WorkflowExecutorNode
 
-        self.register_node_type("chatInputNode", ChatInputNode)
-        self.register_node_type("chatOutputNode", ChatOutputNode)
-        self.register_node_type("routerNode", RouterNode)
-        self.register_node_type("agentNode", AgentNode)
-        self.register_node_type("apiToolNode", ApiToolNode)
-        self.register_node_type("openApiNode", OpenAPINode)
-        self.register_node_type("templateNode", TemplateNode)
-        self.register_node_type("llmModelNode", LLMModelNode)
-        self.register_node_type("knowledgeBaseNode", KnowledgeToolNode)
-        self.register_node_type("pythonCodeNode", PythonToolNode)
-        self.register_node_type("dataMapperNode", DataMapperNode)
-        self.register_node_type("toolBuilderNode", ToolBuilderNode)
-        self.register_node_type("slackMessageNode", SlackToolNode)
-        self.register_node_type("calendarEventNode", CalendarEventsNode)
-        self.register_node_type("readMailsNode", ReadMailsToolNode)
-        self.register_node_type("gmailNode", GmailToolNode)
-        self.register_node_type("whatsappToolNode", WhatsAppToolNode)
-        self.register_node_type("zendeskTicketNode", ZendeskToolNode)
-        self.register_node_type("sqlNode", SQLNode)
-        self.register_node_type("aggregatorNode", AggregatorNode)
-        self.register_node_type("jiraNode", JiraNode)
-        self.register_node_type("mlModelInferenceNode", MLModelInferenceNode)
-        self.register_node_type("trainDataSourceNode", TrainDataSourceNode)
-        self.register_node_type("preprocessingNode", TrainPreprocessNode)
-        self.register_node_type("trainModelNode", TrainModelNode)
-        self.register_node_type("threadRAGNode", ThreadRAGNode)
-        self.register_node_type("mcpNode", MCPNode)
+        cls._registry_initialized = True
+        logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
 
     def _node_needs_db_access(self, node_type: str) -> bool:
         """
@@ -137,44 +133,30 @@ class WorkflowEngine:
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)
         return node_type not in no_db_nodes
     
-    def __init__(self):
-        """Initialize the workflow engine."""
-        self.initialize_workflow_engine()
-
-    def register_node_type(self, node_type: str, node_class: type) -> None:
+    def __init__(self, workflow_config: Dict[str, Any]):
         """
-        Register a node type with its implementation class.
+        Initialize the workflow engine with a workflow configuration.
 
         Args:
-            node_type: The type identifier for the node
-            node_class: The class that implements the node
+            workflow_config: Workflow configuration dictionary with 'nodes' and optional 'edges'
+        
+        Raises:
+            ValueError: If workflow_config is missing required fields
         """
-        if not issubclass(node_class, BaseNode):
-            raise ValueError(
-                f"Node class must inherit from BaseNode: {node_class}")
-
-        self.node_registry[node_type] = node_class
-        logger.info(
-            f"Registered node type: {node_type} -> {node_class.__name__}")
-
-    def build_workflow(self, workflow_config: Dict[str, Any]) -> str:
-        """
-        Build a workflow from configuration.
-
-        Args:
-            workflow_config: Workflow configuration dictionary
-
-        Returns:
-            Workflow ID
-        """
-        workflow_id = workflow_config.get("id", str(uuid.uuid4()))
-
+        # Initialize the class-level node registry if not already done
+        self.__class__._initialize_node_registry()
+        
         # Validate workflow structure
+        if not workflow_config:
+            raise ValueError("workflow_config is required")
         if "nodes" not in workflow_config:
             raise ValueError("Workflow must contain nodes")
 
-        # Store workflow configuration
-        self.workflows[workflow_id] = {
+        # Store workflow ID
+        self.workflow_id = workflow_config.get("id", str(uuid.uuid4()))
+
+        # Build and store workflow configuration
+        self.workflow = {
             "config": workflow_config,
             "nodes": workflow_config["nodes"],
             "edges": workflow_config.get("edges", []),
@@ -188,17 +170,15 @@ class WorkflowEngine:
         }
 
         # Build edge mappings for efficient lookup
-        self._build_edge_mappings(workflow_id)
+        self._build_edge_mappings()
 
         logger.info(
-            f"Built workflow: {workflow_id} ({self.workflows[workflow_id]['metadata']['name']})"
+            f"Initialized workflow engine for workflow: {self.workflow_id} ({self.workflow['metadata']['name']})"
         )
-        return workflow_id
 
-    def _build_edge_mappings(self, workflow_id: str) -> None:
+    def _build_edge_mappings(self) -> None:
         """Build efficient edge mappings for the workflow."""
-        workflow = self.workflows[workflow_id]
-        edges = workflow["edges"]
+        edges = self.workflow["edges"]
 
         # Source edges: node_id -> list of outgoing edges
         source_edges = defaultdict(list)
@@ -212,20 +192,15 @@ class WorkflowEngine:
             source_edges[source_id].append(edge)
             target_edges[target_id].append(edge)
 
-        workflow["source_edges"] = dict(source_edges)
-        workflow["target_edges"] = dict(target_edges)
+        self.workflow["source_edges"] = dict(source_edges)
+        self.workflow["target_edges"] = dict(target_edges)
 
-    def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
-        """Get workflow by ID."""
-        return self.workflows.get(workflow_id)
-
-    def list_workflows(self) -> List[str]:
-        """List all workflow IDs."""
-        return list(self.workflows.keys())
+    def get_workflow(self) -> Dict[str, Any]:
+        """Get the workflow configuration."""
+        return self.workflow
 
     async def execute_from_node(
         self,
-        workflow_id: str,
         start_node_id: Optional[str] = None,
         input_data: Optional[Dict[str, Any]] = None,
         thread_id: str = str(uuid.uuid4()),
@@ -235,24 +210,20 @@ class WorkflowEngine:
         Execute workflow starting from a specific node.
 
         Args:
-            workflow_id: ID of the workflow to execute
             start_node_id: Optional ID of the starting node
             input_data: Input data for the workflow
             thread_id: Thread ID for this execution
+            persist: Whether to persist conversation to memory
 
         Returns:
             WorkflowState with execution results
         """
-        workflow = self.get_workflow(workflow_id)
-        if not workflow:
-            raise ValueError(f"Workflow not found: {workflow_id}")
         if not input_data:
             input_data = {}
             logger.warning("Input data is empty, using empty input data")
 
         if not start_node_id:
-
-            start_node_ids = self._find_starting_nodes(workflow_id)
+            start_node_ids = self._find_starting_nodes()
             if len(start_node_ids) == 1:
                 start_node_id = start_node_ids[0]
             else:
@@ -260,26 +231,26 @@ class WorkflowEngine:
                     f"Multiple starting nodes found: {start_node_ids}")
 
         # Verify start node exists
-        if start_node_id not in [node["id"] for node in workflow["nodes"]]:
+        if start_node_id not in [node["id"] for node in self.workflow["nodes"]]:
             raise ValueError(f"Start node not found: {start_node_id}")
 
         initial_values = process_path_based_input_data(input_data)
 
         # Create execution state
         state = WorkflowState(
-            workflow=workflow,
+            workflow=self.workflow,
             thread_id=thread_id or str(uuid.uuid4()),
             initial_values=initial_values,
         )
 
         try:
             state.start_execution()
-            state.total_steps = len(workflow["nodes"])
+            state.total_steps = len(self.workflow["nodes"])
 
             # Execute from the specified node
             try:
                 await self._execute_from_node_recursive(
-                    start_node_id, state, workflow_id, set()
+                    start_node_id, state, set()
                 )
 
                 state.complete_execution()
@@ -302,13 +273,12 @@ class WorkflowEngine:
             logger.error(f"Error adding message to memory: {e}")
         return state
 
-    def _find_starting_nodes(self, workflow_id: str) -> List[str]:
+    def _find_starting_nodes(self) -> List[str]:
         """Find nodes with no incoming edges (starting nodes)."""
-        workflow = self.workflows[workflow_id]
-        target_edges = workflow["target_edges"]
+        target_edges = self.workflow["target_edges"]
 
         input_node = None
-        for node in workflow["nodes"]:
+        for node in self.workflow["nodes"]:
             if "input" in node["type"].lower():
                 input_node = node
                 break
@@ -317,7 +287,7 @@ class WorkflowEngine:
             return [input_node["id"]]
 
         starting_nodes = []
-        for node in workflow["nodes"]:
+        for node in self.workflow["nodes"]:
             node_id = node["id"]
             if node_id not in target_edges or not target_edges[node_id]:
                 starting_nodes.append(node_id)
@@ -325,7 +295,7 @@ class WorkflowEngine:
         return starting_nodes
 
     async def _execute_from_node_recursive(
-        self, node_id: str, state: WorkflowState, workflow_id: str, visited: Set[str]
+        self, node_id: str, state: WorkflowState, visited: Set[str]
     ) -> None:
         """Recursively execute nodes starting from a specific node."""
         if node_id in visited:
@@ -333,36 +303,69 @@ class WorkflowEngine:
 
         visited.add(node_id)
 
-        # _, node_type = self.get_node_config(workflow_id, node_id=node_id)
         node_output: Optional[dict] = None
 
-        # if "aggregator" in node_type.lower():
         # Check if aggregator requirements are satisfied
-        node = self.executable_node(node_id, state, workflow_id)
+        node = self.executable_node(node_id, state)
         executable_node = node.check_if_requirement_satisfied()
         if executable_node:
             # All sources are ready, execute the aggregator
-            node_output = await self._execute_single_node(node_id, state, workflow_id)
+            node_output = await self._execute_single_node(node_id, state)
         else:
             # Requirements not satisfied, skip execution and continue flow
             logger.debug(
                 f"Aggregator {node_id} requirements not satisfied, skipping execution"
             )
             return
-        # else:
-        #     # Execute regular nodes normally
-        #     node_output = await self._execute_single_node(node_id, state, workflow_id)
 
         # Handle next nodes based on execution result
         if node_output and "next_nodes" in node_output:
             next_nodes = node_output.get("next_nodes", [])
         else:
-            next_nodes = self._find_next_nodes(node_id, workflow_id)
+            next_nodes = self._find_next_nodes(node_id)
 
         # Find and execute next nodes in parallel
         if next_nodes:
             # Capture tenant context from the main request scope
             tenant_id = get_tenant_context()
+
+            async def execute_node_isolated(
+                next_node_id: str,
+                visited_set: Set[str],
+                tenant: str,
+                run_in_new_scope: bool,
+            ):
+                """
+                Execute a node, optionally inside a fresh request scope.
+
+                Important:
+                - When executing multiple next-nodes in parallel, we MUST isolate request-scoped
+                  dependencies (especially AsyncSession). Sharing a single AsyncSession across
+                  concurrent tasks will raise:
+                  "This session is provisioning a new connection; concurrent operations are not permitted".
+                """
+                if not run_in_new_scope:
+                    return await self._execute_from_node_recursive(
+                        next_node_id, state, visited_set
+                    )
+
+                request_scope_factory = injector.get(RequestScopeFactory)
+                async with request_scope_factory.create_scope():
+                    # Preserve tenant context in the new scope
+                    set_tenant_context(tenant)
+                    try:
+                        return await self._execute_from_node_recursive(
+                            next_node_id, state, visited_set
+                        )
+                    finally:
+                        # Ensure any DI-created session is closed for this scope.
+                        # (AsyncSession usually doesn't open a connection until first use, so this
+                        # is cheap even for "no DB" nodes.)
+                        try:
+                            session = injector.get(AsyncSession)
+                            await session.close()
+                        except Exception:  # pylint: disable=broad-except
+                            pass
 
             # Create tasks for all next nodes
             next_tasks = []
@@ -370,35 +373,14 @@ class WorkflowEngine:
                 # Create a copy of visited set for each task to avoid conflicts
                 task_visited = visited.copy()
 
-                # Check if this node needs DB access to determine if we need a separate scope
-                _, next_node_type = self.get_node_config(workflow_id, next_node_id)
-                needs_db = self._node_needs_db_access(next_node_type)
-
-                # Create a wrapper function that conditionally uses a request scope
-                async def execute_node_conditionally(
-                    node_id: str, visited_set: Set[str], tenant: str, requires_db: bool
-                ):
-                    """
-                    Execute a node, creating a request scope only if it needs DB access.
-                    This avoids creating unnecessary database connections for nodes that don't need them.
-                    """
-                    if requires_db and len(next_nodes) > 1:
-                        # Only create scope for nodes that need DB access
-                        request_scope_factory = injector.get(RequestScopeFactory)
-                        async with request_scope_factory.create_scope():
-                            # Set tenant context in the new scope to match the main request
-                            set_tenant_context(tenant)
-                            return await self._execute_from_node_recursive(
-                                node_id, state, workflow_id, visited_set
-                            )
-                    else:
-                        # No DB needed, execute directly without creating a scope
-                        return await self._execute_from_node_recursive(
-                            node_id, state, workflow_id, visited_set
-                        )
-
                 task = asyncio.create_task(
-                    execute_node_conditionally(next_node_id, task_visited, tenant_id, needs_db)
+                    execute_node_isolated(
+                        next_node_id=next_node_id,
+                        visited_set=task_visited,
+                        tenant=tenant_id,
+                        # Only isolate when we are actually running parallel branches.
+                        run_in_new_scope=(len(next_nodes) > 1),
+                    )
                 )
                 next_tasks.append(task)
 
@@ -413,10 +395,9 @@ class WorkflowEngine:
                         f"Error in parallel execution of node {next_nodes[i]}: {result}"
                     )
 
-    def _find_next_nodes(self, node_id: str, workflow_id: str) -> List[str]:
+    def _find_next_nodes(self, node_id: str) -> List[str]:
         """Find next nodes connected to the current node."""
-        workflow = self.workflows[workflow_id]
-        source_edges = workflow["source_edges"]
+        source_edges = self.workflow["source_edges"]
 
         next_nodes = []
         for edge in source_edges.get(node_id, []):
@@ -426,22 +407,19 @@ class WorkflowEngine:
 
    
 
-    def get_node_config(self, workflow_id: str, node_id: str):
+    def get_node_config(self, node_id: str):
         """Get the node config and type."""
-        workflow = self.workflows[workflow_id]
         node_config = next(
-            node for node in workflow["nodes"] if node["id"] == node_id)
+            node for node in self.workflow["nodes"] if node["id"] == node_id)
         node_type = node_config.get("type", "")
         return node_config, node_type
 
     def executable_node(
-        self, node_id: str, state: WorkflowState, workflow_id: str
+        self, node_id: str, state: WorkflowState
     ) -> BaseNode:
-        """Executable node."""
-        node_config, node_type = self.get_node_config(
-            workflow_id=workflow_id, node_id=node_id
-        )
-        node_class = self.node_registry.get(node_type)
+        """Create an executable node instance."""
+        node_config, node_type = self.get_node_config(node_id)
+        node_class = self.__class__._node_registry.get(node_type)
         if not node_class:
             raise ValueError(
                 f"Unknown node type: {node_type}, skipping node {node_id}")
@@ -449,7 +427,7 @@ class WorkflowEngine:
         return node
 
     async def _execute_single_node(
-        self, node_id: str, state: WorkflowState, workflow_id: str
+        self, node_id: str, state: WorkflowState
     ) -> Any:
         """
         Execute a single node.
@@ -459,7 +437,7 @@ class WorkflowEngine:
         existing scope (either from the main request or from parallel execution).
         """
         try:
-            node = self.executable_node(node_id, state, workflow_id)
+            node = self.executable_node(node_id, state)
             # Execute the node
             output = await node.execute()
 
@@ -471,16 +449,12 @@ class WorkflowEngine:
             state.fail_execution(f"Node {node_id} failed: {str(e)}")
             raise
 
-    def get_workflow_status(self, workflow_id: str) -> Dict[str, Any]:
-        """Get the current status of a workflow."""
-        workflow = self.get_workflow(workflow_id)
-        if not workflow:
-            return {"error": "Workflow not found"}
-
+    def get_workflow_status(self) -> Dict[str, Any]:
+        """Get the current status of the workflow."""
         return {
-            "workflow_id": workflow_id,
-            "metadata": workflow["metadata"],
-            "node_count": len(workflow["nodes"]),
-            "edge_count": len(workflow["edges"]),
+            "workflow_id": self.workflow_id,
+            "metadata": self.workflow["metadata"],
+            "node_count": len(self.workflow["nodes"]),
+            "edge_count": len(self.workflow["edges"]),
             "registered": True,
         }
