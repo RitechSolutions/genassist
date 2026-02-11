@@ -17,6 +17,12 @@ export interface ChatSettingsConfig {
   logoUrl?: string;
 }
 
+export interface FeatureFlags {
+  useAudio?: boolean;
+  useFile?: boolean;
+  useWs?: boolean;
+}
+
 type ParamType = 'string' | 'number' | 'boolean';
 
 interface MetadataParam {
@@ -37,8 +43,11 @@ export interface GenAgentConfigPanelProps {
   metadata?: Record<string, any>;
   onMetadataChange?: (next: Record<string, any>) => void;
 
+  featureFlags?: FeatureFlags;
+  onFeatureFlagsChange?: (next: FeatureFlags) => void;
+
   defaultOpen?: { appearance?: boolean; settings?: boolean; metadata?: boolean };
-  onSave?: (payload: { theme: ChatTheme; chatSettings: ChatSettingsConfig; metadata: Record<string, any> }) => void;
+  onSave?: (payload: { theme: ChatTheme; chatSettings: ChatSettingsConfig; metadata: Record<string, any>; featureFlags: FeatureFlags }) => void;
   onCancel?: () => void;
 
   style?: React.CSSProperties;
@@ -58,6 +67,12 @@ const defaultSettings: ChatSettingsConfig = {
   description: 'Support',
   agentName: 'Agent',
   logoUrl: '',
+};
+
+const defaultFeatureFlags: FeatureFlags = {
+  useAudio: false,
+  useFile: false,
+  useWs: false,
 };
 
 function objectToParams(obj: Record<string, any> | undefined): MetadataParam[] {
@@ -88,6 +103,8 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   onChatSettingsChange,
   metadata: metadataProp,
   onMetadataChange,
+  featureFlags: featureFlagsProp,
+  onFeatureFlagsChange,
   defaultOpen,
   onSave,
   onCancel,
@@ -97,6 +114,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   const [theme, setTheme] = useState<ChatTheme>(themeProp || defaultTheme);
   const [chatSettings, setChatSettings] = useState<ChatSettingsConfig>(chatSettingsProp || defaultSettings);
   const [params, setParams] = useState<MetadataParam[]>(objectToParams(metadataProp));
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(featureFlagsProp || defaultFeatureFlags);
 
   useEffect(() => {
     if (themeProp) setTheme(themeProp);
@@ -109,6 +127,10 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   useEffect(() => {
     if (metadataProp) setParams(objectToParams(metadataProp));
   }, [metadataProp]);
+
+  useEffect(() => {
+    if (featureFlagsProp) setFeatureFlags(featureFlagsProp);
+  }, [featureFlagsProp]);
 
   const [showAppearance, setShowAppearance] = useState(
     typeof defaultOpen?.appearance === 'boolean' ? !!defaultOpen?.appearance : true
@@ -144,6 +166,12 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
     const next = { ...chatSettings, [key]: value } as ChatSettingsConfig;
     if (!chatSettingsProp) setChatSettings(next);
     onChatSettingsChange?.(next);
+  };
+
+  const handleFeatureFlagChange = (key: keyof FeatureFlags, value: boolean) => {
+    const next = { ...featureFlags, [key]: value } as FeatureFlags;
+    if (!featureFlagsProp) setFeatureFlags(next);
+    onFeatureFlagsChange?.(next);
   };
 
   const handleAddParam = () => {
@@ -353,7 +381,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   };
 
   const handleSave = () => {
-    onSave?.({ theme, chatSettings, metadata });
+    onSave?.({ theme, chatSettings, metadata, featureFlags });
   };
 
   return (
@@ -486,6 +514,38 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                 onChange={(e) => handleSettingChange('logoUrl', e.target.value)}
                 placeholder="https://example.com/logo.png"
               />
+            </div>
+            <div style={{ padding: '16px', borderTop: '1px solid #e0e0e0', marginTop: 8 }}>
+              <div style={{ fontSize: 13, color: '#555', marginBottom: 12, fontWeight: 500 }}>
+                Features
+              </div>
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Use Audio</label>
+                <input
+                  type="checkbox"
+                  checked={!!featureFlags.useAudio}
+                  onChange={(e) => handleFeatureFlagChange('useAudio', e.target.checked)}
+                  style={{ width: 20, height: 20, cursor: 'pointer' }}
+                />
+              </div>
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Use File</label>
+                <input
+                  type="checkbox"
+                  checked={!!featureFlags.useFile}
+                  onChange={(e) => handleFeatureFlagChange('useFile', e.target.checked)}
+                  style={{ width: 20, height: 20, cursor: 'pointer' }}
+                />
+              </div>
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Use WebSocket</label>
+                <input
+                  type="checkbox"
+                  checked={!!featureFlags.useWs}
+                  onChange={(e) => handleFeatureFlagChange('useWs', e.target.checked)}
+                  style={{ width: 20, height: 20, cursor: 'pointer' }}
+                />
+              </div>
             </div>
           </>
         )}
