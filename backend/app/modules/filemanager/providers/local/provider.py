@@ -24,7 +24,7 @@ class LocalFileSystemProvider(BaseStorageProvider):
 
     name: str = "local"
     provider_type: str = "local"
-    tmp_folder: str = str(DATA_VOLUME / "uploads")
+    tmp_folder: str = str(DATA_VOLUME)
 
     def __init__(self, config: Dict[str, Any]):
         """
