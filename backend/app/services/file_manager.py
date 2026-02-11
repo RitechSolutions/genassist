@@ -47,8 +47,6 @@ class FileManagerService:
         media_type = file.mime_type or "application/octet-stream"
 
         # Properly encode filename for Content-Disposition header
-        # Use RFC 5987 encoding for non-ASCII characters to avoid latin-1 encoding errors
-        # Percent-encode the filename for safe ASCII representation
         filename_encoded = quote(file.name, safe='')
 
         # For UTF-8 version (RFC 5987), percent-encode UTF-8 bytes
@@ -71,7 +69,7 @@ class FileManagerService:
         if content is not None:
             headers["content-length"] = str(len(content))
         elif hasattr(file, 'size') and file.size:
-            headers["content-Length"] = str(file.size)
+            headers["content-length"] = str(file.size)
 
         return headers, media_type
 
@@ -103,9 +101,15 @@ class FileManagerService:
         file_size = len(file_content)
         file_mime_type = file.content_type
         file_name = file.filename
-        file_storage_provider = file_base.storage_provider or self.storage_provider.name
+        # Prefer the storage provider coming from the request payload; fall back to the
+        # already configured provider if present, otherwise default to "local".
+        file_storage_provider = (
+            file_base.storage_provider
+            or (self.storage_provider.name if self.storage_provider else None)
+            or "local"
+        )
         
-        # generate a unique file name
+        # Generate a unique file name only when the client hasn't provided one
         unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
         file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
 
@@ -115,12 +119,13 @@ class FileManagerService:
         if not self.storage_provider or not self.storage_provider.is_initialized():
             raise ValueError("Storage provider not initialized")
 
-        # get the base path of the storage provider
-        storage_path = self.storage_provider.get_base_path()
+        # Resolve the storage path that will be persisted with the file metadata.
+        # If the caller has explicitly provided a storage_path, prefer that.
+        storage_path = file_base.storage_path or self.storage_provider.get_base_path()
 
         # create the file data
         file_data = FileBase(
-            name=file_name,
+            name=file_base.name or file_name,
             mime_type=file_mime_type,
             size=file_size,
             file_extension=file_extension,
@@ -158,14 +163,9 @@ class FileManagerService:
         if not self.storage_provider.is_initialized():
             raise ValueError("Storage provider not initialized")
 
-        # storage_path
-        storage_path = f"{file.storage_path}/{file.path}"
-        
-        # override storage path for s3
-        if file.storage_provider == "s3":
-            storage_path = file.path
-
-        return await self.storage_provider.download_file(storage_path)
+        # get the storage path to download the file from
+        download_path = file.path if file.storage_provider == "s3" else f"{self.storage_provider.get_base_path()}/{file.path}"
+        return await self.storage_provider.download_file(download_path)
 
     async def get_file_base64(self, file_id: UUID) -> str:
         """Get file content as base64 encoded string."""
