@@ -174,7 +174,7 @@ const KnowledgeBaseManager: React.FC = () => {
   const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
 
   /* File types that are supported by the file extractor */
-  const acceptedFileTypes = [".pdf", ".docx", ".doc", ".txt", ".csv", ".xls", ".xlsx", ".pptx", ".ppt", ".html", ".htm", ".yaml", ".yml", ".json", ".md"];
+  const acceptedFileTypes = [".pdf", ".docx", ".doc", ".txt", ".csv", ".xls", ".xlsx", ".pptx", ".ppt", ".html", ".htm", ".yaml", ".yml", ".json", ".jsonl", ".md"];
   
   useEffect(() => {
     fetchItems();
