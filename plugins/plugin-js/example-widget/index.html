@@ -190,28 +190,9 @@ theme: { fontFamily: 'YourFont, sans-serif' }
     <div id="genassist-chat-root"></div>
 
     <!-- Widget Configuration and Auto-initialization -->
-    <script async>
-      (function() {
-      'use strict';
-  
-      window.GENASSIST_CONFIG = {
-        baseUrl: 'https://api.test.genassist.ritech.io',
-        apiKey: 'genagent123',
-        tenant: '',
-        headerTitle: 'GenAssist Demo',
-        placeholder: 'Ask anything...',
-        mode: 'floating',
-        floatingConfig: { position: 'bottom-right' },
-        serverUnavailableMessage: 'Support is currently offline. Please try again later or contact us.',
-        noColorAnimation: true,
-        useWs: false,
-        useFiles: false
-    };
-  
-    })();
-    </script>
+    <script async src="./config/config.js" async></script>
     
-    <script src="./dist/widget.iife.js"></script>
+    <script src="./dist/widget.iife.js" async></script>
     <link rel="stylesheet" href="./dist/widget.css" async>
 </body>
 </html>

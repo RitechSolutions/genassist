@@ -8,15 +8,29 @@ and connection overhead.
 
 import asyncio
 import logging
+import os
+import tempfile
+import urllib.request
+import urllib.parse
 from typing import Dict, Optional, List, Any
 
 from app.schemas.agent_knowledge import KBRead
+from app.modules.data.utils import FileTextExtractor
+from app.core.config.settings import file_storage_settings
 
 from .service import AgentRAGService
 from .providers import SearchResult
 from .utils.doc import bulk_delete_documents, format_search_results
 
 logger = logging.getLogger(__name__)
+
+
+def _url_to_suffix(url: str) -> str:
+    """Return a file suffix from URL path (e.g. .html, .pdf) for temp file extraction."""
+    path = urllib.parse.urlparse(url).path
+    if "." in path:
+        return path[path.rindex(".") :]
+    return ""
 
 
 class AgentRAGServiceManager:
@@ -234,6 +248,9 @@ class AgentRAGServiceManager:
         """
         results = []
 
+        # Initialize the file text extractor
+        extractor = FileTextExtractor()
+
         # Group by KB for efficient processing
         kb_groups = {}
         for item in knowledge_items:
@@ -274,20 +291,47 @@ class AgentRAGServiceManager:
                         and hasattr(item, "files")
                         and item.files
                     ):
-                        from app.modules.data.utils import FileTextExtractor
 
                         doc_ids = []
                         contents = []
 
-                        for idx, file_path in enumerate(item.files):
+                        for idx, file_item in enumerate(item.files):
                             try:
-                                doc_ids.append(
-                                    f"KB:{kb_id}#file_{idx}:{file_path}")
-                                contents.append(
-                                    FileTextExtractor().extract(path=file_path))
+                                # Handle URL string (files stored as list of URLs), path string, or legacy dict
+                                if isinstance(file_item, str):
+                                    doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_item}")
+                                    if file_item.startswith("http://") or file_item.startswith("https://"):
+                                        temp_content = self._download_url_to_temp_file(file_item, extractor, delete_file=True)
+                                        # Download from URL to temp file and extract
+                                        contents.append(content)
+                                    else:
+                                        # Local file path
+                                        contents.append(extractor.extract(path=file_item))
+                                elif isinstance(file_item, dict):
+                                    # Legacy format: dict with file_path and/or url/urls
+                                    file_path = file_item.get("file_path")
+                                    file_url = file_item.get("url") or file_item.get("urls")
+                                    file_storage_provider = file_storage_settings.FILE_MANAGER_PROVIDER or "local"
+
+                                    # Handle url from file manager and other providers vs local file path
+                                    if file_storage_provider != "local" and file_url and (file_url.startswith("http://") or file_url.startswith("https://")):
+                                        doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_url}")
+                                        temp_content = self._download_url_to_temp_file(file_url, extractor, delete_file=True)
+                                        contents.append(temp_content)
+                                    elif file_storage_provider == "local" and file_path:
+                                        doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
+                                        contents.append(extractor.extract(path=file_path))
+                                    else:
+                                        logger.warning(f"File item {idx} missing file_path or url: {file_item}")
+
                             except Exception as e:
+                                file_path_str = (
+                                    file_item
+                                    if isinstance(file_item, str)
+                                    else file_item.get("file_path") or file_item.get("url") or file_item.get("urls") or "unknown"
+                                )
                                 logger.error(
-                                    f"Error extracting file {file_path}: {e}")
+                                    f"Error extracting file {file_path_str}: {e}")
 
                     # Handle URL content
                     elif getattr(item, "type", "") == "url":
@@ -355,3 +399,20 @@ class AgentRAGServiceManager:
             ),
             "service_ids": list(self._services.keys()),
         }
+
+    def _download_url_to_temp_file(self, url: str, extractor: FileTextExtractor, delete_file: bool = False) -> str:
+        """Create a temporary file from a URL"""
+
+        # Download from URL to temp file and extract
+        with tempfile.NamedTemporaryFile(
+            delete=delete_file,
+            suffix=_url_to_suffix(url),
+        ) as tmp:
+            urllib.request.urlretrieve(url, tmp.name)
+        try:
+            return extractor.extract(path=tmp.name)
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
