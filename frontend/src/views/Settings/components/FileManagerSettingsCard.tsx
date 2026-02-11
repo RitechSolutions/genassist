@@ -27,16 +27,20 @@ const providerOptions = [
 export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardProps) => {
   const provider = settings.file_manager_provider || "local";
   const [selectedProvider, setSelectedProvider] = useState(provider);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = () => {
     // TODO: Save the settings to the server
-
-
+    setIsSaving(true);
 
     toast.success("File manager settings saved", {
       icon: <FolderCog className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />,
       duration: 3000,
     });
+
+    setTimeout(() => {
+      setIsSaving(false);
+    }, 3000);
   };
 
   return (
@@ -50,8 +54,13 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
           </p>
         </div>
 
-        <Button variant="outline" type="button" className="ml-auto rounded-full" onClick={handleSave}>
-          <Save className="w-4 h-4 mr-2" />
+        <Button
+          variant="outline"
+          type="button"
+          className="ml-auto rounded-full"
+          loading={isSaving}
+          icon={<Save className="w-4 h-4" />}
+          onClick={handleSave}>
           Save
         </Button>
       </div>
