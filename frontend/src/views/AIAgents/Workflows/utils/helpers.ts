@@ -531,14 +531,14 @@ export const valueToString = (value: unknown, type: SchemaType): string => {
  * Recursively truncates arrays to a maximum number of items.
  * Objects are traversed recursively; primitives are left as-is.
  */
-export const truncateArrays = (data: unknown, maxItems: number = 4): unknown => {
+export const truncateNodeOutput = (data: unknown, maxItems: number = 4): unknown => {
   if (Array.isArray(data)) {
-    return data.slice(0, maxItems).map((item) => truncateArrays(item, maxItems));
+    return data.slice(0, maxItems).map((item) => truncateNodeOutput(item, maxItems));
   }
   if (data !== null && typeof data === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
-      result[key] = truncateArrays(value, maxItems);
+      result[key] = truncateNodeOutput(value, maxItems);
     }
     return result;
   }
