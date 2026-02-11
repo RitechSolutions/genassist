@@ -29,8 +29,6 @@ from app.modules.workflow.agents.rag import ThreadScopedRAG
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 # File manager service
 from app.services.file_manager import FileManagerService
-from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
-from app.modules.filemanager.providers.s3.provider import S3StorageProvider
 from app.schemas.file import FileBase, FileUploadResponse
 from app.core.config.settings import file_storage_settings
 
@@ -230,7 +228,7 @@ async def upload_file(
             }
             
             # create the file path where the file will be saved
-            file_path = os.path.join(UPLOAD_DIR, unique_filename)
+            file_path = os.path.join(str(DATA_VOLUME), unique_filename)
 
             # check if the file manager is enabled
             use_file_manager = file_storage_settings.FILE_MANAGER_ENABLED
