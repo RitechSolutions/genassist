@@ -470,7 +470,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
       setIsFinalized(false);
       setIsTakenOver(false);
       setIsAgentTyping(false);
-      chatServiceRef.current.resetConversation();
+      chatServiceRef.current.resetChatConversation();
 
       const convId = await chatServiceRef.current.startConversation(reCaptchaToken);
       setConversationId(convId);

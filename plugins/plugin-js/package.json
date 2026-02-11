@@ -11,7 +11,7 @@
     "serve": "vite build && bash serve.sh"
   },
   "dependencies": {
-    "genassist-chat-react": "^1.0.24",
+    "genassist-chat-react": "file:../../plugins/react",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "websocket-ts": "^2.2.1"
