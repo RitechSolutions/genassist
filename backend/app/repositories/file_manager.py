@@ -40,9 +40,6 @@ class FileManagerRepository:
             permissions=file_data.permissions,
         )
 
-        new_file_dict = new_file.model_dump(exclude_none=True)
-        new_file = FileModel(**new_file_dict)
-
         # avoid null values when creating the file
         self.db.add(new_file)
         await self.db.commit()
