@@ -5,6 +5,7 @@ export type {
   GenAgentConfigPanelProps,
   ChatTheme,
   ChatSettingsConfig,
+  FeatureFlags,
 } from './components/GenAgentConfigPanel';
 export { ChatBubble } from './components/ChatBubble';
 export { ChatService } from './services/chatService';

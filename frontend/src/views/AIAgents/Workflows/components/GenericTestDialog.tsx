@@ -14,7 +14,7 @@ import { Checkbox } from "@/components/checkbox";
 import { Play, X } from "lucide-react";
 import { NodeData } from "../types/nodes";
 import { testNode, WorkflowTestResponse } from "@/services/workflows";
-import { extractDynamicVariables, getValueFromPath, parseInputValue } from "../utils/helpers";
+import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { SchemaField, SchemaType } from "../types/schemas";
 import JsonViewer from "@/components/JsonViewer";
@@ -256,22 +256,12 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         // Extract the actual output from the response
         const nodeOutput = response.output;
 
-        // if (typeof response.result === 'string') {
-        //   // For simple string outputs, create a generic output structure
-        //   nodeOutput = { output: response.result };
-        // } else if (typeof response.result === 'object' && response.result !== null) {
-        //   // For object outputs, use them directly
-        //   nodeOutput = response.result as Record<string, unknown>;
-        // } else {
-        //   // Fallback for other types
-        //   nodeOutput = { result: response.result };
-        // }
+        const truncatedOutput = truncateNodeOutput(nodeOutput) as string | Record<string, unknown>;
 
         // Update the workflow execution context
-
         updateNodeOutput(
           nodeId,
-          nodeOutput,
+          truncatedOutput,
           nodeType,
           nodeData.name || nodeType
         );
