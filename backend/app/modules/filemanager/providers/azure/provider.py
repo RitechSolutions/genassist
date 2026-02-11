@@ -138,3 +138,16 @@ class AzureStorageProvider(BaseStorageProvider):
                 stats["error"] = str(e)
         
         return stats
+
+    async def get_file_url(self, container_name: str, file_storage_path: str) -> str:
+        """
+        Get the URL of a file in Azure Blob Storage.
+        
+        Args:
+            container_name: Name of the container
+            file_storage_path: Path to the file in storage
+            
+        Returns:
+            URL of the file
+        """
+        return f"https://{self.account_name}.blob.core.windows.net/{container_name}/{file_storage_path}"
