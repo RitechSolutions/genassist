@@ -43,6 +43,12 @@ function App() {
     // reCaptchaKey: "xx-yy-zz",
   });
 
+  const [featureFlags, setFeatureFlags] = useState({
+    useAudio: false,
+    useFile: false,
+    useWs: false,
+  });
+
   const [customLogo, setCustomLogo] = useState<FileState>({
     useCustom: false,
     file: null,
@@ -103,6 +109,13 @@ function App() {
   const handleSettingChange = (property: string, value: string) => {
     setChatSettings((prevSettings) => ({
       ...prevSettings,
+      [property]: value,
+    }));
+  };
+
+  const handleFeatureFlagChange = (property: keyof typeof featureFlags, value: boolean) => {
+    setFeatureFlags((prevFlags) => ({
+      ...prevFlags,
       [property]: value,
     }));
   };
@@ -846,7 +859,39 @@ function App() {
                   }
                   placeholder="https://example.com/logo.png"
                 />
-          </div>
+              </div>
+              <div style={{ padding: "16px", borderTop: "1px solid #e0e0e0", marginTop: 8 }}>
+                <div style={{ fontSize: 13, color: "#555", marginBottom: 12, fontWeight: 500 }}>
+                  Features
+                </div>
+                <div style={formGroupStyle}>
+                  <label style={labelStyle}>Use Audio</label>
+                  <input
+                    type="checkbox"
+                    checked={featureFlags.useAudio}
+                    onChange={(e) => handleFeatureFlagChange("useAudio", e.target.checked)}
+                    style={{ width: 20, height: 20, cursor: "pointer" }}
+                  />
+                </div>
+                <div style={formGroupStyle}>
+                  <label style={labelStyle}>Use File</label>
+                  <input
+                    type="checkbox"
+                    checked={featureFlags.useFile}
+                    onChange={(e) => handleFeatureFlagChange("useFile", e.target.checked)}
+                    style={{ width: 20, height: 20, cursor: "pointer" }}
+                  />
+                </div>
+                <div style={formGroupStyle}>
+                  <label style={labelStyle}>Use WebSocket</label>
+                  <input
+                    type="checkbox"
+                    checked={featureFlags.useWs}
+                    onChange={(e) => handleFeatureFlagChange("useWs", e.target.checked)}
+                    style={{ width: 20, height: 20, cursor: "pointer" }}
+                  />
+                </div>
+              </div>
         </>
       )}
     </div>
@@ -923,12 +968,12 @@ function App() {
         tenant=""
         metadata={metadata}
         theme={theme}
-        useAudio={true}
-        useFile={true}
+        useAudio={featureFlags.useAudio}
+        useFile={featureFlags.useFile}
         headerTitle={chatSettings.name}
         agentName={chatSettings.agentName}
         logoUrl={chatSettings.logoUrl}
-        useWs={true}
+        useWs={featureFlags.useWs}
         serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
         serverUnavailableContactUrl="https://www.ritech.co/"
         serverUnavailableContactLabel="Contact Support"
