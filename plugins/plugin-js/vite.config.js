@@ -8,8 +8,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   plugins: [react()],
 
-  optimizeDeps: {
-    exclude: ["genassist-chat-react"],
+  resolve: {
+    alias: {
+      "genassist-chat-react": path.resolve(__dirname, "../react/dist"),
+      react: path.resolve(__dirname, "node_modules/react"),
+      "react-dom": path.resolve(__dirname, "node_modules/react-dom"),
+    },
   },
 
   define: {
