@@ -575,6 +575,55 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
             ),
         ],
     ),
+    "openrouter": TypeSchema(
+        name="OpenRouter",
+        fields=[
+            FieldSchema(
+                name="api_key",
+                type="password",
+                label="API Key",
+                required=True,
+                description="Your OpenRouter API key from https://openrouter.ai",
+            ),
+            FieldSchema(
+                name="model",
+                type="text",
+                label="Model",
+                required=True,
+                default="anthropic/claude-3.5-sonnet",
+                description="Model in format: provider/model-name (e.g., anthropic/claude-3.5-sonnet, openai/gpt-4o)",
+            ),
+            FieldSchema(
+                name="base_url",
+                type="text",
+                label="Base URL",
+                required=False,
+                default="https://openrouter.ai/api/v1",
+                description="OpenRouter API endpoint",
+            ),
+            FieldSchema(
+                name="temperature",
+                type="number",
+                label="Temperature",
+                required=False,
+                default=0.7,
+                min=0.0,
+                max=2.0,
+                step=0.1,
+                description="Controls randomness (0.0 to 2.0)",
+            ),
+            FieldSchema(
+                name="max_tokens",
+                type="number",
+                label="Max Tokens",
+                required=False,
+                default=1024,
+                min=1,
+                step=1,
+                description="Maximum number of tokens to generate",
+            ),
+        ],
+    ),
 }
 
 LLM_FORM_SCHEMAS_DICT = convert_typed_schemas_to_dict(LLM_FORM_SCHEMAS)

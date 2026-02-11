@@ -1,5 +1,5 @@
 from uuid import UUID
-from typing import Any, Dict, Optional, Literal, List
+from typing import Any, Dict, Optional, Literal, List, Union
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
@@ -13,7 +13,7 @@ class KBBase(BaseModel):
     content: Optional[str] = None
     file_path: Optional[str] = None
     file_type: Optional[str] = None
-    files: Optional[List[str]] = None
+    files: Optional[Union[List[str], List[Dict[str, Any]]]] = None
     vector_store: Optional[Dict[str, Any]] = None
     rag_config: Optional[Dict[str, Any]] = None
     extra_metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -73,8 +73,6 @@ class KBBase(BaseModel):
 
 class KBCreate(KBBase):
     """Body model for POST / PUT (no id)"""
-
-
 class KBRead(KBBase):
     """Response model"""
     id: UUID

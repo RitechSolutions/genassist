@@ -33,18 +33,17 @@ class RegistryItem:
 
         from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
-        self.workflow_engine = WorkflowEngine.get_instance()
-
-        # Only build workflow if one exists
+        # Only create workflow engine if workflow exists
         if self.workflow_model is not None:
-            self.workflow_engine.build_workflow(self.workflow_model)
+            self.workflow_engine = WorkflowEngine(self.workflow_model)
             logger.debug(f"Workflow model: {self.workflow_model}")
         else:
+            self.workflow_engine = None
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
     async def execute(self, session_message: str, metadata: dict) -> dict:
         """Execute a workflow"""
-        if self.workflow_model is None:
+        if self.workflow_engine is None:
             raise ValueError(
                 f"Cannot execute workflow for agent {self.agent_name} ({self.agent_id}): "
                 f"No workflow is assigned to this agent"
@@ -59,7 +58,6 @@ class RegistryItem:
         }
 
         state = await self.workflow_engine.execute_from_node(
-            self.workflow_model["id"],
             input_data=input_data,
             thread_id=thread_id,
         )

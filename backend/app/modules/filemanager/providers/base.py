@@ -18,6 +18,7 @@ class BaseStorageProvider(ABC):
 
     name: str
     provider_type: str
+    base_url: str
 
     def __init__(self, config: Dict[str, Any]):
         """
@@ -28,7 +29,8 @@ class BaseStorageProvider(ABC):
         """
         self.config = config
         self._initialized = False
-
+        self.base_url = config.get("base_url", "")
+        
     @abstractmethod
     async def initialize(self) -> bool:
         """
@@ -53,7 +55,7 @@ class BaseStorageProvider(ABC):
     async def upload_file(
         self,
         file_content: bytes,
-        storage_path: str,
+        file_path: str,
         file_metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """
@@ -61,21 +63,21 @@ class BaseStorageProvider(ABC):
         
         Args:
             file_content: File content as bytes
-            storage_path: Path where the file should be stored
+            file_path: Path where the file should be stored
             file_metadata: Optional file metadata dictionary
             
         Returns:
-            Storage path where the file was stored
+            File path where the file was stored
         """
         pass
 
     @abstractmethod
-    async def download_file(self, storage_path: str) -> bytes:
+    async def download_file(self, file_path: str) -> bytes:
         """
         Download a file from the storage provider
         
         Args:
-            storage_path: Path to the file in storage
+            file_path: Path to the file in storage
             
         Returns:
             File content as bytes
@@ -83,12 +85,12 @@ class BaseStorageProvider(ABC):
         pass
 
     @abstractmethod
-    async def delete_file(self, storage_path: str) -> bool:
+    async def delete_file(self, file_path: str) -> bool:
         """
         Delete a file from the storage provider
         
         Args:
-            storage_path: Path to the file in storage
+            file_path: Path to the file in storage
             
         Returns:
             True if successful, False otherwise
@@ -96,12 +98,12 @@ class BaseStorageProvider(ABC):
         pass
 
     @abstractmethod
-    async def file_exists(self, storage_path: str) -> bool:
+    async def file_exists(self, file_path: str) -> bool:
         """
         Check if a file exists in storage
         
         Args:
-            storage_path: Path to the file in storage
+            file_path: Path to the file in storage
             
         Returns:
             True if file exists, False otherwise
@@ -123,6 +125,20 @@ class BaseStorageProvider(ABC):
             
         Returns:
             List of file paths
+        """
+        pass
+
+    @abstractmethod
+    async def get_file_url(self, base_path: str, file_path: str) -> str:
+        """
+        Get the URL of a file in the storage provider
+        
+        Args:
+            base_path: Base path of the storage provider
+            file_path: Path to the file in storage
+
+        Returns:
+            URL of the file
         """
         pass
 

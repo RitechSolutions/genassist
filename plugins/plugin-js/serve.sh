@@ -2,8 +2,8 @@
 # Simple script to serve the example
 # Run from project root: bash example-widget/serve.sh
 
-# Copy the dist files to the example-widget folder
-cp -R dist example-widget/dist
+# Copy the dist files to the example-widget folder and replace the existing ones
+rm -rf example-widget/dist && cp -r dist example-widget/
 
 # Serve the example-widget folder
 cd example-widget || exit

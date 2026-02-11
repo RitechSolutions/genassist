@@ -30,7 +30,7 @@ export const GlobalChat = () => {
     <GenAgentChat
       baseUrl={baseUrl}
       apiKey={genassistApiKey}
-      tenant={undefined}
+      tenant={'dyrkaj'}
       headerTitle="Genassist Chat"
       placeholder="Ask anything..."
       theme={{
@@ -45,6 +45,7 @@ export const GlobalChat = () => {
       floatingConfig={{
         position: "bottom-right",
       }}
+      useFile={true}
     />
   );
 };

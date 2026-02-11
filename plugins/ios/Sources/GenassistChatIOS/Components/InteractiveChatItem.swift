@@ -162,84 +162,100 @@ struct DynamicItemView: View {
         // Assuming each line is approximately 16-20 points high
         let lineHeight: CGFloat = 18
         let availableHeight = configuration.dynamicItem.imageSize
-        let maxLines = max(1, Int(availableHeight / lineHeight) - 1) // -1 for title space
+        var extraLines = 1
+        if item.category != nil && !item.category!.isEmpty {
+            extraLines = 2
+        }
+        let maxLines = max(1, Int(availableHeight / lineHeight) - extraLines) // -1 for title space
+
         return min(maxLines, 6) // Cap at 6 lines for reasonable UX
     }
     
+    private var hasSlots: Bool {
+        return item.slots != nil && !item.slots!.isEmpty
+    }
+    
     var body: some View {
-        HStack(alignment: .center, spacing: configuration.dynamicItem.spacing) {
-            HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: configuration.dynamicItem.spacing) {
+            HStack(alignment: .top, spacing: configuration.dynamicItem.spacing) {
+                // Image section - smaller when slots are available
                 if let imageUrl = item.image, let url = URL(string: imageUrl) {
                     AsyncImage(url: url) { image in
                         image.resizable()
                     } placeholder: {
                         Color.gray
                     }
-                    .frame(width: configuration.dynamicItem.imageSize, height: configuration.dynamicItem.imageSize)
+                    .frame(
+                        width: hasSlots ? configuration.dynamicItem.imageSize * 0.7 : configuration.dynamicItem.imageSize,
+                        height: hasSlots ? configuration.dynamicItem.imageSize * 0.7 : configuration.dynamicItem.imageSize
+                    )
                     .cornerRadius(8)
                 }
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                // Item name with delete button on the same line
-                HStack {
-                    Text(item.name)
-                        .font(configuration.dynamicItem.titleFont)
-                        .foregroundColor(configuration.dynamicItem.titleColor)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                    
-                    Spacer()
-                    
-                    // Delete button (shown when isRemovable is true)
-                    if isRemovable == true && isLastMessage == true{
-                        Button(action: {
-                            onItemDelete?(item)
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: configuration.dynamicItem.deleteButtonSize))
-                                .foregroundColor(configuration.dynamicItem.deleteButtonColor)
-                                .background(
-                                    Circle()
-                                        .fill(configuration.dynamicItem.deleteButtonBackgroundColor)
-                                        .frame(width: configuration.dynamicItem.deleteButtonSize + 4, height: configuration.dynamicItem.deleteButtonSize + 4)
-                                )
+                
+                // Text content section
+                VStack(alignment: .leading, spacing: 4) {
+                    // Item name with delete button on the same line
+                    HStack {
+                        Text(item.name)
+                            .font(configuration.dynamicItem.titleFont)
+                            .foregroundColor(configuration.dynamicItem.titleColor)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                        
+                        Spacer()
+                        
+                        // Delete button (shown when isRemovable is true)
+                        if isRemovable == true && isLastMessage == true{
+                            Button(action: {
+                                onItemDelete?(item)
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: configuration.dynamicItem.deleteButtonSize))
+                                    .foregroundColor(configuration.dynamicItem.deleteButtonColor)
+                                    .background(
+                                        Circle()
+                                            .fill(configuration.dynamicItem.deleteButtonBackgroundColor)
+                                            .frame(width: configuration.dynamicItem.deleteButtonSize + 4, height: configuration.dynamicItem.deleteButtonSize + 4)
+                                    )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(!isLastMessage)
                         }
-                        .buttonStyle(PlainButtonStyle())
-                        .disabled(!isLastMessage)
+                    }
+                    if let category = item.category, !category.isEmpty {
+                        Text(category)
+                            .font(configuration.dynamicItem.descriptionFont)
+                            .foregroundColor(configuration.dynamicItem.descriptionColor)
+                            .lineLimit(isExpanded ? nil : optimalLineLimit)
+                            .truncationMode(.tail)
+                            .animation(.easeInOut(duration: 0.3), value: isExpanded)
+                    }
+                    
+                    // Only show description when slots are NOT available
+                    if let description = item.description, !description.isEmpty, !hasSlots {
+                        Text(description)
+                            .font(configuration.dynamicItem.descriptionFont)
+                            .foregroundColor(configuration.dynamicItem.descriptionColor)
+                            .lineLimit(isExpanded ? nil : optimalLineLimit)
+                            .truncationMode(.tail)
+                            .animation(.easeInOut(duration: 0.3), value: isExpanded)
                     }
                 }
-                if let category = item.category, !category.isEmpty {
-                    Text(category)
-                        .font(configuration.dynamicItem.descriptionFont)
-                        .foregroundColor(configuration.dynamicItem.descriptionColor)
-                        .lineLimit(isExpanded ? nil : optimalLineLimit)
-                        .truncationMode(.tail)
-                        .animation(.easeInOut(duration: 0.3), value: isExpanded)
-                }
-                
-                if let description = item.description, !description.isEmpty {
-                    Text(description)
-                        .font(configuration.dynamicItem.descriptionFont)
-                        .foregroundColor(configuration.dynamicItem.descriptionColor)
-                        .lineLimit(isExpanded ? nil : optimalLineLimit)
-                        .truncationMode(.tail)
-                        .animation(.easeInOut(duration: 0.3), value: isExpanded)
-                }
-                
-                // Display slots if they exist
-                if item.slots != nil && !item.slots!.isEmpty {
-                    SlotsView(
-                        slots: item.slots!,
-                        selectedSlot: item.selectedSlot,
-                        configuration: configuration,
-                        onSlotTap: { slot in
-                            onItemSlotTap?(item, slot)
-                        },
-                        isLastMessage: isLastMessage
-                    )
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // Display slots if they exist - positioned under the photo and text content
+            if item.slots != nil && !item.slots!.isEmpty {
+                SlotsView(
+                    slots: item.slots!,
+                    selectedSlot: item.selectedSlot,
+                    configuration: configuration,
+                    onSlotTap: { slot in
+                        onItemSlotTap?(item, slot)
+                    },
+                    isLastMessage: isLastMessage
+                )
+            }
         }
         .padding(configuration.dynamicItem.padding)
         .background(configuration.dynamicItem.backgroundColor)
@@ -261,14 +277,22 @@ struct OptionsView: View {
     @State private var selectedOption: String? = nil
     
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: configuration.optionsConfiguration.spacing) {
+        if configuration.optionsConfiguration.orientation == .vertical {
+            VStack(alignment: .leading, spacing: configuration.optionsConfiguration.spacing) {
                 ForEach(options, id: \.self) { option in
                     optionButton(for: option)
-
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.horizontal, 4)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: configuration.optionsConfiguration.spacing) {
+                    ForEach(options, id: \.self) { option in
+                        optionButton(for: option)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
         }
     }
     private func optionButton(for option: String) -> some View {
@@ -306,14 +330,14 @@ struct SlotsView: View {
  
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 4) {
             // Show day header if all slots are on the same date
-            if let day = slotDisplayData.day {
-                Text(day)
+            //if let day = slotDisplayData.day {
+                Text(slotDisplayData.day ?? "Slots")
                     .font(configuration.dynamicItem.descriptionFont)
                     .foregroundColor(configuration.dynamicItem.descriptionColor)
                     .fontWeight(.medium)
-            }
+            //}
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: configuration.dynamicItem.optionsConfiguration.spacing) {

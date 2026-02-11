@@ -218,10 +218,9 @@ async def _handle_jsonrpc_internal(
         if request.method == "tools/list":
             # List tools using MCP SDK adapter
             workflow_repo = injector.get(WorkflowRepository)
-            workflow_engine = WorkflowEngine.get_instance()
             
             adapter = WorkflowMCPServerAdapter(
-                mcp_server, workflow_repo, workflow_engine
+                mcp_server, workflow_repo
             )
             mcp_tools = await adapter.list_tools()
             
@@ -260,10 +259,9 @@ async def _handle_jsonrpc_internal(
 
             try:
                 workflow_repo = injector.get(WorkflowRepository)
-                workflow_engine = WorkflowEngine.get_instance()
                 
                 adapter = WorkflowMCPServerAdapter(
-                    mcp_server, workflow_repo, workflow_engine
+                    mcp_server, workflow_repo
                 )
                 
                 # Call tool using MCP SDK adapter
@@ -454,9 +452,8 @@ async def handle_sse(
 
     # Create MCP server instance
     workflow_repo = injector.get(WorkflowRepository)
-    workflow_engine = WorkflowEngine.get_instance()
     
-    adapter = WorkflowMCPServerAdapter(mcp_server, workflow_repo, workflow_engine)
+    adapter = WorkflowMCPServerAdapter(mcp_server, workflow_repo)
     
     # Create server instance
     server = Server("workflow-mcp-server")
@@ -606,10 +603,9 @@ async def _list_mcp_tools_internal(
 
     # Build tools list using MCP SDK adapter
     workflow_repo = injector.get(WorkflowRepository)
-    workflow_engine = WorkflowEngine.get_instance()
     
     adapter = WorkflowMCPServerAdapter(
-        mcp_server, workflow_repo, workflow_engine
+        mcp_server, workflow_repo
     )
     mcp_tools = await adapter.list_tools()
     
@@ -692,10 +688,9 @@ async def execute_mcp_tool(
     try:
         # Use MCP SDK adapter for tool execution
         workflow_repo = injector.get(WorkflowRepository)
-        workflow_engine = WorkflowEngine.get_instance()
         
         adapter = WorkflowMCPServerAdapter(
-            mcp_server, workflow_repo, workflow_engine
+            mcp_server, workflow_repo
         )
         
         # Get arguments

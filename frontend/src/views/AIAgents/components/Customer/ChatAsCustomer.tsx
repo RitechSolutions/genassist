@@ -5,6 +5,7 @@ import {
   GenAgentConfigPanel,
   type ChatSettingsConfig,
   type ChatTheme,
+  type FeatureFlags,
 } from "genassist-chat-react";
 import { getAgentIntegrationKey } from "@/services/api";
 import { getApiUrl, isWsEnabled } from "@/config/api";
@@ -33,6 +34,11 @@ export default function ChatAsCustomer() {
     description: "Support",
   });
   const [metadata, setMetadata] = useState<Record<string, any>>({});
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({
+    useAudio: false,
+    useFile: false,
+    useWs: false,
+  });
 
   useEffect(() => {
     if (!agentId) {
@@ -92,6 +98,8 @@ export default function ChatAsCustomer() {
             onChatSettingsChange={setChatSettings}
             metadata={metadata}
             onMetadataChange={setMetadata}
+            featureFlags={featureFlags}
+            onFeatureFlagsChange={setFeatureFlags}
             defaultOpen={{ appearance: true, settings: false, metadata: false }}
             style={{
               width: "100%",
@@ -100,10 +108,11 @@ export default function ChatAsCustomer() {
               maxHeight: "calc(100vh - 50px)",
               overflowY: "auto",
             }}
-            onSave={({ theme, chatSettings, metadata }) => {
+            onSave={({ theme, chatSettings, metadata, featureFlags }) => {
               setTheme(theme);
               setChatSettings(chatSettings);
               setMetadata(metadata);
+              setFeatureFlags(featureFlags);
             }}
           />
         </div>
@@ -127,6 +136,7 @@ export default function ChatAsCustomer() {
         <div className="min-h-0 flex h-full w-full">
           <IntegrationCodePanel
             agentId={agentId}
+            featureFlags={featureFlags}
             className="w-full h-full overflow-y-auto"
             style={{ maxHeight: "calc(100vh - 50px)" }}
           />

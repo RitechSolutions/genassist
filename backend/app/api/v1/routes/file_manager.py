@@ -1,47 +1,42 @@
-from fastapi import APIRouter, Depends, status, UploadFile, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, Form, status, Request, UploadFile, File
+from fastapi.responses import Response, RedirectResponse
 from uuid import UUID
-from typing import Optional, List
+from typing import Annotated, Optional, List
 import base64
-import mimetypes
 
-from app.schemas.file import (
-    FileCreate, FileUpdate, FileResponse
-)
+from app.schemas.file import FileBase, FileResponse
 from app.services.file_manager import FileManagerService
-from app.auth.dependencies import auth
+from app.auth.dependencies import auth, permissions
 from fastapi_injector import Injected
-from app.db.models.file import StorageProvider
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
+
+# permissions
+from app.core.permissions.constants import Permissions as P
 
 router = APIRouter()
 
 
 # ==================== File Endpoints ====================
 
-@router.post("/files", response_model=FileResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(auth)])
+@router.post("/files", response_model=FileResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(auth), Depends(permissions(P.FileManager.CREATE))])
 async def create_file(
-    file_create: FileCreate,
+    file: UploadFile = File(...),
+    file_base: FileBase = Depends(FileBase.as_form),
     service: FileManagerService = Injected(FileManagerService),
 ):
     """Upload and create a new file."""
     try:
-        # if we want check for file extension, we can do it here
-        # allowed_extensions = ["pdf", "docx", "txt", "jpg", "jpeg", "png"];
-        allowed_extensions = None
-
         # Create file and return the file response
-        return await service.create_file(file_create, allowed_extensions=allowed_extensions)
-    except Exception as e:
-        raise AppException(
-            error_key=ErrorKey.INTERNAL_ERROR,
-            status_code=500,
-            detail=f"Failed to create file: {str(e)}"
+        return await service.create_file(
+            file,
+            file_base=file_base,
         )
+    except Exception as e:
+        raise AppException(ErrorKey.INTERNAL_ERROR,500,f"Failed to create file: {str(e)}")
 
 
-@router.get("/files/{file_id}", response_model=FileResponse, dependencies=[Depends(auth)])
+@router.get("/files/{file_id}", response_model=FileResponse, dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
 async def get_file(
     file_id: UUID,
     service: FileManagerService = Injected(FileManagerService),
@@ -51,11 +46,7 @@ async def get_file(
         file = await service.get_file_by_id(file_id)
         return file
     except Exception as e:
-        raise AppException(
-            error_key=ErrorKey.FILE_NOT_FOUND,
-            status_code=404,
-            detail=f"File not found: {str(e)}"
-        )
+        raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
 
 @router.get("/files/{file_id}/download", response_model=FileResponse)
@@ -67,6 +58,15 @@ async def download_file(
     try:
         # download the file
         file, content = await service.download_file(file_id)
+
+        # get the file url if the service is using s3
+        if file.storage_provider == "s3":
+            # get the file url
+            file_url = await service.get_file_url(file)
+
+            # redirect to the file url with status code 302
+            return RedirectResponse(url=file_url, status_code=302)
+
         headers, media_type = service.build_file_headers(file, content=content, disposition_type="attachment")
 
         return Response(
@@ -75,12 +75,9 @@ async def download_file(
             headers=headers
         )
     except Exception as e:
-        raise AppException(
-            error_key=ErrorKey.FILE_NOT_FOUND,
-            status_code=404,
-            detail=f"File not found: {str(e)}"
-        )
+        raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
+# @router.get("/files/{file_id}/source", response_model=FileResponse, dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
 @router.get("/files/{file_id}/source", response_model=FileResponse)
 async def get_file_source(
     file_id: UUID,
@@ -89,9 +86,11 @@ async def get_file_source(
 ):
     """Get file source content for inline display."""
     try:
+        # get the file by id
+        file = await service.get_file_by_id(file_id)
+
         # For HEAD requests, only get metadata (no content download)
         if request.method == "HEAD":
-            file = await service.get_file_by_id(file_id)
             headers, media_type = service.build_file_headers(file, disposition_type="inline")
             return Response(
                 content=b"",
@@ -99,6 +98,7 @@ async def get_file_source(
                 headers=headers
             )
 
+        # if the service is not using s3, download the file content
         # For GET requests, download the file content
         file, content = await service.download_file(file_id)
         headers, media_type = service.build_file_headers(file, content=content, disposition_type="inline")
@@ -109,14 +109,10 @@ async def get_file_source(
             headers=headers
         )
     except Exception as e:
-        raise AppException(
-            error_key=ErrorKey.FILE_NOT_FOUND,
-            status_code=404,
-            detail=f"File not found: {str(e)}"
-        )
+        raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
 
-@router.get("/files/{file_id}/base64")
+@router.get("/files/{file_id}/base64", dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
 async def get_file_base64(
     file_id: UUID,
     service: FileManagerService = Injected(FileManagerService),
@@ -136,14 +132,10 @@ async def get_file_base64(
             "content": base64_content
         }
     except Exception as e:
-        raise AppException(
-            error_key=ErrorKey.FILE_NOT_FOUND,
-            status_code=404,
-            detail=f"File not found: {str(e)}"
-        )
+        raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
 
-@router.get("/files", response_model=List[FileResponse], dependencies=[Depends(auth)])
+@router.get("/files", response_model=List[FileResponse], dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
 async def list_files(
     storage_provider: Optional[str] = None,
     limit: Optional[int] = None,
@@ -159,32 +151,26 @@ async def list_files(
         )
         return files
     except Exception as e:
-        raise AppException(
-            error_key=ErrorKey.INTERNAL_ERROR,
-            status_code=500,
-            detail=f"Failed to list files: {str(e)}"
-        )
+        raise AppException(ErrorKey.INTERNAL_ERROR,500,f"Failed to list files: {str(e)}")
 
 
-@router.put("/files/{file_id}", response_model=FileResponse, dependencies=[Depends(auth)])
+@router.put("/files/{file_id}", response_model=FileResponse, dependencies=[Depends(auth), Depends(permissions(P.FileManager.UPDATE))])
 async def update_file(
     file_id: UUID,
-    file_update: FileUpdate,
+    file: UploadFile = File(...),
+    file_base: FileBase = Depends(FileBase.as_form),
     service: FileManagerService = Injected(FileManagerService),
 ):
     """Update file metadata."""
     try:
-        file = await service.update_file(file_id, file_update)
+        # update the file
+        file = await service.update_file(file_id, file, file_base)
         return file
     except Exception as e:
-        raise AppException(
-            error_key=ErrorKey.FILE_NOT_FOUND,
-            status_code=404,
-            detail=f"File not found: {str(e)}"
-        )
+        raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
 
 
-@router.delete("/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(auth)])
+@router.delete("/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(auth), Depends(permissions(P.FileManager.DELETE))])
 async def delete_file(
     file_id: UUID,
     delete_from_storage: bool = True,
@@ -195,8 +181,4 @@ async def delete_file(
         await service.delete_file(file_id, delete_from_storage=delete_from_storage)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except Exception as e:
-        raise AppException(
-            error_key=ErrorKey.FILE_NOT_FOUND,
-            status_code=404,
-            detail=f"File not found: {str(e)}"
-        )
+        raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")

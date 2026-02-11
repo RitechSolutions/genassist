@@ -11,9 +11,8 @@
     "serve": "vite build && bash serve.sh"
   },
   "dependencies": {
-    "genassist-chat-react": "^1.0.24",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
     "websocket-ts": "^2.2.1"
   },
   "devDependencies": {
