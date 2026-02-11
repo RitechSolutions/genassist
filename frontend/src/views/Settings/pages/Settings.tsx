@@ -9,12 +9,15 @@ import { useSettings } from "../hooks/useSettings";
 import { settingSections } from "../helpers/settingsData";
 import { Link } from "react-router-dom";
 import { getAuthMe } from "@/services/auth";
+import { getFileManagerSettings, type FileManagerSettings } from "@/services/fileManager";
+import { FileManagerSettingsCard } from "../components/FileManagerSettingsCard";
 import type { User } from "@/interfaces/user.interface";
 
 const SettingsPage = () => {
   const { toggleStates, handleToggle, saveSettings } = useSettings();
   const [isSaving, setIsSaving] = useState(false);
   const [userProfile, setUserProfile] = useState<User | null>(null);
+  const [fileManagerSettings, setFileManagerSettings] = useState<FileManagerSettings | null>(null);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -26,7 +29,12 @@ const SettingsPage = () => {
         setUserProfile(null);
       }
     };
+    const fetchFileManagerSettings = async () => {
+      const settings = await getFileManagerSettings();
+      setFileManagerSettings(settings);
+    };
     fetchProfile();
+    fetchFileManagerSettings();
   }, []);
 
   const sectionsWithData = useMemo(() => {
@@ -81,11 +89,11 @@ const SettingsPage = () => {
 
               <div className="grid grid-cols-1">
                 {sectionsWithData.map((section) => (
-                  <SettingSection 
-                    key={section.title} 
-                    section={section} 
+                  <SettingSection
+                    key={section.title}
+                    section={section}
                     toggleStates={toggleStates}
-                    onToggle={handleToggle} 
+                    onToggle={handleToggle}
                   />
                 ))}
 
@@ -107,6 +115,13 @@ const SettingsPage = () => {
                     </div>
                   </div>
                 </Card>
+
+                {fileManagerSettings?.file_manager_enabled && (
+                  <Card className="md:col-span-2 mt-6">
+                    <FileManagerSettingsCard settings={fileManagerSettings} />
+                  </Card>
+                )}
+
 
                 {/* <div className="md:col-span-2 flex justify-end gap-4 pt-4">
                   <Button variant="outline">Cancel</Button>
