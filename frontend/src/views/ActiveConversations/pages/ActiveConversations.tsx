@@ -316,16 +316,18 @@ export const ActiveConversations = () => {
           title: "Success",
           description: "Successfully took over the conversation",
         });
-        // Refresh both API data and WebSocket
+        // Update the selected transcript and list
+        setSelectedTranscript((prev) =>
+          prev?.id === transcriptId
+            ? { ...prev, status: "takeover" as const }
+            : prev
+        );
+        setAllConversations((prev) =>
+          prev.map((c) =>
+            c.id === transcriptId ? { ...c, status: "takeover" as const } : c
+          )
+        );
         wsRefetch();
-        // Also reload API data to ensure consistency
-        const response = await conversationService.fetchActive({
-          sentiment: sentimentFilter,
-          category: categoryFilter,
-          include_feedback: includeFeedbackFilter,
-        });
-        setAllConversations(response.conversations || []);
-        // Total comes from polling only
       }
       return success;
     } catch (error) {
