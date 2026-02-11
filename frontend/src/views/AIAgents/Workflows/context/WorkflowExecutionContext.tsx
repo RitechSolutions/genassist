@@ -6,7 +6,6 @@ import React, {
   ReactNode,
 } from "react";
 import { Node, Edge } from "reactflow";
-
 // Types for workflow execution state
 export interface NodeExecutionResult {
   status: "success" | "error" | "pending";
@@ -60,69 +59,6 @@ const WorkflowExecutionContext = createContext<
   WorkflowExecutionContextType | undefined
 >(undefined);
 
-/**
- * Gets the JSON schema signature of a value for comparison.
- * Returns a string representing the structure/type of the value.
- */
-const getSchemaSignature = (value: unknown): string => {
-  if (value === null) return "null";
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "array:empty";
-    return `array:${getSchemaSignature(value[0])}`;
-  }
-  if (typeof value === "object") {
-    const keys = Object.keys(value as Record<string, unknown>).sort();
-    const signatures = keys.map(
-      (key) =>
-        `${key}:${getSchemaSignature((value as Record<string, unknown>)[key])}`
-    );
-    return `object:{${signatures.join(",")}}`;
-  }
-  return typeof value;
-};
-
-/**
- * Checks if all items in an array have the same schema structure.
- */
-const hasUniformSchema = (arr: unknown[]): boolean => {
-  if (arr.length <= 1) return true;
-  const firstSignature = getSchemaSignature(arr[0]);
-  return arr.every((item) => getSchemaSignature(item) === firstSignature);
-};
-
-/**
- * Optimizes output data for storage by truncating large arrays with uniform schemas.
- * Keeps only the first item as an example for schema inference.
- */
-const optimizeOutputForStorage = (
-  value: unknown,
-  arrayThreshold: number = 2
-): unknown => {
-  if (value === null || value === undefined) return value;
-
-  if (Array.isArray(value)) {
-    if (value.length > arrayThreshold && hasUniformSchema(value)) {
-      const optimizedFirst = optimizeOutputForStorage(value[0], arrayThreshold);
-      return {
-        __optimized: true,
-        __originalLength: value.length,
-        items: [optimizedFirst],
-      };
-    }
-    return value.map((item) => optimizeOutputForStorage(item, arrayThreshold));
-  }
-
-  if (typeof value === "object") {
-    const result: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      result[key] = optimizeOutputForStorage(val, arrayThreshold);
-    }
-    return result;
-  }
-
-  return value;
-};
-
 export const useWorkflowExecution = () => {
   const context = useContext(WorkflowExecutionContext);
   if (!context) {
@@ -159,13 +95,6 @@ export const WorkflowExecutionProvider: React.FC<
       setState((prevState) => {
         const newState = { ...prevState };
 
-        // Optimize output for storage - truncate large arrays with uniform schemas
-        /* const optimizedOutput = optimizeOutputForStorage(output) as Record<
-          string,
-          unknown
-        >; */
-
-        // Update node outputs with optimized data
         newState.nodeOutputs[nodeId] = {
           status: "success",
           output: output,
