@@ -7,9 +7,11 @@ import { getApiUrl } from "@/config/api";
 import { getTenantId } from "@/services/auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/tabs";
 import { cn } from "@/helpers/utils";
+import type { FeatureFlags } from "genassist-chat-react";
 
 interface IntegrationCodePanelProps {
   agentId?: string;
+  featureFlags?: FeatureFlags;
   className?: string;
   style?: CSSProperties;
 }
@@ -67,6 +69,7 @@ const CodeSection = ({
 
 export const IntegrationCodePanel = ({
   agentId: agentIdProp,
+  featureFlags,
   className,
   style,
 }: IntegrationCodePanelProps) => {
@@ -195,27 +198,48 @@ export const IntegrationCodePanel = ({
   const reactInstall = `npm install genassist-chat-react
 # or
 yarn add genassist-chat-react`;
-  const reactUsage = `import React from 'react';
-import { GenAgentChat } from 'genassist-chat-react';
+  
+  // Build the React usage code with conditional feature flags
+  const buildReactUsage = () => {
+    const props: string[] = [
+      '  baseUrl={process.env.REACT_APP_CHAT_API_URL}',
+      '  apiKey={process.env.REACT_APP_CHAT_API_KEY}',
+      '  headerTitle="Name"',
+      '  agentName="Agent"',
+      '  logoUrl="https://example.com/logo.png"',
+      '  placeholder="Ask us anything..."',
+      '  tenant={process.env.REACT_APP_TENANT_ID || undefined}',
+      '  mode="floating"',
+    ];
 
-<GenAgentChat
-  baseUrl={process.env.REACT_APP_CHAT_API_URL}
-  apiKey={process.env.REACT_APP_CHAT_API_KEY}
-  headerTitle="Name"
-  agentName="Agent"
-  logoUrl="https://example.com/logo.png"
-  placeholder="Ask us anything..."
-  tenant={process.env.REACT_APP_TENANT_ID || undefined}
-  mode="floating"
-  useWs={true}
-  theme={{
+    // Add feature flags if enabled
+    if (featureFlags?.useAudio) {
+      props.push('  useAudio={true}');
+    }
+    if (featureFlags?.useFile) {
+      props.push('  useFile={true}');
+    }
+    if (featureFlags?.useWs) {
+      props.push('  useWs={true}');
+    }
+
+    props.push(`  theme={{
     primaryColor: '#2962FF',
     backgroundColor: '#ffffff',
     textColor: '#000000',
     fontFamily: 'Roboto, Arial, sans-serif',
     fontSize: '14px'
-  }}
+  }}`);
+
+    return `import React from 'react';
+import { GenAgentChat } from 'genassist-chat-react';
+
+<GenAgentChat
+${props.join('\n')}
 />`;
+  };
+
+  const reactUsage = buildReactUsage();
   const reactEnv = `REACT_APP_CHAT_API_URL=${baseUrl} # change this to your backend url
 REACT_APP_CHAT_API_KEY=${apiKey}
 REACT_APP_TENANT_ID=your-tenant-id # optional, if applicable`;

@@ -1593,7 +1593,7 @@ autoprefixer@^10.4.20:
     picocolors "^1.1.1"
     postcss-value-parser "^4.2.0"
 
-axios@^1.13.5, axios@^1.6.0:
+axios@^1.13.5:
   version "1.13.5"
   resolved "https://registry.npmjs.org/axios/-/axios-1.13.5.tgz"
   integrity sha512-cz4ur7Vb0xS4/KUN0tPWe44eqxrIu31me+fbang3ijiNscE129POzipJJA6zniq2C/Z6sJCjMimjS8Lc/GAs8Q==
@@ -2305,11 +2305,11 @@ function-bind@^1.1.2:
   integrity sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==
 
 genassist-chat-react@^1.0.24:
-  version "1.0.24"
-  resolved "https://registry.npmjs.org/genassist-chat-react/-/genassist-chat-react-1.0.24.tgz"
-  integrity sha512-VrZ+ZYXTN7biQcKQkHVFtmsmF6ZFZvQf7c88Unxb5Afd4MV2bdjFViGcxZMbofIDt7vvdgKdyLlBwXy/jvKHuQ==
+  version "1.0.25"
+  resolved "https://registry.npmjs.org/genassist-chat-react/-/genassist-chat-react-1.0.25.tgz"
+  integrity sha512-UUC3skz0mvFiupE9Eb+2pRkR6HtEnm8S6fMjsIFoEHxaXlEHHN6JSW/9zapTq69FrTD04ck3N0lmlX1rj4cBhA==
   dependencies:
-    axios "^1.6.0"
+    axios "^1.13.5"
     lucide-react "^0.511.0"
     react-google-recaptcha-v3 "^1.11.0"
 
