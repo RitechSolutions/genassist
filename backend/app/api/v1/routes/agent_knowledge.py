@@ -317,6 +317,7 @@ async def upload_file_to_chat(
 
         # load the storage provider
         config = { "base_path": str(DATA_VOLUME)} if provider_name == "local" else file_storage_settings.model_dump(exclude_none=True)
+        config["base_url"] = str(request.base_url).rstrip('/')
         provider = file_manager_service.get_storage_provider_by_name(provider_name, config=config)
         await file_manager_service.set_storage_provider(provider)
         
