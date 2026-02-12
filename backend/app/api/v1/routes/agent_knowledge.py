@@ -23,6 +23,7 @@ from app.modules.data.providers.legra import (
 from app.schemas.agent_knowledge import KBBase, KBCreate, KBRead
 from app.services.agent_knowledge import KnowledgeBaseService
 import asyncio
+from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.agents.rag import ThreadScopedRAG
@@ -512,3 +513,14 @@ async def process_files(files: list[UploadFile] = File(...)):
 async def get_form_schemas():
     """Get supported RAG configuration schemas."""
     return AGENT_RAG_FORM_SCHEMAS_DICT
+
+
+
+#Endpoint to trigger KB batch processing for files from various sources Same way as (e.g. Azure Blob, S3, SharePoint)
+@router.get("/kb-batch-tasks-execution", 
+            dependencies=[Depends(auth)],
+            summary="Runs the job that sync the KB with files from various sources")
+async def summarize_files_from_azure(
+    kb_id: Optional[UUID] = None
+):
+    return await batch_process_files_kb_async_with_scope(kb_id)
