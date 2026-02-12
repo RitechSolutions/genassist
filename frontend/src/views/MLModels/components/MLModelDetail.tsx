@@ -18,8 +18,6 @@ import {
   ChevronLeft,
   Play,
   Clock,
-  CheckCircle2,
-  XCircle,
   AlertCircle,
   Download,
   Star,
@@ -60,7 +58,7 @@ import {
 import { Label } from "@/components/label";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import JsonViewer from "@/components/JsonViewer";
-import { v4 as uuidv4 } from "uuid";
+import { downloadFile } from "@/helpers/utils";
 
 const MLModelDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -99,6 +97,11 @@ const MLModelDetail: React.FC = () => {
     try {
       setLoading(true);
       const data = await getMLModel(id);
+
+      if ((data?.pkl_file && data?.pkl_file.startsWith("http")) || data?.pkl_file_url) {
+        data.pkl_file_url = data.pkl_file_url || data.pkl_file;
+      }
+
       setModel(data);
     } catch (error) {
       toast.error("Failed to load ML model");
@@ -321,6 +324,15 @@ const MLModelDetail: React.FC = () => {
     return labels[type] || type;
   };
 
+  const downloadModelFile = async (fileUrl: string) => {
+    try {
+      await downloadFile(fileUrl, `${model?.name || "model"}.pkl`);
+    } catch (error) {
+      toast.error("Failed to download model file");
+      console.error(error);
+    }
+  };
+
   if (loading) {
     return (
       <SidebarProvider>
@@ -389,7 +401,15 @@ const MLModelDetail: React.FC = () => {
 
       {/* Section 1: Model Details */}
       <div className="rounded-lg border bg-white p-6 mb-6">
-        <h3 className="text-xl font-semibold mb-6">Model Information</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-semibold mb-6">Model Information</h3>
+          {model.pkl_file_url && (
+            <Button variant="outline" size="sm" onClick={() => downloadModelFile(model.pkl_file_url as string)}>
+              <Download className="h-4 w-4 mr-2" />
+              Download Model File
+            </Button>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div>
             <Label className="text-sm text-gray-500 mb-1 block">Model Type</Label>
@@ -401,7 +421,7 @@ const MLModelDetail: React.FC = () => {
           </div>
           <div>
             <Label className="text-sm text-gray-500 mb-1 block">Features</Label>
-            <p className="text-sm font-medium">{model.features.length} features</p>
+            <p className="text-sm font-medium">{model.features.length} feature{model.features.length > 1 ? "s" : ""}</p>
             <p className="text-xs text-gray-500 mt-1">{model.features.join(", ")}</p>
           </div>
           {model.created_at && (
@@ -421,16 +441,6 @@ const MLModelDetail: React.FC = () => {
             </div>
           )}
         </div>
-
-        {model.pkl_file && (
-          <div className="mt-6">
-            <Label className="text-sm text-gray-500 mb-1 block">Model File</Label>
-            <div className="flex items-center gap-2 mt-1">
-              <FileCode className="h-4 w-4" />
-              <p className="text-sm font-medium">{model.pkl_file}</p>
-            </div>
-          </div>
-        )}
 
         {model.inference_params && Object.keys(model.inference_params).length > 0 && (
           <div className="mt-6 pt-6 border-t">

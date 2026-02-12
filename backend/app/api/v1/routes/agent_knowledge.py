@@ -226,9 +226,6 @@ async def upload_file(
                 "filename": unique_filename,
                 "original_filename": file.filename,
             }
-            
-            # create the file path where the file will be saved
-            file_path = os.path.join(str(DATA_VOLUME), unique_filename)
 
             # check if the file manager is enabled
             use_file_manager = file_storage_settings.FILE_MANAGER_ENABLED
@@ -236,24 +233,15 @@ async def upload_file(
             if use_file_manager:
                 # subdir
                 sub_folder = f"agents_config/uploads"
+
+                # initialize the file manager service
+                storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME))
                 
-                # Determine provider type
-                provider_name = file_storage_settings.default_provider_name
-
-                # Load provider
-                config = { "base_path": str(DATA_VOLUME)} if provider_name == "local" else file_storage_settings.model_dump()
-
-                # Set base_url
-                config["base_url"] = str(request.base_url).rstrip('/')
-
-                provider = file_manager_service.get_storage_provider_by_name(provider_name, config=config)
-                await file_manager_service.set_storage_provider(provider)
-
                 file_base = FileBase(
                     name=unique_filename,
-                    storage_path=provider.get_base_path(),
+                    storage_path=storage_provider.get_base_path(),
                     path=sub_folder,
-                    storage_provider=provider_name,
+                    storage_provider=storage_provider.name,
                     file_extension=file_extension,
                 )
 
@@ -268,6 +256,11 @@ async def upload_file(
                 result["file_url"] = file_url
                 result["file_id"] = file_id
             else:
+                # create the file path where the file will be saved
+                file_path = os.path.join(str(UPLOAD_DIR), unique_filename)
+                # add the file_path to the result
+                result["file_path"] = file_path
+
                 # save the file to the upload directory
                 logger.info(f"Saving file to: {file_path}")
 
@@ -277,9 +270,6 @@ async def upload_file(
 
                 logger.info(f"Extracting text from file: {file_path}")
 
-            # add the file_path to the result
-            result["file_path"] = file_path
-            
             logger.info(f"Upload successful: {result}")
             results.append(result)
         except Exception as e:
