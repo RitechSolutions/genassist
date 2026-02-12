@@ -30,7 +30,7 @@ export const GlobalChat = () => {
     <GenAgentChat
       baseUrl={baseUrl}
       apiKey={genassistApiKey}
-      tenant={'dyrkaj'}
+      tenant={undefined}
       headerTitle="Genassist Chat"
       placeholder="Ask anything..."
       theme={{
