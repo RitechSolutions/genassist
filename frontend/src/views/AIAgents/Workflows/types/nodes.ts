@@ -22,7 +22,7 @@ export interface BaseNodeData {
   unwrap?: boolean;
   updateNodeData?: <T extends BaseNodeData>(
     nodeId: string,
-    data: Partial<T>
+    data: Partial<T>,
   ) => void;
 }
 
@@ -169,11 +169,15 @@ export interface KnowledgeBaseNodeData extends BaseNodeData {
 }
 
 // SQL Node Data
+export type SQLMode = "sqlQuery" | "humanQuery";
+
 export interface SQLNodeData extends BaseNodeData {
-  providerId: string;
   dataSourceId: string;
-  query: string;
+  mode?: SQLMode;
+  sqlQuery?: string;
+  providerId?: string;
   systemPrompt?: string;
+  humanQuery?: string;
   parameters?: Record<string, string>;
 }
 
@@ -361,7 +365,7 @@ export const createNode = <T extends NodeData>(
   type: string,
   id: string,
   position: { x: number; y: number },
-  data: T
+  data: T,
 ): Node => {
   return {
     id,
@@ -374,7 +378,7 @@ export const createNode = <T extends NodeData>(
 export const createEdge = (
   source: string,
   target: string,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): Edge => {
   return {
     id: `${source}-${target}`,
