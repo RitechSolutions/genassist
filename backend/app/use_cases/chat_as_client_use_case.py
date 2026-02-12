@@ -253,12 +253,18 @@ async def process_attachments_from_metadata(
                 if not file:
                     pass
                 else:
-                    file_url = f"{base_url}/api/file-manager/files/{file.id}/source?X-Tenant-Id={tenant_id}"
+                    # get the file url for local storage provider missing the base url
+                    file_url = await file_manager_service.get_file_url(file)
+                    chat_file_url = file_url
+                    
+                    # add to attachments local path when the storage provider is local
+                    if file.storage_provider == "local":
+                        chat_file_url = f"{base_url}{file_url.rstrip('/')}"
+                        attachment["file_local_path"] = f"{file.storage_path}/{file.path}"
 
-                    # add to attachments
-                    # attachment["file_local_path"] = f"{file.path}/{file.storage_path}"
-                    attachment["file_local_path"] = f"{file.storage_path}/{file.path}"
+                    attachment["file_url"] = chat_file_url
                     attachment["file_mime_type"] = file.mime_type
+                    attachment["file_storage_provider"] = file.storage_provider
                     
                     # Check if file has OpenAI file_id stored or upload if needed
                     if not attachment.get("openai_file_id"):
@@ -274,10 +280,8 @@ async def process_attachments_from_metadata(
                             try:
                                 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
                                 openai_service = injector.get(OpenAIFineTuningService)
-                                # full_file_path = f"{file.path}/{file.storage_path}"
-                                full_file_path = f"{file.storage_path}/{file.path}"
                                 openai_file_id = await openai_service.upload_file_for_chat(
-                                    file_path=full_file_path,
+                                    file_url=chat_file_url,
                                     filename=file.name,
                                     purpose="user_data"
                                 )
@@ -290,7 +294,7 @@ async def process_attachments_from_metadata(
                     await process_file_upload_from_chat(
                         conversation_id=conversation_id,
                         file_id=file.id,
-                        file_url=file_url,
+                        file_url=chat_file_url,
                         file_name=file.name,
                         file_type=file_type,
                         tenant_id=tenant_id,
