@@ -13,6 +13,6 @@ export interface MLModel {
 }
 
 export interface MLModelFormData extends Omit<MLModel, 'created_at' | 'updated_at'> {
-  pkl_file_url?: string | null;
+  pkl_file_id?: string | null;
 }
 

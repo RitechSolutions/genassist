@@ -2,12 +2,13 @@ from uuid import UUID
 from injector import inject
 import os
 import logging
-
+from typing import Optional
 from app.db.models.ml_model import MLModel
 from app.repositories.ml_models import MLModelsRepository
 from app.schemas.ml_model import MLModelCreate, MLModelUpdate
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.db.models.file import FileModel
 
 logger = logging.getLogger(__name__)
 
@@ -73,4 +74,16 @@ class MLModelsService:
         # Soft delete the model
         await self.repository.delete(ml_model_id)
 
+    async def validate_pkl_file(self, pkl_file_path: str, file: Optional[FileModel] = None) -> dict:
+        """Validate the PKL file for an ML model."""
+        from app.core.utils.model_validator import get_model_info
 
+        # case when file is provided
+
+        model_info  = get_model_info(pkl_file_path)
+        if not model_info["is_valid"]:
+            raise AppException(
+                error_key=ErrorKey.ML_MODEL_NOT_FOUND
+            )
+
+        return model_info

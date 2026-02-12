@@ -18,7 +18,7 @@ class MLModelBase(BaseModel):
     description: Optional[str] = Field(None, description="Description of what the model does")
     model_type: Optional[ModelType] = Field(None, description="Type of machine learning model")
     pkl_file: Optional[str] = Field(None, max_length=500, description="Path to the uploaded .pkl file")
-    pkl_file_url: Optional[str] = Field(None, max_length=500, description="URL to the uploaded .pkl file")
+    pkl_file_id: Optional[str] = Field(None, max_length=500, description="File manager ID for the uploaded .pkl file")
     features: Optional[list[str]] = Field(None, description="List of feature names used by the model")
     target_variable: Optional[str] = Field(None, max_length=255, description="The prediction target variable")
     inference_params: Optional[Dict[str, Any]] = Field(None, description="Key-value pairs for inference configuration")

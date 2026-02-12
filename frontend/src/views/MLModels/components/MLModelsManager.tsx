@@ -227,9 +227,9 @@ const MLModelsManager: React.FC = () => {
 
         dataToSubmit.pkl_file = uploadResult?.file_path;
 
-        // support new file manager service
-        if (uploadResult?.file_url) {
-          dataToSubmit.pkl_file_url = uploadResult?.file_url;
+        // store file manager file ID for download
+        if (uploadResult?.file_id) {
+          dataToSubmit.pkl_file_id = uploadResult?.file_id;
         }
       }
 

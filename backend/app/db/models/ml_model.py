@@ -28,7 +28,7 @@ class MLModel(Base):
         nullable=False
     )
     pkl_file: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    pkl_file_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    pkl_file_id: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     features: Mapped[list] = mapped_column(ARRAY(String), nullable=False)
     target_variable: Mapped[str] = mapped_column(String(255), nullable=False)
     inference_params: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)

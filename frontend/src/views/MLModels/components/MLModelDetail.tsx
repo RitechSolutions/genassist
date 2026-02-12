@@ -59,6 +59,7 @@ import { Label } from "@/components/label";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import JsonViewer from "@/components/JsonViewer";
 import { downloadFile } from "@/helpers/utils";
+import { getApiUrlString } from "@/config/api";
 
 const MLModelDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -98,9 +99,6 @@ const MLModelDetail: React.FC = () => {
       setLoading(true);
       const data = await getMLModel(id);
 
-      if ((data?.pkl_file && data?.pkl_file.startsWith("http")) || data?.pkl_file_url) {
-        data.pkl_file_url = data.pkl_file_url || data.pkl_file;
-      }
 
       setModel(data);
     } catch (error) {
@@ -324,8 +322,15 @@ const MLModelDetail: React.FC = () => {
     return labels[type] || type;
   };
 
-  const downloadModelFile = async (fileUrl: string) => {
+  const getFileDownloadUrl = (fileId: string): string => {
+    const tenantId = localStorage.getItem("tenant_id");
+    const url = new URL(`file-manager/files/${fileId}/source`, getApiUrlString).toString();
+    return tenantId ? `${url}?X-Tenant-Id=${tenantId}` : url;
+  };
+
+  const downloadModelFile = async (fileId: string) => {
     try {
+      const fileUrl = getFileDownloadUrl(fileId);
       await downloadFile(fileUrl, `${model?.name || "model"}.pkl`);
     } catch (error) {
       toast.error("Failed to download model file");
@@ -403,8 +408,8 @@ const MLModelDetail: React.FC = () => {
       <div className="rounded-lg border bg-white p-6 mb-6">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-semibold mb-6">Model Information</h3>
-          {model.pkl_file_url && (
-            <Button variant="outline" size="sm" onClick={() => downloadModelFile(model.pkl_file_url as string)}>
+          {model.pkl_file_id && (
+            <Button variant="outline" size="sm" onClick={() => downloadModelFile(model.pkl_file_id as string)}>
               <Download className="h-4 w-4 mr-2" />
               Download Model File
             </Button>

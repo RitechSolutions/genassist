@@ -29,7 +29,7 @@ class MLModelsRepository:
                 description=ml_model_data.description,
                 model_type=ml_model_data.model_type,
                 pkl_file=ml_model_data.pkl_file,
-                pkl_file_url=ml_model_data.pkl_file_url,
+                pkl_file_id=ml_model_data.pkl_file_id,
                 features=ml_model_data.features,
                 target_variable=ml_model_data.target_variable,
                 inference_params=ml_model_data.inference_params,

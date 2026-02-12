@@ -19574,7 +19574,7 @@
             "title": "Pkl File",
             "description": "Path to the uploaded .pkl file"
           },
-          "pkl_file_url": {
+          "pkl_file_id": {
             "anyOf": [
               {
                 "type": "string",
@@ -19584,8 +19584,8 @@
                 "type": "null"
               }
             ],
-            "title": "Pkl File Url",
-            "description": "URL to the uploaded .pkl file"
+            "title": "Pkl File Id",
+            "description": "File manager ID for the uploaded .pkl file"
           },
           "features": {
             "items": {
@@ -20054,7 +20054,7 @@
             "title": "Pkl File",
             "description": "Path to the uploaded .pkl file"
           },
-          "pkl_file_url": {
+          "pkl_file_id": {
             "anyOf": [
               {
                 "type": "string",
@@ -20064,8 +20064,8 @@
                 "type": "null"
               }
             ],
-            "title": "Pkl File Url",
-            "description": "URL to the uploaded .pkl file"
+            "title": "Pkl File Id",
+            "description": "File manager ID for the uploaded .pkl file"
           },
           "features": {
             "anyOf": [
@@ -20183,7 +20183,7 @@
             "title": "Pkl File",
             "description": "Path to the uploaded .pkl file"
           },
-          "pkl_file_url": {
+          "pkl_file_id": {
             "anyOf": [
               {
                 "type": "string",
@@ -20193,8 +20193,8 @@
                 "type": "null"
               }
             ],
-            "title": "Pkl File Url",
-            "description": "URL to the uploaded .pkl file"
+            "title": "Pkl File Id",
+            "description": "File manager ID for the uploaded .pkl file"
           },
           "features": {
             "anyOf": [
