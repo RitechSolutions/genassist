@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { SQLNodeData } from "../types/nodes";
+import { SQLNodeData, SQLMode } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { Textarea } from "@/components/textarea";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { getAllDataSources } from "@/services/dataSources";
@@ -31,15 +30,17 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
   const { isOpen, onClose, data, onUpdate } = props;
 
   const [name, setName] = useState(data.name || "");
-  const [providerId, setProviderId] = useState(data.providerId || "");
   const [dataSourceId, setDatasourceId] = useState(data.dataSourceId || "");
-  const [query, setQuery] = useState(data.query || "");
+  const [mode, setMode] = useState<SQLMode | undefined>(undefined);
+  const [sqlQuery, setSqlQuery] = useState("");
+  const [providerId, setProviderId] = useState(data.providerId || "");
   const [systemPrompt, setSystemPrompt] = useState(data.systemPrompt || "");
+  const [humanQuery, setHumanQuery] = useState("");
   const [parameters, setParameters] = useState<Record<string, string>>(
-    data.parameters || {}
+    data.parameters || {},
   );
   const [availableProviders, setAvailableProviders] = useState<LLMProvider[]>(
-    []
+    [],
   );
   const [availableDataSources, setAvailableDataSources] = useState<
     DataSource[]
@@ -51,16 +52,18 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
   useEffect(() => {
     if (isOpen) {
       setName(data.name || "");
-      setProviderId(data.providerId || "");
       setDatasourceId(data.dataSourceId || "");
-      setQuery(data.query || "");
+      setMode(data.mode || undefined);
+      setSqlQuery(data.sqlQuery || "");
+      setProviderId(data.providerId || "");
       setSystemPrompt(data.systemPrompt || "");
+      setHumanQuery(data.humanQuery || "");
       setParameters(data.parameters || {});
 
       loadProviders();
       loadDataSources();
     }
-  }, [isOpen, data, toast]);
+  }, [isOpen, data]);
 
   const loadProviders = async () => {
     try {
@@ -86,7 +89,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
           ds.source_type.toLowerCase().includes("mysql") ||
           ds.source_type.toLowerCase().includes("postgres") ||
           ds.source_type.toLowerCase().includes("sqlite") ||
-          ds.source_type.toLowerCase().includes("snowflake")
+          ds.source_type.toLowerCase().includes("snowflake"),
       );
       setAvailableDataSources(dbDataSources);
     } catch (err) {
@@ -102,10 +105,12 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
     onUpdate({
       ...data,
       name,
-      providerId,
       dataSourceId,
-      query,
+      mode,
+      sqlQuery,
+      providerId,
       systemPrompt,
+      humanQuery,
       parameters,
     });
     onClose();
@@ -131,10 +136,12 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
         data={{
           ...data,
           name,
-          providerId,
           dataSourceId,
-          query,
+          mode,
+          sqlQuery,
+          providerId,
           systemPrompt,
+          humanQuery,
           parameters,
         }}
       >
@@ -149,34 +156,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
               className="w-full"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="provider">LLM Provider</Label>
-            <Select
-              value={providerId || ""}
-              onValueChange={(value) => {
-                if (value === "__create__") {
-                  setIsCreateProviderOpen(true);
-                  return;
-                }
-                setProviderId(value);
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select an LLM provider" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableProviders.map((provider) => (
-                  <SelectItem key={provider.id} value={provider.id!}>
-                    {provider.name}
-                  </SelectItem>
-                ))}
-                <CreateNewSelectItem />
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-gray-500">
-              Select the LLM provider to use for query processing
-            </p>
-          </div>
+
           <div className="space-y-2">
             <Label htmlFor="datasource">Data Source</Label>
             <Select
@@ -205,91 +185,167 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
               Select the database data source to query
             </p>
           </div>
+
           <div className="space-y-2">
-            <Label htmlFor="systemPrompt">System Prompt</Label>
-            <DraggableTextArea
-              id="systemPrompt"
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="Enter system prompt for the SQL generator"
-              className="w-full min-h-[100px] font-mono text-sm"
-            />
+            <Label htmlFor="mode">Mode</Label>
+            <Select
+              value={mode || ""}
+              onValueChange={(value) => setMode(value as SQLMode)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sqlQuery">Write SQL Manually</SelectItem>
+                <SelectItem value="humanQuery">
+                  Generate SQL from Text
+                </SelectItem>
+              </SelectContent>
+            </Select>
             <p className="text-xs text-gray-500">
-              Optional system prompt to guide the SQL generation behavior
+              Choose how you want to provide the query
             </p>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="query">Human Query</Label>
-            <DraggableTextArea
-              id="query"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask a question to DB"
-              className="w-full min-h-[100px] font-mono text-sm"
-            />
-            <p className="text-xs text-gray-500">
-              Human to SQL generator. Use variables from previous nodes if
-              needed.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="parameters">Parameters</Label>
+
+          {mode === "sqlQuery" && (
             <div className="space-y-2">
-              {Object.entries(parameters).map(([key, value], index) => (
-                <div key={index} className="flex gap-2">
-                  <DraggableInput
-                    placeholder="Parameter name"
-                    value={key}
-                    onChange={(e) => {
-                      const newParameters = { ...parameters };
-                      delete newParameters[key];
-                      newParameters[e.target.value] = value;
-                      setParameters(newParameters);
-                    }}
-                    className="flex-1"
-                  />
-                  <DraggableInput
-                    placeholder="Parameter value"
-                    value={value}
-                    onChange={(e) => {
-                      setParameters({
-                        ...parameters,
-                        [key]: e.target.value,
-                      });
-                    }}
-                    className="flex-1"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const newParameters = { ...parameters };
-                      delete newParameters[key];
-                      setParameters(newParameters);
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setParameters({
-                    ...parameters,
-                    "": "",
-                  });
-                }}
-              >
-                Add Parameter
-              </Button>
+              <Label htmlFor="sqlQuery">SQL Query</Label>
+              <DraggableTextArea
+                id="sqlQuery"
+                value={sqlQuery}
+                onChange={(e) => setSqlQuery(e.target.value)}
+                placeholder="Enter or drag and drop your SQL query here"
+                className="w-full min-h-[150px] font-mono text-sm"
+              />
+              <p className="text-xs text-gray-500">
+                Enter the SQL query to execute. Use variables from previous
+                nodes if needed.
+              </p>
             </div>
-            <p className="text-xs text-gray-500">
-              Optional parameters that can be used in the SQL query. These will
-              be passed to the backend for processing.
-            </p>
-          </div>
+          )}
+
+          {mode === "humanQuery" && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="provider">LLM Provider</Label>
+                <Select
+                  value={providerId || ""}
+                  onValueChange={(value) => {
+                    if (value === "__create__") {
+                      setIsCreateProviderOpen(true);
+                      return;
+                    }
+                    setProviderId(value);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select an LLM provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableProviders.map((provider) => (
+                      <SelectItem key={provider.id} value={provider.id!}>
+                        {provider.name}
+                      </SelectItem>
+                    ))}
+                    <CreateNewSelectItem />
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  Select the LLM provider to generate SQL from your text
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="systemPrompt">System Prompt</Label>
+                <DraggableTextArea
+                  id="systemPrompt"
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  placeholder="Enter system prompt for the SQL generator"
+                  className="w-full min-h-[100px] text-sm"
+                />
+                <p className="text-xs text-gray-500">
+                  Optional system prompt to guide the SQL generation behavior
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="humanQuery">Query in Plain English</Label>
+                <DraggableTextArea
+                  id="humanQuery"
+                  value={humanQuery}
+                  onChange={(e) => setHumanQuery(e.target.value)}
+                  placeholder="e.g., Show me all customers who made purchases last month"
+                  className="w-full min-h-[100px] text-sm"
+                />
+                <p className="text-xs text-gray-500">
+                  Describe what you want to query in plain English. AI will
+                  convert it to SQL.
+                </p>
+              </div>
+            </>
+          )}
+
+          {mode && (
+            <div className="space-y-2">
+              <Label htmlFor="parameters">Parameters</Label>
+              <div className="space-y-2">
+                {Object.entries(parameters).map(([key, value], index) => (
+                  <div key={index} className="flex gap-2">
+                    <DraggableInput
+                      placeholder="Parameter name"
+                      value={key}
+                      onChange={(e) => {
+                        const newParameters = { ...parameters };
+                        delete newParameters[key];
+                        newParameters[e.target.value] = value;
+                        setParameters(newParameters);
+                      }}
+                      className="flex-1"
+                    />
+                    <DraggableInput
+                      placeholder="Parameter value"
+                      value={value}
+                      onChange={(e) => {
+                        setParameters({
+                          ...parameters,
+                          [key]: e.target.value,
+                        });
+                      }}
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const newParameters = { ...parameters };
+                        delete newParameters[key];
+                        setParameters(newParameters);
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setParameters({
+                      ...parameters,
+                      "": "",
+                    });
+                  }}
+                >
+                  Add Parameter
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Optional parameters that can be used in the SQL query. These
+                will be passed to the backend for processing.
+              </p>
+            </div>
+          )}
         </div>
       </NodeConfigPanel>
       <LLMProviderDialog
