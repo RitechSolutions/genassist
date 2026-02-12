@@ -17,13 +17,14 @@ import {
   SquareCode,
   KeyRoundIcon,
   Sparkles,
-  ChevronDown,
-  ChevronRight,
   Activity,
   Boxes,
   Zap,
 } from "lucide-react";
+import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { getWorkflowById } from "@/services/workflows";
+import { getAgentConfig } from "@/services/api";
+import type { AgentConfig } from "@/interfaces/ai-agent.interface";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { format } from "date-fns";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
@@ -58,20 +59,45 @@ export function AgentDetailsDialog({
 }: AgentDetailsDialogProps) {
   const navigate = useNavigate();
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
+  const [fullAgentConfig, setFullAgentConfig] = useState<AgentConfig | null>(null);
   const [loading, setLoading] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState({
-    welcome: true,
-    queries: true,
-    workflow: true,
+    welcome: false,
+    queries: false,
+    workflow: false,
   });
 
   const showCostPerConversation = useFeatureFlagVisible(
     FeatureFlags.ANALYTICS.SHOW_COST_PER_CONVERSATION
   );
 
+  const workflowId = fullAgentConfig?.workflow_id;
+
   useEffect(() => {
-    if (!open || !agent?.workflowId) {
+    if (!open || !agent?.id) {
+      setFullAgentConfig(null);
+      return;
+    }
+
+    const fetchAgentConfig = async () => {
+      setConfigLoading(true);
+      try {
+        const config = await getAgentConfig(agent.id);
+        setFullAgentConfig(config);
+      } catch (err) {
+        console.error("Error fetching agent config:", err);
+      } finally {
+        setConfigLoading(false);
+      }
+    };
+
+    fetchAgentConfig();
+  }, [open, agent?.id]);
+
+  useEffect(() => {
+    if (!open || !workflowId) {
       setWorkflow(null);
       return;
     }
@@ -81,7 +107,7 @@ export function AgentDetailsDialog({
       setError(null);
 
       try {
-        const workflowData = await getWorkflowById(agent.workflowId!);
+        const workflowData = await getWorkflowById(workflowId);
         setWorkflow(workflowData);
       } catch (err) {
         console.error("Error fetching workflow:", err);
@@ -92,7 +118,7 @@ export function AgentDetailsDialog({
     };
 
     fetchWorkflow();
-  }, [open, agent?.workflowId]);
+  }, [open, workflowId]);
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections((prev) => ({
@@ -211,7 +237,6 @@ export function AgentDetailsDialog({
                 <DialogTitle className="text-xl">{agent.name}</DialogTitle>
                 {agent.isActive ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-md text-xs font-medium">
-                    <Activity className="w-3.5 h-3.5" />
                     Active
                   </span>
                 ) : (
@@ -296,52 +321,35 @@ export function AgentDetailsDialog({
               Configuration
             </h3>
 
-            {/* Welcome Message */}
-            {agent.welcomeMessage && (
-              <div className="border border-border rounded-lg overflow-hidden">
-                <button
-                  onClick={() => toggleSection("welcome")}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <span className="text-sm font-medium text-foreground">
-                    Welcome Message
-                  </span>
-                  {expandedSections.welcome ? (
-                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  )}
-                </button>
-                {expandedSections.welcome && (
-                  <div className="px-4 py-3 bg-white">
-                    <p className="text-sm text-muted-foreground">
-                      {agent.welcomeMessage}
-                    </p>
-                  </div>
-                )}
+            {configLoading ? (
+              <div className="border border-border rounded-lg p-4">
+                <div className="h-4 bg-muted rounded animate-pulse w-2/3" />
+                <div className="h-3 bg-muted rounded animate-pulse w-1/2 mt-2" />
               </div>
-            )}
+            ) : (
+              <>
+                {/* Welcome Message */}
+                {(fullAgentConfig?.welcome_message || agent.welcomeMessage) && (
+                  <CollapsibleSection
+                    title="Welcome Message"
+                    open={expandedSections.welcome}
+                    onOpenChange={() => toggleSection("welcome")}
+                  >
+                    <p className="text-sm text-muted-foreground">
+                      {fullAgentConfig?.welcome_message || agent.welcomeMessage}
+                    </p>
+                  </CollapsibleSection>
+                )}
 
-            {/* Possible Queries */}
-            {agent.possibleQueries && agent.possibleQueries.length > 0 && (
-              <div className="border border-border rounded-lg overflow-hidden">
-                <button
-                  onClick={() => toggleSection("queries")}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <span className="text-sm font-medium text-foreground">
-                    Example Queries ({agent.possibleQueries.length})
-                  </span>
-                  {expandedSections.queries ? (
-                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  )}
-                </button>
-                {expandedSections.queries && (
-                  <div className="px-4 py-3 bg-white">
+                {/* Possible Queries (from full agent config) */}
+                {((fullAgentConfig?.possible_queries?.length ?? 0) > 0 || (agent.possibleQueries?.length ?? 0) > 0) && (
+                  <CollapsibleSection
+                    title={`Example Queries (${(fullAgentConfig?.possible_queries ?? agent.possibleQueries ?? []).length})`}
+                    open={expandedSections.queries}
+                    onOpenChange={() => toggleSection("queries")}
+                  >
                     <ul className="space-y-2">
-                      {agent.possibleQueries.map((query, index) => (
+                      {(fullAgentConfig?.possible_queries ?? agent.possibleQueries ?? []).map((query, index) => (
                         <li
                           key={index}
                           className="text-sm text-muted-foreground flex items-start gap-2"
@@ -351,9 +359,15 @@ export function AgentDetailsDialog({
                         </li>
                       ))}
                     </ul>
-                  </div>
+                  </CollapsibleSection>
                 )}
-              </div>
+
+                {!configLoading && !workflow && !fullAgentConfig?.welcome_message && (fullAgentConfig?.possible_queries?.length ?? 0) === 0 && (agent.possibleQueries?.length ?? 0) === 0 && (
+                  <p className="text-sm text-muted-foreground py-2">
+                    No configuration details available.
+                  </p>
+                )}
+              </>
             )}
           </div>
 
@@ -364,23 +378,12 @@ export function AgentDetailsDialog({
                 Workflow Details
               </h3>
 
-              <div className="border border-border rounded-lg overflow-hidden">
-                <button
-                  onClick={() => toggleSection("workflow")}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <span className="text-sm font-medium text-foreground">
-                    Workflow Information
-                  </span>
-                  {expandedSections.workflow ? (
-                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  )}
-                </button>
-
-                {expandedSections.workflow && (
-                  <div className="px-4 py-3 bg-white space-y-4">
+              <CollapsibleSection
+                title="Workflow Information"
+                open={expandedSections.workflow}
+                onOpenChange={() => toggleSection("workflow")}
+              >
+                <div className="space-y-4">
                     {loading ? (
                       <div className="space-y-2">
                         <div className="h-4 bg-gray-200 rounded animate-pulse" />
@@ -470,9 +473,8 @@ export function AgentDetailsDialog({
                         No workflow details available
                       </p>
                     )}
-                  </div>
-                )}
-              </div>
+                </div>
+              </CollapsibleSection>
             </div>
           )}
         </div>
