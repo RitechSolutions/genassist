@@ -3,7 +3,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { ToolCard } from "../components/ToolsCard";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Search, Plus, Loader2, Loader } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/button";
 import {
   Select,
@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { Tool } from "@/interfaces/tool.interface";
 import { getAllTools, deleteTool } from "@/services/tools";
 import { toast } from "react-hot-toast";
+import { SearchInput } from "@/components/SearchInput";
 
 export default function Tools() {
   const isMobile = useIsMobile();
@@ -82,11 +83,12 @@ export default function Tools() {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 bg-zinc-100 p-8 relative">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
           <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-          <div className="max-w-7xl mx-auto space-y-6">
+          <div className="flex-1 p-4 sm:p-6 lg:p-8">
+            <div className="max-w-7xl mx-auto space-y-6">
             <header className="flex justify-between items-center">
               <div>
                 <h1 className="text-3xl font-bold">Tools</h1>
@@ -95,16 +97,12 @@ export default function Tools() {
                 </p>
               </div>
               <div className="flex items-center space-x-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="text"
-                    placeholder="Search tools…"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary w-full sm:w-64"
-                  />
-                </div>
+                <SearchInput
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  placeholder="Search tools…"
+                  className="w-full sm:w-64"
+                />
 
                 <Select
                   value={filterType}
@@ -112,7 +110,7 @@ export default function Tools() {
                     setFilterType(val as "all" | "api" | "function")
                   }
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full bg-white">
                     <SelectValue placeholder="All Types" />
                   </SelectTrigger>
                   <SelectContent>
@@ -124,7 +122,7 @@ export default function Tools() {
 
                 <Button
                   onClick={() => navigate("/tools/create")}
-                  className="flex items-center gap-2 bg-black text-white font-semibold py-3 px-5 rounded-md hover:opacity-90 transition"
+                  className="flex items-center gap-2 bg-black text-white font-semibold py-3 px-5 rounded-full hover:opacity-90 transition"
                 >
                   <Plus className="w-4 h-4" />
                   Add New
@@ -146,6 +144,7 @@ export default function Tools() {
                 onDeleteTool={handleDelete}
               />
             )}
+            </div>
           </div>
         </main>
       </div>

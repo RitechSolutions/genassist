@@ -1,6 +1,6 @@
 from typing import Optional, Dict, List, Literal
 from uuid import UUID
-from fastapi import UploadFile
+from fastapi import Form, UploadFile
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 
@@ -10,10 +10,10 @@ StorageProviderType = Literal["local", "s3", "azure", "gcs", "sharepoint"]
 class FileBase(BaseModel):
     name: str = Field(..., max_length=500, description="File name")
     path: str = Field(..., max_length=1000, description="File path")
+    storage_path: str = Field(..., max_length=1000, description="Path in storage provider")
+    storage_provider: StorageProviderType = Field(default="local", description="Storage provider")
     size: Optional[int] = Field(None, description="File size in bytes")
     mime_type: Optional[str] = Field(None, max_length=255, description="MIME type")
-    storage_provider: StorageProviderType = Field(default="local", description="Storage provider")
-    storage_path: str = Field(..., max_length=1000, description="Path in storage provider")
     description: Optional[str] = Field(None, description="File description")
     file_metadata: Optional[Dict] = Field(default_factory=dict, description="File metadata")
     file_extension: Optional[str] = Field(None, max_length=10, description="File extension")
@@ -22,16 +22,38 @@ class FileBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
-class FileCreate(FileBase):
-    file: UploadFile = Field(..., description="File to upload", alias="file")
-
-class FileUpdate(FileBase):
-    file: Optional[UploadFile] = Field(None, description="File to upload", alias="file")
+    @classmethod
+    def as_form(
+        cls,
+        name: str = Form(...),
+        path: str = Form(...),
+        storage_provider: StorageProviderType = Form("local"),
+        storage_path: str = Form(...),
+        size: Optional[int] = Form(None),
+        mime_type: Optional[str] = Form(None),
+        description: Optional[str] = Form(None),
+        file_metadata: Optional[str] = Form(None),  # or JSON → str, then parse
+        file_extension: Optional[str] = Form(None),
+        tags: Optional[str] = Form(None),           # e.g. JSON string, then parse
+        permissions: Optional[str] = Form(None),    # same
+    ) -> "FileBase":
+        # Optionally parse JSON strings for file_metadata, tags, permissions here
+        return cls(
+            name=name,
+            path=path,
+            storage_path=storage_path,
+            storage_provider=storage_provider,
+            size=size,
+            mime_type=mime_type,
+            description=description,
+            file_metadata=file_metadata,
+            file_extension=file_extension,
+            tags=tags,
+            permissions=permissions,
+        )
 
 class FileResponse(FileBase):
     id: UUID
-    user_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
     is_deleted: int

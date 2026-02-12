@@ -491,5 +491,5 @@ class WorkflowState:
         # and optimize large arrays with uniform schemas for performance
         from app.modules.workflow.engine.nodes.ml import ml_utils
 
-        sanitized = ml_utils.sanitize_for_json(response)
-        return ml_utils.optimize_output_for_response(sanitized)
+        return ml_utils.sanitize_for_json(response)
+        #return ml_utils.optimize_output_for_response(sanitized)

@@ -38,6 +38,8 @@ public struct GenassistChat: View {
     let placeholder: String
     let headerLogo: AnyView?
     let onDynamicItemTap: ((DynamicChatItem) -> Void)?
+    let tenant: String?
+    let customerId: String?
     
     public enum ConnectionState {
         case connecting
@@ -52,6 +54,8 @@ public struct GenassistChat: View {
         updateConversationPath: String? = nil,
         useWs: Bool = true,
         metadata: ChatMetadata,
+        tenant: String? = nil,
+        customerId: String? = nil,
         configuration: ChatConfiguration = ChatConfiguration(),
         headerTitle: String = "Genassist",
         headerSubtitle: String = "",
@@ -60,12 +64,14 @@ public struct GenassistChat: View {
         onDynamicItemTap: ((DynamicChatItem) -> Void)? = nil,
     ) {
         self.configuration = configuration
-        self.chatService = ChatService(baseURL: baseURL, apiKey: apiKey, metadata: metadata, startConversationPath: startConversationPath, updateConversationPath: updateConversationPath, useWs: useWs)
+        self.chatService = ChatService(baseURL: baseURL, apiKey: apiKey, metadata: metadata, startConversationPath: startConversationPath, updateConversationPath: updateConversationPath, useWs: useWs, tenant: tenant, customerId: customerId)
         self.headerTitle = headerTitle
         self.headerSubtitle = headerSubtitle
         self.placeholder = placeholder
         self.headerLogo = headerLogo
         self.onDynamicItemTap = onDynamicItemTap
+        self.tenant = tenant
+        self.customerId = customerId
 
     }
     
@@ -172,7 +178,8 @@ public struct GenassistChat: View {
                             }()
                             
                             await sendMessage(
-                                "Schedule confirmed with \(scheduleItem.restaurants.count) restaurants",
+                                //"Schedule confirmed with \(scheduleItem.restaurants.count) restaurants",
+                                "Confirm Schedule",
                                 extraMetadata: ["confirmSchedule": scheduleStringified]
                             )
                         }

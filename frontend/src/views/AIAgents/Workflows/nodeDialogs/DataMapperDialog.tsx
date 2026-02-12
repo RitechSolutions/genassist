@@ -12,7 +12,7 @@ import {
 } from "@/components/hover-card";
 import "ace-builds/src-noconflict/mode-python";
 import "ace-builds/src-noconflict/theme-twilight";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableAceEditor } from "../components/custom/DraggableAceEditor";
 
@@ -45,7 +45,7 @@ export const DataMapperDialog: React.FC<DataMapperDialogProps> = (props) => {
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -120,6 +120,6 @@ export const DataMapperDialog: React.FC<DataMapperDialogProps> = (props) => {
           />
         </div>
       </div>
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

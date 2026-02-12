@@ -183,12 +183,9 @@ export const conversationService = {
     try {
       const params = new URLSearchParams();
       params.set("skip", "0");
-      params.set("limit", "100");
+      params.set("limit", "3");
       params.append("conversation_status", "in_progress");
       params.append("conversation_status", "takeover");
-
-      if (options?.fromDate) params.append("from_date", options.fromDate);
-      if (options?.toDate) params.append("to_date", options.toDate);
       const s = (options?.sentiment || "").toLowerCase();
       const c = options?.category || ""; // keep server enum casing
       if (s && s !== "all") {
@@ -200,8 +197,6 @@ export const conversationService = {
           params.append("hostility_positive_max", String(options.hostility_positive_max));
         }
       }
-      if (c && c !== "all") params.append("conversation_topics", c);
-      if (typeof options?.include_feedback === "boolean") params.append("include_feedback", String(options.include_feedback));
 
       const url = `/conversations/?${params.toString()}`;
       const raw = await apiRequest<unknown>("get", url);

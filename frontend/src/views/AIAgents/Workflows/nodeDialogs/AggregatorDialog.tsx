@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { BaseNodeDialogProps } from "./base";
@@ -73,7 +73,7 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -163,6 +163,6 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
           Template for forwarding aggregated results to downstream nodes
         </p>
       </div>
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

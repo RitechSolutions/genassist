@@ -2,7 +2,8 @@ import React, {
   createContext,
   useContext,
   useState,
-  useEffect,
+  useCallback,
+  useRef,
   ReactNode,
 } from "react";
 import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
@@ -16,6 +17,7 @@ interface NodeSchemaContextType {
   getSchema: (nodeType: string) => FieldSchema[] | null;
   hasSchema: (nodeType: string) => boolean;
   refreshSchemas: () => Promise<void>;
+  ensureLoaded: () => Promise<void>;
 }
 
 const NodeSchemaContext = createContext<NodeSchemaContextType | undefined>(
@@ -30,33 +32,48 @@ export const NodeSchemaProvider: React.FC<NodeSchemaProviderProps> = ({
   children,
 }) => {
   const [schemas, setSchemas] = useState<Map<string, FieldSchema[]>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasFetchedRef = useRef(false);
+  const fetchPromiseRef = useRef<Promise<void> | null>(null);
 
-  const fetchSchemas = async () => {
-    try {
-      setLoading(true);
+  const fetchSchemas = useCallback(async () => {
+    // If already fetched, don't fetch again
+    if (hasFetchedRef.current) return;
 
-      const schemasResponse = await getAllNodeSchemas();
-      const schemaMap = new Map<string, FieldSchema[]>(
-        Object.entries(schemasResponse)
-      );
+    // If a fetch is in progress, return that promise
+    if (fetchPromiseRef.current) return fetchPromiseRef.current;
 
-      setSchemas(schemaMap);
-      setError(null);
-    } catch (err) {
-      setError("Failed to load node schemas");
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchPromise = (async () => {
+      try {
+        setLoading(true);
 
-  useEffect(() => {
-    // check if the user is authenticated
-    if (isAuthenticated()) {
-      fetchSchemas();
-    }
+        const schemasResponse = await getAllNodeSchemas();
+        const schemaMap = new Map<string, FieldSchema[]>(
+          Object.entries(schemasResponse)
+        );
+
+        setSchemas(schemaMap);
+        setError(null);
+        hasFetchedRef.current = true;
+      } catch (err) {
+        setError("Failed to load node schemas");
+      } finally {
+        setLoading(false);
+        fetchPromiseRef.current = null;
+      }
+    })();
+
+    fetchPromiseRef.current = fetchPromise;
+    return fetchPromise;
   }, []);
+
+  // Lazy load - only fetch when needed
+  const ensureLoaded = useCallback(async () => {
+    if (!hasFetchedRef.current && isAuthenticated()) {
+      await fetchSchemas();
+    }
+  }, [fetchSchemas]);
 
   const getSchema = (nodeType: string): FieldSchema[] | null => {
     return schemas.get(nodeType) || null;
@@ -67,6 +84,7 @@ export const NodeSchemaProvider: React.FC<NodeSchemaProviderProps> = ({
   };
 
   const refreshSchemas = async (): Promise<void> => {
+    hasFetchedRef.current = false;
     await fetchSchemas();
   };
 
@@ -77,6 +95,7 @@ export const NodeSchemaProvider: React.FC<NodeSchemaProviderProps> = ({
     getSchema,
     hasSchema,
     refreshSchemas,
+    ensureLoaded,
   };
 
   return (

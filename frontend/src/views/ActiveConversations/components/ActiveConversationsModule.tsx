@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/card";
 import { ActiveConversation } from "@/interfaces/liveConversation.interface";
@@ -8,8 +8,6 @@ import {
   HOSTILITY_NEUTRAL_MAX,
 } from "@/views/Transcripts/helpers/formatting";
 import type { TranscriptEntry } from "@/interfaces/transcript.interface";
-import { fetchTopicsReport } from "@/services/metrics";
-import { PaginationBar } from "@/components/PaginationBar";
 import ActiveConversationsHeader from "./ActiveConversationsHeader";
 import ActiveConversationsSummary from "./ActiveConversationsSummary";
 import ActiveConversationsList from "./ActiveConversationsList";
@@ -27,6 +25,12 @@ const parseTimestampMs = (value: string | undefined): number => {
   return Number.isFinite(ms) ? ms : 0;
 };
 
+type SentimentCounts = {
+  good: number;
+  neutral: number;
+  bad: number;
+};
+
 type Props = {
   title?: string;
   items: ActiveConversation[];
@@ -35,9 +39,13 @@ type Props = {
   onRetry?: () => void;
   onItemClick?: (item: ActiveConversation) => void;
   totalCount?: number;
+  sentimentCounts?: SentimentCounts;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
+  isLoadingMore?: boolean;
+  displayLimit?: number;
 };
 
-const PAGE_SIZE = 10;
 
 export function ActiveConversationsModule({
   title = "Active Conversations",
@@ -47,9 +55,13 @@ export function ActiveConversationsModule({
   onRetry,
   onItemClick,
   totalCount,
+  sentimentCounts,
+  hasMore = false,
+  onLoadMore,
+  isLoadingMore = false,
+  displayLimit = 3,
 }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [categories, setCategories] = useState<string[]>([]);
 
   const rawSentiment = (searchParams.get("sentiment") || "all").toLowerCase();
   const sentimentParam = (rawSentiment === "positive"
@@ -59,22 +71,7 @@ export function ActiveConversationsModule({
     : rawSentiment) as SentimentFilter;
   const categoryParam = (searchParams.get("category") || "all");
   const includeFeedbackParam = (searchParams.get("include_feedback") || "false").toLowerCase() === "true";
-  const pageParam = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
 
-  useEffect(() => {
-    let mounted = true;
-    fetchTopicsReport()
-      .then((report) => {
-        if (!mounted || !report) return;
-        const topics = Object.keys(report.details || {});
-        if (topics.length > 0) setCategories(["all", ...topics]);
-        else setCategories(["all", "booking", "billing", "tech support"]);
-      })
-      .catch(() => setCategories(["all", "booking", "billing", "tech support"]));
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -116,7 +113,13 @@ export function ActiveConversationsModule({
   }, [items]);
 
   const globalTotal = typeof totalCount === "number" ? totalCount : normalized.length;
+
+  // Use backend counts if provided, otherwise calculate from loaded items
   const globalCounts = useMemo(() => {
+    if (sentimentCounts) {
+      return sentimentCounts;
+    }
+    // Fallback: calculate from loaded items (less accurate for paginated data)
     let good = 0, neutral = 0, bad = 0;
     for (const i of normalized) {
       if (i.effectiveSentiment === "positive") good++;
@@ -124,7 +127,7 @@ export function ActiveConversationsModule({
       else bad++;
     }
     return { bad, neutral, good };
-  }, [normalized]);
+  }, [sentimentCounts, normalized]);
 
   const filtered = useMemo(() => {
     if (sentimentParam === "all") return normalized;
@@ -134,61 +137,56 @@ export function ActiveConversationsModule({
 
   const total = filtered.length;
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = Math.min(pageParam, totalPages);
-  // Order: highest hostility first, then newest to oldest for everything else (and within buckets)
+  // Get sentiment priority: Bad (negative) = 0, Neutral = 1, Good (positive) = 2
+  const getSentimentPriority = (sentiment: string): number => {
+    if (sentiment === "negative") return 0; // Bad first
+    if (sentiment === "neutral") return 1;   // Neutral second
+    return 2; // Good (positive) last
+  };
+
+  // Sort by worst sentiment first (Bad → Neutral → Good), then by newest timestamp
   const ordered = useMemo(() => {
     return [...filtered].sort((a, b) => {
-      const aHostility = a.in_progress_hostility_score || 0;
-      const bHostility = b.in_progress_hostility_score || 0;
-      const aHigh = isHighHostility(aHostility);
-      const bHigh = isHighHostility(bHostility);
+      const aSentiment = a.effectiveSentiment || "";
+      const bSentiment = b.effectiveSentiment || "";
+      const aPriority = getSentimentPriority(aSentiment);
+      const bPriority = getSentimentPriority(bSentiment);
 
-      if (aHigh !== bHigh) {
-        return bHigh ? 1 : -1; // keep high hostility first
+      // First sort by sentiment priority (Bad first, then Neutral, then Good)
+      if (aPriority !== bPriority) {
+        return aPriority - bPriority;
       }
 
-      // If both high, keep the higher hostility first, then newest
-      if (aHigh && bHigh) {
-        const hostilityDiff = bHostility - aHostility;
-        if (hostilityDiff !== 0) return hostilityDiff;
-      }
-
+      // Within the same sentiment, sort by newest first (most recent timestamp)
       const timeDiff = parseTimestampMs(b.timestamp) - parseTimestampMs(a.timestamp);
       if (timeDiff !== 0) return timeDiff;
 
-      // Fallback: higher hostility wins
-      const hostilityDiff = bHostility - aHostility;
-      if (hostilityDiff !== 0) return hostilityDiff;
-
+      // Fallback: use ID for consistent ordering
       return (b.id || "").localeCompare(a.id || "");
     });
   }, [filtered]);
-  const pageItems = ordered.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
-  );
 
-  const handlePageChange = (page: number) => setParam("page", String(page));
+  // Exclude only conversations we know have no messages (empty array / "[]")
+  const withMessages = useMemo(() => {
+    return ordered.filter((item) => !hasNoMessages(item));
+  }, [ordered]);
+
+  // Show conversations up to the display limit
+  const pageItems = displayLimit > 0 ? withMessages.slice(0, displayLimit) : withMessages;
 
   return (
-    <Card className="p-6 mb-8 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
-      <ActiveConversationsHeader
-        title={title}
-        sentiment={sentimentParam}
-        category={categoryParam}
-        categories={categories}
-        includeFeedback={includeFeedbackParam}
-        onChange={(key, value) => setParam(key, value)}
-      />
+    <Card className="p-6 mb-5 shadow-sm animate-fade-up bg-white border border-border rounded-xl">
+      <ActiveConversationsHeader title={title} />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
-        <div className="md:col-span-1">
+      <div className="flex gap-6">
+        {/* Left Section - Sentiment Summary */}
+        <div className="w-60 shrink-0">
           <ActiveConversationsSummary total={globalTotal} counts={globalCounts} loading={isLoading} />
         </div>
 
-        <div className="md:col-span-3">
-          <div className="rounded-lg hover:rounded-lg bg-muted/40">
+        {/* Right Section - Conversation List */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex flex-col rounded-2xl overflow-hidden bg-muted/40 min-w-0 w-full">
             <ActiveConversationsList
               items={pageItems.map((i) => ({ ...i, transcript: getLatestMessagePreview(i.transcript) }))}
               isLoading={isLoading}
@@ -197,13 +195,19 @@ export function ActiveConversationsModule({
               onClickRow={(row) => onItemClick?.(row as unknown as ActiveConversation)}
             />
           </div>
-          <PaginationBar
-            total={total}
-            pageSize={PAGE_SIZE}
-            currentPage={currentPage}
-            pageItemCount={pageItems.length}
-            onPageChange={handlePageChange}
-          />
+
+          {/* Load More Button */}
+          {hasMore && onLoadMore && (
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={onLoadMore}
+                disabled={isLoadingMore}
+                className="px-4 py-2 text-sm font-medium text-primary hover:text-primary/80 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoadingMore ? "Loading..." : "Load More"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </Card>
@@ -211,6 +215,32 @@ export function ActiveConversationsModule({
 }
 
 export default ActiveConversationsModule;
+
+function hasNoMessages(item: NormalizedConversation): boolean {
+  const transcript = item.transcript;
+  const duration = item.duration ?? 0;
+  const wordCount = item.word_count ?? 0;
+
+  // Explicit empty transcript
+  if (Array.isArray(transcript)) return transcript.length === 0;
+  if (typeof transcript === "string") {
+    if (transcript.trim() === "") {
+      // No transcript content: treat as no messages only when there's no activity (0 duration, 0 words)
+      return duration === 0 && wordCount === 0;
+    }
+    try {
+      const parsed = JSON.parse(transcript);
+      return Array.isArray(parsed) && parsed.length === 0;
+    } catch {
+      return false;
+    }
+  }
+  // transcript undefined/null and no activity
+  if (transcript === undefined || transcript === null) {
+    return duration === 0 && wordCount === 0;
+  }
+  return false;
+}
 
 function getLatestMessagePreview(transcript: string | TranscriptEntry[] | unknown): string {
   if (!transcript) return "";

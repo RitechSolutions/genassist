@@ -41,6 +41,7 @@ public struct TypingIndicator: View {
     @State private var phraseParts: [String] = []
     @State private var currentPartIndex = 0
     @State private var timer: Timer?
+    @State private var isTransitioning = false
     let configuration: ChatConfiguration
     let thinkingPhrases: [String]
     
@@ -61,7 +62,7 @@ public struct TypingIndicator: View {
             HStack(spacing: configuration.timestamp.spacing) {
 
                 
-                Text("Virtual Assistant")
+                Text("Virtual Angel")
                     .font(configuration.timestamp.senderFont)
                     .foregroundColor(configuration.timestamp.senderColor)
                 Text(dateFormatter.string(from: Date()))
@@ -75,11 +76,15 @@ public struct TypingIndicator: View {
                 
                 HStack(spacing: 4) {
                     if !currentPhrasePart.isEmpty {
-                        // Show thinking phrase text
+                        // Show thinking phrase text with smooth transitions
                         Text(currentPhrasePart)
                             .font(configuration.receivedMessage.textFont)
                             .foregroundColor(configuration.receivedMessage.textColor)
                             .multilineTextAlignment(.leading)
+                            .opacity(isTransitioning ? 0 : 1)
+                            .scaleEffect(isTransitioning ? 0.95 : 1.0)
+                            .animation(.easeInOut(duration: 0.3), value: isTransitioning)
+                            .animation(.easeInOut(duration: 0.3), value: currentPhrasePart)
                     } else {
                         // Show animated dots
                         ForEach(0..<3) { index in
@@ -123,6 +128,7 @@ public struct TypingIndicator: View {
         // Check if we have more than 1 thinking phrase
         guard thinkingPhrases.count > 1 else {
             currentPhrasePart = ""
+            isTransitioning = false
             return
         }
         
@@ -135,6 +141,7 @@ public struct TypingIndicator: View {
         // Start with the first part
         currentPartIndex = 0
         currentPhrasePart = phraseParts.first ?? ""
+        isTransitioning = false
         
         // Start timer to cycle through parts at configured interval
         startTimer()
@@ -144,14 +151,28 @@ public struct TypingIndicator: View {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: configuration.thinkingPhrase.interval, repeats: true) { _ in
             Task { @MainActor in
-                currentPartIndex += 1
+                // Fade out current phrase
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    isTransitioning = true
+                }
                 
-                if currentPartIndex < phraseParts.count {
-                    currentPhrasePart = phraseParts[currentPartIndex]
-                } else {
-                    // Reached the end, stop the timer
-                    timer?.invalidate()
-                    timer = nil
+                // Wait for fade out to complete, then change text and fade in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    currentPartIndex += 1
+                    
+                    if currentPartIndex < phraseParts.count {
+                        currentPhrasePart = phraseParts[currentPartIndex]
+                        
+                        // Fade in new phrase
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            isTransitioning = false
+                        }
+                    } else {
+                        // Reached the end, stop the timer
+                        timer?.invalidate()
+                        timer = nil
+                        isTransitioning = false
+                    }
                 }
             }
         }

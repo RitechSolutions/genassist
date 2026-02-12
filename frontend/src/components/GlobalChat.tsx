@@ -34,7 +34,7 @@ export const GlobalChat = () => {
       headerTitle="Genassist Chat"
       placeholder="Ask anything..."
       theme={{
-        primaryColor: "#4F46E5",
+        primaryColor: "#173DED",
         backgroundColor: "#ffffff",
         textColor: "#000000",
         fontFamily: "Roboto, Arial, sans-serif",
@@ -45,6 +45,7 @@ export const GlobalChat = () => {
       floatingConfig={{
         position: "bottom-right",
       }}
+      useFile={true}
     />
   );
 };

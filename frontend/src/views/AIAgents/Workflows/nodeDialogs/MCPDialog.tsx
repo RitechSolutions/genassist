@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/checkbox";
 import { ScrollArea } from "@/components/scroll-area";
 import { Textarea } from "@/components/textarea";
 import { Save, RefreshCw } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import {
@@ -274,7 +274,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
       footer={
@@ -541,6 +541,6 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           be available for the agent to use.
         </p>
       </div>
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

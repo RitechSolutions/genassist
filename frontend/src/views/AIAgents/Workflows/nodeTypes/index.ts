@@ -17,11 +17,13 @@ import {
   SQL_NODE_DEFINITION,
   ML_MODEL_INFERENCE_NODE_DEFINITION,
   THREAD_RAG_NODE_DEFINITION,
+  WORKFLOW_EXECUTOR_NODE_DEFINITION,
 } from "./tools/definitions";
 import KnowledgeBaseNode from "./tools/knowledgeBaseNode";
 import SQLNode from "./tools/sqlNode";
 import MLModelInferenceNode from "./tools/mlModelInferenceNode";
 import ThreadRAGNode from "./tools/threadRAGNode";
+import WorkflowExecutorNode from "./tools/workflowExecutorNode";
 import MCPNode from "./llm/mcpNode";
 import ReadMailsNode from "./integrations/readMailsNode";
 import ToolBuilderNode from "./llm/toolBuilderNode";
@@ -112,6 +114,8 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(TRAIN_MODEL_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(MCP_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(WORKFLOW_EXECUTOR_NODE_DEFINITION);
 };
 
 // Get node types for React Flow
@@ -145,5 +149,6 @@ export const getNodeTypes = () => {
     preprocessingNode: PreprocessingNode,
     trainModelNode: TrainModelNode,
     mcpNode: MCPNode,
+    workflowExecutorNode: WorkflowExecutorNode,
   };
 };

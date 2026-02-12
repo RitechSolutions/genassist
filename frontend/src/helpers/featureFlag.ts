@@ -44,18 +44,18 @@ export const parseFeatureFlags = (featureFlags: FeatureFlag[], prefix: string = 
     if (flag.attribute) {
       switch (flag.attribute) {
         case FeatureToggleAttribute.VISIBLE:
-          item.visible = flag.value === 'true';
+          item.visible = flag.val === 'true';
           break;
         case FeatureToggleAttribute.DISABLED:
-          item.disabled = flag.value === 'true';
+          item.disabled = flag.val === 'true';
           break;
         case FeatureToggleAttribute.VARIANT:
-          item.variant = flag.value;
+          item.variant = flag.val;
           break;
       }
     } else {
       // For backward compatibility with the current implementation
-      item.visible = flag.value === 'true';
+      item.visible = flag.val === 'true';
     }
 
     flagsMap[itemName] = item;
@@ -78,28 +78,28 @@ export const isFeatureEnabled = (featureFlags: FeatureFlag[], key: string): bool
   if (exactFlag) {
     // If it has an attribute, handle it accordingly
     if (exactFlag.attribute === FeatureToggleAttribute.VISIBLE) {
-      return exactFlag.value === 'true';
+      return exactFlag.val === 'true';
     }
     if (exactFlag.attribute === FeatureToggleAttribute.DISABLED) {
-      return exactFlag.value !== 'true';
+      return exactFlag.val !== 'true';
     }
     // Default behavior
-    return exactFlag.value === 'true';
+    return exactFlag.val === 'true';
   }
 
   // Check for parent keys for hierarchical fallback
   for (let i = parts.length - 1; i > 0; i--) {
     const parentKey = parts.slice(0, i).join('.');
     const parentFlag = featureFlags.find(f => f.key === parentKey && f.is_active);
-    
+
     if (parentFlag) {
       if (parentFlag.attribute === FeatureToggleAttribute.VISIBLE) {
-        return parentFlag.value === 'true';
+        return parentFlag.val === 'true';
       }
       if (parentFlag.attribute === FeatureToggleAttribute.DISABLED) {
-        return parentFlag.value !== 'true';
+        return parentFlag.val !== 'true';
       }
-      return parentFlag.value === 'true';
+      return parentFlag.val === 'true';
     }
   }
 
@@ -119,16 +119,16 @@ export const getFeatureValue = (featureFlags: FeatureFlag[], key: string): strin
   // Try exact match first
   const exactFlag = featureFlags.find(f => f.key === key && f.is_active);
   if (exactFlag) {
-    return exactFlag.value;
+    return exactFlag.val;
   }
 
   // Check for parent keys for hierarchical fallback
   for (let i = parts.length - 1; i > 0; i--) {
     const parentKey = parts.slice(0, i).join('.');
     const parentFlag = featureFlags.find(f => f.key === parentKey && f.is_active);
-    
+
     if (parentFlag) {
-      return parentFlag.value;
+      return parentFlag.val;
     }
   }
 

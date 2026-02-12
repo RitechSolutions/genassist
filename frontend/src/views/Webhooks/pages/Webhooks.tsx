@@ -35,26 +35,22 @@ export default function WebhooksPage() {
 
   return (
     <PageLayout>
-      <div className="px-6 py-4 w-full"> {/* Add padding and full-width wrapper */}
-        <PageHeader
-          title="Webhooks"
-          subtitle="Manage outgoing webhooks for event triggers"
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          searchPlaceholder="Search webhooks..."
-          actionButtonText="Add New Webhook"
-          onActionClick={handleCreateWebhook}
-        />
+      <PageHeader
+        title="Webhooks"
+        subtitle="Manage outgoing webhooks for event triggers"
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search webhooks..."
+        actionButtonText="Add New Webhook"
+        onActionClick={handleCreateWebhook}
+      />
 
-        <div className="w-full mt-4"> {/* Ensure WebhookCard fills space */}
-          <WebhookCard
-            searchQuery={searchQuery}
-            refreshKey={refreshKey}
-            onEditWebhook={handleEditWebhook}
-            updatedWebhook={updatedWebhook}
-          />
-        </div>
-      </div>
+      <WebhookCard
+        searchQuery={searchQuery}
+        refreshKey={refreshKey}
+        onEditWebhook={handleEditWebhook}
+        updatedWebhook={updatedWebhook}
+      />
 
       <WebhookDialog
         isOpen={isDialogOpen}

@@ -10,13 +10,12 @@ from urllib.parse import quote
 
 from app.modules.filemanager.providers.base import BaseStorageProvider
 from app.db.models.file import FileModel
+from app.schemas.file import FileBase
 from app.repositories.file_manager import FileManagerRepository
-from app.schemas.file import FileCreate, FileUpdate
 from app.core.tenant_scope import get_tenant_context
-from app.auth.utils import get_current_user_id
 
 from app.modules.filemanager.providers import init_by_name
-from app.core.config.settings import FileStorageSettings
+from app.core.config.settings import file_storage_settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,38 +42,11 @@ class FileManagerService:
 
         return storage_provider_class
 
-    async def _get_default_storage_provider(self) -> BaseStorageProvider:
-        """Get and initialize the default storage provider."""
-        if self.storage_provider and self.storage_provider.is_initialized():
-            return self.storage_provider
-
-        from app.modules.filemanager.manager import get_file_manager_manager
-        from app.modules.filemanager.config import FileManagerConfig, LocalStorageConfig
-        from app.core.config.settings import settings
-
-        manager = get_file_manager_manager()
-        config = manager._config
-
-        if not config:
-            config = FileManagerConfig(
-                default_storage_provider="local",
-                local=LocalStorageConfig(
-                    base_path=str(settings.UPLOAD_FOLDER) if hasattr(settings, 'UPLOAD_FOLDER') else "/tmp/filemanager"
-                )
-            )
-
-        provider = await manager._get_or_create_provider(config.default_storage_provider, config)
-        if provider:
-            self.storage_provider = provider
-        return provider
-
     def build_file_headers(self, file: FileModel, content: Optional[bytes] = None, disposition_type: str = "inline") -> tuple[dict, str]:
         """Build HTTP headers for file responses."""
         media_type = file.mime_type or "application/octet-stream"
 
         # Properly encode filename for Content-Disposition header
-        # Use RFC 5987 encoding for non-ASCII characters to avoid latin-1 encoding errors
-        # Percent-encode the filename for safe ASCII representation
         filename_encoded = quote(file.name, safe='')
 
         # For UTF-8 version (RFC 5987), percent-encode UTF-8 bytes
@@ -97,7 +69,7 @@ class FileManagerService:
         if content is not None:
             headers["content-length"] = str(len(content))
         elif hasattr(file, 'size') and file.size:
-            headers["content-Length"] = str(file.size)
+            headers["content-length"] = str(file.size)
 
         return headers, media_type
 
@@ -106,10 +78,8 @@ class FileManagerService:
     async def create_file(
         self,
         file: UploadFile,
-        description: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        permissions: Optional[Dict] = None,
-        allowed_extensions: Optional[List[str]] = None,
+        file_base: FileBase,
+        allowed_extensions: Optional[list[str]] = None,
     ) -> FileModel:
         """
         Create a file metadata record and upload file content to storage.
@@ -119,101 +89,83 @@ class FileManagerService:
             allowed_extensions: Optional list of allowed file extensions
         """
 
+        file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
+        file_extension = file_extension.lower() if file_extension else "txt"
+
+        # check if file extension is allowed
+        if allowed_extensions is not None and str(file_extension).lower() not in allowed_extensions:
+            raise ValueError(f"File extension {file_extension} not allowed") from None
 
         # read from the file
         file_content = await file.read()
         file_size = len(file_content)
-        file_extension = file.filename.split(".")[-1].lower()
         file_mime_type = file.content_type
         file_name = file.filename
-        file_storage_provider = self.storage_provider.name
-        file_path = self.storage_provider.get_base_path()
-
-        # generate a unique file name
-        relative_storage_path = f"{uuid.uuid4()}.{file_extension}"
-
-        # check if file extension is allowed
-        if allowed_extensions and file_extension not in allowed_extensions:
-            raise ValueError(f"File extension {file_extension} not allowed")
+        # Prefer the storage provider coming from the request payload; fall back to the
+        # already configured provider if present, otherwise default to "local".
+        file_storage_provider = (
+            file_base.storage_provider
+            or (self.storage_provider.name if self.storage_provider else None)
+            or "local"
+        )
+        
+        # Generate a unique file name only when the client hasn't provided one
+        unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
+        file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
 
         # Get or initialize the storage provider
+        provider_name = file_storage_provider or "local"
+        await self._initialize_storage_provider(provider_name)
         if not self.storage_provider or not self.storage_provider.is_initialized():
-            # read from the file
-            if not file_storage_provider:
-                file_storage_provider = "local"
-                # get storage provider by name
-                provider_config = {
-                    "base_path": file_path
-                }
-                storage_provider_class = self.get_storage_provider_by_name(file_storage_provider, config=provider_config)
-                await self.set_storage_provider(storage_provider_class)
+            raise ValueError("Storage provider not initialized")
 
-        if not self.storage_provider:
-            raise ValueError("Storage provider not configured")
+        # Resolve the storage path that will be persisted with the file metadata.
+        # If the caller has explicitly provided a storage_path, prefer that.
+        storage_path = file_base.storage_path or self.storage_provider.get_base_path()
 
-        user_id = get_current_user_id()
-
-        file_data = FileCreate(
-            file=file,
-            name=file_name,
+        # create the file data
+        file_data = FileBase(
+            name=file_base.name or file_name,
             mime_type=file_mime_type,
             size=file_size,
             file_extension=file_extension,
             storage_provider=file_storage_provider,
+            storage_path=storage_path,
             path=file_path,
-            storage_path=relative_storage_path,
-            description=description,
-            tags=tags,
-            permissions=permissions,
+            description=file_base.description,
+            tags=file_base.tags,
+            permissions=file_base.permissions,
         )
 
         # Upload file content if provided
         if file_content is not None:
             await self.storage_provider.upload_file(
                 file_content=file_content,
-                storage_path=file_data.storage_path,
+                file_path=file_path,
                 file_metadata={"name": file_data.name, "mime_type": file_data.mime_type}
             )
 
         # Create file metadata record
-        db_file = await self.repository.create_file(file_data, user_id)
+        db_file = await self.repository.create_file(file_data)
         return db_file
 
     async def get_file_by_id(self, file_id: UUID) -> FileModel:
         """Get file metadata by ID."""
-        return await self.repository.get_file_by_id(file_id)
+        file = await self.repository.get_file_by_id(file_id)
+        return file
 
     async def get_file_content(self, file: FileModel) -> bytes:
         """Get file content from storage provider."""
-        file_storage_provider = file.storage_provider
-
-        if not file_storage_provider:
-            raise ValueError("Storage provider not configured")
-
-
-        # load settings from settings.py
-        file_settings = FileStorageSettings()
+        # initialize the storage provider
+        await self._initialize_storage_provider(file.storage_provider)
         
-        # get storage provider by name
-        provider_config = file_settings.model_dump()
-        
-        storage_provider_class = self.get_storage_provider_by_name(file_storage_provider, config=provider_config)
-        if not storage_provider_class:
-            raise ValueError(f"Storage provider class {file_storage_provider} not found")
-
-        # initialize storage provider
-        await self.set_storage_provider(storage_provider_class)
+        # make sure the storage provider is initialized
         if not self.storage_provider.is_initialized():
-            raise ValueError(f"Storage provider {self.storage_provider} not initialized")
+            raise ValueError("Storage provider not initialized")
 
-        # storage_path
-        storage_path = f"{file.path}/{file.storage_path}"
-        
-        # override storage path for s3
-        if file.storage_provider == "s3":
-            storage_path = file.storage_path
-
-        return await self.storage_provider.download_file(storage_path)
+        # get the storage path to download the file from
+        download_path = file.path if file.storage_provider == "s3" else f"{self.storage_provider.get_base_path()}/{file.path}"
+        return await self.storage_provider.download_file(download_path)
 
     async def get_file_base64(self, file_id: UUID) -> str:
         """Get file content as base64 encoded string."""
@@ -226,6 +178,13 @@ class FileManagerService:
         file = await self.get_file_by_id(file_id)
         content = await self.get_file_content(file)
         return file, content
+
+    async def download_file_to_path(self, file_id: UUID, path: str) -> None:
+        """Download file to path."""
+        file = await self.get_file_by_id(file_id)
+        content = await self.get_file_content(file)
+        with open(path, "wb") as f:
+            f.write(content)
 
     async def list_files(
         self,
@@ -243,18 +202,11 @@ class FileManagerService:
             offset=offset
         )
 
-    async def update_file(self, file_id: UUID, file_update: FileUpdate) -> FileModel:
+    async def update_file(self, file_id: UUID, file: UploadFile, file_base: FileBase) -> FileModel:
         """Update file metadata."""
-        update_data = file_update.model_dump(exclude_unset=True)
-        
-        # Handle path updates
-        if "path" in update_data and update_data["path"]:
-            # If storage path is not explicitly updated, update it to match path
-            if "storage_path" not in update_data:
-                update_data["storage_path"] = update_data["path"]
-
-        file_update_obj = FileUpdate(**update_data)
-        return await self.repository.update_file(file_id, file_update_obj)
+        # update the file
+        file = await self.repository.update_file(file_id, file, **file_base)
+        return file_base
 
     async def delete_file(self, file_id: UUID, delete_from_storage: bool = True) -> None:
         """
@@ -273,7 +225,44 @@ class FileManagerService:
 
         await self.repository.delete_file(file_id)
 
+    # ==================== File URL Methods ====================
+    async def get_file_url(self, file: FileModel) -> str:
+        """Get the URL of a file."""
+        # initialize the storage provider
+        await self._initialize_storage_provider(file.storage_provider)
+
+        # make sure the storage provider is initialized
+        if not self.storage_provider.is_initialized():
+            raise ValueError("Storage provider not initialized")
+
+        # when used the local file storage provider, use the source url
+        if file.storage_provider == "local":
+            config_base_url = self.storage_provider.base_url
+            return f"{config_base_url}/api/file-manager/files/{file.id}/source?X-Tenant-Id={get_tenant_context()}"
+
+        # get the file url from the storage provider
+        return await self.storage_provider.get_file_url(file.storage_path, file.path)
+
     # ==================== Helper Methods ====================
+
+    async def _initialize_storage_provider(self, storage_provider_name: str) -> BaseStorageProvider:
+        """Initialize the storage provider."""
+        if self.storage_provider and self.storage_provider.is_initialized():
+            return self.storage_provider
+        
+        # make sure the file has a storage provider
+        if not storage_provider_name:
+            raise ValueError("File has no storage provider")
+
+
+        # get the storage provider configuration for the file storage provider
+        # convert pydantic settings object to a plain dict for providers
+        config = file_storage_settings.model_dump()
+
+        # initialize the storage provider with the resolved configuration
+        await self.set_storage_provider(
+            self.get_storage_provider_by_name(storage_provider_name, config=config)
+        )
 
     def _generate_file_path(self, name: str, user_id: Optional[UUID] = None) -> str:
         """Generate a file path based on name and user for file metadata record."""

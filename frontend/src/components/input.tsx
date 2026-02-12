@@ -1,16 +1,19 @@
 import * as React from "react"
 
-import { cn } from "@/helpers/utils"
+import { cn, escapeHtml } from "@/helpers/utils"
 
 const highlightPattern = (text: string) => {
-  if (!text) return text;
-  const parts = text.split(/(\{\{[^}]+\}\})/g);
-  return parts.map(part => {
-    if (part.match(/\{\{[^}]+\}\}/)) {
-      return `<span class="text-blue-500 bg-background ">${part}</span>`;
-    }
-    return `<span class="text-transparent">${part}</span>`;
-  }).join('');
+  if (!text) return text
+  const parts = text.split(/(\{\{[^}]+\}\})/g)
+  return parts
+    .map((part) => {
+      const safePart = escapeHtml(part)
+      if (part.match(/\{\{[^}]+\}\}/)) {
+        return `<span class="text-blue-500 bg-background ">${safePart}</span>`
+      }
+      return `<span class="text-transparent">${safePart}</span>`
+    })
+    .join("")
 }
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
@@ -28,11 +31,11 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
         <input
           type={type}
           className={cn(
-            "flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm pointer-events-auto relative z-10",
+            "flex h-10 w-full rounded-full border border-input bg-transparent px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm pointer-events-auto relative z-10",
             className
           )}
           ref={ref}
-          value={value}
+          value={value ?? ""}
           {...props}
         />
         {typeof value === 'string' && (

@@ -130,9 +130,8 @@ async def execute_pipeline_run_async(run_id: UUID):
                     "edges": workflow.edges or [],
                 }
 
-                # Build workflow
-                workflow_engine = WorkflowEngine.get_instance()
-                workflow_engine.build_workflow(workflow_config)
+                # Build workflow engine with configuration
+                workflow_engine = WorkflowEngine(workflow_config)
 
                 # Prepare input data with model context
                 input_data = {
@@ -144,7 +143,7 @@ async def execute_pipeline_run_async(run_id: UUID):
                 # Execute workflow
                 thread_id = f"pipeline_run_{run_id}"
                 state = await workflow_engine.execute_from_node(
-                    str(run.workflow_id), input_data=input_data, thread_id=thread_id
+                    input_data=input_data, thread_id=thread_id
                 )
 
                 # Extract execution results

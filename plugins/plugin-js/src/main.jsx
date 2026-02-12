@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { GenAgentChat } from "genassist-chat-react";
+import { GenAgentChat } from "../../react/src";
 
 // Import CSS files
 import "./font.css";

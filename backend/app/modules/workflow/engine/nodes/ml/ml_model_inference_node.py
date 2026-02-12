@@ -164,7 +164,7 @@ class MLModelInferenceNode(BaseNode):
                     pkl_file=ml_model.pkl_file,
                     updated_at=ml_model.updated_at
                 )
-                logger.debug(f"Model {model_id} ready for inference")
+                logger.info(f"Model {model_id} ready for inference")
             except Exception as e:
                 logger.error(
                     f"Failed to load model {model_id}: {str(e)}", exc_info=True)
@@ -176,7 +176,7 @@ class MLModelInferenceNode(BaseNode):
             # Prepare features for inference
             # Convert string inputs to proper types (bool, float, int) and parse JSON arrays
             inference_inputs = convert_input_types(inference_inputs)
-            logger.info(f"Converted inference inputs: {inference_inputs}")
+            logger.debug(f"Converted inference inputs: {inference_inputs}")
             
             # Normalize to batch format: convert single values to lists
             normalized_inputs = {}

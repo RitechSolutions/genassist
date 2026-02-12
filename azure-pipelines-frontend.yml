@@ -96,8 +96,8 @@ steps:
       ENV_FILE="frontend/.env"
       : > "$ENV_FILE"
       echo "VITE_UI_VERSION=${branchNo}-$(Build.BuildNumber)" >> "$ENV_FILE"
-      echo "VITE_PUBLIC_API_URL=https://api.dev.genassist.ritech.io/api" >> "$ENV_FILE"
-      echo "VITE_WEBSOCKET_PUBLIC_URL=wss://api.dev.genassist.ritech.io/api" >> "$ENV_FILE"
+      echo "VITE_PUBLIC_API_URL=$VITE_PUBLIC_API_URL" >> "$ENV_FILE"
+      echo "VITE_WEBSOCKET_PUBLIC_URL=$VITE_WEBSOCKET_PUBLIC_URL" >> "$ENV_FILE"
 
       # Use secret passed via env
       echo "VITE_GENASSIST_CHAT_APIKEY=$VITE_GENASSIST_CHAT_APIKEY" >> "$ENV_FILE"
@@ -112,6 +112,8 @@ steps:
     displayName: 'Build Image'
     env:
       VITE_GENASSIST_CHAT_APIKEY: $(VITE_GENASSIST_CHAT_APIKEY)
+      VITE_WEBSOCKET_PUBLIC_URL: $(VITE_WEBSOCKET_PUBLIC_URL)
+      VITE_PUBLIC_API_URL: $(VITE_PUBLIC_API_URL)
 
   - task: PublishBuildArtifacts@1
     displayName: 'Publish frontend deploy files'

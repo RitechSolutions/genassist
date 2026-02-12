@@ -9,7 +9,7 @@ import { KnowledgeItem } from "@/interfaces/knowledge.interface";
 import { getAllKnowledgeItems } from "@/services/api";
 import { useToast } from "@/components/use-toast";
 import { Save, Plus, ExternalLink } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 
@@ -78,7 +78,7 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
       footer={
@@ -191,6 +191,6 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
           Select the knowledge bases you want to query.
         </p>
       </div>
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };
