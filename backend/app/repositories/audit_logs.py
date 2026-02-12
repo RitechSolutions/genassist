@@ -1,6 +1,7 @@
 from uuid import UUID
 from injector import inject
 from sqlalchemy import select
+from sqlalchemy.orm import load_only
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.audit_log import AuditLogModel
 from app.schemas.audit_log import AuditLogSearchParams
@@ -14,9 +15,18 @@ class AuditLogRepository:
 
     async def search_logs(self, search_params: AuditLogSearchParams) -> list[AuditLogModel]:
         """
-        Search audit logs with filters.
+        Search audit logs with filters. Excludes json_changes for performance.
         """
-        query = select(AuditLogModel)
+        query = select(AuditLogModel).options(
+            load_only(
+                AuditLogModel.id,
+                AuditLogModel.table_name,
+                AuditLogModel.record_id,
+                AuditLogModel.action_name,
+                AuditLogModel.modified_at,
+                AuditLogModel.modified_by,
+            )
+        )
 
         # Apply filters based on search parameters
         if search_params.start_date:

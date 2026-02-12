@@ -40,7 +40,7 @@ export function ActiveConversationsList({ items, isLoading, error, onRetry, onCl
 
   if (!items || items.length === 0) {
     return (
-      <div className="p-6 text-muted-foreground flex items-center justify-center min-h-[220px]">
+      <div className="p-6 text-muted-foreground flex items-center justify-center min-h-[240px] bg-muted">
         <div className="text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white/70">
             <MessageSquare className="w-6 h-6 text-gray-500" />
@@ -53,7 +53,7 @@ export function ActiveConversationsList({ items, isLoading, error, onRetry, onCl
   }
 
   return (
-    <>
+    <div className="w-full min-w-0">
       {items.map((item) => (
         <ConversationRow
           key={item.id}
@@ -62,7 +62,7 @@ export function ActiveConversationsList({ items, isLoading, error, onRetry, onCl
           onClick={onClickRow}
         />
       ))}
-    </>
+    </div>
   );
 }
 

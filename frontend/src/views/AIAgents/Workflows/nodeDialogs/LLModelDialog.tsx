@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { BaseLLMNodeData, LLMModelNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Save } from "lucide-react";
 import { ModelConfiguration } from "../components/ModelConfiguration";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 
 type LLModelDialogProps = BaseNodeDialogProps<
@@ -33,14 +32,13 @@ export const LLModelDialog: React.FC<LLModelDialogProps> = (props) => {
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button onClick={handleSave}>
-            <Save className="h-4 w-4 mr-2" />
             Save Changes
           </Button>
         </>
@@ -57,6 +55,6 @@ export const LLModelDialog: React.FC<LLModelDialogProps> = (props) => {
         onConfigChange={setConfig}
         typeSelect="model"
       />
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

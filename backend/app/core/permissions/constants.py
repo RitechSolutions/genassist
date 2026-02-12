@@ -189,6 +189,11 @@ class FileManagerPermissions:
     UPDATE = "update:file"
     DELETE = "delete:file"
 
+class DashboardPermissions:
+    """Dashboard read permissions"""
+    READ = "read:dashboard"
+
+
 class Permissions:
     """
     Centralized access to all permission constants.
@@ -225,6 +230,7 @@ class Permissions:
     Workflow = WorkflowPermissions
     OpenAI = OpenAIPermissions
     Customer = CustomerPermissions
+    Dashboard = DashboardPermissions
     FileManager = FileManagerPermissions
 
 
@@ -252,7 +258,7 @@ def get_all_permission_constants() -> set[str]:
         PermissionPermissions, RecordingPermissions, RolePermissions,
         RolePermissionPermissions, TenantPermissions, UserPermissions,
         UserTypePermissions, WorkflowPermissions, OpenAIPermissions,
-        LegacyPermissions, FileManagerPermissions
+        CustomerPermissions, DashboardPermissions, LegacyPermissions, FileManagerPermissions
     ]
 
     # Extract all string constants

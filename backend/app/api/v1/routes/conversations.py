@@ -35,7 +35,7 @@ from fastapi.responses import JSONResponse
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.websockets.socket_room_enum import SocketRoomType
 from app.schemas.agent import AgentRead
-from app.schemas.conversation import ConversationRead
+from app.schemas.conversation import ConversationRead, ConversationPaginatedResponse
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
     ConversationStartWithRecaptchaToken,
@@ -476,15 +476,28 @@ async def takeover_supervisor(
 
 @router.get(
     "",
-    response_model=list[ConversationRead],
+    response_model=ConversationPaginatedResponse,
     dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
 )
-async def get(
+async def get_conversations_list(
     conversation_filter: ConversationFilter = Depends(),
     conversations_service: ConversationService = Injected(ConversationService),
 ):
+    """Get paginated list of conversations with total count."""
     conversations = await conversations_service.get_conversations(conversation_filter)
-    return conversations
+    total = await conversations_service.count_conversations(conversation_filter)
+
+    # Calculate pagination info
+    page = (conversation_filter.skip // conversation_filter.limit) + 1 if conversation_filter.limit > 0 else 1
+    has_more = (conversation_filter.skip + len(conversations)) < total
+
+    return ConversationPaginatedResponse(
+        items=conversations,
+        total=total,
+        page=page,
+        page_size=conversation_filter.limit,
+        has_more=has_more
+    )
 
 
 @router.get(

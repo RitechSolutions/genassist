@@ -12,7 +12,7 @@
 - **React** – UI library for building interactive interfaces  
 - **TypeScript** – Static typing for safer code  
 - **shadcn-ui** – Accessible, customizable UI components  
-- **Tailwind CSS** – Utility-first CSS framework  
+- **Tailwind CSS** – Utility-first CSS framework for UI 
 
 ---
 

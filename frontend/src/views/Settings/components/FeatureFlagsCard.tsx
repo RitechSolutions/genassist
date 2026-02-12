@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/card";
-import { Edit, Loader2, Trash2 } from "lucide-react";
+import { Pencil, Loader2, Trash2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -182,7 +182,7 @@ export function FeatureFlagsCard({
                       onClick={() => onEditFeatureFlag(flag)}
                       title="Edit Feature Flag"
                     >
-                      <Edit className="w-4 h-4 text-black" />
+                      <Pencil className="w-4 h-4 text-black" />
                     </Button>
                     <Button
                       variant="ghost"

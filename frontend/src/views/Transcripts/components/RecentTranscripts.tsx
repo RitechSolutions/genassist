@@ -52,7 +52,7 @@ export function RecentTranscripts() {
 
   return (
     <>
-      <Card className="p-6 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
+      <Card className="p-6 shadow-sm animate-fade-up bg-white">
         <CardHeader 
           title="Recent Transcripts"
           tooltipText="The most recent customer interactions with detailed conversation transcripts and analytics"

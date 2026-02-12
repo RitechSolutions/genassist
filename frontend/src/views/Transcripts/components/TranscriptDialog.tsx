@@ -22,7 +22,7 @@ import { askAIQuestion } from "@/services/aiChat";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { Textarea } from "@/components/textarea";
 import { useToast } from "@/hooks/useToast";
-import { formatMessageTime, formatCallTimestamp, getEffectiveSentiment } from "../helpers/formatting";
+import { formatMessageTime, formatCallTimestamp, formatDateTime, getEffectiveSentiment } from "../helpers/formatting";
 import { MetricCards } from "./MetricCard";
 import { ScoreCards } from "./ScoreCard";
 import { TranscriptAudioPlayer } from "./TranscriptAudioPlayer";
@@ -549,6 +549,13 @@ useEffect(() => {
               {activeTab === "transcript" ? (
                 <div className="p-3 overflow-y-auto text-[13px] sm:text-[12px]" style={{height: isCall ? "500px" : "400px"}}>
                   <div className="space-y-2">
+                    {localTranscript.timestamp && (
+                      <div className="flex justify-center mb-3">
+                        <div className="px-3 py-1 rounded-full bg-muted text-muted-foreground text-xs">
+                          {formatDateTime(localTranscript.timestamp)}
+                        </div>
+                      </div>
+                    )}
                     {(localTranscript.messages ?? localTranscript.messages)?.map((entry, index) => {
                       
                       const entryObj = typeof entry === 'string' ? JSON.parse(entry) : entry;
@@ -635,14 +642,16 @@ useEffect(() => {
                             <div
                               className={`p-2 rounded-lg leading-tight break-words inline-block ${
                               isAgent
-                                ? "bg-black text-white rounded-tl-lg rounded-tr-none"
+                                ? "bg-blue-500 text-white rounded-tl-lg rounded-tr-none"
                                 : "bg-gray-200 text-gray-900 rounded-tr-lg rounded-tl-none"
                             }`}
                               style={{maxWidth: '400px'}}
                           >
                             {entryObj.text}
-                            <span className="block text-[10px] text-muted-foreground text-right mt-1">
-                              {isCall 
+                            <span className={`block text-[10px] text-right mt-1 ${
+                              isAgent ? "text-white/70" : "text-gray-500"
+                            }`}>
+                              {isCall
                                 ? formatCallTimestamp(entryObj.start_time)
                                 : formatMessageTime(entryObj.create_time)
                               }
@@ -716,7 +725,7 @@ useEffect(() => {
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
               />
-              <Button onClick={handleSendMessage} className="px-4 py-2 bg-black text-white">
+              <Button onClick={handleSendMessage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white">
                 Send
               </Button>
             </div>
