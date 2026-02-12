@@ -267,13 +267,29 @@ class FileManagerService:
 
         # when used the local file storage provider, use the source url
         if file.storage_provider == "local":
-            config_base_url = self.storage_provider.base_url
-            return f"{config_base_url}/api/file-manager/files/{file.id}/source?X-Tenant-Id={get_tenant_context()}"
+            return await self.get_file_source_url(file.id)
 
         # get the file url from the storage provider
         return await self.storage_provider.get_file_url(file.storage_path, file.path)
 
-    
+
+    # ==================== File Source URL Methods ====================
+    async def get_file_source_url(self, file_id: UUID) -> str:
+        """Get the source URL of a file."""
+        config_base_url = self.storage_provider.config.get("base_url")
+
+        if not config_base_url:
+            raise ValueError("Storage provider base URL not set")
+
+
+        tenant_id = get_tenant_context()
+        str_file_id = str(file_id)
+
+        if tenant_id:
+            return f"{config_base_url}/api/file-manager/files/{str_file_id}/source?X-Tenant-Id={tenant_id}"
+
+        return f"{config_base_url}/api/file-manager/files/{str_file_id}/source"
+
     # ==================== Helper Methods ====================
     async def _initialize_storage_provider(self, storage_provider_name: str) -> BaseStorageProvider:
         """Initialize the storage provider."""

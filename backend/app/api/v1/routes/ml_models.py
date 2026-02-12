@@ -116,8 +116,13 @@ async def upload_pkl_file(
     """
     try:
         logger.info(f"Received file upload: {file.filename}, content_type: {file.content_type}")
+
+        # file extension
+        file_extension = "pkl"
+
+
         # Generate a unique filename
-        unique_filename = f"{uuid.uuid4()}.pkl"
+        unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
         # subdir
         sub_folder = f"ml_models"
@@ -132,19 +137,14 @@ async def upload_pkl_file(
             path=sub_folder,
             storage_provider=storage_provider.name,
             storage_path=storage_provider.get_base_path(),
-            file_extension="pkl",
-            permissions={
-                "read": ["admin", "user"],
-                "write": ["admin"],
-                "execute": ["admin"],
-            },
+            file_extension=file_extension
         )
 
         # create file in file manager service
         created_file = await file_manager_service.create_file(file, file_base=file_base, allowed_extensions=["pkl"], max_file_size=MAX_PKL_FILE_SIZE)
 
         # get file info
-        file_url = await file_manager_service.get_file_url(created_file)
+        file_url = await file_manager_service.get_file_source_url(created_file.id)
         file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
         file_id = str(created_file.id)
 

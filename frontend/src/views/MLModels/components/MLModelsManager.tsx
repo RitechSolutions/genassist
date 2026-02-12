@@ -108,8 +108,7 @@ const MLModelsManager: React.FC = () => {
     setIsUploading(true);
 
     try {
-      const result = await uploadModelFile(selectedFile);
-      return result;
+      return await uploadModelFile(selectedFile);
     } catch (error) {
       setError(
         `Failed to upload file: ${
