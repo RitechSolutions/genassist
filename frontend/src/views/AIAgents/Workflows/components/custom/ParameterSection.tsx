@@ -261,7 +261,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
                 Delete Parameter
               </Button>
             )}
-            <Button type="submit">
+            <Button type="submit" disabled={!formData.name}>
               {mode === "create" ? "Add Parameter" : "Save Changes"}
             </Button>
           </DialogFooter>
