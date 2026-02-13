@@ -62,22 +62,17 @@ class LocalFileSystemProvider(BaseStorageProvider):
         """
         return str(self.base_path)
 
-    def _resolve_path(self, storage_path: str) -> Path:
+    def _resolve_path(self, file_path: str) -> Path:
         """
         Resolve storage path to absolute file system path.
         
         Args:
-            storage_path: Storage path (relative to base_path)
+            file_path: File path (relative to base_path)
             
         Returns:
             Absolute Path object
         """
-        
-        # when base_path is the tmp_folder, we need to resolve the path to the tmp_folder otherwise return the full path as it is
-        if (str(self.base_path) == self.tmp_folder):
-            return Path(storage_path).resolve()
-        else:
-            return (self.base_path / Path(storage_path)).resolve()
+        return (self.base_path / Path(file_path)).resolve()
 
 
     async def upload_file(

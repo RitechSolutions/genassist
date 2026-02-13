@@ -132,6 +132,13 @@ const SettingsPage = () => {
               </div>
             </div>
           </div>
+          <footer className="mt-4">
+            <div className="max-w-7xl mx-auto w-full">
+              <p className="text-right px-2 sm:px-4 text-xs sm:text-sm text-gray-500">
+                Version: <span>{import.meta.env.VITE_UI_VERSION || '1.0'}</span>
+              </p>
+            </div>
+          </footer>
         </main>
       </div>
     </SidebarProvider>

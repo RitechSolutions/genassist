@@ -58,7 +58,7 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
             </p>
           </div>
         </div>
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center space-x-1 nodrag nopan pointer-events-auto">
           {onSettings && (
             <Button
               size="icon"

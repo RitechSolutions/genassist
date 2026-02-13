@@ -110,6 +110,14 @@ async def get_file_source(
         # get the file by id
         file = await service.get_file_by_id(file_id)
 
+        # get the file url if the service is using s3
+        if file.storage_provider == "s3":
+            # get the file url
+            file_url = await service.get_file_url(file)
+
+            # redirect to the file url with status code 302
+            return RedirectResponse(url=file_url, status_code=302)
+
         # For HEAD requests, only get metadata (no content download)
         if request.method == "HEAD":
             headers, media_type = service.build_file_headers(file, disposition_type="inline")

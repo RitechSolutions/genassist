@@ -130,6 +130,7 @@ export default function ChatAsCustomer() {
             onError={(error) => {
               // ignore
             }}
+            useFile={featureFlags.useFile}
           />
         </div>
 
