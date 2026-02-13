@@ -39,7 +39,7 @@ function App() {
     agentName: "Agent",
     logoUrl: "",
     baseUrl: "http://localhost:8000/",
-    apiKey: "KHDPIvKbP8EXruNwLiBmu679hp0tM4XZxNrYKRyWdxZTQx4GVTFCKw",
+    apiKey: "genagent123",
     // reCaptchaKey: "xx-yy-zz",
   });
 
@@ -1054,6 +1054,20 @@ function App() {
         floatingConfig={{
           position: "bottom-right",
           offset: { x: 20, y: 20 },
+        }}
+        onConfigLoaded={({ chatInputMetadata }) => {
+          const next = (chatInputMetadata && typeof chatInputMetadata === "object" && !Array.isArray(chatInputMetadata))
+            ? (chatInputMetadata as Record<string, any>)
+            : {};
+          setAgentChatInputMetadata(next);
+          try {
+            localStorage.setItem(
+              `genassist_agent_chat_input_metadata:${chatSettings.apiKey}`,
+              JSON.stringify(next)
+            );
+          } catch {
+            // ignore
+          }
         }}
       />
 
