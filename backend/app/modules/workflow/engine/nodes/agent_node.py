@@ -19,6 +19,42 @@ logger = logging.getLogger(__name__)
 class AgentNode(BaseNode):
     """Agent node that can select and execute tools using the BaseNode approach"""
 
+    async def _get_chat_history_for_agent(
+        self, memory, config: Dict[str, Any], provider_id: str
+    ) -> list:
+        """
+        Get chat history based on configured trimming mode.
+
+        Args:
+            memory: Conversation memory instance
+            config: Node configuration
+            provider_id: LLM provider ID
+
+        Returns:
+            List of message dictionaries
+        """
+        trimming_mode = config.get("memoryTrimmingMode", "message_count")
+
+        if trimming_mode == "token_budget":
+            # Token-based trimming
+            from app.dependencies.injector import injector
+            from app.services.llm_providers import LlmProviderService
+
+            llm_service = injector.get(LlmProviderService)
+            provider_info = await llm_service.get_by_id(provider_id)
+
+            history_token_budget = config.get("conversationHistoryTokens", 5000)
+            return await memory.get_chat_history_within_tokens(
+                token_budget=history_token_budget,
+                provider=provider_info.llm_model_provider,
+                model=provider_info.llm_model,
+                as_string=False
+            )
+        else:
+            # Message count-based trimming (existing behavior)
+            max_messages = config.get("maxMessages", 10)
+            return await memory.get_messages(max_messages=max_messages)
+
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process an agent node with tool selection and execution.
@@ -96,7 +132,9 @@ class AgentNode(BaseNode):
             # Get chat history if memory is enabled
             chat_history = []
             if memory_enabled:
-                chat_history = await self.get_memory().get_messages()
+                chat_history = await self._get_chat_history_for_agent(
+                    self.get_memory(), config, provider_id
+                )
 
             # Invoke the agent
             result = await agent.invoke(prompt, chat_history=chat_history)

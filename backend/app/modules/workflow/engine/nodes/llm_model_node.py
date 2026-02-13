@@ -22,6 +22,45 @@ logger = logging.getLogger(__name__)
 class LLMModelNode(BaseNode):
     """LLM model node using the BaseNode approach"""
 
+    async def _get_chat_history_for_context(
+        self, memory, config: Dict[str, Any], provider_id: str
+    ) -> str:
+        """
+        Get chat history based on configured trimming mode.
+
+        Args:
+            memory: Conversation memory instance
+            config: Node configuration
+            provider_id: LLM provider ID
+
+        Returns:
+            Formatted chat history string
+        """
+        trimming_mode = config.get("memoryTrimmingMode", "message_count")
+
+        if trimming_mode == "token_budget":
+            # Token-based trimming
+            from app.dependencies.injector import injector
+            from app.services.llm_providers import LlmProviderService
+
+            llm_service = injector.get(LlmProviderService)
+            provider_info = await llm_service.get_by_id(provider_id)
+
+            history_token_budget = config.get("conversationHistoryTokens", 5000)
+            return await memory.get_chat_history_within_tokens(
+                token_budget=history_token_budget,
+                provider=provider_info.llm_model_provider,
+                model=provider_info.llm_model,
+                as_string=True
+            )
+        else:
+            # Message count-based trimming (existing behavior)
+            max_messages = config.get("maxMessages", 10)
+            return await memory.get_chat_history(
+                as_string=True,
+                max_messages=max_messages
+            )
+
     async def process(self, config: Dict[str, Any]) -> str:
         """
         Process an LLM model node.
@@ -67,8 +106,9 @@ class LLMModelNode(BaseNode):
                 return result
 
             if memory:
-                chat_history = await memory.get_chat_history(
-                    as_string=True, max_messages=10)
+                chat_history = await self._get_chat_history_for_context(
+                    memory, config, provider_id
+                )
                 system_prompt = system_prompt + "\n\n" + chat_history
 
             # default message content
