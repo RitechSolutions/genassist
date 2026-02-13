@@ -51,6 +51,7 @@ class AgentRepository(DbRepository[AgentModel]):
 
     async def get_by_user_id(self,
                              user_id: UUID,
+                             with_workflow: bool = False
                              ) -> AgentModel:
         stmt = (
             select(AgentModel)
@@ -58,8 +59,8 @@ class AgentRepository(DbRepository[AgentModel]):
             .where(OperatorModel.user_id == user_id)
             .options(
                 joinedload(AgentModel.operator).joinedload(OperatorModel.user),
-                joinedload(AgentModel.workflow),
                 joinedload(AgentModel.security_settings),
+                joinedload(AgentModel.workflow) if with_workflow else None,
             )
         )
         result = await self.db.execute(stmt)

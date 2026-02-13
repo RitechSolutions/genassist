@@ -277,9 +277,9 @@ class AgentConfigService:
             key_builder=user_id_key_builder,
             coder=PickleCoder
             )
-    async def get_by_user_id(self, user_id: UUID) -> AgentRead:
+    async def get_by_user_id(self, user_id: UUID, with_workflow: bool = False) -> AgentRead:
         """Get agent by user ID and cache the result"""
-        agent = await self.repository.get_by_user_id(user_id)
+        agent = await self.repository.get_by_user_id(user_id, with_workflow=with_workflow)
         if not agent:
             logger.debug("No agent for userid:"+str(user_id))
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
