@@ -79,7 +79,7 @@ stages:
                   parameters:
                     services: '$(infraPart) app $(celeryPart) $(whisperPart) $(flowerPart)'
                     composeOverride: 'docker-compose.build.yml'
-                    envFile: 'env.dev.backend'
+                    envFile: 'env.cicd'
                     envDest: 'backend/.env'
 
   # ═══════════════════════════════════════════════════════════════════════════
