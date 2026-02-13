@@ -224,6 +224,14 @@ export const uploadFiles = async (files: File[]) => {
   return apiRequestWithFormData("POST", "knowledge/upload", formData);
 };
 
+// Endpoint to trigger KB synchronization execution MANUALLY
+export const executeKnowledgeBaseSyncronizationManually = async (kbId: string) => {
+  return apiRequest(
+    "GET",
+    `genagent/knowledge/kb-batch-tasks-execution?kb_id=${kbId}`
+  );
+};
+
 // Tools endpoints
 export async function getAllTools() {
   return apiRequest("GET", "genagent/tools");
