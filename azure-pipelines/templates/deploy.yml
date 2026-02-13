@@ -36,11 +36,14 @@ steps:
         echo "$EXTRA_ENV" >> ${{ parameters.envDest }}
       fi
 
+      echo "=== Cleaning up existing containers ==="
+      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} down --remove-orphans || true
+
       echo "=== Pulling latest images ==="
       docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} pull ${{ parameters.services }} || true
 
-      echo "=== Rolling update: ${{ parameters.services }} ==="
-      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} up -d --build --remove-orphans ${{ parameters.services }}
+      echo "=== Deploying services: ${{ parameters.services }} ==="
+      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} up -d --build --force-recreate --remove-orphans ${{ parameters.services }}
 
       echo "=== Verifying deployment ==="
       docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} ps
