@@ -116,11 +116,12 @@ const SettingsPage = () => {
                   </div>
                 </Card>
 
-                {fileManagerSettings?.file_manager_enabled && (
+                {/* TODO: WORK IN PROGRESS */}
+                {/* {fileManagerSettings?.file_manager_enabled && (
                   <Card className="md:col-span-2 mt-6">
                     <FileManagerSettingsCard settings={fileManagerSettings} />
                   </Card>
-                )}
+                )} */}
 
 
                 {/* <div className="md:col-span-2 flex justify-end gap-4 pt-4">
