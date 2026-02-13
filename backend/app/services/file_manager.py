@@ -2,12 +2,13 @@ from ast import Dict
 from uuid import UUID
 import uuid
 from fastapi import UploadFile
+import httpx
 from injector import inject
 from typing import Optional, List
 import logging
 import base64
 from urllib.parse import quote
-
+import os
 from app.modules.filemanager.providers.base import BaseStorageProvider
 from app.db.models.file import FileModel
 from app.schemas.file import FileBase
@@ -211,10 +212,36 @@ class FileManagerService:
 
     async def download_file_to_path(self, file_id: UUID, path: str) -> None:
         """Download file to path."""
-        file = await self.get_file_by_id(file_id)
-        content = await self.get_file_content(file)
-        with open(path, "wb") as f:
-            f.write(content)
+        try:
+            # create the directory if it doesn't exist
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
+            file = await self.get_file_by_id(file_id)
+            content = await self.get_file_content(file)
+            with open(path, "wb") as f:
+                f.write(content)
+        except Exception as e:
+            logger.error(f"Failed to download file to path {path}: {e}")
+            raise AppException(error_key=ErrorKey.INTERNAL_ERROR, detail=str(e))
+        
+    async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
+        """Download file from URL to path."""
+        try:
+            # create the directory if it doesn't exist
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream("GET", file_url) as response:
+                    response.raise_for_status()
+                    
+                    with open(path, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                            f.write(chunk)
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to download file from URL {file_url} to path {path}: {e}")
+            return False
 
     async def list_files(
         self,
@@ -281,7 +308,6 @@ class FileManagerService:
         if not config_base_url:
             raise ValueError("Storage provider base URL not set")
 
-
         tenant_id = get_tenant_context()
         str_file_id = str(file_id)
 
@@ -289,6 +315,21 @@ class FileManagerService:
             return f"{config_base_url}/api/file-manager/files/{str_file_id}/source?X-Tenant-Id={tenant_id}"
 
         return f"{config_base_url}/api/file-manager/files/{str_file_id}/source"
+
+
+    async def extract_file_id_from_url(self, file_url: str) -> Optional[UUID]:
+        """Extract the file ID from the file URL."""
+        file_id = file_url.split("/")[-1]
+        try:
+            return UUID(file_id) if file_id else None
+        except ValueError:
+            return None
+
+    async def get_file_from_url(self, file_url: str) -> Optional[FileModel]:
+        """Get the file from the URL."""
+        file_id = await self.extract_file_id_from_url(file_url)
+        return await self.get_file_by_id(file_id)
+
 
     # ==================== Helper Methods ====================
     async def _initialize_storage_provider(self, storage_provider_name: str) -> BaseStorageProvider:

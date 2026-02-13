@@ -237,6 +237,8 @@ export interface TrainDataSourceNodeData extends BaseNodeData {
   query?: string; // SQL query to fetch data
   csvFileName?: string; // Name of the uploaded CSV file
   csvFilePath?: string; // Server path to the uploaded CSV file
+  csvFileId?: string; // ID of the uploaded CSV file
+  csvFileUrl?: string; // URL of the uploaded CSV file
 }
 
 // Preprocessing Node Data

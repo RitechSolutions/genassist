@@ -265,7 +265,8 @@ async def validate_model_file(
 ])
 async def analyze_csv(
     file_url: str = Body(..., embed=True, description="Path or URL to CSV file"),
-    python_code: Optional[str] = Body(None, embed=True, description="Optional Python code to preprocess data before analysis")
+    python_code: Optional[str] = Body(None, embed=True, description="Optional Python code to preprocess data before analysis"),
+    file_manager_service: FileManagerService = Injected(FileManagerService)
 ):
     """
     Analyze a CSV file and return a comprehensive report.
@@ -297,7 +298,12 @@ async def analyze_csv(
     try:
         # Resolve and validate file path using shared utility
         try:
-            file_path = ml_utils.resolve_csv_file_path(file_url)
+            # check if the file_url includes a valid file id
+            if file_url.startswith("http://") or file_url.startswith("https://"):
+                file_path = await file_manager_service.download_file_from_url_to_path(file_url, file_path)
+            else:
+                file_path = ml_utils.resolve_csv_file_path(file_url)
+
         except AppException as e:
             # Convert AppException to HTTPException for API endpoint
             if e.error_key == ErrorKey.FILE_NOT_FOUND:

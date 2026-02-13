@@ -250,11 +250,15 @@ async def upload_file(
                 file_id = str(created_file.id)
 
                 # await file_manager_service.download_file_to_path(file_id, file_path)
-                file_url = await file_manager_service.get_file_url(created_file)
+                file_url = await file_manager_service.get_file_source_url(created_file.id)
 
                 result["file_type"] = "url"
                 result["file_url"] = file_url
                 result["file_id"] = file_id
+
+                # if the file is stored locally, add the file path to the result
+                if created_file.storage_provider == "local":
+                    result["file_path"] = f"{created_file.storage_path}/{created_file.path}"
             else:
                 # create the file path where the file will be saved
                 file_path = os.path.join(str(UPLOAD_DIR), unique_filename)
