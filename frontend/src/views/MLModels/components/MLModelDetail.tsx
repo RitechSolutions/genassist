@@ -85,6 +85,7 @@ const MLModelDetail: React.FC = () => {
   const [configToDelete, setConfigToDelete] = useState<TrainingPipelineConfig | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRefetching, setIsRefetching] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -342,6 +343,7 @@ const MLModelDetail: React.FC = () => {
   };
 
   const refetchPipelineRun = async (runId: string) => {
+    setIsRefetching(true);
     if (!id) return;
     try {
       const updatedRun = await getPipelineRun(id, runId);
@@ -351,6 +353,12 @@ const MLModelDetail: React.FC = () => {
     }
     catch (error) {
       console.error("Error refetching pipeline run:", error);
+    }
+    finally {
+
+      setTimeout(() => {
+        setIsRefetching(false);
+      }, 1000);
     }
   };
 
@@ -641,8 +649,12 @@ const MLModelDetail: React.FC = () => {
                         )}
                       </div>
                       <div className="flex gap-2 ml-4">
-                        <Button variant="outline" size="sm" onClick={() => refetchPipelineRun(run.id)}>
-                          <RefreshCcw className="h-4 w-4 mr-1" /> Refresh
+                        <Button 
+                          variant="outline" size="sm" 
+                          icon={<RefreshCcw className="h-4 w-4 mr-1" />}
+                          loading={isRefetching}
+                          onClick={() => refetchPipelineRun(run.id)}>
+                          Refresh
                         </Button>
                         <Button
                           variant="outline"
