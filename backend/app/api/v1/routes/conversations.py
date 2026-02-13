@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Query, Request, WebSocket
 from fastapi_injector import Injected
@@ -61,6 +61,17 @@ from app.services.file_manager import FileManagerService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+"""
+Get workflow chat input metadata.
+Excludes the default "message" key so it is never passed in agent_chat_input_metadata.
+"""
+def _workflow_test_input_as_metadata(workflow: Any) -> Dict[str, Any]:
+    if not workflow or not isinstance(workflow.get("testInput"), dict):
+        return {}
+    data = dict(workflow["testInput"])
+    data.pop("message", None)
+    return data
 
 @router.get(
     "/{conversation_id}",
@@ -143,6 +154,9 @@ async def start(
         "agent_thinking_phrases": agent_data.get("thinking_phrases"),
         "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
         "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
+        "agent_chat_input_metadata": _workflow_test_input_as_metadata(
+            agent_data.get("workflow")
+        ),
     }
 
     # If agent requires authentication, generate and return a guest JWT token

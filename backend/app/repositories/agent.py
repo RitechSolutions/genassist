@@ -58,6 +58,7 @@ class AgentRepository(DbRepository[AgentModel]):
             .where(OperatorModel.user_id == user_id)
             .options(
                 joinedload(AgentModel.operator).joinedload(OperatorModel.user),
+                joinedload(AgentModel.workflow),
                 joinedload(AgentModel.security_settings),
             )
         )

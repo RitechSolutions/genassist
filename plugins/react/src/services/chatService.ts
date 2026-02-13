@@ -11,6 +11,7 @@ import {
   createWebSocket,
   createWebSocketDiagnostic,
 } from "../utils/websocket";
+export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_updated";
 
 export class ChatService {
   private baseUrl: string;
@@ -32,6 +33,7 @@ export class ChatService {
   private possibleQueries: string[] = [];
   private welcomeData: AgentWelcomeData = {};
   private thinkingConfig: AgentThinkingConfig = { phrases: [], delayMs: 1000 };
+  private chatInputMetadata: Record<string, unknown> = {};
   private welcomeObjectUrl: string | null = null; // to revoke on reset
   private tenant: string | undefined;
   private agentId: string | undefined;
@@ -62,6 +64,27 @@ export class ChatService {
   private getStorageKey(): string {
     // Pointer to current conversation metadata for this apiKey
     return `${this.storageKeyBase}:${this.apiKey}`;
+  }
+
+  /**
+   * Persist agent_chat_input_metadata to localStorage and dispatch a global event.
+   * Any consumer (e.g. config panel) can listen for GENASSIST_AGENT_METADATA_UPDATED
+   * or read from localStorage on mount; no need to pass callbacks into the chat.
+   */
+  private persistAndEmitAgentMetadata(metadata: Record<string, unknown>): void {
+    try {
+      const key = `genassist_agent_chat_input_metadata:${this.apiKey}`;
+      localStorage.setItem(key, JSON.stringify(metadata));
+      if (typeof window !== "undefined" && window.dispatchEvent) {
+        window.dispatchEvent(
+          new CustomEvent(GENASSIST_AGENT_METADATA_UPDATED, {
+            detail: { apiKey: this.apiKey, metadata: { ...metadata } },
+          })
+        );
+      }
+    } catch {
+      // ignore
+    }
   }
 
   /**
@@ -200,6 +223,14 @@ export class ChatService {
   }
 
   /**
+   * Metadata keys/defaults from the workflow's Chat Input node (returned when conversation starts).
+   * Used to show workflow-defined metadata in the config panel.
+   */
+  getChatInputMetadata(): Record<string, unknown> {
+    return { ...this.chatInputMetadata };
+  }
+
+  /**
    * Load a saved conversation ID from localStorage
    */
   private loadSavedConversation(): void {
@@ -310,10 +341,11 @@ export class ChatService {
     this.guestToken = null;
     this.isFinalized = false;
 
-    // Clear possible queries
+    // Clear possible queries and workflow metadata
     this.possibleQueries = [];
     this.welcomeData = {};
     this.thinkingConfig = { phrases: [], delayMs: 1000 };
+    this.chatInputMetadata = {};
     if (this.welcomeObjectUrl) {
       try {
         URL.revokeObjectURL(this.welcomeObjectUrl);
@@ -398,6 +430,17 @@ export class ChatService {
       const anyData: any = response.data as any;
       const agentId: string | undefined = anyData.agent_id;
       this.agentId = agentId;
+      const rawMeta = anyData.agent_chat_input_metadata;
+      if (
+        rawMeta != null &&
+        typeof rawMeta === 'object' &&
+        !Array.isArray(rawMeta)
+      ) {
+        this.chatInputMetadata = { ...rawMeta };
+      } else {
+        this.chatInputMetadata = {};
+      }
+      this.persistAndEmitAgentMetadata(this.chatInputMetadata);
       const welcomeTitle: string | undefined = anyData.agent_welcome_title;
       const welcomeImageUrl: string | undefined =
         anyData.agent_welcome_image_url;

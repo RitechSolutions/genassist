@@ -34,6 +34,7 @@ export default function ChatAsCustomer() {
     description: "Support",
   });
   const [metadata, setMetadata] = useState<Record<string, any>>({});
+  const [agentChatInputMetadata] = useState<Record<string, any>>({});
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({
     useAudio: false,
     useFile: false,
@@ -98,6 +99,7 @@ export default function ChatAsCustomer() {
             onChatSettingsChange={setChatSettings}
             metadata={metadata}
             onMetadataChange={setMetadata}
+            agentChatInputMetadata={agentChatInputMetadata}
             featureFlags={featureFlags}
             onFeatureFlagsChange={setFeatureFlags}
             defaultOpen={{ appearance: true, settings: false, metadata: false }}
@@ -108,11 +110,16 @@ export default function ChatAsCustomer() {
               maxHeight: "calc(100vh - 50px)",
               overflowY: "auto",
             }}
-            onSave={({ theme, chatSettings, metadata, featureFlags }) => {
+            onSave={({ theme, chatSettings, metadata: nextMetadata, featureFlags }) => {
               setTheme(theme);
               setChatSettings(chatSettings);
-              setMetadata(metadata);
+              setMetadata(nextMetadata);
               setFeatureFlags(featureFlags);
+              try {
+                localStorage.setItem(`genassist_metadata:${apiKey}`, JSON.stringify(nextMetadata));
+              } catch {
+                // ignore
+              }
             }}
           />
         </div>
