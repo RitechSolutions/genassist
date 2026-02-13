@@ -66,8 +66,8 @@ Builds Docker images, pushes them to **GitHub Container Registry (GHCR)**, and *
 
 **Deploy:**
 - Downloads the environment-specific secure file and copies it to the correct `.env` location:
-  - Backend pipeline: `env.test.backend` → `backend/.env`
-  - Frontend pipeline: `env.test.frontend` → `frontend/.env`
+  - Backend pipeline: `env.backend.test` → `backend/.env`
+  - Frontend pipeline: `env.frontend.test` → `frontend/.env`
 - Appends dynamic env vars if configured (e.g., `VITE_UI_VERSION` for the frontend)
 - Starts services with `up -d --build --remove-orphans` (rolling update, no downtime)
 - Env vars are injected at container runtime via docker-compose `env_file`
@@ -153,8 +153,8 @@ Environment variables are stored as Azure DevOps **Secure Files** and downloaded
 |---|---|---|
 | `env.dev.backend` | DEV | `backend/.env` |
 | `env.dev.frontend` | DEV | `frontend/.env` |
-| `env.test.backend` | TEST | `backend/.env` |
-| `env.test.frontend` | TEST | `frontend/.env` |
+| `env.backend.test` | TEST | `backend/.env` |
+| `env.frontend.test` | TEST | `frontend/.env` |
 
 These are never checked into source control. The PROD stage does not require secure files — it promotes the already-built image without rebuilding.
 

@@ -122,7 +122,7 @@ stages:
                 - template: templates/deploy.yml
                   parameters:
                     services: '$(infraPart) app $(celeryPart) $(whisperPart) $(flowerPart)'
-                    envFile: 'env.test.backend'
+                    envFile: 'env.backend.test'
                     envDest: 'backend/.env'
 
   # ═══════════════════════════════════════════════════════════════════════════

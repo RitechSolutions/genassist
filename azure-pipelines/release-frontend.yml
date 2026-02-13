@@ -82,7 +82,7 @@ stages:
                 - template: templates/deploy.yml
                   parameters:
                     services: 'ui'
-                    envFile: 'env.test.frontend'
+                    envFile: 'env.frontend.test'
                     envDest: 'frontend/.env'
                     extraEnv: 'VITE_UI_VERSION=$(Build.BuildNumber)'
 
