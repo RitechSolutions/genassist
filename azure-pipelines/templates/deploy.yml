@@ -37,7 +37,11 @@ steps:
       fi
 
       echo "=== Cleaning up orphaned containers ==="
-      for svc in ${{ parameters.services }}; do
+      # Include infrastructure dependencies (db, redis, chroma, qdrant) that
+      # docker compose starts automatically via depends_on, even when not
+      # explicitly listed in the services parameter.
+      CLEANUP_TARGETS="${{ parameters.services }} db redis chroma qdrant"
+      for svc in $CLEANUP_TARGETS; do
         [ -z "$svc" ] && continue
         cids=$(docker ps -aq --filter "name=genassist" | while read cid; do
           cname=$(docker inspect --format '{{.Name}}' "$cid" 2>/dev/null | tr -d '/')
