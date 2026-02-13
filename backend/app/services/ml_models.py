@@ -3,6 +3,7 @@ from injector import inject
 import os
 import logging
 from typing import Optional
+
 from app.db.models.ml_model import MLModel
 from app.repositories.ml_models import MLModelsRepository
 from app.schemas.ml_model import MLModelCreate, MLModelUpdate
@@ -69,6 +70,18 @@ class MLModelsService:
                 logger.info(f"Deleted pkl file: {ml_model.pkl_file}")
             except OSError as e:
                 logger.error(f"Error deleting pkl file {ml_model.pkl_file}: {str(e)}")
+                # Continue with soft delete even if file deletion fails
+        
+        # if there's a pkl_file_id, delete the file from the file manager service
+        if ml_model.pkl_file_id:
+            from app.dependencies.injector import injector
+            from app.services.file_manager import FileManagerService
+            file_manager_service = injector.get(FileManagerService)
+            try:
+                await file_manager_service.delete_file(ml_model.pkl_file_id)
+                logger.info(f"Deleted pkl file: {ml_model.pkl_file_id}")
+            except Exception as e:
+                logger.error(f"Error deleting pkl file {ml_model.pkl_file_id}: {str(e)}")
                 # Continue with soft delete even if file deletion fails
 
         # Soft delete the model

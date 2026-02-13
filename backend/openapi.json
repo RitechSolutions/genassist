@@ -17564,15 +17564,22 @@
       },
       "FileUploadResponse": {
         "properties": {
-          "file_path": {
-            "type": "string",
-            "title": "File Path",
-            "description": "File path"
-          },
           "original_filename": {
             "type": "string",
             "title": "Original Filename",
             "description": "Original file name"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path",
+            "description": "File path"
           },
           "storage_path": {
             "anyOf": [
@@ -17625,7 +17632,6 @@
         },
         "type": "object",
         "required": [
-          "file_path",
           "original_filename"
         ],
         "title": "FileUploadResponse"

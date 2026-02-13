@@ -63,8 +63,8 @@ class FileResponse(FileBase):
     model_config = ConfigDict(from_attributes=True)
 
 class FileUploadResponse(BaseModel):
-    file_path: str = Field(..., description="File path")
     original_filename: str = Field(..., description="Original file name")
+    file_path: Optional[str] = Field(None, description="File path")
     storage_path: Optional[str] = Field(None, description="Storage path")
     filename: Optional[str] = Field(None, description="File name")
     file_url: Optional[str] = Field(None, description="File URL")

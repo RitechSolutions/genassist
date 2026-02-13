@@ -27,6 +27,7 @@ import {
   ExternalLink,
   FileCode,
   Calendar,
+  RefreshCcw,
 } from "lucide-react";
 import { Badge } from "@/components/badge";
 import { getMLModel } from "@/services/mlModels";
@@ -40,6 +41,7 @@ import {
   createPipelineRun,
   promotePipelineRun,
   getPipelineRunArtifacts,
+  getPipelineRun,
 } from "@/services/mlModelPipelines";
 import {
   TrainingPipelineConfig,
@@ -121,6 +123,7 @@ const MLModelDetail: React.FC = () => {
 
   const fetchPipelineRuns = async () => {
     if (!id) return;
+
     try {
       const runs = await getModelPipelineRuns(id);
       setPipelineRuns(runs.sort((a, b) => {
@@ -335,6 +338,19 @@ const MLModelDetail: React.FC = () => {
     } catch (error) {
       toast.error("Failed to download model file");
       console.error(error);
+    }
+  };
+
+  const refetchPipelineRun = async (runId: string) => {
+    if (!id) return;
+    try {
+      const updatedRun = await getPipelineRun(id, runId);
+      if (updatedRun) {
+        setPipelineRuns(pipelineRuns.map(r => r.id === runId ? updatedRun : r));
+      }
+    }
+    catch (error) {
+      console.error("Error refetching pipeline run:", error);
     }
   };
 
@@ -590,7 +606,7 @@ const MLModelDetail: React.FC = () => {
                 
                 return (
                   <div key={run.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <h4 className="text-base font-semibold">
@@ -625,6 +641,9 @@ const MLModelDetail: React.FC = () => {
                         )}
                       </div>
                       <div className="flex gap-2 ml-4">
+                        <Button variant="outline" size="sm" onClick={() => refetchPipelineRun(run.id)}>
+                          <RefreshCcw className="h-4 w-4 mr-1" /> Refresh
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"

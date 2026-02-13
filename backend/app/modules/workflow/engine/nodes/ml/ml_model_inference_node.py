@@ -15,9 +15,14 @@ from app.core.exceptions.exception_classes import AppException
 from app.dependencies.injector import injector
 from app.services.ml_models import MLModelsService
 from app.services.ml_model_manager import get_ml_model_manager
+from app.services.file_manager import FileManagerService
+from app.core.project_path import DATA_VOLUME
+from app.schemas.ml_model import MLModelBase
 
 logger = logging.getLogger(__name__)
 
+# Directory for looking up and storing ML model .pkl files
+ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
 
 def convert_value(val: Any) -> Any:
     """
@@ -146,15 +151,8 @@ class MLModelInferenceNode(BaseNode):
 
             logger.info(f"Getting ML model: {ml_model.name} (ID: {model_id})")
 
-            # Check if pkl file exists
-            if not ml_model.pkl_file or not os.path.exists(ml_model.pkl_file):
-                error_msg = f"PKL file not found for model {ml_model.name}"
-                if ml_model.pkl_file:
-                    error_msg += f" at path: {ml_model.pkl_file}"
-                raise AppException(
-                    error_key=ErrorKey.FILE_NOT_FOUND,
-                    error_detail=error_msg
-                )
+            # Validate and ensure pkl file exists
+            await self._validate_model_file_existence(ml_model, ml_service)
 
             # Get model from cache or load it (using the ML Model Manager)
             try:
@@ -282,3 +280,53 @@ class MLModelInferenceNode(BaseNode):
                 error_key=ErrorKey.INTERNAL_ERROR,
                 error_detail=f"ML model inference failed: {str(e)}"
             ) from e
+
+    async def _validate_model_file_existence(self, ml_model: Any, ml_service: MLModelsService) -> None:
+        """
+        Validate that the ML model's PKL file exists. If not, attempt to download it
+        from the file manager service if a pkl_file_id is available.
+
+        Args:
+            ml_model: The ML model object
+            ml_service: The ML models service instance
+
+        Raises:
+            AppException: If the PKL file is not found and cannot be downloaded
+        """
+        if not ml_model.pkl_file or not os.path.exists(ml_model.pkl_file):
+            # if pkl file id is provided, download the pkl file to the temporary directory
+            if ml_model.pkl_file_id:
+                # Download the PKL file to a temporary directory
+                pkl_file_path = await self._download_pkl_file(ml_model.pkl_file_id, os.path.join(ML_MODELS_UPLOAD_DIR, f"{ml_model.name}_{ml_model.id}.pkl"))
+                # update the ml_model with the new pkl file path
+                await ml_service.update(ml_model.id, MLModelBase(pkl_file=str(pkl_file_path)))
+
+                # assign the new pkl file path to the ml_model
+                ml_model.pkl_file = str(pkl_file_path)
+                return
+
+            error_msg = f"PKL file not found for model {ml_model.name}"
+            if ml_model.pkl_file:
+                error_msg += f" at path: {ml_model.pkl_file}"
+            raise AppException(
+                error_key=ErrorKey.FILE_NOT_FOUND,
+                error_detail=error_msg
+            )
+
+    async def _download_pkl_file(self, pkl_file_id: UUID, destination_path: str) -> str:
+        """
+        Download the PKL file from the file manager service.
+        """
+        file_manager_service = injector.get(FileManagerService)
+        file = await file_manager_service.get_file_by_id(pkl_file_id)
+        if not file:
+            raise AppException(
+                error_key=ErrorKey.FILE_NOT_FOUND,
+                error_detail=f"PKL file not found with ID: {pkl_file_id}"
+            )
+
+
+        # download the file to destination path
+        await file_manager_service.download_file_to_path(file.id, destination_path)
+        logger.info(f"[MLModelInferenceNode] Downloaded PKL file to: {destination_path}")
+        return file.path

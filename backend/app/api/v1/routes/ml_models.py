@@ -145,7 +145,12 @@ async def upload_pkl_file(
 
         # get file info
         file_url = await file_manager_service.get_file_source_url(created_file.id)
-        file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
+        file_path = None
+
+        if created_file.storage_provider == "local":
+            file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
+            # file_path = await file_manager_service.get_file_url(created_file)
+
         file_id = str(created_file.id)
 
         return FileUploadResponse(
@@ -201,7 +206,7 @@ async def invalidate_model_cache(ml_model_id: UUID):
 
 @router.post("/validate/{ml_model_id}", dependencies=[
     Depends(auth),
-    Depends(permissions(P.MlModel.READ))
+    Depends(permissions(P.MlModel.READ)),
 ])
 async def validate_model_file(
     ml_model_id: UUID,
@@ -216,11 +221,24 @@ async def validate_model_file(
     # Get model from database
     ml_model = await service.get_by_id(ml_model_id)
     
-    if not ml_model.pkl_file:
+    if not ml_model.pkl_file or not ml_model.pkl_file_id:
         raise HTTPException(
             status_code=400,
             detail="Model has no PKL file configured"
         )
+
+    # if ml_model.pkl_file is none and we have a pkl_file_id, get the file from the file manager service
+    if not ml_model.pkl_file and ml_model.pkl_file_id:
+        # get the file from the file manager service
+        from app.dependencies.injector import injector
+        from app.services.file_manager import FileManagerService
+        file_manager_service = injector.get(FileManagerService)
+        file = await file_manager_service.get_file_by_id(ml_model.pkl_file_id)
+        if not file:
+            raise HTTPException(
+                status_code=404,
+                detail="PKL file not found"
+            )
     
     # Get model info
     info = get_model_info(ml_model.pkl_file)
