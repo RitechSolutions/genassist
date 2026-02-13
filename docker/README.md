@@ -8,7 +8,7 @@ This directory contains Docker Compose configurations for running GenAssist in d
 docker/
 ├── docker-compose.base.yml     # Base configuration (shared across all environments)
 ├── docker-compose.yml          # Production overrides (pre-built images from GHCR)
-├── docker-compose.dev.yml      # Development overrides (build from source)
+├── docker-compose.build.yml    # Build overrides (build from source)
 ├── docker-compose.ci.yml       # CI/CD overrides (isolated ports)
 ├── .env.example                # Environment variables template
 └── README.md                   # This file
@@ -67,17 +67,17 @@ make dev-down      # Stop everything
 
 ```bash
 # Full stack
-docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml --profile full up -d --build
+docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml --profile full up -d --build
 
 # Infrastructure only
-docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml up -d db redis chroma qdrant whisper
+docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml up -d db redis chroma qdrant whisper
 ```
 
 ## Environment Configurations
 
 | Environment | Override File | Use Case |
 |-------------|---------------|----------|
-| **Development** | `docker-compose.dev.yml` | Builds from source, local development |
+| **Build** | `docker-compose.build.yml` | Builds from source (dev, test, CI/CD) |
 | **Production** | `docker-compose.yml` | Pre-built images from GHCR |
 | **CI/CD** | `docker-compose.ci.yml` | Isolated ports (9xxx), automated testing |
 
@@ -87,7 +87,7 @@ Edit `docker/.env` and change the `COMPOSE_FILE` setting:
 
 ```bash
 # Development (default)
-COMPOSE_FILE=docker-compose.base.yml:docker-compose.dev.yml
+COMPOSE_FILE=docker-compose.base.yml:docker-compose.build.yml
 
 # Production
 COMPOSE_FILE=docker-compose.base.yml:docker-compose.yml
@@ -243,7 +243,7 @@ docker compose up -d --scale celery_worker=3  # Scale workers
 
 ## GPU Support for Whisper
 
-To enable GPU acceleration for the Whisper service, add the GPU configuration to the whisper service in `docker-compose.dev.yml`:
+To enable GPU acceleration for the Whisper service, add the GPU configuration to the whisper service in `docker-compose.build.yml`:
 
 ```yaml
 whisper:

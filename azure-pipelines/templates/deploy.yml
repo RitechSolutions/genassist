@@ -1,0 +1,47 @@
+# Template: Deploy services using docker-compose on self-hosted agent
+# Used by both DEV and TEST stages with different envFile parameters.
+parameters:
+  - name: services
+    type: string
+    displayName: 'Services to deploy (space-separated)'
+  - name: envFile
+    type: string
+    displayName: 'Secure file name for environment variables'
+  - name: envDest
+    type: string
+    displayName: 'Destination path for .env file (e.g., backend/.env or frontend/.env)'
+  - name: composeOverride
+    type: string
+    default: 'docker-compose.yml'
+    displayName: 'Compose override file (docker-compose.yml or docker-compose.build.yml)'
+  - name: extraEnv
+    type: string
+    default: ''
+    displayName: 'Extra environment variables to append (e.g., VITE_UI_VERSION=1.0)'
+
+steps:
+  - task: DownloadSecureFile@1
+    name: envfile
+    displayName: 'Download .env file'
+    inputs:
+      secureFile: ${{ parameters.envFile }}
+
+  - script: |
+      set -euo pipefail
+
+      echo "=== Preparing environment ==="
+      cp "$(envfile.secureFilePath)" ${{ parameters.envDest }}
+      EXTRA_ENV="${{ parameters.extraEnv }}"
+      if [ -n "$EXTRA_ENV" ]; then
+        echo "$EXTRA_ENV" >> ${{ parameters.envDest }}
+      fi
+
+      echo "=== Pulling latest images ==="
+      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} pull ${{ parameters.services }} || true
+
+      echo "=== Rolling update: ${{ parameters.services }} ==="
+      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} up -d --build --remove-orphans ${{ parameters.services }}
+
+      echo "=== Verifying deployment ==="
+      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} ps
+    displayName: 'Deploy ${{ parameters.services }}'

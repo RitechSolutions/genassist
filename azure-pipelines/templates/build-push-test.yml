@@ -1,4 +1,6 @@
-# Template: Build and push image to TEST registry path
+# Template: Build and push image to registry
+# No env injection needed — backend reads .env at runtime, frontend uses
+# placeholder substitution via entrypoint.sh at container startup.
 parameters:
   - name: composeService
     type: string
@@ -13,16 +15,22 @@ parameters:
 steps:
   - script: |
       set -euo pipefail
+      echo "=== Logging in to GHCR ==="
+      echo "$(GHCR_PAT)" | docker login ghcr.io -u "$(GHCR_USER)" --password-stdin
+    displayName: 'Login to GHCR'
+
+  - script: |
+      set -euo pipefail
 
       echo "=== Building ${{ parameters.composeService }} ==="
-      docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml build ${{ parameters.composeService }}
+      docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml build ${{ parameters.composeService }}
       docker image ls
 
-      echo "=== Tagging for TEST ==="
+      echo "=== Tagging ==="
       docker image tag ${{ parameters.localImageName }}:latest ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:$(Build.BuildNumber)
       docker image tag ${{ parameters.localImageName }}:latest ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:latest
 
-      echo "=== Pushing to TEST ==="
+      echo "=== Pushing ==="
       docker push ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:$(Build.BuildNumber)
       docker push ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:latest
 

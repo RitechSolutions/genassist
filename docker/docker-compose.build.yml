@@ -1,10 +1,10 @@
 # =============================================================================
-# GenAssist Docker Compose - Development Overrides
+# GenAssist Docker Compose - Build Overrides
 # =============================================================================
-# Development-specific configuration. Use with base file:
+# Build-from-source configuration. Use with base file:
 #
-#   docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml --profile full up -d --build
-#   docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml up -d db redis chroma qdrant whisper
+#   docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml --profile full up -d --build
+#   docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml up -d db redis chroma qdrant whisper
 #
 # Or use Make: make dev
 # =============================================================================

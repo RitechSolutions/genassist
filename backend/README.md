@@ -43,7 +43,7 @@ cp .env.example .env
 make services
 
 # Or using docker compose directly
-docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml up -d db redis chroma qdrant whisper
+docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml up -d db redis chroma qdrant whisper
 ```
 
 > **Important:** When running backend locally (not in Docker), ensure `CHROMA_HOST=localhost` and `CHROMA_PORT=8005` are set in your `.env` file.

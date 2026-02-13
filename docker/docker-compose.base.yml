@@ -4,7 +4,7 @@
 # Common service definitions shared across all environments.
 # This file should be used with an environment-specific override file:
 #
-#   Development: docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml --profile full up -d
+#   Development: docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml --profile full up -d
 #   Production:  docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.yml --profile full up -d
 #   CI/CD:       docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ci.yml --profile full up -d
 #

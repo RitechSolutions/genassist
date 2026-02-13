@@ -5,7 +5,7 @@
 # For running the application, use the docker/ directory configurations:
 #
 #   Production:    docker compose -f docker/docker-compose.yml --profile full up -d
-#   Development:   docker compose -f docker/docker-compose.dev.yml --profile full up -d --build
+#   Development:   docker compose -f docker/docker-compose.build.yml --profile full up -d --build
 #
 # See docker/README.md for full documentation.
 # =============================================================================

@@ -21,7 +21,7 @@ RESET := \033[0m
 DOCKER_DIR := docker
 COMPOSE_BASE := $(DOCKER_DIR)/docker-compose.base.yml
 COMPOSE_PROD := $(DOCKER_DIR)/docker-compose.yml
-COMPOSE_DEV := $(DOCKER_DIR)/docker-compose.dev.yml
+COMPOSE_DEV := $(DOCKER_DIR)/docker-compose.build.yml
 COMPOSE_CI := $(DOCKER_DIR)/docker-compose.ci.yml
 
 # Compose command shortcuts

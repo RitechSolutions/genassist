@@ -1,0 +1,33 @@
+# Template: Promote image from TEST to PROD registry (no rebuild)
+# Pulls the exact image built and tested in the TEST stage, retags it for PROD,
+# and pushes it. This guarantees the PROD image is identical to what was tested.
+parameters:
+  - name: registryImageName
+    type: string
+    displayName: 'Registry image name (e.g., genassist-backend, genassist-frontend)'
+
+steps:
+  - script: |
+      set -euo pipefail
+      echo "=== Logging in to GHCR ==="
+      echo "$(GHCR_PAT)" | docker login ghcr.io -u "$(GHCR_USER)" --password-stdin
+    displayName: 'Login to GHCR'
+
+  - script: |
+      set -euo pipefail
+
+      echo "=== Pulling tested image ==="
+      docker pull ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:$(Build.BuildNumber)
+
+      echo "=== Tagging for PROD ==="
+      docker image tag ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:$(Build.BuildNumber) ghcr.io/ritechsolutions/genassist/prod/${{ parameters.registryImageName }}:$(Build.BuildNumber)
+      docker image tag ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:$(Build.BuildNumber) ghcr.io/ritechsolutions/genassist/prod/${{ parameters.registryImageName }}:latest
+      docker image tag ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:$(Build.BuildNumber) ghcr.io/ritechsolutions/genassist/prod/${{ parameters.registryImageName }}:prod
+
+      echo "=== Pushing to PROD ==="
+      docker push ghcr.io/ritechsolutions/genassist/prod/${{ parameters.registryImageName }}:$(Build.BuildNumber)
+      docker push ghcr.io/ritechsolutions/genassist/prod/${{ parameters.registryImageName }}:latest
+      docker push ghcr.io/ritechsolutions/genassist/prod/${{ parameters.registryImageName }}:prod
+
+      echo "=== Done ==="
+    displayName: 'Promote ${{ parameters.registryImageName }} to PROD'
