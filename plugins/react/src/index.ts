@@ -8,7 +8,7 @@ export type {
   FeatureFlags,
 } from './components/GenAgentConfigPanel';
 export { ChatBubble } from './components/ChatBubble';
-export { ChatService } from './services/chatService';
+export { ChatService, GENASSIST_AGENT_METADATA_UPDATED } from './services/chatService';
 export { useChat } from './hooks/useChat';
 export type { UseChatProps } from './hooks/useChat';
 export type {
