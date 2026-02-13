@@ -1,0 +1,106 @@
+# Release Pipeline: Backend Services
+# Deploys: app, celery_worker, celery_beat, whisper
+
+name: GenAssist-Release-Backend_$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+
+parameters:
+  - name: deployToDev
+    type: boolean
+    default: true
+    displayName: 'Deploy to DEV'
+  - name: deployToTest
+    type: boolean
+    default: true
+    displayName: 'Deploy to TEST'
+  - name: deployToProd
+    type: boolean
+    default: true
+    displayName: 'Deploy to PROD'
+
+stages:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DEV: Deploy to self-hosted agent using docker-compose
+  # ═══════════════════════════════════════════════════════════════════════════
+  - stage: DEV
+    displayName: 'Deploy to DEV'
+    condition: eq('${{ parameters.deployToDev }}', true)
+    jobs:
+      - deployment: DeployBackend
+        displayName: 'Deploy Backend Services'
+        environment: 'genassist-dev'
+        pool:
+          name: 'Ritech-AI-TR1'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+
+                - template: templates/deploy-dev.yml
+                  parameters:
+                    services: 'db redis chroma qdrant app celery_worker celery_beat whisper'
+                    envFile: 'env.dev'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TEST: Build and push images to GHCR
+  # ═══════════════════════════════════════════════════════════════════════════
+  - stage: TEST
+    displayName: 'Build & Push to TEST'
+    dependsOn: DEV
+    condition: |
+      and(
+        eq('${{ parameters.deployToTest }}', true),
+        or(succeeded(), eq('${{ parameters.deployToDev }}', false))
+      )
+    jobs:
+      - deployment: BuildPushBackend
+        displayName: 'Build & Push Backend Images'
+        environment: 'genassist-test'
+        pool:
+          name: 'Ritech-AI-TR1'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+
+                - template: templates/build-push-test.yml
+                  parameters:
+                    composeService: 'app'
+                    localImageName: 'genassist-app-image'
+                    registryImageName: 'genassist-backend'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROD: Build with prod env vars and push to prod registry path
+  # ═══════════════════════════════════════════════════════════════════════════
+  - stage: PROD
+    displayName: 'Build & Push to PROD'
+    dependsOn: TEST
+    condition: |
+      and(
+        eq('${{ parameters.deployToProd }}', true),
+        or(succeeded(), eq('${{ parameters.deployToTest }}', false))
+      )
+    jobs:
+      - deployment: BuildPushProdBackend
+        displayName: 'Build & Push Backend to PROD'
+        environment: 'genassist-production'
+        pool:
+          name: 'Ritech-AI-TR1'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+
+                - template: templates/build-push-prod.yml
+                  parameters:
+                    composeService: 'app'
+                    localImageName: 'genassist-app-image'
+                    registryImageName: 'genassist-backend'
+                    envFile: 'env.prod'

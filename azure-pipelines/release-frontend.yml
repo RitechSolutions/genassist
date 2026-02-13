@@ -1,0 +1,106 @@
+# Release Pipeline: Frontend Service
+# Deploys: ui
+
+name: GenAssist-Release-Frontend_$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+
+parameters:
+  - name: deployToDev
+    type: boolean
+    default: true
+    displayName: 'Deploy to DEV'
+  - name: deployToTest
+    type: boolean
+    default: true
+    displayName: 'Deploy to TEST'
+  - name: deployToProd
+    type: boolean
+    default: true
+    displayName: 'Deploy to PROD'
+
+stages:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DEV: Deploy to self-hosted agent using docker-compose
+  # ═══════════════════════════════════════════════════════════════════════════
+  - stage: DEV
+    displayName: 'Deploy to DEV'
+    condition: eq('${{ parameters.deployToDev }}', true)
+    jobs:
+      - deployment: DeployFrontend
+        displayName: 'Deploy Frontend Service'
+        environment: 'genassist-dev'
+        pool:
+          name: 'Ritech-AI-TR1'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+
+                - template: templates/deploy-dev.yml
+                  parameters:
+                    services: 'ui'
+                    envFile: 'env.dev'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TEST: Build and push images to GHCR
+  # ═══════════════════════════════════════════════════════════════════════════
+  - stage: TEST
+    displayName: 'Build & Push to TEST'
+    dependsOn: DEV
+    condition: |
+      and(
+        eq('${{ parameters.deployToTest }}', true),
+        or(succeeded(), eq('${{ parameters.deployToDev }}', false))
+      )
+    jobs:
+      - deployment: BuildPushFrontend
+        displayName: 'Build & Push Frontend Image'
+        environment: 'genassist-test'
+        pool:
+          name: 'Ritech-AI-TR1'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+
+                - template: templates/build-push-test.yml
+                  parameters:
+                    composeService: 'ui'
+                    localImageName: 'genassist-ui'
+                    registryImageName: 'genassist-frontend'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PROD: Build with prod env vars and push to prod registry path
+  # ═══════════════════════════════════════════════════════════════════════════
+  - stage: PROD
+    displayName: 'Build & Push to PROD'
+    dependsOn: TEST
+    condition: |
+      and(
+        eq('${{ parameters.deployToProd }}', true),
+        or(succeeded(), eq('${{ parameters.deployToTest }}', false))
+      )
+    jobs:
+      - deployment: BuildPushProdFrontend
+        displayName: 'Build & Push Frontend to PROD'
+        environment: 'genassist-production'
+        pool:
+          name: 'Ritech-AI-TR1'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+
+                - template: templates/build-push-prod.yml
+                  parameters:
+                    composeService: 'ui'
+                    localImageName: 'genassist-ui'
+                    registryImageName: 'genassist-frontend'
+                    envFile: 'env.prod'

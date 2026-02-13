@@ -1,0 +1,30 @@
+# Template: Build and push image to TEST registry path
+parameters:
+  - name: composeService
+    type: string
+    displayName: 'Docker compose service name (e.g., app, ui)'
+  - name: localImageName
+    type: string
+    displayName: 'Local image name after compose build (e.g., genassist-app-image, genassist-ui)'
+  - name: registryImageName
+    type: string
+    displayName: 'Registry image name (e.g., genassist-backend, genassist-frontend)'
+
+steps:
+  - script: |
+      set -euo pipefail
+
+      echo "=== Building ${{ parameters.composeService }} ==="
+      docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml build ${{ parameters.composeService }}
+      docker image ls
+
+      echo "=== Tagging for TEST ==="
+      docker image tag ${{ parameters.localImageName }}:latest ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:$(Build.BuildNumber)
+      docker image tag ${{ parameters.localImageName }}:latest ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:latest
+
+      echo "=== Pushing to TEST ==="
+      docker push ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:$(Build.BuildNumber)
+      docker push ghcr.io/ritechsolutions/${{ parameters.registryImageName }}:latest
+
+      echo "=== Done ==="
+    displayName: 'Build & Push ${{ parameters.registryImageName }}'
