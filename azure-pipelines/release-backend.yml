@@ -79,8 +79,9 @@ stages:
                   parameters:
                     services: '$(infraPart) app $(celeryPart) $(whisperPart) $(flowerPart)'
                     composeOverride: 'docker-compose.build.yml'
-                    envFile: 'env.cicd'
+                    envFile: 'env.backend.dev'
                     envDest: 'backend/.env'
+                    extraEnv: 'API_VERSION=$(Build.BuildNumber)'
 
   # ═══════════════════════════════════════════════════════════════════════════
   # TEST: Build, push to GHCR, and deploy on the build server
@@ -124,6 +125,7 @@ stages:
                     services: '$(infraPart) app $(celeryPart) $(whisperPart) $(flowerPart)'
                     envFile: 'env.backend.test'
                     envDest: 'backend/.env'
+                    extraEnv: 'API_VERSION=$(Build.SourceBranchName)-$(Build.BuildNumber)'
 
   # ═══════════════════════════════════════════════════════════════════════════
   # PROD: Promote tested image to prod registry (no rebuild)
