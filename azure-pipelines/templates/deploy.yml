@@ -36,8 +36,22 @@ steps:
         echo "$EXTRA_ENV" >> ${{ parameters.envDest }}
       fi
 
-      echo "=== Cleaning up existing containers ==="
-      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} down --remove-orphans || true
+      echo "=== Cleaning up orphaned containers ==="
+      for svc in ${{ parameters.services }}; do
+        [ -z "$svc" ] && continue
+        cids=$(docker ps -aq --filter "name=genassist" | while read cid; do
+          cname=$(docker inspect --format '{{.Name}}' "$cid" 2>/dev/null | tr -d '/')
+          echo "$cname" | grep -q "$svc" && echo "$cid"
+        done || true)
+        if [ -n "$cids" ]; then
+          echo "Removing orphaned containers for $svc: $cids"
+          echo "$cids" | xargs docker rm -f 2>/dev/null || true
+        fi
+      done
+
+      echo "=== Stopping target services ==="
+      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} stop ${{ parameters.services }} || true
+      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} rm -f ${{ parameters.services }} || true
 
       echo "=== Pulling latest images ==="
       docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} pull ${{ parameters.services }} || true
