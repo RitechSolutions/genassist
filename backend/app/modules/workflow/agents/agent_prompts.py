@@ -212,7 +212,7 @@ Do not execute any tools, just recommend which ones to use and why."""
 
 # ==================== SHARED PROMPTS ====================
 
-def create_conversation_context(chat_history: List[dict], max_messages: int | None = None) -> str:
+def create_conversation_context(chat_history: List[dict]) -> str:
     """Create conversation context section for prompts
 
     Args:
@@ -225,8 +225,7 @@ def create_conversation_context(chat_history: List[dict], max_messages: int | No
         return ""
 
     context = "\n\nConversation history:\n"
-    messages_to_include = chat_history[-max_messages:] if max_messages else chat_history
-    for msg in messages_to_include:
+    for msg in chat_history:
         context += f"{msg['role'].capitalize()}: {msg['content']}\n"
 
     return context 
