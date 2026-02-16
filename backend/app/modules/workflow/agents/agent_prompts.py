@@ -212,13 +212,21 @@ Do not execute any tools, just recommend which ones to use and why."""
 
 # ==================== SHARED PROMPTS ====================
 
-def create_conversation_context(chat_history: List[dict], max_messages: int = 6) -> str:
-    """Create conversation context section for prompts"""
+def create_conversation_context(chat_history: List[dict], max_messages: int | None = None) -> str:
+    """Create conversation context section for prompts
+
+    Args:
+        chat_history: List of message dictionaries
+        max_messages: Optional limit on messages. If None, includes all messages.
+                     Note: Chat history should already be trimmed by the node based on
+                     user configuration (token budget or message count).
+    """
     if not chat_history:
         return ""
-    
+
     context = "\n\nConversation history:\n"
-    for msg in chat_history[-max_messages:]:  # Keep last N messages
+    messages_to_include = chat_history[-max_messages:] if max_messages else chat_history
+    for msg in messages_to_include:
         context += f"{msg['role'].capitalize()}: {msg['content']}\n"
-    
+
     return context 

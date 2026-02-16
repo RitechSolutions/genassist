@@ -171,7 +171,7 @@ class InMemoryConversationMemory(BaseConversationMemory):
         from app.core.utils.token_utils import get_token_counter
 
         if token_budget <= 0:
-            return "" if as_string else []
+            raise ValueError("Token budget must be positive")
 
         counter = get_token_counter(provider, model)
         selected_messages = []
