@@ -8,7 +8,5 @@ docker-compose.local.yml
 
 Dockerfile
 
-# Prevent secrets from leaking into the image
-.env
+# Ignore other env variants (the pipeline writes the correct .env before build)
 .env.*
-!.env.docker

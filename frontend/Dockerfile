@@ -31,9 +31,6 @@ RUN npm install
 #RUN npm audit fix --force
 #RUN npm audit fix --legacy-peer-deps
 
-# Use placeholder env vars for Docker builds (replaced at runtime by entrypoint.sh)
-RUN cp .env.docker .env
-
 # Build the application
 RUN npm run build
 
