@@ -20,7 +20,7 @@ class AgentNode(BaseNode):
     """Agent node that can select and execute tools using the BaseNode approach"""
 
     async def _get_chat_history_for_agent(
-        self, memory, config: Dict[str, Any], provider_id: str
+        self, memory, config: Dict[str, Any], provider_id: str, system_prompt: str, user_prompt: str
     ) -> list:
         """
         Get chat history based on configured trimming mode.
@@ -29,6 +29,8 @@ class AgentNode(BaseNode):
             memory: Conversation memory instance
             config: Node configuration
             provider_id: LLM provider ID
+            system_prompt: System prompt text (for token counting)
+            user_prompt: User prompt text (for token counting)
 
         Returns:
             List of message dictionaries
@@ -36,18 +38,47 @@ class AgentNode(BaseNode):
         trimming_mode = config.get("memoryTrimmingMode", "message_count")
 
         if trimming_mode == "token_budget":
-            # Token-based trimming
+            # Token-based trimming with budget enforcement
             from app.dependencies.injector import injector
             from app.services.llm_providers import LlmProviderService
+            from app.core.utils.token_utils import get_token_counter
 
             llm_service = injector.get(LlmProviderService)
             provider_info = await llm_service.get_by_id(provider_id)
+            provider = provider_info.llm_model_provider
+            model = provider_info.llm_model
 
-            history_token_budget = config.get("conversationHistoryTokens", 5000)
+            # Get token counter
+            counter = get_token_counter(provider, model)
+
+            # Count actual tokens in prompts
+            system_tokens = counter.count_tokens(system_prompt)
+            user_tokens = counter.count_tokens(user_prompt)
+
+            # Get configuration
+            total_budget = config.get("tokenBudget", 12000)
+            requested_history_tokens = config.get("conversationHistoryTokens", 5000)
+
+            # Calculate if we need to reduce history allocation
+            needed = system_tokens + user_tokens + requested_history_tokens
+
+            if needed > total_budget:
+                # Reduce history to fit within budget
+                actual_history_tokens = total_budget - system_tokens - user_tokens
+                actual_history_tokens = max(0, actual_history_tokens)  # Ensure non-negative
+                logger.warning(
+                    f"Token budget exceeded. Requested history: {requested_history_tokens}, "
+                    f"reduced to: {actual_history_tokens} (Total: {total_budget}, "
+                    f"System: {system_tokens}, User: {user_tokens})"
+                )
+            else:
+                # Within budget, use requested allocation
+                actual_history_tokens = requested_history_tokens
+
             return await memory.get_chat_history_within_tokens(
-                token_budget=history_token_budget,
-                provider=provider_info.llm_model_provider,
-                model=provider_info.llm_model,
+                token_budget=actual_history_tokens,
+                provider=provider,
+                model=model,
                 as_string=False
             )
         else:
@@ -133,7 +164,7 @@ class AgentNode(BaseNode):
             chat_history = []
             if memory_enabled:
                 chat_history = await self._get_chat_history_for_agent(
-                    self.get_memory(), config, provider_id
+                    self.get_memory(), config, provider_id, system_prompt, prompt
                 )
 
             # Invoke the agent
