@@ -41,6 +41,12 @@ steps:
       cp "$(envfile.secureFilePath)" ${{ parameters.envDest }}
       EXTRA_ENV="${{ parameters.extraEnv }}"
       if [ -n "$EXTRA_ENV" ]; then
+        # Remove existing keys so the extra values take precedence
+        # (dotenv uses first occurrence, so appending alone won't override)
+        for pair in $EXTRA_ENV; do
+          KEY=$(echo "$pair" | cut -d= -f1)
+          sed -i "/^${KEY}=/d" ${{ parameters.envDest }}
+        done
         echo "$EXTRA_ENV" >> ${{ parameters.envDest }}
       fi
 
