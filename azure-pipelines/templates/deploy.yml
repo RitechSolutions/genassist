@@ -47,7 +47,7 @@ steps:
           KEY=$(echo "$pair" | cut -d= -f1)
           sed -i "/^${KEY}=/d" ${{ parameters.envDest }}
         done
-        echo "$EXTRA_ENV" >> ${{ parameters.envDest }}
+        printf '\n%s\n' "$EXTRA_ENV" >> ${{ parameters.envDest }}
       fi
 
       # Ensure both env files exist so compose can parse the full file
