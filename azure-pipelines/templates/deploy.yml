@@ -71,8 +71,13 @@ steps:
       echo "=== Pulling latest images ==="
       docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} pull ${{ parameters.services }} || true
 
+      NO_DEPS_FLAG=""
+      if [ "${{ parameters.noDeps }}" = "True" ]; then
+        NO_DEPS_FLAG="--no-deps"
+      fi
+
       echo "=== Deploying services: ${{ parameters.services }} ==="
-      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} up -d --build --force-recreate --remove-orphans ${{ if eq(parameters.noDeps, true) }}--no-deps ${{ end }}${{ parameters.services }}
+      docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} up -d --build --force-recreate --remove-orphans $NO_DEPS_FLAG ${{ parameters.services }}
 
       echo "=== Verifying deployment ==="
       docker compose -f docker/docker-compose.base.yml -f docker/${{ parameters.composeOverride }} ps
