@@ -8564,6 +8564,35 @@
         }
       }
     },
+    "/api/file-manager/settings": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Get File Manager Settings",
+        "description": "Return non-sensitive file manager configuration.",
+        "operationId": "get_file_manager_settings_api_file_manager_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/file-manager/files": {
       "post": {
         "tags": [
@@ -15606,6 +15635,7 @@
           },
           "password": {
             "type": "string",
+            "format": "password",
             "title": "Password"
           },
           "scope": {
@@ -15633,6 +15663,7 @@
                 "type": "null"
               }
             ],
+            "format": "password",
             "title": "Client Secret"
           }
         },

@@ -10,11 +10,32 @@ from app.auth.dependencies import auth, permissions
 from fastapi_injector import Injected
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.config.settings import file_storage_settings
+from app.core.project_path import DATA_VOLUME
 
 # permissions
 from app.core.permissions.constants import Permissions as P
 
 router = APIRouter()
+
+
+# ==================== Settings Endpoints ====================
+
+@router.get("/settings", dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
+async def get_file_manager_settings():
+    """Return non-sensitive file manager configuration."""
+    result = {
+        "file_manager_enabled": file_storage_settings.FILE_MANAGER_ENABLED,
+        "file_manager_provider": file_storage_settings.FILE_MANAGER_PROVIDER,
+    }
+
+    provider = file_storage_settings.FILE_MANAGER_PROVIDER
+    if provider == "local":
+        result["base_path"] = file_storage_settings.model_dump().get("base_path", str(DATA_VOLUME))
+    elif provider == "s3":
+        result["aws_bucket_name"] = file_storage_settings.AWS_BUCKET_NAME or ""
+
+    return result
 
 
 # ==================== File Endpoints ====================

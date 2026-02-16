@@ -48,6 +48,7 @@ export interface StartConversationResponse {
   agent_id?: string;
   agent_thinking_phrases?: string[];
   agent_thinking_phrase_delay?: number; // seconds
+  agent_chat_input_metadata?: Record<string, unknown>; // Metadata keys/defaults from the workflow's Chat Input node
   create_time?: number;
   guest_token?: string;
 }

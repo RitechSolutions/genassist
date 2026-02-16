@@ -104,7 +104,7 @@ class AgentRAGServiceManager:
                 # Cache the service
                 self._services[kb_id] = service
                 logger.info(
-                    f"Created and cached AgentRAGService for KB {kb_id}")
+                    f"[AgentRAGServiceManager] Created and cached AgentRAGService for KB {kb_id}")
                 return service
 
             except Exception as e:

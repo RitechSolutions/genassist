@@ -25,7 +25,17 @@ async def get_agent_for_start(
     Stores agent in request.state for use in rate limiting and CORS.
     """
     userid = get_current_user_id()
-    agent = await agent_config_service.get_by_user_id(userid)
+    agent = await agent_config_service.get_by_user_id(userid, with_workflow=True)
+
+    test_input = None
+    if agent.workflow:
+        test_input = agent.workflow.get('testInput', None) 
+
+        # remove message from testInput with pop()
+        if test_input and 'message' in test_input:
+            test_input.pop('message')
+        agent.workflow = test_input
+
     request.state.agent = agent
     return agent
 
