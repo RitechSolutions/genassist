@@ -1,0 +1,66 @@
+name: PR Security Scan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  security_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: |
+          git fetch --no-tags --prune --depth=1 origin "${{ github.base_ref }}"
+
+      - name: Build PR diff
+        id: diff
+        run: |
+          git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
+          echo "Diff size:"
+          wc -c pr.diff
+
+      - name: Fail on invisible Unicode (zero-width / bidi) in PR diff
+        run: |
+          python3 - <<'PY'
+          import re
+
+          with open("pr.diff", "r", encoding="utf-8", errors="replace") as f:
+              data = f.read()
+
+          # Zero-width + bidi override/isolation chars
+          pat = re.compile(r'[\u200B-\u200F\u202A-\u202E\u2066-\u2069]')
+
+          matches = list(pat.finditer(data))
+          if not matches:
+              print("✅ No suspicious zero-width/bidi unicode found in PR diff")
+              raise SystemExit(0)
+
+          print("❌ Suspicious invisible unicode found in PR diff:")
+          for m in matches[:30]:
+              ch = m.group(0)
+              print(f" - U+{ord(ch):04X}")
+          raise SystemExit(1)
+          PY
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          GITLEAKS_VERSION="8.18.4"
+          curl -sSL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Gitleaks scan (diff only)
+        run: |
+          # Scan only the diff content from stdin
+          cat pr.diff | gitleaks protect --stdin --redact --verbose
