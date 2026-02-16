@@ -48,6 +48,8 @@ stages:
                     envFile: 'env.frontend.dev'
                     envDest: 'frontend/.env'
                     extraEnv: 'VITE_UI_VERSION=$(Build.BuildNumber)'
+                    cleanupExtra: ''
+                    noDeps: true
 
   # ═══════════════════════════════════════════════════════════════════════════
   # TEST: Build, push to GHCR, and deploy on the build server
@@ -85,6 +87,8 @@ stages:
                     envFile: 'env.frontend.test'
                     envDest: 'frontend/.env'
                     extraEnv: 'VITE_UI_VERSION=$(Build.BuildNumber)'
+                    cleanupExtra: ''
+                    noDeps: true
 
   # ═══════════════════════════════════════════════════════════════════════════
   # PROD: Promote tested image to prod registry (no rebuild)
