@@ -43,7 +43,8 @@ RUN pip3 install --no-cache-dir \
     fastapi \
     uvicorn[standard] \
     python-multipart \
-    aiofiles==24.1.0
+    aiofiles==24.1.0 \
+    pydub
 
 # Install Whisper from git (as specified in your requirements)
 RUN pip3 install --no-cache-dir \
@@ -60,4 +61,4 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 RUN python3 -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')"
 RUN python3 -c "import whisper; print(f'Whisper loaded successfully')"
 
-CMD ["python3", "-m", "uvicorn", "whisper_transcribe:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python3", "-m", "uvicorn", "whisper_transcribe:app", "--host", "0.0.0.0", "--port", "8001", "--timeout-keep-alive", "900"]

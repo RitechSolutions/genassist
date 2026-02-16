@@ -217,3 +217,109 @@ async def cuda_status():
         status["whisper_model_device"] = "cpu (cuda not available)"
 
     return status
+
+
+
+######################
+
+from pydub import AudioSegment
+
+
+CHUNK_LENGTH_MS = 3 * 60 * 1000  # 3 minutes
+
+
+async def transcribe_audio_whisper_chunked(
+    file: UploadFile,
+    whisper_options: str,
+    model_name: str,
+):
+    temp_file_path = None
+    chunk_paths = []
+
+    try:
+        # Parse whisper options
+        options_dict = {}
+        if whisper_options:
+            options = WhisperOptions.model_validate_json(whisper_options)
+            options_dict = options.model_dump(exclude_none=True)
+
+        set_whisper_model(model_name)
+
+        # Read uploaded file
+        file_bytes = await file.read()
+        suffix = sanitize_file_suffix(file.filename)
+
+        # Save original temp file
+        async with aiofiles.tempfile.NamedTemporaryFile(
+            delete=False, suffix=suffix
+        ) as temp_file:
+            await temp_file.write(file_bytes)
+            temp_file_path = temp_file.name
+
+        # Load audio with pydub (blocking → run in thread)
+        audio = await asyncio.to_thread(AudioSegment.from_file, temp_file_path)
+
+        # Split into chunks
+        chunks = [
+            audio[i : i + CHUNK_LENGTH_MS]
+            for i in range(0, len(audio), CHUNK_LENGTH_MS)
+        ]
+
+        full_text = ""
+        all_segments = []
+
+        for idx, chunk in enumerate(chunks):
+            chunk_path = f"{temp_file_path}_chunk_{idx}.wav"
+            chunk_paths.append(chunk_path)
+
+            # Export chunk (blocking)
+            await asyncio.to_thread(chunk.export, chunk_path, format="wav")
+
+            # Transcribe chunk
+            result = await asyncio.to_thread(
+                model.transcribe,
+                chunk_path,
+                **options_dict,
+            )
+
+            # Merge results
+            full_text += result.get("text", "") + " "
+
+            if "segments" in result:
+                all_segments.extend(result["segments"])
+
+        return {
+            "text": full_text.strip(),
+            "segments": all_segments,
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+    finally:
+        # Cleanup original file
+        if temp_file_path:
+            try:
+                safe_remove_temp_file(temp_file_path)
+            except Exception as cleanup_error:
+                logger.warning(
+                    f"Failed to remove temp file {temp_file_path}: {cleanup_error}"
+                )
+
+        # Cleanup chunk files
+        for path in chunk_paths:
+            try:
+                safe_remove_temp_file(path)
+            except Exception as cleanup_error:
+                logger.warning(
+                    f"Failed to remove chunk file {path}: {cleanup_error}"
+                )
+
+
+@app.post("/transcribe-long")
+async def transcribe(file: UploadFile = File(...),
+                     whisper_options: Optional[str] = Form(None),
+                     model_name: Optional[str] = DEFAULT_WHISPER_MODEL,
+):
+
+    return await transcribe_audio_whisper_chunked(file, whisper_options, model_name)
