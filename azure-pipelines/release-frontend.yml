@@ -48,7 +48,7 @@ stages:
                     envFile: 'env.frontend.dev'
                     envDest: 'frontend/.env'
                     extraEnv: 'VITE_UI_VERSION=$(Build.BuildNumber)'
-                    cleanupExtra: ''
+                    cleanupExtra: 'frontend'
                     noDeps: true
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -87,7 +87,7 @@ stages:
                     envFile: 'env.frontend.test'
                     envDest: 'frontend/.env'
                     extraEnv: 'VITE_UI_VERSION=$(Build.BuildNumber)'
-                    cleanupExtra: ''
+                    cleanupExtra: 'frontend'
                     noDeps: true
 
   # ═══════════════════════════════════════════════════════════════════════════
