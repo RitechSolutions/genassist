@@ -45,7 +45,7 @@ stages:
                   parameters:
                     services: 'ui'
                     composeOverride: 'docker-compose.build.yml'
-                    envFile: 'env.dev.frontend'
+                    envFile: 'env.frontend.dev'
                     envDest: 'frontend/.env'
                     extraEnv: 'VITE_UI_VERSION=$(Build.BuildNumber)'
 
