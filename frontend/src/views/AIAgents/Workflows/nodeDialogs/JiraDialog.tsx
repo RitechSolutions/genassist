@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isEqual } from "lodash";
 import { JiraNodeData } from "../types/nodes";
 import { BaseNodeDialogProps } from "./base";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
@@ -62,6 +63,17 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, spaceKey, taskName, taskDescription, app_settings_id: appSettingsId || undefined },
+    {
+      name: data.name,
+      spaceKey: data.spaceKey || "",
+      taskName: data.taskName || "",
+      taskDescription: data.taskDescription || "",
+      app_settings_id: data.app_settings_id || undefined,
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -74,9 +86,22 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      spaceKey,
+      taskName,
+      taskDescription,
+      app_settings_id: appSettingsId || undefined,
+    });
+  };
+
   return (
     <>
       <NodeConfigPanel
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

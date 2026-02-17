@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { MCPNodeData, MCPTool, MCPConnectionType, STDIOConnectionConfig, HTTPConnectionConfig } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -174,22 +175,24 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
     }
   };
 
-  const handleSave = () => {
-    // Validate based on connection type
+  const hasUnsavedChanges = !isEqual(
+    { name, description, connectionType, connectionConfig, availableTools, whitelistedTools },
+    {
+      name: data.name || "",
+      description: data.description || "",
+      connectionType: data.connectionType || "http",
+      connectionConfig: data.connectionConfig || { url: "" },
+      availableTools: data.availableTools || [],
+      whitelistedTools: data.whitelistedTools || [],
+    }
+  );
+
+  const performSave = () => {
     if (connectionType === "stdio") {
       if (!stdioCommand.trim()) {
         toast.error("Command is required for STDIO connections");
         return;
       }
-    } else {
-      if (!httpUrl.trim()) {
-        toast.error("Server URL is required for HTTP/SSE connections");
-        return;
-      }
-    }
-
-    // Validate JSON fields
-    if (connectionType === "stdio") {
       try {
         JSON.parse(stdioEnv);
       } catch {
@@ -197,6 +200,10 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         return;
       }
     } else {
+      if (!httpUrl.trim()) {
+        toast.error("Server URL is required for HTTP/SSE connections");
+        return;
+      }
       try {
         JSON.parse(httpHeaders);
       } catch {
@@ -204,7 +211,6 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         return;
       }
     }
-
     onUpdate({
       ...data,
       name,
@@ -214,7 +220,15 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
       availableTools,
       whitelistedTools,
     });
+  };
+
+  const handleSave = () => {
+    performSave();
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    performSave();
   };
 
   const handleDiscoverTools = async () => {
@@ -277,6 +291,8 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
     <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

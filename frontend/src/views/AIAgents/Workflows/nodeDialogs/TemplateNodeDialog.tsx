@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { TemplateNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -35,6 +36,11 @@ export const TemplateNodeDialog: React.FC<TemplateNodeDialogProps> = (
     }
   }, [isOpen, data]);
 
+  const hasUnsavedChanges = !isEqual(templateData, {
+    name: data.name || "",
+    template: data.template || "",
+  });
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -44,8 +50,18 @@ export const TemplateNodeDialog: React.FC<TemplateNodeDialogProps> = (
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name: templateData.name,
+      template: templateData.template,
+    });
+  };
+
   return (
     <NodeConfigPanel
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

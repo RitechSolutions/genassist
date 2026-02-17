@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { isEqual } from "lodash";
 import { OpenApiNodeData } from "../types/nodes";
 import { BaseNodeDialogProps } from "./base";
 import { useToast } from "@/hooks/useToast";
@@ -66,6 +67,17 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
     }
   };
 
+  const hasUnsavedChanges = !isEqual(
+    { name, providerId, query, originalFileName, serverFilePath },
+    {
+      name: data.name || "",
+      providerId: data.providerId || "",
+      query: data.query || "",
+      originalFileName: data.originalFileName || "",
+      serverFilePath: data.serverFilePath || "",
+    }
+  );
+
   const handleSave = async () => {
     onUpdate({
       ...data,
@@ -78,11 +90,24 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      providerId,
+      query,
+      originalFileName,
+      serverFilePath,
+    });
+  };
+
   return (
     <>
       <NodeConfigPanel
         isOpen={isOpen}
         onClose={onClose}
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

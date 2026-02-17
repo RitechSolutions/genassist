@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { ToolBuilderNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Save } from "lucide-react";
@@ -27,13 +28,27 @@ export const ToolBuilderDialog: React.FC<ToolBuilderDialogProps> = (props) => {
     });
   }, [isOpen, data]);
 
-  // Handle save
+  const initialData = {
+    name: data.name || "Tool Builder",
+    description: data.description || "Custom tool for parameter forwarding",
+    inputSchema: data.inputSchema || {},
+    returnDirect: data.returnDirect ?? false,
+  };
+  const hasUnsavedChanges = !isEqual(toolDefinition, initialData);
+
   const handleSave = () => {
     onUpdate({
       ...data,
       ...toolDefinition,
     });
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      ...toolDefinition,
+    });
   };
 
   return (
@@ -56,6 +71,8 @@ export const ToolBuilderDialog: React.FC<ToolBuilderDialogProps> = (props) => {
       }}
       showJsonState={false}
       className="max-w-4xl"
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
     >
       <ToolDefinitionSection
         toolDefinition={toolDefinition}

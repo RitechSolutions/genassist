@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { RouterNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -52,6 +53,16 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, first_value: firstValue, compare_condition: compareCondition, second_value: secondValue },
+    {
+      name: data.name || "",
+      first_value: data.first_value ?? "",
+      compare_condition: (data.compare_condition as ConditionType) ?? "contains",
+      second_value: data.second_value ?? "",
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -63,8 +74,20 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name: name,
+      first_value: firstValue,
+      compare_condition: compareCondition,
+      second_value: secondValue,
+    });
+  };
+
   return (
     <NodeConfigPanel
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { isEqual } from "lodash";
 import { MLModelInferenceNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
@@ -89,24 +90,37 @@ export const MLModelInferenceDialog: React.FC<
     }));
   };
 
-  // Handle save
-  const handleSave = () => {
+  const hasUnsavedChanges = !isEqual(
+    { modelId, inferenceInputs },
+    { modelId: data.modelId || "", inferenceInputs: data.inferenceInputs || {} }
+  );
+
+  const performSave = () => {
     if (!modelId) {
       toast.error("Please select an ML model");
       return;
     }
-
     onUpdate({
       ...data,
       modelId,
       modelName: selectedModel?.name,
       inferenceInputs,
     });
+  };
+
+  const handleSave = () => {
+    performSave();
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    performSave();
   };
 
   return (
     <NodeConfigPanel
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

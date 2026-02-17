@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { PythonCodeNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
@@ -43,7 +44,11 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
-  // Handle save
+  const hasUnsavedChanges = !isEqual(
+    { code, name, unwrap },
+    { code: data.code || "", name: data.name || "", unwrap: data.unwrap || false }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -52,6 +57,15 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
       unwrap,
     });
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      code,
+      name,
+      unwrap,
+    });
   };
 
   const handleGenerateTemplate = async (prompt?: string) => {
@@ -72,6 +86,8 @@ export const PythonCodeDialog: React.FC<PythonCodeDialogProps> = (props) => {
   return (
     <>
       <NodeConfigPanel
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

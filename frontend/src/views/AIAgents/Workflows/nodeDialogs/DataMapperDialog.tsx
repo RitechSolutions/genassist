@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
 import { Save, HelpCircle } from "lucide-react";
@@ -34,18 +35,24 @@ export const DataMapperDialog: React.FC<DataMapperDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, pythonScript },
+    { name: data.name, pythonScript: data.pythonScript }
+  );
+
   const handleSave = () => {
-    const updatedData = {
-      ...data,
-      name,
-      pythonScript,
-    };
-    onUpdate(updatedData);
+    onUpdate({ ...data, name, pythonScript });
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate({ ...data, name, pythonScript });
   };
 
   return (
     <NodeConfigPanel
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

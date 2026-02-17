@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { AgentNodeData, BaseLLMNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { ModelConfiguration } from "../components/ModelConfiguration";
@@ -19,13 +20,21 @@ export const AgentDialog: React.FC<AgentDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
-  // Handle saving the changes
+  const hasUnsavedChanges = !isEqual(config, data);
+
   const handleSave = () => {
     onUpdate({
       ...data,
       ...config,
     });
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      ...config,
+    });
   };
 
   return (
@@ -45,6 +54,8 @@ export const AgentDialog: React.FC<AgentDialogProps> = (props) => {
         ...data,
         ...config,
       }}
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
     >
       <ModelConfiguration
         id="agent-config"

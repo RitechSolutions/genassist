@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { isEqual } from "lodash";
 import { APIToolNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -55,8 +56,23 @@ export const APIToolDialog: React.FC<
     );
   }, [isOpen]);
 
-  // Handle save
-  const handleSave = () => {
+  const initialPayload = {
+    name: data.name || "",
+    endpoint: data.endpoint || "",
+    method: (data.method as HttpMethod) || "GET",
+    headers: data.headers || {},
+    parameters: data.parameters || {},
+    requestBody:
+      typeof data.requestBody === "string"
+        ? data.requestBody
+        : JSON.stringify(data.requestBody) || "",
+  };
+  const hasUnsavedChanges = !isEqual(
+    { name, endpoint, method, headers, parameters, requestBody },
+    initialPayload
+  );
+
+  const performSave = () => {
     let requestBodyParsed = requestBody;
     try {
       if (requestBody && requestBody.trim() !== "") {
@@ -64,10 +80,8 @@ export const APIToolDialog: React.FC<
       }
     } catch (error) {
       toast.error("Invalid JSON in request body.");
-
       return;
     }
-
     onUpdate({
       ...data,
       name,
@@ -77,7 +91,15 @@ export const APIToolDialog: React.FC<
       parameters,
       requestBody: requestBodyParsed,
     });
+  };
+
+  const handleSave = () => {
+    performSave();
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    performSave();
   };
 
   // Add new header
@@ -153,6 +175,8 @@ export const APIToolDialog: React.FC<
           </Button>
         </>
       }
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       {...props}
       data={{
         ...data,

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { CalendarEventToolNodeData } from "../types/nodes";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { Button } from "@/components/button";
@@ -58,6 +59,20 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
     }
   }, [isOpen, data]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, summary, start, end, operation, dataSourceId, subjectContains, timezone },
+    {
+      name: data.name || "",
+      summary: data.summary || "",
+      start: data.start || "",
+      end: data.end || "",
+      operation: data.operation || "",
+      dataSourceId: data.dataSourceId?.toString() || "",
+      subjectContains: data.subjectContains || "",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -73,9 +88,25 @@ export const CalendarEventDialog: React.FC<CalendarEventDialogProps> = (
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      summary,
+      start,
+      end,
+      operation,
+      dataSourceId,
+      subjectContains,
+      timezone,
+    });
+  };
+
   return (
     <>
       <NodeConfigPanel
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

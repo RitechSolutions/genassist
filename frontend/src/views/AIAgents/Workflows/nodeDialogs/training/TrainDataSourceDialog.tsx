@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { TrainDataSourceNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -126,8 +127,29 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
     }
   };
 
-  const handleSave = async () => {
-    // Validate based on source type
+  const currentPayload = {
+    name,
+    sourceType,
+    dataSourceId: dataSourceId ?? undefined,
+    query: query ?? undefined,
+    csvFileName: csvFileName ?? undefined,
+    csvFilePath: csvFilePath ?? undefined,
+    csvFileId: csvFileId ?? undefined,
+    csvFileUrl: csvFileUrl ?? undefined,
+  };
+  const initialPayload = {
+    name: data.name || "Train Data Source",
+    sourceType: (data.sourceType === "datasource" && data.dataSourceId ? "datasource" : "csv") as "datasource" | "csv",
+    dataSourceId: data.dataSourceId ?? undefined,
+    query: data.query ?? undefined,
+    csvFileName: data.csvFileName ?? undefined,
+    csvFilePath: data.csvFilePath ?? undefined,
+    csvFileId: data.csvFileId ?? undefined,
+    csvFileUrl: data.csvFileUrl ?? undefined,
+  };
+  const hasUnsavedChanges = !isEqual(currentPayload, initialPayload);
+
+  const performSave = () => {
     if (sourceType === "datasource") {
       if (!dataSourceId || !query || !query.trim()) {
         toast({
@@ -147,25 +169,27 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         return;
       }
     }
-
     onUpdate({
       ...data,
-      name,
-      sourceType,
-      dataSourceId: dataSourceId ?? undefined,
-      query: query ?? undefined,
-      csvFileName: csvFileName ?? undefined,
-      csvFilePath: csvFilePath ?? undefined,
-      csvFileId: csvFileId ?? undefined,
-      csvFileUrl: csvFileUrl ?? undefined,
+      ...currentPayload,
     });
+  };
+
+  const handleSave = async () => {
+    performSave();
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    performSave();
   };
 
   return (
     <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

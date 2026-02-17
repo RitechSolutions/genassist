@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { isEqual } from "lodash";
 import { WorkflowExecutorNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
@@ -120,6 +121,16 @@ export const WorkflowExecutorDialog: React.FC<
     });
   };
 
+  const hasUnsavedChanges = !isEqual(
+    { name, workflowId, workflowName, inputParameters },
+    {
+      name: data.name || "",
+      workflowId: data.workflowId || "",
+      workflowName: data.workflowName || "",
+      inputParameters: data.inputParameters || {},
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -131,8 +142,20 @@ export const WorkflowExecutorDialog: React.FC<
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      workflowId,
+      workflowName,
+      inputParameters,
+    });
+  };
+
   return (
     <NodeConfigPanel
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

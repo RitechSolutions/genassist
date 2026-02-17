@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { isEqual } from "lodash";
 import { ReadMailsNodeData, SearchCriteria } from "../types/nodes";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { Button } from "@/components/button";
@@ -86,6 +87,15 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, dataSourceId, searchCriteria },
+    {
+      name: data.name || "",
+      dataSourceId: data.dataSourceId?.toString() || "",
+      searchCriteria: data.searchCriteria || emptySearchCriteria,
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -94,6 +104,15 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
       searchCriteria,
     });
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      dataSourceId,
+      searchCriteria,
+    });
   };
 
   const updateSearchCriteriaField = (
@@ -106,6 +125,8 @@ export const ReadMailsDialog: React.FC<ReadMailsDialogProps> = (props) => {
   return (
     <>
       <NodeConfigPanel
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

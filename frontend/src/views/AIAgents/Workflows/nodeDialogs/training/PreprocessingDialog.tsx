@@ -179,7 +179,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     }
   }, [fileUrl]);
 
-  const handleSave = () => {
+  const performSave = () => {
     if (!pythonCode.trim()) {
       toast({
         title: "Validation Error",
@@ -188,20 +188,30 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       });
       return;
     }
-
-    // Save all analysis results (initial + all step results)
-    // Also keep analysisResult for backward compatibility (initial result)
     onUpdate({
       ...data,
       name,
       pythonCode,
       fileUrl,
-      analysisResult: analysisResults.initial || undefined, // For backward compatibility
+      analysisResult: analysisResults.initial || undefined,
       stepAnalysisResults:
         Object.keys(analysisResults).length > 0 ? analysisResults : undefined,
     });
+  };
+
+  const handleSave = () => {
+    performSave();
     onClose();
   };
+
+  const handleSaveOnly = () => {
+    performSave();
+  };
+
+  const hasUnsavedChanges =
+    name !== (data.name || "Data Preprocessing") ||
+    pythonCode !== (data.pythonCode || BASE_PYTHON_TEMPLATE) ||
+    fileUrl !== (data.fileUrl || "");
 
   const handleGenerateTemplate = async (prompt?: string) => {
     try {
@@ -575,6 +585,8 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
         isOpen={isOpen}
         onClose={onClose}
         className="w-[95vw] h-[95vh] max-w-[95vw] max-h-[95vh]"
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

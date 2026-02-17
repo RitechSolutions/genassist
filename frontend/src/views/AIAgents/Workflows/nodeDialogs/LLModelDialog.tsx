@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { BaseLLMNodeData, LLMModelNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { ModelConfiguration } from "../components/ModelConfiguration";
@@ -22,7 +23,8 @@ export const LLModelDialog: React.FC<LLModelDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
-  // Handle saving the changes
+  const hasUnsavedChanges = !isEqual(config, data);
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -31,8 +33,17 @@ export const LLModelDialog: React.FC<LLModelDialogProps> = (props) => {
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      ...config,
+    });
+  };
+
   return (
     <NodeConfigPanel
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

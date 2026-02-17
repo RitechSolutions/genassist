@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { isEqual } from "lodash";
 import { GmailNodeData, GmailOperation } from "../types/nodes";
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { Button } from "@/components/button";
@@ -56,6 +57,21 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, subject, body, to, cc, bcc, dataSourceId, operation, attachments },
+    {
+      name: data.name || "",
+      subject: data.subject || "",
+      body: data.body || "",
+      to: data.to || "",
+      cc: data.cc || "",
+      bcc: data.bcc || "",
+      dataSourceId: data.dataSourceId?.toString() || "",
+      operation: (data.operation as GmailOperation) || "send_email",
+      attachments: data.attachments || [],
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -70,6 +86,21 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
       attachments,
     });
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      subject,
+      body,
+      to,
+      cc,
+      bcc,
+      dataSourceId,
+      operation,
+      attachments,
+    });
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,6 +128,8 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
   return (
     <>
       <NodeConfigPanel
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

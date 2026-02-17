@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { KnowledgeBaseNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -57,6 +58,17 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
     }
   }, [isOpen, data, toast]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, query, limit, force, selectedBases },
+    {
+      name: data.name || "",
+      query: data.query || "",
+      limit: data.limit || 5,
+      force: data.force || false,
+      selectedBases: data.selectedBases || [],
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -67,6 +79,17 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
       selectedBases,
     });
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      query,
+      limit,
+      force,
+      selectedBases,
+    });
   };
 
   const toggleBase = (baseId: string) => {
@@ -81,6 +104,8 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
     <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

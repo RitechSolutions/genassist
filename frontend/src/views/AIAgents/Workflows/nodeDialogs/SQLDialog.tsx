@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { SQLNodeData, SQLMode } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -101,19 +102,35 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
     }
   };
 
+  const payload = {
+    name,
+    dataSourceId,
+    mode,
+    sqlQuery,
+    providerId,
+    systemPrompt,
+    humanQuery,
+    parameters,
+  };
+  const initialPayload = {
+    name: data.name || "",
+    dataSourceId: data.dataSourceId || "",
+    mode: data.mode || undefined,
+    sqlQuery: data.sqlQuery || "",
+    providerId: data.providerId || "",
+    systemPrompt: data.systemPrompt || "",
+    humanQuery: data.humanQuery || "",
+    parameters: data.parameters || {},
+  };
+  const hasUnsavedChanges = !isEqual(payload, initialPayload);
+
   const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      dataSourceId,
-      mode,
-      sqlQuery,
-      providerId,
-      systemPrompt,
-      humanQuery,
-      parameters,
-    });
+    onUpdate({ ...data, ...payload });
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate({ ...data, ...payload });
   };
 
   return (
@@ -121,6 +138,8 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
       <NodeConfigPanel
         isOpen={isOpen}
         onClose={onClose}
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

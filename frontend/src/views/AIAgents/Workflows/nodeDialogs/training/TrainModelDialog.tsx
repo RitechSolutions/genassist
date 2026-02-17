@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { TrainModelNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -82,7 +83,29 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     });
   }, [targetColumn, analysisResult]);
 
-  const handleSave = () => {
+  const payload = {
+    name,
+    fileUrl,
+    analysisResult: analysisResult || undefined,
+    modelType,
+    targetColumn,
+    featureColumns,
+    modelParameters,
+    validationSplit,
+  };
+  const initialPayload = {
+    name: data.name || "Train Model",
+    fileUrl: data.fileUrl || "",
+    analysisResult: data.analysisResult || undefined,
+    modelType: data.modelType || "xgboost",
+    targetColumn: data.targetColumn || "",
+    featureColumns: data.featureColumns || [],
+    modelParameters: data.modelParameters || {},
+    validationSplit: data.validationSplit || 0.2,
+  };
+  const hasUnsavedChanges = !isEqual(payload, initialPayload);
+
+  const performSave = () => {
     if (!targetColumn.trim()) {
       toast({
         title: "Validation Error",
@@ -91,7 +114,6 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       });
       return;
     }
-
     if (featureColumns.length === 0) {
       toast({
         title: "Validation Error",
@@ -100,19 +122,16 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       });
       return;
     }
+    onUpdate({ ...data, ...payload });
+  };
 
-    onUpdate({
-      ...data,
-      name,
-      fileUrl,
-      analysisResult: analysisResult || undefined,
-      modelType,
-      targetColumn,
-      featureColumns,
-      modelParameters,
-      validationSplit,
-    });
+  const handleSave = () => {
+    performSave();
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    performSave();
   };
 
   const handleAnalyzeCSV = async () => {
@@ -217,6 +236,8 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       <NodeConfigPanel
         isOpen={isOpen}
         onClose={onClose}
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>
@@ -231,14 +252,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
         {...props}
         data={{
           ...data,
-          name,
-          fileUrl,
-          analysisResult: analysisResult || undefined,
-          modelType,
-          targetColumn,
-          featureColumns,
-          modelParameters,
-          validationSplit,
+          ...payload,
         }}
       >
         <div className="space-y-4">

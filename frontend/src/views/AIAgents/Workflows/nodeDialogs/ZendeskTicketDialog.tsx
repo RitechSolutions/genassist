@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { ZendeskTicketNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -83,19 +84,38 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
     }
   }, [isOpen, data]);
 
+  const payload = {
+    name,
+    subject,
+    description,
+    requester_name: requesterName,
+    requester_email: requesterEmail,
+    tags: getTagsArr(),
+    custom_fields: customFields.length > 0 ? customFields : undefined,
+    app_settings_id: appSettingsId || undefined,
+  };
+  const initialPayload = {
+    name: data.name || "",
+    subject: data.subject || "",
+    description: data.description || "",
+    requester_name: data.requester_name || "",
+    requester_email: data.requester_email || "",
+    tags: data.tags || [],
+    custom_fields: data.custom_fields || [],
+    app_settings_id: data.app_settings_id || undefined,
+  };
+  const hasUnsavedChanges = !isEqual(
+    { ...payload, custom_fields: payload.custom_fields || [] },
+    { ...initialPayload, custom_fields: initialPayload.custom_fields || [] }
+  );
+
   const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      subject,
-      description,
-      requester_name: requesterName,
-      requester_email: requesterEmail,
-      tags: getTagsArr(),
-      custom_fields: customFields.length > 0 ? customFields : undefined,
-      app_settings_id: appSettingsId || undefined,
-    });
+    onUpdate({ ...data, ...payload });
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate({ ...data, ...payload });
   };
 
   const addCustomField = () => {
@@ -125,6 +145,8 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
   return (
     <>
       <NodeConfigPanel
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { ThreadRAGNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -43,33 +44,55 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
-  const handleSave = () => {
+  const buildUpdatedData = (): ThreadRAGNodeData => {
     const updatedData: ThreadRAGNodeData = {
       ...data,
       name,
       action,
     };
-
     if (action === "retrieve") {
       updatedData.query = query;
       updatedData.top_k = topK;
-      // Clear add action fields
       updatedData.message = undefined;
     } else {
       updatedData.message = message;
-      // Clear retrieve action fields
       updatedData.query = undefined;
       updatedData.top_k = undefined;
     }
+    return updatedData;
+  };
 
-    onUpdate(updatedData);
+  const currentState = {
+    name,
+    action,
+    query,
+    top_k: topK,
+    message,
+  };
+  const initialState = {
+    name: data.name || "",
+    action: data.action || "retrieve",
+    query: data.query || "",
+    top_k: data.top_k || 5,
+    message: data.message || "",
+  };
+  const hasUnsavedChanges = !isEqual(currentState, initialState);
+
+  const handleSave = () => {
+    onUpdate(buildUpdatedData());
     onClose();
+  };
+
+  const handleSaveOnly = () => {
+    onUpdate(buildUpdatedData());
   };
 
   return (
     <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       title="Configure Per Chat RAG"
       description="Configure the RAG node to retrieve context or add messages to the chat RAG"
       footer={

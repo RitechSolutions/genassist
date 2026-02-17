@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { WhatsappNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -60,6 +61,16 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, message: textMsg, recipient_number: toNumber, app_settings_id: appSettingsId || undefined },
+    {
+      name: data.name,
+      message: data.message || "",
+      recipient_number: data.recipient_number || "",
+      app_settings_id: data.app_settings_id || undefined,
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -71,9 +82,21 @@ export const WhatsAppDialog: React.FC<WhatsAppDialogProps> = (props) => {
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      message: textMsg,
+      recipient_number: toNumber,
+      app_settings_id: appSettingsId || undefined,
+    });
+  };
+
   return (
     <>
       <NodeConfigPanel
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>

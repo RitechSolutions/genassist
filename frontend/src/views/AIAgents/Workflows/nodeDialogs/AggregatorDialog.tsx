@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { AggregatorNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -61,6 +62,16 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
     }
   }, [isOpen, data, edges, props.nodeId]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, aggregationStrategy, timeoutSeconds, forwardTemplate },
+    {
+      name: data.name || "",
+      aggregationStrategy: (data.aggregationStrategy as AggregationStrategyType) ?? "list",
+      timeoutSeconds: data.timeoutSeconds ?? 15,
+      forwardTemplate: data.forwardTemplate ?? "",
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -72,8 +83,20 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      aggregationStrategy,
+      timeoutSeconds,
+      forwardTemplate,
+    });
+  };
+
   return (
     <NodeConfigPanel
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveOnly}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>

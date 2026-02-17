@@ -8,10 +8,20 @@ import {
 } from "@/components/sheet";
 import { cn } from "@/lib/utils";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/alert-dialog";
 import { JsonViewer, NodeMetadata } from "./custom/JsonViewer";
 import { GenericTestDialog } from "./GenericTestDialog";
 import { Button } from "@/components/button";
-import { Play, GripVertical, Lock, LockOpen } from "lucide-react";
+import { Loader2, Play, GripVertical, Lock, LockOpen } from "lucide-react";
 import { NodeData } from "../types/nodes";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { Node, Edge } from "reactflow";
@@ -55,6 +65,9 @@ interface WorkflowNodesPanelProps {
   // Unwrap field props
   showUnwrap?: boolean;
   onUnwrapChange?: (unwrap: boolean) => void;
+  // Unsaved changes: when true, closing (e.g. click outside) shows confirm dialog
+  hasUnsavedChanges?: boolean;
+  onSave?: () => void | Promise<void>;
 }
 
 export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
@@ -76,6 +89,8 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   // Unwrap field props
   showUnwrap = false,
   onUnwrapChange,
+  hasUnsavedChanges = false,
+  onSave,
 }) => {
   const nodeDefinition = nodeRegistry.getNodeType(nodeType);
 
@@ -85,6 +100,8 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   );
   const [sheetWidth, setSheetWidth] = useState<number | null>(null);
   const [isPinned, setIsPinned] = useState(false);
+  const [isUnsavedConfirmOpen, setIsUnsavedConfirmOpen] = useState(false);
+  const [isSavingFromConfirm, setIsSavingFromConfirm] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const { getAvailableDataForNode, hasNodeBeenExecuted, nodes: workflowNodes } =
@@ -169,6 +186,22 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
     e.stopPropagation();
   };
 
+  const handleUnsavedDiscard = useCallback(() => {
+    setIsUnsavedConfirmOpen(false);
+    onClose();
+  }, [onClose]);
+
+  const handleUnsavedSave = useCallback(async () => {
+    setIsSavingFromConfirm(true);
+    try {
+      await Promise.resolve(onSave?.());
+      setIsUnsavedConfirmOpen(false);
+      onClose();
+    } finally {
+      setIsSavingFromConfirm(false);
+    }
+  }, [onSave, onClose]);
+
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
   e.preventDefault();
   e.stopPropagation();
@@ -234,7 +267,13 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
       <Sheet
         open={isOpen}
         onOpenChange={(open) => {
-          if (!open && isPinned) return;
+          if (!open) {
+            if (isPinned || isTestDialogOpen) return;
+            if (hasUnsavedChanges) {
+              setIsUnsavedConfirmOpen(true);
+              return;
+            }
+          }
           onClose();
         }}
         modal={false}
@@ -426,6 +465,37 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
           nodeName={nodeName}
         />
       )}
+
+      {/* Unsaved changes confirm */}
+      <AlertDialog open={isUnsavedConfirmOpen} onOpenChange={setIsUnsavedConfirmOpen}>
+        <AlertDialogContent
+          className="z-[1003]"
+          overlayClassName="z-[1003]"
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>You have unsaved changes!</AlertDialogTitle>
+            <AlertDialogDescription>
+              Would you like to save or discard them?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={handleUnsavedDiscard}
+              disabled={isSavingFromConfirm}
+            >
+              Discard
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleUnsavedSave}
+              disabled={isSavingFromConfirm}
+              className="bg-blue-600 hover:bg-blue-700 focus:ring-blue-600"
+            >
+              {isSavingFromConfirm && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };

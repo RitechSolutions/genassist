@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { isEqual } from "lodash";
 import { SlackOutputNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -60,6 +61,16 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  const hasUnsavedChanges = !isEqual(
+    { name, channel, message, app_settings_id: appSettingsId || undefined },
+    {
+      name: data.name,
+      channel: data.channel || "",
+      message: data.message || "",
+      app_settings_id: data.app_settings_id || undefined,
+    }
+  );
+
   const handleSave = () => {
     onUpdate({
       ...data,
@@ -71,9 +82,21 @@ export const SlackOutputDialog: React.FC<SlackOutputDialogProps> = (props) => {
     onClose();
   };
 
+  const handleSaveOnly = () => {
+    onUpdate({
+      ...data,
+      name,
+      channel,
+      message,
+      app_settings_id: appSettingsId || undefined,
+    });
+  };
+
   return (
     <>
       <NodeConfigPanel
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={handleSaveOnly}
         footer={
           <>
             <Button variant="outline" onClick={onClose}>
