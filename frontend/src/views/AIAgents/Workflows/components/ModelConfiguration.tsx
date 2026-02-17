@@ -99,6 +99,34 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     });
   };
 
+  const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget") => {
+    onConfigChange({
+      ...config,
+      memoryTrimmingMode: mode,
+    });
+  };
+
+  const handleMaxMessagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({
+      ...config,
+      maxMessages: Number.parseInt(e.target.value) || 10,
+    });
+  };
+
+  const handleTokenBudgetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({
+      ...config,
+      tokenBudget: Number.parseInt(e.target.value) || 10000,
+    });
+  };
+
+  const handleConversationHistoryTokensChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({
+      ...config,
+      conversationHistoryTokens: Number.parseInt(e.target.value) || 5000,
+    });
+  };
+
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     onConfigChange({
@@ -228,6 +256,68 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           onCheckedChange={handleMemoryChange}
         />
       </div>
+      {config.memory && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor={`memory-trimming-mode-${id}`}>Memory Trimming Mode</Label>
+            <Select
+              value={config.memoryTrimmingMode || "message_count"}
+              onValueChange={handleMemoryTrimmingModeChange}
+            >
+              <SelectTrigger id={`memory-trimming-mode-${id}`} className="w-full">
+                <SelectValue placeholder="Select trimming mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="message_count">Last N Messages</SelectItem>
+                <SelectItem value="token_budget">Token Budget</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {config.memoryTrimmingMode === "message_count" || !config.memoryTrimmingMode ? (
+            <div className="space-y-2">
+              <Label htmlFor={`max-messages-${id}`}>Max Messages</Label>
+              <Input
+                id={`max-messages-${id}`}
+                type="number"
+                min={1}
+                step={1}
+                value={config.maxMessages || 10}
+                onChange={handleMaxMessagesChange}
+                placeholder="10"
+              />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor={`token-budget-${id}`}>Total Token Budget</Label>
+                <Input
+                  id={`token-budget-${id}`}
+                  type="number"
+                  min={1000}
+                  max={50000}
+                  step={100}
+                  value={config.tokenBudget || 10000}
+                  onChange={handleTokenBudgetChange}
+                  placeholder="10000"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`conversation-history-tokens-${id}`}>Conversation History Allocation (tokens)</Label>
+                <Input
+                  id={`conversation-history-tokens-${id}`}
+                  type="number"
+                  min={0}
+                  max={20000}
+                  step={100}
+                  value={config.conversationHistoryTokens || 5000}
+                  onChange={handleConversationHistoryTokensChange}
+                  placeholder="5000"
+                />
+              </div>
+            </>
+          )}
+        </>
+      )}
       <LLMProviderDialog
         isOpen={isCreateProviderOpen}
         onOpenChange={(open) => setIsCreateProviderOpen(open)}
