@@ -133,6 +133,7 @@ class ErrorKey(Enum):
     LLM_BILLING_LIMIT_REACHED = "LLM_BILLING_LIMIT_REACHED"
     LLM_INVALID_API_KEY = "LLM_INVALID_API_KEY"
     LLM_AUTHENTICATION_FAILED = "LLM_AUTHENTICATION_FAILED"
+    FILE_MANAGER_INITIALIZATION_FAILED = "FILE_MANAGER_INITIALIZATION_FAILED"
 
 ERROR_MESSAGES = {
     'en': {
@@ -258,9 +259,11 @@ ERROR_MESSAGES = {
         ErrorKey.LLM_BILLING_LIMIT_REACHED: "Billing limit reached for the LLM provider. Please update your billing settings.",
         ErrorKey.LLM_INVALID_API_KEY: "Invalid API key for the LLM provider.",
         ErrorKey.LLM_AUTHENTICATION_FAILED: "Authentication failed with the LLM provider. Please check your credentials.",
+        ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Failed to initialize file manager service.",
 },
     'fr': {
         ErrorKey.INTERNAL_ERROR: 'Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.',
+        ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
     }
 }
 

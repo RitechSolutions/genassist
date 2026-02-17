@@ -2,12 +2,13 @@ from ast import Dict
 from uuid import UUID
 import uuid
 from fastapi import UploadFile
+import httpx
 from injector import inject
 from typing import Optional, List
 import logging
 import base64
 from urllib.parse import quote
-
+import os
 from app.modules.filemanager.providers.base import BaseStorageProvider
 from app.db.models.file import FileModel
 from app.schemas.file import FileBase
@@ -16,6 +17,8 @@ from app.core.tenant_scope import get_tenant_context
 
 from app.modules.filemanager.providers import init_by_name
 from app.core.config.settings import file_storage_settings
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,28 @@ class FileManagerService:
         self.repository = repository
         # Storage provider will be injected via manager or configuration
         self.storage_provider = None
+    
+    async def initialize(self, base_url: str, base_path: str) -> BaseStorageProvider: 
+        """Initialize the file manager service with the default storage provider and return the storage provider."""
 
+        try:
+            # get the storage provider configuration for the file storage provider
+            config = file_storage_settings.model_dump()
+            config["base_url"] = base_url
+            config["base_path"] = base_path
+
+            # get the default provider name and initialize the storage provider
+            provider_name = file_storage_settings.default_provider_name
+            self.storage_provider = self.get_storage_provider_by_name(provider_name, config=config)
+            await self.storage_provider.initialize()
+
+            # return the storage provider
+            return self.storage_provider
+        except Exception as e:
+            logger.error(f"Failed to initialize file manager service: {e}")
+            raise AppException(error_key=ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED, detail=str(e))
+
+    
     async def set_storage_provider(self, provider: BaseStorageProvider):
         """Set the storage provider for this service instance."""
         self.storage_provider = provider
@@ -80,6 +104,7 @@ class FileManagerService:
         file: UploadFile,
         file_base: FileBase,
         allowed_extensions: Optional[list[str]] = None,
+        max_file_size: Optional[int] = None,
     ) -> FileModel:
         """
         Create a file metadata record and upload file content to storage.
@@ -93,14 +118,19 @@ class FileManagerService:
         file_extension = file_extension.lower() if file_extension else "txt"
 
         # check if file extension is allowed
-        if allowed_extensions is not None and str(file_extension).lower() not in allowed_extensions:
-            raise ValueError(f"File extension {file_extension} not allowed") from None
+        if allowed_extensions is not None:
+            self._validate_file_extension(file_extension, allowed_extensions)
 
         # read from the file
         file_content = await file.read()
         file_size = len(file_content)
         file_mime_type = file.content_type
         file_name = file.filename
+
+        # check if file size is allowed
+        if max_file_size is not None:
+            self._validate_file_size(file_size, max_file_size)
+
         # Prefer the storage provider coming from the request payload; fall back to the
         # already configured provider if present, otherwise default to "local".
         file_storage_provider = (
@@ -126,6 +156,7 @@ class FileManagerService:
         # create the file data
         file_data = FileBase(
             name=file_base.name or file_name,
+            original_filename=file_base.original_filename or file_name,
             mime_type=file_mime_type,
             size=file_size,
             file_extension=file_extension,
@@ -181,10 +212,36 @@ class FileManagerService:
 
     async def download_file_to_path(self, file_id: UUID, path: str) -> None:
         """Download file to path."""
-        file = await self.get_file_by_id(file_id)
-        content = await self.get_file_content(file)
-        with open(path, "wb") as f:
-            f.write(content)
+        try:
+            # create the directory if it doesn't exist
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
+            file = await self.get_file_by_id(file_id)
+            content = await self.get_file_content(file)
+            with open(path, "wb") as f:
+                f.write(content)
+        except Exception as e:
+            logger.error(f"Failed to download file to path {path}: {e}")
+            raise AppException(error_key=ErrorKey.INTERNAL_ERROR, detail=str(e))
+        
+    async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
+        """Download file from URL to path."""
+        try:
+            # create the directory if it doesn't exist
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream("GET", file_url) as response:
+                    response.raise_for_status()
+                    
+                    with open(path, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                            f.write(chunk)
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to download file from URL {file_url} to path {path}: {e}")
+            return False
 
     async def list_files(
         self,
@@ -237,14 +294,44 @@ class FileManagerService:
 
         # when used the local file storage provider, use the source url
         if file.storage_provider == "local":
-            config_base_url = self.storage_provider.base_url
-            return f"{config_base_url}/api/file-manager/files/{file.id}/source?X-Tenant-Id={get_tenant_context()}"
+            return await self.get_file_source_url(file.id)
 
         # get the file url from the storage provider
         return await self.storage_provider.get_file_url(file.storage_path, file.path)
 
-    # ==================== Helper Methods ====================
 
+    # ==================== File Source URL Methods ====================
+    async def get_file_source_url(self, file_id: UUID) -> str:
+        """Get the source URL of a file."""
+        config_base_url = self.storage_provider.config.get("base_url")
+
+        if not config_base_url:
+            raise ValueError("Storage provider base URL not set")
+
+        tenant_id = get_tenant_context()
+        str_file_id = str(file_id)
+
+        if tenant_id:
+            return f"{config_base_url}/api/file-manager/files/{str_file_id}/source?X-Tenant-Id={tenant_id}"
+
+        return f"{config_base_url}/api/file-manager/files/{str_file_id}/source"
+
+
+    async def extract_file_id_from_url(self, file_url: str) -> Optional[UUID]:
+        """Extract the file ID from the file URL."""
+        file_id = file_url.split("/")[-1]
+        try:
+            return UUID(file_id) if file_id else None
+        except ValueError:
+            return None
+
+    async def get_file_from_url(self, file_url: str) -> Optional[FileModel]:
+        """Get the file from the URL."""
+        file_id = await self.extract_file_id_from_url(file_url)
+        return await self.get_file_by_id(file_id)
+
+
+    # ==================== Helper Methods ====================
     async def _initialize_storage_provider(self, storage_provider_name: str) -> BaseStorageProvider:
         """Initialize the storage provider."""
         if self.storage_provider and self.storage_provider.is_initialized():
@@ -270,3 +357,13 @@ class FileManagerService:
         tenant_id = get_tenant_context() or "master"
         user_prefix = f"user_{user_id}" if user_id else "shared"
         return f"{tenant_id}/{user_prefix}/{name}"
+
+    def _validate_file_extension(self, file_extension: str, allowed_extensions: list[str]) -> None:
+        """Validate the file extension."""
+        if file_extension not in allowed_extensions:
+            raise ValueError(f"File extension {file_extension} not allowed")
+
+    def _validate_file_size(self, file_size: int, max_file_size: int) -> None:
+        """Validate the file size."""
+        if file_size > max_file_size:
+            raise ValueError(f"File size {file_size} is greater than the maximum allowed size {max_file_size}")

@@ -69,7 +69,7 @@ dependencies:
   - coverage=7.8.0
   - cpython=3.10.17
   - croniter=6.0.0
-  - cryptography=44.0.3
+  - cryptography=46.0.5
   - cyrus-sasl=2.1.27
   - databases=0.9.0
   - datasets=2.14.4
@@ -231,8 +231,8 @@ dependencies:
   - packaging=24.2
   - pandas=2.2.3
   - passlib=1.7.4
-  - pdfminer.six=20250416
-  - pillow=11.1.0
+  - pdfminer.six>=20251230
+  - pillow>=12.1.1
   - pip=25.1
   - platformdirs=4.3.7
   - pluggy=1.5.0

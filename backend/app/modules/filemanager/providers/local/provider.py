@@ -323,4 +323,5 @@ class LocalFileSystemProvider(BaseStorageProvider):
         Returns:
             URL of the file
         """
+        # resolve the path
         return f"{storage_path}/{file_path}"

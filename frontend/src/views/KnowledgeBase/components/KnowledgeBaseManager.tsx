@@ -1082,10 +1082,10 @@ const KnowledgeBaseManager: React.FC = () => {
                         <div>
                           <div className="mb-1">Upload Files</div>
                           <div className="flex flex-col gap-2">
-                            <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md p-6 cursor-pointer">
+                            <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md cursor-pointer">
                               <label
                                 htmlFor="file-upload"
-                                className="flex flex-col items-center gap-2 cursor-pointer w-full"
+                                className="flex flex-col items-center gap-2 cursor-pointer w-full p-6"
                               >
                                 <Upload className="h-10 w-10 text-muted-foreground" />
                                 <span className="text-sm font-medium text-muted-foreground">

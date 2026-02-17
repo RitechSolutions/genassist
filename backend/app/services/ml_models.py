@@ -2,12 +2,14 @@ from uuid import UUID
 from injector import inject
 import os
 import logging
+from typing import Optional
 
 from app.db.models.ml_model import MLModel
 from app.repositories.ml_models import MLModelsRepository
 from app.schemas.ml_model import MLModelCreate, MLModelUpdate
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.db.models.file import FileModel
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +71,32 @@ class MLModelsService:
             except OSError as e:
                 logger.error(f"Error deleting pkl file {ml_model.pkl_file}: {str(e)}")
                 # Continue with soft delete even if file deletion fails
+        
+        # if there's a pkl_file_id, delete the file from the file manager service
+        if ml_model.pkl_file_id:
+            from app.dependencies.injector import injector
+            from app.services.file_manager import FileManagerService
+            file_manager_service = injector.get(FileManagerService)
+            try:
+                await file_manager_service.delete_file(ml_model.pkl_file_id)
+                logger.info(f"Deleted pkl file: {ml_model.pkl_file_id}")
+            except Exception as e:
+                logger.error(f"Error deleting pkl file {ml_model.pkl_file_id}: {str(e)}")
+                # Continue with soft delete even if file deletion fails
 
         # Soft delete the model
         await self.repository.delete(ml_model_id)
 
+    async def validate_pkl_file(self, pkl_file_path: str, file: Optional[FileModel] = None) -> dict:
+        """Validate the PKL file for an ML model."""
+        from app.core.utils.model_validator import get_model_info
 
+        # case when file is provided
+
+        model_info  = get_model_info(pkl_file_path)
+        if not model_info["is_valid"]:
+            raise AppException(
+                error_key=ErrorKey.ML_MODEL_NOT_FOUND
+            )
+
+        return model_info

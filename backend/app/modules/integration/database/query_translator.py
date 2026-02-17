@@ -2,8 +2,8 @@ import asyncio
 import json
 import logging
 import re
-import time
 from typing import Any, Dict, Optional
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -13,17 +13,17 @@ from .query_validator import validate_with_sqlglot
 logger = logging.getLogger(__name__)
 
 
-
 # ==============================================================
 #  MAIN FUNCTION
 # ==============================================================
+
 
 async def translate_to_query(
     db_manager: DatabaseManager,
     llm_model: BaseChatModel,
     natural_language_query: str,
     system_prompt: Optional[str] = None,
-    **_: Any
+    **_: Any,
 ) -> Dict[str, Any]:
     """
     Schema-strict text-to-SQL translator that converts natural language
@@ -47,11 +47,13 @@ async def translate_to_query(
     # Ask the model
     try:
         response = await asyncio.wait_for(
-            llm_model.ainvoke([
-                SystemMessage(content=prompt),
-                HumanMessage(content=natural_language_query)
-            ]),
-            timeout=60
+            llm_model.ainvoke(
+                [
+                    SystemMessage(content=prompt),
+                    HumanMessage(content=natural_language_query),
+                ]
+            ),
+            timeout=60,
         )
         raw_output = getattr(response, "content", str(response)).strip()
     except asyncio.TimeoutError:
@@ -90,19 +92,22 @@ async def translate_to_query(
     query_info["raw_output"] = raw_output
 
     return query_info
+
+
 # ==============================================================
 #  PROMPT CONSTRUCTION
 # ==============================================================
+
 
 def _build_prompt(schema: Dict[str, Any], system_prompt: Optional[str] = None) -> str:
     """
     Build a schema-strict prompt with table-selection rule.
     """
     schema_text = _summarize_schema(schema)
-    
+
     # Always include base prompt, and add custom prompt if provided
     combined_prompt = _get_combined_prompt(system_prompt)
-    
+
     return f"""{combined_prompt}
 
 DATABASE SCHEMA:
@@ -124,9 +129,10 @@ Output ONLY JSON in this exact format:
 #  FULL-SCHEMA SUMMARIZATION
 # ==============================================================
 
+
 def _summarize_schema(schema: Dict[str, Any]) -> str:
     """
-    Render structured schema summary with examples for all columns.
+    Render structured schema summary with table and column information.
     """
     sections = []
     for table in schema.get("tables", []):
@@ -136,31 +142,7 @@ def _summarize_schema(schema: Dict[str, Any]) -> str:
         for col in table.get("columns", []):
             col_name = col["name"]
             data_type = col.get("type", "")
-            example_values = ""
-
-            # Get unique values count and examples (support both keys)
-            examples = col.get("possible_values", []) or col.get("categorical_values", [])
-            total_distinct = col.get("total_distinct_count", 0)
-            
-            if examples:
-                clean_examples = [str(v) for v in examples if v is not None]
-                
-                # Determine if categorical based on unique values count
-                if total_distinct > 0 and total_distinct <= 20:
-                    # Categorical column - show all unique values
-                    example_values = f" ({total_distinct} unique values - categorical: {', '.join(clean_examples)})"
-                elif total_distinct > 20:
-                    # Non-categorical column with many unique values
-                    example_values = f" ({total_distinct} unique values - examples: {', '.join(clean_examples[:4])})"
-                else:
-                    # Fallback when total_distinct is not available
-                    example_values = f" (examples: {', '.join(clean_examples[:4])})"
-
-            default = col.get("default")
-            if default:
-                example_values += f" [default: {default}]"
-
-            col_lines.append(f"  - {col_name} ({data_type}){example_values}\n")
+            col_lines.append(f"  - {col_name} ({data_type})\n")
 
         table_block = f"TABLE: {table_name}\n" + "".join(col_lines)
         sections.append(table_block)
@@ -171,6 +153,7 @@ def _summarize_schema(schema: Dict[str, Any]) -> str:
 # ==============================================================
 #  RESPONSE PARSING
 # ==============================================================
+
 
 def _parse_response(response: str) -> Dict[str, Any]:
     """
@@ -187,24 +170,21 @@ def _parse_response(response: str) -> Dict[str, Any]:
     except Exception:
         sql_match = re.search(r"SELECT.*", response, re.IGNORECASE | re.DOTALL)
         sql = sql_match.group(0).strip() if sql_match else "SELECT 1"
-        parsed = {
-            "formatted_query": sql,
-            "parameters": [],
-            "query_type": "read"
-        }
+        parsed = {"formatted_query": sql, "parameters": [], "query_type": "read"}
 
     sql = parsed.get("formatted_query", "SELECT 1").replace("\\n", " ").strip()
 
     return {
         "formatted_query": sql,
         "parameters": parsed.get("parameters", []),
-        "query_type": parsed.get("query_type", "read")
+        "query_type": parsed.get("query_type", "read"),
     }
 
 
 # ==============================================================
 #  VALUE RESTORATION
 # ==============================================================
+
 
 def _restore_exact_values(query: str, schema: Dict[str, Any]) -> str:
     """
@@ -216,7 +196,9 @@ def _restore_exact_values(query: str, schema: Dict[str, Any]) -> str:
     try:
         for table in schema.get("tables", []):
             for col in table.get("columns", []):
-                examples = col.get("possible_values", []) or col.get("categorical_values", [])
+                examples = col.get("possible_values", []) or col.get(
+                    "categorical_values", []
+                )
                 if not examples:
                     continue
 
@@ -239,6 +221,7 @@ def _restore_exact_values(query: str, schema: Dict[str, Any]) -> str:
 # ==============================================================
 #  PROMPT TEMPLATES
 # ==============================================================
+
 
 def _get_base_prompt() -> str:
     """

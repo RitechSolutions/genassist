@@ -9,6 +9,7 @@ import {
 import { PaginatedResponse } from "@/interfaces/common.interface";
 import { getApiKeys, getApiKey } from "@/services/apiKeys";
 import { AxiosError } from "axios";
+import { UploadFileResponse } from "@/interfaces/file-manager.interface";
 
 // Re-export types for backward compatibility
 export type { AgentConfig, AgentListItem, PaginatedResponse };
@@ -215,13 +216,13 @@ export async function finalizeKnowledgeItem(id: string) {
   return apiRequest("POST", `genagent/knowledge/finalize/${id}`);
 }
 
-export const uploadFiles = async (files: File[]) => {
+export const uploadFiles = async (files: File[]): Promise<UploadFileResponse[]> => {
   const formData = new FormData();
   files.forEach((file) => {
     formData.append("files", file);
   });
 
-  return apiRequestWithFormData("POST", "knowledge/upload", formData);
+  return apiRequestWithFormData<UploadFileResponse[]>("POST", "knowledge/upload", formData);
 };
 
 // Tools endpoints

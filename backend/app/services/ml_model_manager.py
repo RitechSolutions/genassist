@@ -13,7 +13,7 @@ import os
 from typing import Dict, Optional, Any
 from datetime import datetime
 from uuid import UUID
-
+from app.core.project_path import DATA_VOLUME
 from injector import inject
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,9 @@ _MODEL_LOAD_EXECUTOR = ThreadPoolExecutor(
     max_workers=8,
     thread_name_prefix="ml_model_loader"
 )
+
+# Directory for storing ML model .pkl files
+ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
 
 
 def _load_pickle_sync(pkl_file: str) -> Any:
@@ -75,11 +78,12 @@ def _load_pickle_sync(pkl_file: str) -> Any:
 class CachedMLModel:
     """Container for a cached ML model with metadata"""
 
-    def __init__(self, model: Any, model_id: UUID, updated_at: datetime, pkl_file: str):
+    def __init__(self, model: Any, model_id: UUID, updated_at: datetime, pkl_file: str, pkl_file_id: Optional[str] = None):
         self.model = model
         self.model_id = model_id
         self.updated_at = updated_at
         self.pkl_file = pkl_file
+        self.pkl_file_id = pkl_file_id
         self.load_time = datetime.now()
 
     def is_stale(self, current_updated_at: datetime) -> bool:
@@ -125,6 +129,7 @@ class MLModelManager:
         self,
         model_id: UUID,
         pkl_file: str,
+        pkl_file_id: str,
         updated_at: datetime
     ) -> Any:
         """
@@ -163,8 +168,16 @@ class MLModelManager:
                 if not cached.is_stale(updated_at):
                     return cached.model
 
+            # if pkl_file_id is provided, download the file from the file manager service
+            if not pkl_file and pkl_file_id:
+                # download the file to the temporary directory
+                pkl_file_path = await download_pkl_file(pkl_file_id, os.path.join(ML_MODELS_UPLOAD_DIR, f"{model_id_str}.pkl"))
+                
+                # update the pkl_file with the new path
+                pkl_file = str(pkl_file_path)
+
             # Load the model
-            logger.info(f"Loading ML model {model_id_str} from {pkl_file}")
+            logger.info(f"Loading ML model {model_id_str} from {pkl_file} and pkl_file_id: {pkl_file_id}")
             model = await self._load_model_from_file(pkl_file)
 
             # Cache the model
@@ -172,7 +185,8 @@ class MLModelManager:
                 model=model,
                 model_id=model_id,
                 updated_at=updated_at,
-                pkl_file=pkl_file
+                pkl_file=pkl_file,
+                pkl_file_id=pkl_file_id
             )
 
             logger.info(f"Cached ML model {model_id_str}")
@@ -312,3 +326,19 @@ class MLModelManager:
 def get_ml_model_manager() -> MLModelManager:
     """Get the global ML Model Manager instance"""
     return MLModelManager.get_instance()
+
+async def download_pkl_file(pkl_file_id: UUID, destination_path: str) -> str:
+    """
+    Download the PKL file from the file manager service.
+    """
+    from app.dependencies.injector import injector
+    from app.services.file_manager import FileManagerService
+    file_manager_service = injector.get(FileManagerService)
+    file = await file_manager_service.get_file_by_id(pkl_file_id)
+    if not file:
+        raise FileNotFoundError(f"PKL file not found with ID: {pkl_file_id}")
+
+    # download the file to destination path
+    await file_manager_service.download_file_to_path(file.id, destination_path)
+    logger.info(f"Downloaded PKL file to: {destination_path}")
+    return destination_path

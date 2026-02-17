@@ -6891,7 +6891,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__schemas__file__FileUploadResponse"
+                  "$ref": "#/components/schemas/FileUploadResponse"
                 }
               }
             }
@@ -9313,7 +9313,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__schemas__ml_model__FileUploadResponse"
+                  "$ref": "#/components/schemas/FileUploadResponse"
                 }
               }
             }
@@ -15705,6 +15705,17 @@
             "type": "string",
             "title": "Storage Path"
           },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
           "size": {
             "anyOf": [
               {
@@ -15891,6 +15902,17 @@
           "storage_path": {
             "type": "string",
             "title": "Storage Path"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
           },
           "size": {
             "anyOf": [
@@ -17433,6 +17455,19 @@
             "description": "Storage provider",
             "default": "local"
           },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename",
+            "description": "Original file name"
+          },
           "size": {
             "anyOf": [
               {
@@ -17555,6 +17590,80 @@
           "is_deleted"
         ],
         "title": "FileResponse"
+      },
+      "FileUploadResponse": {
+        "properties": {
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename",
+            "description": "Original file name"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path",
+            "description": "File path"
+          },
+          "storage_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Path",
+            "description": "Storage path"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename",
+            "description": "File name"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Url",
+            "description": "File URL"
+          },
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id",
+            "description": "File ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "original_filename"
+        ],
+        "title": "FileUploadResponse"
       },
       "FolderRequest": {
         "properties": {
@@ -19500,6 +19609,19 @@
             "title": "Pkl File",
             "description": "Path to the uploaded .pkl file"
           },
+          "pkl_file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pkl File Id",
+            "description": "File manager ID for the uploaded .pkl file"
+          },
           "features": {
             "items": {
               "type": "string"
@@ -19967,6 +20089,19 @@
             "title": "Pkl File",
             "description": "Path to the uploaded .pkl file"
           },
+          "pkl_file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pkl File Id",
+            "description": "File manager ID for the uploaded .pkl file"
+          },
           "features": {
             "anyOf": [
               {
@@ -20082,6 +20217,19 @@
             ],
             "title": "Pkl File",
             "description": "Path to the uploaded .pkl file"
+          },
+          "pkl_file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pkl File Id",
+            "description": "File manager ID for the uploaded .pkl file"
           },
           "features": {
             "anyOf": [
@@ -23205,70 +23353,6 @@
           "filepath"
         ],
         "title": "FileRequest"
-      },
-      "app__schemas__file__FileUploadResponse": {
-        "properties": {
-          "filename": {
-            "type": "string",
-            "title": "Filename",
-            "description": "File name"
-          },
-          "original_filename": {
-            "type": "string",
-            "title": "Original Filename",
-            "description": "Original file name"
-          },
-          "storage_path": {
-            "type": "string",
-            "title": "Storage Path",
-            "description": "Storage path"
-          },
-          "file_path": {
-            "type": "string",
-            "title": "File Path",
-            "description": "File path"
-          },
-          "file_url": {
-            "type": "string",
-            "title": "File Url",
-            "description": "File URL"
-          },
-          "file_id": {
-            "type": "string",
-            "title": "File Id",
-            "description": "File ID"
-          }
-        },
-        "type": "object",
-        "required": [
-          "filename",
-          "original_filename",
-          "storage_path",
-          "file_path",
-          "file_url",
-          "file_id"
-        ],
-        "title": "FileUploadResponse"
-      },
-      "app__schemas__ml_model__FileUploadResponse": {
-        "properties": {
-          "file_path": {
-            "type": "string",
-            "title": "File Path",
-            "description": "Path to the uploaded file"
-          },
-          "original_filename": {
-            "type": "string",
-            "title": "Original Filename",
-            "description": "Original name of the uploaded file"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file_path",
-          "original_filename"
-        ],
-        "title": "FileUploadResponse"
       }
     },
     "securitySchemes": {

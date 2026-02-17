@@ -2,12 +2,13 @@ from uuid import UUID
 import os
 import uuid
 import tempfile
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Body
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Body, Request
 from fastapi_injector import Injected
 from typing import Optional
 
 from app.auth.dependencies import auth, permissions
-from app.schemas.ml_model import MLModelRead, MLModelCreate, MLModelUpdate, FileUploadResponse
+from app.schemas.ml_model import MLModelRead, MLModelCreate, MLModelUpdate
+from app.schemas.file import FileBase, FileUploadResponse
 from app.services.ml_models import MLModelsService
 from app.services.ml_model_manager import get_ml_model_manager
 from app.core.exceptions.error_messages import ErrorKey
@@ -15,6 +16,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.core.permissions.constants import Permissions as P
+from app.services.file_manager import FileManagerService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -100,7 +102,9 @@ async def delete_ml_model(
     Depends(permissions(P.MlModel.CREATE))
 ])
 async def upload_pkl_file(
+    request: Request,
     file: UploadFile = File(...),
+    file_manager_service: FileManagerService = Injected(FileManagerService)
 ):
     """
     Upload a .pkl model file.
@@ -113,37 +117,49 @@ async def upload_pkl_file(
     try:
         logger.info(f"Received file upload: {file.filename}, content_type: {file.content_type}")
 
-        # Validate file extension
-        if not file.filename or not file.filename.lower().endswith('.pkl'):
-            raise AppException(
-                error_key=ErrorKey.INVALID_PKL_FILE
-            )
+        # file extension
+        file_extension = "pkl"
 
-        # Read file content to validate size
-        file_content = await file.read()
-        file_size = len(file_content)
-
-        if file_size > MAX_PKL_FILE_SIZE:
-            raise AppException(
-                error_key=ErrorKey.PKL_FILE_TOO_LARGE
-            )
 
         # Generate a unique filename
-        unique_filename = f"{uuid.uuid4()}.pkl"
-        file_path = os.path.join(ML_MODELS_UPLOAD_DIR, unique_filename)
+        unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
-        logger.info(f"Saving file to: {file_path}")
+        # subdir
+        sub_folder = f"ml_models"
 
-        # Save the file
-        with open(file_path, "wb") as buffer:
-            buffer.write(file_content)
+        # initialize the file manager service
+        storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME))
+        
+        # create file base
+        file_base = FileBase(
+            name=unique_filename,
+            original_filename=file.filename,
+            path=sub_folder,
+            storage_provider=storage_provider.name,
+            storage_path=storage_provider.get_base_path(),
+            file_extension=file_extension
+        )
 
-        result = {
-            "file_path": file_path,
-            "original_filename": file.filename,
-        }
-        logger.info(f"Upload successful: {result}")
-        return result
+        # create file in file manager service
+        created_file = await file_manager_service.create_file(file, file_base=file_base, allowed_extensions=["pkl"], max_file_size=MAX_PKL_FILE_SIZE)
+
+        # get file info
+        file_url = await file_manager_service.get_file_source_url(created_file.id)
+        file_path = None
+
+        if created_file.storage_provider == "local":
+            file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
+            # file_path = await file_manager_service.get_file_url(created_file)
+
+        file_id = str(created_file.id)
+
+        return FileUploadResponse(
+            filename=file.filename,
+            file_path=file_path,
+            original_filename=file.filename,
+            file_id=file_id,
+            file_url=file_url,
+        )
 
     except AppException:
         # Re-raise AppException as is
@@ -190,7 +206,7 @@ async def invalidate_model_cache(ml_model_id: UUID):
 
 @router.post("/validate/{ml_model_id}", dependencies=[
     Depends(auth),
-    Depends(permissions(P.MlModel.READ))
+    Depends(permissions(P.MlModel.READ)),
 ])
 async def validate_model_file(
     ml_model_id: UUID,
@@ -205,11 +221,24 @@ async def validate_model_file(
     # Get model from database
     ml_model = await service.get_by_id(ml_model_id)
     
-    if not ml_model.pkl_file:
+    if not ml_model.pkl_file or not ml_model.pkl_file_id:
         raise HTTPException(
             status_code=400,
             detail="Model has no PKL file configured"
         )
+
+    # if ml_model.pkl_file is none and we have a pkl_file_id, get the file from the file manager service
+    if not ml_model.pkl_file and ml_model.pkl_file_id:
+        # get the file from the file manager service
+        from app.dependencies.injector import injector
+        from app.services.file_manager import FileManagerService
+        file_manager_service = injector.get(FileManagerService)
+        file = await file_manager_service.get_file_by_id(ml_model.pkl_file_id)
+        if not file:
+            raise HTTPException(
+                status_code=404,
+                detail="PKL file not found"
+            )
     
     # Get model info
     info = get_model_info(ml_model.pkl_file)
@@ -230,14 +259,14 @@ async def validate_model_file(
         )
     }
 
-
 @router.post("/analyze-csv", dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.READ))
 ])
 async def analyze_csv(
     file_url: str = Body(..., embed=True, description="Path or URL to CSV file"),
-    python_code: Optional[str] = Body(None, embed=True, description="Optional Python code to preprocess data before analysis")
+    python_code: Optional[str] = Body(None, embed=True, description="Optional Python code to preprocess data before analysis"),
+    file_manager_service: FileManagerService = Injected(FileManagerService)
 ):
     """
     Analyze a CSV file and return a comprehensive report.
@@ -269,7 +298,12 @@ async def analyze_csv(
     try:
         # Resolve and validate file path using shared utility
         try:
-            file_path = ml_utils.resolve_csv_file_path(file_url)
+            # check if the file_url includes a valid file id
+            if file_url.startswith("http://") or file_url.startswith("https://"):
+                file_path = await file_manager_service.download_file_from_url_to_path(file_url, file_path)
+            else:
+                file_path = ml_utils.resolve_csv_file_path(file_url)
+
         except AppException as e:
             # Convert AppException to HTTPException for API endpoint
             if e.error_key == ErrorKey.FILE_NOT_FOUND:

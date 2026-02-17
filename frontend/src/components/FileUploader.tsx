@@ -4,16 +4,14 @@ import { Label } from "@/components/label";
 import { FileText, Upload, X } from "lucide-react";
 import { useToast } from "@/hooks/useToast";
 import { uploadFiles } from "@/services/api";
+import { UploadFileResponse } from "@/interfaces/file-manager.interface";
 
 export interface FileUploaderProps {
   label: string;
   acceptedFileTypes?: string[]; // ex: [".json", ".yaml"]
   initialOriginalFileName?: string;
   initialServerFilePath?: string;
-  onUploadComplete?: (result: {
-    file_path: string;
-    original_filename: string;
-  }) => void;
+  onUploadComplete?: (result: UploadFileResponse) => void;
   onRemove?: () => void;
   placeholder?: string;
 }
@@ -74,29 +72,21 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   const uploadFile = async (
     fileToUpload?: File
   ): Promise<{
-    file_path: string;
-    original_filename: string;
-  } | null> => {
+    file_path?: string;
+    original_filename?: string;
+  } & UploadFileResponse | null> => {
     const targetFile = fileToUpload || file;
     if (!targetFile) return null;
 
     setIsUploading(true);
 
     try {
-      const result = (await uploadFiles([targetFile])) as Array<{
-        file_path: string;
-        original_filename: string;
-      }>;
+      const result = await uploadFiles([targetFile]);
+      setServerFilePath(result[0].file_path);
+      setOriginalFileName(result[0].original_filename);
+      onUploadComplete?.(result[0]);
 
-      const uploadResult = {
-        file_path: result[0].file_path,
-        original_filename: result[0].original_filename,
-      };
-
-      setServerFilePath(uploadResult.file_path);
-      setOriginalFileName(uploadResult.original_filename);
-      onUploadComplete?.(uploadResult);
-      return uploadResult;
+      return result[0];
     } catch (error) {
       // Clear the failed file from state
       setFile(null);
