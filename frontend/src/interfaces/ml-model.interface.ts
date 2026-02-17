@@ -4,6 +4,7 @@ export interface MLModel {
   description: string;
   model_type: 'xgboost' | 'random_forest' | 'linear_regression' | 'logistic_regression' | 'other';
   pkl_file?: string | null;
+  pkl_file_id?: string | null;
   features: string[];
   target_variable: string;
   inference_params?: Record<string, unknown>;
