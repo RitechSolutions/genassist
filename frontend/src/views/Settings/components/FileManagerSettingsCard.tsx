@@ -11,6 +11,7 @@ import type { FileManagerSettings } from "@/services/fileManager";
 import { useState } from "react";
 import { Button } from "@/components/button";
 import toast from "react-hot-toast";
+import { updateFileManagerSettings } from "@/services/appSettings";
 
 interface FileManagerSettingsCardProps {
   settings: FileManagerSettings;
@@ -29,8 +30,29 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
   const [selectedProvider, setSelectedProvider] = useState(provider);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = () => {
-    // TODO: Save the settings to the server
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
+      await updateFileManagerSettings({
+        file_manager_enabled: settings.file_manager_enabled,
+        file_manager_provider: selectedProvider,
+        base_path: selectedProvider === "local" ? settings.base_path : undefined,
+        aws_bucket_name: selectedProvider === "s3" ? settings.aws_bucket_name : undefined,
+      });
+
+      toast.success("File manager settings saved", {
+        icon: <FolderCog className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />,
+        duration: 3000,
+      });
+    } catch (error) {
+      toast.error("Failed to update file manager settings", {
+        icon: <FolderCog className="w-5 h-5 sm:w-6 sm:h-6 text-red-500" />,
+        duration: 3000,
+      });
+      throw new Error("Failed to update file manager settings");
+    } finally {
+      setIsSaving(false);
+    }
     setIsSaving(true);
 
     toast.success("File manager settings saved", {
@@ -95,6 +117,7 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
             <input
               type="text"
               value={settings.base_path || ""}
+              readOnly
               className="w-1/2 rounded-full border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none disabled:opacity-75"
             />
           </div>
@@ -106,6 +129,7 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
             <input
               type="text"
               value={settings.aws_bucket_name || ""}
+              readOnly
               className="w-1/2 rounded-full border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none disabled:opacity-75"
             />
           </div>

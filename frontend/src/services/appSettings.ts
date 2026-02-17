@@ -1,6 +1,7 @@
 import { apiRequest } from "@/config/api";
 import { AppSetting } from "@/interfaces/app-setting.interface";
 import { DynamicFormSchema } from "@/interfaces/dynamicFormSchemas.interface";
+import { FileManagerSettings } from "./fileManager";
 
 export const getAllAppSettings = async (): Promise<AppSetting[]> => {
   try {
@@ -8,11 +9,11 @@ export const getAllAppSettings = async (): Promise<AppSetting[]> => {
     if (!data) {
       return [];
     }
-    
+
     if (!Array.isArray(data)) {
       return [];
     }
-    
+
     return data;
   } catch (error) {
     throw error;
@@ -40,7 +41,7 @@ export const createAppSetting = async (appSettingData: Partial<AppSetting>): Pro
       description: appSettingData.description,
       is_active: appSettingData.is_active,
     };
-    
+
     const response = await apiRequest<AppSetting>("POST", "app-settings", requestData);
     if (!response) throw new Error("Failed to create app setting");
     return response;
@@ -52,7 +53,7 @@ export const createAppSetting = async (appSettingData: Partial<AppSetting>): Pro
 export const updateAppSetting = async (id: string, appSettingData: Partial<AppSetting>): Promise<AppSetting> => {
   try {
     const requestData: Record<string, unknown> = {};
-    
+
     if (appSettingData.name !== undefined) requestData.name = appSettingData.name;
     if (appSettingData.type !== undefined) requestData.type = appSettingData.type;
     if (appSettingData.values !== undefined) requestData.values = appSettingData.values;
@@ -83,4 +84,17 @@ export const getAppSettingsFormSchemas = async (): Promise<DynamicFormSchema> =>
   } catch (error) {
     throw error;
   }
-}; 
+};
+
+export const updateFileManagerSettings = async (settings: FileManagerSettings): Promise<void> => {
+  const requestData = {
+    name: "File Manager Settings",
+    type: "FileManagerSettings",
+    values: settings,
+    description: "File manager settings for the application",
+    is_active: settings.file_manager_enabled ? 1 : 0,
+  };
+
+  // await updateAppSetting("file-manager-settings", settings as unknown as Record<string, unknown>);
+  await createAppSetting(requestData as unknown as Partial<AppSetting>);
+};

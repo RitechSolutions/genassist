@@ -116,13 +116,11 @@ const SettingsPage = () => {
                   </div>
                 </Card>
 
-                {/* TODO: WORK IN PROGRESS */}
-                {/* {fileManagerSettings?.file_manager_enabled && (
+                {fileManagerSettings?.file_manager_enabled && (
                   <Card className="md:col-span-2 mt-6">
                     <FileManagerSettingsCard settings={fileManagerSettings} />
                   </Card>
-                )} */}
-
+                )}
 
                 {/* <div className="md:col-span-2 flex justify-end gap-4 pt-4">
                   <Button variant="outline">Cancel</Button>
@@ -146,4 +144,4 @@ const SettingsPage = () => {
   );
 };
 
-export default SettingsPage; 
+export default SettingsPage;
