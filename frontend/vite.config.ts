@@ -13,11 +13,7 @@ export default defineConfig(({ mode }) => ({
   ].filter(Boolean),
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
-      'genassist-chat-react': path.resolve(
-        __dirname,
-        'node_modules/genassist-chat-react/dist/index.js'
-      ),
+      "@": path.resolve(__dirname, "./src")
     },
   },
   build: {

@@ -212,13 +212,17 @@ Do not execute any tools, just recommend which ones to use and why."""
 
 # ==================== SHARED PROMPTS ====================
 
-def create_conversation_context(chat_history: List[dict], max_messages: int = 6) -> str:
-    """Create conversation context section for prompts"""
+def create_conversation_context(chat_history: List[dict]) -> str:
+    """Create conversation context section for prompts
+
+    Args:
+        chat_history: List of message dictionaries
+    """
     if not chat_history:
         return ""
-    
+
     context = "\n\nConversation history:\n"
-    for msg in chat_history[-max_messages:]:  # Keep last N messages
+    for msg in chat_history:
         context += f"{msg['role'].capitalize()}: {msg['content']}\n"
-    
+
     return context 

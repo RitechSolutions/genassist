@@ -152,6 +152,10 @@ export interface BaseLLMNodeData extends BaseNodeData {
     | "Chain-of-Thought"
     | "ReActAgentLC";
   maxIterations?: number;
+  memoryTrimmingMode?: "message_count" | "token_budget";
+  maxMessages?: number;
+  tokenBudget?: number;
+  conversationHistoryTokens?: number;
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { NodeSchema, SchemaField } from "../types/schemas";
 import { Input } from "@/components/input";
+import { Textarea } from "@/components/textarea";
 import { Label } from "@/components/label";
 import { ParameterSection } from "./custom/ParameterSection";
 import { ToolBaseNodeData } from "../types/nodes";
@@ -81,12 +82,12 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
 
       <div className="space-y-2">
         <Label htmlFor="description">Description</Label>
-        <Input
+        <Textarea
           id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Enter a description for this tool"
-          className="w-full"
+          className="w-full text-base min-h-[120px] resize-y"
         />
       </div>
       <div className="space-y-2 w-full flex items-center">
