@@ -200,7 +200,7 @@ def calculate_history_tokens(config: dict[str, Any], model: str, provider:str, s
     user_tokens = counter.count_tokens(user_prompt)
 
     # Get configuration
-    total_budget = config.get("tokenBudget", 12000)
+    total_budget = config.get("tokenBudget", 10000)
     requested_history_tokens = config.get("conversationHistoryTokens", 5000)
 
     # Calculate if we need to reduce history allocation
