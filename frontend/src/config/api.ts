@@ -15,7 +15,7 @@ const processQueue = (error: unknown, token: string | null = null) => {
       resolve(token);
     }
   });
-  
+
   failedQueue = [];
 };
 
@@ -35,17 +35,17 @@ api.interceptors.request.use(
     const accessToken = localStorage.getItem("access_token");
     const tokenType = localStorage.getItem("token_type") || "Bearer";
     const tenantId = localStorage.getItem("tenant_id");
-    
+
     if (accessToken && !config.headers.Authorization) {
       const properTokenType = tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType;
       config.headers.Authorization = `${properTokenType} ${accessToken}`;
     }
-    
+
     // Add tenant ID header if available
     if (tenantId) {
       config.headers["x-tenant-id"] = tenantId;
     }
-    
+
     return config;
   },
   (error) => {
@@ -58,7 +58,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    
+
     // Handle 401 errors with token refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
@@ -76,26 +76,26 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       const refreshToken = localStorage.getItem("refresh_token");
-      
+
       if (!refreshToken) {
         isRefreshing = false;
         processQueue(error, null);
-        
+
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
         localStorage.removeItem("token_type");
         localStorage.removeItem("isAuthenticated");
         localStorage.removeItem("force_upd_pass_date");
         localStorage.removeItem("tenant_id");
-        
+
         return Promise.reject(error);
       }
-      
+
       try {
         const baseURL = await getApiUrl();
         const params = new URLSearchParams();
         params.append("refresh_token", refreshToken);
-        
+
         const refreshResponse = await axios.post(
           `${baseURL}auth/refresh_token`,
           params,
@@ -105,24 +105,24 @@ api.interceptors.response.use(
             },
           }
         );
-        
+
         const { access_token, token_type, force_upd_pass_date } = refreshResponse.data;
         localStorage.setItem("access_token", access_token);
         localStorage.setItem("token_type", token_type || "Bearer");
-        
+
         // Store force_upd_pass_date if provided in refresh response
         if (force_upd_pass_date) {
           localStorage.setItem("force_upd_pass_date", force_upd_pass_date);
         }
-        
+
         localStorage.setItem("isAuthenticated", "true");
-        
+
         // Update the Authorization header for the retry
         originalRequest.headers.Authorization = `${token_type || "Bearer"} ${access_token}`;
-        
+
         processQueue(null, access_token);
         isRefreshing = false;
-        
+
         // Retry the original request
         return api(originalRequest);
       } catch (refreshError) {
@@ -133,14 +133,14 @@ api.interceptors.response.use(
         localStorage.removeItem("isAuthenticated");
         localStorage.removeItem("force_upd_pass_date");
         localStorage.removeItem("tenant_id");
-        
+
         processQueue(refreshError, null);
         isRefreshing = false;
-        
+
         return Promise.reject(refreshError);
       }
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -199,8 +199,8 @@ export const apiRequest = async <T>(
       return null;
     }
 
-    // Mark server as down for 5xx errors
-    if (status && status >= 500) {
+    // Mark server as down for 5xx errors allowed 500, 501
+    if (status && status > 501) {
       setServerDown();
     } else if (hasResponse) {
       setServerUp();
