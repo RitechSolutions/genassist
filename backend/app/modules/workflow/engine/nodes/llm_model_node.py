@@ -12,6 +12,7 @@ from app.core.utils.token_utils import calculate_history_tokens
 from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
+from app.services.llm_providers import LlmProviderService
 
 
 logger = logging.getLogger(__name__)
@@ -41,8 +42,12 @@ class LLMModelNode(BaseNode):
         if trimming_mode == "token_budget":
             # Token-based trimming with budget enforcement
             from app.dependencies.injector import injector
+            llm_service = injector.get(LlmProviderService)
+            provider_info = await llm_service.get_by_id(provider_id)
+            provider = provider_info.llm_model_provider
+            model = provider_info.llm_model
 
-            actual_history_tokens, model, provider = await calculate_history_tokens(config, provider_id,
+            actual_history_tokens, model, provider = calculate_history_tokens(config, model, provider,
                                                                                     system_prompt, user_prompt)
 
             return await memory.get_chat_history_within_tokens(

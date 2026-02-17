@@ -9,8 +9,6 @@ This module provides token counting functionality with provider-specific strateg
 from typing import Dict, Any, List
 import logging
 from abc import ABC, abstractmethod
-from app.dependencies.injector import injector
-from app.services.llm_providers import LlmProviderService
 
 
 logger = logging.getLogger(__name__)
@@ -191,13 +189,8 @@ def estimate_string_tokens(text: str, provider: str, model: str) -> int:
     return counter.count_tokens(text)
 
 
-async def calculate_history_tokens(config: dict[str, Any], provider_id: str, system_prompt: str,
-                                   user_prompt: str) -> tuple[int, str, str]:
-
-    llm_service = injector.get(LlmProviderService)
-    provider_info = await llm_service.get_by_id(provider_id)
-    provider = provider_info.llm_model_provider
-    model = provider_info.llm_model
+def calculate_history_tokens(config: dict[str, Any], model: str, provider:str, system_prompt: str,
+                                   user_prompt: str) -> int:
 
     # Get token counter
     counter = get_token_counter(provider, model)
@@ -225,4 +218,4 @@ async def calculate_history_tokens(config: dict[str, Any], provider_id: str, sys
     else:
         # Within budget, use requested allocation
         actual_history_tokens = requested_history_tokens
-    return actual_history_tokens, model, provider
+    return actual_history_tokens
