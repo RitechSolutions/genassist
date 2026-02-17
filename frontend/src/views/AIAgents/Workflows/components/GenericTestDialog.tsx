@@ -18,6 +18,7 @@ import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNod
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { SchemaField, SchemaType } from "../types/schemas";
 import JsonViewer from "@/components/JsonViewer";
+import { set } from "date-fns";
 
 export interface GenericTestInputField {
   id: string;
@@ -249,24 +250,25 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         node_config: nodeData,
       });
 
-      // truncate the output to default of 4 items
-      setOutput(truncateNodeOutput(response) as string | Record<string, unknown>);
 
-      // Update the node output in the workflow execution context
-      if (nodeId && response && response.output !== undefined) {
-        // Extract the actual output from the response
-        const nodeOutput = response.output;
+      if (response && response.output !== undefined) {
+        const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
 
-        const truncatedOutput = truncateNodeOutput(nodeOutput) as string | Record<string, unknown>;
+        // Store the full output in state but only display the truncated version
+        setOutput(Object.assign({}, response, { output: truncatedOutput }));
 
-        // Update the workflow execution context
-        updateNodeOutput(
-          nodeId,
-          truncatedOutput,
-          nodeType,
-          nodeData.name || nodeType
-        );
+        if (nodeId) {
+            updateNodeOutput(
+              nodeId,
+              truncatedOutput,
+              nodeType,
+              nodeData.name || nodeType
+            ); 
+        }
+      } else {
+        setOutput(response);
       }
+
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "An error occurred";
