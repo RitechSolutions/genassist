@@ -51,36 +51,17 @@ class TiktokenCounter(TokenCounter):
         if self.encoding_name in self._encoding_cache:
             return self._encoding_cache[self.encoding_name]
 
-        try:
-            import tiktoken
+        import tiktoken
+        encoding = tiktoken.get_encoding(self.encoding_name)
+        self._encoding_cache[self.encoding_name] = encoding
+        return encoding
 
-            encoding = tiktoken.get_encoding(self.encoding_name)
-            self._encoding_cache[self.encoding_name] = encoding
-            return encoding
-        except ImportError:
-            raise ImportError(
-                "tiktoken library not installed. Install with: pip install tiktoken"
-            )
 
     @property
     def encoding_name(self) -> str:
         """Get the appropriate encoding name for the model"""
-        # GPT-5 and O1 series use o200k_base
-        if any(
-            prefix in self.model
-            for prefix in ["gpt-5", "o1-", "o1-mini", "o1-small", "o1-medium", "o1-large"]
-        ):
-            return "o200k_base"
-
-        # GPT-4, GPT-3.5-turbo and other models use cl100k_base
-        if any(prefix in self.model for prefix in ["gpt-4", "gpt-3.5-turbo"]):
-            return "cl100k_base"
-
-        # Default to cl100k_base for unknown OpenAI models
-        logger.warning(
-            f"Unknown OpenAI model '{self.model}', defaulting to cl100k_base encoding"
-        )
-        return "cl100k_base"
+        from app.core.utils.gpt_utils import get_openai_encoding_name
+        return get_openai_encoding_name(self.model)
 
     def count_tokens(self, text: str) -> int:
         """
