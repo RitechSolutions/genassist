@@ -116,7 +116,7 @@ const SettingsPage = () => {
                   </div>
                 </Card>
 
-                {fileManagerSettings?.file_manager_enabled && (
+                {fileManagerSettings?.is_active && (
                   <Card className="md:col-span-2 mt-6">
                     <FileManagerSettingsCard settings={fileManagerSettings} />
                   </Card>
