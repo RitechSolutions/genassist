@@ -14,8 +14,7 @@ import { FileManagerSettingsCard } from "../components/FileManagerSettingsCard";
 import type { User } from "@/interfaces/user.interface";
 
 const SettingsPage = () => {
-  const { toggleStates, handleToggle, saveSettings } = useSettings();
-  const [isSaving, setIsSaving] = useState(false);
+  const { toggleStates, handleToggle } = useSettings();
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [fileManagerSettings, setFileManagerSettings] = useState<FileManagerSettings | null>(null);
   const isMobile = useIsMobile();
@@ -65,12 +64,6 @@ const SettingsPage = () => {
         : section
     );
   }, [userProfile]);
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    await saveSettings();
-    setIsSaving(false);
-  };
 
   return (
     <SidebarProvider>

@@ -26,18 +26,24 @@ const providerOptions = [
 ];
 
 export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardProps) => {
-  const provider = settings.file_manager_provider || "local";
+  const provider = settings.values.file_manager_provider || "local";
   const [selectedProvider, setSelectedProvider] = useState(provider);
   const [isSaving, setIsSaving] = useState(false);
+  const [basePath, setBasePath] = useState(settings.values.base_path || "");
+  const [awsBucketName, setAwsBucketName] = useState(settings.values.aws_bucket_name || "");
 
   const handleSave = async () => {
     try {
       setIsSaving(true);
+
       await updateFileManagerSettings({
-        file_manager_enabled: settings.file_manager_enabled,
-        file_manager_provider: selectedProvider,
-        base_path: selectedProvider === "local" ? settings.base_path : undefined,
-        aws_bucket_name: selectedProvider === "s3" ? settings.aws_bucket_name : undefined,
+        ...settings,
+        values: {
+          ...settings.values,
+          file_manager_provider: selectedProvider,
+          base_path: basePath,
+          aws_bucket_name: awsBucketName,
+        },
       });
 
       toast.success("File manager settings saved", {
@@ -53,16 +59,14 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
     } finally {
       setIsSaving(false);
     }
-    setIsSaving(true);
+  };
 
-    toast.success("File manager settings saved", {
-      icon: <FolderCog className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />,
-      duration: 3000,
-    });
-
-    setTimeout(() => {
-      setIsSaving(false);
-    }, 3000);
+  const handleInputChange = (value: string, key: string) => {
+    if (key === "base_path") {
+      setBasePath(value);
+    } else if (key === "aws_bucket_name") {
+      setAwsBucketName(value);
+    }
   };
 
   return (
@@ -116,8 +120,9 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
             <label className="text-sm font-medium">Base Path</label>
             <input
               type="text"
-              value={settings.base_path || ""}
-              readOnly
+              value={basePath}
+              onChange={(e) => handleInputChange(e.target.value, "base_path")}
+              disabled={isSaving}
               className="w-1/2 rounded-full border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none disabled:opacity-75"
             />
           </div>
@@ -128,8 +133,9 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
             <label className="text-sm font-medium">Bucket Name</label>
             <input
               type="text"
-              value={settings.aws_bucket_name || ""}
-              readOnly
+              value={awsBucketName}
+              onChange={(e) => handleInputChange(e.target.value, "aws_bucket_name")}
+              disabled={isSaving}
               className="w-1/2 rounded-full border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none disabled:opacity-75"
             />
           </div>

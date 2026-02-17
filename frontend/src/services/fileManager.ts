@@ -1,8 +1,9 @@
 import { apiRequest } from "@/config/api";
 
 export interface FileManagerSettings {
-  id: string;
+  id?: string;
   name: string;
+  description?: string;
   type: string;
   values: {
     file_manager_enabled: boolean;

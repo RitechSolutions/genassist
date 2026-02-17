@@ -38,8 +38,8 @@ async def get_file_manager_settings(svc: AppSettingsService = Injected(AppSettin
                 "base_path": str(DATA_VOLUME),
                 "aws_bucket_name": file_storage_settings.AWS_BUCKET_NAME or "",
                 "azure_container_name": file_storage_settings.AZURE_CONTAINER_NAME or "",
-                "gcs_bucket_name": file_storage_settings.GCS_BUCKET_NAME or "",
-                "sharepoint_site_url": file_storage_settings.SHAREPOINT_SITE_URL or "",
+                # "gcs_bucket_name": file_storage_settings.GOOGLE_STORAGE_BUCKET or "",
+                # "sharepoint_site_url": file_storage_settings.SHAREPOINT_SITE_URL or "",
             },
             is_active=1,
         ))

@@ -88,13 +88,17 @@ export const getAppSettingsFormSchemas = async (): Promise<DynamicFormSchema> =>
 
 export const updateFileManagerSettings = async (settings: FileManagerSettings): Promise<void> => {
   const requestData = {
-    name: "File Manager Settings",
-    type: "FileManagerSettings",
-    values: settings,
-    description: "File manager settings for the application",
-    is_active: settings.file_manager_enabled ? 1 : 0,
+    name: settings.name,
+    type: settings.type,
+    values: settings.values,
+    description: settings.description || 'File manager settings for the application',
+    is_active: settings.is_active,
+    id: settings.id,
   };
 
-  // await updateAppSetting("file-manager-settings", settings as unknown as Record<string, unknown>);
-  await createAppSetting(requestData as unknown as Partial<AppSetting>);
+  if (settings.id) {
+    await updateAppSetting(settings.id, requestData as unknown as Partial<AppSetting>);
+  } else {
+    await createAppSetting(requestData as unknown as Partial<AppSetting>);
+  }
 };
