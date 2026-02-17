@@ -9,12 +9,15 @@ import { useSettings } from "../hooks/useSettings";
 import { settingSections } from "../helpers/settingsData";
 import { Link } from "react-router-dom";
 import { getAuthMe } from "@/services/auth";
+import { getFileManagerSettings, type FileManagerSettings } from "@/services/fileManager";
+import { FileManagerSettingsCard } from "../components/FileManagerSettingsCard";
 import type { User } from "@/interfaces/user.interface";
 
 const SettingsPage = () => {
   const { toggleStates, handleToggle, saveSettings } = useSettings();
   const [isSaving, setIsSaving] = useState(false);
   const [userProfile, setUserProfile] = useState<User | null>(null);
+  const [fileManagerSettings, setFileManagerSettings] = useState<FileManagerSettings | null>(null);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -26,7 +29,12 @@ const SettingsPage = () => {
         setUserProfile(null);
       }
     };
+    const fetchFileManagerSettings = async () => {
+      const settings = await getFileManagerSettings();
+      setFileManagerSettings(settings);
+    };
     fetchProfile();
+    fetchFileManagerSettings();
   }, []);
 
   const sectionsWithData = useMemo(() => {
@@ -66,11 +74,11 @@ const SettingsPage = () => {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100 relative">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
           <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-          <div className="flex-1 p-4 sm:p-8">
+          <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
               <header className="mb-8">
                 <h1 className="text-2xl sm:text-3xl font-bold mb-2 animate-fade-down">Settings</h1>
@@ -81,11 +89,11 @@ const SettingsPage = () => {
 
               <div className="grid grid-cols-1">
                 {sectionsWithData.map((section) => (
-                  <SettingSection 
-                    key={section.title} 
-                    section={section} 
+                  <SettingSection
+                    key={section.title}
+                    section={section}
                     toggleStates={toggleStates}
-                    onToggle={handleToggle} 
+                    onToggle={handleToggle}
                   />
                 ))}
 
@@ -108,6 +116,14 @@ const SettingsPage = () => {
                   </div>
                 </Card>
 
+                {/* TODO: WORK IN PROGRESS */}
+                {/* {fileManagerSettings?.file_manager_enabled && (
+                  <Card className="md:col-span-2 mt-6">
+                    <FileManagerSettingsCard settings={fileManagerSettings} />
+                  </Card>
+                )} */}
+
+
                 {/* <div className="md:col-span-2 flex justify-end gap-4 pt-4">
                   <Button variant="outline">Cancel</Button>
                   <Button onClick={handleSave} disabled={isSaving}>
@@ -117,6 +133,13 @@ const SettingsPage = () => {
               </div>
             </div>
           </div>
+          <footer className="mt-4">
+            <div className="max-w-7xl mx-auto w-full">
+              <p className="text-right px-2 sm:px-4 text-xs sm:text-sm text-gray-500">
+                Version: <span>{import.meta.env.VITE_UI_VERSION || '1.0'}</span>
+              </p>
+            </div>
+          </footer>
         </main>
       </div>
     </SidebarProvider>

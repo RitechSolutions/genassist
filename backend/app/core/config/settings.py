@@ -262,7 +262,8 @@ settings = ProjectSettings()
 
 
 class FileStorageSettings(BaseSettings):
-    DEFAULT_STORAGE_PROVIDER: str = "local"
+    FILE_MANAGER_ENABLED: bool = False
+    FILE_MANAGER_PROVIDER: str = "local"
 
     AZURE_CONNECTION_STRING: Optional[str] = None
     AZURE_ACCOUNT_NAME: Optional[str] = None
@@ -283,6 +284,11 @@ class FileStorageSettings(BaseSettings):
     GCP_REGION: Optional[str] = None
 
     APP_URL: Optional[str] = "http://localhost:8000"
+
+    @computed_field
+    @property
+    def default_provider_name(self) -> str:
+        return self.FILE_MANAGER_PROVIDER or "local"
 
     model_config = ConfigDict(
         env_file=".env",

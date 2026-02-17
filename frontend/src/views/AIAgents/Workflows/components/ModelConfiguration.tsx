@@ -16,6 +16,13 @@ import { DraggableTextArea } from "./custom/DraggableTextArea";
 import { Input } from "@/components/input";
 import { LLMProviderDialog } from "@/views/LlmProviders/components/LLMProviderDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { Info } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 
 export interface ModelConfigurationProps {
   id: string;
@@ -99,6 +106,34 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     });
   };
 
+  const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget") => {
+    onConfigChange({
+      ...config,
+      memoryTrimmingMode: mode,
+    });
+  };
+
+  const handleMaxMessagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({
+      ...config,
+      maxMessages: Number.parseInt(e.target.value) || 10,
+    });
+  };
+
+  const handleTokenBudgetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({
+      ...config,
+      tokenBudget: Number.parseInt(e.target.value) || 10000,
+    });
+  };
+
+  const handleConversationHistoryTokensChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({
+      ...config,
+      conversationHistoryTokens: Number.parseInt(e.target.value) || 5000,
+    });
+  };
+
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     onConfigChange({
@@ -109,6 +144,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
 
   const providerId = config.providerId;
   return (
+    <TooltipProvider>
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor={`name-input-${id}`}>Node Name</Label>
@@ -134,7 +170,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
             handleProviderSelect(val);
           }}
         >
-          <SelectTrigger id={`provider-select-${id}`}>
+          <SelectTrigger id={`provider-select-${id}`} className="w-full">
             <SelectValue placeholder="Select provider" />
           </SelectTrigger>
           <SelectContent>
@@ -175,7 +211,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
               onValueChange={handleAgentTypeSelect}
               defaultValue={typeSelect === "agent" ? "ToolSelector" : "Base"}
             >
-              <SelectTrigger id={`agent-type-select-${id}`}>
+              <SelectTrigger id={`agent-type-select-${id}`} className="w-full">
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
               {typeSelect === "agent" && (
@@ -228,6 +264,100 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           onCheckedChange={handleMemoryChange}
         />
       </div>
+      {config.memory && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor={`memory-trimming-mode-${id}`}>Memory Trimming Mode</Label>
+            <Select
+              value={config.memoryTrimmingMode || "message_count"}
+              onValueChange={handleMemoryTrimmingModeChange}
+            >
+              <SelectTrigger id={`memory-trimming-mode-${id}`} className="w-full">
+                <SelectValue placeholder="Select trimming mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="message_count">Last N Messages</SelectItem>
+                <SelectItem value="token_budget">Token Budget</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {config.memoryTrimmingMode === "message_count" || !config.memoryTrimmingMode ? (
+            <div className="space-y-2">
+              <Label htmlFor={`max-messages-${id}`}>Max Messages</Label>
+              <Input
+                id={`max-messages-${id}`}
+                type="number"
+                min={1}
+                step={1}
+                value={config.maxMessages || 10}
+                onChange={handleMaxMessagesChange}
+                placeholder="10"
+              />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`token-budget-${id}`}>Total Token Budget</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Total token budget info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Includes user prompt, system prompt & message history (RAG not included)
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`token-budget-${id}`}
+                  type="number"
+                  min={1000}
+                  max={50000}
+                  step={100}
+                  value={config.tokenBudget || 10000}
+                  onChange={handleTokenBudgetChange}
+                  placeholder="10000"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`conversation-history-tokens-${id}`}>Conversation History Allocation (tokens)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Conversation history allocation info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      estimate 0.75 words = 1 token
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`conversation-history-tokens-${id}`}
+                  type="number"
+                  min={0}
+                  max={20000}
+                  step={100}
+                  value={config.conversationHistoryTokens || 5000}
+                  onChange={handleConversationHistoryTokensChange}
+                  placeholder="5000"
+                />
+              </div>
+            </>
+          )}
+        </>
+      )}
       <LLMProviderDialog
         isOpen={isCreateProviderOpen}
         onOpenChange={(open) => setIsCreateProviderOpen(open)}
@@ -241,5 +371,6 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
         mode="create"
       />
     </div>
+    </TooltipProvider>
   );
 };

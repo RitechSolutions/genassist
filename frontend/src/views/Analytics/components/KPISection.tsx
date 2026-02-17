@@ -1,114 +1,97 @@
 import { useState, useEffect } from "react";
-import { Clock, ThumbsUp, Award, CheckCircle } from "lucide-react";
-import { fetchMetrics } from "@/services/metrics";
-import { generateMetricData } from "../helpers/metricDataGenerator";
-import { MetricsAPIResponse } from "@/interfaces/analytics.interface";
-import { MetricCard } from "@/components/analytics/MetricCard";
+import { StatsOverviewCard } from "./StatsOverviewCard";
 
 import { usePermissions, useIsLoadingPermissions } from "@/context/PermissionContext";
+import { fetchDashboardSummary, getFilterDays } from "@/services/dashboard";
+import type { DashboardSummaryStats } from "@/interfaces/dashboard.interface";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 
 interface KPISectionProps {
   timeFilter: string;
 }
 
+const formatResponseTime = (ms: number): string => {
+  if (ms === 0) return "0ms";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.round(ms / 60000)}m`;
+};
+
+const formatNumber = (num: number): string => {
+  return num.toLocaleString();
+};
+
 export function KPISection({ timeFilter }: KPISectionProps) {
   const permissions = usePermissions();
   const isLoadingPermissions = useIsLoadingPermissions();
-  const [metrics, setMetrics] = useState<MetricsAPIResponse | null>(null);
+  const showCostPerConversation = useFeatureFlagVisible(
+    FeatureFlags.ANALYTICS.SHOW_COST_PER_CONVERSATION
+  );
+  const [summaryStats, setSummaryStats] = useState<DashboardSummaryStats | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const getMetrics = async () => {
+    const fetchStats = async () => {
       if (isLoadingPermissions) {
         return;
       }
-      if (permissions.includes("read:metrics") || permissions.includes("*") ) {
+
+      // Check for dashboard permission or wildcard
+      if (permissions.includes("read:dashboard") || permissions.includes("*")) {
+        setLoading(true);
         try {
-          const data = await fetchMetrics();
-          setMetrics(data);
+          const days = getFilterDays(timeFilter);
+          const data = await fetchDashboardSummary(days);
+          setSummaryStats(data);
         } catch (err) {
-          // ignore
+          console.error("Error fetching dashboard summary:", err);
+        } finally {
+          setLoading(false);
         }
+      } else {
+        setLoading(false);
       }
     };
-  
-    getMetrics();
-  }, [isLoadingPermissions, permissions]);
 
-  const defaultMetrics = {
-    "Response Time": "0m",
-    "Customer Satisfaction": "0%",
-    "Quality of Service": "0%",
-    "Resolution Rate": "0%",
-    "Efficiency": "0%",
-  };
+    fetchStats();
+  }, [isLoadingPermissions, permissions, timeFilter]);
 
-  const formattedData = metrics || defaultMetrics;
-
-  const kpiMetrics = [
+  // Transform summary stats for the stats overview card
+  const statsMetrics = [
     {
-      title: "Responsiveness",
-      value: formattedData["Response Time"],
-      icon: Clock,
-      color: "#3b82f6",
-      data: generateMetricData(timeFilter, parseFloat(formattedData["Response Time"]) || 0, 0.5).map(item => ({
-        name: item.date, 
-        value: item.value
-      })),
-      format: (value: number) => `${value.toFixed(1)}m`,
-      tooltip: "Average time it takes for agents to respond to customer inquiries",
+      label: "Active Agents",
+      value: summaryStats?.active_agents?.toString() || "0",
+      change: 0,
+      changeType: "neutral" as const,
     },
     {
-      title: "Satisfaction",
-      value: formattedData["Customer Satisfaction"],
-      icon: ThumbsUp,
-      color: "#16a34a",
-      data: generateMetricData(timeFilter, parseFloat(formattedData["Customer Satisfaction"]) || 0, 5).map(item => ({
-        name: item.date, 
-        value: item.value
-      })),
-      format: (value: number) => `${value.toFixed(1)}%`,
-      tooltip: "Percentage of customers reporting a positive experience with our service",
+      label: "Workflow Runs",
+      value: formatNumber(summaryStats?.workflow_runs || 0),
+      change: 0,
+      changeType: "neutral" as const,
     },
     {
-      title: "Service Quality",
-      value: formattedData["Quality of Service"],
-      icon: Award,
-      color: "#9333ea",
-      data: generateMetricData(timeFilter, parseFloat(formattedData["Quality of Service"]) || 0, 0.3).map(item => ({
-        name: item.date, 
-        value: item.value
-      })),
-      format: (value: number) => `${value.toFixed(1)}%`,
-      tooltip: "Measure of service performance based on internal quality standards",
+      label: "Avg Response Time",
+      value: formatResponseTime(summaryStats?.avg_response_time_ms || 0),
+      change: 0,
+      changeType: "neutral" as const,
     },
-    {
-      title: "Resolution Rate",
-      value: formattedData["Resolution Rate"],
-      icon: CheckCircle,
-      color: "#dc2626",
-      data: generateMetricData(timeFilter, parseFloat(formattedData["Resolution Rate"]) || 0, 3).map(item => ({
-        name: item.date, 
-        value: item.value
-      })),
-      format: (value: number) => `${value.toFixed(1)}%`,
-      tooltip: "Percentage of customer issues resolved on first contact",
-    },
+    ...(showCostPerConversation
+      ? [
+          {
+            label: "Usage",
+            value: "~$48.00",
+            change: 16,
+            changeType: "increase" as const,
+          },
+        ]
+      : []),
   ];
 
   return (
-    <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6 mb-6">
-      {kpiMetrics.map((metric) => (
-        <MetricCard 
-          key={metric.title}
-          title={metric.title}
-          value={metric.value}
-          icon={metric.icon}
-          data={metric.data}
-          color={metric.color}
-          format={metric.format}
-          description={metric.tooltip}
-        />
-      ))}
+    <section className="mb-5">
+      <StatsOverviewCard metrics={statsMetrics} loading={loading} />
     </section>
   );
-} 
+}

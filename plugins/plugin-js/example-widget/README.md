@@ -35,8 +35,10 @@ Then open: `http://localhost:8022/index.html`
 # Build first
 npm run build
 
-# Copy dist files to example-widget
-cp -R dist example-widget/dist
+# Copy the dist files to the example-widget folder and replace the existing ones
+rm -rf example-widget/dist && cp -r dist example-widget/
+
+# Copy example-widget/config/config.example.js to example-widget/config/config.js and use your configurations
 
 # Serve from example-widget directory
 cd example-widget

@@ -26,12 +26,12 @@ import {
   AlertCircle,
   CheckCircle2,
   Plus,
-  Search,
   ChevronLeft,
   Trash2,
   Brain,
   FileCode,
 } from "lucide-react";
+import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MLModel } from "@/interfaces/ml-model.interface";
 import { Badge } from "@/components/badge";
@@ -108,8 +108,7 @@ const MLModelsManager: React.FC = () => {
     setIsUploading(true);
 
     try {
-      const result = await uploadModelFile(selectedFile);
-      return result;
+      return await uploadModelFile(selectedFile);
     } catch (error) {
       setError(
         `Failed to upload file: ${
@@ -219,14 +218,20 @@ const MLModelsManager: React.FC = () => {
 
       const dataToSubmit = { ...formData };
 
-      if (selectedFile && !formData.pkl_file) {
+      // if pkl file is selected, upload the file
+      if (selectedFile && (!formData.pkl_file || !formData.pkl_file_id)) {
         const uploadResult = await uploadFile();
 
         if (!uploadResult) {
           throw new Error("File upload failed");
         }
 
-        dataToSubmit.pkl_file = uploadResult.file_path;
+        dataToSubmit.pkl_file = uploadResult?.file_path;
+
+        // store file manager file ID for download
+        if (uploadResult?.file_id) {
+          dataToSubmit.pkl_file_id = uploadResult?.file_id;
+        }
       }
 
       if (editingItem) {
@@ -443,10 +448,10 @@ const MLModelsManager: React.FC = () => {
                       <div>
                         <div className="mb-1">Upload Model File (.pkl)</div>
                         <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md p-6">
+                          <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md cursor-pointer">
                             <label
                               htmlFor="file-upload"
-                              className="flex flex-col items-center gap-2 cursor-pointer"
+                              className="flex flex-col items-center gap-2 cursor-pointer w-full p-6"
                             >
                               <Upload className="h-10 w-10 text-muted-foreground" />
                               <span className="text-sm font-medium text-muted-foreground">
@@ -632,7 +637,7 @@ const MLModelsManager: React.FC = () => {
                     onValueChange={(value) => setTypeFilter(value)}
                     defaultValue="all"
                   >
-                    <SelectTrigger className="min-w-32">
+                    <SelectTrigger className="min-w-32 bg-white">
                       <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -645,16 +650,13 @@ const MLModelsManager: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="relative">
-                  <Search className="absolute top-0 bottom-0 left-3 my-auto text-gray-500 h-4 w-4" />
-                  <Input
-                    placeholder="Search ML models..."
-                    className="pl-9 min-w-64"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                <Button onClick={() => setShowForm(true)}>
+                <SearchInput
+                  placeholder="Search ML models..."
+                  className="min-w-64"
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                />
+                <Button onClick={() => setShowForm(true)} className="rounded-full">
                   <Plus className="h-4 w-4 mr-2" />
                   Add New
                 </Button>
@@ -725,7 +727,7 @@ const MLModelsManager: React.FC = () => {
                             <span>
                               <strong>Features:</strong> {item.features.length}
                             </span>
-                            {item.pkl_file && (
+                            {(item.pkl_file || !!item.pkl_file_id) && (
                               <span className="flex items-center gap-1">
                                 <FileCode className="h-4 w-4" />
                                 Model file uploaded

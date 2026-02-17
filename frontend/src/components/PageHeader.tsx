@@ -1,5 +1,6 @@
-import { Search, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/button";
+import { SearchInput } from "@/components/SearchInput";
 
 interface PageHeaderProps {
   title: string;
@@ -27,17 +28,12 @@ export function PageHeader({
         <p className="text-sm md:text-base text-muted-foreground animate-fade-up">{subtitle}</p>
       </div>
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
-        <div className="relative w-full sm:w-[260px]">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder={searchPlaceholder}
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        </div>
-        <Button className="flex items-center gap-2 w-full sm:w-auto justify-center" onClick={onActionClick}>
+        <SearchInput
+          value={searchQuery}
+          onChange={onSearchChange}
+          placeholder={searchPlaceholder}
+        />
+        <Button className="flex items-center gap-2 w-full sm:w-auto justify-center rounded-full" onClick={onActionClick}>
           <Plus className="w-4 h-4" />
           {actionButtonText}
         </Button>

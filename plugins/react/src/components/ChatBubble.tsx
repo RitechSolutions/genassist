@@ -28,7 +28,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({
     justifyContent: 'center',
     cursor: 'pointer',
     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-    zIndex: 1000,
+    zIndex: 40,
   };
 
   const chatBubbleStyle: React.CSSProperties = {

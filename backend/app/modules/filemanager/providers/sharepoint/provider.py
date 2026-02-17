@@ -84,3 +84,16 @@ class SharePointProvider(BaseStorageProvider):
             "initialized": self._initialized,
             "status": "stub - not implemented",
         }
+
+    def get_file_url(self, base_path: str, file_id: str) -> str:
+        """
+        Get the URL of a file in SharePoint.
+        
+        Args:
+            base_path: Base path of the storage provider
+            file_id: ID of the file
+            
+        Returns:
+            URL of the file
+        """
+        return f"https://{self.site_url}/{file_id}"

@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,30 +42,40 @@ export function ConfirmDialog({
   const confirmButtonClassName =
     primaryButtonText === "Delete"
       ? "bg-red-600 hover:bg-red-700 focus:ring-red-600"
-      : "px-4 bg-black hover:bg-black/90";
+      : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-600";
 
   return (
     <AlertDialog open={isOpen} onOpenChange={onOpenChange}>
       <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {description || defaultDescription}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel} disabled={isInProgress}>
-            {secondaryButtonText}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            disabled={isInProgress}
-            className={confirmButtonClassName}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="absolute right-0 top-0 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+            aria-label="Close"
           >
-            {isInProgress && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {primaryButtonText}
-          </AlertDialogAction>
-        </AlertDialogFooter>
+            <X className="h-4 w-4" />
+          </button>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{title}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {description || defaultDescription}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={onCancel} disabled={isInProgress}>
+              {secondaryButtonText}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onConfirm}
+              disabled={isInProgress}
+              className={confirmButtonClassName}
+            >
+              {isInProgress && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {primaryButtonText}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </div>
       </AlertDialogContent>
     </AlertDialog>
   );

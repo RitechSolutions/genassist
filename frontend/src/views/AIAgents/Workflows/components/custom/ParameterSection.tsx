@@ -165,7 +165,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent style={{ zIndex: 1100 }}>
         <DialogHeader>
           <DialogTitle>
             {mode === "create" ? "Add Parameter" : "Edit Parameter"}
@@ -261,7 +261,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
                 Delete Parameter
               </Button>
             )}
-            <Button type="submit">
+            <Button type="submit" disabled={!formData.name}>
               {mode === "create" ? "Add Parameter" : "Save Changes"}
             </Button>
           </DialogFooter>
@@ -375,8 +375,8 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
               </Badge>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {Object.entries(suggestedParams).map(([name, s]) => (
+          <DropdownMenuContent align="start" style={{ zIndex: 1100 }}>
+            {Object.entries(suggestedParams || {}).map(([name, s]) => (
               <DropdownMenuItem
                 key={name}
                 onSelect={() => handleAddSelect(name)}

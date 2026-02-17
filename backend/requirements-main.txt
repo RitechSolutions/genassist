@@ -36,7 +36,7 @@ coloredlogs==15.0.1
 compressed-rtf==1.0.7
 coverage==7.7.1
 croniter==6.0.0
-cryptography==44.0.3
+cryptography==46.0.5
 dataclasses-json==0.6.7
 decorator==5.2.1
 Deprecated==1.2.18
@@ -136,9 +136,9 @@ ormsgpack==1.12.1
 overrides==7.7.0
 packaging==24.2
 passlib==1.7.4
-pdfminer.six==20251107
+pdfminer.six>=20251230
 pendulum==3.1.0
-pillow==11.3.0
+pillow>=12.1.1
 platformdirs==4.3.8
 pluggy==1.6.0
 posthog==4.2.0
@@ -201,7 +201,7 @@ starlette-context==0.4.0
 sympy==1.14.0
 tenacity==9.1.2
 threadpoolctl==3.6.0
-tiktoken==0.9.0
+tiktoken==0.12.0
 tokenizers==0.21.1
 tomli==2.2.1
 tomlkit==0.13.2

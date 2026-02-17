@@ -28,7 +28,7 @@ import { conversationService } from "@/services/liveConversations";
 import { useWebSocketTranscript } from "../hooks/useWebsocket";
 import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmModels";
 import toast from "react-hot-toast";
-import { formatDuration, formatMessageTime } from "../helpers/format";
+import { formatDuration, formatMessageTime, formatDateTime } from "../helpers/format";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { Textarea } from "@/components/textarea";
 import { submitConversationFeedback } from "@/services/transcripts";
@@ -36,6 +36,13 @@ import { apiRequest, isWsEnabled } from "@/config/api";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
 import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
+
+function toEpochMs(ct: string | number | undefined | null): number {
+  if (ct == null) return 0;
+  if (typeof ct === "number") return ct;
+  const t = new Date(ct).getTime();
+  return isNaN(t) ? 0 : t;
+}
 
 interface Props {
   transcript: Transcript | null;
@@ -116,6 +123,7 @@ function TranscriptDialogContent({
     (transcript?.messages ?? transcript?.transcript) || []
   );
   const [sentMessages, setSentMessages] = useState<TranscriptEntry[]>([]);
+  const isSendingRef = useRef(false);
   const [isThinking, setIsThinking] = useState(false);
 
   // Feedback state (conversation-level)
@@ -353,7 +361,7 @@ function TranscriptDialogContent({
           !baseMessages.some(
             (msg) =>
               msg.text === sentMsg.text &&
-              msg.create_time === sentMsg.create_time
+              toEpochMs(msg.create_time) === toEpochMs(sentMsg.create_time)
           )
         ) {
           baseMessages.push(sentMsg);
@@ -386,7 +394,7 @@ function TranscriptDialogContent({
 
         if (
           !currentMsgs.some(
-            (m) => m.text === msg.text && m.create_time === msg.create_time
+            (m) => m.text === msg.text && toEpochMs(m.create_time) === toEpochMs(msg.create_time)
           )
         ) {
           currentMsgs.push(msg);
@@ -398,7 +406,7 @@ function TranscriptDialogContent({
       for (const msg of messages) {
         if (
           !currentMsgs.some(
-            (m) => m.text === msg.text && m.create_time === msg.create_time
+            (m) => m.text === msg.text && toEpochMs(m.create_time) === toEpochMs(msg.create_time)
           )
         ) {
           currentMsgs.push(msg);
@@ -410,7 +418,7 @@ function TranscriptDialogContent({
       if (
         !currentMsgs.some(
           (m) =>
-            m.text === sentMsg.text && m.create_time === sentMsg.create_time
+            m.text === sentMsg.text && toEpochMs(m.create_time) === toEpochMs(sentMsg.create_time)
         )
       ) {
         currentMsgs.push(sentMsg);
@@ -430,12 +438,22 @@ function TranscriptDialogContent({
         text: "", // handled specially in renderer
         start_time: (now - conversationCreateTime) / 1000,
         end_time: (now - conversationCreateTime) / 1000,
-        create_time: now.toString(),
+        create_time: new Date(now).toISOString(),
         type: "takeover",
       } as TranscriptEntry);
     }
 
-    setLocalMessages(currentMsgs);
+    // Ensure at most one takeover marker (stale closure can cause duplicates)
+    let seenTakeover = false;
+    const dedupedMsgs = currentMsgs.filter((m) => {
+      if (m.type === "takeover") {
+        if (seenTakeover) return false;
+        seenTakeover = true;
+      }
+      return true;
+    });
+
+    setLocalMessages(dedupedMsgs);
 
     if (!userInitiatedTakeOver) {
       setHasTakenOver(
@@ -515,11 +533,15 @@ function TranscriptDialogContent({
           text: "",
           start_time: (now - conversationCreateTime) / 1000,
           end_time: (now - conversationCreateTime) / 1000,
-          create_time: now.toString(),
+          create_time: new Date(now).toISOString(),
           type: "takeover",
         };
 
-        setLocalMessages((prev) => [...prev, takeoverEntry]);
+        setLocalMessages((prev) =>
+          prev.some((m) => m.type === "takeover")
+            ? prev
+            : [...prev, takeoverEntry]
+        );
 
         if (refetchConversations) {
           refetchConversations();
@@ -538,7 +560,9 @@ function TranscriptDialogContent({
       : conversationStats.duration;
 
   const handleSendMessage = async () => {
-    if (!chatInput.trim() || !transcript?.id) return;
+    if (!chatInput.trim() || !transcript?.id || isSendingRef.current) return;
+
+    isSendingRef.current = true;
 
     const now = Date.now();
     const conversationCreateTime = transcript.create_time
@@ -549,10 +573,13 @@ function TranscriptDialogContent({
       text: chatInput.trim(),
       start_time: (now - conversationCreateTime) / 1000,
       end_time: (now - conversationCreateTime) / 1000 + 0.01,
-      create_time: now,
+      create_time: new Date(now).toISOString(),
     };
 
     setChatInput("");
+
+    // Add message to local state immediately for instant UI feedback
+    setSentMessages((prev) => [...prev, newEntry]);
 
     try {
       await conversationService.updateConversation(transcript.id, {
@@ -562,7 +589,11 @@ function TranscriptDialogContent({
 
       if (refetchConversations) refetchConversations();
     } catch (err) {
-      // ignore
+      // Remove the message from sent messages if the API call fails
+      setSentMessages((prev) => prev.filter((m) => m.create_time !== newEntry.create_time));
+      toast.error("Failed to send message");
+    } finally {
+      isSendingRef.current = false;
     }
   };
 
@@ -829,6 +860,13 @@ function TranscriptDialogContent({
           >
             {localMessages.length > 0 ? (
               <div className="space-y-2">
+                {transcript.timestamp && (
+                  <div className="flex justify-center mb-3">
+                    <div className="px-3 py-1 rounded-full bg-muted text-muted-foreground text-xs">
+                      {formatDateTime(transcript.timestamp)}
+                    </div>
+                  </div>
+                )}
                 {localMessages.map((entry, idx) => {
                   if (entry.type === "takeover") {
                     return (
@@ -875,12 +913,14 @@ function TranscriptDialogContent({
                         <div
                           className={`p-2 rounded-lg max-w-[75%] sm:max-w-[90%] leading-tight break-words ${
                             isAgent
-                              ? "bg-black text-white rounded-tl-lg"
+                              ? "bg-blue-500 text-white rounded-tl-lg"
                               : "bg-gray-200 text-gray-900 rounded-tr-lg"
                           }`}
                         >
                           <ConversationEntryWrapper entry={entry} />
-                          <span className="block text-[10px] text-muted-foreground text-right mt-1">
+                          <span className={`block text-[10px] text-right mt-1 ${
+                            isAgent ? "text-white/70" : "text-gray-500"
+                          }`}>
                             {formatMessageTime(entry.create_time)}
                           </span>
                         </div>
@@ -893,7 +933,7 @@ function TranscriptDialogContent({
                     <span className="text-[11px] text-black font-medium mb-1">
                       Agent
                     </span>
-                    <div className="p-3 rounded-lg max-w-[75%] sm:max-w-[90%] leading-tight break-words bg-black text-white rounded-tl-lg">
+                    <div className="p-3 rounded-lg max-w-[75%] sm:max-w-[90%] leading-tight break-words bg-blue-500 text-white rounded-tl-lg">
                       <div className="flex items-center space-x-1">
                         <div
                           className="w-2 h-2 rounded-full bg-white/60 animate-bounce"
@@ -923,7 +963,7 @@ function TranscriptDialogContent({
             {!hasTakenOver ? (
               <Button
                 onClick={handleTakeOver}
-                className="w-full bg-black text-white"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                 disabled={
                   loading || transcript.status === "complete" || hasTakenOver
                 }
@@ -942,7 +982,7 @@ function TranscriptDialogContent({
                   />
                   <Button
                     onClick={handleSendMessage}
-                    className="px-4 py-2 bg-black text-white"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white"
                   >
                     Send
                   </Button>
@@ -973,7 +1013,7 @@ function InfoBox({
   value: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center p-3 bg-primary/5 rounded-lg">
+    <div className="flex flex-col items-center p-3 bg-gray-100 rounded-lg">
       {icon}
       <span className="text-sm font-medium">{value}</span>
       <span className="text-xs text-muted-foreground">{label}</span>

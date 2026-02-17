@@ -22,7 +22,7 @@ export interface BaseNodeData {
   unwrap?: boolean;
   updateNodeData?: <T extends BaseNodeData>(
     nodeId: string,
-    data: Partial<T>
+    data: Partial<T>,
   ) => void;
 }
 
@@ -152,6 +152,10 @@ export interface BaseLLMNodeData extends BaseNodeData {
     | "Chain-of-Thought"
     | "ReActAgentLC";
   maxIterations?: number;
+  memoryTrimmingMode?: "message_count" | "token_budget";
+  maxMessages?: number;
+  tokenBudget?: number;
+  conversationHistoryTokens?: number;
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {
@@ -169,11 +173,15 @@ export interface KnowledgeBaseNodeData extends BaseNodeData {
 }
 
 // SQL Node Data
+export type SQLMode = "sqlQuery" | "humanQuery";
+
 export interface SQLNodeData extends BaseNodeData {
-  providerId: string;
   dataSourceId: string;
-  query: string;
+  mode?: SQLMode;
+  sqlQuery?: string;
+  providerId?: string;
   systemPrompt?: string;
+  humanQuery?: string;
   parameters?: Record<string, string>;
 }
 
@@ -233,6 +241,8 @@ export interface TrainDataSourceNodeData extends BaseNodeData {
   query?: string; // SQL query to fetch data
   csvFileName?: string; // Name of the uploaded CSV file
   csvFilePath?: string; // Server path to the uploaded CSV file
+  csvFileId?: string; // ID of the uploaded CSV file
+  csvFileUrl?: string; // URL of the uploaded CSV file
 }
 
 // Preprocessing Node Data
@@ -361,7 +371,7 @@ export const createNode = <T extends NodeData>(
   type: string,
   id: string,
   position: { x: number; y: number },
-  data: T
+  data: T,
 ): Node => {
   return {
     id,
@@ -374,7 +384,7 @@ export const createNode = <T extends NodeData>(
 export const createEdge = (
   source: string,
   target: string,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): Edge => {
   return {
     id: `${source}-${target}`,

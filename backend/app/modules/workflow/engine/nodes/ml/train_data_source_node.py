@@ -10,12 +10,12 @@ import os
 import asyncio
 from pathlib import Path
 from uuid import UUID
-
 from app.modules.workflow.engine.base_node import BaseNode
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.modules.integration.database.provider_manager import DBProviderManager
 from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.core.project_path import DATA_VOLUME
 
 logger = logging.getLogger(__name__)
 
@@ -205,16 +205,32 @@ class TrainDataSourceNode(BaseNode):
             Dictionary with CSV data and metadata
         """
         csv_file_path = config.get("csvFilePath")
+        csv_file_id = config.get("csvFileId")
+        csv_file_url = config.get("csvFileUrl")
 
-        if not csv_file_path:
+        if not csv_file_path and not csv_file_id:
             raise AppException(
                 error_key=ErrorKey.MISSING_PARAMETER,
                 error_detail="csvFilePath is required for CSV source type",
             )
 
-        logger.info(f"Processing CSV file: {csv_file_path}")
+        logger.info(f"Processing CSV file: {csv_file_path or csv_file_id}")
 
         try:
+            if not csv_file_path and csv_file_id:
+                from app.dependencies.injector import injector
+                from app.services.file_manager import FileManagerService
+                file_manager_service = injector.get(FileManagerService)
+                dest_file_path = f"{DATA_VOLUME}/train/{csv_file_id}.csv"
+
+                logger.info(f"Downloading CSV file to: {dest_file_path}")
+
+                # download the file to the destination path
+                await file_manager_service.download_file_to_path(csv_file_id, dest_file_path)
+                
+                # set the csv file path to the destination path
+                csv_file_path = dest_file_path
+
             # Validate file exists and is accessible
             csv_path = Path(csv_file_path)
             if not csv_path.exists():
