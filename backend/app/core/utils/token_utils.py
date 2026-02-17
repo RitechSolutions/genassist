@@ -191,7 +191,8 @@ def estimate_string_tokens(text: str, provider: str, model: str) -> int:
 
 def calculate_history_tokens(config: dict[str, Any], model: str, provider:str, system_prompt: str,
                                    user_prompt: str) -> int:
-
+    TOTAL_TOKEN_DEFAULT = 10000 # declared in frontend component as well
+    TOTAL_CONVERSATION_HISTORY_DEFAULT= 5000 # declared in frontend component as well
     # Get token counter
     counter = get_token_counter(provider, model)
 
@@ -200,8 +201,8 @@ def calculate_history_tokens(config: dict[str, Any], model: str, provider:str, s
     user_tokens = counter.count_tokens(user_prompt)
 
     # Get configuration
-    total_budget = config.get("tokenBudget", 10000)
-    requested_history_tokens = config.get("conversationHistoryTokens", 5000)
+    total_budget = config.get("tokenBudget", TOTAL_TOKEN_DEFAULT)
+    requested_history_tokens = config.get("conversationHistoryTokens", TOTAL_CONVERSATION_HISTORY_DEFAULT)
 
     # Calculate if we need to reduce history allocation
     needed = system_tokens + user_tokens + requested_history_tokens
