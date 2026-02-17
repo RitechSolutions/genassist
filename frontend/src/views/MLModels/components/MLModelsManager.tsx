@@ -726,7 +726,7 @@ const MLModelsManager: React.FC = () => {
                             <span>
                               <strong>Features:</strong> {item.features.length}
                             </span>
-                            {item.pkl_file && (
+                            {(item.pkl_file || !!item.pkl_file_id) && (
                               <span className="flex items-center gap-1">
                                 <FileCode className="h-4 w-4" />
                                 Model file uploaded
