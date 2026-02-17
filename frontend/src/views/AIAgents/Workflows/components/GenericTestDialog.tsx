@@ -199,15 +199,15 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     try {
       // Parse input values based on their schema types
       const parsedData: Record<string, unknown> = {};
-      
+
       // Get inputSchema if available
-      const inputSchema = "inputSchema" in nodeData && nodeData.inputSchema 
-        ? nodeData.inputSchema 
+      const inputSchema = "inputSchema" in nodeData && nodeData.inputSchema
+        ? nodeData.inputSchema
         : null;
 
       for (const field of inputFields) {
         const value = formData[field.id];
-        
+
         if (value === undefined || value === "") {
           // Skip empty values unless required
           if (!field.required) {
@@ -262,7 +262,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
               truncatedOutput,
               nodeType,
               nodeData.name || nodeType
-            ); 
+            );
         }
       } else {
         setOutput(response);
