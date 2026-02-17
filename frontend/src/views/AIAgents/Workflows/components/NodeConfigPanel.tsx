@@ -21,7 +21,7 @@ import {
 import { JsonViewer, NodeMetadata } from "./custom/JsonViewer";
 import { GenericTestDialog } from "./GenericTestDialog";
 import { Button } from "@/components/button";
-import { Loader2, Play, GripVertical, Lock, LockOpen } from "lucide-react";
+import { Loader2, Play, GripVertical, Lock, LockOpen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NodeData } from "../types/nodes";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { Node, Edge } from "reactflow";
@@ -102,6 +102,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   const [isPinned, setIsPinned] = useState(false);
   const [isUnsavedConfirmOpen, setIsUnsavedConfirmOpen] = useState(false);
   const [isSavingFromConfirm, setIsSavingFromConfirm] = useState(false);
+  const [isLeftColumnVisible, setIsLeftColumnVisible] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const { getAvailableDataForNode, hasNodeBeenExecuted, nodes: workflowNodes } =
@@ -352,74 +353,99 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
           <div className="flex flex-1 gap-6 overflow-hidden px-6 pl-8">
             {/* Left side - JSON State section */}
             {jsonStateDisplay && (
-              <div className="min-w-80 flex-1 border-r border-gray-200 pr-6 flex flex-col py-6">
-                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200">
-                  <div>
+              isLeftColumnVisible ? (
+                <div className="min-w-80 flex-1 border-r border-gray-200 pr-6 flex flex-col py-6">
+                  <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-200">
                     <p className="text-xs text-gray-500">
                       Drag variables to input fields
                     </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 shrink-0"
+                      onClick={() => setIsLeftColumnVisible(false)}
+                      title="Hide parameters panel"
+                      aria-label="Hide parameters panel"
+                    >
+                      <PanelLeftClose className="h-4 w-4" />
+                    </Button>
                   </div>
-                </div>
 
-                <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-y-auto overflow-x-auto min-h-0 max-h-[calc(85vh-200px)]">
-                  <div className="p-3 bg-white min-w-max">
-                    {jsonStateDisplay.data ? (
-                      <JsonViewer
-                        data={jsonStateDisplay.data as Record<string, unknown>}
-                        onDragStart={handleDragStart}
-                        nodeMetadata={nodeMetadata}
-                      />
-                    ) : (
-                      <div className="text-sm text-center font-extrabold text-red-500">
-                        Connect this node to workflow to see available data
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {showHelp && (
-                  <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="flex items-start gap-2">
-                      <div className="text-blue-600 mt-0.5">
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
-                      </div>
-                      <div className="text-xs text-blue-800">
-                        <p className="font-medium mb-1">💡 How to use:</p>
-                        <ul className="space-y-0.5">
-                          <li>
-                            • <strong>Drag</strong> any key badge to input
-                            fields
-                          </li>
-                          <li>
-                            • <strong>Click</strong> badges to copy reference
-                            paths
-                          </li>
-                          <li>
-                            • <strong>Expand</strong> objects to see nested
-                            values
-                          </li>
-                          <li>
-                            • <strong>All levels</strong> are draggable
-                            (objects, arrays, values)
-                          </li>
-                        </ul>
-                      </div>
+                  <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-y-auto overflow-x-auto min-h-0 max-h-[calc(85vh-200px)]">
+                    <div className="p-3 bg-white min-w-max">
+                      {jsonStateDisplay.data ? (
+                        <JsonViewer
+                          data={jsonStateDisplay.data as Record<string, unknown>}
+                          onDragStart={handleDragStart}
+                          nodeMetadata={nodeMetadata}
+                        />
+                      ) : (
+                        <div className="text-sm text-center font-extrabold text-red-500">
+                          Connect this node to workflow to see available data
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
+
+                  {showHelp && (
+                    <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex items-start gap-2">
+                        <div className="text-blue-600 mt-0.5">
+                          <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            />
+                          </svg>
+                        </div>
+                        <div className="text-xs text-blue-800">
+                          <p className="font-medium mb-1">💡 How to use:</p>
+                          <ul className="space-y-0.5">
+                            <li>
+                              • <strong>Drag</strong> any key badge to input
+                              fields
+                            </li>
+                            <li>
+                              • <strong>Click</strong> badges to copy reference
+                              paths
+                            </li>
+                            <li>
+                              • <strong>Expand</strong> objects to see nested
+                              values
+                            </li>
+                            <li>
+                              • <strong>All levels</strong> are draggable
+                              (objects, arrays, values)
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="w-10 flex-shrink-0 border-r border-gray-200 flex flex-col items-center py-4">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0"
+                    onClick={() => setIsLeftColumnVisible(true)}
+                    title="Show parameters panel"
+                    aria-label="Show parameters panel"
+                  >
+                    <PanelLeftOpen className="h-4 w-4" />
+                  </Button>
+                </div>
+              )
             )}
 
             {/* Right side - Main content */}
