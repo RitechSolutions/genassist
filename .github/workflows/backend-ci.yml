@@ -21,6 +21,9 @@ on:
   # Allow manual trigger
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Cancel in-progress runs for the same PR
 concurrency:
   group: backend-ci-${{ github.head_ref || github.ref }}
