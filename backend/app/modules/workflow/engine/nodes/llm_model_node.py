@@ -3,24 +3,67 @@ LLM model node implementation using the BaseNode class.
 """
 
 import base64
-import os
 from typing import Any, Dict
 import logging
-from uuid import UUID
-from fastapi_injector import Injected
 from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.modules.workflow.engine.base_node import BaseNode
+from app.core.utils.token_utils import calculate_history_tokens
+from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
+from app.services.llm_providers import LlmProviderService
+
 
 logger = logging.getLogger(__name__)
 
 
 class LLMModelNode(BaseNode):
     """LLM model node using the BaseNode approach"""
+
+    async def _get_chat_history_for_context(
+        self, memory, config: Dict[str, Any], provider_id: str, system_prompt: str, user_prompt: str
+    ) -> str:
+        """
+        Get chat history based on configured trimming mode.
+
+        Args:
+            memory: Conversation memory instance
+            config: Node configuration
+            provider_id: LLM provider ID
+            system_prompt: System prompt text (for token counting)
+            user_prompt: User prompt text (for token counting)
+
+        Returns:
+            Formatted chat history string
+        """
+        trimming_mode = config.get("memoryTrimmingMode", "message_count")
+
+        if trimming_mode == "token_budget":
+            # Token-based trimming with budget enforcement
+            from app.dependencies.injector import injector
+            llm_service = injector.get(LlmProviderService)
+            provider_info = await llm_service.get_by_id(provider_id)
+            provider = provider_info.llm_model_provider
+            model = provider_info.llm_model
+
+            actual_history_tokens, model, provider = calculate_history_tokens(config, model, provider,
+                                                                                    system_prompt, user_prompt)
+
+            return await memory.get_chat_history_within_tokens(
+                token_budget=actual_history_tokens,
+                provider=provider,
+                model=model,
+                as_string=True
+            )
+        else:
+            # Message count-based trimming (existing behavior)
+            max_messages = config.get("maxMessages", 10)
+            return await memory.get_chat_history(
+                as_string=True,
+                max_messages=max_messages
+            )
+
 
     async def process(self, config: Dict[str, Any]) -> str:
         """
@@ -67,8 +110,9 @@ class LLMModelNode(BaseNode):
                 return result
 
             if memory:
-                chat_history = await memory.get_chat_history(
-                    as_string=True, max_messages=10)
+                chat_history = await self._get_chat_history_for_context(
+                    memory, config, provider_id, system_prompt, prompt
+                )
                 system_prompt = system_prompt + "\n\n" + chat_history
 
             # default message content

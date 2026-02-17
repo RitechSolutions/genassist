@@ -49,6 +49,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   const [query, setQuery] = useState(data.query ?? null);
   const [csvFileName, setCsvFileName] = useState(data.csvFileName ?? null);
   const [csvFilePath, setCsvFilePath] = useState(data.csvFilePath ?? null);
+  const [csvFileId, setCsvFileId] = useState(data.csvFileId ?? null);
+  const [csvFileUrl, setCsvFileUrl] = useState(data.csvFileUrl ?? null);
   const [availableDataSources, setAvailableDataSources] = useState<
     DataSource[]
   >([]);
@@ -77,6 +79,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       setQuery(data.query ?? null);
       setCsvFileName(data.csvFileName ?? null);
       setCsvFilePath(data.csvFilePath ?? null);
+      setCsvFileId(data.csvFileId ?? null);
+      setCsvFileUrl(data.csvFileUrl ?? null);
 
       const loadDataSources = async () => {
         try {
@@ -134,7 +138,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         return;
       }
     } else if (sourceType === "csv") {
-      if (!csvFileName && !csvFilePath) {
+      if (!csvFileName && !csvFilePath && !csvFileId) {
         toast({
           title: "Validation Error",
           description: "Please upload a CSV file",
@@ -152,6 +156,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       query: query ?? undefined,
       csvFileName: csvFileName ?? undefined,
       csvFilePath: csvFilePath ?? undefined,
+      csvFileId: csvFileId ?? undefined,
+      csvFileUrl: csvFileUrl ?? undefined,
     });
     onClose();
   };
@@ -244,6 +250,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
             onUploadComplete={(result) => {
               setCsvFileName(result.original_filename);
               setCsvFilePath(result.file_path);
+              setCsvFileId(result.file_id);
+              setCsvFileUrl(result.file_url);
             }}
             onRemove={() => {
               setCsvFileName(null);

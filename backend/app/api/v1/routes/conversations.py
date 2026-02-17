@@ -143,6 +143,7 @@ async def start(
         "agent_thinking_phrases": agent_data.get("thinking_phrases"),
         "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
         "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
+        "agent_chat_input_metadata": agent_data.get("workflow"),
     }
 
     # If agent requires authentication, generate and return a guest JWT token

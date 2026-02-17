@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback } from "react";
-import { GenAgentChat } from "../../src";
+import { GenAgentChat, GENASSIST_AGENT_METADATA_UPDATED } from "../../src";
 import {
   ChevronDown,
   ChevronUp,
@@ -62,6 +62,7 @@ function App() {
   const [showAppearance, setShowAppearance] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
+  const [agentChatInputMetadata, setAgentChatInputMetadata] = useState<Record<string, any>>({});
 
   // Metadata builder state
   const [params, setParams] = useState<MetadataParam[]>([]);
@@ -98,6 +99,70 @@ function App() {
     });
     return obj;
   }, [params]);
+
+  // Restore persisted metadata on mount (survives page refresh)
+  const apiKey = chatSettings.apiKey;
+  React.useEffect(() => {
+    if (!apiKey) return;
+    try {
+      const storedAgent = localStorage.getItem(`genassist_agent_chat_input_metadata:${apiKey}`);
+      if (storedAgent) {
+        const parsed = JSON.parse(storedAgent);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          setAgentChatInputMetadata(parsed);
+        }
+      }
+      const storedMeta = localStorage.getItem(`genassist_metadata:${apiKey}`);
+      if (storedMeta) {
+        const parsed = JSON.parse(storedMeta);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const restored: MetadataParam[] = Object.entries(parsed).map(([name, value]) => {
+            let type: ParamType = "string";
+            if (typeof value === "number") type = "number";
+            else if (typeof value === "boolean") type = "boolean";
+            return { name, type, required: false, value: value as string | number | boolean };
+          });
+          setParams(restored);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [apiKey]);
+
+  // Subscribe to service-level metadata updates (fired by ChatService on each start conversation)
+  React.useEffect(() => {
+    if (!apiKey) return;
+    const handler = (e: CustomEvent<{ apiKey: string; metadata: Record<string, any> }>) => {
+      if (e.detail?.apiKey !== apiKey || e.detail?.metadata == null) return;
+      const next =
+        typeof e.detail.metadata === "object" && !Array.isArray(e.detail.metadata)
+          ? e.detail.metadata
+          : {};
+      setAgentChatInputMetadata(next);
+    };
+    window.addEventListener(GENASSIST_AGENT_METADATA_UPDATED, handler as EventListener);
+    return () =>
+      window.removeEventListener(GENASSIST_AGENT_METADATA_UPDATED, handler as EventListener);
+  }, [apiKey]);
+
+  // When agent_chat_input_metadata arrives (after "Start conversation"), merge into params and expand METADATA section
+  React.useEffect(() => {
+    if (!agentChatInputMetadata || Object.keys(agentChatInputMetadata).length === 0) return;
+    const fromAgent: MetadataParam[] = Object.entries(agentChatInputMetadata).map(([name, value]) => {
+      let type: ParamType = "string";
+      if (typeof value === "number") type = "number";
+      else if (typeof value === "boolean") type = "boolean";
+      return { name, type, required: false, value: value as string | number | boolean };
+    });
+    setParams((prev) => {
+      const byName = new Map<string, MetadataParam>();
+      fromAgent.forEach((p) => byName.set(p.name, p));
+      prev.forEach((p) => byName.set(p.name, p));
+      return Array.from(byName.values());
+    });
+    setShowMetadata(true);
+  }, [agentChatInputMetadata]);
 
   const handleColorChange = (property: string, value: string) => {
     setTheme((prevTheme) => ({
@@ -154,7 +219,14 @@ function App() {
   };
 
   const handleSaveChanges = () => {
-    // Here you would typically save the settings to a server
+    try {
+      localStorage.setItem(
+        `genassist_metadata:${chatSettings.apiKey}`,
+        JSON.stringify(metadata)
+      );
+    } catch {
+      // ignore
+    }
     alert("Changes saved!");
   };
 
@@ -982,6 +1054,20 @@ function App() {
         floatingConfig={{
           position: "bottom-right",
           offset: { x: 20, y: 20 },
+        }}
+        onConfigLoaded={({ chatInputMetadata }) => {
+          const next = (chatInputMetadata && typeof chatInputMetadata === "object" && !Array.isArray(chatInputMetadata))
+            ? (chatInputMetadata as Record<string, any>)
+            : {};
+          setAgentChatInputMetadata(next);
+          try {
+            localStorage.setItem(
+              `genassist_agent_chat_input_metadata:${chatSettings.apiKey}`,
+              JSON.stringify(next)
+            );
+          } catch {
+            // ignore
+          }
         }}
       />
 

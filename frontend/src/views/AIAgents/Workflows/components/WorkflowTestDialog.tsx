@@ -23,7 +23,7 @@ import { testWorkflow, WorkflowTestResponse } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
-import { getValueFromPath, parseInputValue, valueToString } from "../utils/helpers";
+import { getValueFromPath, parseInputValue, truncateNodeOutput, valueToString } from "../utils/helpers";
 import JsonViewer from "@/components/JsonViewer";
 
 interface WorkflowTestDialogProps {
@@ -170,7 +170,12 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
         input_data: parsedInputs,
         workflow: workflow,
       });
-      setResponse(response);
+      // Truncate arrays in the output to a default of 4 items
+      const truncatedResponse = {
+        ...response,
+        output: truncateNodeOutput(response.output),
+      };
+      setResponse(truncatedResponse as WorkflowTestResponse);
       // Update workflow.testInput with the latest changes
       if (onUpdateWorkflowTestInputs) {
         onUpdateWorkflowTestInputs(testInput);
