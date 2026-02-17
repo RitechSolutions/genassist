@@ -82,6 +82,27 @@ class BaseConversationMemory:
         """Get the chat history in a format suitable for LLM context"""
         raise NotImplementedError
 
+    async def get_chat_history_within_tokens(
+        self,
+        token_budget: int,
+        provider: str,
+        model: str,
+        as_string: bool = False
+    ) -> Union[List[dict[str, Any]], str]:
+        """
+        Get formatted chat history within token budget.
+
+        Args:
+            token_budget: Maximum tokens for history
+            provider: LLM provider name (e.g., 'openai', 'anthropic')
+            model: Model name for tokenization (e.g., 'gpt-4o')
+            as_string: If True, return formatted string; else list of dicts
+
+        Returns:
+            Formatted chat history within token budget
+        """
+        raise NotImplementedError
+
 
 class InMemoryConversationMemory(BaseConversationMemory):
     """In-memory implementation of conversation memory"""
@@ -138,6 +159,54 @@ class InMemoryConversationMemory(BaseConversationMemory):
             return "\n".join(history_parts)
 
         return self.messages[-max_messages:]
+
+    async def get_chat_history_within_tokens(
+        self,
+        token_budget: int,
+        provider: str,
+        model: str,
+        as_string: bool = False
+    ) -> Union[List[dict[str, Any]], str]:
+        """Get formatted chat history within token budget"""
+        from app.core.utils.token_utils import get_token_counter
+
+        if token_budget <= 0:
+            raise ValueError("Token budget must be positive")
+
+        counter = get_token_counter(provider, model)
+        selected_messages = []
+        current_tokens = 0
+
+        # Iterate from most recent to oldest
+        for message in reversed(self.messages):
+            # Count tokens for this message
+            message_dict = message.to_dict()
+            message_tokens = counter.count_tokens(
+                f"{message_dict['role']}: {message_dict['content']}"
+            )
+
+            # Check if adding this message would exceed budget
+            if current_tokens + message_tokens > token_budget:
+                # If we have no messages yet, include at least this one
+                if not selected_messages:
+                    selected_messages.append(message_dict)
+                break
+
+            selected_messages.append(message_dict)
+            current_tokens += message_tokens
+
+        # Reverse to get chronological order (oldest to newest)
+        selected_messages.reverse()
+
+        if as_string:
+            history_parts = []
+            for msg in selected_messages:
+                prefix = f"{msg['role'].capitalize()}: "
+                content = msg['content']
+                history_parts.append(f"{prefix}{content}")
+            return "\n".join(history_parts)
+
+        return selected_messages
 
 
 class RedisConversationMemory(BaseConversationMemory):
@@ -366,6 +435,69 @@ class RedisConversationMemory(BaseConversationMemory):
                 f"Failed to get chat history from Redis for thread {self.thread_id}: {e}"
             )
             return [] if not as_string else ""
+
+    async def get_chat_history_within_tokens(
+        self,
+        token_budget: int,
+        provider: str,
+        model: str,
+        as_string: bool = False
+    ) -> Union[List[dict[str, Any]], str]:
+        """Get formatted chat history within token budget"""
+        from app.core.utils.token_utils import get_token_counter
+
+        if token_budget <= 0:
+            return "" if as_string else []
+
+        counter = get_token_counter(provider, model)
+        redis = await self._get_redis()
+
+        # Fetch a larger batch initially to minimize round-trips
+        # Most conversations won't need more than 50 messages
+        batch_size = 50
+        message_jsons = await redis.lrange(self._message_key, 0, batch_size - 1)
+
+        if not message_jsons:
+            return "" if as_string else []
+
+        selected_messages = []
+        current_tokens = 0
+
+        # Process messages (stored newest-first in Redis)
+        for message_json in message_jsons:
+            try:
+                message_data = json.loads(message_json)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse message from Redis: {e}")
+                continue
+
+            # Count tokens for this message
+            message_tokens = counter.count_tokens(
+                f"{message_data['role']}: {message_data['content']}"
+            )
+
+            # Check if adding this message would exceed budget
+            if current_tokens + message_tokens > token_budget:
+                # If we have no messages yet, include at least this one
+                if not selected_messages:
+                    selected_messages.append(message_data)
+                break
+
+            selected_messages.append(message_data)
+            current_tokens += message_tokens
+
+        # Reverse to get chronological order (oldest to newest)
+        selected_messages.reverse()
+
+        if as_string:
+            history_parts = []
+            for msg in selected_messages:
+                prefix = f"{msg['role'].capitalize()}: "
+                content = msg['content']
+                history_parts.append(f"{prefix}{content}")
+            return "\n".join(history_parts)
+
+        return selected_messages
 
     async def get_conversation_info(self) -> Dict[str, Any]:
         """Get conversation metadata from Redis"""

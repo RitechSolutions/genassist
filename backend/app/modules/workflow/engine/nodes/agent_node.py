@@ -6,18 +6,62 @@ import datetime
 from typing import Dict, Any
 import logging
 
-from app.modules.workflow.engine.base_node import BaseNode
+from app.core.utils.token_utils import calculate_history_tokens
+from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.agents.react_agent import ReActAgent
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.agents.simple_tool_agent import SimpleToolAgent
 from app.modules.workflow.agents.tool_agent import ToolAgent
+from app.services.llm_providers import LlmProviderService
+
 
 logger = logging.getLogger(__name__)
 
 
 class AgentNode(BaseNode):
     """Agent node that can select and execute tools using the BaseNode approach"""
+
+    async def _get_chat_history_for_agent(
+        self, memory, config: Dict[str, Any], provider_id: str, system_prompt: str, user_prompt: str
+    ) -> list:
+        """
+        Get chat history based on configured trimming mode.
+
+        Args:
+            memory: Conversation memory instance
+            config: Node configuration
+            provider_id: LLM provider ID
+            system_prompt: System prompt text (for token counting)
+            user_prompt: User prompt text (for token counting)
+
+        Returns:
+            List of message dictionaries
+        """
+        trimming_mode = config.get("memoryTrimmingMode", "message_count")
+
+        if trimming_mode == "token_budget":
+            # Token-based trimming with budget enforcement
+            from app.dependencies.injector import injector
+
+            llm_service = injector.get(LlmProviderService)
+            provider_info = await llm_service.get_by_id(provider_id)
+            provider = provider_info.llm_model_provider
+            model = provider_info.llm_model
+
+            actual_history_tokens = calculate_history_tokens(config, model, provider,
+                                                                   system_prompt, user_prompt)
+
+            return await memory.get_chat_history_within_tokens(
+                token_budget=actual_history_tokens,
+                provider=provider,
+                model=model,
+                as_string=False
+            )
+        else:
+            # Message count-based trimming (existing behavior)
+            max_messages = config.get("maxMessages", 10)
+            return await memory.get_messages(max_messages=max_messages)
 
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -96,7 +140,9 @@ class AgentNode(BaseNode):
             # Get chat history if memory is enabled
             chat_history = []
             if memory_enabled:
-                chat_history = await self.get_memory().get_messages()
+                chat_history = await self._get_chat_history_for_agent(
+                    self.get_memory(), config, provider_id, system_prompt, prompt
+                )
 
             # Invoke the agent
             result = await agent.invoke(prompt, chat_history=chat_history)

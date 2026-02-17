@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Sheet,
   SheetContent,
@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { JsonViewer, NodeMetadata } from "./custom/JsonViewer";
 import { GenericTestDialog } from "./GenericTestDialog";
 import { Button } from "@/components/button";
-import { Play } from "lucide-react";
+import { Play, GripVertical, Lock, LockOpen } from "lucide-react";
 import { NodeData } from "../types/nodes";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { Node, Edge, useNodes } from "reactflow";
@@ -31,6 +31,18 @@ import {
   AlertDialogCancel,
 } from "@/components/alert-dialog";
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
+
+const DEFAULT_SHEET_WIDTH_PX = 896;
+const MIN_SHEET_WIDTH_PX = 480;
+
+function getMaxSheetWidthPx(): number {
+  if (typeof window === "undefined") return 1600;
+  return Math.round(window.innerWidth * 0.95);
+}
+function clampWidth(w: number): number {
+  const max = getMaxSheetWidthPx();
+  return Math.max(MIN_SHEET_WIDTH_PX, Math.min(max, Math.round(w)));
+}
 
 interface WorkflowNodesPanelProps {
   isOpen: boolean;
@@ -88,6 +100,10 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   const [initialNodeName, setInitialNodeName] = useState<string | undefined>(
     undefined
   );
+  const [sheetWidth, setSheetWidth] = useState<number | null>(null);
+  const [isPinned, setIsPinned] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
   const { getAvailableDataForNode, hasNodeBeenExecuted, nodes: workflowNodes } =
     useWorkflowExecution();
 
@@ -127,6 +143,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   const handleSheetOpenChange = useCallback(
     (open: boolean) => {
       if (!open) {
+        if (isPinned) return; // Pinned panels don't close
         if (isDirty && onUpdate) {
           setShowUnsavedDialog(true);
           return; // Block close, show confirmation
@@ -135,7 +152,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
         onClose();
       }
     },
-    [isDirty, onUpdate, onClose]
+    [isPinned, isDirty, onUpdate, onClose]
   );
 
   // Confirmation dialog handlers
@@ -231,6 +248,36 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
     e.stopPropagation();
   };
 
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const doc = (e.currentTarget.ownerDocument ?? document);
+  const el = contentRef.current;
+
+  const startX = e.clientX;
+  const startWidth =
+    sheetWidth ??
+    (el ? el.getBoundingClientRect().width : DEFAULT_SHEET_WIDTH_PX);
+
+  const onMouseMove = (moveEvent: MouseEvent) => {
+    const delta = startX - moveEvent.clientX;
+    setSheetWidth(clampWidth(startWidth + delta));
+  };
+
+  const cleanup = () => {
+    doc.removeEventListener("mousemove", onMouseMove);
+    doc.removeEventListener("mouseup", cleanup);
+    doc.body.style.cursor = "";
+    doc.body.style.userSelect = "";
+  };
+
+  doc.body.style.cursor = "col-resize";
+  doc.body.style.userSelect = "none";
+  doc.addEventListener("mousemove", onMouseMove);
+  doc.addEventListener("mouseup", cleanup);
+}, [sheetWidth, clampWidth]);
+
   const nodeName = initialNodeName || nodeDefinition?.label || "node";
 
   // Prevent body scroll when panel is open
@@ -238,27 +285,63 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
     if (isOpen) {
       const previousOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
-      
+
       return () => {
         document.body.style.overflow = previousOverflow;
       };
     }
   }, [isOpen]);
 
+  // When viewport shrinks, clamp sheet width so
+  // the resize handle stays on screen and the sheet can be resized again
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleWindowResize = () => {
+      const maxW = getMaxSheetWidthPx();
+      setSheetWidth((prev) => {
+        if (prev == null) return prev;
+        return prev > maxW ? maxW : prev;
+      });
+    };
+    window.addEventListener("resize", handleWindowResize);
+    handleWindowResize();
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [isOpen]);
+
   return (
     <>
       <Sheet open={internalOpen} onOpenChange={handleSheetOpenChange} modal={false}>
-        <SheetContent 
-          hideOverlay={true} 
+        <SheetContent
+          ref={contentRef}
+          hideOverlay={true}
+          hideDefaultClose={true}
           className={cn(
-            "sm:max-w-4xl w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full overflow-hidden",
+            "sm:max-w-4xl w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full overflow-visible",
             className
           )}
-          style={{ zIndex: 1002 }}
+          style={{
+            zIndex: 1002,
+            ...(sheetWidth != null && {
+              width: sheetWidth,
+              maxWidth: "none",
+            }),
+          }}
           onDoubleClick={handleDoubleClick}
           onMouseDown={handleMouseDown}
           onClick={handleClick}
         >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize panel"
+            className="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize touch-none z-20 flex items-center justify-center group hover:bg-primary/10 rounded-l-2xl transition-colors"
+            onMouseDown={handleResizeStart}
+          >
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </div>
+          <div className="absolute inset-0 flex flex-col overflow-hidden rounded-2xl pointer-events-none [&>*]:pointer-events-auto">
           <SheetHeader className="p-6 pb-4 border-b shrink-0">
             <div className="flex items-center justify-between mr-4">
               <div>
@@ -302,7 +385,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
           <div className="flex flex-1 gap-6 overflow-hidden px-6 pl-8">
             {/* Left side - JSON State section */}
             {jsonStateDisplay && (
-              <div className="w-80 border-r border-gray-200 pr-6 flex flex-col flex-shrink-0 py-6">
+              <div className="min-w-80 flex-1 border-r border-gray-200 pr-6 flex flex-col py-6">
                 <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200">
                   <div>
                     <p className="text-xs text-gray-500">
@@ -311,8 +394,8 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
                   </div>
                 </div>
 
-                <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-y-auto overflow-x-hidden min-h-0 max-h-[calc(85vh-200px)]">
-                  <div className="p-3 bg-white">
+                <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-y-auto overflow-x-auto min-h-0 max-h-[calc(85vh-200px)]">
+                  <div className="p-3 bg-white min-w-max">
                     {jsonStateDisplay.data ? (
                       <JsonViewer
                         data={jsonStateDisplay.data as Record<string, unknown>}
@@ -384,6 +467,23 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
           <div className="shrink-0 border-t bg-background px-6 py-4 flex justify-end gap-3">
             {footer}
           </div>
+          </div>
+          {/* Lock toggle */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute left-0 bottom-5 z-30 h-8 w-8 -translate-x-1/2 rounded-full bg-white/50 shadow-md backdrop-blur-sm transition-colors hover:bg-white/70 hover:text-accent-foreground"
+            onClick={() => setIsPinned((p) => !p)}
+            title={isPinned ? "Unlock – panel can close when clicking outside" : "Lock – keep panel open while navigating"}
+            aria-label={isPinned ? "Unlock panel" : "Lock panel"}
+          >
+            {isPinned ? (
+              <Lock className="h-4 w-4" />
+            ) : (
+              <LockOpen className="h-4 w-4" />
+            )}
+          </Button>
         </SheetContent>
       </Sheet>
 
