@@ -55,3 +55,15 @@ export function escapeHtml(text: string) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;")
 }
+
+export function downloadFile(fileUrl: string, filename: string) {
+  try {
+    const link = document.createElement("a");
+    link.href = fileUrl;
+    link.download = filename;
+    link.click();
+  } catch (error) {
+    console.error("Failed to download file:", error);
+    throw error;
+  }
+}

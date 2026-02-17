@@ -27,7 +27,7 @@ class FileManagerRepository:
     async def create_file(self, file_data: FileBase) -> FileModel:
         """Create a new file metadata record."""
         new_file = FileModel(
-            name=file_data.name,
+            name=file_data.original_filename or file_data.name,
             size=file_data.size,
             mime_type=file_data.mime_type,
             path=file_data.path or file_data.name,

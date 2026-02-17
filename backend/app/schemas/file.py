@@ -12,6 +12,7 @@ class FileBase(BaseModel):
     path: str = Field(..., max_length=1000, description="File path")
     storage_path: str = Field(..., max_length=1000, description="Path in storage provider")
     storage_provider: StorageProviderType = Field(default="local", description="Storage provider")
+    original_filename: Optional[str] = Field(None, max_length=500, description="Original file name")
     size: Optional[int] = Field(None, description="File size in bytes")
     mime_type: Optional[str] = Field(None, max_length=255, description="MIME type")
     description: Optional[str] = Field(None, description="File description")
@@ -29,6 +30,7 @@ class FileBase(BaseModel):
         path: str = Form(...),
         storage_provider: StorageProviderType = Form("local"),
         storage_path: str = Form(...),
+        original_filename: Optional[str] = Form(None),
         size: Optional[int] = Form(None),
         mime_type: Optional[str] = Form(None),
         description: Optional[str] = Form(None),
@@ -40,6 +42,7 @@ class FileBase(BaseModel):
         # Optionally parse JSON strings for file_metadata, tags, permissions here
         return cls(
             name=name,
+            original_filename=original_filename,
             path=path,
             storage_path=storage_path,
             storage_provider=storage_provider,
@@ -60,9 +63,9 @@ class FileResponse(FileBase):
     model_config = ConfigDict(from_attributes=True)
 
 class FileUploadResponse(BaseModel):
-    filename: str = Field(..., description="File name")
     original_filename: str = Field(..., description="Original file name")
-    storage_path: str = Field(..., description="Storage path")
-    file_path: str = Field(..., description="File path")
-    file_url: str = Field(..., description="File URL")
-    file_id: str = Field(..., description="File ID")
+    file_path: Optional[str] = Field(None, description="File path")
+    storage_path: Optional[str] = Field(None, description="Storage path")
+    filename: Optional[str] = Field(None, description="File name")
+    file_url: Optional[str] = Field(None, description="File URL")
+    file_id: Optional[str] = Field(None, description="File ID")

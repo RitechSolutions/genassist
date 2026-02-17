@@ -336,8 +336,7 @@ class BaseNode(ABC):
 
             # Log replacements for debugging
             if replacements:
-                logger.debug("Node %s variable replacements: %s",
-                             self.node_id, replacements)
+                logger.debug("Node %s variable replacements: %s", self.node_id, replacements)
 
             self.set_node_input(replacements)
             # Process the node (implemented by subclasses)

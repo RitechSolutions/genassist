@@ -12,5 +12,7 @@ export interface MLModel {
   [key: string]: unknown;
 }
 
-export interface MLModelFormData extends Omit<MLModel, 'created_at' | 'updated_at'> {}
+export interface MLModelFormData extends Omit<MLModel, 'created_at' | 'updated_at'> {
+  pkl_file_id?: string | null;
+}
 
