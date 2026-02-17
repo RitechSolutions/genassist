@@ -210,7 +210,7 @@ async def upload_file(
     """
     results = []
     logger.info(f"Starting upload of {len(files)} files.")
-    
+
     for file in files:
         try:
             logger.info(
@@ -236,7 +236,7 @@ async def upload_file(
 
                 # initialize the file manager service
                 storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME))
-                
+
                 file_base = FileBase(
                     name=unique_filename,
                     storage_path=storage_provider.get_base_path(),
@@ -314,7 +314,7 @@ async def upload_file_to_chat(
         config["base_url"] = str(request.base_url).rstrip('/')
         provider = file_manager_service.get_storage_provider_by_name(provider_name, config=config)
         await file_manager_service.set_storage_provider(provider)
-        
+
         file_url = None
 
         try:

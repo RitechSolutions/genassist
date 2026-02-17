@@ -19,6 +19,7 @@ from app.modules.filemanager.providers import init_by_name
 from app.core.config.settings import file_storage_settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.services.app_settings import AppSettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,8 @@ class FileManagerService:
         self.repository = repository
         # Storage provider will be injected via manager or configuration
         self.storage_provider = None
-    
-    async def initialize(self, base_url: str, base_path: str) -> BaseStorageProvider: 
+
+    async def initialize(self, base_url: str, base_path: str) -> BaseStorageProvider:
         """Initialize the file manager service with the default storage provider and return the storage provider."""
 
         try:
@@ -41,8 +42,11 @@ class FileManagerService:
             config["base_url"] = base_url
             config["base_path"] = base_path
 
-            # get the default provider name and initialize the storage provider
-            provider_name = file_storage_settings.default_provider_name
+            # get the file manager settings
+            file_manager_settings = await AppSettingsService.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+            if file_manager_settings:
+                provider_name = file_manager_settings.values.file_manager_provider or file_storage_settings.default_provider_name
+
             self.storage_provider = self.get_storage_provider_by_name(provider_name, config=config)
             await self.storage_provider.initialize()
 
@@ -52,7 +56,7 @@ class FileManagerService:
             logger.error(f"Failed to initialize file manager service: {e}")
             raise AppException(error_key=ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED, detail=str(e))
 
-    
+
     async def set_storage_provider(self, provider: BaseStorageProvider):
         """Set the storage provider for this service instance."""
         self.storage_provider = provider
@@ -138,7 +142,7 @@ class FileManagerService:
             or (self.storage_provider.name if self.storage_provider else None)
             or "local"
         )
-        
+
         # Generate a unique file name only when the client hasn't provided one
         unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
         file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
@@ -189,7 +193,7 @@ class FileManagerService:
         """Get file content from storage provider."""
         # initialize the storage provider
         await self._initialize_storage_provider(file.storage_provider)
-        
+
         # make sure the storage provider is initialized
         if not self.storage_provider.is_initialized():
             raise ValueError("Storage provider not initialized")
@@ -203,7 +207,7 @@ class FileManagerService:
         file = await self.get_file_by_id(file_id)
         content = await self.get_file_content(file)
         return base64.standard_b64encode(content).decode('utf-8')
-    
+
     async def download_file(self, file_id: UUID) -> tuple[FileModel, bytes]:
         """Get both file metadata and content."""
         file = await self.get_file_by_id(file_id)
@@ -223,7 +227,7 @@ class FileManagerService:
         except Exception as e:
             logger.error(f"Failed to download file to path {path}: {e}")
             raise AppException(error_key=ErrorKey.INTERNAL_ERROR, detail=str(e))
-        
+
     async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
         """Download file from URL to path."""
         try:
@@ -233,7 +237,7 @@ class FileManagerService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream("GET", file_url) as response:
                     response.raise_for_status()
-                    
+
                     with open(path, "wb") as f:
                         async for chunk in response.aiter_bytes(chunk_size=8192):
                             f.write(chunk)
@@ -268,7 +272,7 @@ class FileManagerService:
     async def delete_file(self, file_id: UUID, delete_from_storage: bool = True) -> None:
         """
         Delete a file (soft delete in DB, optionally delete from storage).
-        
+
         Args:
             file_id: File ID to delete
             delete_from_storage: Whether to delete from storage provider as well
@@ -336,7 +340,7 @@ class FileManagerService:
         """Initialize the storage provider."""
         if self.storage_provider and self.storage_provider.is_initialized():
             return self.storage_provider
-        
+
         # make sure the file has a storage provider
         if not storage_provider_name:
             raise ValueError("File has no storage provider")
