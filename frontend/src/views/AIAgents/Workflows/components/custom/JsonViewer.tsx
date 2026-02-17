@@ -197,7 +197,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
         key={key}
         className="flex items-center justify-between ml-2 py-1 px-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors"
       >
-        <div className="flex items-center gap-2 flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-1 min-w-max">
           {/* Draggable key badge */}
           <div
             draggable
@@ -212,7 +212,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
 
           {/* Value with tooltip for long text */}
           <span
-            className="text-gray-600 text-xs font-mono truncate cursor-default"
+            className="text-gray-600 text-xs font-mono whitespace-nowrap cursor-default"
             title={fullValueTooltip}
           >
             {displayValue}
@@ -223,7 +223,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
   };
 
   return (
-    <div className="space-y-1 max-w-full bg-white">
+    <div className="space-y-1 bg-white">
       {Object.entries(data).map(([key, value]) => {
         const currentPath = basePath ? `${basePath}.${key}` : key;
         return renderValue(key, value, currentPath);
