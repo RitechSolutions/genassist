@@ -1,16 +1,14 @@
 # Standard library imports
-import asyncio
-import logging
 import base64
-import os
-from typing import Dict, List, Any, Tuple, Optional
-
-# Third-party imports
-import snowflake.connector
-from cryptography.hazmat.primitives import serialization
+import logging
+from typing import Any, Dict, List, Optional, Tuple
 
 # Local application imports
 from app.core.utils.encryption_utils import decrypt_key
+from cryptography.hazmat.primitives import serialization
+
+# Third-party imports
+import snowflake.connector
 
 logger = logging.getLogger(__name__)
 
@@ -229,126 +227,66 @@ class SnowflakeManager:
             current_database = self.config.get("database", "SNOWFLAKE")
             current_schema = self.config.get("schema", "PUBLIC")
 
-            tables_query = """
-            SELECT 
-                table_name,
+            # Single query to get all table and column information
+            schema_query = """
+            SELECT
                 table_schema,
-                table_type
-            FROM information_schema.tables 
-            WHERE table_catalog = %s 
+                table_name,
+                column_name,
+                data_type,
+                ordinal_position
+            FROM information_schema.columns
+            WHERE table_catalog = %s
               AND table_schema = %s
-            ORDER BY table_name
-            LIMIT 50
+            ORDER BY table_name, ordinal_position
             """
-            logger.info(
-                f"Executing tables query for {current_database}.{current_schema}"
-            )
-            cur.execute(tables_query, [current_database, current_schema])
-            tables_data = cur.fetchall()
-            logger.info(
-                f"Found {len(tables_data)} tables in {current_database}.{current_schema}"
-            )
 
-            tables: List[Dict[str, Any]] = []
+            logger.info(
+                f"Executing schema query for {current_database}.{current_schema}"
+            )
+            cur.execute(schema_query, [current_database, current_schema])
+            rows = cur.fetchall()
+            logger.info(f"Retrieved {len(rows)} column definitions")
+
+            # Group columns by table
+            tables_dict = {}
             allowed_upper = (
                 [t.upper() for t in self.allowed_tables]
                 if self.allowed_tables
                 else None
             )
 
-            for table_name, table_schema, table_type in tables_data:
+            for table_schema, table_name, column_name, data_type, _ in rows:
+                # Filter by allowed tables
                 if allowed_upper and table_name.upper() not in allowed_upper:
                     continue
 
-                columns_query = """
-                SELECT 
-                    column_name,
-                    data_type,
-                    is_nullable,
-                    column_default
-                FROM information_schema.columns 
-                WHERE table_catalog = %s 
-                  AND table_name = %s 
-                  AND table_schema = %s
-                ORDER BY ordinal_position
-                LIMIT 20
-                """
-                cur.execute(columns_query, [current_database, table_name, table_schema])
-                columns_data = cur.fetchall()
-
-                columns: List[Dict[str, Any]] = []
-                for col_name, data_type, is_nullable, column_default in columns_data:
-                    col_info: Dict[str, Any] = {
-                        "name": col_name,
-                        "type": data_type,
-                        "nullable": is_nullable == "YES",
-                        "default": column_default,
-                    }
-
-                    # Categorical sampler for text-like columns
-                    if include_categorical_values and data_type in (
-                        "TEXT",
-                        "VARCHAR",
-                        "CHAR",
-                    ):
-                        try:
-                            # Validate identifiers to prevent SQL injection
-                            safe_col = self._validate_identifier(col_name)
-                            safe_schema = self._validate_identifier(table_schema)
-                            safe_table = self._validate_identifier(table_name)
-
-                            if not all([safe_col, safe_schema, safe_table]):
-                                logger.warning(
-                                    f"Invalid identifier detected, skipping categorical probe for {table_schema}.{table_name}.{col_name}"
-                                )
-                                continue
-
-                            # Use quoted identifiers for safety
-                            count_query = f"""
-                            SELECT COUNT(DISTINCT "{safe_col}")
-                            FROM "{safe_schema}"."{safe_table}"
-                            WHERE "{safe_col}" IS NOT NULL
-                            """
-                            cur.execute(count_query)
-                            total_distinct = cur.fetchone()[0]
-                            col_info["total_distinct_count"] = total_distinct
-
-                            if total_distinct <= 50:
-                                # max_categorical_values is an int from function parameter, safe to use
-                                categorical_query = f"""
-                                SELECT DISTINCT "{safe_col}"
-                                FROM "{safe_schema}"."{safe_table}"
-                                WHERE "{safe_col}" IS NOT NULL
-                                LIMIT {int(max_categorical_values)}
-                                """
-                                cur.execute(categorical_query)
-                                sample_vals = cur.fetchall()
-                                if sample_vals:
-                                    col_info["categorical_values"] = [
-                                        r[0] for r in sample_vals
-                                    ]
-                        except Exception as e:
-                            logger.warning(
-                                f"Categorical probe failed for {table_schema}.{table_name}.{col_name}: {e}"
-                            )
-
-                    columns.append(col_info)
-
-                tables.append(
-                    {
-                        "name": f"{table_schema}.{table_name}",
+                # Create table entry if it doesn't exist
+                table_key = f"{table_schema}.{table_name}"
+                if table_key not in tables_dict:
+                    tables_dict[table_key] = {
+                        "name": table_key,
                         "schema": table_schema,
                         "table": table_name,
-                        "type": table_type,
-                        "columns": columns,
+                        "columns": [],
+                    }
+
+                # Add column info
+                tables_dict[table_key]["columns"].append(
+                    {
+                        "name": column_name,
+                        "type": data_type,
                     }
                 )
 
+            tables = list(tables_dict.values())
+
             schema_result = {
                 "tables": tables,
-                "database": self.config.get("database", "unknown"),
+                "database": current_database,
                 "schema_count": len(set(t["schema"] for t in tables)),
             }
+
             logger.info(f"Schema retrieval complete. Found {len(tables)} tables.")
             return schema_result
 
