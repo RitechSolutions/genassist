@@ -867,7 +867,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                           {/* <Plus className="h-4 w-4" /> */}
                         </div>
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="z-[1002]" position="popper">
                         {stepTypes.map((type) => (
                           <SelectItem key={type} value={type}>
                             {getStepTypeDisplayName(type)}
