@@ -3,18 +3,16 @@ LLM model node implementation using the BaseNode class.
 """
 
 import base64
-import os
 from typing import Any, Dict
 import logging
-from uuid import UUID
-from fastapi_injector import Injected
 from langchain_core.messages import HumanMessage, SystemMessage
-
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.modules.workflow.engine.base_node import BaseNode
+from app.core.utils.token_utils import calculate_history_tokens
+from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,40 +41,9 @@ class LLMModelNode(BaseNode):
         if trimming_mode == "token_budget":
             # Token-based trimming with budget enforcement
             from app.dependencies.injector import injector
-            from app.services.llm_providers import LlmProviderService
-            from app.core.utils.token_utils import get_token_counter
 
-            llm_service = injector.get(LlmProviderService)
-            provider_info = await llm_service.get_by_id(provider_id)
-            provider = provider_info.llm_model_provider
-            model = provider_info.llm_model
-
-            # Get token counter
-            counter = get_token_counter(provider, model)
-
-            # Count actual tokens in prompts
-            system_tokens = counter.count_tokens(system_prompt)
-            user_tokens = counter.count_tokens(user_prompt)
-
-            # Get configuration
-            total_budget = config.get("tokenBudget", 12000)
-            requested_history_tokens = config.get("conversationHistoryTokens", 5000)
-
-            # Calculate if we need to reduce history allocation
-            needed = system_tokens + user_tokens + requested_history_tokens
-
-            if needed > total_budget:
-                # Reduce history to fit within budget
-                actual_history_tokens = total_budget - system_tokens - user_tokens
-                actual_history_tokens = max(0, actual_history_tokens)  # Ensure non-negative
-                logger.warning(
-                    f"Token budget exceeded. Requested history: {requested_history_tokens}, "
-                    f"reduced to: {actual_history_tokens} (Total: {total_budget}, "
-                    f"System: {system_tokens}, User: {user_tokens})"
-                )
-            else:
-                # Within budget, use requested allocation
-                actual_history_tokens = requested_history_tokens
+            actual_history_tokens, model, provider = await calculate_history_tokens(config, provider_id,
+                                                                                    system_prompt, user_prompt)
 
             return await memory.get_chat_history_within_tokens(
                 token_budget=actual_history_tokens,
@@ -91,6 +58,7 @@ class LLMModelNode(BaseNode):
                 as_string=True,
                 max_messages=max_messages
             )
+
 
     async def process(self, config: Dict[str, Any]) -> str:
         """

@@ -116,7 +116,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   const handleTokenBudgetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onConfigChange({
       ...config,
-      tokenBudget: Number.parseInt(e.target.value) || 12000,
+      tokenBudget: Number.parseInt(e.target.value) || 10000,
     });
   };
 
@@ -296,9 +296,9 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                   min={1000}
                   max={50000}
                   step={100}
-                  value={config.tokenBudget || 12000}
+                  value={config.tokenBudget || 10000}
                   onChange={handleTokenBudgetChange}
-                  placeholder="12000"
+                  placeholder="10000"
                 />
               </div>
               <div className="space-y-2">
