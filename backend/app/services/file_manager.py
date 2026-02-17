@@ -35,7 +35,7 @@ class FileManagerService:
 
     async def initialize(self, base_url: str, base_path: str) -> BaseStorageProvider:
         """Initialize the file manager service with the default storage provider and return the storage provider."""
-
+        default_provider_name = file_storage_settings.default_provider_name
         try:
             # get the storage provider configuration for the file storage provider
             config = file_storage_settings.model_dump()
@@ -45,8 +45,9 @@ class FileManagerService:
             # get the file manager settings
             file_manager_settings = await AppSettingsService.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
             if file_manager_settings:
-                provider_name = file_manager_settings.values.file_manager_provider or file_storage_settings.default_provider_name
+                provider_name = file_manager_settings.values.file_manager_provider or default_provider_name
 
+            # get the storage provider by name
             self.storage_provider = self.get_storage_provider_by_name(provider_name, config=config)
             await self.storage_provider.initialize()
 

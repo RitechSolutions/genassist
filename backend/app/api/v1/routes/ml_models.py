@@ -89,11 +89,11 @@ async def delete_ml_model(
 ):
     """Delete an ML model and its associated .pkl file."""
     await service.delete(ml_model_id)
-    
+
     # Invalidate the model from cache
     model_manager = get_ml_model_manager()
     model_manager.invalidate_model(ml_model_id)
-    
+
     return None
 
 
@@ -129,7 +129,7 @@ async def upload_pkl_file(
 
         # initialize the file manager service
         storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME))
-        
+
         # create file base
         file_base = FileBase(
             name=unique_filename,
@@ -217,10 +217,10 @@ async def validate_model_file(
     This runs validation in a subprocess to prevent segfaults from crashing the API.
     """
     from app.core.utils.model_validator import validate_pickle_file_safe, get_model_info
-    
+
     # Get model from database
     ml_model = await service.get_by_id(ml_model_id)
-    
+
     if not ml_model.pkl_file or not ml_model.pkl_file_id:
         raise HTTPException(
             status_code=400,
@@ -239,10 +239,10 @@ async def validate_model_file(
                 status_code=404,
                 detail="PKL file not found"
             )
-    
+
     # Get model info
     info = get_model_info(ml_model.pkl_file)
-    
+
     return {
         "model_id": str(ml_model_id),
         "model_name": ml_model.name,
@@ -322,22 +322,22 @@ async def analyze_csv(
         # If python_code is provided, preprocess the data first
         if python_code:
             logger.info("Preprocessing data with Python code before analysis")
-            
+
             try:
                 # Load the CSV file using shared utility
                 data, df = ml_utils.load_csv_file(file_url)
-                
+
                 # Execute preprocessing code using shared utility
                 # Use raise_on_error=True to raise exceptions for API endpoint
                 processed_df, _, _ = await ml_utils.execute_and_process_preprocessing_code(
                     python_code, data, df, str(file_path), raise_on_error=True
                 )
-                
+
                 # Save processed data to a temporary CSV file
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as tmp_file:
                     processed_df.to_csv(tmp_file.name, index=False, encoding='utf-8')
                     temp_file_path = tmp_file.name
-                
+
                 try:
                     # Analyze the processed CSV file
                     analysis = ml_utils.analyze_csv_data(temp_file_path)
@@ -348,7 +348,7 @@ async def analyze_csv(
                         os.unlink(temp_file_path)
                     except Exception as e:
                         logger.warning(f"Failed to delete temporary file {temp_file_path}: {str(e)}")
-                        
+
             except AppException as e:
                 # Convert AppException to HTTPException for API endpoint
                 raise HTTPException(
@@ -361,7 +361,7 @@ async def analyze_csv(
                     status_code=500,
                     detail=f"Error executing preprocessing code: {str(e)}"
                 ) from e
-        
+
         # If no python_code, analyze the original CSV file directly
         analysis = ml_utils.analyze_csv_data(str(file_path))
         return analysis
