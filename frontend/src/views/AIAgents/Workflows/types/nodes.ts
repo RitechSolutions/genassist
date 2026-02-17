@@ -156,6 +156,10 @@ export interface BaseLLMNodeData extends BaseNodeData {
   maxMessages?: number;
   tokenBudget?: number;
   conversationHistoryTokens?: number;
+  enableCompacting?: boolean;
+  compactingThreshold?: number;
+  compactingKeepRecent?: number;
+  compactingModel?: string;
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {

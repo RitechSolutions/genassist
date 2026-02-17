@@ -61,6 +61,59 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         description="Maximum messages when using message count mode"
     ),
     FieldSchema(
+        name="enableCompacting",
+        type="boolean",
+        label="Enable Message Compacting",
+        required=False,
+        default=False,
+        description="Automatically compact older messages into summaries and entity stores",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="message_count"
+        )
+    ),
+    FieldSchema(
+        name="compactingThreshold",
+        type="number",
+        label="Compacting Threshold (messages)",
+        required=False,
+        default=20,
+        min=10,
+        max=100,
+        step=5,
+        description="Trigger compaction when total messages exceed this count",
+        conditional=ConditionalField(
+            field="enableCompacting",
+            value=True
+        )
+    ),
+    FieldSchema(
+        name="compactingKeepRecent",
+        type="number",
+        label="Keep Recent Messages",
+        required=False,
+        default=10,
+        min=5,
+        max=50,
+        step=5,
+        description="Number of recent messages to keep uncompacted",
+        conditional=ConditionalField(
+            field="enableCompacting",
+            value=True
+        )
+    ),
+    FieldSchema(
+        name="compactingModel",
+        type="select",
+        label="Compacting Model",
+        required=False,
+        description="LLM provider to use for compaction (defaults to node's provider)",
+        conditional=ConditionalField(
+            field="enableCompacting",
+            value=True
+        )
+    ),
+    FieldSchema(
         name="tokenBudget",
         type="number",
         label="Total Token Budget",
