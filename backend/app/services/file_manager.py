@@ -2,6 +2,7 @@ from ast import Dict
 from uuid import UUID
 import uuid
 from fastapi import UploadFile
+from fastapi_injector import Injected
 import httpx
 from injector import inject
 from typing import Optional, List
@@ -19,7 +20,7 @@ from app.modules.filemanager.providers import init_by_name
 from app.core.config.settings import file_storage_settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.services.app_settings import AppSettingsService
+from app.schemas.app_settings import AppSettingsRead
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class FileManagerService:
         # Storage provider will be injected via manager or configuration
         self.storage_provider = None
 
-    async def initialize(self, base_url: str, base_path: str) -> BaseStorageProvider:
+    async def initialize(self, base_url: str, base_path: str, app_settings: Optional[AppSettingsRead] = None) -> BaseStorageProvider:
         """Initialize the file manager service with the default storage provider and return the storage provider."""
         default_provider_name = file_storage_settings.default_provider_name
         try:
@@ -43,9 +44,10 @@ class FileManagerService:
             config["base_path"] = base_path
 
             # get the file manager settings
-            file_manager_settings = await AppSettingsService.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
-            if file_manager_settings:
-                provider_name = file_manager_settings.values.file_manager_provider or default_provider_name
+            if app_settings:
+                provider_name = app_settings.values.get("file_manager_provider", default_provider_name)
+                config["base_path"] = app_settings.values.get("base_path", base_path)
+                config["AWS_BUCKET_NAME"] = app_settings.values.get("aws_bucket_name", file_storage_settings.AWS_BUCKET_NAME)
 
             # get the storage provider by name
             self.storage_provider = self.get_storage_provider_by_name(provider_name, config=config)

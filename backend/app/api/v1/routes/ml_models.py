@@ -17,8 +17,9 @@ from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.core.permissions.constants import Permissions as P
 from app.services.file_manager import FileManagerService
-import logging
+from app.services.app_settings import AppSettingsService
 
+import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -104,7 +105,8 @@ async def delete_ml_model(
 async def upload_pkl_file(
     request: Request,
     file: UploadFile = File(...),
-    file_manager_service: FileManagerService = Injected(FileManagerService)
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
 ):
     """
     Upload a .pkl model file.
@@ -128,7 +130,8 @@ async def upload_pkl_file(
         sub_folder = f"ml_models"
 
         # initialize the file manager service
-        storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME))
+        app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+        storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings = app_settings_config)
 
         # create file base
         file_base = FileBase(

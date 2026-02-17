@@ -31,6 +31,7 @@ from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 from app.services.file_manager import FileManagerService
 from app.schemas.file import FileBase, FileUploadResponse
 from app.core.config.settings import file_storage_settings
+from app.services.app_settings import AppSettingsService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -204,6 +205,7 @@ async def upload_file(
     request: Request,
     files: List[UploadFile] = File(...),
     file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
 ):
     """
     Upload multiple files, extract their text content, and return saved filenames and paths.
@@ -235,7 +237,8 @@ async def upload_file(
                 sub_folder = f"agents_config/uploads"
 
                 # initialize the file manager service
-                storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME))
+                app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+                storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings = app_settings_config)
 
                 file_base = FileBase(
                     name=unique_filename,
@@ -297,6 +300,7 @@ async def upload_file_to_chat(
     chat_id: str = Form(...),
     file: UploadFile = File(...),
     file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
 ):
     """
     Upload a file, extract its text content, and return both the saved filename and extracted text file
@@ -306,14 +310,9 @@ async def upload_file_to_chat(
             f"Received file upload: {file.filename}, size: {file.size}, content_type: {file.content_type}"
         )
 
-        # get the provider type
-        provider_name = file_storage_settings.default_provider_name
-
-        # load the storage provider
-        config = { "base_path": str(DATA_VOLUME)} if provider_name == "local" else file_storage_settings.model_dump(exclude_none=True)
-        config["base_url"] = str(request.base_url).rstrip('/')
-        provider = file_manager_service.get_storage_provider_by_name(provider_name, config=config)
-        await file_manager_service.set_storage_provider(provider)
+        # file storage settings
+        app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+        storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings = app_settings_config)
 
         file_url = None
 
@@ -322,8 +321,8 @@ async def upload_file_to_chat(
             file_base = FileBase(
                 name=file.filename,
                 path=f"agents_config/upload-chat-files/{chat_id}",
-                storage_path=provider.get_base_path(),
-                storage_provider=provider_name,
+                storage_path=storage_provider.get_base_path(),
+                storage_provider=storage_provider.name,
                 file_extension=file.filename.split(".")[-1] if "." in file.filename else "",
             )
 
