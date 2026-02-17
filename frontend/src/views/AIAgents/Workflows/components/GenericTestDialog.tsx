@@ -249,7 +249,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         node_config: nodeData,
       });
 
-      setOutput(response);
+      // truncate the output to default of 4 items
+      setOutput(truncateNodeOutput(response) as string | Record<string, unknown>);
 
       // Update the node output in the workflow execution context
       if (nodeId && response && response.output !== undefined) {

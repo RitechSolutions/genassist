@@ -218,7 +218,8 @@ const MLModelsManager: React.FC = () => {
 
       const dataToSubmit = { ...formData };
 
-      if (selectedFile && !formData.pkl_file) {
+      // if pkl file is selected, upload the file
+      if (selectedFile && (!formData.pkl_file || !formData.pkl_file_id)) {
         const uploadResult = await uploadFile();
 
         if (!uploadResult) {
