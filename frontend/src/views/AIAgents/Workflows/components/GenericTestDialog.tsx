@@ -18,7 +18,6 @@ import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNod
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { SchemaField, SchemaType } from "../types/schemas";
 import JsonViewer from "@/components/JsonViewer";
-import { set } from "date-fns";
 
 export interface GenericTestInputField {
   id: string;
