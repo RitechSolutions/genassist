@@ -152,11 +152,10 @@ export interface BaseLLMNodeData extends BaseNodeData {
     | "Chain-of-Thought"
     | "ReActAgentLC";
   maxIterations?: number;
-  memoryTrimmingMode?: "message_count" | "token_budget";
+  memoryTrimmingMode?: "message_count" | "token_budget" | "message_compacting";
   maxMessages?: number;
   tokenBudget?: number;
   conversationHistoryTokens?: number;
-  enableCompacting?: boolean;
   compactingThreshold?: number;
   compactingKeepRecent?: number;
   compactingModel?: string;

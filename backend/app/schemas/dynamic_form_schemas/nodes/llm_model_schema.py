@@ -46,7 +46,8 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         default="message_count",
         options=[
             {"value": "message_count", "label": "Last N Messages"},
-            {"value": "token_budget", "label": "Token Budget"}
+            {"value": "token_budget", "label": "Token Budget"},
+            {"value": "message_compacting", "label": "Message Compacting"}
         ],
         description="How to limit conversation history"
     ),
@@ -58,15 +59,7 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         default=10,
         min=1,
         step=1,
-        description="Maximum messages when using message count mode"
-    ),
-    FieldSchema(
-        name="enableCompacting",
-        type="boolean",
-        label="Enable Message Compacting",
-        required=False,
-        default=False,
-        description="Automatically compact older messages into summaries and entity stores",
+        description="Maximum messages when using message count mode",
         conditional=ConditionalField(
             field="memoryTrimmingMode",
             value="message_count"
@@ -83,23 +76,23 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         step=5,
         description="Trigger compaction when total messages exceed this count",
         conditional=ConditionalField(
-            field="enableCompacting",
-            value=True
+            field="memoryTrimmingMode",
+            value="message_compacting"
         )
     ),
     FieldSchema(
         name="compactingKeepRecent",
         type="number",
-        label="Keep Recent Messages",
+        label="Recent Messages to Keep",
         required=False,
         default=10,
         min=5,
         max=50,
         step=5,
-        description="Number of recent messages to keep uncompacted",
+        description="Number of recent messages to include in context (older messages are compacted)",
         conditional=ConditionalField(
-            field="enableCompacting",
-            value=True
+            field="memoryTrimmingMode",
+            value="message_compacting"
         )
     ),
     FieldSchema(
@@ -109,8 +102,8 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         required=False,
         description="LLM provider to use for compaction (defaults to node's provider)",
         conditional=ConditionalField(
-            field="enableCompacting",
-            value=True
+            field="memoryTrimmingMode",
+            value="message_compacting"
         )
     ),
     FieldSchema(

@@ -56,28 +56,27 @@ class LLMModelNode(BaseNode):
                 model=model,
                 as_string=True
             )
+        elif trimming_mode == "message_compacting":
+            # Message compacting mode - compact old messages, keep recent N
+            keep_recent = config.get("compactingKeepRecent", 10)
+            threshold = config.get("compactingThreshold", 20)
+
+            # Check if compaction needed
+            if await memory.needs_compaction(threshold):
+                await self._perform_compaction(memory, config, provider_id)
+
+            # Get history with compacted summary
+            return await memory.get_chat_history_with_compaction(
+                max_messages=keep_recent,
+                as_string=True
+            )
         else:
-            # Message count-based trimming
-            enable_compacting = config.get("enableCompacting", False)
+            # Message count mode - simple last N messages
             max_messages = config.get("maxMessages", 10)
-
-            if enable_compacting:
-                # Check if compaction needed
-                threshold = config.get("compactingThreshold", 20)
-                if await memory.needs_compaction(threshold):
-                    await self._perform_compaction(memory, config, provider_id)
-
-                # Get history with compacted summary
-                return await memory.get_chat_history_with_compaction(
-                    max_messages=max_messages,
-                    as_string=True
-                )
-            else:
-                # Original behavior
-                return await memory.get_chat_history(
-                    as_string=True,
-                    max_messages=max_messages
-                )
+            return await memory.get_chat_history(
+                as_string=True,
+                max_messages=max_messages
+            )
 
     async def _perform_compaction(
         self, memory, config: Dict[str, Any], provider_id: str

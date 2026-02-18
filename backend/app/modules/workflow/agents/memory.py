@@ -718,58 +718,53 @@ class RedisConversationMemory(BaseConversationMemory):
         self, keep_recent: int
     ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """Split messages into (to_compact, to_keep) based on what's already compacted"""
-        try:
-            redis = await self._get_redis()
-            total_messages = await redis.llen(self._message_key)  # type: ignore
-            summary = await self.get_compacted_summary()
+        redis = await self._get_redis()
+        total_messages = await redis.llen(self._message_key)  # type: ignore
+        summary = await self.get_compacted_summary()
 
-            # Determine starting point for compaction
-            if summary:
-                # Already compacted some messages
-                already_compacted = summary.get("compacted_message_count", 0)
-                start_index = already_compacted
-            else:
-                # First time compacting
-                start_index = 0
+        # Determine starting point for compaction
+        if summary:
+            # Already compacted some messages
+            already_compacted = summary.get("compacted_message_count", 0)
+            start_index = already_compacted
+        else:
+            # First time compacting
+            start_index = 0
 
-            # Calculate split point
-            # Keep the last 'keep_recent' messages uncompacted
-            split_index = max(start_index, total_messages - keep_recent)
+        # Calculate split point
+        # Keep the last 'keep_recent' messages uncompacted
+        split_index = max(start_index, total_messages - keep_recent)
 
-            if split_index <= start_index:
-                # No new messages to compact
-                recent_messages = await self.get_messages(max_messages=keep_recent)
-                return ([], recent_messages)
+        if split_index <= start_index:
+            # No new messages to compact
+            recent_messages = await self.get_messages(max_messages=keep_recent)
+            return [], recent_messages
 
-            # Fetch messages to compact
-            # Redis stores newest first (lpush), so we need to calculate indices correctly
-            # Messages from oldest to newest would be at indices (total-1) down to 0
-            # We want messages from start_index to split_index (in chronological order)
-            # In Redis terms: from (total - split_index) to (total - start_index - 1)
-            redis_start = total_messages - split_index
-            redis_end = total_messages - start_index - 1
+        # Fetch messages to compact
+        # Redis stores newest first (lpush), so we need to calculate indices correctly
+        # Messages from oldest to newest would be at indices (total-1) down to 0
+        # We want messages from start_index to split_index (in chronological order)
+        # In Redis terms: from (total - split_index) to (total - start_index - 1)
+        redis_start = total_messages - split_index
+        redis_end = total_messages - start_index - 1
 
-            to_compact_jsons = await redis.lrange(
-                self._message_key, redis_start, redis_end
-            )  # type: ignore
+        to_compact_jsons = await redis.lrange(
+            self._message_key, redis_start, redis_end
+        )  # type: ignore
 
-            to_compact = []
-            for message_json in reversed(to_compact_jsons):  # Reverse to get chronological order
-                try:
-                    message_data = json.loads(message_json)
-                    to_compact.append(message_data)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"Failed to parse message from Redis: {e}")
-                    continue
+        to_compact = []
+        for message_json in reversed(to_compact_jsons):  # Reverse to get chronological order
+            try:
+                message_data = json.loads(message_json)
+                to_compact.append(message_data)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse message from Redis: {e}")
+                continue
 
-            # Get recent messages to keep
-            to_keep = await self.get_messages(max_messages=keep_recent)
+        # Get recent messages to keep
+        to_keep = await self.get_messages(max_messages=keep_recent)
 
-            return (to_compact, to_keep)
-
-        except Exception as e:
-            logger.error(f"Failed to get messages for compaction for thread {self.thread_id}: {e}")
-            return ([], [])
+        return to_compact, to_keep
 
     async def get_chat_history_with_compaction(
         self, max_messages: int, as_string: bool = False
