@@ -601,6 +601,7 @@ function TranscriptDialogContent({
     if (!transcript?.id) return;
 
     setIsFinalizing(true);
+    onOpenChange(false);
 
     const processingToast = toast.loading("Processing conversation...", {
       duration: Infinity,
@@ -610,9 +611,7 @@ function TranscriptDialogContent({
       await conversationService.finalizeConversation(transcript.id);
       toast.dismiss(processingToast);
       toast.success("Conversation finalized successfully.");
-
       if (refetchConversations) refetchConversations();
-      onOpenChange(false);
     } catch (err) {
       toast.dismiss(processingToast);
       toast.error("Failed to finalize conversation.");
@@ -622,8 +621,8 @@ function TranscriptDialogContent({
   };
 
   const handleFeedbackSubmit = async () => {
-    if (!transcript?.id || !feedbackType || !feedbackMessage.trim()) {
-      toast.error("Please select rating and enter a message.");
+    if (!transcript?.id || !feedbackType) {
+      toast.error("Please select a rating.");
       return;
     }
     setFeedbackSubmitting(true);
@@ -769,6 +768,7 @@ function TranscriptDialogContent({
                       <h4 className="text-sm font-medium mb-3">Rate</h4>
                       <div className="flex gap-3">
                         <button
+                          type="button"
                           onClick={() => setFeedbackType("good")}
                           className={`p-2 rounded ${
                             feedbackType === "good"
@@ -779,6 +779,7 @@ function TranscriptDialogContent({
                           <ThumbsUp className="w-4 h-4" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => setFeedbackType("bad")}
                           className={`p-2 rounded ${
                             feedbackType === "bad"
@@ -804,11 +805,7 @@ function TranscriptDialogContent({
                     </div>
                     <Button
                       onClick={handleFeedbackSubmit}
-                      disabled={
-                        !feedbackType ||
-                        !feedbackMessage.trim() ||
-                        feedbackSubmitting
-                      }
+                      disabled={!feedbackType || feedbackSubmitting}
                       className="w-full bg-blue-600 text-white hover:bg-blue-700"
                     >
                       {feedbackSubmitting ? "Submitting..." : "Save"}

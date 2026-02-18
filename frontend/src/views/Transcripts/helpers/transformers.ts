@@ -171,6 +171,8 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
         in_progress_hostility_score: backendData.in_progress_hostility_score,
       },
       feedback: feedbackArray,
+      thumbs_up_count: backendData.thumbs_up_count ?? 0,
+      thumbs_down_count: backendData.thumbs_down_count ?? 0,
     };
   } catch (error) {
     return {
