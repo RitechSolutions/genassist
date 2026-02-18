@@ -27,6 +27,7 @@ import { MetricCards } from "./MetricCard";
 import { ScoreCards } from "./ScoreCard";
 import { TranscriptAudioPlayer } from "./TranscriptAudioPlayer";
 import { MessageFeedbackPopover } from "./MessageFeedbackPopover";
+import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
@@ -107,7 +108,7 @@ useEffect(() => {
       // Reset feedback state if no feedback exists for this transcript
       setUserFeedback(null);
     }
-    
+
     // Reset form state when switching transcripts
     setIsEditing(false);
     setFeedbackType(null);
@@ -267,7 +268,7 @@ useEffect(() => {
               feedback,
               feedback_message: "",
               feedback_timestamp: new Date().toISOString(),
-              feedback_user_id: "", 
+              feedback_user_id: "",
             };
             const existingFeedback = Array.isArray(entry.feedback) ? entry.feedback : [];
             return { ...entry, feedback: [...existingFeedback, newFeedback] };
@@ -286,7 +287,7 @@ useEffect(() => {
     const handleOpenChange = (open: boolean) => {
       setIsOpen(open);
       onOpenChange?.(open);
-      
+
       // When opening, populate the text with existing feedback
       if (open) {
         const collection = (localTranscript?.messages ?? localTranscript?.messages) || [];
@@ -479,7 +480,7 @@ useEffect(() => {
                         >
                           <ThumbsUp className="w-4 h-4" />
                         </button>
-                        
+
                         <button
                           type="button"
                           onClick={() => setFeedbackType("bad")}
@@ -513,7 +514,7 @@ useEffect(() => {
                       >
                         {feedbackSubmitting ? "Submitting..." : "Save"}
                       </Button>
-                      
+
                       {isEditing && (
                         <Button
                           onClick={() => {
@@ -559,11 +560,12 @@ useEffect(() => {
                       </div>
                     )}
                     {(localTranscript.messages ?? localTranscript.messages)?.map((entry, index) => {
-                      
+
+
                       const entryObj = typeof entry === 'string' ? JSON.parse(entry) : entry;
                       const entryType = entryObj.type || '';
-                      
-                      if (entryType === "takeover" || 
+
+                      if (entryType === "takeover" ||
                           (entryObj.speaker === "Unknown" && entryObj.text === "" && entryObj.start_time === 0)) {
                         return (
                           <div className="flex justify-center my-3" key={`takeover-${index}-${entryObj.create_time || index}`}>
@@ -649,7 +651,7 @@ useEffect(() => {
                             }`}
                               style={{maxWidth: '400px'}}
                           >
-                            {entryObj.text}
+                            <ConversationEntryWrapper entry={entryObj} />
                             <span className={`block text-[10px] text-right mt-1 ${
                               isAgent ? "text-white/70" : "text-gray-500"
                             }`}>
