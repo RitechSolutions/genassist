@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, Query, Request, WebSocket
 from fastapi_injector import Injected
 from starlette.websockets import WebSocketDisconnect
 from app.core.exceptions.exception_handler import send_socket_error
+from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.auth.dependencies import (
     auth,
@@ -30,12 +31,11 @@ from app.auth.dependencies_agent_security import (
     get_agent_for_update,
 )
 from app.core.agent_security_utils import apply_agent_cors_headers
-from fastapi import Response
 from fastapi.responses import JSONResponse
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.websockets.socket_room_enum import SocketRoomType
 from app.schemas.agent import AgentRead
-from app.schemas.conversation import ConversationRead
+from app.schemas.conversation import ConversationRead, ConversationPaginatedResponse
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
     ConversationStartWithRecaptchaToken,
@@ -143,6 +143,7 @@ async def start(
         "agent_thinking_phrases": agent_data.get("thinking_phrases"),
         "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
         "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
+        "agent_chat_input_metadata": agent_data.get("workflow"),
     }
 
     # If agent requires authentication, generate and return a guest JWT token
@@ -274,6 +275,8 @@ async def update_no_agent(
                 "duration": updated_conversation.duration,
                 "negative_reason": updated_conversation.negative_reason,
                 "topic": updated_conversation.topic,
+                "thumbs_up_count": updated_conversation.thumbs_up_count,
+                "thumbs_down_count": updated_conversation.thumbs_down_count,
             },
             room_id=SocketRoomType.DASHBOARD,
             current_user_id=get_current_user_id(),
@@ -476,15 +479,28 @@ async def takeover_supervisor(
 
 @router.get(
     "",
-    response_model=list[ConversationRead],
+    response_model=ConversationPaginatedResponse,
     dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
 )
-async def get(
+async def get_conversations_list(
     conversation_filter: ConversationFilter = Depends(),
     conversations_service: ConversationService = Injected(ConversationService),
 ):
+    """Get paginated list of conversations with total count."""
     conversations = await conversations_service.get_conversations(conversation_filter)
-    return conversations
+    total = await conversations_service.count_conversations(conversation_filter)
+
+    # Calculate pagination info
+    page = (conversation_filter.skip // conversation_filter.limit) + 1 if conversation_filter.limit > 0 else 1
+    has_more = (conversation_filter.skip + len(conversations)) < total
+
+    return ConversationPaginatedResponse(
+        items=conversations,
+        total=total,
+        page=page,
+        page_size=conversation_filter.limit,
+        has_more=has_more
+    )
 
 
 @router.get(
@@ -511,10 +527,23 @@ async def add_message_feedback(
     transcript_message_service: TranscriptMessageService = Injected(
         TranscriptMessageService
     ),
+    conversation_service: ConversationService = Injected(ConversationService),
 ):
-    await transcript_message_service.add_transcript_message_feedback(
+    _, conversation_id = await transcript_message_service.add_transcript_message_feedback(
         message_id, transcript_feedback
     )
+
+    # Get the conversation and update thumbs up/down counts
+    conversation = await conversation_service.get_conversation_by_id(
+        conversation_id, raise_not_found=True
+    )
+
+    # Update conversation thumbs up/down counts based on feedback type
+    increment_feedback(conversation, transcript_feedback)
+
+    # Persist the updated conversation
+    await conversation_service.update_conversation(conversation)
+
     return {
         "message": f"Successfully added message feedback, "
         f"for message id:{message_id} "

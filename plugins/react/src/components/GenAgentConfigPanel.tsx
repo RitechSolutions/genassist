@@ -43,6 +43,8 @@ export interface GenAgentConfigPanelProps {
   metadata?: Record<string, any>;
   onMetadataChange?: (next: Record<string, any>) => void;
 
+  agentChatInputMetadata?: Record<string, any>;
+
   featureFlags?: FeatureFlags;
   onFeatureFlagsChange?: (next: FeatureFlags) => void;
 
@@ -103,6 +105,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   onChatSettingsChange,
   metadata: metadataProp,
   onMetadataChange,
+  agentChatInputMetadata,
   featureFlags: featureFlagsProp,
   onFeatureFlagsChange,
   defaultOpen,
@@ -110,10 +113,16 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   onCancel,
   style,
 }) => {
+  // Merge workflow chat input metadata with user metadata
+  const mergedMetadata = useMemo(
+    () => ({ ...(agentChatInputMetadata || {}), ...(metadataProp || {}) }),
+    [agentChatInputMetadata, metadataProp]
+  );
+
   // Controlled or internal state fallbacks
   const [theme, setTheme] = useState<ChatTheme>(themeProp || defaultTheme);
   const [chatSettings, setChatSettings] = useState<ChatSettingsConfig>(chatSettingsProp || defaultSettings);
-  const [params, setParams] = useState<MetadataParam[]>(objectToParams(metadataProp));
+  const [params, setParams] = useState<MetadataParam[]>(() => objectToParams(mergedMetadata));
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(featureFlagsProp || defaultFeatureFlags);
 
   useEffect(() => {
@@ -125,8 +134,8 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   }, [chatSettingsProp]);
 
   useEffect(() => {
-    if (metadataProp) setParams(objectToParams(metadataProp));
-  }, [metadataProp]);
+    setParams(objectToParams(mergedMetadata));
+  }, [agentChatInputMetadata, metadataProp]);
 
   useEffect(() => {
     if (featureFlagsProp) setFeatureFlags(featureFlagsProp);
@@ -141,6 +150,16 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   const [showMetadata, setShowMetadata] = useState(
     typeof defaultOpen?.metadata === 'boolean' ? !!defaultOpen?.metadata : false
   );
+
+  // Auto-expand Metadata section
+  const prevMetaKeyCountRef = React.useRef<number>(0);
+  useEffect(() => {
+    const keyCount = agentChatInputMetadata ? Object.keys(agentChatInputMetadata).length : 0;
+    if (keyCount > 0 && prevMetaKeyCountRef.current === 0) {
+      setShowMetadata(true);
+    }
+    prevMetaKeyCountRef.current = keyCount;
+  }, [agentChatInputMetadata]);
 
   const [showAddParam, setShowAddParam] = useState(false);
   const [draftParam, setDraftParam] = useState<MetadataParam>({
@@ -562,6 +581,11 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
             <div style={{ padding: '12px 16px' }}>
               <div style={{ fontSize: 13, color: '#555', marginBottom: 10 }}>
                 Define key/value parameters sent as chat metadata.
+                {Object.keys(agentChatInputMetadata || {}).length > 0 && (
+                  <span style={{ display: 'block', marginTop: 4, color: '#666' }}>
+                    Parameters from the workflow&apos;s Chat Input node are shown below.
+                  </span>
+                )}
               </div>
               <button style={fullWidthActionButton} onClick={() => setShowAddParam(true)}>
                 <Plus size={18} />
@@ -807,7 +831,7 @@ const modalOverlayStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  zIndex: 9999,
+  zIndex: 1005,
 };
 
 const modalStyle: React.CSSProperties = {

@@ -35,13 +35,13 @@ class S3Client:
     ) -> Dict[str, Any]:
         """
         List files in the S3 bucket with pagination support.
-        
+
         Args:
             prefix: Filter files by prefix (folder path)
             max_keys: Maximum number of keys to return in one request
             continuation_token: Token for pagination
             file_extensions: List of file extensions to filter (e.g., ['.pdf', '.txt'])
-            
+
         Returns:
             Dictionary containing:
             - files: List of file information (name, size, last_modified)
@@ -55,7 +55,7 @@ class S3Client:
                 'Prefix': prefix,
                 'MaxKeys': max_keys
             }
-            
+
             if continuation_token:
                 params['ContinuationToken'] = continuation_token
 
@@ -68,7 +68,7 @@ class S3Client:
             files = []
             for obj in response.get('Contents', []):
                 file_name = obj['Key']
-                
+
                 # Apply file extension filter if specified
                 if file_extensions:
                     if not any(file_name.lower().endswith(ext.lower()) for ext in file_extensions):
@@ -94,10 +94,10 @@ class S3Client:
     def get_file_metadata(self, file_key: str) -> Dict[str, Any]:
         """
         Get metadata for a specific file.
-        
+
         Args:
             file_key: The key (path) of the file in the bucket
-            
+
         Returns:
             Dictionary containing file metadata
         """
@@ -106,7 +106,7 @@ class S3Client:
                 Bucket=self.bucket_name,
                 Key=file_key
             )
-            
+
             return {
                 'key': file_key,
                 'size': response['ContentLength'],
@@ -122,11 +122,11 @@ class S3Client:
     def download_file(self, file_key: str, local_path: str) -> bool:
         """
         Download a file from S3 to a local path.
-        
+
         Args:
             file_key: The key (path) of the file in the bucket
             local_path: Local path where the file should be saved
-            
+
         Returns:
             Boolean indicating success
         """
@@ -144,10 +144,10 @@ class S3Client:
     def get_file_content(self, file_key: str) -> bytes:
         """
         Get the content of a file as bytes.
-        
+
         Args:
             file_key: The key (path) of the file in the bucket
-            
+
         Returns:
             File content as bytes
         """
@@ -164,12 +164,12 @@ class S3Client:
     def upload_file(self, file_name: str, bucket: str, key: str) -> bool:
         """
         Upload file to S3.
-        
+
         Args:
             content: Content to upload
             bucket: Bucket name
             key: Key (path) in the bucket
-            
+
         Returns:
             Boolean indicating success
         """
@@ -180,7 +180,7 @@ class S3Client:
         except ClientError as e:
             logger.error(f"Error uploading content to S3: {str(e)}")
             return False
-          
+
 
     def upload_content(self, content: bytes | str, bucket: str, key: str) -> bool:
         """
@@ -204,14 +204,14 @@ class S3Client:
         except ClientError as e:
             logger.error(f"Error uploading content to S3: {str(e)}")
             return False
-          
+
     def delete_file(self, file_key: str) -> bool:
         """
         Delete a file from S3.
-        
+
         Args:
             file_key: The key (path) of the file in the bucket
-            
+
         Returns:
             Boolean indicating success
         """
@@ -228,12 +228,12 @@ class S3Client:
     def generate_presigned_url(self, operation: str, params: Dict[str, Any], expires_in: int) -> str:
         """
         Generate a presigned URL for an S3 operation.
-        
+
         Args:
             operation: The S3 operation to generate a presigned URL for
             params: Parameters for the S3 operation
             expires_in: The number of seconds the presigned URL should be valid for
-            
+
         Returns:
             A presigned URL for the S3 operation
         """

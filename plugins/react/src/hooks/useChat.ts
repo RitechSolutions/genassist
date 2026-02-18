@@ -46,6 +46,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
   const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
   const [thinkingPhrases, setThinkingPhrases] = useState<string[]>([]);
   const [thinkingDelayMs, setThinkingDelayMs] = useState<number>(1000);
+  const [chatInputMetadata, setChatInputMetadata] = useState<Record<string, unknown>>({});
   const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
 
@@ -78,6 +79,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     setPossibleQueries([]);
     setThinkingPhrases([]);
     setThinkingDelayMs(1000);
+    setChatInputMetadata({});
     setMessages([]);
     const key = buildMessagesKey(apiKey, conversationId);
     if (key) {
@@ -226,6 +228,10 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
           setThinkingPhrases(thinking.phrases || []);
           setThinkingDelayMs(thinking.delayMs || 1000);
         }
+        const meta = chatServiceRef.current.getChatInputMetadata?.();
+        if (meta && typeof meta === 'object' && Object.keys(meta).length > 0) {
+          setChatInputMetadata(meta);
+        }
       }
     } else if (chatServiceRef.current) {
       // Just update metadata without re-initializing
@@ -349,6 +355,10 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
         const thinking = chatServiceRef.current.getThinkingConfig();
         setThinkingPhrases(thinking.phrases || []);
         setThinkingDelayMs(thinking.delayMs || 1000);
+      }
+      const meta = chatServiceRef.current.getChatInputMetadata?.();
+      if (meta && typeof meta === 'object' && Object.keys(meta).length > 0) {
+        setChatInputMetadata(meta);
       }
     } catch (error) {
       setConnectionState('disconnected');
@@ -493,6 +503,10 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
         setThinkingPhrases(thinking.phrases || []);
         setThinkingDelayMs(thinking.delayMs || 1000);
       }
+      const meta = chatServiceRef.current.getChatInputMetadata?.();
+      if (meta && typeof meta === 'object' && Object.keys(meta).length > 0) {
+        setChatInputMetadata(meta);
+      }
     } catch (error) {
       setConnectionState('disconnected');
       setIsAgentTyping(false);
@@ -564,5 +578,6 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     welcomeMessage,
     thinkingPhrases,
     thinkingDelayMs,
+    chatInputMetadata,
   };
 };

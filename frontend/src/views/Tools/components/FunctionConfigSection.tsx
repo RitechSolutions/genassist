@@ -45,7 +45,7 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
       <div className="editor-card relative flex flex-col p-6 gap-2.5 h-[648px] bg-[#1C1C1C] backdrop-blur-[20px] rounded-[16px]">
         <div className="editor-controls absolute top-4 right-4 flex gap-2 z-10">
           <button
-            className="editor-button flex justify-center items-center p-1 w-[28px] h-[28px] rounded-[8px] hover:bg-white/10"
+            className="editor-button flex justify-center items-center p-1 w-[28px] h-[28px] rounded-full hover:bg-white/10"
             onClick={() => {
               navigator.clipboard.writeText(code);
               toast.success("Code copied.");
@@ -53,7 +53,7 @@ export const FunctionConfigSection: FC<FunctionConfigSectionProps> = ({
           >
             <ClipboardList className="w-5 h-5 text-white" />
           </button>
-          <button className="editor-button flex justify-center items-center p-1 w-[28px] h-[28px] rounded-[8px] hover:bg-white/10">
+          <button className="editor-button flex justify-center items-center p-1 w-[28px] h-[28px] rounded-full hover:bg-white/10">
             <Maximize2 className="w-5 h-5 text-white" />
           </button>
         </div>

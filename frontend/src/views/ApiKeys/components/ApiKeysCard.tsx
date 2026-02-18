@@ -3,7 +3,7 @@ import { DataTable } from "@/components/DataTable";
 import { TableCell, TableRow } from "@/components/table";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
-import { Edit } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import { getAllApiKeys } from "@/services/apiKeys";
 import { getAllUsers } from "@/services/users";
@@ -98,7 +98,7 @@ export function ApiKeysCard({
           onClick={() => onEditApiKey(apiKey)}
           title="Edit API Key"
         >
-          <Edit className="w-4 h-4 text-black" />
+          <Pencil className="w-4 h-4 text-black" />
         </Button>
       </TableCell>
     </TableRow>

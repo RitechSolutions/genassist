@@ -204,20 +204,22 @@ def executable_function(params):
 
 export const SQL_NODE_DEFINITION: NodeTypeDefinition<SQLNodeData> = {
   type: "sqlNode",
-  label: "SQL Generator",
+  label: "SQL Executor",
   description:
-    "Generates SQL queries using an AI model to retrieve structured data.",
-  shortDescription: "Generate SQL queries",
+    "Executes SQL queries on a configured database. Write SQL manually or generate it from text.",
+  shortDescription: "Execute SQL queries",
   configSubtitle:
     "Configure SQL generation settings, including model provider, data source, and prompts.",
   category: "tools",
   icon: "Database",
   defaultData: {
-    name: "SQL Generator",
-    providerId: "",
+    name: "SQL Executor",
     dataSourceId: "",
-    query: "",
+    mode: undefined,
+    sqlQuery: "",
+    providerId: "",
     systemPrompt: "",
+    humanQuery: "",
     handlers: [
       {
         id: "input",

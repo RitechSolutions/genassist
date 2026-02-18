@@ -70,8 +70,22 @@ class ConversationRead(ConversationBase):
     negative_reason: Optional[str] = None
     feedback: Optional[str] = None
     messages: Optional[list[TranscriptMessageRead]] = None
+    thumbs_down_count: int = 0
+    thumbs_up_count: int = 0
+
 
 
     model_config = ConfigDict(
         from_attributes = True
     )
+
+
+class ConversationPaginatedResponse(BaseModel):
+    """Paginated response for conversations list."""
+    items: list[ConversationRead]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+    model_config = ConfigDict(from_attributes=True)

@@ -16,7 +16,7 @@ export function SentimentDistribution({ positive = 0, neutral = 0, negative = 0 
   ];
 
   return (
-    <div className="bg-primary/5 p-4 rounded-lg">
+    <div className="bg-gray-100 p-4 rounded-lg">
       <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
         <BarChart3 className="w-4 h-4" />
         Sentiment Distribution

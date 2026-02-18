@@ -37,13 +37,13 @@ import {
   AlertCircle,
   CheckCircle2,
   Plus,
-  Search,
   FileText,
   ChevronLeft,
   Trash2,
   Download,
   RefreshCw,
 } from "lucide-react";
+import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RagConfigValues } from "../types/ragSchema";
 import {
@@ -1116,10 +1116,10 @@ const KnowledgeBaseManager: React.FC = () => {
                         <div>
                           <div className="mb-1">Upload Files</div>
                           <div className="flex flex-col gap-2">
-                            <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md p-6 cursor-pointer">
+                            <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md cursor-pointer">
                               <label
                                 htmlFor="file-upload"
-                                className="flex flex-col items-center gap-2 cursor-pointer w-full"
+                                className="flex flex-col items-center gap-2 cursor-pointer w-full p-6"
                               >
                                 <Upload className="h-10 w-10 text-muted-foreground" />
                                 <span className="text-sm font-medium text-muted-foreground">
@@ -1598,7 +1598,7 @@ const KnowledgeBaseManager: React.FC = () => {
                     onValueChange={(value) => setTypeFilter(value)}
                     defaultValue="all"
                   >
-                    <SelectTrigger className="min-w-32">
+                    <SelectTrigger className="min-w-32 bg-white">
                       <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1624,16 +1624,13 @@ const KnowledgeBaseManager: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="relative">
-                  <Search className="absolute top-0 bottom-0 left-3 my-auto text-gray-500 h-4 w-4" />
-                  <Input
-                    placeholder="Search knowledge base..."
-                    className="pl-9 min-w-64"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                <Button onClick={() => addNewKnowledgeBase()}>
+                <SearchInput
+                  placeholder="Search knowledge base..."
+                  className="min-w-64"
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                />
+                <Button onClick={() => addNewKnowledgeBase()} className="rounded-full">
                   <Plus className="h-4 w-4 mr-2" />
                   Add New
                 </Button>

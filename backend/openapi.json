@@ -2581,23 +2581,23 @@
         ],
         "parameters": [
           {
-            "name": "start_date",
+            "name": "date_from",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
               "format": "date-time",
-              "title": "Start Date"
+              "title": "Date From"
             }
           },
           {
-            "name": "end_date",
+            "name": "date_to",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
               "format": "date-time",
-              "title": "End Date"
+              "title": "Date To"
             }
           },
           {
@@ -2629,13 +2629,13 @@
             }
           },
           {
-            "name": "modified_by",
+            "name": "user",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Modified By"
+              "title": "User"
             }
           },
           {
@@ -2682,7 +2682,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AuditLogRead"
+                    "$ref": "#/components/schemas/AuditLogSearchResult"
                   },
                   "title": "Response Search Api Audit Logs Search Get"
                 }
@@ -2752,6 +2752,347 @@
             }
           }
         }
+      }
+    },
+    "/api/dashboard": {
+      "get": {
+        "tags": [
+          "v1",
+          "Dashboard"
+        ],
+        "summary": "Get full dashboard data",
+        "description": "Returns all dashboard sections: summary stats, active conversations, agents, and integrations.",
+        "operationId": "get_dashboard_api_dashboard_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "description": "Number of days to look back for statistics",
+              "default": 30,
+              "title": "Days"
+            },
+            "description": "Number of days to look back for statistics"
+          },
+          {
+            "name": "conversations_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number for active conversations",
+              "default": 1,
+              "title": "Conversations Page"
+            },
+            "description": "Page number for active conversations"
+          },
+          {
+            "name": "conversations_page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of active conversations per page",
+              "default": 3,
+              "title": "Conversations Page Size"
+            },
+            "description": "Number of active conversations per page"
+          },
+          {
+            "name": "agents_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of agents to return",
+              "default": 5,
+              "title": "Agents Limit"
+            },
+            "description": "Maximum number of agents to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/summary": {
+      "get": {
+        "tags": [
+          "v1",
+          "Dashboard"
+        ],
+        "summary": "Get dashboard summary statistics",
+        "description": "Returns summary statistics: active agents count, workflow runs, and average response time.",
+        "operationId": "get_summary_stats_api_dashboard_summary_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "description": "Number of days to look back",
+              "default": 30,
+              "title": "Days"
+            },
+            "description": "Number of days to look back"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSummaryStats"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/conversations": {
+      "get": {
+        "tags": [
+          "v1",
+          "Dashboard"
+        ],
+        "summary": "Get active conversations",
+        "description": "Returns active (in-progress) conversations with feedback breakdown and pagination.",
+        "operationId": "get_active_conversations_api_dashboard_conversations_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "description": "Number of days to look back",
+              "default": 30,
+              "title": "Days"
+            },
+            "description": "Number of days to look back"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number"
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Number of conversations per page",
+              "default": 10,
+              "title": "Page Size"
+            },
+            "description": "Number of conversations per page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveConversationsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/agents": {
+      "get": {
+        "tags": [
+          "v1",
+          "Dashboard"
+        ],
+        "summary": "Get agents with statistics",
+        "description": "Returns agents with their performance statistics (limited for dashboard display).",
+        "operationId": "get_agents_stats_api_dashboard_agents_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "description": "Number of days to look back",
+              "default": 30,
+              "title": "Days"
+            },
+            "description": "Number of days to look back"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Maximum number of agents to return",
+              "default": 5,
+              "title": "Limit"
+            },
+            "description": "Maximum number of agents to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStatsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/integrations": {
+      "get": {
+        "tags": [
+          "v1",
+          "Dashboard"
+        ],
+        "summary": "Get active integrations",
+        "description": "Returns all active integrations (Zendesk, Gmail, Slack, etc.).",
+        "operationId": "get_integrations_api_dashboard_integrations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/datasources": {
@@ -4067,8 +4408,9 @@
           "v1",
           "Conversations"
         ],
-        "summary": "Get",
-        "operationId": "get_api_conversations_get",
+        "summary": "Get Conversations List",
+        "description": "Get paginated list of conversations with total count.",
+        "operationId": "get_conversations_list_api_conversations_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -4369,11 +4711,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ConversationRead"
-                  },
-                  "title": "Response Get Api Conversations Get"
+                  "$ref": "#/components/schemas/ConversationPaginatedResponse"
                 }
               }
             }
@@ -6553,7 +6891,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__schemas__file__FileUploadResponse"
+                  "$ref": "#/components/schemas/FileUploadResponse"
                 }
               }
             }
@@ -8226,6 +8564,34 @@
         }
       }
     },
+    "/api/file-manager/settings": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Get File Manager Settings",
+        "operationId": "get_file_manager_settings_api_file_manager_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/file-manager/files": {
       "post": {
         "tags": [
@@ -8946,7 +9312,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__schemas__ml_model__FileUploadResponse"
+                  "$ref": "#/components/schemas/FileUploadResponse"
                 }
               }
             }
@@ -13466,6 +13832,138 @@
   },
   "components": {
     "schemas": {
+      "ActiveConversationItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "duration": {
+            "type": "integer",
+            "title": "Duration",
+            "default": 0
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "negative_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negative Reason"
+          },
+          "in_progress_hostility_score": {
+            "type": "integer",
+            "title": "In Progress Hostility Score",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "created_at"
+        ],
+        "title": "ActiveConversationItem",
+        "description": "Single active conversation item for the dashboard."
+      },
+      "ActiveConversationsResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "good_count": {
+            "type": "integer",
+            "title": "Good Count"
+          },
+          "neutral_count": {
+            "type": "integer",
+            "title": "Neutral Count"
+          },
+          "bad_count": {
+            "type": "integer",
+            "title": "Bad Count"
+          },
+          "conversations": {
+            "items": {
+              "$ref": "#/components/schemas/ActiveConversationItem"
+            },
+            "type": "array",
+            "title": "Conversations"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size",
+            "default": 10
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "good_count",
+          "neutral_count",
+          "bad_count",
+          "conversations"
+        ],
+        "title": "ActiveConversationsResponse",
+        "description": "Active conversations section response with pagination."
+      },
       "AgentCreate": {
         "properties": {
           "name": {
@@ -13782,6 +14280,11 @@
               }
             ],
             "title": "Test Input"
+          },
+          "has_welcome_image": {
+            "type": "boolean",
+            "title": "Has Welcome Image",
+            "default": false
           }
         },
         "type": "object",
@@ -14257,6 +14760,68 @@
         "type": "object",
         "title": "AgentSecuritySettingsUpdate"
       },
+      "AgentStatsItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "conversations_today": {
+            "type": "integer",
+            "title": "Conversations Today",
+            "default": 0
+          },
+          "resolution_rate": {
+            "type": "string",
+            "title": "Resolution Rate",
+            "default": "0.00"
+          },
+          "avg_response_time_ms": {
+            "type": "integer",
+            "title": "Avg Response Time Ms",
+            "default": 0
+          },
+          "cost": {
+            "type": "string",
+            "title": "Cost",
+            "default": "0.00"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AgentStatsItem",
+        "description": "Single agent with its statistics."
+      },
+      "AgentStatsResponse": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentStatsItem"
+            },
+            "type": "array",
+            "title": "Agents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agents"
+        ],
+        "title": "AgentStatsResponse",
+        "description": "Your Agents section response."
+      },
       "AgentUpdate": {
         "properties": {
           "name": {
@@ -14638,6 +15203,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "FileManagerSettings",
               "Other"
             ],
             "title": "Type"
@@ -14687,6 +15253,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "FileManagerSettings",
               "Other"
             ],
             "title": "Type"
@@ -14763,6 +15330,7 @@
                   "Microsoft",
                   "Slack",
                   "Jira",
+                  "FileManagerSettings",
                   "Other"
                 ]
               },
@@ -14840,6 +15408,23 @@
             "type": "string",
             "title": "Action Name"
           },
+          "modified_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Modified At"
+          },
+          "modified_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified By"
+          },
           "json_changes": {
             "anyOf": [
               {
@@ -14850,6 +15435,37 @@
               }
             ],
             "title": "Json Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "table_name",
+          "record_id",
+          "action_name",
+          "modified_at"
+        ],
+        "title": "AuditLogRead",
+        "description": "Schema for individual audit log detail - includes json_changes."
+      },
+      "AuditLogSearchResult": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "table_name": {
+            "type": "string",
+            "title": "Table Name"
+          },
+          "record_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Record Id"
+          },
+          "action_name": {
+            "type": "string",
+            "title": "Action Name"
           },
           "modified_at": {
             "type": "string",
@@ -14877,7 +15493,8 @@
           "action_name",
           "modified_at"
         ],
-        "title": "AuditLogRead"
+        "title": "AuditLogSearchResult",
+        "description": "Schema for audit log search results - excludes json_changes."
       },
       "Body_add_conversation_feedback_api_conversations_feedback__conversation_id__patch": {
         "properties": {
@@ -15090,6 +15707,17 @@
             "type": "string",
             "title": "Storage Path"
           },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
           "size": {
             "anyOf": [
               {
@@ -15276,6 +15904,17 @@
           "storage_path": {
             "type": "string",
             "title": "Storage Path"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
           },
           "size": {
             "anyOf": [
@@ -15552,6 +16191,43 @@
         ],
         "title": "ConversationAnalysisRead"
       },
+      "ConversationPaginatedResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "has_more"
+        ],
+        "title": "ConversationPaginatedResponse",
+        "description": "Paginated response for conversations list."
+      },
       "ConversationRead": {
         "properties": {
           "operator_id": {
@@ -15800,6 +16476,16 @@
               }
             ],
             "title": "Messages"
+          },
+          "thumbs_down_count": {
+            "type": "integer",
+            "title": "Thumbs Down Count",
+            "default": 0
+          },
+          "thumbs_up_count": {
+            "type": "integer",
+            "title": "Thumbs Up Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -16374,6 +17060,55 @@
         "type": "object",
         "title": "CustomerUpdate"
       },
+      "DashboardResponse": {
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/DashboardSummaryStats"
+          },
+          "active_conversations": {
+            "$ref": "#/components/schemas/ActiveConversationsResponse"
+          },
+          "agents": {
+            "$ref": "#/components/schemas/AgentStatsResponse"
+          },
+          "integrations": {
+            "$ref": "#/components/schemas/IntegrationsResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "active_conversations",
+          "agents",
+          "integrations"
+        ],
+        "title": "DashboardResponse",
+        "description": "Full dashboard response combining all sections."
+      },
+      "DashboardSummaryStats": {
+        "properties": {
+          "active_agents": {
+            "type": "integer",
+            "title": "Active Agents"
+          },
+          "workflow_runs": {
+            "type": "integer",
+            "title": "Workflow Runs"
+          },
+          "avg_response_time_ms": {
+            "type": "integer",
+            "title": "Avg Response Time Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active_agents",
+          "workflow_runs",
+          "avg_response_time_ms"
+        ],
+        "title": "DashboardSummaryStats",
+        "description": "Summary statistics for the dashboard header."
+      },
       "DataSourceCreate": {
         "properties": {
           "name": {
@@ -16732,6 +17467,19 @@
             "description": "Storage provider",
             "default": "local"
           },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename",
+            "description": "Original file name"
+          },
           "size": {
             "anyOf": [
               {
@@ -16854,6 +17602,80 @@
           "is_deleted"
         ],
         "title": "FileResponse"
+      },
+      "FileUploadResponse": {
+        "properties": {
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename",
+            "description": "Original file name"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path",
+            "description": "File path"
+          },
+          "storage_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Path",
+            "description": "Storage path"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename",
+            "description": "File name"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Url",
+            "description": "File URL"
+          },
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id",
+            "description": "File ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "original_filename"
+        ],
+        "title": "FileUploadResponse"
       },
       "FolderRequest": {
         "properties": {
@@ -17064,6 +17886,64 @@
         },
         "type": "object",
         "title": "InProgressConversationTranscriptFinalize"
+      },
+      "IntegrationItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "type"
+        ],
+        "title": "IntegrationItem",
+        "description": "Single integration item."
+      },
+      "IntegrationsResponse": {
+        "properties": {
+          "integrations": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationItem"
+            },
+            "type": "array",
+            "title": "Integrations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "integrations"
+        ],
+        "title": "IntegrationsResponse",
+        "description": "Integrations section response."
       },
       "JSONRPCRequest": {
         "properties": {
@@ -18741,6 +19621,19 @@
             "title": "Pkl File",
             "description": "Path to the uploaded .pkl file"
           },
+          "pkl_file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pkl File Id",
+            "description": "File manager ID for the uploaded .pkl file"
+          },
           "features": {
             "items": {
               "type": "string"
@@ -19208,6 +20101,19 @@
             "title": "Pkl File",
             "description": "Path to the uploaded .pkl file"
           },
+          "pkl_file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pkl File Id",
+            "description": "File manager ID for the uploaded .pkl file"
+          },
           "features": {
             "anyOf": [
               {
@@ -19323,6 +20229,19 @@
             ],
             "title": "Pkl File",
             "description": "Path to the uploaded .pkl file"
+          },
+          "pkl_file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pkl File Id",
+            "description": "File manager ID for the uploaded .pkl file"
           },
           "features": {
             "anyOf": [
@@ -20619,6 +21538,8 @@
         "enum": [
           "created_at",
           "updated_at",
+          "thumbs_up_count",
+          "thumbs_down_count",
           "id"
         ],
         "title": "SortField"
@@ -22446,70 +23367,6 @@
           "filepath"
         ],
         "title": "FileRequest"
-      },
-      "app__schemas__file__FileUploadResponse": {
-        "properties": {
-          "filename": {
-            "type": "string",
-            "title": "Filename",
-            "description": "File name"
-          },
-          "original_filename": {
-            "type": "string",
-            "title": "Original Filename",
-            "description": "Original file name"
-          },
-          "storage_path": {
-            "type": "string",
-            "title": "Storage Path",
-            "description": "Storage path"
-          },
-          "file_path": {
-            "type": "string",
-            "title": "File Path",
-            "description": "File path"
-          },
-          "file_url": {
-            "type": "string",
-            "title": "File Url",
-            "description": "File URL"
-          },
-          "file_id": {
-            "type": "string",
-            "title": "File Id",
-            "description": "File ID"
-          }
-        },
-        "type": "object",
-        "required": [
-          "filename",
-          "original_filename",
-          "storage_path",
-          "file_path",
-          "file_url",
-          "file_id"
-        ],
-        "title": "FileUploadResponse"
-      },
-      "app__schemas__ml_model__FileUploadResponse": {
-        "properties": {
-          "file_path": {
-            "type": "string",
-            "title": "File Path",
-            "description": "Path to the uploaded file"
-          },
-          "original_filename": {
-            "type": "string",
-            "title": "Original Filename",
-            "description": "Original name of the uploaded file"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file_path",
-          "original_filename"
-        ],
-        "title": "FileUploadResponse"
       }
     },
     "securitySchemes": {

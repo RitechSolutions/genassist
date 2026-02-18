@@ -22,7 +22,7 @@ export const MetricCard = ({
   description
 }: MetricCardProps) => {
   return (
-    <Card className="p-4 sm:p-6 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
+    <Card className="p-4 sm:p-6 shadow-sm animate-fade-up bg-white">
       <div className="flex items-center justify-between mb-3 sm:mb-4">
         <div className="flex items-center gap-2">
           <Icon className="w-4 h-4 sm:w-5 sm:h-5" style={{ color }} />

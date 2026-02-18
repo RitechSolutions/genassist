@@ -145,7 +145,7 @@ class ThreadScopedRAG:
 
                 # Cache the service
                 self._services[chat_id] = service
-                logger.info(f"Created and cached AgentRAGService for chat {chat_id}")
+                logger.info(f"[ThreadScopedRAG] Created and cached AgentRAGService for chat {chat_id}")
                 return service
 
             except Exception as e:

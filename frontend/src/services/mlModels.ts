@@ -59,7 +59,7 @@ export const deleteMLModel = async (id: string): Promise<void> => {
 
 export const uploadModelFile = async (
   file: File,
-): Promise<{ file_path: string; original_filename: string }> => {
+): Promise<{ file_path: string; original_filename: string; file_id?: string; file_url?: string }> => {
   try {
   const formData = new FormData();
   formData.append("file", file);
@@ -92,6 +92,8 @@ export const uploadModelFile = async (
   return await response.json() as Promise<{
     file_path: string;
     original_filename: string;
+    file_id?: string;
+    file_url?: string;
   }>;
   } catch (error) {
     console.error("Error uploading model file:", error);

@@ -19,7 +19,7 @@ export const NodeAlert: React.FC<NodeAlertProps> = ({
   const handleClick = hasMissingFields ? onFix : onTest;
 
   return (
-    <div className="flex items-center gap-3 p-4 mx-0.5 mb-0.5 mt-1 bg-red-600 rounded-sm text-white">
+    <div className="flex items-center gap-3 p-4 mx-0.5 mb-0.5 mt-1 bg-red-600 rounded-sm text-white nodrag nopan pointer-events-auto">
       <div className="flex items-center justify-center">
         {renderIcon("CircleAlert")}
       </div>

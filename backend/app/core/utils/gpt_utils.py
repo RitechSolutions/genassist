@@ -1,11 +1,92 @@
 import functools
 import logging
 import re
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
+from dataclasses import dataclass
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
 
 logger = logging.getLogger(__name__)
+
+
+# OpenAI Model Registry
+@dataclass
+class OpenAIModel:
+    """OpenAI model metadata"""
+    value: str  # Model ID used in API calls
+    label: str  # Display name for UI
+    encoding: str  # Tiktoken encoding name
+    context_window: int  # Maximum context tokens
+
+
+OPENAI_MODELS = [
+    OpenAIModel("gpt-5", "GPT 5", "o200k_base", 200000),
+    OpenAIModel("gpt-5-mini", "GPT 5 mini", "o200k_base", 128000),
+    OpenAIModel("gpt-5-nano", "GPT 5 nano", "o200k_base", 128000),
+    OpenAIModel("gpt-5.1", "GPT 5.1", "o200k_base", 200000),
+    OpenAIModel("gpt-5.2", "GPT 5.2", "o200k_base", 200000),
+    OpenAIModel("gpt-4o", "GPT-4o", "cl100k_base", 128000),
+    OpenAIModel("gpt-4o-mini", "GPT-4o Mini", "cl100k_base", 128000),
+    OpenAIModel("gpt-4", "GPT-4", "cl100k_base", 8192),
+    OpenAIModel("gpt-4-32k", "GPT-4 32K", "cl100k_base", 32768),
+    OpenAIModel("gpt-4-turbo-preview", "GPT-4 Turbo Preview", "cl100k_base", 128000),
+    OpenAIModel("o1-mini", "O1 Mini", "o200k_base", 128000),
+    OpenAIModel("o1-small", "O1 Small", "o200k_base", 200000),
+    OpenAIModel("o1-medium", "O1 Medium", "o200k_base", 200000),
+    OpenAIModel("o1-large", "O1 Large", "o200k_base", 200000),
+    OpenAIModel("gpt-3.5-turbo", "GPT-3.5 Turbo", "cl100k_base", 16385),
+    OpenAIModel("gpt-3.5-turbo-16k", "GPT-3.5 Turbo 16K", "cl100k_base", 16385),
+]
+
+
+def get_openai_model_options() -> List[Dict[str, str]]:
+    """Get OpenAI model options for UI select dropdown"""
+    return [{"value": model.value, "label": model.label} for model in OPENAI_MODELS]
+
+
+def get_openai_encoding_name(model: str) -> str:
+    """
+    Get tiktoken encoding name for an OpenAI model.
+
+    Args:
+        model: Model name (e.g., "gpt-4o", "gpt-3.5-turbo")
+
+    Returns:
+        Encoding name (e.g., "cl100k_base", "o200k_base")
+    """
+    model_lower = model.lower()
+
+    for openai_model in OPENAI_MODELS:
+        if openai_model.value.lower() == model_lower:
+            return openai_model.encoding
+
+    # Default fallback based on model prefixes
+    if any(prefix in model_lower for prefix in ["gpt-5", "o1-"]):
+        return "o200k_base"
+
+    # Default to cl100k_base for unknown models
+    logger.warning(f"Unknown OpenAI model '{model}', defaulting to cl100k_base encoding")
+    return "cl100k_base"
+
+
+def get_openai_context_window(model: str) -> int:
+    """
+    Get context window size for an OpenAI model.
+
+    Args:
+        model: Model name (e.g., "gpt-4o", "gpt-3.5-turbo")
+
+    Returns:
+        Context window size in tokens
+    """
+    model_lower = model.lower()
+
+    for openai_model in OPENAI_MODELS:
+        if openai_model.value.lower() == model_lower:
+            return openai_model.context_window
+
+    # Default to 8192 for unknown models
+    return 8192
 
 
 # Non-retryable error patterns (provider-agnostic) to use for any model in langchain

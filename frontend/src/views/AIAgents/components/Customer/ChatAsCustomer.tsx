@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   GenAgentChat,
   GenAgentConfigPanel,
+  GENASSIST_AGENT_METADATA_UPDATED,
   type ChatSettingsConfig,
   type ChatTheme,
   type FeatureFlags,
@@ -34,11 +35,51 @@ export default function ChatAsCustomer() {
     description: "Support",
   });
   const [metadata, setMetadata] = useState<Record<string, any>>({});
+  const [agentChatInputMetadata, setAgentChatInputMetadata] = useState<Record<string, any>>({});
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({
     useAudio: false,
     useFile: false,
     useWs: false,
   });
+
+  // Restore persisted metadata on mount
+  useEffect(() => {
+    if (!apiKey) return;
+    try {
+      const storedAgent = localStorage.getItem(`genassist_agent_chat_input_metadata:${apiKey}`);
+      if (storedAgent) {
+        const parsed = JSON.parse(storedAgent);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          setAgentChatInputMetadata(parsed);
+        }
+      }
+      const storedMeta = localStorage.getItem(`genassist_metadata:${apiKey}`);
+      if (storedMeta) {
+        const parsed = JSON.parse(storedMeta);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          setMetadata(parsed);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [apiKey]);
+
+  // Subscribe to service-level metadata updates
+  useEffect(() => {
+    if (!apiKey) return;
+    const handler = (e: CustomEvent<{ apiKey: string; metadata: Record<string, any> }>) => {
+      if (e.detail?.apiKey === apiKey && e.detail?.metadata != null) {
+        setAgentChatInputMetadata(
+          typeof e.detail.metadata === "object" && !Array.isArray(e.detail.metadata)
+            ? e.detail.metadata
+            : {}
+        );
+      }
+    };
+    window.addEventListener(GENASSIST_AGENT_METADATA_UPDATED, handler as EventListener);
+    return () => window.removeEventListener(GENASSIST_AGENT_METADATA_UPDATED, handler as EventListener);
+  }, [apiKey]);
 
   useEffect(() => {
     if (!agentId) {
@@ -98,6 +139,7 @@ export default function ChatAsCustomer() {
             onChatSettingsChange={setChatSettings}
             metadata={metadata}
             onMetadataChange={setMetadata}
+            agentChatInputMetadata={agentChatInputMetadata}
             featureFlags={featureFlags}
             onFeatureFlagsChange={setFeatureFlags}
             defaultOpen={{ appearance: true, settings: false, metadata: false }}
@@ -108,11 +150,16 @@ export default function ChatAsCustomer() {
               maxHeight: "calc(100vh - 50px)",
               overflowY: "auto",
             }}
-            onSave={({ theme, chatSettings, metadata, featureFlags }) => {
+            onSave={({ theme, chatSettings, metadata: nextMetadata, featureFlags }) => {
               setTheme(theme);
               setChatSettings(chatSettings);
-              setMetadata(metadata);
+              setMetadata(nextMetadata);
               setFeatureFlags(featureFlags);
+              try {
+                localStorage.setItem(`genassist_metadata:${apiKey}`, JSON.stringify(nextMetadata));
+              } catch {
+                // ignore
+              }
             }}
           />
         </div>
@@ -130,6 +177,7 @@ export default function ChatAsCustomer() {
             onError={(error) => {
               // ignore
             }}
+            useFile={featureFlags.useFile}
           />
         </div>
 

@@ -4,7 +4,7 @@ import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Save } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import {
@@ -67,7 +67,7 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
       title="Configure Per Chat RAG"
@@ -165,6 +165,6 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
           </div>
         </>
       )}
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

@@ -3,8 +3,8 @@ import { ZendeskTicketNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { Save, Plus, X } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
 import { BaseNodeDialogProps } from "./base";
 import {
   Select,
@@ -124,7 +124,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
 
   return (
     <>
-      <NodeConfigDialog
+      <NodeConfigPanel
         footer={
           <>
             <Button variant="outline" onClick={onClose}>
@@ -324,7 +324,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
             )}
           </div>
         </div>
-      </NodeConfigDialog>
+      </NodeConfigPanel>
 
       <AppSettingDialog
         isOpen={isCreateSettingOpen}

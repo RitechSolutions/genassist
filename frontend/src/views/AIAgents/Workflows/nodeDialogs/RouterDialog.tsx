@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
 
@@ -64,7 +64,7 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -134,6 +134,6 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
           className="w-full"
         />
       </div>
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

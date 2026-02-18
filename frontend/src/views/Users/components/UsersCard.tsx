@@ -3,7 +3,7 @@ import { DataTable } from "@/components/DataTable";
 import { TableCell, TableRow } from "@/components/table";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { Edit } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { getAllUsers } from "@/services/users";
 import { toast } from "react-hot-toast";
 import { User } from "@/interfaces/user.interface";
@@ -116,7 +116,7 @@ export function UsersCard({
           onClick={() => onEditUser(user)}
           title="Edit User"
         >
-          <Edit className="w-4 h-4 text-black" />
+          <Pencil className="w-4 h-4 text-black" />
         </Button>
       </TableCell>
     </TableRow>
