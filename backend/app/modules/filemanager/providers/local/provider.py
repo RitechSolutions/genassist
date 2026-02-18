@@ -80,7 +80,7 @@ class LocalFileSystemProvider(BaseStorageProvider):
         file_content: bytes,
         file_path: str,
         file_metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> bool:
         """
         Upload a file to local file system.
 
@@ -90,7 +90,7 @@ class LocalFileSystemProvider(BaseStorageProvider):
             file_metadata: Optional file metadata dictionary (not used for local storage)
 
         Returns:
-            File path where the file was stored
+            True if successful, False otherwise
         """
         try:
             full_path = self._resolve_path(file_path)
@@ -102,10 +102,10 @@ class LocalFileSystemProvider(BaseStorageProvider):
             full_path.write_bytes(file_content)
 
             logger.debug(f"Uploaded file to {full_path}")
-            return file_path
+            return True
         except Exception as e:
             logger.error(f"Failed to upload file {file_path}: {e}")
-            raise
+            return False
 
     async def download_file(self, file_path: str) -> bytes:
         """

@@ -57,7 +57,7 @@ class BaseStorageProvider(ABC):
         file_content: bytes,
         file_path: str,
         file_metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> bool:
         """
         Upload a file to the storage provider
 
@@ -67,7 +67,7 @@ class BaseStorageProvider(ABC):
             file_metadata: Optional file metadata dictionary
 
         Returns:
-            File path where the file was stored
+            True if successful, False otherwise
         """
         pass
 

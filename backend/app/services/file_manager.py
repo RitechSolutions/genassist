@@ -121,71 +121,77 @@ class FileManagerService:
             allowed_extensions: Optional list of allowed file extensions
         """
 
-        file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
-        file_extension = file_extension.lower() if file_extension else "txt"
+        try:
+            file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
+            file_extension = file_extension.lower() if file_extension else "txt"
 
-        # check if file extension is allowed
-        if allowed_extensions is not None:
-            self._validate_file_extension(file_extension, allowed_extensions)
+            # check if file extension is allowed
+            if allowed_extensions is not None:
+                self._validate_file_extension(file_extension, allowed_extensions)
 
-        # read from the file
-        file_content = await file.read()
-        file_size = len(file_content)
-        file_mime_type = file.content_type
-        file_name = file.filename
+            # read from the file
+            file_content = await file.read()
+            file_size = len(file_content)
+            file_mime_type = file.content_type
+            file_name = file.filename
 
-        # check if file size is allowed
-        if max_file_size is not None:
-            self._validate_file_size(file_size, max_file_size)
+            # check if file size is allowed
+            if max_file_size is not None:
+                self._validate_file_size(file_size, max_file_size)
 
-        # Prefer the storage provider coming from the request payload; fall back to the
-        # already configured provider if present, otherwise default to "local".
-        file_storage_provider = (
-            file_base.storage_provider
-            or (self.storage_provider.name if self.storage_provider else None)
-            or "local"
-        )
-
-        # Generate a unique file name only when the client hasn't provided one
-        unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
-        file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
-
-        # Get or initialize the storage provider
-        provider_name = file_storage_provider or "local"
-        await self._initialize_storage_provider(provider_name)
-        if not self.storage_provider or not self.storage_provider.is_initialized():
-            raise ValueError("Storage provider not initialized")
-
-        # Resolve the storage path that will be persisted with the file metadata.
-        # If the caller has explicitly provided a storage_path, prefer that.
-        storage_path = file_base.storage_path or self.storage_provider.get_base_path()
-
-        # create the file data
-        file_data = FileBase(
-            name=file_base.name or file_name,
-            original_filename=file_base.original_filename or file_name,
-            mime_type=file_mime_type,
-            size=file_size,
-            file_extension=file_extension,
-            storage_provider=file_storage_provider,
-            storage_path=storage_path,
-            path=file_path,
-            description=file_base.description,
-            tags=file_base.tags,
-            permissions=file_base.permissions,
-        )
-
-        # Upload file content if provided
-        if file_content is not None:
-            await self.storage_provider.upload_file(
-                file_content=file_content,
-                file_path=file_path,
-                file_metadata={"name": file_data.name, "mime_type": file_data.mime_type}
+            # Prefer the storage provider coming from the request payload; fall back to the
+            # already configured provider if present, otherwise default to "local".
+            file_storage_provider = (
+                file_base.storage_provider
+                or (self.storage_provider.name if self.storage_provider else None)
+                or "local"
             )
 
-        # Create file metadata record
-        db_file = await self.repository.create_file(file_data)
-        return db_file
+            # Generate a unique file name only when the client hasn't provided one
+            unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
+            file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
+
+            # Get or initialize the storage provider
+            provider_name = file_storage_provider or "local"
+            await self._initialize_storage_provider(provider_name)
+            if not self.storage_provider or not self.storage_provider.is_initialized():
+                raise ValueError("Storage provider not initialized")
+
+            # Resolve the storage path that will be persisted with the file metadata.
+            # If the caller has explicitly provided a storage_path, prefer that.
+            storage_path = file_base.storage_path or self.storage_provider.get_base_path()
+
+            # create the file data
+            file_data = FileBase(
+                name=file_base.name or file_name,
+                original_filename=file_base.original_filename or file_name,
+                mime_type=file_mime_type,
+                size=file_size,
+                file_extension=file_extension,
+                storage_provider=file_storage_provider,
+                storage_path=storage_path,
+                path=file_path,
+                description=file_base.description,
+                tags=file_base.tags,
+                permissions=file_base.permissions,
+            )
+
+            # Upload file content if provided
+            if file_content is not None:
+                upload_result = await self.storage_provider.upload_file(
+                    file_content=file_content,
+                    file_path=file_path,
+                    file_metadata={"name": file_data.name, "mime_type": file_data.mime_type}
+                )
+                if not upload_result:
+                    raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Failed to upload file {file_path} on storage provider {self.storage_provider.name}")
+        except Exception as e:
+            logger.error(f"Failed to create file: {e}")
+            raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Failed to create file {file_path} on storage provider {self.storage_provider.name}: {str(e)}")
+        finally:
+            # Create file metadata record
+            db_file = await self.repository.create_file(file_data)
+            return db_file
 
     async def get_file_by_id(self, file_id: UUID) -> FileModel:
         """Get file metadata by ID."""

@@ -60,10 +60,9 @@ class S3StorageProvider(BaseStorageProvider):
         file_content: bytes,
         file_path: str,
         file_metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> bool:
         """Upload a file to S3."""
-        self.s3_client.upload_content(file_content, self.aws_bucket_name, file_path)
-        return file_path
+        return self.s3_client.upload_content(file_content, self.aws_bucket_name, file_path)
 
     async def download_file(self, file_path: str) -> bytes:
         """Download a file from S3."""
