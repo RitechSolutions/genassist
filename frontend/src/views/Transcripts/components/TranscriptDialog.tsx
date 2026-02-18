@@ -171,10 +171,10 @@ useEffect(() => {
   };
 
   const handleFeedbackSubmit = async () => {
-    if (!localTranscript || !feedbackType || !feedbackMessage.trim()) {
+    if (!localTranscript || !feedbackType) {
       toast({
         title: "Error",
-        description: "Please select feedback type and enter a message.",
+        description: "Please select a rating.",
         variant: "destructive",
       });
       return;
@@ -469,6 +469,7 @@ useEffect(() => {
                       <h4 className="text-sm font-medium mb-3">Rate</h4>
                       <div className="flex gap-3">
                         <button
+                          type="button"
                           onClick={() => setFeedbackType("good")}
                           className={`p-2 rounded transition-all ${
                             feedbackType === "good"
@@ -480,6 +481,7 @@ useEffect(() => {
                         </button>
                         
                         <button
+                          type="button"
                           onClick={() => setFeedbackType("bad")}
                           className={`p-2 rounded transition-all ${
                             feedbackType === "bad"
@@ -506,7 +508,7 @@ useEffect(() => {
                     <div className="flex gap-2">
                       <Button
                         onClick={handleFeedbackSubmit}
-                        disabled={!feedbackType || !feedbackMessage.trim() || feedbackSubmitting}
+                        disabled={!feedbackType || feedbackSubmitting}
                         className="flex-1 bg-blue-600 text-white hover:bg-blue-700"
                       >
                         {feedbackSubmitting ? "Submitting..." : "Save"}
@@ -542,12 +544,12 @@ useEffect(() => {
             >
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="transcript">Transcript</TabsTrigger>
-                <TabsTrigger value="ai">Chat</TabsTrigger>
+                <TabsTrigger value="ai">Ask GenAI</TabsTrigger>
               </TabsList>
             </Tabs>
             <div className="flex-1 flex flex-col bg-secondary/30 rounded-lg overflow-hidden">
               {activeTab === "transcript" ? (
-                <div className="p-3 overflow-y-auto text-[13px] sm:text-[12px]" style={{height: isCall ? "500px" : "400px"}}>
+                <div className="p-3 overflow-y-auto text-[13px] sm:text-[12px]" style={{height: isCall ? "550px" : "460px"}}>
                   <div className="space-y-2">
                     {localTranscript.timestamp && (
                       <div className="flex justify-center mb-3">
@@ -661,6 +663,13 @@ useEffect(() => {
                         </div>
                       );
                     })}
+                    {localTranscript.status === "finalized" && (
+                      <div className="flex justify-center my-3">
+                        <div className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium flex items-center">
+                          Conversation Finalized
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -716,19 +725,21 @@ useEffect(() => {
               )}
 
             </div>
-            <div className="mt-2 flex items-center gap-2 bg-secondary/30 p-2 rounded-lg">
-              <Input
-                className="flex-1"
-                type="text"
-                placeholder="Ask GenAI"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-              />
-              <Button onClick={handleSendMessage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white">
-                Send
-              </Button>
-            </div>
+            {activeTab === "ai" && (
+              <div className="mt-2 flex items-center gap-2 bg-secondary/30 p-2 rounded-lg">
+                <Input
+                  className="flex-1"
+                  type="text"
+                  placeholder="Ask GenAI"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                />
+                <Button onClick={handleSendMessage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white">
+                  Send
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
