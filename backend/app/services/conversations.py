@@ -77,6 +77,9 @@ class ConversationService:
     async def save_conversation(self, conversation: ConversationCreate):
         return await self.conversation_repo.save_conversation(conversation)
 
+    async def update_conversation(self, conversation: ConversationModel):
+        return await self.conversation_repo.update_conversation(conversation)
+
     async def get_conversation_by_id(
         self,
         conversation_id: UUID,

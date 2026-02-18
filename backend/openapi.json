@@ -16474,6 +16474,16 @@
               }
             ],
             "title": "Messages"
+          },
+          "thumbs_down_count": {
+            "type": "integer",
+            "title": "Thumbs Down Count",
+            "default": 0
+          },
+          "thumbs_up_count": {
+            "type": "integer",
+            "title": "Thumbs Up Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -21526,6 +21536,8 @@
         "enum": [
           "created_at",
           "updated_at",
+          "thumbs_up_count",
+          "thumbs_down_count",
           "id"
         ],
         "title": "SortField"

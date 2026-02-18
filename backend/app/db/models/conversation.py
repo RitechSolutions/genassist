@@ -84,6 +84,8 @@ class ConversationModel(Base):
         Integer, server_default=text("0")
     )
     conversation_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    thumbs_down_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    thumbs_up_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
 
     # NEW: Add relationship to messages
     messages: Mapped[list["TranscriptMessageModel"]] = relationship(
