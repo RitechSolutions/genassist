@@ -34,16 +34,18 @@ async def get_file_manager_settings(svc: AppSettingsService = Injected(AppSettin
             type="FileManagerSettings",
             values={
                 "file_manager_enabled": True,
-                "file_manager_provider": "local",
+                "file_manager_provider": file_storage_settings.FILE_MANAGER_PROVIDER or "local",
                 "base_path": str(DATA_VOLUME),
                 "aws_bucket_name": file_storage_settings.AWS_BUCKET_NAME or "",
                 "azure_container_name": file_storage_settings.AZURE_CONTAINER_NAME or "",
                 # "gcs_bucket_name": file_storage_settings.GOOGLE_STORAGE_BUCKET or "",
                 # "sharepoint_site_url": file_storage_settings.SHAREPOINT_SITE_URL or "",
             },
-            is_active=1,
+            is_active=1 if file_storage_settings.FILE_MANAGER_ENABLED else 0 # default to 1 if enabled, 0 if disabled
         ))
 
+    # check if the file manager is not enabled from the environment variables
+    app_settings.is_active = 1 if file_storage_settings.FILE_MANAGER_ENABLED and app_settings.is_active == 1 else 0
     return app_settings
 
 

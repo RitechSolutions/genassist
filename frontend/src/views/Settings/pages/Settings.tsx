@@ -109,9 +109,19 @@ const SettingsPage = () => {
                   </div>
                 </Card>
 
-                {fileManagerSettings?.is_active && (
-                  <Card className="md:col-span-2 mt-6">
-                    <FileManagerSettingsCard settings={fileManagerSettings} />
+                {fileManagerSettings?.values.file_manager_enabled === true && (
+                  (fileManagerSettings.is_active === 1) && (
+                    <Card className="md:col-span-2 mt-6">
+                      <FileManagerSettingsCard settings={fileManagerSettings} />
+                    </Card>
+                  )) || (
+                  <Card className="md:col-span-2 mt-6 animate-fade-up animate-delay-200">
+                    <div className="p-6">
+                      <h2 className="text-xl font-semibold mb-4 animate-fade-up">File Manager Settings</h2>
+                      <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
+                        File manager is not enabled or is disabled in the database. Please contact your administrator to enable it.
+                      </p>
+                    </div>
                   </Card>
                 )}
 
