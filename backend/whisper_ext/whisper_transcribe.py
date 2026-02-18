@@ -221,22 +221,28 @@ async def cuda_status():
 
 
 ######################
+## Chunked transcription for long audio files
+######################
 
 from pydub import AudioSegment
 import torch
+
 from faster_whisper import WhisperModel # Use faster-whisper for improved performance on CPU and GPU remove the rgullar whisper if it work
 from concurrent.futures import ThreadPoolExecutor
+
 import time
 import os
 
 
-CHUNK_LENGTH_MS = 10 * 60 * 1000  # 10 minutes
+CHUNK_LENGTH_MS = 10 * 60000  # 10 minutes (600 seconds)
 
 GPU_WORKERS = int(os.environ.get("GPU_WORKERS", 1))  # Only one worker can use the GPU at a time (update it as per your system configuration)
 CPU_WORKERS = int(os.environ.get("CPU_WORKERS", 4))   # Number of paralel workers for CPU processing (update it as per number of cores  your system has)
 
+#check if Cuda is available and set device accordingly
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Use a lock to ensure only one GPU transcription runs at a time the rest are forwarded to CPU workers
 gpu_lock = asyncio.Lock()
 selected_model = "base.en" # set it as default model
 
@@ -368,6 +374,7 @@ async def transcribe_audio_whisper_chunked(
             safe_remove_temp_file(path)
 
 
+# Endpoint for chunked transcription of long audio files with the same options as the regular endpoint
 @app.post("/transcribe-long")
 async def transcribe(
     file: UploadFile = File(...),

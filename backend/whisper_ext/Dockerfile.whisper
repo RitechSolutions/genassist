@@ -49,6 +49,8 @@ RUN pip3 install --no-cache-dir \
 # Install Whisper from git (as specified in your requirements)
 RUN pip3 install --no-cache-dir \
    git+https://github.com/openai/whisper.git@517a43ecd132a2089d85f4ebc044728a71d49f6e
+
+# Install faster-whisper (as specified in requirements)
 RUN pip3 install --no-cache-dir faster-whisper
 
 
