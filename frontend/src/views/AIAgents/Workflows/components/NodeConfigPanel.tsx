@@ -143,7 +143,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   const handleSheetOpenChange = useCallback(
     (open: boolean) => {
       if (!open) {
-        if (isPinned) return; // Pinned panels don't close
+        if (isPinned || isTestDialogOpen) return; // Don't close while pinned or testing
         if (isDirty && onUpdate) {
           setShowUnsavedDialog(true);
           return; // Block close, show confirmation
@@ -152,7 +152,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
         onClose();
       }
     },
-    [isPinned, isDirty, onUpdate, onClose]
+    [isPinned, isTestDialogOpen, isDirty, onUpdate, onClose]
   );
 
   // Confirmation dialog handlers
