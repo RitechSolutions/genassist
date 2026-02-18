@@ -280,7 +280,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] w-full overflow-hidden">
+      <DialogContent className="max-w-2xl max-h-[85vh] w-full overflow-hidden" style={{ zIndex: 1201 }}>
         <DialogHeader>
           <DialogTitle>{`Test ${nodeName}`}</DialogTitle>
           <p className="text-sm text-gray-500">

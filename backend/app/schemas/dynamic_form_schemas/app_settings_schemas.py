@@ -174,7 +174,64 @@ APP_SETTINGS_SCHEMAS: Dict[str, TypeSchema] = {
                 encrypted=False,
             ),
         ],
-    )
+    ),
+    "FileManagerSettings": TypeSchema(
+        name="FileManagerSettings",
+        fields=[
+            FieldSchema(
+                name="file_manager_enabled",
+                label="File Manager Enabled",
+                type="boolean",
+                required=True,
+                placeholder="Enable File Manager",
+                description="Enable File Manager",
+                encrypted=False,
+            ),
+            FieldSchema(
+                name="file_manager_provider",
+                label="Storage Provider",
+                type="select",
+                required=True,
+                placeholder="Select Storage Provider",
+                description="Storage Provider for the file manager",
+                encrypted=False,
+                options=[
+                    { "label": "Local", "value": "local" },
+                    { "label": "S3", "value": "s3" },
+                    { "label": "Azure", "value": "azure" },
+                    { "label": "GCS", "value": "gcs" },
+                    { "label": "SharePoint", "value": "sharepoint" },
+                ],
+            ),
+            FieldSchema(
+                name="base_path",
+                label="Base Path",
+                type="text",
+                required=False,
+                placeholder="Enter Base Path",
+                description="Base Path for the file manager",
+                encrypted=False,
+            ),
+            FieldSchema(
+                name="aws_bucket_name",
+                label="AWS Bucket Name",
+                type="text",
+                required=False,
+                placeholder="Enter AWS Bucket Name",
+                description="AWS Bucket Name for the file manager",
+                encrypted=False,
+            ),
+            FieldSchema(
+                name="azure_container_name",
+                label="Azure Container Name",
+                type="text",
+                required=False,
+                placeholder="Enter Azure Container Name",
+                description="Azure Container Name for the file manager",
+                encrypted=False,
+            ),
+        ],
+    ),
 }
 
 APP_SETTINGS_SCHEMAS_DICT = convert_typed_schemas_to_dict(APP_SETTINGS_SCHEMAS)

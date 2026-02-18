@@ -16,6 +16,13 @@ import { DraggableTextArea } from "./custom/DraggableTextArea";
 import { Input } from "@/components/input";
 import { LLMProviderDialog } from "@/views/LlmProviders/components/LLMProviderDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { Info } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 
 export interface ModelConfigurationProps {
   id: string;
@@ -137,6 +144,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
 
   const providerId = config.providerId;
   return (
+    <TooltipProvider>
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor={`name-input-${id}`}>Node Name</Label>
@@ -289,7 +297,23 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           ) : (
             <>
               <div className="space-y-2">
-                <Label htmlFor={`token-budget-${id}`}>Total Token Budget</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`token-budget-${id}`}>Total Token Budget</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Total token budget info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Includes user prompt, system prompt & message history (RAG not included)
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <Input
                   id={`token-budget-${id}`}
                   type="number"
@@ -302,7 +326,23 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor={`conversation-history-tokens-${id}`}>Conversation History Allocation (tokens)</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`conversation-history-tokens-${id}`}>Conversation History Allocation (tokens)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Conversation history allocation info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      estimate 0.75 words = 1 token
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <Input
                   id={`conversation-history-tokens-${id}`}
                   type="number"
@@ -331,5 +371,6 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
         mode="create"
       />
     </div>
+    </TooltipProvider>
   );
 };

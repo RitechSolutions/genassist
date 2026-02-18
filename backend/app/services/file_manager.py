@@ -2,6 +2,7 @@ from ast import Dict
 from uuid import UUID
 import uuid
 from fastapi import UploadFile
+from fastapi_injector import Injected
 import httpx
 from injector import inject
 from typing import Optional, List
@@ -19,6 +20,7 @@ from app.modules.filemanager.providers import init_by_name
 from app.core.config.settings import file_storage_settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.schemas.app_settings import AppSettingsRead
 
 logger = logging.getLogger(__name__)
 
@@ -31,18 +33,23 @@ class FileManagerService:
         self.repository = repository
         # Storage provider will be injected via manager or configuration
         self.storage_provider = None
-    
-    async def initialize(self, base_url: str, base_path: str) -> BaseStorageProvider: 
-        """Initialize the file manager service with the default storage provider and return the storage provider."""
 
+    async def initialize(self, base_url: str, base_path: str, app_settings: Optional[AppSettingsRead] = None) -> BaseStorageProvider:
+        """Initialize the file manager service with the default storage provider and return the storage provider."""
+        default_provider_name = file_storage_settings.default_provider_name
         try:
             # get the storage provider configuration for the file storage provider
             config = file_storage_settings.model_dump()
             config["base_url"] = base_url
             config["base_path"] = base_path
 
-            # get the default provider name and initialize the storage provider
-            provider_name = file_storage_settings.default_provider_name
+            # get the file manager settings
+            if app_settings:
+                provider_name = app_settings.values.get("file_manager_provider", default_provider_name)
+                config["base_path"] = app_settings.values.get("base_path", base_path)
+                config["AWS_BUCKET_NAME"] = app_settings.values.get("aws_bucket_name", file_storage_settings.AWS_BUCKET_NAME)
+
+            # get the storage provider by name
             self.storage_provider = self.get_storage_provider_by_name(provider_name, config=config)
             await self.storage_provider.initialize()
 
@@ -52,7 +59,7 @@ class FileManagerService:
             logger.error(f"Failed to initialize file manager service: {e}")
             raise AppException(error_key=ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED, detail=str(e))
 
-    
+
     async def set_storage_provider(self, provider: BaseStorageProvider):
         """Set the storage provider for this service instance."""
         self.storage_provider = provider
@@ -114,71 +121,77 @@ class FileManagerService:
             allowed_extensions: Optional list of allowed file extensions
         """
 
-        file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
-        file_extension = file_extension.lower() if file_extension else "txt"
+        try:
+            file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
+            file_extension = file_extension.lower() if file_extension else "txt"
 
-        # check if file extension is allowed
-        if allowed_extensions is not None:
-            self._validate_file_extension(file_extension, allowed_extensions)
+            # check if file extension is allowed
+            if allowed_extensions is not None:
+                self._validate_file_extension(file_extension, allowed_extensions)
 
-        # read from the file
-        file_content = await file.read()
-        file_size = len(file_content)
-        file_mime_type = file.content_type
-        file_name = file.filename
+            # read from the file
+            file_content = await file.read()
+            file_size = len(file_content)
+            file_mime_type = file.content_type
+            file_name = file.filename
 
-        # check if file size is allowed
-        if max_file_size is not None:
-            self._validate_file_size(file_size, max_file_size)
+            # check if file size is allowed
+            if max_file_size is not None:
+                self._validate_file_size(file_size, max_file_size)
 
-        # Prefer the storage provider coming from the request payload; fall back to the
-        # already configured provider if present, otherwise default to "local".
-        file_storage_provider = (
-            file_base.storage_provider
-            or (self.storage_provider.name if self.storage_provider else None)
-            or "local"
-        )
-        
-        # Generate a unique file name only when the client hasn't provided one
-        unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
-        file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
-
-        # Get or initialize the storage provider
-        provider_name = file_storage_provider or "local"
-        await self._initialize_storage_provider(provider_name)
-        if not self.storage_provider or not self.storage_provider.is_initialized():
-            raise ValueError("Storage provider not initialized")
-
-        # Resolve the storage path that will be persisted with the file metadata.
-        # If the caller has explicitly provided a storage_path, prefer that.
-        storage_path = file_base.storage_path or self.storage_provider.get_base_path()
-
-        # create the file data
-        file_data = FileBase(
-            name=file_base.name or file_name,
-            original_filename=file_base.original_filename or file_name,
-            mime_type=file_mime_type,
-            size=file_size,
-            file_extension=file_extension,
-            storage_provider=file_storage_provider,
-            storage_path=storage_path,
-            path=file_path,
-            description=file_base.description,
-            tags=file_base.tags,
-            permissions=file_base.permissions,
-        )
-
-        # Upload file content if provided
-        if file_content is not None:
-            await self.storage_provider.upload_file(
-                file_content=file_content,
-                file_path=file_path,
-                file_metadata={"name": file_data.name, "mime_type": file_data.mime_type}
+            # Prefer the storage provider coming from the request payload; fall back to the
+            # already configured provider if present, otherwise default to "local".
+            file_storage_provider = (
+                file_base.storage_provider
+                or (self.storage_provider.name if self.storage_provider else None)
+                or "local"
             )
 
-        # Create file metadata record
-        db_file = await self.repository.create_file(file_data)
-        return db_file
+            # Generate a unique file name only when the client hasn't provided one
+            unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
+            file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
+
+            # Get or initialize the storage provider
+            provider_name = file_storage_provider or "local"
+            await self._initialize_storage_provider(provider_name)
+            if not self.storage_provider or not self.storage_provider.is_initialized():
+                raise ValueError("Storage provider not initialized")
+
+            # Resolve the storage path that will be persisted with the file metadata.
+            # If the caller has explicitly provided a storage_path, prefer that.
+            storage_path = file_base.storage_path or self.storage_provider.get_base_path()
+
+            # create the file data
+            file_data = FileBase(
+                name=file_base.name or file_name,
+                original_filename=file_base.original_filename or file_name,
+                mime_type=file_mime_type,
+                size=file_size,
+                file_extension=file_extension,
+                storage_provider=file_storage_provider,
+                storage_path=storage_path,
+                path=file_path,
+                description=file_base.description,
+                tags=file_base.tags,
+                permissions=file_base.permissions,
+            )
+
+            # Upload file content if provided
+            if file_content is not None:
+                upload_result = await self.storage_provider.upload_file(
+                    file_content=file_content,
+                    file_path=file_path,
+                    file_metadata={"name": file_data.name, "mime_type": file_data.mime_type}
+                )
+                if not upload_result:
+                    raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Failed to upload file {file_path} on storage provider {self.storage_provider.name}")
+        except Exception as e:
+            logger.error(f"Failed to create file: {e}")
+            raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Failed to create file {file_path} on storage provider {self.storage_provider.name}: {str(e)}")
+        finally:
+            # Create file metadata record
+            db_file = await self.repository.create_file(file_data)
+            return db_file
 
     async def get_file_by_id(self, file_id: UUID) -> FileModel:
         """Get file metadata by ID."""
@@ -189,7 +202,7 @@ class FileManagerService:
         """Get file content from storage provider."""
         # initialize the storage provider
         await self._initialize_storage_provider(file.storage_provider)
-        
+
         # make sure the storage provider is initialized
         if not self.storage_provider.is_initialized():
             raise ValueError("Storage provider not initialized")
@@ -203,7 +216,7 @@ class FileManagerService:
         file = await self.get_file_by_id(file_id)
         content = await self.get_file_content(file)
         return base64.standard_b64encode(content).decode('utf-8')
-    
+
     async def download_file(self, file_id: UUID) -> tuple[FileModel, bytes]:
         """Get both file metadata and content."""
         file = await self.get_file_by_id(file_id)
@@ -223,7 +236,7 @@ class FileManagerService:
         except Exception as e:
             logger.error(f"Failed to download file to path {path}: {e}")
             raise AppException(error_key=ErrorKey.INTERNAL_ERROR, detail=str(e))
-        
+
     async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
         """Download file from URL to path."""
         try:
@@ -233,7 +246,7 @@ class FileManagerService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream("GET", file_url) as response:
                     response.raise_for_status()
-                    
+
                     with open(path, "wb") as f:
                         async for chunk in response.aiter_bytes(chunk_size=8192):
                             f.write(chunk)
@@ -268,7 +281,7 @@ class FileManagerService:
     async def delete_file(self, file_id: UUID, delete_from_storage: bool = True) -> None:
         """
         Delete a file (soft delete in DB, optionally delete from storage).
-        
+
         Args:
             file_id: File ID to delete
             delete_from_storage: Whether to delete from storage provider as well
@@ -336,7 +349,7 @@ class FileManagerService:
         """Initialize the storage provider."""
         if self.storage_provider and self.storage_provider.is_initialized():
             return self.storage_provider
-        
+
         # make sure the file has a storage provider
         if not storage_provider_name:
             raise ValueError("File has no storage provider")

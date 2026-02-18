@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, Query, Request, WebSocket
 from fastapi_injector import Injected
 from starlette.websockets import WebSocketDisconnect
 from app.core.exceptions.exception_handler import send_socket_error
+from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.auth.dependencies import (
     auth,
@@ -30,7 +31,6 @@ from app.auth.dependencies_agent_security import (
     get_agent_for_update,
 )
 from app.core.agent_security_utils import apply_agent_cors_headers
-from fastapi import Response
 from fastapi.responses import JSONResponse
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.websockets.socket_room_enum import SocketRoomType
@@ -275,6 +275,8 @@ async def update_no_agent(
                 "duration": updated_conversation.duration,
                 "negative_reason": updated_conversation.negative_reason,
                 "topic": updated_conversation.topic,
+                "thumbs_up_count": updated_conversation.thumbs_up_count,
+                "thumbs_down_count": updated_conversation.thumbs_down_count,
             },
             room_id=SocketRoomType.DASHBOARD,
             current_user_id=get_current_user_id(),
@@ -525,10 +527,23 @@ async def add_message_feedback(
     transcript_message_service: TranscriptMessageService = Injected(
         TranscriptMessageService
     ),
+    conversation_service: ConversationService = Injected(ConversationService),
 ):
-    await transcript_message_service.add_transcript_message_feedback(
+    _, conversation_id = await transcript_message_service.add_transcript_message_feedback(
         message_id, transcript_feedback
     )
+
+    # Get the conversation and update thumbs up/down counts
+    conversation = await conversation_service.get_conversation_by_id(
+        conversation_id, raise_not_found=True
+    )
+
+    # Update conversation thumbs up/down counts based on feedback type
+    increment_feedback(conversation, transcript_feedback)
+
+    # Persist the updated conversation
+    await conversation_service.update_conversation(conversation)
+
     return {
         "message": f"Successfully added message feedback, "
         f"for message id:{message_id} "

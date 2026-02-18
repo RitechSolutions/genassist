@@ -624,6 +624,21 @@ class FileExtractor:
             logger.error(f"Error extracting from image: {str(e)}")
             return ""
 
+    @staticmethod
+    def extract_from_image_bytes(content: bytes) -> str:
+        """Extract text from image bytes using OCR"""
+        try:
+            from io import BytesIO
+            from PIL import Image
+            import pytesseract
+
+            image = Image.open(BytesIO(content))
+            text = pytesseract.image_to_string(image)
+            return text.strip()
+        except Exception as e:
+            logger.error(f"Error extracting from image: {str(e)}")
+            return ""
+
 
     @staticmethod
     def extract_from_txt(file_path: str) -> str:

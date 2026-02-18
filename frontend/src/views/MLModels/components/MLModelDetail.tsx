@@ -60,7 +60,7 @@ import {
 import { Label } from "@/components/label";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import JsonViewer from "@/components/JsonViewer";
-import { downloadFile } from "@/helpers/utils";
+import { downloadFile, getFileDownloadUrl } from "@/helpers/utils";
 import { getApiUrlString } from "@/config/api";
 
 const MLModelDetail: React.FC = () => {
@@ -326,15 +326,10 @@ const MLModelDetail: React.FC = () => {
     return labels[type] || type;
   };
 
-  const getFileDownloadUrl = (fileId: string): string => {
-    const tenantId = localStorage.getItem("tenant_id");
-    const url = new URL(`file-manager/files/${fileId}/source`, getApiUrlString).toString();
-    return tenantId ? `${url}?X-Tenant-Id=${tenantId}` : url;
-  };
-
   const downloadModelFile = async (fileId: string) => {
     try {
-      const fileUrl = getFileDownloadUrl(fileId);
+      const tenantId = localStorage.getItem("tenant_id");
+      const fileUrl = getFileDownloadUrl(fileId, getApiUrlString, tenantId || "");
       await downloadFile(fileUrl, `${model?.name || "model"}.pkl`);
     } catch (error) {
       toast.error("Failed to download model file");
@@ -611,7 +606,7 @@ const MLModelDetail: React.FC = () => {
                 const duration = run.started_at && run.completed_at
                   ? Math.round((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000 / 60)
                   : null;
-                
+
                 return (
                   <div key={run.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
                     <div className="flex items-center justify-between">
@@ -649,8 +644,8 @@ const MLModelDetail: React.FC = () => {
                         )}
                       </div>
                       <div className="flex gap-2 ml-4">
-                        <Button 
-                          variant="outline" size="sm" 
+                        <Button
+                          variant="outline" size="sm"
                           icon={<RefreshCcw className="h-4 w-4 mr-1" />}
                           loading={isRefetching}
                           onClick={() => refetchPipelineRun(run.id)}>

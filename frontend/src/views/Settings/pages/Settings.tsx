@@ -14,8 +14,7 @@ import { FileManagerSettingsCard } from "../components/FileManagerSettingsCard";
 import type { User } from "@/interfaces/user.interface";
 
 const SettingsPage = () => {
-  const { toggleStates, handleToggle, saveSettings } = useSettings();
-  const [isSaving, setIsSaving] = useState(false);
+  const { toggleStates, handleToggle } = useSettings();
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [fileManagerSettings, setFileManagerSettings] = useState<FileManagerSettings | null>(null);
   const isMobile = useIsMobile();
@@ -66,12 +65,6 @@ const SettingsPage = () => {
     );
   }, [userProfile]);
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    await saveSettings();
-    setIsSaving(false);
-  };
-
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
@@ -116,13 +109,21 @@ const SettingsPage = () => {
                   </div>
                 </Card>
 
-                {/* TODO: WORK IN PROGRESS */}
-                {/* {fileManagerSettings?.file_manager_enabled && (
-                  <Card className="md:col-span-2 mt-6">
-                    <FileManagerSettingsCard settings={fileManagerSettings} />
+                {fileManagerSettings?.values.file_manager_enabled === true && (
+                  (fileManagerSettings.is_active === 1) && (
+                    <Card className="md:col-span-2 mt-6">
+                      <FileManagerSettingsCard settings={fileManagerSettings} />
+                    </Card>
+                  )) || (
+                  <Card className="md:col-span-2 mt-6 animate-fade-up animate-delay-200">
+                    <div className="p-6">
+                      <h2 className="text-xl font-semibold mb-4 animate-fade-up">File Manager Settings</h2>
+                      <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
+                        File manager is not enabled or is disabled in the database. Please contact your administrator to enable it.
+                      </p>
+                    </div>
                   </Card>
-                )} */}
-
+                )}
 
                 {/* <div className="md:col-span-2 flex justify-end gap-4 pt-4">
                   <Button variant="outline">Cancel</Button>
@@ -146,4 +147,4 @@ const SettingsPage = () => {
   );
 };
 
-export default SettingsPage; 
+export default SettingsPage;

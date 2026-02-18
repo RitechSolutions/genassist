@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { MetricsSection } from "../components/MetricsSection";
+import { AnalyticsMetricsSection } from "../components/AnalyticsMetricsSection";
 import { useAnalyticsData } from "../hooks/useAnalyticsData";
 
 const AnalyticsPage = () => {
@@ -47,11 +47,11 @@ const AnalyticsPage = () => {
                 </Select>
               </header>
 
-              <MetricsSection 
-                timeFrame={timeFrame} 
-                metrics={metrics} 
-                loading={loading} 
-                error={error} 
+              <AnalyticsMetricsSection
+                timeFrame={timeFrame}
+                metrics={metrics}
+                loading={loading}
+                error={error}
               />
             </div>
           </div>
