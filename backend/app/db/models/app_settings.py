@@ -16,7 +16,7 @@ class AppSettingsModel(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "type IN ('Zendesk', 'WhatsApp', 'Gmail', 'Microsoft', 'Slack', 'Jira', 'Other')",
+            "type IN ('Zendesk', 'WhatsApp', 'Gmail', 'Microsoft', 'Slack', 'Jira', 'FileManagerSettings', 'Other')",
             name='app_settings_type_check'
         ),
     )

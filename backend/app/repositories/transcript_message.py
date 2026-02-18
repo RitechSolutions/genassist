@@ -76,19 +76,14 @@ class TranscriptMessageRepository:
     async def add_message_feedback(
             self,
             message_id: UUID,
-            transcript_feedback: TranscriptSegmentFeedback
+            transcript_feedback: TranscriptSegmentFeedback,
             ) -> MessageFeedbackModel:
-        """Add feedback to a message"""
-        from datetime import datetime, timezone
-
-        # Get the message
-        message = await self.get_message_by_message_id(message_id)
-        if not message:
-            raise ValueError(f"Message with id {transcript_feedback.message_id} not found")
+        """Add feedback to a message. Message must be provided to avoid redundant queries."""
+        from datetime import timezone, datetime
 
         # Check if user already has feedback
         existing_feedback = await self.get_user_feedback_for_message(
-                message.id,
+                message_id,
                 get_current_user_id()
                 )
 
@@ -103,7 +98,7 @@ class TranscriptMessageRepository:
         else:
             # Create new feedback
             new_feedback = MessageFeedbackModel(
-                    message_id=message.id,
+                    message_id=message_id,
                     feedback=transcript_feedback.feedback.value,
                     feedback_timestamp=datetime.now(timezone.utc),
                     feedback_user_id=get_current_user_id(),
