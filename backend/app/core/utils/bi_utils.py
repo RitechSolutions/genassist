@@ -7,13 +7,14 @@ from app.core.exceptions.exception_classes import AppException
 from fastapi import UploadFile
 from typing import Dict, Tuple, Any
 from app.core.config.settings import settings
+from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.enums.transcript_message_type import TranscriptMessageType
 from app.core.utils.web_scraping_utils import fetch_from_url, html2text
 from app.db.models import ConversationModel
 from app.db.models.message_model import TranscriptMessageModel
 from app.schemas.agent_knowledge import KBBase
 import logging
-from app.schemas.conversation_transcript import TranscriptSegmentInput
+from app.schemas.conversation_transcript import TranscriptSegmentFeedback, TranscriptSegmentInput
 from app.schemas.filter import ConversationFilter
 
 
@@ -436,3 +437,10 @@ def filter_conversation_messages_create_time(
                 )
             )
     return query
+
+
+def increment_feedback(conversation: ConversationModel, transcript_feedback: TranscriptSegmentFeedback):
+    if transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD):
+        conversation.thumbs_up_count += 1
+    elif transcript_feedback.feedback in (Feedback.BAD, Feedback.VERY_BAD):
+        conversation.thumbs_down_count += 1
