@@ -8571,7 +8571,6 @@
           "FileManager"
         ],
         "summary": "Get File Manager Settings",
-        "description": "Return non-sensitive file manager configuration.",
         "operationId": "get_file_manager_settings_api_file_manager_settings_get",
         "responses": {
           "200": {
@@ -15204,6 +15203,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "FileManagerSettings",
               "Other"
             ],
             "title": "Type"
@@ -15253,6 +15253,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "FileManagerSettings",
               "Other"
             ],
             "title": "Type"
@@ -15329,6 +15330,7 @@
                   "Microsoft",
                   "Slack",
                   "Jira",
+                  "FileManagerSettings",
                   "Other"
                 ]
               },
