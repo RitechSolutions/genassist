@@ -349,14 +349,16 @@ async def upload_file_to_chat(
 
         # Extract text from the file
         try:
-            if file_extension.lower() == "pdf":
-                extracted_text = FileExtractor.extract_from_pdf(file_path)
-            elif file_extension.lower() == "docx":
-                extracted_text = FileExtractor.extract_from_docx(file_path)
-            elif file_extension.lower() in ["jpg", "jpeg", "png"]:
-                extracted_text = FileExtractor.extract_from_image(file_path)
-            else:  # Assume text file
-                extracted_text = FileExtractor.extract_from_txt(file_path)
+            # Download file content via the service so it works with any storage provider (local, S3, etc.)
+            file_content = await file_manager_service.get_file_content(created_file)
+
+            if file_extension.lower() in ["jpg", "jpeg", "png"]:
+                extracted_text = FileExtractor.extract_from_image_bytes(file_content)
+            else:
+                extracted_text = FileTextExtractor().extract(
+                    filename=created_file.name or file.filename,
+                    content=file_content,
+                )
             from app.dependencies.injector import injector
 
             # add file content to thread rag using workflow engine
