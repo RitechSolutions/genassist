@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Sheet,
   SheetContent,
@@ -14,10 +14,23 @@ import { Button } from "@/components/button";
 import { Play, GripVertical, Lock, LockOpen } from "lucide-react";
 import { NodeData } from "../types/nodes";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
-import { Node, Edge } from "reactflow";
+import { Node, Edge, useNodes } from "reactflow";
 import { Checkbox } from "@/components/checkbox";
 import { Label } from "@/components/label";
 import nodeRegistry from "../registry/nodeRegistry";
+import { isEqual } from "lodash";
+import {
+  AlertDialog,
+  AlertDialogPortal,
+  AlertDialogOverlay,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/alert-dialog";
+import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 
 const DEFAULT_SHEET_WIDTH_PX = 896;
 const MIN_SHEET_WIDTH_PX = 480;
@@ -55,6 +68,9 @@ interface WorkflowNodesPanelProps {
   // Unwrap field props
   showUnwrap?: boolean;
   onUnwrapChange?: (unwrap: boolean) => void;
+
+  // Save callback (passed via {...props} from dialogs)
+  onUpdate?: (data: NodeData) => void;
 }
 
 export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
@@ -76,6 +92,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   // Unwrap field props
   showUnwrap = false,
   onUnwrapChange,
+  onUpdate,
 }) => {
   const nodeDefinition = nodeRegistry.getNodeType(nodeType);
 
@@ -89,6 +106,70 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
 
   const { getAvailableDataForNode, hasNodeBeenExecuted, nodes: workflowNodes } =
     useWorkflowExecution();
+
+  // --- Unsaved changes detection ---
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(isOpen);
+
+  // Get persisted node data from the ReactFlow store
+  const reactFlowNodes = useNodes();
+  const persistedNodeData = useMemo(() => {
+    if (!nodeId) return undefined;
+    const node = reactFlowNodes.find((n) => n.id === nodeId);
+    return node?.data as NodeData | undefined;
+  }, [reactFlowNodes, nodeId]);
+
+  // Check if current panel data differs from persisted node data
+  const isDirty = useMemo(() => {
+    if (!persistedNodeData || !data) return false;
+    try {
+      const persistedClean = JSON.parse(JSON.stringify(persistedNodeData));
+      const currentClean = JSON.parse(JSON.stringify(data));
+      return !isEqual(persistedClean, currentClean);
+    } catch {
+      return false;
+    }
+  }, [persistedNodeData, data]);
+
+  // Sync internalOpen from isOpen (Cancel/Save buttons close immediately)
+  useEffect(() => {
+    if (isOpen) {
+      setShowUnsavedDialog(false);
+    }
+    setInternalOpen(isOpen);
+  }, [isOpen]);
+
+  // Intercept Sheet's own close triggers (Escape, X button) — only place we guard
+  const handleSheetOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        if (isPinned || isTestDialogOpen) return; // Don't close while pinned or testing
+        if (isDirty && onUpdate) {
+          setShowUnsavedDialog(true);
+          return; // Block close, show confirmation
+        }
+        setInternalOpen(false);
+        onClose();
+      }
+    },
+    [isPinned, isTestDialogOpen, isDirty, onUpdate, onClose]
+  );
+
+  // Confirmation dialog handlers
+  const handleConfirmSave = useCallback(() => {
+    if (onUpdate && data) {
+      onUpdate(data as NodeData);
+    }
+    setShowUnsavedDialog(false);
+    setInternalOpen(false);
+    onClose();
+  }, [onUpdate, data, onClose]);
+
+  const handleConfirmDiscard = useCallback(() => {
+    setShowUnsavedDialog(false);
+    setInternalOpen(false);
+    onClose();
+  }, [onClose]);
 
   // Build node metadata for JsonViewer to display node names instead of IDs
   const nodeMetadata: NodeMetadata = React.useMemo(() => {
@@ -109,10 +190,8 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
     }
   }, [isOpen]);
 
-  // Debug logging for props
-  React.useEffect(() => {}, [nodeId, nodeType, data, isOpen]);
-
   const handleTest = () => {
+
     setIsTestDialogOpen(true);
   };
 
@@ -206,7 +285,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
     if (isOpen) {
       const previousOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
-      
+
       return () => {
         document.body.style.overflow = previousOverflow;
       };
@@ -231,14 +310,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
 
   return (
     <>
-      <Sheet
-        open={isOpen}
-        onOpenChange={(open) => {
-          if (!open && isPinned) return;
-          onClose();
-        }}
-        modal={false}
-      >
+      <Sheet open={internalOpen} onOpenChange={handleSheetOpenChange} modal={false}>
         <SheetContent
           ref={contentRef}
           hideOverlay={true}
@@ -426,6 +498,40 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
           nodeName={nodeName}
         />
       )}
+
+      {/* Unsaved changes confirmation dialog */}
+      <AlertDialog
+        open={showUnsavedDialog}
+        onOpenChange={(open) => {
+          if (!open) handleConfirmDiscard();
+        }}
+      >
+        <AlertDialogPortal>
+          <AlertDialogOverlay style={{ zIndex: 1999 }} />
+          <AlertDialogPrimitive.Content
+            className="fixed left-[50%] top-[50%] grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg"
+            style={{ zIndex: 2000 }}
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle>You have unsaved changes!</AlertDialogTitle>
+              <AlertDialogDescription>
+                Would you like to save or discard them?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={handleConfirmDiscard}>
+                Discard
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmSave}
+                className="bg-blue-600 hover:bg-blue-700 focus:ring-blue-600"
+              >
+                Save
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogPrimitive.Content>
+        </AlertDialogPortal>
+      </AlertDialog>
     </>
   );
 };
