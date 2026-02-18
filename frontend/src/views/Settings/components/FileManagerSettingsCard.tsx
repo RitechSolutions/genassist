@@ -31,6 +31,7 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
   const [isSaving, setIsSaving] = useState(false);
   const [basePath, setBasePath] = useState(settings.values.base_path || "");
   const [awsBucketName, setAwsBucketName] = useState(settings.values.aws_bucket_name || "");
+  const showProviderOptions = false; // TODO: show provider options based on the provider
 
   const handleSave = async () => {
     try {
@@ -115,7 +116,7 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
           </Select>
         </div>
 
-        {selectedProvider === "local" && (
+        {showProviderOptions && selectedProvider === "local" && (
           <div className="flex items-center justify-between h-[40px]">
             <label className="text-sm font-medium">Base Path</label>
             <input
@@ -128,7 +129,7 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
           </div>
         )}
 
-        {selectedProvider === "s3" && (
+        {showProviderOptions && selectedProvider === "s3" && (
           <div className="flex items-center justify-between h-[40px]">
             <label className="text-sm font-medium">Bucket Name</label>
             <input
