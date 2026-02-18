@@ -61,15 +61,25 @@ class LLMModelNode(BaseNode):
             keep_recent = config.get("compactingKeepRecent", 10)
             threshold = config.get("compactingThreshold", 20)
 
-            # Check if compaction needed
-            if await memory.needs_compaction(threshold):
-                await self._perform_compaction(memory, config, provider_id)
+            # Check if we've ever compacted before
+            existing_summary = await memory.get_compacted_summary()
 
-            # Get history with compacted summary
-            return await memory.get_chat_history_with_compaction(
-                max_messages=keep_recent,
-                as_string=True
-            )
+            if existing_summary or await memory.needs_compaction(threshold):
+                # We've compacted before OR need to compact now
+                if await memory.needs_compaction(threshold):
+                    await self._perform_compaction(memory, config, provider_id)
+
+                # Return compacted summary + recent N messages
+                return await memory.get_chat_history_with_compaction(
+                    max_messages=keep_recent,
+                    as_string=True
+                )
+            else:
+                # Never compacted and below threshold - return ALL messages
+                return await memory.get_chat_history(
+                    as_string=True,
+                    max_messages=999  # Large number to get all messages
+                )
         else:
             # Message count mode - simple last N messages
             max_messages = config.get("maxMessages", 10)

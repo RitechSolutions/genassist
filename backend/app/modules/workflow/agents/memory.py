@@ -279,19 +279,18 @@ class InMemoryConversationMemory(BaseConversationMemory):
         return selected_messages
 
     async def needs_compaction(self, threshold: int) -> bool:
-        """Check if compaction is needed with throttling"""
+        """Check if compaction is needed at threshold intervals"""
         total_messages = len(self.messages)
 
         if total_messages < threshold:
             return False
 
-        # Check if we've compacted recently
+        # Check if we need to compact again at next threshold
         summary = await self.get_compacted_summary()
         if summary:
             compacted_count = summary.get("compacted_message_count", 0)
-            # Only compact if we have at least 10 new messages since last compaction
-            new_messages_since_compaction = total_messages - compacted_count
-            if new_messages_since_compaction < 10:
+            # Compact every threshold messages (at 20, 40, 60, 80...)
+            if total_messages < compacted_count + threshold:
                 return False
 
         return True
@@ -589,7 +588,7 @@ class RedisConversationMemory(BaseConversationMemory):
 
             return json.loads(metadata_json)
 
-        except (json.JSONDecodeError, Exception) as e:
+        except Exception as e:
             logger.error(
                 f"Failed to get metadata from Redis for thread {self.thread_id}: {e}"
             )
@@ -682,7 +681,7 @@ class RedisConversationMemory(BaseConversationMemory):
         return selected_messages
 
     async def needs_compaction(self, threshold: int) -> bool:
-        """Check if compaction is needed with throttling"""
+        """Check if compaction is needed at threshold intervals"""
         try:
             redis = await self._get_redis()
             # Get total message count using llen
@@ -691,13 +690,12 @@ class RedisConversationMemory(BaseConversationMemory):
             if total_messages < threshold:
                 return False
 
-            # Check if we've compacted recently
+            # Check if we need to compact again at next threshold
             summary = await self.get_compacted_summary()
             if summary:
                 compacted_count = summary.get("compacted_message_count", 0)
-                # Only compact if we have at least 10 new messages since last compaction
-                new_messages_since_compaction = total_messages - compacted_count
-                if new_messages_since_compaction < 10:
+                # Compact every threshold messages (at 20, 40, 60, 80...)
+                if total_messages < compacted_count + threshold:
                     return False
 
             return True
