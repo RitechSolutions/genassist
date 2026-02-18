@@ -8,6 +8,7 @@ from app.api.v1.routes import (
     audit_logs,
     auth,
     conversations,
+    dashboard,
     datasources,
     llm_analysts,
     llm_providers,
@@ -35,7 +36,7 @@ from app.api.v1.routes import (
     playground,
     smb_share_router,
     tenants,
-    azure_blob_router, 
+    azure_blob_router,
     public_registration,
     workflow_manager,
     mcp,
@@ -65,6 +66,7 @@ router.include_router(
     feature_flags.router, prefix="/feature-flags", tags=["FeatureFlags"]
 )
 router.include_router(audit_logs.router, prefix="/audit-logs", tags=["Audit Logs"])
+router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 
 router.include_router(datasources.router, prefix="/datasources", tags=["Datasources"])
 router.include_router(recordings.router, prefix="/audio", tags=["Audio"])

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class AzureStorageProvider(BaseStorageProvider):
     """
     Storage provider implementation using Azure Blob Storage (stub).
-    
+
     TODO: Implement full Azure Blob Storage operations using azure-storage-blob.
     """
 
@@ -26,7 +26,7 @@ class AzureStorageProvider(BaseStorageProvider):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the Azure Blob Storage provider.
-        
+
         Args:
             config: Configuration dictionary containing Azure credentials and container
         """
@@ -75,12 +75,12 @@ class AzureStorageProvider(BaseStorageProvider):
         file_content: bytes,
         storage_path: str,
         file_metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> bool:
         """Upload a file to Azure Blob Storage."""
         self._ensure_initialized()
         try:
             self.container_client.upload_blob(name=storage_path, data=file_content, overwrite=True)
-            return storage_path
+            return True
         except Exception as e:
             logger.error(f"Error uploading file to Azure Blob Storage: {e}")
             raise
@@ -102,7 +102,7 @@ class AzureStorageProvider(BaseStorageProvider):
         """Check if a file exists in Azure Blob Storage."""
         self._ensure_initialized()
         blob_client = self.container_client.get_blob_client(name=storage_path)
-        return blob_client.exists() 
+        return blob_client.exists()
 
     async def list_files(
         self,
@@ -136,5 +136,18 @@ class AzureStorageProvider(BaseStorageProvider):
             except Exception as e:
                 logger.error(f"Error getting stats from Azure Blob Storage: {e}")
                 stats["error"] = str(e)
-        
+
         return stats
+
+    async def get_file_url(self, container_name: str, file_storage_path: str) -> str:
+        """
+        Get the URL of a file in Azure Blob Storage.
+
+        Args:
+            container_name: Name of the container
+            file_storage_path: Path to the file in storage
+
+        Returns:
+            URL of the file
+        """
+        return f"https://{self.account_name}.blob.core.windows.net/{container_name}/{file_storage_path}"

@@ -1,3 +1,4 @@
+import { getApiUrlString } from "@/config/api";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -12,7 +13,7 @@ export function formatDate(date: string | Date): string {
     month: "long",
     day: "numeric",
   });
-} 
+}
 
 export function getTimeFromDatetime(datetimeString: string): string {
   const date = new Date(datetimeString);
@@ -45,4 +46,35 @@ export function maskInput(inputVal: string, maxLength: number = 36): string {
     maskSize = maxLength;
   }
   return "*".repeat(maskSize);
+}
+
+export function escapeHtml(text: string) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+export function downloadFile(fileUrl: string, filename: string) {
+  try {
+    const link = document.createElement("a");
+    link.href = fileUrl;
+    link.download = filename;
+    link.click();
+  } catch (error) {
+    console.error("Failed to download file:", error);
+    throw error;
+  }
+}
+
+export function getFileDownloadUrl(fileId: string, baseUrl: string, tenantId: string): string {
+  let url = new URL(`file-manager/files/${fileId}/source`, baseUrl).toString();
+
+  if (tenantId) {
+    url = url.includes("?") ? `${url}&X-Tenant-Id=${tenantId}` : `${url}?X-Tenant-Id=${tenantId}`;
+  }
+
+  return url;
 }

@@ -132,10 +132,15 @@ class TrainModelNode(BaseNode):
                     missing_columns.append(col)
             
             if missing_columns:
-                raise AppException(
-                    error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail=f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
-                )
+                logger.error(f"Columns not found in data: {missing_columns}. Available columns: {all_columns}")
+                return {
+                    "success": False,
+                    "error": f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
+                }
+                # raise AppException(
+                #     error_key=ErrorKey.INTERNAL_ERROR,
+                #     error_detail=f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
+                # )
 
             # Prepare features and target
             X = df[feature_columns].copy()

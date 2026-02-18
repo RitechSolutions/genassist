@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/select";
 import { Save } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import toast from "react-hot-toast";
@@ -106,7 +106,7 @@ export const MLModelInferenceDialog: React.FC<
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -200,6 +200,6 @@ export const MLModelInferenceDialog: React.FC<
           </div>
         )}
       </div>
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

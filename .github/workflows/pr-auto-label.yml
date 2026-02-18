@@ -57,5 +57,7 @@ jobs:
               "perf": "enhancement",
               "test": "enhancement",
               "build": "enhancement",
-              "ci": "enhancement"
+              "ci": "enhancement",
+              "cleanup": "enhancement",
+              "enhancement": "enhancement"
             }

@@ -7,6 +7,7 @@ All schemas use the unified TypeSchema structure from base.py.
 
 from typing import Dict
 from .base import FieldSchema, TypeSchema, convert_typed_schemas_to_dict
+from app.core.utils.gpt_utils import get_openai_model_options
 
 # Define LLM schemas using direct Pydantic models
 LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
@@ -26,24 +27,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 label="Model",
                 required=True,
                 default="gpt-3.5-turbo",
-                options=[
-                    {"value": "gpt-5", "label": "GPT 5"},
-                    {"value": "gpt-5-mini", "label": "GPT 5 mini"},
-                    {"value": "gpt-5-nano", "label": "GPT 5 nano"},
-                    {"value": "gpt-5.1", "label": "GPT 5.1"},
-                    {"value": "gpt-5.2", "label": "GPT 5.2"},
-                    {"value": "gpt-4o", "label": "GPT-4o"},
-                    {"value": "gpt-4o-mini", "label": "GPT-4o Mini"},
-                    {"value": "gpt-4", "label": "GPT-4"},
-                    {"value": "gpt-4-32k", "label": "GPT-4 32K"},
-                    {"value": "gpt-4-turbo-preview", "label": "GPT-4 Turbo Preview"},
-                    {"value": "o1-mini", "label": "O1 Mini"},
-                    {"value": "o1-small", "label": "O1 Small"},
-                    {"value": "o1-medium", "label": "O1 Medium"},
-                    {"value": "o1-large", "label": "O1 Large"},
-                    {"value": "gpt-3.5-turbo", "label": "GPT-3.5 Turbo"},
-                    {"value": "gpt-3.5-turbo-16k", "label": "GPT-3.5 Turbo 16K"},
-                ],
+                options=get_openai_model_options(),
             ),
             FieldSchema(
                 name="organization",
@@ -572,6 +556,55 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                     {"value": "sonar-small-online", "label": "Sonar Small Online"},
                     {"value": "sonar-medium-online", "label": "Sonar Medium Online"},
                 ],
+            ),
+        ],
+    ),
+    "openrouter": TypeSchema(
+        name="OpenRouter",
+        fields=[
+            FieldSchema(
+                name="api_key",
+                type="password",
+                label="API Key",
+                required=True,
+                description="Your OpenRouter API key from https://openrouter.ai",
+            ),
+            FieldSchema(
+                name="model",
+                type="text",
+                label="Model",
+                required=True,
+                default="anthropic/claude-3.5-sonnet",
+                description="Model in format: provider/model-name (e.g., anthropic/claude-3.5-sonnet, openai/gpt-4o)",
+            ),
+            FieldSchema(
+                name="base_url",
+                type="text",
+                label="Base URL",
+                required=False,
+                default="https://openrouter.ai/api/v1",
+                description="OpenRouter API endpoint",
+            ),
+            FieldSchema(
+                name="temperature",
+                type="number",
+                label="Temperature",
+                required=False,
+                default=0.7,
+                min=0.0,
+                max=2.0,
+                step=0.1,
+                description="Controls randomness (0.0 to 2.0)",
+            ),
+            FieldSchema(
+                name="max_tokens",
+                type="number",
+                label="Max Tokens",
+                required=False,
+                default=1024,
+                min=1,
+                step=1,
+                description="Maximum number of tokens to generate",
             ),
         ],
     ),

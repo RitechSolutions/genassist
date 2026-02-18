@@ -19,7 +19,7 @@ export function MetricCard({
   iconClassName = "",
 }: MetricCardProps) {
   return (
-    <div className={`flex flex-col items-center p-3 bg-primary/5 rounded-lg ${className}`}>
+    <div className={`flex flex-col items-center p-3 bg-gray-100 rounded-lg ${className}`}>
       <Icon className={`w-5 h-5 mb-1 text-primary ${iconClassName}`} />
       <div className="text-sm font-medium">{value}</div>
       <span className="text-xs text-muted-foreground">{label}</span>

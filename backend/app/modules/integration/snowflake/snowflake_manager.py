@@ -1,15 +1,14 @@
 # Standard library imports
-import asyncio
+import base64
 import logging
-import os
-from typing import Dict, List, Any, Tuple, Optional
-
-# Third-party imports
-import snowflake.connector
-from cryptography.hazmat.primitives import serialization
+from typing import Any, Dict, List, Optional, Tuple
 
 # Local application imports
 from app.core.utils.encryption_utils import decrypt_key
+from cryptography.hazmat.primitives import serialization
+
+# Third-party imports
+import snowflake.connector
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,7 @@ class SnowflakeManager:
                 - schema: Schema name (default: "PUBLIC")
                 - role: Snowflake role (optional)
                 - auth_method: "private_key" or "password" (default: "password")
-                - private_key: Encrypted PEM private key string (for private_key auth)
+                - private_key: PEM private key encrypted and Base64-encoded (for private_key auth)
                 - private_key_passphrase: Encrypted passphrase (optional)
                 - password: Encrypted password (for password auth)
                 - allowed_tables: List of allowed table names (optional)
@@ -53,7 +52,9 @@ class SnowflakeManager:
     # Private helpers
     # ---------------------------
 
-    def _private_key_der_from_pem(self, pem_str: str, passphrase: Optional[str]) -> bytes:
+    def _private_key_der_from_pem(
+        self, pem_str: str, passphrase: Optional[str]
+    ) -> bytes:
         """
         Convert a PEM (encrypted or not) private key string to *unencrypted* PKCS#8 DER bytes.
         Exactly what the Snowflake connector expects under 'private_key'.
@@ -62,16 +63,23 @@ class SnowflakeManager:
         if not pem_str or not pem_str.strip():
             raise ValueError("Private key PEM is empty.")
 
-        key = serialization.load_pem_private_key(
-            pem_str.encode("utf-8"),
-            password=None if passphrase is None else passphrase.encode("utf-8")
-        )
+        pem_bytes = pem_str.encode("utf-8")
+        password_bytes = passphrase.encode("utf-8") if passphrase else None
+
+        try:
+            # Attempt with passphrase (if provided)
+            key = serialization.load_pem_private_key(pem_bytes, password=password_bytes)
+        except (TypeError, ValueError):
+            # Fallback: If passphrase was rejected or caused a type mismatch,
+            # try one last time with None.
+            # If it fails here, the key is truly invalid or password-protected.
+            key = serialization.load_pem_private_key(pem_bytes, password=None)
+
         return key.private_bytes(
             encoding=serialization.Encoding.DER,
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         )
-
 
     def _build_conn_params(self) -> Dict[str, Any]:
         """
@@ -99,10 +107,17 @@ class SnowflakeManager:
         if auth_method == "private_key":
             private_key = self.config.get("private_key")
             if not private_key:
-                raise ValueError("auth_method='private_key' requires 'private_key' in config.")
-            
-            pem_str = decrypt_key(private_key)
-            passphrase = decrypt_key(self.config["private_key_passphrase"]) if self.config.get("private_key_passphrase") else None
+                raise ValueError(
+                    "auth_method='private_key' requires 'private_key' in config."
+                )
+
+            encrypted_pem_str = base64.b64decode(private_key).decode("utf-8")
+            pem_str = decrypt_key(encrypted_pem_str)
+            passphrase = (
+                decrypt_key(self.config["private_key_passphrase"])
+                if self.config.get("private_key_passphrase")
+                else None
+            )
             der_bytes = self._private_key_der_from_pem(pem_str, passphrase)
             params["private_key"] = der_bytes
             logger.info("Using key-pair authentication.")
@@ -112,7 +127,9 @@ class SnowflakeManager:
         if auth_method == "password":
             pwd = self.config.get("password")
             if not pwd:
-                raise ValueError("auth_method='password' requires 'password' in config.")
+                raise ValueError(
+                    "auth_method='password' requires 'password' in config."
+                )
             params["password"] = decrypt_key(pwd)
             logger.info("Using password authentication.")
             return params
@@ -152,9 +169,7 @@ class SnowflakeManager:
                 self.connection = None
 
     async def execute_query(
-        self,
-        query: str,
-        parameters: Optional[Dict[str, Any]] = None
+        self, query: str, parameters: Optional[Dict[str, Any]] = None
     ) -> Tuple[List[Dict], Optional[str]]:
         """
         Execute a SQL query with a one-time reconnect on token-expiry (390114).
@@ -201,7 +216,7 @@ class SnowflakeManager:
         include_samples: bool = True,
         sample_size: int = 1,
         include_categorical_values: bool = True,
-        max_categorical_values: int = 10
+        max_categorical_values: int = 10,
     ) -> Dict[str, Any]:
         """Retrieve schema info for current database+schema; respects allowed_tables."""
         if not self.connection:
@@ -209,109 +224,69 @@ class SnowflakeManager:
 
         cur = self.connection.cursor()
         try:
-            current_database = self.config.get('database', 'SNOWFLAKE')
-            current_schema = self.config.get('schema', 'PUBLIC')
+            current_database = self.config.get("database", "SNOWFLAKE")
+            current_schema = self.config.get("schema", "PUBLIC")
 
-            tables_query = """
-            SELECT 
-                table_name,
+            # Single query to get all table and column information
+            schema_query = """
+            SELECT
                 table_schema,
-                table_type
-            FROM information_schema.tables 
-            WHERE table_catalog = %s 
+                table_name,
+                column_name,
+                data_type,
+                ordinal_position
+            FROM information_schema.columns
+            WHERE table_catalog = %s
               AND table_schema = %s
-            ORDER BY table_name
-            LIMIT 50
+            ORDER BY table_name, ordinal_position
             """
-            logger.info(f"Executing tables query for {current_database}.{current_schema}")
-            cur.execute(tables_query, [current_database, current_schema])
-            tables_data = cur.fetchall()
-            logger.info(f"Found {len(tables_data)} tables in {current_database}.{current_schema}")
 
-            tables: List[Dict[str, Any]] = []
-            allowed_upper = [t.upper() for t in self.allowed_tables] if self.allowed_tables else None
+            logger.info(
+                f"Executing schema query for {current_database}.{current_schema}"
+            )
+            cur.execute(schema_query, [current_database, current_schema])
+            rows = cur.fetchall()
+            logger.info(f"Retrieved {len(rows)} column definitions")
 
-            for table_name, table_schema, table_type in tables_data:
+            # Group columns by table
+            tables_dict = {}
+            allowed_upper = (
+                [t.upper() for t in self.allowed_tables]
+                if self.allowed_tables
+                else None
+            )
+
+            for table_schema, table_name, column_name, data_type, _ in rows:
+                # Filter by allowed tables
                 if allowed_upper and table_name.upper() not in allowed_upper:
                     continue
 
-                columns_query = """
-                SELECT 
-                    column_name,
-                    data_type,
-                    is_nullable,
-                    column_default
-                FROM information_schema.columns 
-                WHERE table_catalog = %s 
-                  AND table_name = %s 
-                  AND table_schema = %s
-                ORDER BY ordinal_position
-                LIMIT 20
-                """
-                cur.execute(columns_query, [current_database, table_name, table_schema])
-                columns_data = cur.fetchall()
-
-                columns: List[Dict[str, Any]] = []
-                for col_name, data_type, is_nullable, column_default in columns_data:
-                    col_info: Dict[str, Any] = {
-                        "name": col_name,
-                        "type": data_type,
-                        "nullable": is_nullable == "YES",
-                        "default": column_default
+                # Create table entry if it doesn't exist
+                table_key = f"{table_schema}.{table_name}"
+                if table_key not in tables_dict:
+                    tables_dict[table_key] = {
+                        "name": table_key,
+                        "schema": table_schema,
+                        "table": table_name,
+                        "columns": [],
                     }
 
-                    # Categorical sampler for text-like columns
-                    if include_categorical_values and data_type in ('TEXT', 'VARCHAR', 'CHAR'):
-                        try:
-                            # Validate identifiers to prevent SQL injection
-                            safe_col = self._validate_identifier(col_name)
-                            safe_schema = self._validate_identifier(table_schema)
-                            safe_table = self._validate_identifier(table_name)
+                # Add column info
+                tables_dict[table_key]["columns"].append(
+                    {
+                        "name": column_name,
+                        "type": data_type,
+                    }
+                )
 
-                            if not all([safe_col, safe_schema, safe_table]):
-                                logger.warning(f"Invalid identifier detected, skipping categorical probe for {table_schema}.{table_name}.{col_name}")
-                                continue
-
-                            # Use quoted identifiers for safety
-                            count_query = f"""
-                            SELECT COUNT(DISTINCT "{safe_col}")
-                            FROM "{safe_schema}"."{safe_table}"
-                            WHERE "{safe_col}" IS NOT NULL
-                            """
-                            cur.execute(count_query)
-                            total_distinct = cur.fetchone()[0]
-                            col_info["total_distinct_count"] = total_distinct
-
-                            if total_distinct <= 50:
-                                # max_categorical_values is an int from function parameter, safe to use
-                                categorical_query = f"""
-                                SELECT DISTINCT "{safe_col}"
-                                FROM "{safe_schema}"."{safe_table}"
-                                WHERE "{safe_col}" IS NOT NULL
-                                LIMIT {int(max_categorical_values)}
-                                """
-                                cur.execute(categorical_query)
-                                sample_vals = cur.fetchall()
-                                if sample_vals:
-                                    col_info["categorical_values"] = [r[0] for r in sample_vals]
-                        except Exception as e:
-                            logger.warning(f"Categorical probe failed for {table_schema}.{table_name}.{col_name}: {e}")
-
-                    columns.append(col_info)
-
-                tables.append({
-                    "name": f"{table_schema}.{table_name}",
-                    "schema": table_schema,
-                    "table": table_name,
-                    "type": table_type,
-                    "columns": columns
-                })
+            tables = list(tables_dict.values())
 
             schema_result = {
                 "tables": tables,
-                "database": self.config.get('database', 'unknown'),
-                "schema_count": len(set(t["schema"] for t in tables))
+                "database": current_database,
+                "schema_count": len(set(t["schema"] for t in tables)),
             }
+
             logger.info(f"Schema retrieval complete. Found {len(tables)} tables.")
             return schema_result
 
@@ -326,20 +301,31 @@ class SnowflakeManager:
         alphanumeric characters, underscores, and dollar signs.
         """
         import re
+
         if not identifier:
             return None
         # Remove any double quotes that might be present
         identifier = identifier.strip('"')
         # Snowflake identifier pattern: starts with letter/underscore, followed by alphanumeric/underscore/dollar
-        if re.match(r'^[A-Za-z_][A-Za-z0-9_$]*$', identifier):
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_$]*$", identifier):
             return identifier
         return None
 
     def _is_categorical_column(self, data_type: str, column_name: str) -> bool:
-        categorical_types = {'VARCHAR', 'CHAR', 'STRING', 'TEXT'}
+        categorical_types = {"VARCHAR", "CHAR", "STRING", "TEXT"}
         if data_type.upper() in categorical_types:
             return True
-        patterns = ['type', 'status', 'category', 'kind', 'class', 'group', 'level', 'grade', 'rank']
+        patterns = [
+            "type",
+            "status",
+            "category",
+            "kind",
+            "class",
+            "group",
+            "level",
+            "grade",
+            "rank",
+        ]
         return any(p in column_name.lower() for p in patterns)
 
     async def get_schema(
@@ -347,14 +333,14 @@ class SnowflakeManager:
         include_samples: bool = True,
         sample_size: int = 1,
         include_categorical_values: bool = True,
-        max_categorical_values: int = 10
+        max_categorical_values: int = 10,
     ) -> Dict[str, Any]:
         if not self.schema:
             self.schema = await self._get_schema(
                 include_samples=include_samples,
                 sample_size=sample_size,
                 include_categorical_values=include_categorical_values,
-                max_categorical_values=max_categorical_values
+                max_categorical_values=max_categorical_values,
             )
         return self.schema
 

@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AgentConfig, getAllKnowledgeItems } from "@/services/api";
+import { AgentListItem } from "@/interfaces/ai-agent.interface";
 import { Button } from "@/components/button";
 import {
-  Search,
   Plus,
   MoreVertical,
-  Edit,
+  Pencil,
   Trash2,
   AlertCircle,
   SquareCode,
   KeyRoundIcon,
   Shield,
+  Loader2,
 } from "lucide-react";
 import { Switch } from "@/components/switch";
 import {
@@ -22,54 +22,63 @@ import {
   DropdownMenuSeparator,
 } from "@/components/dropdown-menu";
 import { AgentFormDialog } from "./AgentForm";
+import { SearchInput } from "@/components/SearchInput";
 
 interface AgentListProps {
-  agents: AgentConfig[];
+  agents: AgentListItem[];
+  total: number;
   onDelete: (agentId: string) => void;
   onUpdate: (agentId: string) => void;
   onManageKeys: (agentId: string) => void;
-  onGetIntegrationCode: (agentId: string, userId: string) => void;
+  onGetIntegrationCode: (agentId: string) => void;
+  onRefresh: () => void;
+  loadMore: () => void;
+  hasMore: boolean;
+  loadingMore: boolean;
 }
 
 const AgentList: React.FC<AgentListProps> = ({
   agents,
+  total,
   onDelete,
   onUpdate,
   onManageKeys,
   onGetIntegrationCode,
+  onRefresh,
+  loadMore,
+  hasMore,
+  loadingMore,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  interface KnowledgeItem {
-    id: string;
-    rag_config?: {
-      enabled: boolean;
-    };
-  }
+  // Infinite scroll using IntersectionObserver
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loadMore]);
 
   const activeAgents = agents.filter((agent) => agent.is_active);
   const inactiveAgents = agents.filter((agent) => !agent.is_active);
   const filteredAgents = agents.filter((agent) => {
-    const agentName = agent.name || `${agent.provider}-${agent.model}`;
+    const agentName = agent.name;
     return agentName.toLowerCase().includes(searchTerm.toLowerCase());
   });
-  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
 
   const [openAgentForm, setOpenAgentForm] = useState(false);
-
-  useEffect(() => {
-    const fetchKnowledgeItems = async () => {
-      try {
-        const items = await getAllKnowledgeItems();
-        setKnowledgeItems(items as KnowledgeItem[]);
-      } catch (err) {
-        // ignore
-      }
-    };
-
-    fetchKnowledgeItems();
-  }, []);
 
   const handleOpenWorkflow = (agentId: string) => {
     navigate(`/ai-agents/workflow/${agentId}`);
@@ -101,10 +110,9 @@ const AgentList: React.FC<AgentListProps> = ({
     );
   }
 
-  const renderAgent = (agent: AgentConfig) => {
-    const agentName = agent.name || `${agent.provider}-${agent.model}`;
+  const renderAgent = (agent: AgentListItem) => {
+    const agentName = agent.name;
     const isActive = !!agent.is_active;
-    // Truncate system prompt for display
     const truncatedPrompt = agent.possible_queries?.join(" ") ?? "";
 
     return (
@@ -157,7 +165,7 @@ const AgentList: React.FC<AgentListProps> = ({
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem asChild>
                     <Link to={`/ai-agents/workflow/${agent.id}`}>
-                      <Edit className="mr-2 h-4 w-4" />
+                      <Pencil className="mr-2 h-4 w-4" />
                       <span>Edit</span>
                     </Link>
                   </DropdownMenuItem>
@@ -171,7 +179,7 @@ const AgentList: React.FC<AgentListProps> = ({
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.stopPropagation();
-                      onGetIntegrationCode(agent.id, agent.user_id!);
+                      onGetIntegrationCode(agent.id);
                     }}
                   >
                     <SquareCode className="mr-2 h-4 w-4" /> Integration
@@ -199,29 +207,30 @@ const AgentList: React.FC<AgentListProps> = ({
     );
   };
 
+  const handleFormClose = () => {
+    setOpenAgentForm(false);
+    onRefresh();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold">
-            Workflows{" "}
-            {/* <span className="text-2xl text-zinc-400 font-normal">({activeAgents.length} Active, {inactiveAgents.length} Inactive)</span> */}
+            Agent Studio{" "}
+            <span className="text-2xl text-zinc-400 font-normal">({activeAgents.length} Active, {inactiveAgents.length} Inactive)</span>
           </h2>
           <p className="text-zinc-400 font-normal">View and manage workflows</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search agents..."
-              className="h-10 w-[200px] rounded-md border border-input bg-white pl-8 pr-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
+          <SearchInput
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="Search agents..."
+            className="w-[200px]"
+          />
           <Button
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 rounded-full"
             onClick={() => setOpenAgentForm(true)}
           >
             <Plus className="h-4 w-4" />
@@ -231,21 +240,24 @@ const AgentList: React.FC<AgentListProps> = ({
       </div>
 
       <div className="rounded-md border bg-card">
-        <div className="p-6">
-          <h3 className="text-xl font-semibold">
-            {filteredAgents.length} Workflows ({activeAgents.length} Active,{" "}
-            {inactiveAgents.length} Inactive)
-          </h3>
-        </div>
         <div className="divide-y">
           {filteredAgents.map((agent) => {
             return renderAgent(agent);
           })}
         </div>
+
+        {/* Infinite scroll sentinel and loading indicator */}
+        {loadingMore && (
+          <div className="flex items-center justify-center py-4 border-t">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading more...</span>
+          </div>
+        )}
+        <div ref={sentinelRef} className="h-1" />
       </div>
       <AgentFormDialog
         isOpen={openAgentForm}
-        onClose={() => setOpenAgentForm(false)}
+        onClose={handleFormClose}
         data={null}
       />
     </div>

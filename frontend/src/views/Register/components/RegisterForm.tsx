@@ -61,7 +61,7 @@ export const RegisterForm = ({ onSubmit, isLoading }: RegisterFormProps) => {
 
       <Button
         type="submit"
-        className="w-full bg-black text-white hover:bg-black/90"
+        className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
         disabled={isLoading || !username || !password || !confirmPassword}
       >
         {isLoading ? "Creating account..." : "Sign Up"}

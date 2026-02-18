@@ -6,7 +6,12 @@ All schemas use the unified TypeSchema structure from base.py.
 """
 
 from typing import Dict
-from .base import FieldSchema, TypeSchema, ConditionalField, convert_typed_schemas_to_dict
+from .base import (
+    FieldSchema,
+    TypeSchema,
+    ConditionalField,
+    convert_typed_schemas_to_dict,
+)
 
 # Define field schemas for each data source type
 DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
@@ -200,11 +205,11 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 conditional=ConditionalField(field="auth_method", value="password"),
             ),
             FieldSchema(
-                name="private_key",
-                type="password",
-                label="Private Key",
+                name="private_key_file",
+                type="files",
+                label="Private Key File",
                 required=True,
-                description="Enter RSA private key for authentication",
+                description="Upload RSA private key file for authentication",
                 conditional=ConditionalField(field="auth_method", value="private_key"),
             ),
             FieldSchema(

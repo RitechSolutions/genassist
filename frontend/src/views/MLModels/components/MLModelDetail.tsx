@@ -18,8 +18,6 @@ import {
   ChevronLeft,
   Play,
   Clock,
-  CheckCircle2,
-  XCircle,
   AlertCircle,
   Download,
   Star,
@@ -29,6 +27,7 @@ import {
   ExternalLink,
   FileCode,
   Calendar,
+  RefreshCcw,
 } from "lucide-react";
 import { Badge } from "@/components/badge";
 import { getMLModel } from "@/services/mlModels";
@@ -42,6 +41,7 @@ import {
   createPipelineRun,
   promotePipelineRun,
   getPipelineRunArtifacts,
+  getPipelineRun,
 } from "@/services/mlModelPipelines";
 import {
   TrainingPipelineConfig,
@@ -60,7 +60,8 @@ import {
 import { Label } from "@/components/label";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import JsonViewer from "@/components/JsonViewer";
-import { v4 as uuidv4 } from "uuid";
+import { downloadFile, getFileDownloadUrl } from "@/helpers/utils";
+import { getApiUrlString } from "@/config/api";
 
 const MLModelDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -84,6 +85,7 @@ const MLModelDetail: React.FC = () => {
   const [configToDelete, setConfigToDelete] = useState<TrainingPipelineConfig | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRefetching, setIsRefetching] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -99,6 +101,8 @@ const MLModelDetail: React.FC = () => {
     try {
       setLoading(true);
       const data = await getMLModel(id);
+
+
       setModel(data);
     } catch (error) {
       toast.error("Failed to load ML model");
@@ -120,6 +124,7 @@ const MLModelDetail: React.FC = () => {
 
   const fetchPipelineRuns = async () => {
     if (!id) return;
+
     try {
       const runs = await getModelPipelineRuns(id);
       setPipelineRuns(runs.sort((a, b) => {
@@ -321,14 +326,45 @@ const MLModelDetail: React.FC = () => {
     return labels[type] || type;
   };
 
+  const downloadModelFile = async (fileId: string) => {
+    try {
+      const tenantId = localStorage.getItem("tenant_id");
+      const fileUrl = getFileDownloadUrl(fileId, getApiUrlString, tenantId || "");
+      await downloadFile(fileUrl, `${model?.name || "model"}.pkl`);
+    } catch (error) {
+      toast.error("Failed to download model file");
+      console.error(error);
+    }
+  };
+
+  const refetchPipelineRun = async (runId: string) => {
+    setIsRefetching(true);
+    if (!id) return;
+    try {
+      const updatedRun = await getPipelineRun(id, runId);
+      if (updatedRun) {
+        setPipelineRuns(pipelineRuns.map(r => r.id === runId ? updatedRun : r));
+      }
+    }
+    catch (error) {
+      console.error("Error refetching pipeline run:", error);
+    }
+    finally {
+
+      setTimeout(() => {
+        setIsRefetching(false);
+      }, 1000);
+    }
+  };
+
   if (loading) {
     return (
       <SidebarProvider>
-        <div className="min-h-screen flex w-full">
+        <div className="min-h-screen flex w-full overflow-x-hidden">
           {!isMobile && <AppSidebar />}
-          <main className="flex-1 flex flex-col bg-zinc-100 relative">
+          <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
             <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-            <div className="flex-1 p-8">
+            <div className="flex-1 p-4 sm:p-6 lg:p-8">
               <div className="max-w-7xl mx-auto">
                 <div className="flex justify-center items-center py-12">
                   <div className="text-sm text-gray-500">Loading model details...</div>
@@ -344,11 +380,11 @@ const MLModelDetail: React.FC = () => {
   if (!model) {
     return (
       <SidebarProvider>
-        <div className="min-h-screen flex w-full">
+        <div className="min-h-screen flex w-full overflow-x-hidden">
           {!isMobile && <AppSidebar />}
-          <main className="flex-1 flex flex-col bg-zinc-100 relative">
+          <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
             <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-            <div className="flex-1 p-8">
+            <div className="flex-1 p-4 sm:p-6 lg:p-8">
               <div className="max-w-7xl mx-auto">
                 <div className="flex flex-col items-center justify-center py-12 gap-4">
                   <AlertCircle className="h-12 w-12 text-gray-400" />
@@ -366,10 +402,11 @@ const MLModelDetail: React.FC = () => {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 flex flex-col bg-zinc-100">
-          <div className="flex-1 p-8">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
+          <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
+          <div className="flex-1 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
               <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -388,7 +425,15 @@ const MLModelDetail: React.FC = () => {
 
       {/* Section 1: Model Details */}
       <div className="rounded-lg border bg-white p-6 mb-6">
-        <h3 className="text-xl font-semibold mb-6">Model Information</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-semibold mb-6">Model Information</h3>
+          {model.pkl_file_id && (
+            <Button variant="outline" size="sm" onClick={() => downloadModelFile(model.pkl_file_id as string)}>
+              <Download className="h-4 w-4 mr-2" />
+              Download Model File
+            </Button>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div>
             <Label className="text-sm text-gray-500 mb-1 block">Model Type</Label>
@@ -400,7 +445,7 @@ const MLModelDetail: React.FC = () => {
           </div>
           <div>
             <Label className="text-sm text-gray-500 mb-1 block">Features</Label>
-            <p className="text-sm font-medium">{model.features.length} features</p>
+            <p className="text-sm font-medium">{model.features.length} feature{model.features.length > 1 ? "s" : ""}</p>
             <p className="text-xs text-gray-500 mt-1">{model.features.join(", ")}</p>
           </div>
           {model.created_at && (
@@ -420,16 +465,6 @@ const MLModelDetail: React.FC = () => {
             </div>
           )}
         </div>
-
-        {model.pkl_file && (
-          <div className="mt-6">
-            <Label className="text-sm text-gray-500 mb-1 block">Model File</Label>
-            <div className="flex items-center gap-2 mt-1">
-              <FileCode className="h-4 w-4" />
-              <p className="text-sm font-medium">{model.pkl_file}</p>
-            </div>
-          </div>
-        )}
 
         {model.inference_params && Object.keys(model.inference_params).length > 0 && (
           <div className="mt-6 pt-6 border-t">
@@ -571,10 +606,10 @@ const MLModelDetail: React.FC = () => {
                 const duration = run.started_at && run.completed_at
                   ? Math.round((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000 / 60)
                   : null;
-                
+
                 return (
                   <div key={run.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <h4 className="text-base font-semibold">
@@ -609,6 +644,13 @@ const MLModelDetail: React.FC = () => {
                         )}
                       </div>
                       <div className="flex gap-2 ml-4">
+                        <Button
+                          variant="outline" size="sm"
+                          icon={<RefreshCcw className="h-4 w-4 mr-1" />}
+                          loading={isRefetching}
+                          onClick={() => refetchPipelineRun(run.id)}>
+                          Refresh
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"

@@ -1,0 +1,16 @@
+# Build
+dist
+
+# Example widget dist
+example-widget/dist
+
+# Config files
+example-widget/config/config.js
+
+# Node modules
+node_modules
+example-widget/node_modules
+
+# Fonts
+src/fonts/*
+!src/fonts/README.txt

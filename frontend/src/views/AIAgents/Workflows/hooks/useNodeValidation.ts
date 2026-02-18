@@ -5,37 +5,46 @@ import { NodeData } from "../types/nodes";
 import { useNodeSchema } from "@/context/NodeSchemaContext";
 
 export function useNodeValidation(nodeType: string, nodeData: NodeData) {
-  const { getSchema, loading } = useNodeSchema();
+  const { getSchema, loading, ensureLoaded, schemas } = useNodeSchema();
   const [schema, setSchema] = useState<FieldSchema[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     async function loadSchema() {
-      if (loading) {
-        setIsLoading(true);
-        return;
-      }
+      setIsLoading(true);
+
+      // Trigger lazy load of schemas when needed
+      await ensureLoaded();
+
+      if (!isMounted) return;
 
       try {
         const cachedSchema = getSchema(nodeType);
 
         if (cachedSchema) {
           setSchema(cachedSchema);
-          setIsLoading(false);
         } else {
-          console.error(`Schema not found for node type: ${nodeType}`);
+          // Schema might not exist for this node type - this is not necessarily an error
           setSchema(null);
-          setIsLoading(false);
         }
       } catch (err) {
         console.error("Error loading node schema", err);
         setSchema(null);
-        setIsLoading(false);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     }
 
     loadSchema();
-  }, [nodeType, loading, getSchema]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [nodeType, ensureLoaded, getSchema, schemas]);
 
   // Compute missing fields when data or schema changes
   const missingFields = useMemo(() => {

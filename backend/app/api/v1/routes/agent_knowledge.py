@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form, Request
 from typing import List, Dict, Optional
 import os
 import uuid
@@ -29,12 +29,12 @@ from app.modules.workflow.agents.rag import ThreadScopedRAG
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 # File manager service
 from app.services.file_manager import FileManagerService
-from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
-from app.schemas.file import FileUploadResponse
+from app.schemas.file import FileBase, FileUploadResponse
+from app.core.config.settings import file_storage_settings
+from app.services.app_settings import AppSettingsService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
 
 # Helper functions removed - now using simplified manager interface
 # Define upload directory
@@ -202,13 +202,17 @@ async def delete_knowledge_doc(
     ],
 )
 async def upload_file(
+    request: Request,
     files: List[UploadFile] = File(...),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
 ):
     """
     Upload multiple files, extract their text content, and return saved filenames and paths.
     """
     results = []
     logger.info(f"Starting upload of {len(files)} files.")
+
     for file in files:
         try:
             logger.info(
@@ -216,30 +220,63 @@ async def upload_file(
             )
 
             # Generate a unique filename
-            file_extension = file.filename.split(
-                ".")[-1] if "." in file.filename else ""
-            unique_filename = (
-                f"{uuid.uuid4()}.{file_extension}" if file_extension else f"{uuid.uuid4()}"
-            )
-            file_path = os.path.join(UPLOAD_DIR, unique_filename)
+            file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
+            unique_filename = (f"{uuid.uuid4()}.{file_extension}" if file_extension else f"{uuid.uuid4()}")
 
-            logger.info(f"Saving file to: {file_path}")
-
-            # Save the file
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-
-            # Extract text from the file
-            extracted_text = FileTextExtractor().extract_from_path(path=file_path)
-            if not extracted_text:
-                raise AppException(ErrorKey.ERROR_EXTRACTING_FROM_FILE)
-
-            # Return the filenames and paths
+            # create the result object
             result = {
                 "filename": unique_filename,
                 "original_filename": file.filename,
-                "file_path": file_path,
             }
+
+            # check if the file manager is enabled
+            use_file_manager = file_storage_settings.FILE_MANAGER_ENABLED
+
+            if use_file_manager:
+                # subdir
+                sub_folder = f"agents_config/uploads"
+
+                # initialize the file manager service
+                app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+                storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings = app_settings_config)
+
+                file_base = FileBase(
+                    name=unique_filename,
+                    storage_path=storage_provider.get_base_path(),
+                    path=sub_folder,
+                    storage_provider=storage_provider.name,
+                    file_extension=file_extension,
+                )
+
+                # use file manager service to upload the file
+                created_file = await file_manager_service.create_file(file, file_base=file_base)
+                file_id = str(created_file.id)
+
+                # await file_manager_service.download_file_to_path(file_id, file_path)
+                file_url = await file_manager_service.get_file_source_url(created_file.id)
+
+                result["file_type"] = "url"
+                result["file_url"] = file_url
+                result["file_id"] = file_id
+
+                # if the file is stored locally, add the file path to the result
+                if created_file.storage_provider == "local":
+                    result["file_path"] = f"{created_file.storage_path}/{created_file.path}"
+            else:
+                # create the file path where the file will be saved
+                file_path = os.path.join(str(UPLOAD_DIR), unique_filename)
+                # add the file_path to the result
+                result["file_path"] = file_path
+
+                # save the file to the upload directory
+                logger.info(f"Saving file to: {file_path}")
+
+                # Save the file
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+
+                logger.info(f"Extracting text from file: {file_path}")
+
             logger.info(f"Upload successful: {result}")
             results.append(result)
         except Exception as e:
@@ -259,9 +296,11 @@ async def upload_file(
     ]
 )
 async def upload_file_to_chat(
+    request: Request,
     chat_id: str = Form(...),
     file: UploadFile = File(...),
     file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
 ):
     """
     Upload a file, extract its text content, and return both the saved filename and extracted text file
@@ -271,15 +310,29 @@ async def upload_file_to_chat(
             f"Received file upload: {file.filename}, size: {file.size}, content_type: {file.content_type}"
         )
 
-        # Introduce file manager service and set the storage provider to local file system
-        await file_manager_service.set_storage_provider(LocalFileSystemProvider(config={"base_path": UPLOAD_DIR}))
+        # file storage settings
+        app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+        storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings = app_settings_config)
+
+        file_url = None
 
         try:
+            file_base = FileBase(
+                name=file.filename,
+                path=f"agents_config/upload-chat-files/{chat_id}",
+                storage_path=storage_provider.get_base_path(),
+                storage_provider=storage_provider.name,
+                file_extension=file.filename.split(".")[-1] if "." in file.filename else "",
+            )
+
             # create file in file manager service
             created_file = await file_manager_service.create_file(
                 file,
+                file_base=file_base,
                 allowed_extensions=["pdf", "docx", "txt", "jpg", "jpeg", "png"],
             )
+
+            file_url = await file_manager_service.get_file_url(created_file)
         except Exception as e:
             logger.error(f"Error creating file: {str(e)}")
             raise HTTPException(
@@ -289,20 +342,24 @@ async def upload_file_to_chat(
         file_id = created_file.id
         file_extension = created_file.file_extension
         storage_path = created_file.storage_path
-        file_path = f"{UPLOAD_DIR}/{storage_path}"
+        file_path = f"{storage_path}/{created_file.path}"
 
         logger.debug(f"File Id: {file_id}")
 
         # Extract text from the file
         try:
-            if file_extension.lower() == "pdf":
-                extracted_text = FileExtractor.extract_from_pdf(file_path)
-            elif file_extension.lower() == "docx":
-                extracted_text = FileExtractor.extract_from_docx(file_path)
-            elif file_extension.lower() in ["jpg", "jpeg", "png"]:
-                extracted_text = FileExtractor.extract_from_image(file_path)
-            else:  # Assume text file
-                extracted_text = FileExtractor.extract_from_txt(file_path)
+            # Download file content via the service so it works with any storage provider (local, S3, etc.)
+            # file_content = await file_manager_service.get_file_content(created_file)
+
+            if file_extension.lower() in ["jpg", "jpeg", "png"]:
+                _file, file_content_bytes = await file_manager_service.download_file(created_file.id)
+                extracted_text = FileExtractor.extract_from_image_bytes(file_content_bytes)
+            else:
+                _file, file_content_bytes = await file_manager_service.download_file(created_file.id)
+                extracted_text = FileTextExtractor().extract(
+                    filename=created_file.name or file.filename,
+                    content=file_content_bytes,
+                )
             from app.dependencies.injector import injector
 
             # add file content to thread rag using workflow engine
@@ -317,7 +374,6 @@ async def upload_file_to_chat(
         except Exception as e:
             logger.warning(f"Could not extract text from file: {str(e)}")
 
-        file_relative_url = f"/api/file-manager/files/{file_id}/source"
 
         # Return the filenames and paths
         result = FileUploadResponse(
@@ -325,7 +381,7 @@ async def upload_file_to_chat(
             original_filename=file.filename,
             storage_path=storage_path,
             file_path=file_path,
-            file_url=file_relative_url,
+            file_url=file_url,
             file_id=str(file_id),
         )
 

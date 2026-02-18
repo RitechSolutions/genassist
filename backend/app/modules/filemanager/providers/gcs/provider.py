@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class GoogleCloudStorageProvider(BaseStorageProvider):
     """
     Storage provider implementation using Google Cloud Storage (stub).
-    
+
     TODO: Implement full GCS operations using google-cloud-storage.
     """
 
@@ -25,7 +25,7 @@ class GoogleCloudStorageProvider(BaseStorageProvider):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the Google Cloud Storage provider.
-        
+
         Args:
             config: Configuration dictionary containing GCS credentials and bucket
         """
@@ -44,14 +44,14 @@ class GoogleCloudStorageProvider(BaseStorageProvider):
     async def upload_file(
         self,
         file_content: bytes,
-        storage_path: str,
+        file_path: str,
         file_metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> bool:
         """Upload a file to Google Cloud Storage."""
         # TODO: Implement GCS file upload
         raise NotImplementedError("GoogleCloudStorageProvider.upload_file is not yet implemented")
 
-    async def download_file(self, storage_path: str) -> bytes:
+    async def download_file(self, file_path: str) -> bytes:
         """Download a file from Google Cloud Storage."""
         # TODO: Implement GCS file download
         raise NotImplementedError("GoogleCloudStorageProvider.download_file is not yet implemented")
@@ -83,3 +83,16 @@ class GoogleCloudStorageProvider(BaseStorageProvider):
             "initialized": self._initialized,
             "status": "stub - not implemented",
         }
+
+    async def get_file_url(self, bucket_name: str, file_storage_path: str) -> str:
+        """
+        Get the URL of a file in Google Cloud Storage.
+
+        Args:
+            bucket_name: Name of the bucket
+            file_storage_path: Path to the file in storage
+
+        Returns:
+            URL of the file
+        """
+        return f"https://storage.googleapis.com/{bucket_name}/{file_storage_path}"

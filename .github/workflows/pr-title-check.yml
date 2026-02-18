@@ -36,7 +36,9 @@ jobs:
               "release",
               "merge",
               "rebase",
-              "revert"
+              "revert",
+              "cleanup",
+              "enhancement"
             ];
 
             // Accept:

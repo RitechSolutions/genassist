@@ -35,26 +35,22 @@ export default function MCPServersPage() {
 
   return (
     <PageLayout>
-      <div className="px-6 py-4 w-full">
-        <PageHeader
-          title="MCP Servers"
-          subtitle="Manage MCP servers and expose workflows as tools"
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          searchPlaceholder="Search MCP servers..."
-          actionButtonText="Add New MCP Server"
-          onActionClick={handleCreateServer}
-        />
+      <PageHeader
+        title="MCP Servers"
+        subtitle="Manage MCP servers and expose workflows as tools"
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search MCP servers..."
+        actionButtonText="Add New MCP Server"
+        onActionClick={handleCreateServer}
+      />
 
-        <div className="w-full mt-4">
-          <MCPServerCard
-            searchQuery={searchQuery}
-            refreshKey={refreshKey}
-            onEditServer={handleEditServer}
-            updatedServer={updatedServer}
-          />
-        </div>
-      </div>
+      <MCPServerCard
+        searchQuery={searchQuery}
+        refreshKey={refreshKey}
+        onEditServer={handleEditServer}
+        updatedServer={updatedServer}
+      />
 
       <MCPServerDialog
         isOpen={isDialogOpen}

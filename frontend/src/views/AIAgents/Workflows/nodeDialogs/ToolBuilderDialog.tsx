@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { ToolBuilderNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Save } from "lucide-react";
-import { NodeConfigDialog } from "../components/NodeConfigDialog";
+import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { ToolDefinitionSection } from "../components/ToolDefinitionSection";
 
@@ -37,7 +37,7 @@ export const ToolBuilderDialog: React.FC<ToolBuilderDialogProps> = (props) => {
   };
 
   return (
-    <NodeConfigDialog
+    <NodeConfigPanel
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -61,6 +61,6 @@ export const ToolBuilderDialog: React.FC<ToolBuilderDialogProps> = (props) => {
         toolDefinition={toolDefinition}
         onToolDefinitionChange={setToolDefinition}
       />
-    </NodeConfigDialog>
+    </NodeConfigPanel>
   );
 };

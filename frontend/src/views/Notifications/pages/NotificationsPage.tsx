@@ -21,11 +21,12 @@ const NotificationsPage = () => {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full overflow-x-hidden">
         {!isMobile && <AppSidebar />}
-        <main className="flex-1 p-8 relative">
+        <main className="flex-1 flex flex-col bg-zinc-100 min-w-0 relative peer-data-[state=expanded]:md:ml-[calc(var(--sidebar-width)-2px)] peer-data-[state=collapsed]:md:ml-0 transition-[margin] duration-200">
           <SidebarTrigger className="fixed top-4 z-10 h-8 w-8 bg-white/50 backdrop-blur-sm hover:bg-white/70 rounded-full shadow-md transition-[left] duration-200" />
-          <div className="max-w-4xl mx-auto">
+          <div className="flex-1 p-4 sm:p-6 lg:p-8">
+            <div className="max-w-4xl mx-auto">
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -83,6 +84,7 @@ const NotificationsPage = () => {
                 </p>
               </TabsContent>
             </Tabs>
+            </div>
           </div>
         </main>
       </div>

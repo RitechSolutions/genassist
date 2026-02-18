@@ -6,6 +6,7 @@ import React, {
   ReactNode,
 } from "react";
 import { Node, Edge } from "reactflow";
+import { generateSampleOutput, NodeSchema } from "../types/schemas";
 
 // Types for workflow execution state
 export interface NodeExecutionResult {
@@ -96,10 +97,9 @@ export const WorkflowExecutionProvider: React.FC<
       setState((prevState) => {
         const newState = { ...prevState };
 
-        // Update node outputs
         newState.nodeOutputs[nodeId] = {
           status: "success",
-          output,
+          output: output,
           timestamp: Date.now(),
           nodeType,
           nodeName,
@@ -112,7 +112,6 @@ export const WorkflowExecutionProvider: React.FC<
 
         // Update source data for all nodes
         newState.source = output;
-
         return newState;
       });
     },
@@ -191,6 +190,34 @@ export const WorkflowExecutionProvider: React.FC<
     [nodes]
   );
 
+  // Helper to get output data for a node - either from execution or from schema
+  const getNodeOutputData = useCallback(
+    (nodeId: string): Record<string, unknown> | null => {
+      // First check if we have execution data
+      const executionOutput = state.nodeOutputs[nodeId];
+      if (executionOutput && executionOutput.output) {
+        return executionOutput.output;
+      }
+
+      // Fall back to generating sample data from node schema
+      const node = getNodeById(nodeId);
+      if (!node) return null;
+
+      // For chatInputNode, use its inputSchema
+      if (node.type === "chatInputNode" && node.data?.inputSchema) {
+        return generateSampleOutput(node.data.inputSchema as NodeSchema);
+      }
+
+      // For other nodes, try to use outputSchema if available
+      if (node.data?.outputSchema) {
+        return generateSampleOutput(node.data.outputSchema as NodeSchema);
+      }
+
+      return null;
+    },
+    [state.nodeOutputs, getNodeById]
+  );
+
   const getAvailableDataForNode = useCallback(
     (nodeId: string) => {
       // Find all predecessor nodes (nodes that come before this node in the workflow)
@@ -225,6 +252,13 @@ export const WorkflowExecutionProvider: React.FC<
         node &&
         node.type === "chatInputNode"
       ) {
+        // Return session data or generate from schema
+        if (Object.keys(state.session).length > 0) {
+          return state.session;
+        }
+        if (node.data?.inputSchema) {
+          return generateSampleOutput(node.data.inputSchema as NodeSchema);
+        }
         return state.session;
       }
 
@@ -248,9 +282,10 @@ export const WorkflowExecutionProvider: React.FC<
         });
 
       // Helper function to filter out keys containing "session.direct_input"
-      const filterOutput = (output: Record<string, unknown>) => {
+      const filterOutput = (output: unknown): unknown => {
+        if (!output || typeof output !== "object" || Array.isArray(output)) return output;
         const filtered: Record<string, unknown> = {};
-        Object.entries(output).forEach(([key, value]) => {
+        Object.entries(output as Record<string, unknown>).forEach(([key, value]) => {
           if (!key.includes("session.direct_input")) {
             filtered[key] = value;
           }
@@ -261,30 +296,40 @@ export const WorkflowExecutionProvider: React.FC<
       // Build node outputs object with all predecessor outputs
       const nodeOutputs = {};
       predecessorIds.forEach((predecessorId) => {
-        const predecessorOutput = state.nodeOutputs[predecessorId];
-        if (predecessorOutput && predecessorOutput.output) {
-          nodeOutputs[predecessorId] = filterOutput(predecessorOutput.output);
+        const output = getNodeOutputData(predecessorId);
+        if (output) {
+          nodeOutputs[predecessorId] = filterOutput(output);
         }
       });
 
       // Build source object with only direct predecessors
       let source = {};
       if (directPredecessors.length === 1) {
-        const predecessorOutput = state.nodeOutputs[directPredecessors[0]];
-        if (predecessorOutput && predecessorOutput.output) {
-          source = filterOutput(predecessorOutput.output);
+        const output = getNodeOutputData(directPredecessors[0]);
+        if (output) {
+          source = filterOutput(output);
         }
       } else {
         directPredecessors.forEach((predecessorId) => {
-          const predecessorOutput = state.nodeOutputs[predecessorId];
-          if (predecessorOutput && predecessorOutput.output) {
-            source[predecessorId] = filterOutput(predecessorOutput.output);
+          const output = getNodeOutputData(predecessorId);
+          if (output) {
+            source[predecessorId] = filterOutput(output);
           }
         });
       }
 
+      // Get session data - either from execution or generate from chatInputNode schema
+      let sessionData = state.session;
+      if (Object.keys(sessionData).length === 0) {
+        // Find chatInputNode and generate session from its schema
+        const chatInputNode = nodes.find((n) => n.type === "chatInputNode");
+        if (chatInputNode?.data?.inputSchema) {
+          sessionData = generateSampleOutput(chatInputNode.data.inputSchema as NodeSchema) || {};
+        }
+      }
+
       const availableData: Record<string, unknown> = {
-        session: state.session,
+        session: sessionData,
         source: source,
         node_outputs: nodeOutputs,
         // predecessors: predecessorIds,
@@ -292,7 +337,7 @@ export const WorkflowExecutionProvider: React.FC<
 
       return availableData;
     },
-    [state.session, state.nodeOutputs, edges, getNodeById]
+    [state.session, state.nodeOutputs, edges, getNodeById, getNodeOutputData, nodes]
   );
 
   const value: WorkflowExecutionContextType = {

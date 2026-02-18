@@ -91,7 +91,7 @@ export const LoginForm = ({ onSubmit, isLoading }: LoginFormProps) => {
 
       <Button
         type="submit"
-        className="w-full bg-black text-white hover:bg-black/90"
+        className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
         disabled={isLoading || !username || !password}
       >
         {isLoading ? "Signing in..." : "Sign in"}

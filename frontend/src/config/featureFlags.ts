@@ -20,10 +20,21 @@ export const FeatureFlags = {
       API_KEYS: 'feature.apiKeys'
     },
 
+    // Analytics / agent metrics: cost is hidden by default; show when this flag is enabled
+    ANALYTICS: {
+      SHOW_COST_PER_CONVERSATION: 'analytics.showCostPerConversation',
+    },
+
     ADMIN_TOOLS: {
       APP_SETTINGS: 'ui.menu.app-settings',
     },
   
+    // Workflow specific flags
+    WORKFLOW: {
+      CHAT_INPUT: 'workflow.chatInput',
+      CONVERSATIONAL_TAB: 'workflow.conversationalTab',
+    },
+
     // Specific UI components within features
     COMPONENTS: {
       CHAT: 'components.chat',

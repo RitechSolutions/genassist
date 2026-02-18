@@ -46,7 +46,7 @@ export const PerformanceChart = ({ timeFilter }: PerformanceChartProps) => {
   }, []);
 
   return (
-    <Card className="p-4 sm:p-6 shadow-sm transition-shadow hover:shadow-md animate-fade-up bg-white">
+    <Card className="p-4 sm:p-6 shadow-sm animate-fade-up bg-white">
       <h2 className="text-base sm:text-lg font-semibold mb-4">Weekly Performance Trend</h2>
       <div className="h-[300px] sm:h-[400px] w-full">
         <ResponsiveContainer width="100%" height="100%">

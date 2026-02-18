@@ -8,9 +8,9 @@ from .config import (
     GoogleCloudStorageConfig,
     SharePointStorageConfig,
 )
-from .manager import FileManagerServiceManager, get_file_manager_manager
 from .providers.base import BaseStorageProvider
 from .providers.local import LocalFileSystemProvider
+from .providers.s3 import S3StorageProvider
 
 __all__ = [
     "FileManagerConfig",
@@ -19,8 +19,7 @@ __all__ = [
     "AzureStorageConfig",
     "GoogleCloudStorageConfig",
     "SharePointStorageConfig",
-    "FileManagerServiceManager",
-    "get_file_manager_manager",
     "BaseStorageProvider",
     "LocalFileSystemProvider",
+    "S3StorageProvider",
 ]

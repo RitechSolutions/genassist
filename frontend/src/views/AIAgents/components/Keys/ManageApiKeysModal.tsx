@@ -28,7 +28,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/alert-dialog";
-import { PlusCircle, Edit, Trash2, Copy, Eye, EyeOff } from "lucide-react";
+import { PlusCircle, Pencil, Trash2, Copy, Eye, EyeOff } from "lucide-react";
 import { Input } from "@/components/input";
 import { Badge } from "@/components/badge";
 import toast from "react-hot-toast";
@@ -169,7 +169,7 @@ export default function ManageApiKeysModal({
                             }}
                             className="h-8 px-2 inline-flex items-center"
                           >
-                            <Edit className="h-4 w-4 mr-1" />
+                            <Pencil className="h-4 w-4 mr-1" />
                           </Button>
 
                           <AlertDialog>

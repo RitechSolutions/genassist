@@ -426,7 +426,7 @@ class OpenAIFineTuningService:
 
     async def upload_file_for_chat(
         self,
-        file_path: str,
+        file_url: str,
         filename: str,
         purpose: str = "user_data"
     ) -> str:
@@ -434,7 +434,7 @@ class OpenAIFineTuningService:
         Upload a file to OpenAI for use in chat completions.
         
         Args:
-            file_path: Local path to the file
+            file_url: URL of the file
             filename: Original filename
             purpose: File purpose (default: "user_data" for chat inputs)
         
@@ -442,10 +442,10 @@ class OpenAIFineTuningService:
             OpenAI file ID (e.g., "file-abc123")
         """
         try:
-            logger.info(f"Uploading file {filename} from {file_path} to OpenAI for chat")
+            logger.info(f"Uploading file {filename} from {file_url} to OpenAI for chat")
             
             # Read file content
-            with open(file_path, "rb") as f:
+            with open(file_url, "rb") as f:
                 file_content = f.read()
             
             # Upload to OpenAI

@@ -1,5 +1,5 @@
 from typing import List
-from ..base import FieldSchema
+from ..base import FieldSchema, ConditionalField
 
 LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
     FieldSchema(
@@ -37,5 +37,57 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         type="boolean",
         label="Enable Memory",
         required=True
+    ),
+    FieldSchema(
+        name="memoryTrimmingMode",
+        type="select",
+        label="Memory Trimming Mode",
+        required=False,
+        default="message_count",
+        options=[
+            {"value": "message_count", "label": "Last N Messages"},
+            {"value": "token_budget", "label": "Token Budget"}
+        ],
+        description="How to limit conversation history"
+    ),
+    FieldSchema(
+        name="maxMessages",
+        type="number",
+        label="Max Messages",
+        required=False,
+        default=10,
+        min=1,
+        step=1,
+        description="Maximum messages when using message count mode"
+    ),
+    FieldSchema(
+        name="tokenBudget",
+        type="number",
+        label="Total Token Budget",
+        required=False,
+        default=10000,
+        min=1000,
+        max=50000,
+        step=100,
+        description="Total tokens available per request",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="token_budget"
+        )
+    ),
+    FieldSchema(
+        name="conversationHistoryTokens",
+        type="number",
+        label="Conversation History Allocation (tokens)",
+        required=False,
+        default=5000,
+        min=0,
+        max=20000,
+        step=100,
+        description="Token budget for conversation history",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="token_budget"
+        )
     ),
 ]

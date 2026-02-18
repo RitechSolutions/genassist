@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { RegisterForm } from "../components/RegisterForm";
 import TermsAndPolicyNotice from "@/components/TermsAndPolicyNotice";
+import { AuthMockupPanel } from "@/components/AuthMockupPanel";
 
 const RegisterPage = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -109,12 +110,7 @@ const RegisterPage = () => {
           <TermsAndPolicyNotice mode="signup" className="mt-2" />
         </div>
       </div>
-      <div
-        style={{
-          backgroundImage: `url('/login-image.jpg')`,
-        }}
-        className="hidden md:block bg-cover bg-center bg-no-repeat bg-violet-100"
-      />
+      <AuthMockupPanel />
     </div>
   );
 };

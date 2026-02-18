@@ -44,7 +44,9 @@ export function TranscriptCard({ transcript, onClick, className = "" }: Transcri
             getEffectiveSentiment(transcript).slice(1)}
         </Badge>
       </div>
-      <div className="text-sm text-muted-foreground truncate" dangerouslySetInnerHTML={{ __html: getTranscriptPreview(transcript) as string }}></div>
+      <div className="text-sm text-muted-foreground truncate">
+        {getTranscriptPreview(transcript)}
+      </div>
     </div>
   );
 }
