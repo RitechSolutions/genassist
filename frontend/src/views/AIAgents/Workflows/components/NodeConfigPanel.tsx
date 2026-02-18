@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { JsonViewer, NodeMetadata } from "./custom/JsonViewer";
 import { GenericTestDialog } from "./GenericTestDialog";
 import { Button } from "@/components/button";
-import { Play, GripVertical, Lock, LockOpen } from "lucide-react";
+import { Play, GripVertical, Lock, LockOpen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NodeData } from "../types/nodes";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { Node, Edge, useNodes } from "reactflow";
@@ -102,6 +102,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   );
   const [sheetWidth, setSheetWidth] = useState<number | null>(null);
   const [isPinned, setIsPinned] = useState(false);
+  const [isJsonPanelVisible, setIsJsonPanelVisible] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const { getAvailableDataForNode, hasNodeBeenExecuted, nodes: workflowNodes } =
@@ -384,14 +385,23 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
 
           <div className="flex flex-1 gap-6 overflow-hidden px-6 pl-8">
             {/* Left side - JSON State section */}
-            {jsonStateDisplay && (
+            {jsonStateDisplay && isJsonPanelVisible && (
               <div className="min-w-80 flex-1 border-r border-gray-200 pr-6 flex flex-col py-6">
-                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200">
-                  <div>
-                    <p className="text-xs text-gray-500">
-                      Drag variables to input fields
-                    </p>
-                  </div>
+                <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-200">
+                  <p className="text-xs text-gray-500">
+                    Drag variables to input fields
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={() => setIsJsonPanelVisible(false)}
+                    title="Hide variables panel"
+                    aria-label="Hide variables panel"
+                  >
+                    <PanelLeftClose className="h-4 w-4 text-muted-foreground" />
+                  </Button>
                 </div>
 
                 <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-y-auto overflow-x-auto min-h-0 max-h-[calc(85vh-200px)]">
@@ -452,6 +462,21 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+            {jsonStateDisplay && !isJsonPanelVisible && (
+              <div className="w-10 flex-shrink-0 border-r border-gray-200 flex flex-col items-center py-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setIsJsonPanelVisible(true)}
+                  title="Show variables panel"
+                  aria-label="Show variables panel"
+                >
+                  <PanelLeftOpen className="h-4 w-4 text-muted-foreground" />
+                </Button>
               </div>
             )}
 
