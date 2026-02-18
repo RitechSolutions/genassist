@@ -10,6 +10,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Upload,
+  ChevronDown,
 } from "lucide-react";
 import { Card } from "@/components/card";
 import { Button } from "@/components/button";
@@ -22,6 +23,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
 import { useState, useEffect } from "react";
 import { Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
@@ -37,6 +47,7 @@ import { UploadMediaDialog } from "@/views/MediaUpload";
 import { getPaginationMeta } from "@/helpers/pagination";
 import { PaginationBar } from "@/components/PaginationBar";
 import { SearchInput } from "@/components/SearchInput";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixTooltip";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -56,6 +67,8 @@ const Transcripts = () => {
     Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1)
   );
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [orderBy, setOrderBy] = useState("");
+  const [sortDirection, setSortDirection] = useState("desc");
 
   // Initialize showLiveOnly based on URL parameters
   const statusParams = searchParams.getAll("status");
@@ -80,6 +93,8 @@ const Transcripts = () => {
     hostility_positive_max: hostilityParams.hostility_positive_max,
     hostility_neutral_max: hostilityParams.hostility_neutral_max,
     conversation_status: showLiveOnly ? ["in_progress", "takeover"] : undefined,
+    order_by: orderBy || undefined,
+    sort_direction: orderBy ? sortDirection : undefined,
   });
   
   const isMobile = useIsMobile();
@@ -170,6 +185,13 @@ const Transcripts = () => {
     const nextPage = Math.max(1, newPage);
     setCurrentPage(nextPage);
     updateUrlParams({ page: nextPage === 1 ? null : nextPage });
+  };
+
+  const applySort = (by: string, dir: string) => {
+    setOrderBy(by);
+    setSortDirection(dir);
+    setCurrentPage(1);
+    updateUrlParams({ page: 1 });
   };
 
   const filteredTranscripts = transcripts.filter((transcript) => {
@@ -282,44 +304,81 @@ const Transcripts = () => {
                 </div>
               </div>
 
-              <Tabs
-                value={activeTab}
-                className="w-full"
-                onValueChange={handleSentimentChange}
-              >
-                <TabsList className="w-full flex-wrap justify-start gap-2">
-                  <TabsTrigger value="all" className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    All
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="positive"
-                    className="flex items-center gap-2"
-                  >
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                    Positive
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="neutral"
-                    className="flex items-center gap-2"
-                  >
-                    <MinusCircle className="w-4 h-4 text-yellow-500" />
-                    Neutral
-                  </TabsTrigger>
-                  <TabsTrigger
-                  value="negative"
-                  className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-orange-400" />
-                    Bad
-                  </TabsTrigger>
-                  {/* <TabsTrigger
-                  value="very-bad"
-                  className="flex items-center gap-2">
-                    <XCircle className="w-4 h-4 text-red-500" />
-                    Very Bad
-                  </TabsTrigger> */}
-                </TabsList>
-              </Tabs>
+              <div className="w-full flex flex-wrap items-center justify-between gap-2">
+                <Tabs
+                  value={activeTab}
+                  className="flex-1 min-w-0"
+                  onValueChange={handleSentimentChange}
+                >
+                  <TabsList className="w-full flex-wrap justify-start gap-2">
+                    <TabsTrigger value="all" className="flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4" />
+                      All
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="positive"
+                      className="flex items-center gap-2"
+                    >
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      Positive
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="neutral"
+                      className="flex items-center gap-2"
+                    >
+                      <MinusCircle className="w-4 h-4 text-yellow-500" />
+                      Neutral
+                    </TabsTrigger>
+                    <TabsTrigger
+                    value="negative"
+                    className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-orange-400" />
+                      Bad
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-10 w-[200px] shrink-0 items-center justify-between rounded-full border border-input bg-white px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1"
+                    >
+                      <span>Sort by</span>
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[10rem]">
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="flex items-center gap-2">
+                        <ThumbsDown className="h-4 w-4 text-red-600" />
+                        Thumbs Down
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuItem onClick={() => applySort("thumbs_down_count", "desc")}>
+                          High to low
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => applySort("thumbs_down_count", "asc")}>
+                          Low to high
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="flex items-center gap-2">
+                        <ThumbsUp className="h-4 w-4 text-green-600" />
+                        Thumbs Up
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuItem onClick={() => applySort("thumbs_up_count", "desc")}>
+                          High to low
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => applySort("thumbs_up_count", "asc")}>
+                          Low to high
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
 
               <Card className="divide-y bg-white">
                 {loading ? (
@@ -374,24 +433,43 @@ const Transcripts = () => {
                         </div>
                       </div>
                         <div className="text-right flex items-center gap-2 sm:justify-end flex-wrap mt-2 sm:mt-0">
-                          {/* Display conversation feedback */}
-                          {transcript?.feedback && transcript.feedback.length > 0 && (() => {
-                            const latestFeedback = transcript.feedback[transcript.feedback.length - 1];
-                            const isGoodFeedback = latestFeedback.feedback === 'good';
-                            return (
-                              <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full">
-                                {isGoodFeedback ? (
-                                  <ThumbsUp className="w-3 h-3 text-green-600" />
-                                ) : (
-                                  <ThumbsDown className="w-3 h-3 text-red-600" />
-                                )}
-                                <span className="text-xs text-gray-700">
-                                  {latestFeedback.feedback_message?.slice(0, 30) || 'Feedback provided'}
-                                  {latestFeedback.feedback_message && latestFeedback.feedback_message.length > 30 ? '...' : ''}
-                                </span>
-                              </div>
-                            );
-                          })()}
+                          <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full">
+                            {transcript?.feedback && transcript.feedback.length > 0 && (() => {
+                              const latestFeedback = transcript.feedback[transcript.feedback.length - 1];
+                              const isGoodFeedback = latestFeedback.feedback === "good";
+                              const message = latestFeedback.feedback_message?.trim() || "";
+                              const tooltipText = message
+                                ? `Supervisor feedback: ${message}`
+                                : "Supervisor feedback.";
+                              return (
+                                <>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-flex cursor-default">
+                                        {isGoodFeedback ? (
+                                          <ThumbsUp className="w-3 h-3 text-green-600 shrink-0 fill-current" />
+                                        ) : (
+                                          <ThumbsDown className="w-3 h-3 text-red-600 shrink-0 fill-current" />
+                                        )}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {tooltipText}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  <span className="mx-1 h-3 w-px bg-gray-300 shrink-0" aria-hidden />
+                                </>
+                              );
+                            })()}
+                            <ThumbsUp className="w-3 h-3 text-green-600 shrink-0" />
+                            <span className="text-xs text-gray-700">
+                              {transcript?.thumbs_up_count ?? 0}
+                            </span>
+                            <ThumbsDown className="w-3 h-3 text-red-600 ml-0.5 shrink-0" />
+                            <span className="text-xs text-gray-700">
+                              {transcript?.thumbs_down_count ?? 0}
+                            </span>
+                          </div>
                           <span
                             className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getSentimentStyles(
                               transcript ? getEffectiveSentiment(transcript) : ""
