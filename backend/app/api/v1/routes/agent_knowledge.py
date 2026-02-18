@@ -317,7 +317,6 @@ async def upload_file_to_chat(
         file_url = None
 
         try:
-
             file_base = FileBase(
                 name=file.filename,
                 path=f"agents_config/upload-chat-files/{chat_id}",
@@ -350,14 +349,16 @@ async def upload_file_to_chat(
         # Extract text from the file
         try:
             # Download file content via the service so it works with any storage provider (local, S3, etc.)
-            file_content = await file_manager_service.get_file_content(created_file)
+            # file_content = await file_manager_service.get_file_content(created_file)
 
             if file_extension.lower() in ["jpg", "jpeg", "png"]:
-                extracted_text = FileExtractor.extract_from_image_bytes(file_content)
+                _file, file_content_bytes = await file_manager_service.download_file(created_file.id)
+                extracted_text = FileExtractor.extract_from_image_bytes(file_content_bytes)
             else:
+                _file, file_content_bytes = await file_manager_service.download_file(created_file.id)
                 extracted_text = FileTextExtractor().extract(
                     filename=created_file.name or file.filename,
-                    content=file_content,
+                    content=file_content_bytes,
                 )
             from app.dependencies.injector import injector
 
