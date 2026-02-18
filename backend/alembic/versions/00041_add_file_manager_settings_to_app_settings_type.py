@@ -1,7 +1,7 @@
 """add FileManagerSettings to app_settings type constraint
 
 Revision ID: c9e0f1234567
-Revises: b8d9e0f12345
+Revises: 5b024671c309
 Create Date: 2026-02-17
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c9e0f1234567"
-down_revision: Union[str, None] = "b8d9e0f12345"
+down_revision: Union[str, None] = "5b024671c309"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
