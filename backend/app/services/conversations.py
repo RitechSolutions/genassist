@@ -395,7 +395,6 @@ class ConversationService:
         else:
             # TODO remove after fixing seed
             # Temporary solution to avoid seed missing llm_analyst
-            print("Test")
             analysis_result = {
                 "hostile_score": 0,
                 "topic": "Other",

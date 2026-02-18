@@ -275,6 +275,8 @@ async def update_no_agent(
                 "duration": updated_conversation.duration,
                 "negative_reason": updated_conversation.negative_reason,
                 "topic": updated_conversation.topic,
+                "thumbs_up_count": updated_conversation.thumbs_up_count,
+                "thumbs_down_count": updated_conversation.thumbs_down_count,
             },
             room_id=SocketRoomType.DASHBOARD,
             current_user_id=get_current_user_id(),
