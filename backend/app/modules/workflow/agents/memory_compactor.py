@@ -22,12 +22,12 @@ class MemoryCompactor:
     """Handles compaction of conversation history into summaries and entity stores"""
 
     # Prompt template for LLM-based compaction
-    COMPACTION_PROMPT = """You are a memory compaction assistant. Your task is to analyze a conversation history and extract:
+    COMPACTION_PROMPT = """Your task is to analyze a conversation history and extract:
 
 1. Key entities and facts (structured data)
 2. A flowing prose summary that captures the conversation's context and nuances
 
-You will receive a series of messages from a conversation. Create a compact representation that preserves:
+You will receive a series of messages from a conversation{previous_compaction_prompt}. Create a compact representation that preserves:
 - Important facts, entities, and their relationships
 - Context and conversation flow
 - User preferences and stated goals
@@ -86,7 +86,13 @@ Provide the JSON response:"""
 
         # Call LLM to generate compacted representation
         try:
-            prompt = self.COMPACTION_PROMPT.format(conversation_history=history_text)
+            # add existing summary explanation to the prompt if it exists, otherwise just pass messages
+            prompt = self.COMPACTION_PROMPT.format(conversation_history=history_text,
+                                                   previous_compaction_prompt=" and previous summary done for "
+                                                                              "messages before the latest ones "
+                                                                              "included "
+                                                                              "below" if existing_summary else "")
+
             response = await self.llm_model.ainvoke([
                 SystemMessage(content="You are a helpful assistant that compacts conversation history."),
                 HumanMessage(content=prompt)

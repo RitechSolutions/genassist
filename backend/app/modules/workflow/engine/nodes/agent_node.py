@@ -65,10 +65,10 @@ class AgentNode(BaseNode):
 
             # Check if we've ever compacted before
             existing_summary = await memory.get_compacted_summary()
-
-            if existing_summary or await memory.needs_compaction(threshold):
+            needs_compaction = await memory.needs_compaction(threshold)
+            if existing_summary or needs_compaction:
                 # We've compacted before OR need to compact now
-                if await memory.needs_compaction(threshold):
+                if needs_compaction:
                     await self._perform_compaction(memory, config, provider_id)
 
                 # Return compacted summary + recent N messages
@@ -101,7 +101,7 @@ class AgentNode(BaseNode):
             keep_recent = config.get("compactingKeepRecent", 10)
 
             # Get messages to compact
-            to_compact, to_keep = await memory.get_messages_for_compaction(keep_recent)
+            to_compact = await memory.get_messages_for_compaction(keep_recent)
 
             if not to_compact:
                 logger.info("No messages available for compaction")

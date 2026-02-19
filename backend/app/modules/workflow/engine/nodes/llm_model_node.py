@@ -103,7 +103,7 @@ class LLMModelNode(BaseNode):
             keep_recent = config.get("compactingKeepRecent", 10)
 
             # Get messages to compact
-            to_compact, to_keep = await memory.get_messages_for_compaction(keep_recent)
+            to_compact = await memory.get_messages_for_compaction(keep_recent)
 
             if not to_compact:
                 logger.info("No messages available for compaction")

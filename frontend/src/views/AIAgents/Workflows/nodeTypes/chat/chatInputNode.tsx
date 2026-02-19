@@ -15,7 +15,7 @@ const DEFAULT_SUGGESTED_PARAMS: NodeSchema = {
     description: "The thread id of the parameter",
     required: false,
   },
-  conversation_history: {
+    conversation_history: {
     type: "string",
     description: "The conversation history",
     required: false,

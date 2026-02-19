@@ -685,7 +685,7 @@ class RedisConversationMemory(BaseConversationMemory):
         try:
             redis = await self._get_redis()
             # Get total message count using llen
-            total_messages = await redis.llen(self._message_key)  # type: ignore
+            total_messages = await redis.llen(self._message_key)
 
             if total_messages < threshold:
                 return False
@@ -714,7 +714,7 @@ class RedisConversationMemory(BaseConversationMemory):
 
     async def get_messages_for_compaction(
         self, keep_recent: int
-    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    ) -> List[Dict[str, Any]]:
         """Split messages into (to_compact, to_keep) based on what's already compacted"""
         redis = await self._get_redis()
         total_messages = await redis.llen(self._message_key)  # type: ignore
@@ -735,8 +735,7 @@ class RedisConversationMemory(BaseConversationMemory):
 
         if split_index <= start_index:
             # No new messages to compact
-            recent_messages = await self.get_messages(max_messages=keep_recent)
-            return [], recent_messages
+            return []
 
         # Fetch messages to compact
         # Redis stores newest first (lpush), so we need to calculate indices correctly
@@ -756,13 +755,11 @@ class RedisConversationMemory(BaseConversationMemory):
                 message_data = json.loads(message_json)
                 to_compact.append(message_data)
             except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse message from Redis: {e}")
+                logger.error(f"Failed to parse message from Redis: {e}")
                 continue
 
-        # Get recent messages to keep
-        to_keep = await self.get_messages(max_messages=keep_recent)
 
-        return to_compact, to_keep
+        return to_compact
 
     async def get_chat_history_with_compaction(
         self, max_messages: int, as_string: bool = False
