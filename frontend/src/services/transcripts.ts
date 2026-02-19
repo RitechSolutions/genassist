@@ -37,7 +37,9 @@ export const fetchTranscripts = async (
   hostility_neutral_max?: number,
   hostility_positive_max?: number,
   include_feedback?: boolean,
-  conversation_status?: string[]
+  conversation_status?: string[],
+  order_by?: string,
+  sort_direction?: string
 ): Promise<FetchTranscriptsResult> => {
   try {
     let url = "conversations/";
@@ -64,6 +66,8 @@ export const fetchTranscripts = async (
         queryParams.append("conversation_status", status);
       });
     }
+    if (order_by) queryParams.append("order_by", order_by);
+    if (sort_direction) queryParams.append("sort_direction", sort_direction);
 
     if (queryParams.toString()) {
       url += `?${queryParams.toString()}`;

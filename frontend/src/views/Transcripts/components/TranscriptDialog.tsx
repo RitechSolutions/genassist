@@ -27,6 +27,7 @@ import { MetricCards } from "./MetricCard";
 import { ScoreCards } from "./ScoreCard";
 import { TranscriptAudioPlayer } from "./TranscriptAudioPlayer";
 import { MessageFeedbackPopover } from "./MessageFeedbackPopover";
+import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
@@ -107,7 +108,7 @@ useEffect(() => {
       // Reset feedback state if no feedback exists for this transcript
       setUserFeedback(null);
     }
-    
+
     // Reset form state when switching transcripts
     setIsEditing(false);
     setFeedbackType(null);
@@ -171,10 +172,10 @@ useEffect(() => {
   };
 
   const handleFeedbackSubmit = async () => {
-    if (!localTranscript || !feedbackType || !feedbackMessage.trim()) {
+    if (!localTranscript || !feedbackType) {
       toast({
         title: "Error",
-        description: "Please select feedback type and enter a message.",
+        description: "Please select a rating.",
         variant: "destructive",
       });
       return;
@@ -267,7 +268,7 @@ useEffect(() => {
               feedback,
               feedback_message: "",
               feedback_timestamp: new Date().toISOString(),
-              feedback_user_id: "", 
+              feedback_user_id: "",
             };
             const existingFeedback = Array.isArray(entry.feedback) ? entry.feedback : [];
             return { ...entry, feedback: [...existingFeedback, newFeedback] };
@@ -286,7 +287,7 @@ useEffect(() => {
     const handleOpenChange = (open: boolean) => {
       setIsOpen(open);
       onOpenChange?.(open);
-      
+
       // When opening, populate the text with existing feedback
       if (open) {
         const collection = (localTranscript?.messages ?? localTranscript?.messages) || [];
@@ -469,6 +470,7 @@ useEffect(() => {
                       <h4 className="text-sm font-medium mb-3">Rate</h4>
                       <div className="flex gap-3">
                         <button
+                          type="button"
                           onClick={() => setFeedbackType("good")}
                           className={`p-2 rounded transition-all ${
                             feedbackType === "good"
@@ -478,8 +480,9 @@ useEffect(() => {
                         >
                           <ThumbsUp className="w-4 h-4" />
                         </button>
-                        
+
                         <button
+                          type="button"
                           onClick={() => setFeedbackType("bad")}
                           className={`p-2 rounded transition-all ${
                             feedbackType === "bad"
@@ -506,12 +509,12 @@ useEffect(() => {
                     <div className="flex gap-2">
                       <Button
                         onClick={handleFeedbackSubmit}
-                        disabled={!feedbackType || !feedbackMessage.trim() || feedbackSubmitting}
+                        disabled={!feedbackType || feedbackSubmitting}
                         className="flex-1 bg-blue-600 text-white hover:bg-blue-700"
                       >
                         {feedbackSubmitting ? "Submitting..." : "Save"}
                       </Button>
-                      
+
                       {isEditing && (
                         <Button
                           onClick={() => {
@@ -542,12 +545,12 @@ useEffect(() => {
             >
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="transcript">Transcript</TabsTrigger>
-                <TabsTrigger value="ai">Chat</TabsTrigger>
+                <TabsTrigger value="ai">Ask GenAI</TabsTrigger>
               </TabsList>
             </Tabs>
             <div className="flex-1 flex flex-col bg-secondary/30 rounded-lg overflow-hidden">
               {activeTab === "transcript" ? (
-                <div className="p-3 overflow-y-auto text-[13px] sm:text-[12px]" style={{height: isCall ? "500px" : "400px"}}>
+                <div className="p-3 overflow-y-auto text-[13px] sm:text-[12px]" style={{height: isCall ? "550px" : "460px"}}>
                   <div className="space-y-2">
                     {localTranscript.timestamp && (
                       <div className="flex justify-center mb-3">
@@ -557,11 +560,12 @@ useEffect(() => {
                       </div>
                     )}
                     {(localTranscript.messages ?? localTranscript.messages)?.map((entry, index) => {
-                      
+
+
                       const entryObj = typeof entry === 'string' ? JSON.parse(entry) : entry;
                       const entryType = entryObj.type || '';
-                      
-                      if (entryType === "takeover" || 
+
+                      if (entryType === "takeover" ||
                           (entryObj.speaker === "Unknown" && entryObj.text === "" && entryObj.start_time === 0)) {
                         return (
                           <div className="flex justify-center my-3" key={`takeover-${index}-${entryObj.create_time || index}`}>
@@ -647,7 +651,7 @@ useEffect(() => {
                             }`}
                               style={{maxWidth: '400px'}}
                           >
-                            {entryObj.text}
+                            <ConversationEntryWrapper entry={entryObj} />
                             <span className={`block text-[10px] text-right mt-1 ${
                               isAgent ? "text-white/70" : "text-gray-500"
                             }`}>
@@ -661,6 +665,13 @@ useEffect(() => {
                         </div>
                       );
                     })}
+                    {localTranscript.status === "finalized" && (
+                      <div className="flex justify-center my-3">
+                        <div className="px-3 py-1.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium flex items-center">
+                          Conversation Finalized
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -716,19 +727,21 @@ useEffect(() => {
               )}
 
             </div>
-            <div className="mt-2 flex items-center gap-2 bg-secondary/30 p-2 rounded-lg">
-              <Input
-                className="flex-1"
-                type="text"
-                placeholder="Ask GenAI"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-              />
-              <Button onClick={handleSendMessage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white">
-                Send
-              </Button>
-            </div>
+            {activeTab === "ai" && (
+              <div className="mt-2 flex items-center gap-2 bg-secondary/30 p-2 rounded-lg">
+                <Input
+                  className="flex-1"
+                  type="text"
+                  placeholder="Ask GenAI"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                />
+                <Button onClick={handleSendMessage} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white">
+                  Send
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
