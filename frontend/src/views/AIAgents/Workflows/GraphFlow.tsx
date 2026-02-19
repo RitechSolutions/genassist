@@ -88,7 +88,7 @@ const GraphFlowContent: React.FC = () => {
   useEffect(() => {
     // Always hide overflow on the body when on Agent Studio page
     document.body.style.overflow = 'hidden';
-    
+
     // Cleanup on unmount - restore default overflow
     return () => {
       document.body.style.overflow = '';
@@ -324,17 +324,17 @@ const GraphFlowContent: React.FC = () => {
   const onReconnectStart = useCallback(() => {
     edgeReconnectSuccessful.current = false;
   }, []);
- 
+
   const onReconnect = useCallback((oldEdge, newConnection) => {
     edgeReconnectSuccessful.current = true;
     setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
   }, []);
- 
+
   const onReconnectEnd = useCallback((_, edge) => {
     if (!edgeReconnectSuccessful.current) {
       setEdges((eds) => eds.filter((e) => e.id !== edge.id));
     }
- 
+
     edgeReconnectSuccessful.current = true;
   }, []);
 
@@ -415,12 +415,12 @@ const GraphFlowContent: React.FC = () => {
   const onSelectionChange = useCallback(({ nodes: selectedNodes }) => {
     if (selectedNodes && selectedNodes.length === 1) {
       setSelectedNode(selectedNodes[0]);
-      
+
       // Add animated-edge class to edges connected to selected node
       const selectedNodeId = selectedNodes[0].id;
       setEdges((eds) =>
         eds.map((edge) => {
-          const isConnected = 
+          const isConnected =
             edge.source === selectedNodeId || edge.target === selectedNodeId;
           return {
             ...edge,

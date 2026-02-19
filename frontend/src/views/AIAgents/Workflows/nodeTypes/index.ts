@@ -37,9 +37,11 @@ import {
 import {
   DATA_MAPPER_NODE_DEFINITION,
   TEMPLATE_NODE_DEFINITION,
+  STATE_IO_NODE_DEFINITION,
 } from "./utils/definitions";
 import TemplateNode from "./utils/templateNode";
 import DataMapperNode from "./utils/dataMapperNode";
+import StateIONode from "./utils/stateIONode";
 import SlackOutputNode from "./integrations/slackOutputNode";
 import ZendeskTicketNode from "./integrations/zendeskTicketNode";
 import GmailNode from "./integrations/gmailNode";
@@ -75,6 +77,7 @@ export const registerAllNodeTypes = () => {
   // Clear existing registry to prevent duplicates
   nodeRegistry.clearRegistry();
   nodeRegistry.registerNodeType(TEMPLATE_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(STATE_IO_NODE_DEFINITION);
   nodeRegistry.registerNodeType(MODEL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(API_TOOL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(OPEN_API_NODE_DEFINITION);
@@ -124,6 +127,7 @@ export const getNodeTypes = () => {
     chatInputNode: ChatInputNode,
     llmModelNode: LLMModelNode,
     templateNode: TemplateNode,
+    stateIONode: StateIONode,
     chatOutputNode: ChatOutputNode,
     apiToolNode: APIToolNode,
     openApiNode: OpenApiNode,

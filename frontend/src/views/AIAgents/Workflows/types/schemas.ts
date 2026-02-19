@@ -13,6 +13,7 @@ export interface SchemaField {
   defaultValue?: string;
   properties?: Record<string, SchemaField>; // For object types
   items?: SchemaField; // For array types
+  shouldPersist?: boolean; // Whether the parameter should be persisted in the state
 }
 
 // Input/Output schema for a node
@@ -73,7 +74,7 @@ export const validateSchemaCompatibility = (
 const isTypeCompatible = (sourceType: SchemaType, targetType: SchemaType): boolean => {
   if (sourceType === targetType) return true;
   if (targetType === 'any') return true;
-  
+
   // Add more type compatibility rules as needed
   const compatibilityMap: Record<SchemaType, SchemaType[]> = {
     string: ['any'],
@@ -195,7 +196,7 @@ const generateSampleValue = (fieldSchema: SchemaField): unknown => {
         if (desc.includes('time')) return '14:30:00';
       }
       return 'sample_string';
-    
+
     case 'number':
       if (fieldSchema.description) {
         const desc = fieldSchema.description.toLowerCase();
@@ -206,16 +207,16 @@ const generateSampleValue = (fieldSchema: SchemaField): unknown => {
         if (desc.includes('year')) return 2024;
       }
       return 123;
-    
+
     case 'boolean':
       return true;
-    
+
     case 'object':
       if (fieldSchema.properties) {
         return generateSampleOutput(fieldSchema.properties);
       }
       return { key: 'value' };
-    
+
     case 'array':
       if (fieldSchema.items) {
         // Generate array with 2-3 sample items
@@ -227,10 +228,10 @@ const generateSampleValue = (fieldSchema: SchemaField): unknown => {
         return items;
       }
       return ['item1', 'item2', 'item3'];
-    
+
     case 'any':
       return 'sample_value';
-    
+
     default:
       return 'unknown_type_sample';
   }
@@ -247,4 +248,4 @@ export const generateFieldSample = (fieldName: string, fieldSchema: SchemaField)
     return parseDefaultValue(fieldSchema.defaultValue, fieldSchema.type);
   }
   return generateSampleValue(fieldSchema);
-}; 
+};

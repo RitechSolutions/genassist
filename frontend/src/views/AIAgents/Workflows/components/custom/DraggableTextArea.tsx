@@ -76,7 +76,7 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
           variableReference,
           cursorPosition
         );
-        
+
         // Create a synthetic event for the onChange callback
         const syntheticEvent = {
           target: { value: newValue }
@@ -100,7 +100,7 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
           variableReference,
           cursorPosition
         );
-        
+
         // Create a synthetic event for the onChange callback
         const syntheticEvent = {
           target: { value: newValue }

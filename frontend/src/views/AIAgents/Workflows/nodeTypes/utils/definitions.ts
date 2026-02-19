@@ -4,9 +4,11 @@ import {
   NodeData,
   TemplateNodeData,
   DataMapperNodeData,
+  StateIONodeData,
 } from "../../types/nodes";
 import TemplateNode from "./templateNode";
 import DataMapperNode from "./dataMapperNode";
+import StateIONode from "./stateIONode";
 
 export const TEMPLATE_NODE_DEFINITION: NodeTypeDefinition<TemplateNodeData> = {
   type: "templateNode",
@@ -70,7 +72,7 @@ from typing import Optional
 # import datetime
 
 def executable_function(params):
-    
+
     # Your transformation logic here - example using the parameters:
     result = 'Successfully executed {{parameter1}} function with no parameters'
 
@@ -100,3 +102,42 @@ def executable_function(params):
       },
     }),
   };
+
+export const STATE_IO_NODE_DEFINITION: NodeTypeDefinition<StateIONodeData> = {
+  type: "stateIONode",
+  label: "State I/O",
+  description:
+    "Synchronizes workflow parameters with persistent state",
+  shortDescription: "Persist and load state variables",
+  configSubtitle:
+    "Review parameters marked as persistent and manage additional state variables.",
+  category: "io",
+  icon: "Database",
+  defaultData: {
+    name: "State I/O",
+    stateVariables: {},
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  } as StateIONodeData,
+  component: StateIONode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "stateIONode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};

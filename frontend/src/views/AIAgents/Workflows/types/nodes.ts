@@ -266,7 +266,7 @@ export interface TrainModelNodeData extends BaseNodeData {
     | "other";
   targetColumn: string; // Target variable column name
   featureColumns: string[]; // Feature column names
-  modelParameters: Record<string, any>; // Model-specific parameters
+  modelParameters: Record<string, unknown>; // Model-specific parameters
   validationSplit: number; // Train/validation split ratio
 }
 
@@ -319,6 +319,18 @@ export interface WorkflowExecutorNodeData extends BaseNodeData {
   inputParameters: Record<string, string>; // Input parameters for the workflow
 }
 
+// State I/O Node Data
+export interface StateIONodeData extends BaseNodeData {
+  /**
+   * Explicit state variables that should be written to and read from
+   * the backend persistent state store (Redis).
+   *
+   * Keys may correspond to parameters declared with shouldPersist = true,
+   * or to additional ad-hoc state keys defined in the node.
+   */
+  stateVariables: Record<string, string>;
+}
+
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
@@ -344,7 +356,8 @@ export type NodeData =
   | TrainModelNodeData
   | ThreadRAGNodeData
   | MCPNodeData
-  | WorkflowExecutorNodeData;
+  | WorkflowExecutorNodeData
+  | StateIONodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

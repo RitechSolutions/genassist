@@ -26,6 +26,7 @@ import {
 } from "@/components/dropdown-menu";
 import { useChatInputSchema } from "../../hooks/useChatInputSchema";
 import { Label } from "@/components/label";
+import { Switch } from "@/components/switch";
 
 interface ParameterSectionProps {
   label?: string;
@@ -115,12 +116,14 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
     description: string;
     required: boolean;
     defaultValue?: string;
+    shouldPersist?: boolean;
   }>({
     name: "",
     type: "string",
     description: "",
     required: false,
     defaultValue: "",
+    shouldPersist: false,
   });
 
   useEffect(() => {
@@ -132,6 +135,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           description: param.description || "",
           required: param.required || false,
           defaultValue: param.defaultValue || "",
+          shouldPersist: param.shouldPersist || false,
         });
       } else {
         setFormData({
@@ -140,6 +144,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           description: "",
           required: false,
           defaultValue: "",
+          shouldPersist: false,
         });
       }
     }
@@ -152,6 +157,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
       description: formData.description,
       required: formData.required,
       defaultValue: formData.defaultValue,
+      shouldPersist: formData.shouldPersist || false,
     });
     onOpenChange(false);
   };
@@ -250,7 +256,15 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
               className="w-full"
             />
           </div>
-          <DialogFooter className="flex justify-between">
+          <div className="flex items-center justify-between gap-2 w-full py-2">
+            <label className="text-sm font-medium">Should be persisted in the state?</label>
+            <Switch
+              checked={formData.shouldPersist || false}
+              onCheckedChange={(v) => setFormData((prev) => ({ ...prev, shouldPersist: v as boolean }))}
+            />
+          </div>
+
+          <DialogFooter className="flex justify-between border-t pt-4">
             {mode === "edit" && onDelete && (
               <Button
                 type="button"

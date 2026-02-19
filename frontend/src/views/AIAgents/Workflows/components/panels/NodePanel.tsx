@@ -115,7 +115,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     // If searching, use filtered results
     if (searchQuery.trim() && filteredNodesByCategory) {
       const categories = Object.keys(filteredNodesByCategory);
-      
+
       if (categories.length === 0) {
         return (
           <div className="text-sm text-muted-foreground p-4 text-center">
