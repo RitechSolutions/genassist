@@ -26,6 +26,7 @@ from .train_data_source_schema import TRAIN_DATA_SOURCE_NODE_DIALOG_SCHEMA
 from .thread_rag_schema import THREAD_RAG_NODE_DIALOG_SCHEMA
 from .preprocessing_schema import PREPROCESSING_NODE_DIALOG_SCHEMA
 from .train_model_schema import TRAIN_MODEL_NODE_DIALOG_SCHEMA
+from .user_input_schema import USER_INPUT_NODE_DIALOG_SCHEMA
 
 NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "chatInputNode": CHAT_INPUT_NODE_DIALOG_SCHEMA,
@@ -54,6 +55,7 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "threadRAGNode": THREAD_RAG_NODE_DIALOG_SCHEMA,
     "preprocessingNode": PREPROCESSING_NODE_DIALOG_SCHEMA,
     "trainModelNode": TRAIN_MODEL_NODE_DIALOG_SCHEMA,
+    "userInputNode": USER_INPUT_NODE_DIALOG_SCHEMA,
 }
 
 
@@ -176,6 +178,11 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
   ],
 
   "trainModelNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "userInputNode": [
     { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
     { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
   ]

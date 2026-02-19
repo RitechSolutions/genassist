@@ -7,6 +7,7 @@ import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
 import { Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
 import { ChatBubble } from './ChatBubble';
+import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
 
@@ -112,6 +113,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentWithFile[]>([]);
+  const [submittedForms, setSubmittedForms] = useState<Set<number>>(new Set());
+  const [submittingFormIndex, setSubmittingFormIndex] = useState<number | null>(null);
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
   const [fileErrorToast, setFileErrorToast] = useState<string | null>(null);
   const fileErrorToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -432,6 +435,23 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     await submitMessage();
   };
 
+  const handleFormSubmit = async (formData: Record<string, unknown>, messageIndex: number) => {
+    if (submittingFormIndex !== null || isAgentTyping) return;
+    setSubmittingFormIndex(messageIndex);
+    try {
+      // Build a readable summary from the form data
+      const summaryText = Object.entries(formData)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', ');
+      await sendMessage(summaryText, [], { user_input_from_form: formData }, reCaptchaTokenRef.current);
+      setSubmittedForms((prev) => new Set(prev).add(messageIndex));
+    } catch (error) {
+      // ignore
+    } finally {
+      setSubmittingFormIndex(null);
+    }
+  };
+
   const handleQuickAction = async (text: string) => {
     if (!text.trim()) return;
     if (isAgentTyping) return; // Prevent sending while agent is thinking/typing
@@ -608,6 +628,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
     await resetConversation(reCaptchaTokenRef.current);
     setSelectedFaqQuery(null); // Clear FAQ query on reset
+    setSubmittedForms(new Set()); // Clear form submission state so new forms are interactive
+    setSubmittingFormIndex(null);
     setShowResetConfirm(false);
   };
 
@@ -1372,14 +1394,37 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             }
 
             return messages.filter(applyMessageFilter).map((message, index) => {
+              // Render dynamic form for form_request messages
+              if (message.type === 'form_request' && message.speaker === 'agent') {
+                try {
+                  const formSchema = JSON.parse(message.text);
+                  return (
+                    <div key={index} style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>
+                        {agentName || 'Agent'}
+                      </div>
+                      <DynamicFormMessage
+                        schema={formSchema}
+                        onSubmit={(data) => handleFormSubmit(data, index)}
+                        isSubmitting={submittingFormIndex === index}
+                        isSubmitted={submittedForms.has(index)}
+                        primaryColor={primaryColor}
+                      />
+                    </div>
+                  );
+                } catch {
+                  // Fall through to normal rendering if JSON parse fails
+                }
+              }
+
               const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
               const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
               const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
 
               return (
-                <ChatMessageComponent 
-                  key={index} 
-                  message={message} 
+                <ChatMessageComponent
+                  key={index}
+                  message={message}
                   theme={theme}
                   onPlayAudio={message.speaker === 'agent' ? playResponseAudio : undefined}
                   isPlayingAudio={isPlayingAudio}

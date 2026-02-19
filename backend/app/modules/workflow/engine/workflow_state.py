@@ -2,7 +2,7 @@
 Enhanced workflow state management for execution tracking and performance metrics.
 """
 
-from typing import Dict, Any, Union
+from typing import Dict, Any, Optional, Union
 import logging
 import uuid
 from datetime import datetime
@@ -73,6 +73,12 @@ class WorkflowState:
 
         # Error tracking
         self.errors = []
+
+        # Pause/resume tracking
+        self.paused_node_id: Optional[str] = None
+        self.paused_form_schema: Optional[dict] = None
+        self.user_input_data: Optional[dict] = None
+        self.is_test: bool = False
 
         # Edge data and execution context
         self.source_edges = workflow.get("source_edges", {}) if workflow else {}
@@ -242,16 +248,19 @@ class WorkflowState:
         self.errors = []
         logger.info(f"Workflow execution started: {self.execution_id}")
 
-    def pause_execution(self) -> None:
-        """Pause workflow execution"""
+    def pause_execution(self, node_id: str, form_schema: dict) -> None:
+        """Pause workflow execution at a specific node for user input."""
         self.status = "paused"
         self.is_executing = False
-        logger.info(f"Workflow execution paused: {self.execution_id}")
+        self.paused_node_id = node_id
+        self.paused_form_schema = form_schema
+        logger.info(f"Workflow execution paused at node {node_id}: {self.execution_id}")
 
-    def resume_execution(self) -> None:
-        """Resume workflow execution"""
+    def resume_execution(self, user_input_data: dict) -> None:
+        """Resume workflow execution with user-provided input."""
         self.status = "running"
         self.is_executing = True
+        self.user_input_data = user_input_data
         logger.info(f"Workflow execution resumed: {self.execution_id}")
 
     def complete_execution(self) -> None:
@@ -493,3 +502,46 @@ class WorkflowState:
 
         return ml_utils.sanitize_for_json(response)
         #return ml_utils.optimize_output_for_response(sanitized)
+
+    def serialize_for_pause(self) -> dict:
+        """Serialize state for persistence when workflow is paused for user input."""
+        return {
+            "execution_id": self.execution_id,
+            "thread_id": self.thread_id,
+            "workflow_id": self.workflow_id,
+            "initial_values": self.initial_values,
+            "node_outputs": self.node_outputs,
+            "node_inputs": self.node_inputs,
+            "node_execution_status": self.node_execution_status,
+            "execution_path": self.execution_path,
+            "execution_history": self.execution_history,
+            "paused_node_id": self.paused_node_id,
+            "paused_form_schema": self.paused_form_schema,
+            "current_step": self.current_step,
+            "total_steps": self.total_steps,
+            "execution_start_time": self.execution_start_time,
+            "status": self.status,
+        }
+
+    @classmethod
+    def deserialize_from_pause(cls, workflow: dict, serialized_data: dict) -> "WorkflowState":
+        """Reconstruct a WorkflowState from serialized pause data to resume execution."""
+        state = cls(
+            workflow=workflow,
+            initial_values=serialized_data.get("initial_values", {}),
+            thread_id=serialized_data["thread_id"],
+        )
+        state.execution_id = serialized_data["execution_id"]
+        state.workflow_id = serialized_data.get("workflow_id")
+        state.node_outputs = serialized_data.get("node_outputs", {})
+        state.node_inputs = serialized_data.get("node_inputs", {})
+        state.node_execution_status = serialized_data.get("node_execution_status", {})
+        state.execution_path = serialized_data.get("execution_path", [])
+        state.execution_history = serialized_data.get("execution_history", [])
+        state.paused_node_id = serialized_data.get("paused_node_id")
+        state.paused_form_schema = serialized_data.get("paused_form_schema")
+        state.current_step = serialized_data.get("current_step", 0)
+        state.total_steps = serialized_data.get("total_steps", 0)
+        state.execution_start_time = serialized_data.get("execution_start_time")
+        state.status = serialized_data.get("status", "paused")
+        return state

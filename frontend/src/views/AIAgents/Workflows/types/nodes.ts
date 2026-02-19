@@ -39,6 +39,23 @@ export interface ChatInputNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
 }
 
+// User Input node data — collects structured data from the user mid-flow
+export interface UserInputFormField {
+  name: string;
+  type: "text" | "number" | "select" | "boolean" | "date";
+  label: string;
+  required?: boolean;
+  placeholder?: string;
+  description?: string;
+  options?: Array<{ value: string; label: string }>;
+}
+
+export interface UserInputNodeData extends BaseNodeData {
+  message?: string;
+  form_fields: UserInputFormField[];
+  ask_once?: boolean;
+}
+
 // Prompt Template node data
 export interface TemplateNodeData extends BaseNodeData {
   template: string;
@@ -344,7 +361,8 @@ export type NodeData =
   | TrainModelNodeData
   | ThreadRAGNodeData
   | MCPNodeData
-  | WorkflowExecutorNodeData;
+  | WorkflowExecutorNodeData
+  | UserInputNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

@@ -115,21 +115,33 @@ async def process_conversation_update_with_agent(
             metadata=model.metadata,
         )
 
-        agent_answer = agent_response.get("response", "No answer found")
-
         # Set formatted agent message in transcript
         now = datetime.now(timezone.utc)
-
         elapsed_seconds = (now - conversation.created_at).total_seconds()
 
-        transcript_object = TranscriptSegmentInput(
-            id=generate_sequential_uuid(),  # Generate ID upfront
-            create_time=now,
-            start_time=elapsed_seconds,
-            end_time=elapsed_seconds,
-            speaker="agent",
-            text=str(agent_answer),
-        )
+        if agent_response.get("status") == "awaiting_input":
+            # Workflow paused for user input — send form_request message
+            form_schema = agent_response.get("form_schema", {})
+            transcript_object = TranscriptSegmentInput(
+                id=generate_sequential_uuid(),
+                create_time=now,
+                start_time=elapsed_seconds,
+                end_time=elapsed_seconds,
+                speaker="agent",
+                text=json.dumps(form_schema),
+                type="form_request",
+            )
+        else:
+            # Normal agent response
+            agent_answer = agent_response.get("response", "No answer found")
+            transcript_object = TranscriptSegmentInput(
+                id=generate_sequential_uuid(),
+                create_time=now,
+                start_time=elapsed_seconds,
+                end_time=elapsed_seconds,
+                speaker="agent",
+                text=str(agent_answer),
+            )
 
         model.messages.append(transcript_object)
 

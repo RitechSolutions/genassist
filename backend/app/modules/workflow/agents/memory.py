@@ -103,6 +103,18 @@ class BaseConversationMemory:
         """
         raise NotImplementedError
 
+    async def save_paused_workflow_state(self, state_dict: dict) -> None:
+        """Save paused workflow state for later resume."""
+        raise NotImplementedError
+
+    async def get_paused_workflow_state(self) -> dict | None:
+        """Retrieve paused workflow state, or None if not paused."""
+        raise NotImplementedError
+
+    async def clear_paused_workflow_state(self) -> None:
+        """Clear paused workflow state after resume."""
+        raise NotImplementedError
+
 
 class InMemoryConversationMemory(BaseConversationMemory):
     """In-memory implementation of conversation memory"""
@@ -207,6 +219,20 @@ class InMemoryConversationMemory(BaseConversationMemory):
             return "\n".join(history_parts)
 
         return selected_messages
+
+    async def save_paused_workflow_state(self, state_dict: dict) -> None:
+        """Save paused workflow state in memory."""
+        self.metadata["_paused_workflow_state"] = state_dict
+        logger.info(f"Saved paused workflow state in-memory for thread {self.thread_id}")
+
+    async def get_paused_workflow_state(self) -> dict | None:
+        """Retrieve paused workflow state from memory."""
+        return self.metadata.get("_paused_workflow_state")
+
+    async def clear_paused_workflow_state(self) -> None:
+        """Clear paused workflow state from memory."""
+        self.metadata.pop("_paused_workflow_state", None)
+        logger.info(f"Cleared paused workflow state in-memory for thread {self.thread_id}")
 
 
 class RedisConversationMemory(BaseConversationMemory):
@@ -557,6 +583,45 @@ class RedisConversationMemory(BaseConversationMemory):
             logger.error(
                 f"Failed to delete conversation from Redis for thread {self.thread_id}: {e}"
             )
+            raise
+
+    async def save_paused_workflow_state(self, state_dict: dict) -> None:
+        """Save paused workflow state to Redis with 24h expiry."""
+        try:
+            redis = await self._get_redis()
+            tenant_prefix = self._get_tenant_prefix()
+            paused_key = f"{tenant_prefix}:conversation:{self.thread_id}:paused_workflow"
+            await redis.setex(paused_key, 86400, json.dumps(state_dict))
+            logger.info(f"Saved paused workflow state to Redis for thread {self.thread_id}")
+        except Exception as e:
+            logger.error(f"Failed to save paused workflow state for thread {self.thread_id}: {e}")
+            raise
+
+    async def get_paused_workflow_state(self) -> dict | None:
+        """Retrieve paused workflow state from Redis."""
+        try:
+            redis = await self._get_redis()
+            tenant_prefix = self._get_tenant_prefix()
+            paused_key = f"{tenant_prefix}:conversation:{self.thread_id}:paused_workflow"
+            serialized = await redis.get(paused_key)
+            if serialized:
+                logger.info(f"Retrieved paused workflow state from Redis for thread {self.thread_id}")
+                return json.loads(serialized)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get paused workflow state for thread {self.thread_id}: {e}")
+            raise
+
+    async def clear_paused_workflow_state(self) -> None:
+        """Clear paused workflow state from Redis."""
+        try:
+            redis = await self._get_redis()
+            tenant_prefix = self._get_tenant_prefix()
+            paused_key = f"{tenant_prefix}:conversation:{self.thread_id}:paused_workflow"
+            await redis.delete(paused_key)
+            logger.info(f"Cleared paused workflow state from Redis for thread {self.thread_id}")
+        except Exception as e:
+            logger.error(f"Failed to clear paused workflow state for thread {self.thread_id}: {e}")
             raise
 
 

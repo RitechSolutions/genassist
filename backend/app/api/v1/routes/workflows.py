@@ -54,6 +54,7 @@ SUPPORTED_NODE_TYPES = [
     "trainModelNode",
     "mcpNode",
     "workflowExecutorNode",
+    "userInputNode",
 ]
 
 
@@ -291,7 +292,7 @@ async def test_workflow(
 
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
         state = await workflow_engine.execute_from_node(
-            input_data=input_data, thread_id=thread_id
+            input_data=input_data, thread_id=thread_id, is_test=True
         )
 
         return state.format_state_as_response()
@@ -366,7 +367,7 @@ async def test_individual_node(test_data: Dict[str, Any]):
         workflow_engine = WorkflowEngine(workflow_config)
 
         # Execute the workflow
-        state = await workflow_engine.execute_from_node(input_data=input_data)
+        state = await workflow_engine.execute_from_node(input_data=input_data, is_test=True)
 
         return state.format_state_as_response()
 

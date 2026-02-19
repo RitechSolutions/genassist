@@ -42,7 +42,7 @@ class RegistryItem:
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
     async def execute(self, session_message: str, metadata: dict) -> dict:
-        """Execute a workflow"""
+        """Execute a workflow, or resume a paused one if user_input_from_form is present."""
         if self.workflow_engine is None:
             raise ValueError(
                 f"Cannot execute workflow for agent {self.agent_name} ({self.agent_id}): "
@@ -50,15 +50,32 @@ class RegistryItem:
             )
 
         thread_id = metadata.get("thread_id", None)
+        user_input_from_form = metadata.get("user_input_from_form")
 
-        # add the content blocks to the input data
-        input_data = {
-            "message": session_message,
-            **metadata,
-        }
+        if user_input_from_form and thread_id:
+            # Resume a paused workflow with user-provided form data
+            state = await self.workflow_engine.resume_from_pause(
+                thread_id=thread_id,
+                user_input_data=user_input_from_form,
+            )
+        else:
+            # Normal execution
+            input_data = {
+                "message": session_message,
+                **metadata,
+            }
 
-        state = await self.workflow_engine.execute_from_node(
-            input_data=input_data,
-            thread_id=thread_id,
-        )
+            state = await self.workflow_engine.execute_from_node(
+                input_data=input_data,
+                thread_id=thread_id,
+            )
+
+        # Return a special response when workflow is paused for user input
+        if state.status == "paused":
+            return {
+                "status": "awaiting_input",
+                "form_schema": state.paused_form_schema,
+                "node_id": state.paused_node_id,
+            }
+
         return state.format_state_as_response()

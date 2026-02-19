@@ -88,6 +88,17 @@ async def run_query_agent_logic(
             metadata=metadata
             )
     logger.debug(f"Workflow Final Result: {result}")
+
+    # Handle awaiting_input status (workflow paused for user input)
+    if result.get("status") == "awaiting_input":
+        return {
+            "status": "awaiting_input",
+            "form_schema": result.get("form_schema"),
+            "node_id": result.get("node_id"),
+            "agent_id": agent_id,
+            "thread_id": metadata.get("thread_id"),
+        }
+
     backward_compatibility_result = {
                 "status": result.get("status"),
                 "response": result.get("output"),

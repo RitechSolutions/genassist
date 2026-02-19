@@ -580,6 +580,7 @@ export class ChatService {
                   speaker: "agent",
                   text: messageData.text,
                   message_id: messageData.message_id || messageData.id,
+                  type: messageData.type,
                 };
                 
                 // Only process if this is a new message we haven't seen before

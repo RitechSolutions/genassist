@@ -39,7 +39,7 @@ function App() {
     agentName: "Agent",
     logoUrl: "",
     baseUrl: "http://localhost:8000/",
-    apiKey: "genagent123",
+    apiKey: "agent123",
     // reCaptchaKey: "xx-yy-zz",
   });
 
@@ -481,7 +481,7 @@ function App() {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   };
-  
+
   const metaValueStyle: React.CSSProperties = {
     maxWidth: 150,
     overflow: "hidden",
