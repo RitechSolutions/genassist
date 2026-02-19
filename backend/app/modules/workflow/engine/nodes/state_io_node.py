@@ -35,7 +35,7 @@ class StateIONode(BaseNode):
         Build a Redis key for workflow-level state variables.
 
         Key pattern (tenant-aware):
-            tenant:{tenant_id}:workflow:{workflow_id}:state_vars
+            tenant:{tenant_id}:workflow:{workflow_id}:thread:{thread_id}:state_vars
         """
         tenant_id = get_tenant_context()
         tenant_prefix = f"tenant:{tenant_id}:" if tenant_id else ""
@@ -47,7 +47,9 @@ class StateIONode(BaseNode):
         if not workflow_id:
             workflow_id = "unknown"
 
-        return f"{tenant_prefix}workflow:{workflow_id}:state_vars"
+        thread_id = self.get_state().thread_id or "unknown"
+
+        return f"{tenant_prefix}workflow:{workflow_id}:thread:{thread_id}:state_vars"
 
     def _discover_persistent_param_names(self) -> Set[str]:
         """
