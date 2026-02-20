@@ -66,6 +66,7 @@ function App() {
         reCaptchaKey={your-recaptcha-site-key}
         headerTitle="Customer Support"
         placeholder="Ask a question..."
+        inputDisclaimer="Agent can make mistakes"
         onError={() => {}}
         onTakeover={handleTakeover}
         noColorAnimation={false}
@@ -96,6 +97,7 @@ export default App;
 | serverUnavailableMessage | string | No | 'The agent is currently offline, please check back later. Thank you!' | Custom message for when agent is offline (Agent is off or server is down) |
 | serverUnavailableContactUrl | string | No | - | Url to redirect user for contact support |
 | serverUnavailableContactLabel | string | No | Contact support | Label for contact support |
+| inputDisclaimer | string | No | Agent can make mistakes. Check important info. | Disclaimer for agent information |
 | useWS | boolean | false | true | 'Enable or disable websocket...' |
 | useAudio | boolean | false | false | 'Enable or disable audio on chat input...' |
 | useFile | boolean | false | false | 'Enable or disable file attachments on chat input...' |

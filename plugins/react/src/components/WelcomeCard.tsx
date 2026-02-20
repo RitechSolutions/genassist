@@ -1,5 +1,5 @@
 import React from 'react';
-import { parseBoldText } from './InteractiveContent';
+import { MarkdownMessage } from './MarkdownMessage';
 
 interface ThemeLike {
   primaryColor?: string;
@@ -79,7 +79,7 @@ export const WelcomeCard: React.FC<WelcomeCardProps> = ({
         </div>
       )}
       {title && <div style={welcomeTitleStyle}>{title}</div>}
-      {content && <div style={welcomeSubtitleStyle}>{parseBoldText(content)}</div>}
+      {content && <div style={welcomeSubtitleStyle}><MarkdownMessage text={content} /></div>}
       {possibleQueries && possibleQueries.length > 0 && (
         <div style={chipContainerStyle}>
           {possibleQueries.map((q, idx) => (

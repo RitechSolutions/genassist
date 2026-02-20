@@ -141,6 +141,7 @@ export interface GenAgentChatProps {
   serverUnavailableMessage?: string; // Custom message when server is down
   serverUnavailableContactUrl?: string; // Optional URL for a contact/support
   serverUnavailableContactLabel?: string; // Label for the contact link
+  inputDisclaimer?: string; // Disclaimer text shown below the chat input
 }
 
 // NOTE: These are the only file extensions that are supported by the chat.
