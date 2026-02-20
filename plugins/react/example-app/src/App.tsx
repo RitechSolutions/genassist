@@ -1050,6 +1050,7 @@ function App() {
         serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
         serverUnavailableContactUrl="https://www.ritech.co/"
         serverUnavailableContactLabel="Contact Support"
+        inputDisclaimer="Agent can make mistakes. Check important info."
         onError={handleError}
         mode="floating"
         floatingConfig={{

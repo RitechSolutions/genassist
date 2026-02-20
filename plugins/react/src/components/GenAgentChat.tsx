@@ -51,6 +51,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   serverUnavailableMessage,
   serverUnavailableContactUrl,
   serverUnavailableContactLabel,
+  inputDisclaimer = 'Agent can make mistakes. Check important info.',
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -1502,6 +1503,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={inputContainerStyle}>
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0 }}>
             <div style={inputWrapperStyle}>
               {useFile && (
                 <>
@@ -1562,6 +1564,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   </button>
                 )}
               </div>
+            </div>
+            <div style={{ textAlign: 'left', fontSize: '11px', color: '#9ca3af', marginTop: '6px', padding: '6px', fontFamily }}>
+              {inputDisclaimer}
+            </div>
             </div>
           </form>
         )}
