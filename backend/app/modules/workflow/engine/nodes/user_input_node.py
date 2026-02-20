@@ -23,7 +23,7 @@ class UserInputNode(BaseNode):
 
         Priority order:
         1. Cached path (ask_once=True): data was already collected — return from memory.
-        2. Test mode: return sample data.
+        2. Provided values (from test dialog or pre-filled input_data) — return them.
         3. First time / ask_once=False: pause and show the form.
 
         Note: The resume path after form submission is handled by
@@ -52,12 +52,13 @@ class UserInputNode(BaseNode):
         if not form_fields:
             raise ValueError(f"UserInputNode {self.node_id}: no form fields configured")
 
-        # 3. Test execution — return sample data instead of pausing
-        if self.state.is_test:
-            logger.info(f"UserInputNode {self.node_id}: test mode, returning sample data")
-            return self._generate_sample_output(form_fields)
+        # 2. Check for provided values (e.g. from test dialog)
+        provided_values = self._extract_provided_values(form_fields)
+        if provided_values:
+            logger.info(f"UserInputNode {self.node_id}: using provided input values")
+            return provided_values
 
-        # 4. First execution — pause for input
+        # 3. Pause for input
         form_schema = {
             "message": message,
             "fields": form_fields,
@@ -71,23 +72,19 @@ class UserInputNode(BaseNode):
             message=message,
         )
 
-    @staticmethod
-    def _generate_sample_output(form_fields: list) -> Dict[str, Any]:
-        """Generate sample output values based on field definitions."""
-        sample_values = {
-            "text": "Sample text",
-            "number": 42,
-            "select": None,  # handled per-field
-            "boolean": True,
-            "date": "2025-01-15",
-        }
-        result = {}
-        for field in form_fields:
-            field_type = field.get("type", "text")
-            name = field.get("name", "unknown")
-            if field_type == "select":
-                options = field.get("options", [])
-                result[name] = options[0]["value"] if options else "option_1"
-            else:
-                result[name] = sample_values.get(field_type, "sample")
-        return result
+    def _extract_provided_values(self, form_fields: list) -> Dict[str, Any] | None:
+        """Extract user-provided values from initial_values for single-node tests.
+
+        Only applies when this is a single-node workflow (from the test-node endpoint),
+        where field values are passed directly in initial_values. Guarded by len(nodes)==1
+        to avoid false matches against workflow input keys like "message" or "thread_id".
+        """
+        initial = self.state.initial_values or {}
+        nodes = self.state.workflow.get("nodes", [])
+        if len(nodes) == 1:
+            field_names = {f.get("name") for f in form_fields}
+            direct_values = {k: v for k, v in initial.items() if k in field_names}
+            if direct_values:
+                return direct_values
+
+        return None

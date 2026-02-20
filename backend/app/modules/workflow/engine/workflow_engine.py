@@ -209,7 +209,6 @@ class WorkflowEngine:
         input_data: Optional[Dict[str, Any]] = None,
         thread_id: str = str(uuid.uuid4()),
         persist: Optional[bool] = True,
-        is_test: bool = False,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -247,8 +246,6 @@ class WorkflowEngine:
             thread_id=thread_id or str(uuid.uuid4()),
             initial_values=initial_values,
         )
-        state.is_test = is_test
-
         try:
             state.start_execution()
             state.total_steps = len(self.workflow["nodes"])
@@ -270,10 +267,6 @@ class WorkflowEngine:
 
             except ValueError as e:
                 state.fail_execution(str(e))
-
-        except WorkflowPausedException:
-            # Already handled above, just pass through
-            pass
 
         except Exception as e:
             state.fail_execution(str(e))
@@ -428,8 +421,6 @@ class WorkflowEngine:
 
         return next_nodes
 
-   
-
     def get_node_config(self, node_id: str):
         """Get the node config and type."""
         node_config = next(
@@ -520,7 +511,7 @@ class WorkflowEngine:
 
         # Deserialize and resume
         state = WorkflowState.deserialize_from_pause(self.workflow, paused_state_dict)
-        state.resume_execution(user_input_data)
+        state.resume_execution()
 
         # Clear the paused state from Redis
         await memory.clear_paused_workflow_state()

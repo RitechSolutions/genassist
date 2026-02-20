@@ -77,8 +77,6 @@ class WorkflowState:
         # Pause/resume tracking
         self.paused_node_id: Optional[str] = None
         self.paused_form_schema: Optional[dict] = None
-        self.user_input_data: Optional[dict] = None
-        self.is_test: bool = False
 
         # Edge data and execution context
         self.source_edges = workflow.get("source_edges", {}) if workflow else {}
@@ -256,11 +254,10 @@ class WorkflowState:
         self.paused_form_schema = form_schema
         logger.info(f"Workflow execution paused at node {node_id}: {self.execution_id}")
 
-    def resume_execution(self, user_input_data: dict) -> None:
-        """Resume workflow execution with user-provided input."""
+    def resume_execution(self) -> None:
+        """Resume workflow execution after user input."""
         self.status = "running"
         self.is_executing = True
-        self.user_input_data = user_input_data
         logger.info(f"Workflow execution resumed: {self.execution_id}")
 
     def complete_execution(self) -> None:

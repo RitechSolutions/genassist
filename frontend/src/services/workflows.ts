@@ -83,6 +83,19 @@ export const testWorkflow = (testData: WorkflowTestPayload) =>
     testData as unknown as Record<string, unknown>
   );
 
+export interface ResumeTestPayload {
+  workflow: Workflow;
+  thread_id: string;
+  user_input_data: Record<string, unknown>;
+}
+
+export const resumeTestWorkflow = (testData: ResumeTestPayload) =>
+  apiRequest<WorkflowTestResponse>(
+    "POST",
+    `${BASE}/test/resume`,
+    testData as unknown as Record<string, unknown>
+  );
+
 export const generatePythonTemplate = (schema: any, prompt?: string) =>
   apiRequest<{ template: string }>("POST", `${BASE}/generate-python-template`, {
     parameters_schema: schema,

@@ -292,8 +292,17 @@ async def test_workflow(
 
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
         state = await workflow_engine.execute_from_node(
-            input_data=input_data, thread_id=thread_id, is_test=True
+            input_data=input_data, thread_id=thread_id
         )
+
+        # If workflow paused for user input, return paused status with form info
+        if state.status == "paused":
+            return {
+                "status": "paused",
+                "form_schema": state.paused_form_schema,
+                "paused_node_id": state.paused_node_id,
+                "thread_id": state.thread_id,
+            }
 
         return state.format_state_as_response()
 
@@ -304,6 +313,65 @@ async def test_workflow(
         logger.error(f"Error testing workflow with new engine: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post(
+    "/test/resume", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
+)
+async def resume_test_workflow(test_data: Dict[str, Any]):
+    """
+    Resume a paused workflow test after user input submission.
+
+    Request body should contain:
+    - workflow: The workflow configuration
+    - thread_id: The thread ID from the paused response
+    - user_input_data: The user's form submission values
+    """
+    thread_id = test_data.get("thread_id")
+    user_input_data = test_data.get("user_input_data", {})
+
+    if not thread_id:
+        raise HTTPException(status_code=400, detail="thread_id is required")
+    if not user_input_data:
+        raise HTTPException(status_code=400, detail="user_input_data is required")
+
+    try:
+        input_workflow = test_data.get("workflow", {})
+        if not input_workflow:
+            raise HTTPException(
+                status_code=400, detail="workflow is required to resume execution"
+            )
+
+        workflow = WorkflowUpdate(**input_workflow)
+        workflow_config = {
+            "id": "test-workflow",
+            "nodes": workflow.nodes,
+            "edges": workflow.edges,
+        }
+
+        workflow_engine = WorkflowEngine(workflow_config)
+        state = await workflow_engine.resume_from_pause(
+            thread_id=thread_id,
+            user_input_data=user_input_data,
+        )
+
+        # Check if workflow paused again at another node
+        if state.status == "paused":
+            return {
+                "status": "paused",
+                "form_schema": state.paused_form_schema,
+                "paused_node_id": state.paused_node_id,
+                "thread_id": state.thread_id,
+            }
+
+        return state.format_state_as_response()
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resuming test workflow: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get(
@@ -367,7 +435,7 @@ async def test_individual_node(test_data: Dict[str, Any]):
         workflow_engine = WorkflowEngine(workflow_config)
 
         # Execute the workflow
-        state = await workflow_engine.execute_from_node(input_data=input_data, is_test=True)
+        state = await workflow_engine.execute_from_node(input_data=input_data)
 
         return state.format_state_as_response()
 

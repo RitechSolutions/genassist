@@ -11,8 +11,15 @@ import { Label } from "@/components/label";
 import { Textarea } from "@/components/textarea";
 import { Input } from "@/components/input";
 import { Checkbox } from "@/components/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/select";
 import { Play, X } from "lucide-react";
-import { NodeData } from "../types/nodes";
+import { NodeData, UserInputNodeData } from "../types/nodes";
 import { testNode, WorkflowTestResponse } from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
@@ -26,7 +33,8 @@ export interface GenericTestInputField {
   placeholder?: string;
   required?: boolean;
   defaultValue?: string;
-  source?: string; // Added source property
+  source?: string;
+  options?: Array<{ value: string; label: string }>;
 }
 
 interface GenericTestDialogProps {
@@ -64,6 +72,28 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
   // Extract variables from node config when dialog opens
   useEffect(() => {
     if (isOpen && nodeData) {
+      // Special handling for userInputNode — populate fields from form_fields config
+      if (nodeType === "userInputNode" && "form_fields" in nodeData) {
+        const uiNodeData = nodeData as UserInputNodeData;
+        const formFields = uiNodeData.form_fields || [];
+        const userInputFields: GenericTestInputField[] = formFields.map((field) => ({
+          id: field.name,
+          label: field.label,
+          type: field.type,
+          placeholder: field.placeholder || `Enter ${field.label}`,
+          required: field.required || false,
+          defaultValue: "",
+          source: "form_fields",
+          options: field.type === "select" ? field.options : undefined,
+        }));
+        setInputFields(userInputFields);
+        setAvailableData(nodeId ? getAvailableDataForNode(nodeId) : null);
+        const initialData: Record<string, string> = {};
+        userInputFields.forEach((field) => { initialData[field.id] = ""; });
+        setFormData(initialData);
+        return;
+      }
+
       let variables = extractVariablesFromNodeConfig(nodeData);
       variables = variables.filter((v) => v !== "direct_input");
       const schemaFields = extractInputSchemaFields(nodeData);
@@ -220,6 +250,14 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         if (inputSchema && field.id in inputSchema) {
           const schemaField = inputSchema[field.id] as SchemaField;
           fieldType = schemaField.type;
+        }
+        // Map userInputNode field types to schema-compatible types
+        if (field.source === "form_fields") {
+          const typeMap: Record<string, SchemaType> = {
+            text: "string", select: "string", date: "string",
+            number: "number", boolean: "boolean",
+          };
+          fieldType = typeMap[field.type] || "string";
         }
 
         // Parse the value based on its type
@@ -393,10 +431,27 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
                             : 'Enter a valid JSON array (e.g., ["item1", "item2"])'}
                         </p>
                       </div>
+                    ) : field.options && field.options.length > 0 ? (
+                      <Select
+                        value={formData[field.id] || ""}
+                        onValueChange={(val) => handleInputChange(field.id, val)}
+                        disabled={isLoading}
+                      >
+                        <SelectTrigger className="text-sm">
+                          <SelectValue placeholder={field.placeholder || `Select ${field.label}`} />
+                        </SelectTrigger>
+                        <SelectContent className="z-[1300]">
+                          {field.options.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <Input
                         id={field.id}
-                        type={field.type === "number" ? "number" : "text"}
+                        type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
                         placeholder={field.placeholder}
                         value={formData[field.id] || ""}
                         onChange={(e) =>
