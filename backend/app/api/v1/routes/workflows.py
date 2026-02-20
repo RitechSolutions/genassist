@@ -54,6 +54,7 @@ SUPPORTED_NODE_TYPES = [
     "trainModelNode",
     "mcpNode",
     "workflowExecutorNode",
+    "setStateNode",
 ]
 
 

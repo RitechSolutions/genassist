@@ -53,6 +53,33 @@ class ChatInputNode(BaseNode):
                         "conversation_history", conversation_history
                     )
 
+            # Handle stateful parameters
+            memory = self.get_memory()
+            for param_name, param_schema in input_schema.items():
+                if param_schema.get("stateful", False):
+                    # For stateful parameters, always check Redis first to ensure we have
+                    # the latest value (which may have been updated by a sub-workflow)
+                    # Then fall back to session if Redis doesn't have it
+                    stateful_value = await memory.get_stateful_value(param_name, None)
+                    if stateful_value is not None:
+                        # Redis has the value, use it and update session
+                        session[param_name] = stateful_value
+                        validated_data[param_name] = stateful_value
+                        self.get_state().update_session_value(param_name, stateful_value)
+                    else:
+                        # Redis doesn't have it, check session
+                        stateful_value = session.get(param_name, None)
+                        if stateful_value is None or stateful_value == "":
+                            # Not in session either, use default if available
+                            if param_schema.get("required", False) is False and "defaultValue" in param_schema:
+                                default_value = param_schema["defaultValue"]
+                                session[param_name] = default_value
+                                validated_data[param_name] = default_value
+                                self.get_state().update_session_value(param_name, default_value)
+                        else:
+                            # Value in session but not in Redis, use session value
+                            validated_data[param_name] = stateful_value
+
             self.set_node_input(validated_data)
             return validated_data
         except ValueError as e:

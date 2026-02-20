@@ -26,6 +26,7 @@ from .aggregator_node import AggregatorNode
 from .thread_rag_node import ThreadRAGNode
 from .mcp_node import MCPNode
 from .workflow_executor_node import WorkflowExecutorNode
+from .set_state_node import SetStateNode
 
 __all__ = [
     "ChatInputNode",
@@ -56,4 +57,5 @@ __all__ = [
     "ThreadRAGNode",
     "MCPNode",
     "WorkflowExecutorNode",
+    "SetStateNode",
 ]
