@@ -601,9 +601,9 @@ const GraphFlowContent: React.FC = () => {
               className={`fixed top-2 z-20 flex flex-row flex-wrap items-center justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
                 (() => {
                   if (showNodePanel && showWorkflowPanel) {
-                    return "right-[calc(20rem+20rem+1rem)]";
+                    return "right-[calc(360px+20rem+1rem)]";
                   } else if (showNodePanel) {
-                    return "right-[calc(20rem+1rem)]";
+                    return "right-[calc(360px+1rem)]";
                   } else if (showWorkflowPanel) {
                     return "right-[calc(20rem+1rem)]";
                   } else {
