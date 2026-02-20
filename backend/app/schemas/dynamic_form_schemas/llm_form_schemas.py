@@ -98,6 +98,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 options=[
                     {"value": "gemini-2.5-pro", "label": "Gemini Pro (2.5)"},
                     {"value": "gemini-3-pro-preview", "label": "Gemini 3 pro preview"},
+                    {"value": "gemini-3.1-pro-preview", "label": "Gemini 3.1 pro preview"},
                     {
                         "value": "gemini-3-flash-preview",
                         "label": "Gemini 3 flash preview",
