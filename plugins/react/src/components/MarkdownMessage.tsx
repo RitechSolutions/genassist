@@ -37,7 +37,7 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ text, style })
     <div style={baseStyle}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeSanitize(sanitizeSchema)]}
+        rehypePlugins={[rehypeSanitize(sanitizeSchema) as import('unified').Pluggable]}
         components={{
           a: ({ href, children, ...props }) => (
             <a
