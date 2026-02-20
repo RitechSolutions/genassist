@@ -34,6 +34,7 @@ from app.modules.workflow.engine.nodes import (
     ThreadRAGNode,
     MCPNode,
     WorkflowExecutorNode,
+    SetStateNode,
 )
 from typing import Dict, Any, List, Optional, Set
 import logging
@@ -99,6 +100,7 @@ class WorkflowEngine:
         cls._node_registry["threadRAGNode"] = ThreadRAGNode
         cls._node_registry["mcpNode"] = MCPNode
         cls._node_registry["workflowExecutorNode"] = WorkflowExecutorNode
+        cls._node_registry["setStateNode"] = SetStateNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -128,6 +130,7 @@ class WorkflowEngine:
             "dataMapperNode",
             "toolBuilderNode",
             "aggregatorNode",
+            "setStateNode",
         }
         
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)

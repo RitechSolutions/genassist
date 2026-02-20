@@ -19,11 +19,12 @@ const DEFAULT_SUGGESTED_PARAMS: NodeSchema = {
     type: "string",
     description: "The conversation history",
     required: false,
+    stateful: true,
   },
   language: {
     type: "string",
     description: "The language of the conversation",
-    required: true,
+    required: false,
   },
 };
 
@@ -96,6 +97,7 @@ const ChatInputNode: React.FC<NodeProps<ChatInputNodeData>> = ({
           removeItem={removeItem}
           suggestParams={true}
           listSuggestedParams={DEFAULT_SUGGESTED_PARAMS}
+          allowStateful={true}
         />
       </div>
     </BaseNodeContainer>

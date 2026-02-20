@@ -6,6 +6,7 @@ import {
   updateKnowledgeItem,
   deleteKnowledgeItem,
   uploadFiles as apiUploadFiles,
+  executeKnowledgeBaseSyncronizationManually,
 } from "@/services/api";
 import { getApiUrlString } from "@/config/api";
 import { getAllDataSources } from "@/services/dataSources";
@@ -40,6 +41,7 @@ import {
   ChevronLeft,
   Trash2,
   Download,
+  RefreshCw,
 } from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -173,6 +175,9 @@ const KnowledgeBaseManager: React.FC = () => {
   const [urls, setUrls] = useState<string[]>([""]);
   const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
 
+  const [isSyncing, setIsSyncing] = useState(false);
+
+
   /* File types that are supported by the file extractor */
   const acceptedFileTypes = [".pdf", ".docx", ".doc", ".txt", ".csv", ".xls", ".xlsx", ".pptx", ".ppt", ".html", ".htm", ".yaml", ".yml", ".json", ".jsonl", ".md"];
   
@@ -193,7 +198,36 @@ const KnowledgeBaseManager: React.FC = () => {
     }
   };
 
-  // useEffect(() => {
+
+  const handleSyncNow = async () => {
+    if (!editingItem?.id) {
+      toast.error("Please save the knowledge base before syncing.");
+      return;
+    }
+
+    try {
+      setIsSyncing(true);
+
+      toast.success("Synchronization started" );
+
+      await executeKnowledgeBaseSyncronizationManually(editingItem.id);
+
+      toast.success("Synchronization completed successfully.");
+
+      // Auto refresh after short delay (optional but recommended)
+      setTimeout(() => {
+        fetchItems();
+      }, 1000);
+
+    } catch (error) {
+      toast.error("Failed to trigger synchronization.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+
+    // useEffect(() => {
   //   const fetchLLMProviders = async () => {
   //     try {
   //       const result = await getAllLLMProviders();
@@ -1272,27 +1306,45 @@ const KnowledgeBaseManager: React.FC = () => {
                                   <div className="bg-gray-50 rounded-lg">
                                     <div className="flex items-center justify-between p-4">
                                       <div>
-                                        <div>
-                                          <div className="mb-1">
-                                            Sync Schedule/Enable
-                                          </div>
-                                          <Input
-                                            id="sync_schedule"
-                                            name="sync_schedule"
-                                            disabled={
-                                              !formData.sync_active && true
-                                            }
-                                            value={formData.sync_schedule ?? ""}
-                                            onChange={(e) => {
-                                              const value = e.target.value;
-                                              setFormData((prev) => ({
-                                                ...prev,
-                                                sync_schedule: value,
-                                              }));
-                                            }}
-                                            placeholder="e.g. every 15':  */15 * * * *"
-                                          />
-                                        </div>
+<div>
+  <div className="mb-1">Sync Schedule/Enable</div>
+
+  <div className="flex gap-2">
+    <Input
+      id="sync_schedule"
+      name="sync_schedule"
+      disabled={!formData.sync_active}
+      value={formData.sync_schedule ?? ""}
+      onChange={(e) => {
+        const value = e.target.value;
+        setFormData((prev) => ({
+          ...prev,
+          sync_schedule: value,
+        }));
+      }}
+      placeholder="e.g. every 15':  */15 * * * *"
+      className="flex-1"
+    />
+
+    {editingItem && (
+      <Button
+        type="button"
+        variant="outline"
+        onClick={handleSyncNow}
+        disabled={isSyncing}
+        className="min-w-[130px]"
+      >
+        <div className="flex items-center gap-2">
+          <RefreshCw
+            className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`}
+          />
+          {isSyncing ? "Syncing..." : "Sync Now"}
+        </div>
+      </Button>
+    )}
+  </div>
+</div>
+
                                       </div>
 
                                       <div className="flex items-center justify-between mt-2">
