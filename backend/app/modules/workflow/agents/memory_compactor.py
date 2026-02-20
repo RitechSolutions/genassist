@@ -33,6 +33,8 @@ You will receive a series of messages from a conversation{previous_compaction_pr
 - User preferences and stated goals
 - Key decisions or conclusions
 
+{previous_expansion_prompt}
+
 Respond with a JSON object in this exact format:
 {{
   "entities": [
@@ -91,7 +93,11 @@ Provide the JSON response:"""
                                                    previous_compaction_prompt=" and previous summary done for "
                                                                               "messages before the latest ones "
                                                                               "included "
-                                                                              "below" if existing_summary else "")
+                                                                              "below" if existing_summary else "",
+                                                   previous_expansion_prompt="Expand or update the previous "
+                                                                             "compaction summary with "
+                                                                             "new data as necessary." if
+                                                   existing_summary else "")
 
             response = await self.llm_model.ainvoke([
                 SystemMessage(content="You are a helpful assistant that compacts conversation history."),
