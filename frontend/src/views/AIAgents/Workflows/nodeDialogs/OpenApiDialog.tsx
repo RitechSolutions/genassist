@@ -30,13 +30,16 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
   const [providerId, setProviderId] = useState(data.providerId || "");
   const [query, setQuery] = useState(data.query || "");
   const [originalFileName, setOriginalFileName] = useState(
-    data.originalFileName || ""
+    data.originalFileName || "",
   );
-  const [serverFilePath, setServerFilePath] = useState(
-    data.serverFilePath || ""
+  const [serverFilePath, setServerFilePath] = useState<string | undefined>(
+    data.serverFilePath,
+  );
+  const [serverFileUrl, setServerFileUrl] = useState<string | undefined>(
+    data.serverFileUrl,
   );
   const [availableProviders, setAvailableProviders] = useState<LLMProvider[]>(
-    []
+    [],
   );
   const { toast } = useToast();
   const [isCreateProviderOpen, setIsCreateProviderOpen] = useState(false);
@@ -48,6 +51,7 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
       setQuery(data.query || "");
       setOriginalFileName(data.originalFileName || "");
       setServerFilePath(data.serverFilePath || "");
+      setServerFileUrl(data.serverFileUrl || "");
 
       loadProviders();
     }
@@ -74,6 +78,7 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
       query,
       originalFileName,
       serverFilePath,
+      serverFileUrl,
     });
     onClose();
   };
@@ -142,14 +147,17 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
             label="Specification File"
             acceptedFileTypes={[".json", ".yaml", ".yml"]}
             initialServerFilePath={serverFilePath}
+            initialServerFileUrl={serverFileUrl}
             initialOriginalFileName={originalFileName}
             onUploadComplete={(result) => {
               setOriginalFileName(result.original_filename);
               setServerFilePath(result.file_path);
+              setServerFileUrl(result.file_url);
             }}
             onRemove={() => {
               setOriginalFileName("");
-              setServerFilePath("");
+              setServerFilePath(undefined);
+              setServerFileUrl(undefined);
             }}
             placeholder="Select a JSON or YAML file to upload"
           />
