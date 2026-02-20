@@ -9,4 +9,3 @@ export interface BaseNodeDialogProps<T extends NodeData, U> {
     nodeType: string;
   }
 
-  
