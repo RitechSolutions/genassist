@@ -27,6 +27,7 @@ from .thread_rag_node import ThreadRAGNode
 from .mcp_node import MCPNode
 from .workflow_executor_node import WorkflowExecutorNode
 from .user_input_node import UserInputNode
+from .set_state_node import SetStateNode
 
 __all__ = [
     "ChatInputNode",
@@ -58,4 +59,5 @@ __all__ = [
     "MCPNode",
     "WorkflowExecutorNode",
     "UserInputNode",
+    "SetStateNode"
 ]

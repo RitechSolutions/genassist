@@ -55,6 +55,7 @@ SUPPORTED_NODE_TYPES = [
     "mcpNode",
     "workflowExecutorNode",
     "userInputNode",
+    "setStateNode"
 ]
 
 
@@ -475,7 +476,7 @@ async def generate_python_template(
 
             # Compose the LLM prompt
             llm_prompt = f"""
-You are an expert Python developer. You are given a Python function template below. 
+You are an expert Python developer. You are given a Python function template below.
             Modify the function so that inside the 'executable_function', you add the following logic described by the user, you do not change anything else from the template, including comments:
 
 ---

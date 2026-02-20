@@ -27,6 +27,9 @@ export interface WorkflowExecutionState {
   // All node outputs by node ID
   nodeOutputs: Record<string, NodeExecutionResult>;
 
+  // Persistent stateful parameters (persists across workflow executions)
+  statefulState?: Record<string, unknown>;
+
   // Execution metadata
   lastExecutionId?: string;
   lastExecutionTime?: number;
@@ -82,10 +85,18 @@ export const WorkflowExecutionProvider: React.FC<
     session: {},
     source: {},
     nodeOutputs: {},
+    statefulState: {},
   });
 
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+
+  const getNodeById = useCallback(
+    (nodeId: string) => {
+      return nodes.find((node) => node.id === nodeId);
+    },
+    [nodes]
+  );
 
   const updateNodeOutput = useCallback(
     (
@@ -108,6 +119,60 @@ export const WorkflowExecutionProvider: React.FC<
         // Update session data for chat input nodes
         if (nodeType === "chatInputNode") {
           newState.session = output;
+          // Merge stateful parameters from persistent state
+          if (newState.statefulState) {
+            newState.session = { ...newState.statefulState, ...output };
+          }
+        }
+
+        // Handle SetStateNode - update persistent stateful parameters
+        if (nodeType === "setStateNode") {
+          const node = nodes.find((n) => n.id === nodeId);
+          if (node) {
+            const nodeData = node.data as any;
+            const updatedState: Record<string, unknown> = {
+              ...(newState.statefulState || {}),
+            };
+
+            // Handle new array format (states)
+            if (nodeData.states && Array.isArray(nodeData.states)) {
+              nodeData.states.forEach((stateEntry: { key: string; value: string }) => {
+                if (stateEntry.key) {
+                  // The output should contain the resolved value for each state key
+                  const stateValue =
+                    output[stateEntry.key] !== undefined
+                      ? output[stateEntry.key]
+                      : output[`${stateEntry.key}_value`] !== undefined
+                        ? output[`${stateEntry.key}_value`]
+                        : output.value !== undefined
+                          ? output.value
+                          : stateEntry.value; // Fallback to the configured value
+                  
+                  if (stateValue !== undefined) {
+                    updatedState[stateEntry.key] = stateValue;
+                  }
+                }
+              });
+            }
+            // Legacy support for single stateKey/stateValue
+            else if (nodeData.stateKey) {
+              const stateKey = nodeData.stateKey;
+              const stateValue =
+                output[stateKey] !== undefined
+                  ? output[stateKey]
+                  : output.value !== undefined
+                    ? output.value
+                    : Object.values(output)[0];
+
+              if (stateValue !== undefined) {
+                updatedState[stateKey] = stateValue;
+              }
+            }
+
+            if (Object.keys(updatedState).length > 0) {
+              newState.statefulState = updatedState;
+            }
+          }
         }
 
         // Update source data for all nodes
@@ -115,7 +180,7 @@ export const WorkflowExecutionProvider: React.FC<
         return newState;
       });
     },
-    []
+    [nodes]
   );
 
   const clearNodeOutput = useCallback((nodeId: string) => {
@@ -128,6 +193,10 @@ export const WorkflowExecutionProvider: React.FC<
 
       // Rebuild session (only from chat input nodes)
       newState.session = {};
+      // Start with stateful state if available
+      if (newState.statefulState) {
+        newState.session = { ...newState.statefulState };
+      }
       remainingOutputs.forEach((result) => {
         if (result.nodeType === "chatInputNode") {
           newState.session = { ...newState.session, ...result.output };
@@ -145,11 +214,13 @@ export const WorkflowExecutionProvider: React.FC<
   }, []);
 
   const clearAllOutputs = useCallback(() => {
-    setState({
+    setState((prevState) => ({
       session: {},
       source: {},
       nodeOutputs: {},
-    });
+      // Preserve stateful state across clears
+      statefulState: prevState.statefulState || {},
+    }));
   }, []);
 
   const setWorkflowStructure = useCallback(
@@ -182,12 +253,6 @@ export const WorkflowExecutionProvider: React.FC<
       return !!state.nodeOutputs[nodeId];
     },
     [state.nodeOutputs]
-  );
-  const getNodeById = useCallback(
-    (nodeId: string) => {
-      return nodes.find((node) => node.id === nodeId);
-    },
-    [nodes]
   );
 
   // Helper to get output data for a node - either from execution or from schema

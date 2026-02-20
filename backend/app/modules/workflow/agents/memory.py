@@ -113,6 +113,16 @@ class BaseConversationMemory:
 
     async def clear_paused_workflow_state(self) -> None:
         """Clear paused workflow state after resume."""
+    async def get_stateful_value(self, key: str, default: Any = None) -> Any:
+        """Get a stateful parameter value"""
+        raise NotImplementedError
+
+    async def set_stateful_value(self, key: str, value: Any) -> None:
+        """Set a stateful parameter value"""
+        raise NotImplementedError
+
+    async def get_all_stateful_values(self) -> Dict[str, Any]:
+        """Get all stateful parameter values"""
         raise NotImplementedError
 
 
@@ -233,6 +243,23 @@ class InMemoryConversationMemory(BaseConversationMemory):
         """Clear paused workflow state from memory."""
         self.metadata.pop("_paused_workflow_state", None)
         logger.info(f"Cleared paused workflow state in-memory for thread {self.thread_id}")
+    async def get_stateful_value(self, key: str, default: Any = None) -> Any:
+        """Get a stateful parameter value from in-memory storage"""
+        return self.metadata.get(f"stateful_{key}", default)
+
+    async def set_stateful_value(self, key: str, value: Any) -> None:
+        """Set a stateful parameter value in in-memory storage"""
+        self.metadata[f"stateful_{key}"] = value
+        self.last_updated = datetime.now().isoformat()
+
+    async def get_all_stateful_values(self) -> Dict[str, Any]:
+        """Get all stateful parameter values from in-memory storage"""
+        stateful_values = {}
+        for key, value in self.metadata.items():
+            if key.startswith("stateful_"):
+                stateful_key = key.replace("stateful_", "", 1)
+                stateful_values[stateful_key] = value
+        return stateful_values
 
 
 class RedisConversationMemory(BaseConversationMemory):
@@ -246,6 +273,7 @@ class RedisConversationMemory(BaseConversationMemory):
         self._message_key = f"{tenant_prefix}:conversation:{self.thread_id}:messages"
         self._metadata_key = f"{tenant_prefix}:conversation:{self.thread_id}:metadata"
         self._conversation_key = f"{tenant_prefix}:conversation:{self.thread_id}:info"
+        self._stateful_key = f"{tenant_prefix}:conversation:{self.thread_id}:stateful"
         self.initialized = False
 
     def _get_tenant_prefix(self) -> str:
@@ -374,9 +402,10 @@ class RedisConversationMemory(BaseConversationMemory):
         try:
             redis = await self._get_redis()
 
-            # Delete all conversation data
+            # Delete all conversation data including stateful values
             await redis.delete(self._message_key)
             await redis.delete(self._metadata_key)
+            await redis.delete(self._stateful_key)
 
             # Reset conversation info
             self.last_updated = datetime.now().isoformat()
@@ -572,10 +601,11 @@ class RedisConversationMemory(BaseConversationMemory):
         try:
             redis = await self._get_redis()
 
-            # Delete all keys related to this conversation
+            # Delete all keys related to this conversation including stateful values
             await redis.delete(self._message_key)
             await redis.delete(self._metadata_key)
             await redis.delete(self._conversation_key)
+            await redis.delete(self._stateful_key)
 
             logger.info(f"Deleted conversation data for thread {self.thread_id}")
 
@@ -623,6 +653,61 @@ class RedisConversationMemory(BaseConversationMemory):
         except Exception as e:
             logger.error(f"Failed to clear paused workflow state for thread {self.thread_id}: {e}")
             raise
+    async def get_stateful_value(self, key: str, default: Any = None) -> Any:
+        """Get a stateful parameter value from Redis"""
+        try:
+            redis = await self._get_redis()
+            # type: ignore
+            value_json = await redis.hget(self._stateful_key, key)
+            if value_json is None:
+                return default
+            return json.loads(value_json)
+        except (json.JSONDecodeError, Exception) as e:
+            logger.error(
+                f"Failed to get stateful value {key} from Redis for thread {self.thread_id}: {e}"
+            )
+            return default
+
+    async def set_stateful_value(self, key: str, value: Any) -> None:
+        """Set a stateful parameter value in Redis"""
+        try:
+            await self._initialize_conversation()
+            redis = await self._get_redis()
+            # Store value as JSON
+            value_json = json.dumps(value)
+            # type: ignore
+            await redis.hset(self._stateful_key, key, value_json)
+            # Set TTL for stateful values (30 days, same as conversation)
+            await redis.expire(self._stateful_key, 86400 * 30)  # type: ignore
+            logger.debug(f"Set stateful value {key} for thread {self.thread_id}")
+        except Exception as e:
+            logger.error(
+                f"Failed to set stateful value {key} in Redis for thread {self.thread_id}: {e}"
+            )
+            raise
+
+    async def get_all_stateful_values(self) -> Dict[str, Any]:
+        """Get all stateful parameter values from Redis"""
+        try:
+            redis = await self._get_redis()
+            # type: ignore
+            all_values = await redis.hgetall(self._stateful_key)
+            if not all_values:
+                return {}
+            # Parse all JSON values
+            result = {}
+            for key, value_json in all_values.items():
+                try:
+                    result[key] = json.loads(value_json)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse stateful value {key}: {e}")
+                    continue
+            return result
+        except Exception as e:
+            logger.error(
+                f"Failed to get all stateful values from Redis for thread {self.thread_id}: {e}"
+            )
+            return {}
 
 
 class ConversationMemory:

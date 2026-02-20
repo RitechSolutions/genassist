@@ -31,6 +31,7 @@ import {
   AlertDialogCancel,
 } from "@/components/alert-dialog";
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
+import { renderIcon } from "../utils/iconUtils";
 
 const DEFAULT_SHEET_WIDTH_PX = 896;
 const MIN_SHEET_WIDTH_PX = 480;
@@ -489,8 +490,9 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
           </div>
 
           {/* Sticky Footer with Action Buttons */}
-          <div className="shrink-0 border-t bg-background px-6 py-4 flex justify-end gap-3">
-            {footer}
+          <div className="shrink-0 border-t bg-background px-6 py-4 flex justify-end gap-3 items-center justify-between">
+            <div className="text-xs text-gray-400 flex items-center gap-2">{nodeDefinition?.icon && renderIcon(nodeDefinition?.icon, "w-4 h-4 text-gray-500")} {nodeDefinition?.type} </div>
+            <div className="flex justify-end gap-2">{footer}</div>
           </div>
           </div>
           {/* Lock toggle */}
