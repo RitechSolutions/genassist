@@ -347,12 +347,49 @@ class InMemoryConversationMemory(BaseConversationMemory):
 
         return to_compact, to_keep
 
+    async def get_uncompacted_messages(self) -> List[Dict[str, Any]]:
+        """
+        Get all messages that haven't been compacted yet.
+
+        Returns:
+            List of all uncompacted message dictionaries in chronological order
+        """
+        summary = await self.get_compacted_summary()
+
+        if not summary:
+            # No compaction has occurred - return all messages
+            return [m.to_dict() for m in self.messages]
+
+        compacted_count = summary.get("compacted_message_count", 0)
+
+        # Return all messages after the compacted range
+        uncompacted = self.messages[compacted_count:]
+        return [m.to_dict() for m in uncompacted]
+
     async def get_chat_history_with_compaction(
         self, max_messages: int, as_string: bool = False
     ) -> Union[List[Dict[str, Any]], str]:
-        """Get history with compacted summary prepended as synthetic system message"""
+        """
+        Get history with compacted summary + ALL uncompacted messages.
+
+        The max_messages parameter is only used as a fallback when no compaction
+        has occurred yet. Once compaction exists, ALL uncompacted messages are returned.
+
+        Args:
+            max_messages: Fallback limit if NO compaction exists (backwards compatibility)
+            as_string: If True, return formatted string
+
+        Returns:
+            Chat history with compacted context
+        """
         summary = await self.get_compacted_summary()
-        recent_messages = await self.get_messages(max_messages=max_messages)
+
+        if summary:
+            # Compaction exists - return ALL uncompacted messages
+            recent_messages = await self.get_uncompacted_messages()
+        else:
+            # No compaction yet - use max_messages as fallback
+            recent_messages = await self.get_messages(max_messages=max_messages)
 
         result = []
 
@@ -366,7 +403,7 @@ class InMemoryConversationMemory(BaseConversationMemory):
                 "timestamp": summary.get("last_compaction_timestamp")
             })
 
-        # Add recent messages
+        # Add all uncompacted messages
         result.extend(recent_messages)
 
         if as_string:
@@ -795,13 +832,75 @@ class RedisConversationMemory(BaseConversationMemory):
 
         return to_compact
 
+    async def get_uncompacted_messages(self) -> List[Dict[str, Any]]:
+        """
+        Get all messages that haven't been compacted yet.
+
+        Returns:
+            List of all uncompacted message dictionaries in chronological order
+        """
+        redis = await self._get_redis()
+        summary = await self.get_compacted_summary()
+
+        total_messages = await redis.llen(self._message_key)  # type: ignore
+
+        if not summary or total_messages == 0:
+            # No compaction or no messages - return all
+            all_msgs = await redis.lrange(self._message_key, 0, -1)  # type: ignore
+            messages = []
+            for msg_json in reversed(all_msgs):  # Reverse for chronological order
+                try:
+                    messages.append(json.loads(msg_json))
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse message: {e}")
+            return messages
+
+        compacted_count = summary.get("compacted_message_count", 0)
+
+        # Redis uses lpush, so newest messages are at index 0
+        # Uncompacted messages are indices 0 to (total - compacted_count - 1)
+        uncompacted_count = total_messages - compacted_count
+
+        if uncompacted_count <= 0:
+            return []
+
+        # Fetch uncompacted messages
+        message_jsons = await redis.lrange(self._message_key, 0, uncompacted_count - 1)  # type: ignore
+
+        messages = []
+        for msg_json in reversed(message_jsons):  # Reverse for chronological order
+            try:
+                messages.append(json.loads(msg_json))
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse message: {e}")
+
+        return messages
+
     async def get_chat_history_with_compaction(
         self, max_messages: int, as_string: bool = False
     ) -> Union[List[Dict[str, Any]], str]:
-        """Get history with compacted summary prepended as synthetic system message"""
+        """
+        Get history with compacted summary + ALL uncompacted messages.
+
+        The max_messages parameter is only used as a fallback when no compaction
+        has occurred yet. Once compaction exists, ALL uncompacted messages are returned.
+
+        Args:
+            max_messages: Fallback limit if NO compaction exists (backwards compatibility)
+            as_string: If True, return formatted string
+
+        Returns:
+            Chat history with compacted context
+        """
         try:
             summary = await self.get_compacted_summary()
-            recent_messages = await self.get_messages(max_messages=max_messages)
+
+            if summary:
+                # Compaction exists - return ALL uncompacted messages
+                recent_messages = await self.get_uncompacted_messages()
+            else:
+                # No compaction yet - use max_messages as fallback
+                recent_messages = await self.get_messages(max_messages=max_messages)
 
             result = []
 
@@ -815,7 +914,7 @@ class RedisConversationMemory(BaseConversationMemory):
                     "timestamp": summary.get("last_compaction_timestamp")
                 })
 
-            # Add recent messages
+            # Add all uncompacted messages
             result.extend(recent_messages)
 
             if as_string:

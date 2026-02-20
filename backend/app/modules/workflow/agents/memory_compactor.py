@@ -96,7 +96,8 @@ Provide the JSON response:"""
                                                                               "below" if existing_summary else "",
                                                    previous_expansion_prompt="Expand or update the previous "
                                                                              "compaction summary with "
-                                                                             "new data as necessary." if
+                                                                             "new data as necessary, while loosing "
+                                                                             "the least amount of previous context." if
                                                    existing_summary else "")
 
             response = await self.llm_model.ainvoke([

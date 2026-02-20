@@ -59,7 +59,9 @@ class AgentNode(BaseNode):
                 as_string=False
             )
         elif trimming_mode == "message_compacting":
-            # Message compacting mode - compact old messages, keep recent N
+         # Message compacting mode - compact old messages at threshold intervals
+            # compactingKeepRecent: minimum raw messages to keep (context grows between compactions)
+            # compactingThreshold: compact every N messages (e.g., at 20, 40, 60...)
             keep_recent = config.get("compactingKeepRecent", 10)
             threshold = config.get("compactingThreshold", 20)
 
@@ -71,9 +73,10 @@ class AgentNode(BaseNode):
                 if needs_compaction:
                     await self._perform_compaction(memory, config, provider_id)
 
-                # Return compacted summary + recent N messages
+                # Return compacted summary + ALL uncompacted messages
+                # max_messages is only used as a fallback when no compaction exists yet
                 return await memory.get_chat_history_with_compaction(
-                    max_messages=keep_recent,
+                    max_messages=keep_recent,  # Fallback limit only
                     as_string=False
                 )
             else:
