@@ -191,6 +191,7 @@ export interface OpenApiNodeData extends BaseNodeData {
   query: string;
   originalFileName: string;
   serverFilePath?: string;
+  serverFileUrl?: string;
 }
 
 // Python Code Node Data
