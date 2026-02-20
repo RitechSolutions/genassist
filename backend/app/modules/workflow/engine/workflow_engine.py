@@ -36,6 +36,7 @@ from app.modules.workflow.engine.nodes import (
     MCPNode,
     WorkflowExecutorNode,
     UserInputNode,
+    SetStateNode
 )
 from typing import Dict, Any, List, Optional, Set
 import logging
@@ -102,6 +103,7 @@ class WorkflowEngine:
         cls._node_registry["mcpNode"] = MCPNode
         cls._node_registry["workflowExecutorNode"] = WorkflowExecutorNode
         cls._node_registry["userInputNode"] = UserInputNode
+        cls._node_registry["setStateNode"] = SetStateNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -109,13 +111,13 @@ class WorkflowEngine:
     def _node_needs_db_access(self, node_type: str) -> bool:
         """
         Determine if a node type requires database access.
-        
+
         This helps optimize connection pool usage by only creating DB connections
         for nodes that actually need them.
-        
+
         Args:
             node_type: The type identifier of the node
-            
+
         Returns:
             True if the node needs DB access, False otherwise
         """
@@ -132,24 +134,25 @@ class WorkflowEngine:
             "toolBuilderNode",
             "aggregatorNode",
             "userInputNode",
+            "setStateNode"
         }
-        
+
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)
         return node_type not in no_db_nodes
-    
+
     def __init__(self, workflow_config: Dict[str, Any]):
         """
         Initialize the workflow engine with a workflow configuration.
 
         Args:
             workflow_config: Workflow configuration dictionary with 'nodes' and optional 'edges'
-        
+
         Raises:
             ValueError: If workflow_config is missing required fields
         """
         # Initialize the class-level node registry if not already done
         self.__class__._initialize_node_registry()
-        
+
         # Validate workflow structure
         if not workflow_config:
             raise ValueError("workflow_config is required")

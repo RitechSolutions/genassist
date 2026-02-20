@@ -105,9 +105,21 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         // ignore
       }
 
+      // Filter out stateful parameters and conversation_history from variables
+      const filteredVariables = variables.filter((v) => {
+        // Check if this variable is a stateful parameter in inputSchema
+        if ("inputSchema" in nodeData && nodeData.inputSchema) {
+          const schema = nodeData.inputSchema[v];
+          if (schema?.stateful) {
+            return false;
+          }
+        }
+        return true;
+      });
+
       const allFields =
-        variables.length > 0
-          ? variables.map((variable) => ({
+        filteredVariables.length > 0
+          ? filteredVariables.map((variable) => ({
               id: variable,
               label: variable,
               type: "string",
@@ -197,6 +209,11 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     // Check if the node has inputSchema
     if ("inputSchema" in data && data.inputSchema) {
       Object.entries(data.inputSchema).forEach(([key, schema]) => {
+        // Skip stateful parameters and conversation_history
+        if (schema.stateful) {
+          return;
+        }
+        
         fields.push({
           id: key,
           label: key,
@@ -236,6 +253,14 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         : null;
 
       for (const field of inputFields) {
+        // Skip stateful parameters and conversation_history
+        if (inputSchema && field.id in inputSchema) {
+          const schemaField = inputSchema[field.id] as SchemaField;
+          if (schemaField.stateful) {
+            continue;
+          }
+        }
+        
         const value = formData[field.id];
 
         if (value === undefined || value === "") {

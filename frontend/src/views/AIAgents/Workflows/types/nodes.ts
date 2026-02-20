@@ -222,6 +222,14 @@ export interface DataMapperNodeData extends BaseNodeData {
   pythonScript: string;
 }
 
+// Set State Node Data
+export interface SetStateNodeData extends BaseNodeData {
+  states?: Array<{
+    key: string; // The key of the stateful parameter to set
+    value: string; // The value to set (can contain {{variables}})
+  }>;
+}
+
 export interface CalendarEventToolNodeData extends BaseNodeData {
   summary: string; // event summary/title
   start: string; // start datetime of event
@@ -362,7 +370,8 @@ export type NodeData =
   | ThreadRAGNodeData
   | MCPNodeData
   | WorkflowExecutorNodeData
-  | UserInputNodeData;
+  | UserInputNodeData
+  | SetStateNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

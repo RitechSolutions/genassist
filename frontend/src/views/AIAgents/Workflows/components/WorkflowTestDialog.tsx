@@ -27,6 +27,7 @@ import {
   RefreshCw,
   ClipboardList,
 } from "lucide-react";
+import { v4 as uuidv4 } from "uuid";
 import { UserInputFormField } from "../types/nodes";
 import { testWorkflow, resumeTestWorkflow, WorkflowTestResponse } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
@@ -71,12 +72,20 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   const [pausedFormSchema, setPausedFormSchema] = useState<PausedFormSchema | null>(null);
   const [pausedThreadId, setPausedThreadId] = useState<string | null>(null);
   const [userInputFormData, setUserInputFormData] = useState<Record<string, string>>({});
+  // Generate thread_id function
+  const generateThreadId = () => {
+    const newThreadId = uuidv4();
+    setTestInputs((prev) => ({
+      ...prev,
+      thread_id: newThreadId,
+    }));
+  };
 
   const { state: executionState } = useWorkflowExecution();
 
   // Find chatInputNode and get its inputSchema
   useEffect(() => {
-    if (workflow) {
+    if (workflow && isOpen) {
       const chatInputNode = workflow.nodes.find((node) =>
         node.type.includes("InputNode")
       );
@@ -88,6 +97,11 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
         const prefilled = new Set<string>();
 
         Object.entries(chatInputNode.data.inputSchema).forEach(([key, field]: [string, SchemaField]) => {
+          // Skip stateful parameters
+          if (field.stateful) {
+            return;
+          }
+
           let value: unknown = undefined;
 
           // First try to get value from session data
@@ -116,11 +130,16 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
             : "";
         });
 
+        // Always restore thread_id from saved testInput (it may not be in node's inputSchema)
+        if (workflow?.testInput?.thread_id !== undefined && workflow.testInput.thread_id !== "") {
+          initialInputs.thread_id = valueToString(workflow.testInput.thread_id, "string");
+        }
+
         setTestInputs(initialInputs);
         setPrefilledFields(prefilled);
       }
     }
-  }, [workflow, executionState?.session]);
+  }, [workflow, executionState?.session, isOpen]);
 
   // Check if a response indicates a paused workflow (handles both direct and nested formats)
   const isPausedResponse = (res: WorkflowTestResponse): boolean => {
@@ -172,7 +191,10 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     // Check if all required fields are filled
     if (inputSchema) {
       const missingRequired = Object.entries(inputSchema)
-        .filter(([_, field]: [string, SchemaField]) => field.required)
+        .filter(([key, field]: [string, SchemaField]) => {
+          // Exclude stateful parameters from validation
+          return field.required && !field.stateful;
+        })
         .some(([key, field]: [string, SchemaField]) => {
           const value = testInput[key];
           if (!value) return true;
@@ -199,13 +221,17 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       // Parse input values based on their schema types
       const parsedInputs: Record<string, unknown> = {
         message: testInput.message || "",
-        thread_id: `test-${Date.now()}`,
+        thread_id: testInput.thread_id || uuidv4(),
       };
 
       if (inputSchema) {
         Object.entries(inputSchema).forEach(([key, field]: [string, SchemaField]) => {
           if (key === "message") {
             // message is already handled above
+            return;
+          }
+          // Skip stateful parameters
+          if (field.stateful) {
             return;
           }
           const value = testInput[key];
@@ -380,7 +406,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
               />
             </div>
 
-            {inputSchema && Object.keys(inputSchema).length > 1 && (
+            {inputSchema && (
               <div className="space-y-2">
                 <Button
                   variant="ghost"
@@ -397,8 +423,47 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
 
                 {showMetadata && (
                   <div className="pl-4 space-y-4 border-l-2 border-gray-200">
+                    {/* Thread ID field - always show so saved testInput.thread_id is visible and usable */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="test-input-thread_id">
+                          Thread ID
+                          {inputSchema?.thread_id?.required && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                        </Label>
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          id="test-input-thread_id"
+                          type="text"
+                          placeholder="Thread ID will be auto-generated"
+                          value={testInput.thread_id || ""}
+                          readOnly
+                          disabled={testing}
+                          className="flex-1 bg-gray-50 cursor-not-allowed"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={generateThreadId}
+                          disabled={testing}
+                          title="Generate new Thread ID"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
                     {Object.entries(inputSchema)
-                      .filter(([key]) => key !== "message")
+                      .filter(([key, field]: [string, SchemaField]) => {
+                        // Exclude message, stateful parameters, and thread_id
+                        return (
+                          key !== "message" &&
+                          !field.stateful &&
+                          key !== "thread_id"
+                        );
+                      })
                       .map(([key, field]: [string, SchemaField]) => {
                         const isBoolean = field.type === "boolean";
                         const isObjectOrArray = field.type === "object" || field.type === "array";
