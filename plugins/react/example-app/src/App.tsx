@@ -38,9 +38,10 @@ function App() {
     description: "Support",
     agentName: "Agent",
     logoUrl: "",
-    baseUrl: "http://localhost:8000/",
-    apiKey: "genagent123",
-    // reCaptchaKey: "xx-yy-zz",
+    baseUrl: import.meta.env.VITE_GENASSIST_CHAT_APIURL || "",
+    apiKey: import.meta.env.VITE_GENASSIST_CHAT_APIKEY || "",
+    reCaptchaKey: import.meta.env.VITE_GENASSIST_CHAT_RECAPTCHA_KEY || "",
+    tenant: import.meta.env.VITE_GENASSIST_CHAT_TENANT || "",
   });
 
   const [featureFlags, setFeatureFlags] = useState({
@@ -481,7 +482,7 @@ function App() {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   };
-  
+
   const metaValueStyle: React.CSSProperties = {
     maxWidth: 150,
     overflow: "hidden",
@@ -1055,7 +1056,7 @@ function App() {
           position: "bottom-right",
           offset: { x: 20, y: 20 },
         }}
-        onConfigLoaded={({ chatInputMetadata }) => {
+        onConfigLoaded={({ chatInputMetadata }: { chatInputMetadata?: any }) => {
           const next = (chatInputMetadata && typeof chatInputMetadata === "object" && !Array.isArray(chatInputMetadata))
             ? (chatInputMetadata as Record<string, any>)
             : {};
