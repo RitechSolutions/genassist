@@ -8,6 +8,7 @@ import PythonCodeNode from "./tools/pythonCodeNode";
 import {
   CHAT_INPUT_NODE_DEFINITION,
   CHAT_OUTPUT_NODE_DEFINITION,
+  SET_STATE_NODE_DEFINITION,
 } from "./chat/definitions";
 import {
   API_TOOL_NODE_DEFINITION,
@@ -40,6 +41,7 @@ import {
 } from "./utils/definitions";
 import TemplateNode from "./utils/templateNode";
 import DataMapperNode from "./utils/dataMapperNode";
+import SetStateNode from "./chat/setStateNode";
 import SlackOutputNode from "./integrations/slackOutputNode";
 import ZendeskTicketNode from "./integrations/zendeskTicketNode";
 import GmailNode from "./integrations/gmailNode";
@@ -101,6 +103,8 @@ export const registerAllNodeTypes = () => {
 
   nodeRegistry.registerNodeType(DATA_MAPPER_NODE_DEFINITION);
 
+  nodeRegistry.registerNodeType(SET_STATE_NODE_DEFINITION);
+
   nodeRegistry.registerNodeType(ROUTER_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(AGGREGATOR_NODE_DEFINITION);
@@ -143,6 +147,7 @@ export const getNodeTypes = () => {
     routerNode: RouterNode,
     aggregatorNode: AggregatorNode,
     dataMapperNode: DataMapperNode,
+    setStateNode: SetStateNode,
     calendarEventNode: CalendarEventNode,
     jiraNode: JiraNode,
     trainDataSourceNode: TrainDataSourceNode,
