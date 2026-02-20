@@ -7165,6 +7165,63 @@
         ]
       }
     },
+    "/api/genagent/knowledge/kb-batch-tasks-execution": {
+      "get": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Runs the job that sync the KB with files from various sources",
+        "operationId": "summarize_files_from_azure_api_genagent_knowledge_kb_batch_tasks_execution_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kb_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kb Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/workflow": {
       "get": {
         "tags": [
@@ -7987,34 +8044,6 @@
         ],
         "summary": "Runs the job that sync the KB with Sharepoint Site Content",
         "operationId": "run_sharepoint_job_to_api_office365_office365_sharepoint_kb_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
-    "/api/office365/kb-batch-tasks": {
-      "get": {
-        "tags": [
-          "v1",
-          "Office365"
-        ],
-        "summary": "Runs the job that sync the KB with files from various sources",
-        "operationId": "summarize_files_from_azure_api_office365_kb_batch_tasks_get",
         "responses": {
           "200": {
             "description": "Successful Response",

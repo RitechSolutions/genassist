@@ -1,4 +1,5 @@
 from ast import Dict
+import re
 from uuid import UUID
 import uuid
 from fastapi import UploadFile
@@ -255,6 +256,21 @@ class FileManagerService:
         except Exception as e:
             logger.error(f"Failed to download file from URL {file_url} to path {path}: {e}")
             return False
+
+    async def get_file_content_from_url(self, file_url: str) -> bytes:
+        """Get file content from URL."""
+        # use regex to extract the file id from the url
+        file_id = re.search(r"/files/([a-f0-9-]+)/source", file_url)
+        if file_id:
+            file_id = file_id.group(1)
+        else:
+            raise ValueError("Invalid file URL: {file_url}")
+        file = await self.get_file_by_id(file_id)
+        try:
+            return await self.get_file_content(file)
+        except Exception as e:
+            logger.error(f"Failed to get file content from URL {file_url}: {e}")
+            raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(e))
 
     async def list_files(
         self,
