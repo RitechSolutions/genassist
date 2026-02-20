@@ -326,14 +326,14 @@ class InMemoryConversationMemory(BaseConversationMemory):
 
         if split_index <= start_index:
             # No new messages to compact
-            return ([], self.messages[-keep_recent:] if keep_recent > 0 else [])
+            return [], self.messages[-keep_recent:] if keep_recent > 0 else []
 
         # Messages to compact (from start_index to split_index)
         to_compact = [m.to_dict() for m in self.messages[start_index:split_index]]
         # Messages to keep recent (last keep_recent messages)
         to_keep = [m.to_dict() for m in self.messages[-keep_recent:]] if keep_recent > 0 else []
 
-        return (to_compact, to_keep)
+        return to_compact, to_keep
 
     async def get_chat_history_with_compaction(
         self, max_messages: int, as_string: bool = False
@@ -385,7 +385,7 @@ class InMemoryConversationMemory(BaseConversationMemory):
                     parts.append(f"- {entity.get('description', '')}")
 
         if summary.get("compacted_message_count"):
-            parts.append(f"\n(Summary represents {summary['compacted_message_count']} earlier messages)")
+            parts.append(f"\nSummary represents {summary['compacted_message_count']} earlier messages")
 
         return "\n".join(parts)
 
@@ -516,7 +516,7 @@ class RedisConversationMemory(BaseConversationMemory):
             if max_messages and len(messages) > max_messages:
                 messages = messages[-max_messages:]
 
-            return [messages.to_dict() for messages in messages]
+            return [message.to_dict() for message in messages]
 
         except Exception as e:
             logger.error(
@@ -816,7 +816,7 @@ class RedisConversationMemory(BaseConversationMemory):
                     parts.append(f"- {entity.get('description', '')}")
 
         if summary.get("compacted_message_count"):
-            parts.append(f"\n(Summary represents {summary['compacted_message_count']} earlier messages)")
+            parts.append(f"\nSummary represents {summary['compacted_message_count']} earlier messages")
 
         return "\n".join(parts)
 
