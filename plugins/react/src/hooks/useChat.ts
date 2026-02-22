@@ -16,6 +16,7 @@ export interface UseChatProps {
   serverUnavailableMessage?: string; // Custom message when server is down
   serverUnavailableContactUrl?: string; // Optional URL for contact/support
   serverUnavailableContactLabel?: string; // Label for the contact link
+  onConfigLoaded?: (props: { chatInputMetadata?: Record<string, any> }) => void; // Callback for when the chat input metadata is loaded
 }
 
 const DEFAULT_SERVER_UNAVAILABLE_MESSAGE = 'The service is temporarily unavailable. Please try again later.';
@@ -32,7 +33,7 @@ function isNetworkOrServerError(error: any): boolean {
   return typeof status === 'number' && status >= 500;
 }
 
-export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, language, onError, onTakeover, onFinalize, serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel }: UseChatProps) => {
+export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, language, onError, onTakeover, onFinalize, serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel, onConfigLoaded }: UseChatProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [preloadedAttachments, setPreloadedAttachments] = useState<Attachment[]>([]);
@@ -104,6 +105,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
   const onErrorRef = useRef(onError);
   const onTakeoverRef = useRef(onTakeover);
   const onFinalizeRef = useRef(onFinalize);
+  const onConfigLoadedRef = useRef(onConfigLoaded);
 
   // Update callback refs when they change
   useEffect(() => {
@@ -118,6 +120,10 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     onFinalizeRef.current = onFinalize;
   }, [onFinalize]);
 
+  useEffect(() => {
+    onConfigLoadedRef.current = onConfigLoaded;
+  }, [onConfigLoaded]);
+
   // Initialize chat service - only when baseUrl, apiKey, tenant, useWs, or metadata actually change
   useEffect(() => {
     const metadataChanged = metadataRef.current !== metadataString;
@@ -125,7 +131,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     const apiKeyChanged = prevApiKeyRef.current !== apiKey;
     const tenantChanged = prevTenantRef.current !== tenant;
     const useWsChanged = prevUseWsRef.current !== useWs;
-    
+
     // Only re-initialize for connection-related changes, NOT for metadata changes
     const needsReinit = !chatServiceRef.current || baseUrlChanged || apiKeyChanged || tenantChanged || useWsChanged;
 
@@ -143,9 +149,9 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
         chatServiceRef.current.disconnect();
         chatServiceRef.current.setWelcomeDataHandler(null);
       }
-      
+
       chatServiceRef.current = new ChatService(baseUrl, apiKey, metadata, tenant, language, useWs);
-      
+
       // Set up handlers
       chatServiceRef.current.setMessageHandler((message: ChatMessage) => {
         const normalizedMessage: ChatMessage = {
@@ -232,6 +238,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
         if (meta && typeof meta === 'object' && Object.keys(meta).length > 0) {
           setChatInputMetadata(meta);
         }
+        onConfigLoadedRef.current?.({ chatInputMetadata: meta ?? {} });
       }
     } else if (chatServiceRef.current) {
       // Just update metadata without re-initializing
@@ -310,7 +317,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     if (!chatServiceRef.current) {
       return;
     }
-    
+
     setConnectionState('connecting');
     setIsLoading(true);
     setMessages([]);
@@ -327,11 +334,11 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     setIsFinalized(false);
     setIsTakenOver(false);
     setIsAgentTyping(false);
-    
+
     try {
       // Reset the conversation in the chat service
       chatServiceRef.current.resetChatConversation();
-      
+
       // Start a new conversation
       const convId = await chatServiceRef.current.startConversation(reCaptchaToken);
       setConversationId(convId);
@@ -360,6 +367,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
       if (meta && typeof meta === 'object' && Object.keys(meta).length > 0) {
         setChatInputMetadata(meta);
       }
+      onConfigLoadedRef.current?.({ chatInputMetadata: chatServiceRef.current.getChatInputMetadata?.() ?? {} });
     } catch (error) {
       setConnectionState('disconnected');
       setIsAgentTyping(false);
@@ -374,7 +382,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
   }, []);
 
   const uploadFile = useCallback(async (file: File): Promise<Attachment | null> => {
-    const conversationId = chatServiceRef.current?.getConversationId(); 
+    const conversationId = chatServiceRef.current?.getConversationId();
     if (!conversationId) {
       return null;
     }
@@ -384,7 +392,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
 
       // construct the file url with the base url
       const file_url = new URL(uploadResult!.file_url!, baseUrl).href;
-      
+
       const attachment: Attachment = {
         name: file.name,
         type: file.type,
@@ -416,7 +424,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
       setIsLoading(true);
 
       const newAttachments: Attachment[] = [];
-      
+
       if (files.length > 0) {
         const uploadedFiles = files.map(f => preloadedAttachments.find(pa => pa.name === f.name && pa.size === f.size)).filter(Boolean) as Attachment[];
         newAttachments.push(...uploadedFiles);
@@ -426,7 +434,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
       if (!isTakenOver) {
         setIsAgentTyping(true);
       }
-      
+
       await chatServiceRef.current.sendMessage(text, newAttachments, extraMetadata, reCaptchaToken);
 
       setPreloadedAttachments([]);
@@ -469,7 +477,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     try {
       setConnectionState('connecting');
       setIsLoading(true);
-      
+
       // Reset state for new conversation
       setMessages([]);
       setPossibleQueries([]);
@@ -507,6 +515,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
       if (meta && typeof meta === 'object' && Object.keys(meta).length > 0) {
         setChatInputMetadata(meta);
       }
+      onConfigLoadedRef.current?.({ chatInputMetadata: chatServiceRef.current.getChatInputMetadata?.() ?? {} });
     } catch (error) {
       setConnectionState('disconnected');
       setIsAgentTyping(false);
@@ -531,7 +540,7 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
         console.error('Cannot send feedback: messageId is required');
         return;
       }
-      
+
       try {
         await chatServiceRef.current.addFeedback(messageId, value, feedbackMessage);
 
