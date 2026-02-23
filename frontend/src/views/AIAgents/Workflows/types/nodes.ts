@@ -80,6 +80,7 @@ export interface AggregatorNodeData extends BaseNodeData {
   aggregationStrategy?: "list" | "merge" | "first" | "last";
   timeoutSeconds?: number;
   forwardTemplate?: string;
+  requireAllInputs?: boolean;
 }
 
 export interface ZendeskTicketNodeData extends BaseNodeData {
@@ -191,6 +192,7 @@ export interface OpenApiNodeData extends BaseNodeData {
   query: string;
   originalFileName: string;
   serverFilePath?: string;
+  serverFileUrl?: string;
 }
 
 // Python Code Node Data

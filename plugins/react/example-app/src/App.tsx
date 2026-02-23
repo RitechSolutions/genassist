@@ -38,9 +38,10 @@ function App() {
     description: "Support",
     agentName: "Agent",
     logoUrl: "",
-    baseUrl: "http://localhost:8000/",
-    apiKey: "genagent123",
-    // reCaptchaKey: "xx-yy-zz",
+    baseUrl: import.meta.env.VITE_GENASSIST_CHAT_APIURL || "",
+    apiKey: import.meta.env.VITE_GENASSIST_CHAT_APIKEY || "",
+    reCaptchaKey: import.meta.env.VITE_GENASSIST_CHAT_RECAPTCHA_KEY || "",
+    tenant: import.meta.env.VITE_GENASSIST_CHAT_TENANT || "",
   });
 
   const [featureFlags, setFeatureFlags] = useState({
@@ -481,7 +482,7 @@ function App() {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   };
-  
+
   const metaValueStyle: React.CSSProperties = {
     maxWidth: 150,
     overflow: "hidden",
@@ -1049,13 +1050,14 @@ function App() {
         serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
         serverUnavailableContactUrl="https://www.ritech.co/"
         serverUnavailableContactLabel="Contact Support"
+        inputDisclaimer={<span><a href="https://genassist.ai">Genassist</a> provides AI-generated content for informational purposes only. While our bots strive for accuracy, AI responses may occasionally be incorrect, incomplete, or biased. Users should independently verify any critical information before taking action</span>}
         onError={handleError}
         mode="floating"
         floatingConfig={{
           position: "bottom-right",
           offset: { x: 20, y: 20 },
         }}
-        onConfigLoaded={({ chatInputMetadata }) => {
+        onConfigLoaded={({ chatInputMetadata }: { chatInputMetadata?: any }) => {
           const next = (chatInputMetadata && typeof chatInputMetadata === "object" && !Array.isArray(chatInputMetadata))
             ? (chatInputMetadata as Record<string, any>)
             : {};

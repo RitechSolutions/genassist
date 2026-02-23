@@ -2,6 +2,7 @@ import React from 'react';
 import { ChatContentBlock, DynamicChatItem, FileItem, ScheduleItem } from '../types';
 import { getFileIcon } from './FileTypeIcon';
 import { X } from 'lucide-react';
+import { MarkdownMessage } from './MarkdownMessage';
 
 // Utility function to parse markdown bold syntax (**text**) and convert to React elements
 export const parseBoldText = (input: string): React.ReactNode[] => {
@@ -111,11 +112,7 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
 };
 
 const TextBlock: React.FC<{ text: string }> = ({ text }) => {
-  return (
-    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
-      {parseBoldText(text)}
-    </div>
-  );
+  return <MarkdownMessage text={text} />;
 };
 
 interface QuickOptionsProps {
