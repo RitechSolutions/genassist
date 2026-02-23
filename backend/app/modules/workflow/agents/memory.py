@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Union
+from typing import Dict, Any, List, Union, Optional
 import logging
 from datetime import datetime
 import json
@@ -100,6 +100,76 @@ class BaseConversationMemory:
 
         Returns:
             Formatted chat history within token budget
+        """
+        raise NotImplementedError
+
+    async def needs_compaction(self, threshold: int) -> bool:
+        """
+        Check if conversation needs compaction based on total message count.
+
+        Args:
+            threshold: Message count threshold for triggering compaction
+
+        Returns:
+            True if total messages exceed threshold and compaction hasn't run recently
+        """
+        raise NotImplementedError
+
+    async def get_compacted_summary(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the current compacted summary (entities + prose).
+
+        Returns:
+            Dictionary with:
+            - entities: List of extracted facts/entities in JSON format
+            - prose_summary: Natural language summary
+            - compacted_until_timestamp: ISO timestamp of last message in compacted range
+            - compacted_message_count: Number of messages that were compacted
+            - last_compaction_timestamp: When compaction was performed
+            Or None if no compaction exists
+        """
+        raise NotImplementedError
+
+    async def set_compacted_summary(self, summary: Dict[str, Any]) -> None:
+        """
+        Store a compacted summary.
+
+        Args:
+            summary: Dictionary with entities, prose_summary, metadata
+        """
+        raise NotImplementedError
+
+    async def get_messages_for_compaction(
+            self, keep_recent: int
+            ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Get messages split into compaction candidates and recent messages to keep.
+
+        Args:
+            keep_recent: Number of most recent messages to exclude from compaction
+
+        Returns:
+            Tuple of (messages_to_compact, messages_to_keep)
+            Only returns messages that haven't been compacted yet
+        """
+        raise NotImplementedError
+
+    async def get_chat_history_with_compaction(
+            self, max_messages: int, as_string: bool = False
+            ) -> Union[List[Dict[str, Any]], str]:
+        """
+        Get chat history with compacted summary prepended.
+
+        This method retrieves:
+        1. Compacted summary (if it exists) as a synthetic "system" message
+        2. Most recent N messages (uncompacted)
+
+        Args:
+            max_messages: Number of recent messages to include
+            as_string: If True, return formatted string; else list of dicts
+
+        Returns:
+            Chat history with compacted context
         """
         raise NotImplementedError
 
@@ -219,6 +289,156 @@ class InMemoryConversationMemory(BaseConversationMemory):
             return "\n".join(history_parts)
 
         return selected_messages
+
+    async def needs_compaction(self, threshold: int) -> bool:
+        """Check if compaction is needed at threshold intervals"""
+        total_messages = len(self.messages)
+
+        if total_messages < threshold:
+            return False
+
+        # Check if we need to compact again at next threshold
+        summary = await self.get_compacted_summary()
+        if summary:
+            compacted_count = summary.get("compacted_message_count", 0)
+            # Compact every threshold messages (at 20, 40, 60, 80...)
+            if total_messages < compacted_count + threshold:
+                return False
+
+        return True
+
+    async def get_compacted_summary(self) -> Optional[Dict[str, Any]]:
+        """Retrieve stored compacted summary (entities + prose)"""
+        return self.metadata.get("compacted_summary")
+
+    async def set_compacted_summary(self, summary: Dict[str, Any]) -> None:
+        """Store compacted summary in metadata"""
+        self.metadata["compacted_summary"] = summary
+
+    async def get_messages_for_compaction(
+        self, keep_recent: int
+    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Split messages into (to_compact, to_keep) based on what's already compacted"""
+        total_messages = len(self.messages)
+        summary = await self.get_compacted_summary()
+
+        # Determine starting point for compaction
+        if summary:
+            # Already compacted some messages
+            already_compacted = summary.get("compacted_message_count", 0)
+            # Messages to consider for new compaction (exclude already compacted + recent)
+            start_index = already_compacted
+        else:
+            # First time compacting
+            start_index = 0
+
+        # Calculate split point
+        # Keep the last 'keep_recent' messages uncompacted
+        split_index = max(start_index, total_messages - keep_recent)
+
+        if split_index <= start_index:
+            # No new messages to compact
+            return [], self.messages[-keep_recent:] if keep_recent > 0 else []
+
+        # Messages to compact (from start_index to split_index)
+        to_compact = [m.to_dict() for m in self.messages[start_index:split_index]]
+        # Messages to keep recent (last keep_recent messages)
+        to_keep = [m.to_dict() for m in self.messages[-keep_recent:]] if keep_recent > 0 else []
+
+        return to_compact, to_keep
+
+    async def get_uncompacted_messages(self) -> List[Dict[str, Any]]:
+        """
+        Get all messages that haven't been compacted yet.
+
+        Returns:
+            List of all uncompacted message dictionaries in chronological order
+        """
+        summary = await self.get_compacted_summary()
+
+        if not summary:
+            # No compaction has occurred - return all messages
+            return [m.to_dict() for m in self.messages]
+
+        compacted_count = summary.get("compacted_message_count", 0)
+
+        # Return all messages after the compacted range
+        uncompacted = self.messages[compacted_count:]
+        return [m.to_dict() for m in uncompacted]
+
+    async def get_chat_history_with_compaction(
+        self, max_messages: int, as_string: bool = False
+    ) -> Union[List[Dict[str, Any]], str]:
+        """
+        Get history with compacted summary + ALL uncompacted messages.
+
+        The max_messages parameter is only used as a fallback when no compaction
+        has occurred yet. Once compaction exists, ALL uncompacted messages are returned.
+
+        Args:
+            max_messages: Fallback limit if NO compaction exists (backwards compatibility)
+            as_string: If True, return formatted string
+
+        Returns:
+            Chat history with compacted context
+        """
+        summary = await self.get_compacted_summary()
+
+        if summary:
+            # Compaction exists - return ALL uncompacted messages
+            recent_messages = await self.get_uncompacted_messages()
+        else:
+            # No compaction yet - use max_messages as fallback
+            recent_messages = await self.get_messages(max_messages=max_messages)
+
+        result = []
+
+        # Add compacted summary as synthetic system message
+        if summary and (summary.get("prose_summary") or summary.get("entities")):
+            summary_content = self._format_compacted_summary(summary)
+            result.append({
+                "role": "system",
+                "content": summary_content,
+                "message_type": "compacted_summary",
+                "timestamp": summary.get("last_compaction_timestamp")
+            })
+
+        # Add all uncompacted messages
+        result.extend(recent_messages)
+
+        if as_string:
+            history_parts = []
+            for msg in result:
+                prefix = f"{msg['role'].capitalize()}: "
+                history_parts.append(f"{prefix}{msg['content']}")
+            return "\n".join(history_parts)
+
+        return result
+
+    def _format_compacted_summary(self, summary: Dict[str, Any]) -> str:
+        """Format compacted summary for inclusion in chat history"""
+        parts = ["[Conversation History Summary]"]
+
+        if summary.get("prose_summary"):
+            parts.append(f"\nContext: {summary['prose_summary']}")
+
+        if summary.get("entities"):
+            parts.append("\nKey Information:")
+            for entity in summary["entities"][:20]:  # Limit to avoid token bloat
+                entity_type = entity.get("type", "fact")
+                if entity_type == "person":
+                    parts.append(f"- Person: {entity.get('name', 'Unknown')}")
+                elif entity_type == "preference":
+                    parts.append(f"- User preference: {entity.get('description', '')}")
+                else:
+                    parts.append(f"- {entity.get('description', '')}")
+
+        if summary.get("compacted_message_count"):
+            parts.append(f"\nSummary represents {summary['compacted_message_count']} earlier messages")
+
+        return "\n".join(parts)
+
+
 
     async def get_stateful_value(self, key: str, default: Any = None) -> Any:
         """Get a stateful parameter value from in-memory storage"""
@@ -366,7 +586,7 @@ class RedisConversationMemory(BaseConversationMemory):
             if max_messages and len(messages) > max_messages:
                 messages = messages[-max_messages:]
 
-            return [messages.to_dict() for messages in messages]
+            return [message.to_dict() for message in messages]
 
         except Exception as e:
             logger.error(
@@ -439,7 +659,7 @@ class RedisConversationMemory(BaseConversationMemory):
 
             return json.loads(metadata_json)
 
-        except (json.JSONDecodeError, Exception) as e:
+        except Exception as e:
             logger.error(
                 f"Failed to get metadata from Redis for thread {self.thread_id}: {e}"
             )
@@ -530,6 +750,208 @@ class RedisConversationMemory(BaseConversationMemory):
             return "\n".join(history_parts)
 
         return selected_messages
+
+    async def needs_compaction(self, threshold: int) -> bool:
+        """Check if compaction is needed at threshold intervals"""
+        try:
+            redis = await self._get_redis()
+            # Get total message count using llen
+            total_messages = await redis.llen(self._message_key)
+
+            if total_messages < threshold:
+                return False
+
+            # Check if we need to compact again at next threshold
+            summary = await self.get_compacted_summary()
+            if summary:
+                compacted_count = summary.get("compacted_message_count", 0)
+                # Compact every threshold messages (at 20, 40, 60, 80...)
+                if total_messages < compacted_count + threshold:
+                    return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to check compaction need for thread {self.thread_id}: {e}")
+            return False
+
+    async def get_compacted_summary(self) -> Optional[Dict[str, Any]]:
+        """Retrieve stored compacted summary (entities + prose)"""
+        return await self.get_metadata("compacted_summary")
+
+    async def set_compacted_summary(self, summary: Dict[str, Any]) -> None:
+        """Store compacted summary in metadata"""
+        await self.set_metadata("compacted_summary", summary)
+
+    async def get_messages_for_compaction(
+        self, keep_recent: int
+    ) -> List[Dict[str, Any]]:
+        """Split messages into (to_compact, to_keep) based on what's already compacted"""
+        redis = await self._get_redis()
+        total_messages = await redis.llen(self._message_key)  # type: ignore
+        summary = await self.get_compacted_summary()
+
+        # Determine starting point for compaction
+        if summary:
+            # Already compacted some messages
+            already_compacted = summary.get("compacted_message_count", 0)
+            start_index = already_compacted
+        else:
+            # First time compacting
+            start_index = 0
+
+        # Calculate split point
+        # Keep the last 'keep_recent' messages uncompacted
+        split_index = max(start_index, total_messages - keep_recent)
+
+        if split_index <= start_index:
+            # No new messages to compact
+            return []
+
+        # Fetch messages to compact
+        # Redis stores newest first (lpush), so we need to calculate indices correctly
+        # Messages from oldest to newest would be at indices (total-1) down to 0
+        # We want messages from start_index to split_index (in chronological order)
+        # In Redis terms: from (total - split_index) to (total - start_index - 1)
+        redis_start = total_messages - split_index
+        redis_end = total_messages - start_index - 1
+
+        to_compact_jsons = await redis.lrange(
+            self._message_key, redis_start, redis_end
+        )  # type: ignore
+
+        to_compact = []
+        for message_json in reversed(to_compact_jsons):  # Reverse to get chronological order
+            try:
+                message_data = json.loads(message_json)
+                to_compact.append(message_data)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse message from Redis: {e}")
+                continue
+
+
+        return to_compact
+
+    async def get_uncompacted_messages(self) -> List[Dict[str, Any]]:
+        """
+        Get all messages that haven't been compacted yet.
+
+        Returns:
+            List of all uncompacted message dictionaries in chronological order
+        """
+        redis = await self._get_redis()
+        summary = await self.get_compacted_summary()
+
+        total_messages = await redis.llen(self._message_key)  # type: ignore
+
+        if not summary or total_messages == 0:
+            # No compaction or no messages - return all
+            all_msgs = await redis.lrange(self._message_key, 0, -1)  # type: ignore
+            messages = []
+            for msg_json in reversed(all_msgs):  # Reverse for chronological order
+                try:
+                    messages.append(json.loads(msg_json))
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse message: {e}")
+            return messages
+
+        compacted_count = summary.get("compacted_message_count", 0)
+
+        # Redis uses lpush, so newest messages are at index 0
+        # Uncompacted messages are indices 0 to (total - compacted_count - 1)
+        uncompacted_count = total_messages - compacted_count
+
+        if uncompacted_count <= 0:
+            return []
+
+        # Fetch uncompacted messages
+        message_jsons = await redis.lrange(self._message_key, 0, uncompacted_count - 1)  # type: ignore
+
+        messages = []
+        for msg_json in reversed(message_jsons):  # Reverse for chronological order
+            try:
+                messages.append(json.loads(msg_json))
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse message: {e}")
+
+        return messages
+
+    async def get_chat_history_with_compaction(
+        self, max_messages: int, as_string: bool = False
+    ) -> Union[List[Dict[str, Any]], str]:
+        """
+        Get history with compacted summary + ALL uncompacted messages.
+
+        The max_messages parameter is only used as a fallback when no compaction
+        has occurred yet. Once compaction exists, ALL uncompacted messages are returned.
+
+        Args:
+            max_messages: Fallback limit if NO compaction exists (backwards compatibility)
+            as_string: If True, return formatted string
+
+        Returns:
+            Chat history with compacted context
+        """
+        try:
+            summary = await self.get_compacted_summary()
+
+            if summary:
+                # Compaction exists - return ALL uncompacted messages
+                recent_messages = await self.get_uncompacted_messages()
+            else:
+                # No compaction yet - use max_messages as fallback
+                recent_messages = await self.get_messages(max_messages=max_messages)
+
+            result = []
+
+            # Add compacted summary as synthetic system message
+            if summary and (summary.get("prose_summary") or summary.get("entities")):
+                summary_content = self._format_compacted_summary(summary)
+                result.append({
+                    "role": "system",
+                    "content": summary_content,
+                    "message_type": "compacted_summary",
+                    "timestamp": summary.get("last_compaction_timestamp")
+                })
+
+            # Add all uncompacted messages
+            result.extend(recent_messages)
+
+            if as_string:
+                history_parts = []
+                for msg in result:
+                    prefix = f"{msg['role'].capitalize()}: "
+                    history_parts.append(f"{prefix}{msg['content']}")
+                return "\n".join(history_parts)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to get chat history with compaction for thread {self.thread_id}: {e}")
+            return "" if as_string else []
+
+    def _format_compacted_summary(self, summary: Dict[str, Any]) -> str:
+        """Format compacted summary for inclusion in chat history"""
+        parts = ["[Conversation History Summary]"]
+
+        if summary.get("prose_summary"):
+            parts.append(f"\nContext: {summary['prose_summary']}")
+
+        if summary.get("entities"):
+            parts.append("\nKey Information:")
+            for entity in summary["entities"][:20]:  # Limit to avoid token bloat
+                entity_type = entity.get("type", "fact")
+                if entity_type == "person":
+                    parts.append(f"- Person: {entity.get('name', 'Unknown')}")
+                elif entity_type == "preference":
+                    parts.append(f"- User preference: {entity.get('description', '')}")
+                else:
+                    parts.append(f"- {entity.get('description', '')}")
+
+        if summary.get("compacted_message_count"):
+            parts.append(f"\nSummary represents {summary['compacted_message_count']} earlier messages")
+
+        return "\n".join(parts)
 
     async def get_conversation_info(self) -> Dict[str, Any]:
         """Get conversation metadata from Redis"""
