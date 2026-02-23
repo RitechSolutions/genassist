@@ -1,8 +1,11 @@
 'use strict';
 
+const VITE_GENASSIST_CHAT_APIURL = null;
+const VITE_GENASSIST_CHAT_APIKEY = null;
+
 window.GENASSIST_CONFIG = {
-  baseUrl: '_api_url_',
-  apiKey: '_api_key_',
+  baseUrl: VITE_GENASSIST_CHAT_APIURL,
+  apiKey: VITE_GENASSIST_CHAT_APIKEY,
   tenant: '',
   headerTitle: 'GenAssist Demo',
   placeholder: 'Ask anything...',

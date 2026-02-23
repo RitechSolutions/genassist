@@ -435,6 +435,21 @@ class WorkflowState:
         }
         self.execution_path = [*self.execution_path, *state.execution_path]
         self.execution_history = [*self.execution_history, *state.execution_history]
+        
+        # Merge stateful values from sub-workflow session into parent session
+        # This ensures stateful values updated in sub-workflows propagate to parent
+        # Note: We don't merge conversation_history as it's managed separately
+        sub_session = state.get_session()
+        parent_session = self.get_session()
+        for key, value in sub_session.items():
+            # Skip conversation_history as it's managed separately
+            if key == "conversation_history":
+                continue
+            # Merge stateful values: if key doesn't exist in parent or values differ,
+            # update parent with sub-workflow's value (sub-workflow may have updated via SetStateNode)
+            if key not in parent_session or parent_session.get(key) != value:
+                parent_session[key] = value
+                self.update_session_value(key, value)
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get the complete state including all execution details"""

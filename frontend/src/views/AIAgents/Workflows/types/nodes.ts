@@ -80,6 +80,7 @@ export interface AggregatorNodeData extends BaseNodeData {
   aggregationStrategy?: "list" | "merge" | "first" | "last";
   timeoutSeconds?: number;
   forwardTemplate?: string;
+  requireAllInputs?: boolean;
 }
 
 export interface ZendeskTicketNodeData extends BaseNodeData {
@@ -191,6 +192,7 @@ export interface OpenApiNodeData extends BaseNodeData {
   query: string;
   originalFileName: string;
   serverFilePath?: string;
+  serverFileUrl?: string;
 }
 
 // Python Code Node Data
@@ -203,6 +205,14 @@ export type ToolBuilderNodeData = ToolBaseNodeData;
 
 export interface DataMapperNodeData extends BaseNodeData {
   pythonScript: string;
+}
+
+// Set State Node Data
+export interface SetStateNodeData extends BaseNodeData {
+  states?: Array<{
+    key: string; // The key of the stateful parameter to set
+    value: string; // The value to set (can contain {{variables}})
+  }>;
 }
 
 export interface CalendarEventToolNodeData extends BaseNodeData {
@@ -344,7 +354,8 @@ export type NodeData =
   | TrainModelNodeData
   | ThreadRAGNodeData
   | MCPNodeData
-  | WorkflowExecutorNodeData;
+  | WorkflowExecutorNodeData
+  | SetStateNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;

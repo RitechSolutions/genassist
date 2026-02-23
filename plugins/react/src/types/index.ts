@@ -141,6 +141,8 @@ export interface GenAgentChatProps {
   serverUnavailableMessage?: string; // Custom message when server is down
   serverUnavailableContactUrl?: string; // Optional URL for a contact/support
   serverUnavailableContactLabel?: string; // Label for the contact link
+  inputDisclaimer?: string | React.ReactNode; // Disclaimer text or React node shown below the chat input
+  onConfigLoaded?: (props: { chatInputMetadata?: Record<string, any> }) => void;
 }
 
 // NOTE: These are the only file extensions that are supported by the chat.

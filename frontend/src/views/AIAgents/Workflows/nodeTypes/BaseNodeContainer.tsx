@@ -72,6 +72,7 @@ const BaseNodeContainer = <T extends NodeData>({
   const hasError = !hasNodeBeenExecuted(id) || hasValidationError;
   const isSpecialNode =
     nodeType === "chatInputNode" || nodeType === "chatOutputNode";
+  const isAgentNode = nodeType === "agentNode";
 
   const cardColor = hasError
     ? "red-200"
@@ -81,42 +82,55 @@ const BaseNodeContainer = <T extends NodeData>({
   const iconColor = hasError ? "red-600" : isSpecialNode ? "white" : color;
   const icon = hasError ? "CircleAlert" : iconName;
 
+  const card = (
+    <div
+      className={`rounded-[6px] bg-${cardColor} ${NODE_WIDTH} self-stretch ${isAgentNode ? "" : `border-2 ${getBorderColor()}`}`}
+      style={{
+        boxShadow: isAgentNode ? undefined : "0 0 10px rgba(0, 0, 0, 0.2)",
+      }}
+    >
+      {/* Node header */}
+      <NodeHeader
+        iconName={icon}
+        title={title}
+        subtitle={subtitle}
+        color={iconColor}
+        hasError={hasError}
+        isSpecialNode={isSpecialNode}
+        onSettings={onSettings}
+        onTest={handleTest}
+        onDeleteClick={() => setIsDeleteDialogOpen(true)}
+      />
+
+      {/* Node content */}
+      {nodeContent && <NodeContent data={nodeContent} />}
+      {children}
+
+      {/* Handlers */}
+      <HandlersRenderer id={id} data={data} />
+
+      {hasError && (
+        <NodeAlert
+          missingFields={missingFields}
+          onFix={onSettings}
+          onTest={handleTest}
+        />
+      )}
+    </div>
+  );
+
   return (
     <>
-      <div
-        className={`border-2 rounded-md bg-${cardColor} ${NODE_WIDTH} ${getBorderColor()}`}
-        style={{
-          boxShadow: "0 0 10px rgba(0, 0, 0, 0.2)",
-        }}
-      >
-        {/* Node header */}
-        <NodeHeader
-          iconName={icon}
-          title={title}
-          subtitle={subtitle}
-          color={iconColor}
-          hasError={hasError}
-          isSpecialNode={isSpecialNode}
-          onSettings={onSettings}
-          onTest={handleTest}
-          onDeleteClick={() => setIsDeleteDialogOpen(true)}
-        />
-
-        {/* Node content */}
-        {nodeContent && <NodeContent data={nodeContent} />}
-        {children}
-
-        {/* Handlers */}
-        <HandlersRenderer id={id} data={data} />
-
-        {hasError && (
-          <NodeAlert
-            missingFields={missingFields}
-            onFix={onSettings}
-            onTest={handleTest}
-          />
-        )}
-      </div>
+      {isAgentNode ? (
+        <div
+          className={`agent-gradient-border${selected ? " ring-2 ring-blue-500 ring-offset-1" : ""}`}
+          style={{ boxShadow: "0 0 16px rgba(192, 132, 252, 0.4)" }}
+        >
+          {card}
+        </div>
+      ) : (
+        card
+      )}
 
       {/* Generic Test Dialog - automatically included */}
       <GenericTestDialog
@@ -134,7 +148,7 @@ const BaseNodeContainer = <T extends NodeData>({
         onConfirm={handleDelete}
         isInProgress={isDeleting}
         itemName={title}
-      ></ConfirmDialog>
+      />
     </>
   );
 };

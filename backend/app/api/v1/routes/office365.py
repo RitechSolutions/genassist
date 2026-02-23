@@ -14,7 +14,6 @@ import requests
 from datetime import datetime, timedelta
 
 from app.tasks.sharepoint_tasks import import_sharepoint_files_to_kb_async_with_scope
-from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
 
 
 logger = logging.getLogger(__name__)
@@ -244,6 +243,3 @@ async def run_sharepoint_job_to():
     return await import_sharepoint_files_to_kb_async_with_scope()
 
 
-@router.get("/kb-batch-tasks", dependencies=[Depends(auth)],summary="Runs the job that sync the KB with files from various sources")
-async def summarize_files_from_azure():
-    return await batch_process_files_kb_async_with_scope()
