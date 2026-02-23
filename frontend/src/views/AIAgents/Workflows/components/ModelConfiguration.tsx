@@ -106,7 +106,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     });
   };
 
-  const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget") => {
+  const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget" | "message_compacting") => {
     onConfigChange({
       ...config,
       memoryTrimmingMode: mode,
@@ -139,6 +139,27 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     onConfigChange({
       ...config,
       name: newValue,
+    });
+  };
+
+  const handleCompactingThresholdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({
+      ...config,
+      compactingThreshold: Number.parseInt(e.target.value) || 20,
+    });
+  };
+
+  const handleCompactingKeepRecentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({
+      ...config,
+      compactingKeepRecent: Number.parseInt(e.target.value) || 10,
+    });
+  };
+
+  const handleCompactingModelChange = (providerId: string) => {
+    onConfigChange({
+      ...config,
+      compactingModel: providerId,
     });
   };
 
@@ -278,6 +299,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
               <SelectContent>
                 <SelectItem value="message_count">Last N Messages</SelectItem>
                 <SelectItem value="token_budget">Token Budget</SelectItem>
+                <SelectItem value="message_compacting">Message Compacting</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -294,6 +316,104 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                 placeholder="10"
               />
             </div>
+          ) : config.memoryTrimmingMode === "message_compacting" ? (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`compacting-threshold-${id}`}>Compacting Threshold (messages)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Compacting threshold info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Trigger compaction when total messages exceed this count
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`compacting-threshold-${id}`}
+                  type="number"
+                  min={10}
+                  max={100}
+                  step={5}
+                  value={config.compactingThreshold || 20}
+                  onChange={handleCompactingThresholdChange}
+                  placeholder="20"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`compacting-keep-recent-${id}`}>Recent Messages to Keep</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Recent messages info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Number of recent messages to include in context (older messages are compacted into summaries)
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`compacting-keep-recent-${id}`}
+                  type="number"
+                  min={5}
+                  max={50}
+                  step={5}
+                  value={config.compactingKeepRecent || 10}
+                  onChange={handleCompactingKeepRecentChange}
+                  placeholder="10"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`compacting-model-${id}`}>Compacting Model</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Compacting model info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      LLM provider to use for compaction (defaults to node's provider)
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={config.compactingModel || config.providerId || ""}
+                  onValueChange={handleCompactingModelChange}
+                >
+                  <SelectTrigger id={`compacting-model-${id}`} className="w-full">
+                    <SelectValue placeholder="Use node's provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providers.map((provider) => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        {provider.name} ({provider.llm_model_provider} -{" "}
+                        {provider.llm_model})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
           ) : (
             <>
               <div className="space-y-2">
