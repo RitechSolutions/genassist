@@ -116,33 +116,6 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
         />
       </div>
 
-      <TooltipProvider>
-        <div className="space-y-2 flex items-center gap-2 w-full">
-          <Label htmlFor="require-all-inputs">Require all inputs to finish</Label>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-              >
-                <Info className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs text-balance">
-              When enabled, the node waits for every connected input branch to
-              complete before merging results. Disable to proceed as soon as any
-              input is available, returning only the results that have finished.
-            </TooltipContent>
-          </Tooltip>
-          <div className="flex-1" />
-          <Switch
-            id="require-all-inputs"
-            checked={requireAllInputs}
-            onCheckedChange={setRequireAllInputs}
-          />
-        </div>
-      </TooltipProvider>
-
       <div className="space-y-2">
         <Label htmlFor="aggregation-strategy">Aggregation Strategy</Label>
         <Select
@@ -201,6 +174,34 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
           Template for forwarding aggregated results to downstream nodes
         </p>
       </div>
+
+      <TooltipProvider>
+        <div className="flex items-center gap-2 w-full !mt-6">
+          <Label htmlFor="require-all-inputs">Require all inputs to finish</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                <Info className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs text-balance">
+              When enabled, the node waits for every connected input branch to
+              complete before merging results. Disable to proceed as soon as any
+              input is available, returning only the results that have finished.
+            </TooltipContent>
+          </Tooltip>
+          <div className="flex-1" />
+          <Switch
+            id="require-all-inputs"
+            checked={requireAllInputs}
+            onCheckedChange={setRequireAllInputs}
+          />
+        </div>
+      </TooltipProvider>
+
     </NodeConfigPanel>
   );
 };
