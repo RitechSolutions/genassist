@@ -25,5 +25,11 @@ AGGREGATOR_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         type="text",
         label="Forward Template",
         required=False
+    ),
+    FieldSchema(
+        name="requireAllInputs",
+        type="boolean",
+        label="Require All Inputs",
+        required=False
     )
 ]
