@@ -177,7 +177,7 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
 
       <TooltipProvider>
         <div className="flex items-center gap-2 w-full !mt-6">
-          <Label htmlFor="require-all-inputs">Require all inputs to finish</Label>
+          <Label htmlFor="require-all-inputs">Require complete results</Label>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -188,9 +188,9 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
               </button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs text-balance">
-              When enabled, the node waits for every connected input branch to
-              complete before merging results. Disable to proceed as soon as any
-              input is available, returning only the results that have finished.
+              When enabled, all connected branches must complete before results
+              are merged. When disabled, available results are merged immediately
+              without waiting for remaining branches.
             </TooltipContent>
           </Tooltip>
           <div className="flex-1" />
