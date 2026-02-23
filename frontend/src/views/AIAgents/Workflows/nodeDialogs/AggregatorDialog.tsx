@@ -3,7 +3,7 @@ import { AggregatorNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
-import { Save } from "lucide-react";
+import { Save, Info } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -11,6 +11,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
+import { Switch } from "@/components/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
@@ -39,6 +46,7 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
     useState<AggregationStrategyType>("list");
   const [timeoutSeconds, setTimeoutSeconds] = useState(15);
   const [forwardTemplate, setForwardTemplate] = useState("");
+  const [requireAllInputs, setRequireAllInputs] = useState(true);
 
   useEffect(() => {
     if (isOpen) {
@@ -47,6 +55,7 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
         (data.aggregationStrategy as AggregationStrategyType) ?? "list"
       );
       setTimeoutSeconds(data.timeoutSeconds ?? 15);
+      setRequireAllInputs(data.requireAllInputs ?? true);
 
       // Auto-generate default forward template from direct predecessor nodes
       const directSources =
@@ -68,6 +77,7 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
       aggregationStrategy,
       timeoutSeconds,
       forwardTemplate,
+      requireAllInputs,
     });
     onClose();
   };
@@ -92,6 +102,7 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
         aggregationStrategy,
         timeoutSeconds,
         forwardTemplate,
+        requireAllInputs,
       }}
     >
       <div className="space-y-2">
@@ -104,6 +115,33 @@ export const AggregatorDialog: React.FC<AggregatorDialogProps> = (props) => {
           className="w-full"
         />
       </div>
+
+      <TooltipProvider>
+        <div className="space-y-2 flex items-center gap-2 w-full">
+          <Label htmlFor="require-all-inputs">Require all inputs to finish</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                <Info className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs text-balance">
+              When enabled, the node waits for every connected input branch to
+              complete before merging results. Disable to proceed as soon as any
+              input is available, returning only the results that have finished.
+            </TooltipContent>
+          </Tooltip>
+          <div className="flex-1" />
+          <Switch
+            id="require-all-inputs"
+            checked={requireAllInputs}
+            onCheckedChange={setRequireAllInputs}
+          />
+        </div>
+      </TooltipProvider>
 
       <div className="space-y-2">
         <Label htmlFor="aggregation-strategy">Aggregation Strategy</Label>

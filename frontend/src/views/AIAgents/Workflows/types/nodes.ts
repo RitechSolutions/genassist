@@ -80,6 +80,7 @@ export interface AggregatorNodeData extends BaseNodeData {
   aggregationStrategy?: "list" | "merge" | "first" | "last";
   timeoutSeconds?: number;
   forwardTemplate?: string;
+  requireAllInputs?: boolean;
 }
 
 export interface ZendeskTicketNodeData extends BaseNodeData {
