@@ -296,6 +296,15 @@ export const useChat = ({ baseUrl, apiKey, tenant, metadata, useWs = true, langu
     try {
       const stored = localStorage.getItem(key);
       setMessages(stored ? JSON.parse(stored) : []);
+
+      // manually check if messages have takeover
+      const hasTakeOverMsg = messages.some(m => m?.type === 'takeover');
+      setIsTakenOver(hasTakeOverMsg);
+
+      // check if messages have a record with type = finalized
+      const hasFinalizedMsg = messages.some(m => m?.type === 'finalized');
+      setIsFinalized(hasFinalizedMsg);
+
     } catch (error) {
       setMessages([]);
     }
