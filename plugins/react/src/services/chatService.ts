@@ -6,6 +6,8 @@ import {
   AgentThinkingConfig,
   AgentWelcomeData,
   FileUploadResponse,
+  InProgressPollResponse,
+  InProgressPollMessage,
 } from "../types";
 import {
   createWebSocket,
@@ -42,6 +44,7 @@ export class ChatService {
   private serverUnavailableMessage: string | undefined;
   private serverUnavailableContactUrl: string | undefined;
   private serverUnavailableContactLabel: string | undefined;
+  private usePoll: boolean = false;
 
   constructor(
     baseUrl: string,
@@ -49,7 +52,8 @@ export class ChatService {
     metadata?: Record<string, any>,
     tenant?: string,
     language?: string,
-    useWs: boolean = true
+    useWs: boolean = true,
+    usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     this.apiKey = apiKey;
@@ -57,6 +61,7 @@ export class ChatService {
     this.tenant = tenant;
     this.language = language;
     this.useWs = useWs;
+    this.usePoll = usePoll;
     // Try to load a saved conversation for this apiKey from localStorage
     this.loadSavedConversation();
   }
@@ -354,6 +359,7 @@ export class ChatService {
 
   /**
    * Internal handler for takeover events: emits a special message and invokes takeoverHandler.
+   * Runs only once per conversation (idempotent).
    */
   private handleTakeover(now?: number): void {
     const t = now ?? Date.now() / 1000;
@@ -366,6 +372,7 @@ export class ChatService {
         text: "Supervisor took over",
         type: "takeover",
       };
+
       this.messageHandler(takeoverMessage);
     }
     if (this.takeoverHandler) {
@@ -608,14 +615,9 @@ export class ChatService {
       });
 
       // If not using WebSocket, try to retrieve the response message from the update conversation response
-      if (!this.useWs && this.messageHandler) {
+      if (!this.useWs && this.messageHandler && (!this.useWs || !this.usePoll)) { // usePoll is true when using heartbeat polling
         try {
           const responseData = response?.data as any || {};
-
-          // add message on localstorage if is takeover
-          if (responseData?.status === 'takeover') {
-            this.handleTakeover(now);
-          }
 
           if (responseData.messages && Array.isArray(responseData.messages)) {
 
@@ -904,4 +906,81 @@ export class ChatService {
       end_time: message.end_time - this.conversationCreateTime,
     };
   }
+
+  /************ Heartbeat polling ************/
+  /**
+   * Poll in-progress conversation (heartbeat when WebSocket is disabled).
+   * Returns status and messages normalized to ChatMessage[].
+   */
+  async pollInProgressConversation(): Promise<{
+    status: string;
+    pollMessages: InProgressPollMessage[];
+  }> {
+    if (!this.conversationId || !this.conversationCreateTime) {
+      throw new Error("Conversation not started");
+    }
+
+    const response = await axios.get<InProgressPollResponse>(
+      `${this.baseUrl}/api/conversations/in-progress/poll/${this.conversationId}`,
+      { headers: this.getHeaders() }
+    );
+
+    const pollMessages = (response.data.messages || []).map((m) =>
+      this.normalizePollMessageToChatMessage(m)
+    );
+
+    return { status: response.data.status, pollMessages };
+  }
+
+  private normalizePollMessageToChatMessage(m: InProgressPollMessage): InProgressPollMessage {
+    let createTime =
+      typeof m.create_time === "number"
+        ? m.create_time
+        : m.create_time
+          ? +new Date(m.create_time)
+          : Math.floor(Date.now() / 1000);
+
+    // Normalize to seconds: ISO string gives ms (>1e12); if so convert. Otherwise assume already seconds.
+    if (createTime >= 1e12) {
+      createTime = Math.round(createTime / 1000);
+    }
+    const startTime =
+      this.conversationCreateTime != null
+        ? createTime - this.conversationCreateTime
+        : m.start_time;
+    const endTime =
+      this.conversationCreateTime != null
+        ? startTime + (m.end_time - m.start_time) || 0.01
+        : m.end_time;
+    return {
+      id: m.id,
+      create_time: createTime,
+      start_time: startTime,
+      end_time: endTime,
+      speaker: m.speaker as "customer" | "agent" | "special",
+      text: m.text,
+      type: m.type,
+      feedback: m.feedback,
+    };
+  }
+
+  async notifyTakeoverFromPoll(): Promise<void> {
+    // Poll already adds the "Supervisor took over" message from the message list.
+    // Only run the handler so UI state updates; do not call handleTakeover() or we duplicate the message.
+    if (this.takeoverHandler) {
+      this.takeoverHandler();
+    }
+  }
+
+  async notifyFinalizedFromPoll(): Promise<void> {
+    // Poll already adds the "Conversation Finalized" message from the message list.
+    // Only update state and run the handler; do not call handleConversationFinalized() or we duplicate the message.
+    if (this.finalizedHandler) {
+      this.finalizedHandler();
+    }
+    this.isFinalized = true;
+    this.saveConversation();
+  }
+
+  /****** End of Heartbeat polling ************/
 }
