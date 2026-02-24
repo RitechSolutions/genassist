@@ -19,7 +19,6 @@ libffi-dev
 liblzma-dev
 ffmpeg
 pkg-config
-poppler-utils
 tesseract-ocr
 tesseract-ocr-eng
 libmagic1
