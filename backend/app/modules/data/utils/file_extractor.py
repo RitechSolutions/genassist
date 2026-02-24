@@ -562,16 +562,21 @@ class FileTextExtractor:
 
 
     def _ocr_pdf(self, pdf_path: Path) -> str:
-        from pdf2image import convert_from_path
+        import fitz  # PyMuPDF
         import pytesseract
+        from PIL import Image
+        import io
 
-        imgs = convert_from_path(str(pdf_path), dpi=self.options.ocr.dpi)
+        doc = fitz.open(str(pdf_path))
         texts: list[str] = []
-        for i, img in enumerate(imgs):
+        for i, page in enumerate(doc):
             if self.options.ocr.max_pages is not None and i >= self.options.ocr.max_pages:
                 break
+            pix = page.get_pixmap(dpi=self.options.ocr.dpi)
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
             texts.append(pytesseract.image_to_string(
                     img, lang=self.options.ocr.lang))
+        doc.close()
         return "\n".join(texts)
 
 
