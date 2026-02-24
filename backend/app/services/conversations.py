@@ -35,7 +35,11 @@ from app.db.seed.seed_data_config import seed_test_data
 from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.conversations import ConversationRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
-from app.schemas.conversation import ConversationCreate, ConversationWithOperatorAgentRead
+from app.schemas.conversation import (
+    ConversationCreate,
+    ConversationWithOperatorAgentRead,
+    InProgressPollResponse,
+)
 from app.schemas.conversation_analysis import ConversationAnalysisRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
@@ -43,6 +47,7 @@ from app.schemas.conversation_transcript import (
     TranscriptSegmentInput,
 )
 from app.schemas.filter import ConversationFilter
+from app.schemas.transcript_message import TranscriptMessageRead
 from app.services.conversation_analysis import ConversationAnalysisService
 from app.services.gpt_kpi_analyzer import GptKpiAnalyzer
 from app.services.llm_analysts import LlmAnalystService
@@ -93,6 +98,38 @@ class ConversationService:
         if not conversation and raise_not_found:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
         return conversation
+
+    @cache(
+        expire=2,
+        namespace="conversations:in_progress_poll",
+        key_builder=make_key_builder("conversation_id"),
+        coder=PickleCoder,
+    )
+    async def get_in_progress_poll_data(
+        self, conversation_id: UUID
+    ) -> InProgressPollResponse:
+        """
+        Lightweight poll data for heartbeat when WebSocket is disabled.
+        Cached 2s to avoid DB hammering; invalidate on conversation update/finalize.
+        """
+        conversation = await self.conversation_repo.fetch_conversation_by_id(
+            conversation_id,
+            include_messages=True,
+        )
+        if not conversation:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
+        messages_raw = [
+            TranscriptMessageRead.model_validate(m)
+            for m in (conversation.messages or [])
+        ]
+
+        # filter out messages with speaker 'customer'
+        messages = [m for m in messages_raw if m.speaker != 'customer']
+
+        return InProgressPollResponse(
+            status=conversation.status or "in_progress",
+            messages=messages,
+        )
 
     async def get_conversation_by_id_full(
         self, conversation_id: UUID, conversation_filter: ConversationFilter

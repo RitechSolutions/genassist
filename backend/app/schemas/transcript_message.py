@@ -12,7 +12,7 @@ class TranscriptMessageBase(BaseModel):
     speaker: str = Field(..., max_length=50)
     text: str
     type: str = Field(..., max_length=50)
-
+    sequence_number: Optional[int] = None
 
     model_config = ConfigDict(
         from_attributes = True
