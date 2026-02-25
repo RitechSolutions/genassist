@@ -35,7 +35,11 @@ from fastapi.responses import JSONResponse
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.modules.websockets.socket_room_enum import SocketRoomType
 from app.schemas.agent import AgentRead
-from app.schemas.conversation import ConversationRead, ConversationPaginatedResponse
+from app.schemas.conversation import (
+    ConversationRead,
+    ConversationPaginatedResponse,
+    InProgressPollResponse,
+)
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
     ConversationStartWithRecaptchaToken,
@@ -44,6 +48,7 @@ from app.schemas.conversation_transcript import (
     InProgressConversationTranscriptFinalize,
     TranscriptSegmentFeedback,
 )
+from app.cache.redis_cache import invalidate_cache
 from app.schemas.filter import ConversationFilter
 from app.schemas.socket_principal import SocketPrincipal
 from app.services.agent_config import AgentConfigService
@@ -187,6 +192,44 @@ async def start(
     return json_response
 
 
+@router.get(
+    "/in-progress/poll/{conversation_id}",
+    response_model=InProgressPollResponse,
+    dependencies=[
+        Depends(get_agent_for_update),
+        Depends(auth_for_conversation_update),
+        Depends(permissions(P.Conversation.UPDATE_IN_PROGRESS)),
+    ],
+)
+@limiter.limit(get_agent_rate_limit_update, key_func=get_conversation_identifier)
+@limiter.limit(get_agent_rate_limit_update_hour, key_func=get_conversation_identifier)
+async def poll_in_progress(
+    request: Request,
+    conversation_id: UUID,
+    service: ConversationService = Injected(ConversationService),
+):
+    """
+    Heartbeat polling for in-progress conversation when WebSocket is disabled.
+    Returns status and messages so the client can sync state (new messages, finalized, takeover).
+    Uses a short (2s) cache to avoid DB hammering; cache is invalidated on update/finalize.
+    """
+    try:
+        payload = await service.get_in_progress_poll_data(conversation_id)
+    except AppException as e:
+        if e.status_code == 404:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
+        raise
+    json_response = JSONResponse(content=payload.model_dump(mode="json"))
+    agent = getattr(request.state, "agent", None)
+    agent_security_settings = (
+        agent.security_settings
+        if agent and hasattr(agent, "security_settings")
+        else None
+    )
+    apply_agent_cors_headers(request, json_response, agent_security_settings)
+    return json_response
+
+
 @router.patch(
     "/in-progress/no-agent-update/{conversation_id}",
     dependencies=[
@@ -262,6 +305,8 @@ async def update_no_agent(
     updated_conversation = await service.update_in_progress_conversation(
         conversation_id, model
     )
+
+    await invalidate_cache("conversations:in_progress_poll", conversation_id)
 
     # Notify dashboard a conversation is updated
     tenant_id = get_tenant_context()
@@ -342,7 +387,7 @@ async def update(
     if not agent:
         logger.debug("agent not found")
         raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
-    
+
     # validate recaptcha token
     reCaptchaToken = model.recaptcha_token or None
     is_valid, score, reason = verify_recaptcha_token(reCaptchaToken, agent=agent)
@@ -368,6 +413,8 @@ async def update(
         tenant_id=tenant_id,
         current_user_id=get_current_user_id(),
     )
+
+    await invalidate_cache("conversations:in_progress_poll", conversation_id)
 
     upd_conv_pyd: ConversationRead = ConversationRead.model_validate(
         updated_conversation
@@ -429,6 +476,7 @@ async def finalize(
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
         conversation_id= conversation_id, llm_analyst_id=finalize.llm_analyst_id,
     )
+    await invalidate_cache("conversations:in_progress_poll", conversation_id)
     return finalized_conversation_analysis
 
 
