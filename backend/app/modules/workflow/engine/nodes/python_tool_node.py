@@ -40,8 +40,8 @@ class PythonToolNode(BaseNode):
         self.set_node_input(code)
 
         try:
-            # Execute the Python code
-            response = await execute_python_code(code, {})
+            # Execute the Python code with resolved params from code_params
+            response = await execute_python_code(code, self.code_params or {})
             if unwrap:
                 response = response.get("result", None)
             return response

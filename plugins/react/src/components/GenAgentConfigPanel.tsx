@@ -21,6 +21,7 @@ export interface FeatureFlags {
   useAudio?: boolean;
   useFile?: boolean;
   useWs?: boolean;
+  usePoll?: boolean;
 }
 
 type ParamType = 'string' | 'number' | 'boolean';
@@ -75,6 +76,7 @@ const defaultFeatureFlags: FeatureFlags = {
   useAudio: false,
   useFile: false,
   useWs: false,
+  usePoll: false,
 };
 
 function objectToParams(obj: Record<string, any> | undefined): MetadataParam[] {
