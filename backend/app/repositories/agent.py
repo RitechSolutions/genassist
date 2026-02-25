@@ -3,7 +3,7 @@ from uuid import UUID
 from injector import inject
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from app.db.models import AgentModel, OperatorModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.filter import BaseFilterModel
@@ -17,14 +17,14 @@ class AgentRepository(DbRepository[AgentModel]):
 
     async def get_by_id_full(self, agent_id: UUID) -> AgentModel | None:
         """
-        Return the Agent row *with* agent_tools and agent_knowledge_bases
-        eagerly loaded in a single round‑trip.
+        Return the Agent row with operator, workflow, and security_settings
+        eagerly loaded.
         """
         result = await self.db.execute(
             select(AgentModel)
             .options(
                 joinedload(AgentModel.operator).joinedload(OperatorModel.user),
-                joinedload(AgentModel.workflow),
+                selectinload(AgentModel.workflow),  # separate query avoids cartesian product with other joins
                 joinedload(AgentModel.security_settings)
             )
             .where(AgentModel.id == agent_id)
