@@ -376,7 +376,7 @@ useEffect(() => {
             ) : (
               <MessageSquare className="w-5 h-5" />
             )}
-            {isCall ? "Call" : "Chat"} #{(localTranscript?.metadata?.title ?? "----").slice(0, 4)}{" "}
+            {isCall ? "Call" : "Chat"} #{(localTranscript?.metadata?.title ?? "----").slice(-4)}{" "}
           </DialogTitle>
         </DialogHeader>
 
