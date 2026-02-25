@@ -98,7 +98,7 @@ dependencies:
   - googleapis-common-protos=1.72.0
   - greenlet=3.1.1
   - grpcio=1.71.0
-  - h11=0.14.0
+  - h11=0.16.0
   - httpcore=1.0.2
   - httpx=0.27.0
   - httpx-sse=0.4.0
