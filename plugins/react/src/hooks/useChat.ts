@@ -84,7 +84,6 @@ export const useChat = ({
   >({});
   const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
-  const [isPolling, setIsPolling] = useState<boolean>(false);
 
   // Scoped messages key for apiKey, conversatioId
   const buildMessagesKey = useCallback(
@@ -470,7 +469,6 @@ export const useChat = ({
 
     const poll = async () => {
       if (cancelled) return;
-      setIsPolling(true);
       try {
         const { status, pollMessages } = await svc.pollInProgressConversation();
         if (cancelled) return;
@@ -486,7 +484,7 @@ export const useChat = ({
         const newMessagesRaw = (pollMessages || []).filter((m) => {
           const ct = Number((m as any).create_time);
           if (ct === 0 || !Number.isFinite(ct)) return false;
-          return ct >= lastServerCreateTime;
+          return ct > lastServerCreateTime;
         });
 
         if (newMessagesRaw.length > 0) {
@@ -554,7 +552,7 @@ export const useChat = ({
           // No new messages; still honor status if it indicates a terminal state (once per conversation)
           if (status === "finalized" && !finalizedProcessedRef.current) {
             finalizedProcessedRef.current = true;
-            svc.notifyFinalizedFromPoll();
+            svc.handleConversationFinalized();
             setIsFinalized(true);
           } else if (status === "takeover" && !takeoverProcessedRef.current) {
             takeoverProcessedRef.current = true;
@@ -565,25 +563,23 @@ export const useChat = ({
 
         if (status === "finalized") {
           // Mark finalized and let the effect cleanup prevent further scheduling
-          setIsPolling(false);
           return;
         }
 
         // Increase polling interval over time on success
-        const nextInterval = Math.min(
-          (heartbeatIntervalRef.current || HEARTBEAT_INITIAL_INTERVAL_MS) +
-            HEARTBEAT_INTERVAL_STEP_MS,
-          HEARTBEAT_MAX_INTERVAL_MS,
-        );
+        // const nextInterval = Math.min(
+        //   (heartbeatIntervalRef.current || HEARTBEAT_INITIAL_INTERVAL_MS) +
+        //     HEARTBEAT_INTERVAL_STEP_MS,
+        //   HEARTBEAT_MAX_INTERVAL_MS,
+        // );
+        const nextInterval = HEARTBEAT_INTERVAL_STEP_MS;
         heartbeatIntervalRef.current = nextInterval;
-        setIsPolling(false);
         scheduleNext(nextInterval);
       } catch {
         if (cancelled) return;
         // Increment failure counter and stop after 5 consecutive failures
         heartbeatFailureCountRef.current += 1;
         if (heartbeatFailureCountRef.current >= 5) {
-          setIsPolling(false);
           return;
         }
         const retryDelay =

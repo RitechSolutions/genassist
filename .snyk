@@ -1,0 +1,22 @@
+version: v1.25.0
+# ignore:
+#   'SNYK-PYTHON-FASTAPI-3598305':
+#     - '*':
+#         reason: 'Vulnerability is in a dev-only tool not shipped to production'
+#         expires: '2026-03-25T00:00:00.000Z'
+include:
+  - 'backend/**'
+  - 'frontend/**'
+  - 'ui_tests/**'
+  - 'dummy_data/**'
+  - 'venv/**'
+  - 'genassist_env/**'
+  - 'tests/**'
+  - 'tests/**'
+exclude:
+  code:
+    - dummy_data/
+    - venv/
+    # - backend/venv/
+    # - backend/genassist_env/
+    - ui_tests/

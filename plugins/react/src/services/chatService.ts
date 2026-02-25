@@ -74,7 +74,7 @@ export class ChatService {
   /**
    * Handle conversation finalized: emit special message, call finalized handler, persist state.
    */
-  private handleConversationFinalized(): void {
+  public handleConversationFinalized(): void {
     if (this.messageHandler) {
       const now = Date.now() / 1000;
       const finalizedMessage: ChatMessage = {

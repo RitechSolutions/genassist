@@ -1,3 +1,5 @@
 .env
 .DS_Store
 frontend/.claude/skills/ui-skills/SKILL.md
+snyk-report.html
+snyk-oss-report.html

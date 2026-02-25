@@ -3,5 +3,7 @@
         "backend"
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "python.testing.pytestEnabled": true,
+    "snyk.advanced.organization": "127dc1bb-7c47-4fd4-8360-aab25380519f",
+    "snyk.advanced.autoSelectOrganization": true
 }
