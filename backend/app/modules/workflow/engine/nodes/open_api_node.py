@@ -31,9 +31,13 @@ class OpenAPINode(BaseNode):
         Returns:
             Dictionary with the answer to the user's query about the specification
         """
-        provider_id = config.get("providerId")
-        query = config.get("query")
-        server_file_path = config.get("serverFilePath")
+        provider_id, query, server_file_path, original_file_name, server_file_url = (
+            config.get("providerId"),
+            config.get("query"),
+            config.get("serverFilePath"),
+            config.get("originalFileName"),
+            config.get("serverFileUrl")
+        )
 
         if not provider_id:
             raise AppException(error_key=ErrorKey.MISSING_PARAMETER)
@@ -41,23 +45,37 @@ class OpenAPINode(BaseNode):
         if not query:
             raise AppException(error_key=ErrorKey.MISSING_PARAMETER)
 
-        if not server_file_path:
+        if not server_file_path and not server_file_url:
             raise AppException(error_key=ErrorKey.MISSING_PARAMETER)
 
         try:
             extractor = FileTextExtractor()
-            spec_content = extractor.extract(path=server_file_path)
+
+            # If file_url is present, download and extract from bytes
+            if server_file_url:
+                from app.dependencies.injector import injector
+                from app.services.file_manager import FileManagerService
+                file_manager_service = injector.get(FileManagerService)
+                file_content = await file_manager_service.get_file_content_from_url(server_file_url)
+
+                # Use original_file_name if available, otherwise try to infer from URL
+                filename = original_file_name or server_file_url.split("/")[-1]
+                spec_content = extractor.extract_from_bytes(filename=filename, content=file_content)
+            else:
+                # Fallback to existing path-based extraction
+                spec_content = extractor.extract(path=server_file_path)
 
             if not spec_content:
+                file_source = server_file_url or server_file_path
                 logger.error(
-                    "Failed to load OpenAPI specification from file: %s",
-                    server_file_path
+                    "Failed to load OpenAPI specification from: %s",
+                    file_source
                 )
                 return {
                     "status": 500,
                     "error": (
                         f"Failed to load OpenAPI specification. "
-                        "Please check file path and format."
+                        "Please check file path/URL and format."
                     ),
                 }
 

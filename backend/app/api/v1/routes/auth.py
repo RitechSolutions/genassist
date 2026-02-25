@@ -56,11 +56,11 @@ async def refresh_token(
     
     user = await auth_service.decode_jwt(refresh_token)  # Decode user
     tenant_id = get_tenant_context()
-    access_token = auth_service.create_access_token(
-        data={"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}
-    )
+    token_data = {"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}
+    access_token = auth_service.create_access_token(data=token_data)
+    new_refresh_token = auth_service.create_refresh_token(data=token_data)
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
 
 
 @router.get("/me", summary="Returns current user details", dependencies=[Depends(auth)])

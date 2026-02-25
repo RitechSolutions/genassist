@@ -71,6 +71,7 @@ export const AGGREGATOR_NODE_DEFINITION: NodeTypeDefinition<AggregatorNodeData> 
       aggregationStrategy: "list",
       forwardTemplate: "",
       timeoutSeconds: 15,
+      requireAllInputs: true,
       handlers: [
         {
           id: "input",

@@ -1,3 +1,4 @@
+import { getApiUrlString } from "@/config/api";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -12,7 +13,7 @@ export function formatDate(date: string | Date): string {
     month: "long",
     day: "numeric",
   });
-} 
+}
 
 export function getTimeFromDatetime(datetimeString: string): string {
   const date = new Date(datetimeString);
@@ -66,4 +67,14 @@ export function downloadFile(fileUrl: string, filename: string) {
     console.error("Failed to download file:", error);
     throw error;
   }
+}
+
+export function getFileDownloadUrl(fileId: string, baseUrl: string, tenantId: string): string {
+  let url = new URL(`file-manager/files/${fileId}/source`, baseUrl).toString();
+
+  if (tenantId) {
+    url = url.includes("?") ? `${url}&X-Tenant-Id=${tenantId}` : `${url}?X-Tenant-Id=${tenantId}`;
+  }
+
+  return url;
 }

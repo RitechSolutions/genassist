@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/dialog";
+import { Checkbox } from "@/components/checkbox";
 import { NodeSchema, SchemaField, SchemaType } from "../../types/schemas";
 import {
   DropdownMenu,
@@ -41,6 +42,7 @@ interface ParameterSectionProps {
   ) => void;
   suggestParams?: boolean;
   listSuggestedParams?: NodeSchema;
+  allowStateful?: boolean; // Only allow stateful parameters in chatInputNode
 }
 
 interface ParameterDialogProps {
@@ -53,6 +55,7 @@ interface ParameterDialogProps {
   mode: "edit" | "create";
   totalParams: number;
   suggestedParams?: NodeSchema;
+  allowStateful?: boolean; // Only allow stateful parameters in chatInputNode
 }
 
 interface ParameterBadgesProps {
@@ -108,6 +111,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
   onDelete,
   mode,
   totalParams,
+  allowStateful = false,
 }) => {
   const [formData, setFormData] = useState<{
     name: string;
@@ -115,12 +119,14 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
     description: string;
     required: boolean;
     defaultValue?: string;
+    stateful?: boolean;
   }>({
     name: "",
     type: "string",
     description: "",
     required: false,
     defaultValue: "",
+    stateful: false,
   });
 
   useEffect(() => {
@@ -132,6 +138,8 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           description: param.description || "",
           required: param.required || false,
           defaultValue: param.defaultValue || "",
+          // Only preserve stateful if allowStateful is true, otherwise reset to false
+          stateful: allowStateful ? (param.stateful || false) : false,
         });
       } else {
         setFormData({
@@ -140,10 +148,11 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           description: "",
           required: false,
           defaultValue: "",
+          stateful: false,
         });
       }
     }
-  }, [isOpen, mode, paramName, param]);
+  }, [isOpen, mode, paramName, param, allowStateful]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,6 +161,8 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
       description: formData.description,
       required: formData.required,
       defaultValue: formData.defaultValue,
+      // Only save stateful if allowStateful is true
+      stateful: allowStateful ? formData.stateful : false,
     });
     onOpenChange(false);
   };
@@ -236,6 +247,25 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
               </SelectContent>
             </Select>
           </div>
+          {allowStateful && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="stateful"
+                  checked={formData.stateful || false}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, stateful: checked === true }))
+                  }
+                />
+                <label htmlFor="stateful" className="text-sm font-medium cursor-pointer">
+                  Stateful (persists across workflow executions)
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">
+                When enabled, this parameter will maintain its value between workflow executions
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Default Value</label>
             <Input
@@ -279,6 +309,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
   removeItem,
   suggestParams = false,
   listSuggestedParams = {},
+  allowStateful = false,
 }) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedParamName, setSelectedParamName] = useState<string | null>(
@@ -340,7 +371,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
             <Badge
               key={name}
               variant="secondary"
-              className="cursor-pointer hover:bg-secondary/80 break-words"
+              className={`cursor-pointer hover:bg-secondary/80 break-words ${param.stateful ? 'bg-blue-500 text-white' : ''}`}
               onClick={() => handleParamClick(name)}
             >
               {name}
@@ -404,6 +435,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
         onDelete={handleDelete}
         mode={dialogMode}
         totalParams={Object.keys(dynamicParams ?? {}).length}
+        allowStateful={allowStateful}
       />
     </div>
   );

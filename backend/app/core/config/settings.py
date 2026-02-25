@@ -45,6 +45,8 @@ class ProjectSettings(BaseSettings):
     # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
     CELERY_WORKER_POOL: str = "solo"
 
+    CELERY_CLEANUP_STALE_CONVERSATIONS_CRON: str = "*/30"
+
     FERNET_KEY: Optional[str]
 
     # === LLM Keys ===

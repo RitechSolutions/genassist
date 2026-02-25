@@ -8,6 +8,7 @@ export interface AppSetting {
     | "Microsoft"
     | "Slack"
     | "Jira"
+    | "FileManagerSettings"
     | "Other";
   values: Record<string, string>;
   description?: string;

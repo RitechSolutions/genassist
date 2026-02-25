@@ -46,7 +46,8 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         default="message_count",
         options=[
             {"value": "message_count", "label": "Last N Messages"},
-            {"value": "token_budget", "label": "Token Budget"}
+            {"value": "token_budget", "label": "Token Budget"},
+            {"value": "message_compacting", "label": "Message Compacting"}
         ],
         description="How to limit conversation history"
     ),
@@ -58,7 +59,52 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         default=10,
         min=1,
         step=1,
-        description="Maximum messages when using message count mode"
+        description="Maximum messages when using message count mode",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="message_count"
+        )
+    ),
+    FieldSchema(
+        name="compactingThreshold",
+        type="number",
+        label="Compacting Threshold (messages)",
+        required=False,
+        default=20,
+        min=10,
+        max=100,
+        step=5,
+        description="Trigger compaction when total messages exceed this count",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="message_compacting"
+        )
+    ),
+    FieldSchema(
+        name="compactingKeepRecent",
+        type="number",
+        label="Recent Messages to Keep",
+        required=False,
+        default=10,
+        min=5,
+        max=50,
+        step=5,
+        description="Minimum number of recent messages to keep uncompacted. Between compactions, all new messages accumulate and will be included in context.",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="message_compacting"
+        )
+    ),
+    FieldSchema(
+        name="compactingModel",
+        type="select",
+        label="Compacting Model",
+        required=False,
+        description="LLM provider to use for compaction (defaults to node's provider)",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="message_compacting"
+        )
     ),
     FieldSchema(
         name="tokenBudget",

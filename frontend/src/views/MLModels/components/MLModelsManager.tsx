@@ -30,11 +30,15 @@ import {
   Trash2,
   Brain,
   FileCode,
+  FileIcon,
+  Download,
 } from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MLModel } from "@/interfaces/ml-model.interface";
 import { Badge } from "@/components/badge";
+import { downloadFile, getFileDownloadUrl } from "@/helpers/utils";
+import { getApiUrlString } from "@/config/api";
 
 const DEFAULT_FORM_DATA: MLModel = {
   id: uuidv4(),
@@ -123,13 +127,13 @@ const MLModelsManager: React.FC = () => {
 
   const handleFeaturesInputChange = (value: string) => {
     setFeaturesInput(value);
-    
+
     // Parse comma-separated values and update formData
     const featuresArray = value
       .split(', ')
       .map(f => f.trim())
       .filter(f => f.length > 0);
-    
+
     setFormData((prev) => ({
       ...prev,
       features: featuresArray,
@@ -316,6 +320,17 @@ const MLModelsManager: React.FC = () => {
     }
   };
 
+  const downloadModelFile = async (fileId: string) => {
+    try {
+      const tenantId = localStorage.getItem("tenant_id");
+      const fileUrl = getFileDownloadUrl(fileId, getApiUrlString, tenantId || "");
+      await downloadFile(fileUrl, `${formData.name || "model"}.pkl`);
+    } catch (error) {
+      toast.error("Failed to download model file");
+      console.error(error);
+    }
+  };
+
   const filteredItems = items.filter((item) => {
     const matchesQuery =
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -493,7 +508,7 @@ const MLModelsManager: React.FC = () => {
                             </div>
                           )}
 
-                          {formData.pkl_file && !selectedFile && (
+                          {formData.pkl_file && !formData.pkl_file_id && !selectedFile && (
                             <div className="flex items-center justify-between p-2 bg-muted rounded-md">
                               <div className="flex items-center gap-2">
                                 <FileCode className="h-4 w-4" />
@@ -501,6 +516,27 @@ const MLModelsManager: React.FC = () => {
                                   File: {formData.pkl_file}
                                 </span>
                               </div>
+                            </div>
+                          )}
+
+                          {formData.pkl_file_id && !selectedFile && (
+                            <div className="flex items-center justify-between p-2 bg-muted rounded-md">
+                              <div className="flex items-center gap-2">
+                                <FileIcon className="h-4 w-4" />
+                                <span className="text-sm">
+                                  {formData.name}
+                                </span>
+                              </div>
+
+                              <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => downloadModelFile(formData.pkl_file_id as string)}
+                                  className="h-8 w-8 ml-auto"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
                             </div>
                           )}
 
@@ -696,8 +732,8 @@ const MLModelsManager: React.FC = () => {
               ) : (
                 <div className="divide-y divide-gray-100">
                   {filteredItems.map((item) => (
-                    <div 
-                      key={item.id} 
+                    <div
+                      key={item.id}
                       className="py-4 px-6 hover:bg-gray-50 cursor-pointer transition-colors"
                       onClick={(e) => {
                         // Don't navigate if clicking on buttons

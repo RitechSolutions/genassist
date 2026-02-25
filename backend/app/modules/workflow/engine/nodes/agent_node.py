@@ -58,10 +58,79 @@ class AgentNode(BaseNode):
                 model=model,
                 as_string=False
             )
+        elif trimming_mode == "message_compacting":
+         # Message compacting mode - compact old messages at threshold intervals
+            # compactingKeepRecent: minimum raw messages to keep (context grows between compactions)
+            # compactingThreshold: compact every N messages (e.g., at 20, 40, 60...)
+            keep_recent = config.get("compactingKeepRecent", 10)
+            threshold = config.get("compactingThreshold", 20)
+
+            # Check if we've ever compacted before
+            existing_summary = await memory.get_compacted_summary()
+            needs_compaction = await memory.needs_compaction(threshold)
+            if existing_summary or needs_compaction:
+                # We've compacted before OR need to compact now
+                if needs_compaction:
+                    await self._perform_compaction(memory, config, provider_id)
+
+                # Return compacted summary + ALL uncompacted messages
+                # max_messages is only used as a fallback when no compaction exists yet
+                return await memory.get_chat_history_with_compaction(
+                    max_messages=keep_recent,  # Fallback limit only
+                    as_string=False
+                )
+            else:
+                # Never compacted and below threshold - return ALL messages
+                return await memory.get_messages(
+                    max_messages=999  # Large number to get all messages
+                )
         else:
-            # Message count-based trimming (existing behavior)
+            # Message count mode - simple last N messages
             max_messages = config.get("maxMessages", 10)
             return await memory.get_messages(max_messages=max_messages)
+
+    async def _perform_compaction(
+        self, memory, config: Dict[str, Any], provider_id: str
+    ) -> None:
+        """
+        Perform message compaction using configured settings.
+
+        Args:
+            memory: Conversation memory instance
+            config: Node configuration
+            provider_id: LLM provider ID for compaction
+        """
+        try:
+            keep_recent = config.get("compactingKeepRecent", 10)
+
+            # Get messages to compact
+            to_compact = await memory.get_messages_for_compaction(keep_recent)
+
+            if not to_compact:
+                logger.info("No messages available for compaction")
+                return
+
+            # Get or create LLM for compaction
+            compacting_model_id = config.get("compactingModel") or provider_id
+            from app.dependencies.injector import injector
+            llm_provider = injector.get(LLMProvider)
+            llm_model = await llm_provider.get_model(compacting_model_id)
+
+            # Create compactor and perform compaction
+            from app.modules.workflow.agents.memory_compactor import MemoryCompactor
+            compactor = MemoryCompactor(llm_model)
+
+            existing_summary = await memory.get_compacted_summary()
+            new_summary = await compactor.compact_messages(to_compact, existing_summary)
+
+            # Store compacted summary
+            await memory.set_compacted_summary(new_summary)
+
+            logger.info(f"Successfully compacted {len(to_compact)} messages")
+
+        except Exception as e:
+            logger.error(f"Error during compaction: {e}")
+            # Don't fail the main request if compaction fails
 
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """

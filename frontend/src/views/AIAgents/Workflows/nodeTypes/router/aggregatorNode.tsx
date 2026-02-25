@@ -29,10 +29,17 @@ const AggregatorNode: React.FC<NodeProps<AggregatorNodeData>> = ({
 
   const timeout = data.timeoutSeconds ? data.timeoutSeconds : 0;
 
+  const requireAllInputs = data.requireAllInputs ?? true;
+
   const nodeContent: NodeContentRow[] = [
     {
       label: "Strategy",
       value: data.aggregationStrategy,
+      isSelection: true,
+    },
+    {
+      label: "Require All Inputs",
+      value: requireAllInputs ? "Yes" : "No",
       isSelection: true,
     },
     {

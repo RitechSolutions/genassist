@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SharePointProvider(BaseStorageProvider):
     """
     Storage provider implementation using SharePoint (stub).
-    
+
     TODO: Implement full SharePoint operations using Office365-REST-Python-Client or similar.
     """
 
@@ -25,7 +25,7 @@ class SharePointProvider(BaseStorageProvider):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the SharePoint provider.
-        
+
         Args:
             config: Configuration dictionary containing SharePoint credentials and site URL
         """
@@ -45,9 +45,9 @@ class SharePointProvider(BaseStorageProvider):
     async def upload_file(
         self,
         file_content: bytes,
-        storage_path: str,
+        file_path: str,
         file_metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> bool:
         """Upload a file to SharePoint."""
         # TODO: Implement SharePoint file upload
         raise NotImplementedError("SharePointProvider.upload_file is not yet implemented")
@@ -88,11 +88,11 @@ class SharePointProvider(BaseStorageProvider):
     def get_file_url(self, base_path: str, file_id: str) -> str:
         """
         Get the URL of a file in SharePoint.
-        
+
         Args:
             base_path: Base path of the storage provider
             file_id: ID of the file
-            
+
         Returns:
             URL of the file
         """

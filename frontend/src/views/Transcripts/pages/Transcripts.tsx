@@ -10,6 +10,8 @@ import {
   ThumbsUp,
   ThumbsDown,
   Upload,
+  ChevronDown,
+  RefreshCw,
 } from "lucide-react";
 import { Card } from "@/components/card";
 import { Button } from "@/components/button";
@@ -22,7 +24,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { useState, useEffect } from "react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
+import { useState, useEffect, type ReactNode } from "react";
 import { Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
@@ -33,10 +44,12 @@ import { Switch } from "@/components/switch";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/useToast";
 import { conversationService } from "@/services/liveConversations";
+import { transformTranscript } from "../helpers/transformers";
 import { UploadMediaDialog } from "@/views/MediaUpload";
 import { getPaginationMeta } from "@/helpers/pagination";
 import { PaginationBar } from "@/components/PaginationBar";
 import { SearchInput } from "@/components/SearchInput";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixTooltip";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -56,6 +69,8 @@ const Transcripts = () => {
     Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1)
   );
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [orderBy, setOrderBy] = useState("");
+  const [sortDirection, setSortDirection] = useState("desc");
 
   // Initialize showLiveOnly based on URL parameters
   const statusParams = searchParams.getAll("status");
@@ -80,6 +95,8 @@ const Transcripts = () => {
     hostility_positive_max: hostilityParams.hostility_positive_max,
     hostility_neutral_max: hostilityParams.hostility_neutral_max,
     conversation_status: showLiveOnly ? ["in_progress", "takeover"] : undefined,
+    order_by: orderBy || undefined,
+    sort_direction: orderBy ? sortDirection : undefined,
   });
   
   const isMobile = useIsMobile();
@@ -142,6 +159,35 @@ const Transcripts = () => {
     );
   }, [location.search]);
 
+  // Fetch latest conversation data when opening the dialog
+  useEffect(() => {
+    if (!isModalOpen || !selectedTranscript?.id) return;
+
+    let cancelled = false;
+    const conversationId = selectedTranscript.id;
+
+    const refreshConversation = async () => {
+      try {
+        const backend = await conversationService.fetchConversationsTranscriptsAndData(conversationId);
+        if (cancelled) return;
+        setSelectedTranscript(transformTranscript(backend));
+      } catch {
+        if (!cancelled) {
+          toast({
+            title: "Could not refresh",
+            description: "Failed to load latest conversation data.",
+            variant: "destructive",
+          });
+        }
+      }
+    };
+
+    refreshConversation();
+    return () => {
+      cancelled = true;
+    };
+  }, [isModalOpen, selectedTranscript?.id]);
+
   // Handle filter changes
   const handleSentimentChange = (value: string) => {
     setActiveTab(value);
@@ -170,6 +216,41 @@ const Transcripts = () => {
     const nextPage = Math.max(1, newPage);
     setCurrentPage(nextPage);
     updateUrlParams({ page: nextPage === 1 ? null : nextPage });
+  };
+
+  const applySort = (by: string, dir: string) => {
+    setOrderBy(by);
+    setSortDirection(dir);
+    setCurrentPage(1);
+    updateUrlParams({ page: 1 });
+  };
+
+  const getSortLabel = (): { label: string; icon: ReactNode } | null => {
+    if (!orderBy) return null;
+    const dirLabel = sortDirection === "desc" ? "High→Low" : "Low→High";
+    if (orderBy === "thumbs_down_count") {
+      return {
+        label: `Thumbs Down · ${dirLabel}`,
+        icon: <ThumbsDown className="h-4 w-4 text-red-600 shrink-0" />,
+      };
+    }
+    if (orderBy === "thumbs_up_count") {
+      return {
+        label: `Thumbs Up · ${dirLabel}`,
+        icon: <ThumbsUp className="h-4 w-4 text-green-600 shrink-0" />,
+      };
+    }
+    return null;
+  };
+
+  const activeSort = getSortLabel();
+
+  const handleRefreshConversations = () => {
+    refetch();
+    toast({
+      title: "Refreshing",
+      description: "Conversations are being refreshed.",
+    });
   };
 
   const filteredTranscripts = transcripts.filter((transcript) => {
@@ -282,44 +363,129 @@ const Transcripts = () => {
                 </div>
               </div>
 
-              <Tabs
-                value={activeTab}
-                className="w-full"
-                onValueChange={handleSentimentChange}
-              >
-                <TabsList className="w-full flex-wrap justify-start gap-2">
-                  <TabsTrigger value="all" className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    All
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="positive"
-                    className="flex items-center gap-2"
-                  >
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                    Positive
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="neutral"
-                    className="flex items-center gap-2"
-                  >
-                    <MinusCircle className="w-4 h-4 text-yellow-500" />
-                    Neutral
-                  </TabsTrigger>
-                  <TabsTrigger
-                  value="negative"
-                  className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-orange-400" />
-                    Bad
-                  </TabsTrigger>
-                  {/* <TabsTrigger
-                  value="very-bad"
-                  className="flex items-center gap-2">
-                    <XCircle className="w-4 h-4 text-red-500" />
-                    Very Bad
-                  </TabsTrigger> */}
-                </TabsList>
-              </Tabs>
+              <div className="w-full flex flex-wrap items-center justify-between gap-2">
+                <Tabs
+                  value={activeTab}
+                  className="flex-1 min-w-0"
+                  onValueChange={handleSentimentChange}
+                >
+                  <TabsList className="w-full flex-wrap justify-start gap-2">
+                    <TabsTrigger value="all" className="flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4" />
+                      All
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="positive"
+                      className="flex items-center gap-2"
+                    >
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      Positive
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="neutral"
+                      className="flex items-center gap-2"
+                    >
+                      <MinusCircle className="w-4 h-4 text-yellow-500" />
+                      Neutral
+                    </TabsTrigger>
+                    <TabsTrigger
+                    value="negative"
+                    className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-orange-400" />
+                      Bad
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <div className="flex items-center gap-2 shrink-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={`flex h-10 shrink-0 items-center justify-between gap-2 rounded-full border px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${
+                          activeSort
+                            ? "min-w-[200px] border-zinc-300 bg-zinc-100 text-foreground"
+                            : "min-w-[140px] w-[200px] border-input bg-white"
+                        }`}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          {activeSort ? (
+                            <>
+                              {activeSort.icon}
+                              <span className="truncate">{activeSort.label}</span>
+                            </>
+                          ) : (
+                            <span>Sort by</span>
+                          )}
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-[10rem]">
+                      {activeSort && (
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setOrderBy("");
+                            setSortDirection("desc");
+                            setCurrentPage(1);
+                            updateUrlParams({ page: 1 });
+                          }}
+                          className="text-muted-foreground"
+                        >
+                          Clear sort
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger className="flex items-center gap-2">
+                          <ThumbsDown className="h-4 w-4 text-red-600" />
+                          Thumbs Down
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem onClick={() => applySort("thumbs_down_count", "desc")}>
+                            High to low
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => applySort("thumbs_down_count", "asc")}>
+                            Low to high
+                          </DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger className="flex items-center gap-2">
+                          <ThumbsUp className="h-4 w-4 text-green-600" />
+                          Thumbs Up
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem onClick={() => applySort("thumbs_up_count", "desc")}>
+                            High to low
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => applySort("thumbs_up_count", "asc")}>
+                            Low to high
+                          </DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-10 w-10 rounded-full shrink-0"
+                        onClick={handleRefreshConversations}
+                        disabled={loading}
+                        aria-label="Refresh conversations"
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+                          aria-hidden
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Refresh conversations</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
 
               <Card className="divide-y bg-white">
                 {loading ? (
@@ -352,7 +518,7 @@ const Transcripts = () => {
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-semibold">
                               {isCallTranscript(transcript) ? "Call" : "Chat"} #
-                              {(transcript?.metadata?.title ?? "----").slice(0, 4)|| "Untitled"}{" - "} 
+                              {(transcript?.metadata?.title ?? "----").slice(-4) || "Untitled"}{" - "} 
                               {transcript?.metadata?.topic}
                             </h3>
                             {isLiveTranscript(transcript) && (
@@ -374,24 +540,43 @@ const Transcripts = () => {
                         </div>
                       </div>
                         <div className="text-right flex items-center gap-2 sm:justify-end flex-wrap mt-2 sm:mt-0">
-                          {/* Display conversation feedback */}
-                          {transcript?.feedback && transcript.feedback.length > 0 && (() => {
-                            const latestFeedback = transcript.feedback[transcript.feedback.length - 1];
-                            const isGoodFeedback = latestFeedback.feedback === 'good';
-                            return (
-                              <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full">
-                                {isGoodFeedback ? (
-                                  <ThumbsUp className="w-3 h-3 text-green-600" />
-                                ) : (
-                                  <ThumbsDown className="w-3 h-3 text-red-600" />
-                                )}
-                                <span className="text-xs text-gray-700">
-                                  {latestFeedback.feedback_message?.slice(0, 30) || 'Feedback provided'}
-                                  {latestFeedback.feedback_message && latestFeedback.feedback_message.length > 30 ? '...' : ''}
-                                </span>
-                              </div>
-                            );
-                          })()}
+                          <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full">
+                            {transcript?.feedback && transcript.feedback.length > 0 && (() => {
+                              const latestFeedback = transcript.feedback[transcript.feedback.length - 1];
+                              const isGoodFeedback = latestFeedback.feedback === "good";
+                              const message = latestFeedback.feedback_message?.trim() || "";
+                              const tooltipText = message
+                                ? `Supervisor feedback: ${message}`
+                                : "Supervisor feedback.";
+                              return (
+                                <>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-flex cursor-default">
+                                        {isGoodFeedback ? (
+                                          <ThumbsUp className="w-3 h-3 text-green-600 shrink-0 fill-current" />
+                                        ) : (
+                                          <ThumbsDown className="w-3 h-3 text-red-600 shrink-0 fill-current" />
+                                        )}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {tooltipText}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  <span className="mx-1 h-3 w-px bg-gray-300 shrink-0" aria-hidden />
+                                </>
+                              );
+                            })()}
+                            <ThumbsUp className="w-3 h-3 text-green-600 shrink-0" />
+                            <span className="text-xs text-gray-700">
+                              {transcript?.thumbs_up_count ?? 0}
+                            </span>
+                            <ThumbsDown className="w-3 h-3 text-red-600 ml-0.5 shrink-0" />
+                            <span className="text-xs text-gray-700">
+                              {transcript?.thumbs_down_count ?? 0}
+                            </span>
+                          </div>
                           <span
                             className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${getSentimentStyles(
                               transcript ? getEffectiveSentiment(transcript) : ""

@@ -11,6 +11,7 @@ import type { FileManagerSettings } from "@/services/fileManager";
 import { useState } from "react";
 import { Button } from "@/components/button";
 import toast from "react-hot-toast";
+import { updateFileManagerSettings } from "@/services/appSettings";
 
 interface FileManagerSettingsCardProps {
   settings: FileManagerSettings;
@@ -25,22 +26,48 @@ const providerOptions = [
 ];
 
 export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardProps) => {
-  const provider = settings.file_manager_provider || "local";
+  const provider = settings.values.file_manager_provider || "local";
   const [selectedProvider, setSelectedProvider] = useState(provider);
   const [isSaving, setIsSaving] = useState(false);
+  const [basePath, setBasePath] = useState(settings.values.base_path || "");
+  const [awsBucketName, setAwsBucketName] = useState(settings.values.aws_bucket_name || "");
+  const showProviderOptions = false; // TODO: show provider options based on the provider
 
-  const handleSave = () => {
-    // TODO: Save the settings to the server
-    setIsSaving(true);
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
 
-    toast.success("File manager settings saved", {
-      icon: <FolderCog className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />,
-      duration: 3000,
-    });
+      await updateFileManagerSettings({
+        ...settings,
+        values: {
+          ...settings.values,
+          file_manager_provider: selectedProvider,
+          base_path: basePath,
+          aws_bucket_name: awsBucketName,
+        },
+      });
 
-    setTimeout(() => {
+      toast.success("File manager settings saved", {
+        icon: <FolderCog className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />,
+        duration: 3000,
+      });
+    } catch (error) {
+      toast.error("Failed to update file manager settings", {
+        icon: <FolderCog className="w-5 h-5 sm:w-6 sm:h-6 text-red-500" />,
+        duration: 3000,
+      });
+      throw new Error("Failed to update file manager settings");
+    } finally {
       setIsSaving(false);
-    }, 3000);
+    }
+  };
+
+  const handleInputChange = (value: string, key: string) => {
+    if (key === "base_path") {
+      setBasePath(value);
+    } else if (key === "aws_bucket_name") {
+      setAwsBucketName(value);
+    }
   };
 
   return (
@@ -89,23 +116,27 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
           </Select>
         </div>
 
-        {selectedProvider === "local" && (
+        {showProviderOptions && selectedProvider === "local" && (
           <div className="flex items-center justify-between h-[40px]">
             <label className="text-sm font-medium">Base Path</label>
             <input
               type="text"
-              value={settings.base_path || ""}
+              value={basePath}
+              onChange={(e) => handleInputChange(e.target.value, "base_path")}
+              disabled={isSaving}
               className="w-1/2 rounded-full border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none disabled:opacity-75"
             />
           </div>
         )}
 
-        {selectedProvider === "s3" && (
+        {showProviderOptions && selectedProvider === "s3" && (
           <div className="flex items-center justify-between h-[40px]">
             <label className="text-sm font-medium">Bucket Name</label>
             <input
               type="text"
-              value={settings.aws_bucket_name || ""}
+              value={awsBucketName}
+              onChange={(e) => handleInputChange(e.target.value, "aws_bucket_name")}
+              disabled={isSaving}
               className="w-1/2 rounded-full border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none disabled:opacity-75"
             />
           </div>

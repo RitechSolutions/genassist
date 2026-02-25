@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/tabs";
 import { HelpCircle, Search } from "lucide-react";
 import { Input } from "@/components/input";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
-import { getNodeColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
+import { getNodeColor, getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
 import { renderIcon } from "@/views/AIAgents/Workflows/utils/iconUtils";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
@@ -151,35 +151,35 @@ const NodePanel: React.FC<NodePanelProps> = ({
           {nodesInCategory.map((nodeType) => {
             const isDragging = draggingNodeType === nodeType.type;
             const color = getNodeColor(category);
+            const bgColor = getNodeBgColor(category);
+            const iconColor = getNodeIconColor(category);
 
             return (
               <div
                 key={nodeType.type}
-                className={`bg-background border border-border rounded-lg p-4 cursor-pointer transition-all duration-200 select-none ${
+                className={`${bgColor} border border-border rounded-lg p-[2px] cursor-pointer transition-all duration-200 select-none ${
                   isDragging
                     ? "opacity-50 scale-95 border-2 border-dashed border-blue-400 bg-blue-50"
-                    : "hover:bg-muted/50 hover:shadow-sm"
+                    : "hover:shadow-sm"
                 }`}
                 onClick={() => onAddNode(nodeType.type)}
                 draggable={true}
                 onDragStart={(event) => onDragStart(event, nodeType.type)}
                 onDragEnd={onDragEnd}
               >
-                <div className="flex gap-2 items-start">
-                  <div className="shrink-0 w-5 h-5">
-                    {renderIcon(nodeType.icon, `h-5 w-5 ${color}`)}
+                <div className="flex gap-2 items-center px-4 pr-2 py-2">
+                  <div className="shrink-0 w-4 h-4">
+                    {renderIcon(nodeType.icon, `h-4 w-4 ${iconColor}`)}
                   </div>
-                  <div className="flex-1 flex flex-col gap-1 min-w-0">
-                    <div className="flex gap-2 items-center w-full">
-                      <p className="flex-1 text-sm font-semibold text-accent-foreground min-w-0">
-                        {nodeType.label}
-                      </p>
-                      <HelpCircle className="shrink-0 h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <p className="text-sm text-muted-foreground w-full">
-                      {nodeType.description}
-                    </p>
-                  </div>
+                  <p className="flex-1 text-sm font-semibold text-accent-foreground min-w-0">
+                    {nodeType.label}
+                  </p>
+                  <HelpCircle className="shrink-0 h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="bg-background rounded-md px-4 py-2">
+                  <p className="text-sm text-muted-foreground">
+                    {nodeType.description}
+                  </p>
                 </div>
               </div>
             );
@@ -198,7 +198,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
       ></div>
 
       <div
-        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-80 bg-primary-foreground shadow-lg rounded-xl transition-transform duration-300 border z-[1001] ${
+        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-[360px] bg-primary-foreground shadow-lg rounded-xl transition-transform duration-300 border z-[1001] ${
           isOpen ? "translate-x-0" : "translate-x-[calc(100%+0.5rem)]"
         }`}
       >

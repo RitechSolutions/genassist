@@ -20,7 +20,7 @@
             "program": "${workspaceFolder}/backend/run.py",
             "console": "integratedTerminal",
             "envFile": "${workspaceFolder}/backend/.env",
-            "python": "${workspaceFolder}/backend/genassist_env/bin/python",
+            "pythonPath": "${workspaceFolder}/backend/genassist_env/bin/python",
             "justMyCode": true
         }
     ]

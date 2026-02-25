@@ -151,7 +151,7 @@ class ParallelWorkflowEngine(WorkflowEngine):
                                                     state: WorkflowState,
                                                     workflow_id: str,
                                                     executed_nodes: Set[str]) -> Optional[str]:
-        """Execute aggregator node after ensuring all dependencies are ready."""
+        """Execute aggregator node after ensuring dependencies are ready."""
         workflow = self.workflows[workflow_id]
         target_edges = workflow["target_edges"]
 
@@ -161,9 +161,19 @@ class ParallelWorkflowEngine(WorkflowEngine):
             source_id = edge["source"]
             source_nodes.append(source_id)
 
-        # Wait for all source nodes to be executed
-        while not all(source_id in executed_nodes for source_id in source_nodes):
-            await asyncio.sleep(0.001)  # Very short wait
+        # Read requireAllInputs from node config (defaults to True)
+        node_config = next(
+            node for node in workflow["nodes"] if node["id"] == node_id)
+        require_all_inputs = node_config.get("data", {}).get("requireAllInputs", True)
+
+        if require_all_inputs:
+            # Wait for all source nodes to be executed
+            while not all(source_id in executed_nodes for source_id in source_nodes):
+                await asyncio.sleep(0.05)
+        else:
+            # Wait for at least one source node to be executed
+            while not any(source_id in executed_nodes for source_id in source_nodes):
+                await asyncio.sleep(0.05)
 
         # Now execute the aggregator
         await self._execute_single_node(node_id, state, workflow_id)

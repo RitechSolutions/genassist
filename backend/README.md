@@ -1,4 +1,4 @@
-# Introduction 
+# Introduction
 Backend API for GenAssist
 
 # Getting Started
@@ -13,7 +13,7 @@ Create virtual environment and install requirements\
     sudo apt-get update; sudo apt-get install make build-essential libssl-dev zlib1g-dev \
     libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
     libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev ffmpeg
-    
+
     install pyenv: `curl -fsSL https://pyenv.run | bash`
     pyenv install 3.12
 
@@ -51,7 +51,7 @@ Create virtual environment and install requirements\
     ```bash
     python run.py
     ```
-    
+
 4. Try out APIs using Swagger UI:
     API key: test123
     UserRead Auth: admin/genadmin
@@ -90,7 +90,7 @@ Create virtual environment and install requirements\
     docker compose up -d
     ```
     Prometeus, cAdvisor and node-exporter will run in background to collect the metrics, while
-    Grafana can be accessed 
+    Grafana can be accessed
     ```
     http://localhost:9000/
     ```
@@ -106,7 +106,7 @@ Create virtual environment and install requirements\
     - filebeat
     - kibana
 
-    **Kibana** - Open Search Logs UI: 
+    **Kibana** - Open Search Logs UI:
     ```bash
     http://localhost:5601
     ```

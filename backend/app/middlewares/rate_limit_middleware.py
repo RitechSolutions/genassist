@@ -62,7 +62,7 @@ def get_agent_rate_limit_start(request: Request = None) -> str:
     # Get request from parameter or context
     if request is None:
         request = _request_context.get()
-    
+
     if request is None:
         return f"{settings.RATE_LIMIT_CONVERSATION_START_PER_MINUTE}/minute"
 
@@ -85,7 +85,7 @@ def get_agent_rate_limit_start_hour(request: Request = None) -> str:
     # Get request from parameter or context
     if request is None:
         request = _request_context.get()
-    
+
     if request is None:
         return f"{settings.RATE_LIMIT_CONVERSATION_START_PER_HOUR}/hour"
 
@@ -108,7 +108,7 @@ def get_agent_rate_limit_update(request: Request = None) -> str:
     # Get request from parameter or context
     if request is None:
         request = _request_context.get()
-    
+
     if request is None:
         return f"{settings.RATE_LIMIT_CONVERSATION_UPDATE_PER_MINUTE}/minute"
 
@@ -131,7 +131,7 @@ def get_agent_rate_limit_update_hour(request: Request = None) -> str:
     # Get request from parameter or context
     if request is None:
         request = _request_context.get()
-    
+
     if request is None:
         return f"{settings.RATE_LIMIT_CONVERSATION_UPDATE_PER_HOUR}/hour"
 

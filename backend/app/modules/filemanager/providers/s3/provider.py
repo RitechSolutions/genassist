@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class S3StorageProvider(BaseStorageProvider):
     """
     Storage provider implementation using AWS S3 (stub).
-    
+
     TODO: Implement full S3 operations using boto3.
     """
 
@@ -28,21 +28,21 @@ class S3StorageProvider(BaseStorageProvider):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the S3 storage provider.
-        
+
         Args:
             config: Configuration dictionary containing S3 credentials and bucket
         """
         super().__init__(config)
-        self.aws_bucket_name = config.get("AWS_BUCKET_NAME", "") 
-        self.aws_access_key_id = config.get("AWS_ACCESS_KEY_ID", None)
-        self.aws_secret_access_key = config.get("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_bucket_name = config.get("AWS_BUCKET_NAME", "")
+        # self.aws_access_key_id = config.get("AWS_ACCESS_KEY_ID", None)
+        # self.aws_secret_access_key = config.get("AWS_SECRET_ACCESS_KEY", None)
         self.aws_region_name = config.get("AWS_REGION", None)
-        
+
         # Initialize S3 client
         self.s3_client = S3Client(
             bucket_name=self.aws_bucket_name,
-            aws_access_key_id=self.aws_access_key_id,
-            aws_secret_access_key=self.aws_secret_access_key,
+            # aws_access_key_id=self.aws_access_key_id,
+            # aws_secret_access_key=self.aws_secret_access_key,
             region_name=self.aws_region_name,
         )
 
@@ -60,10 +60,9 @@ class S3StorageProvider(BaseStorageProvider):
         file_content: bytes,
         file_path: str,
         file_metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> bool:
         """Upload a file to S3."""
-        self.s3_client.upload_content(file_content, self.aws_bucket_name, file_path)
-        return file_path
+        return self.s3_client.upload_content(file_content, self.aws_bucket_name, file_path)
 
     async def download_file(self, file_path: str) -> bytes:
         """Download a file from S3."""

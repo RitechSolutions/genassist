@@ -11,6 +11,7 @@ export interface SchemaField {
   description?: string;
   required?: boolean;
   defaultValue?: string;
+  stateful?: boolean; // If true, this parameter persists across workflow executions
   properties?: Record<string, SchemaField>; // For object types
   items?: SchemaField; // For array types
 }

@@ -204,6 +204,33 @@ input[type="checkbox"]:hover {
   stroke-width: 3 !important;
 }
 
+/* Animated gradient border for AI Agent node */
+@property --agent-border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes agent-border-spin {
+  to { --agent-border-angle: 360deg; }
+}
+
+.agent-gradient-border {
+  display: flex;
+  background: conic-gradient(
+    from var(--agent-border-angle),
+    #f472b6,
+    #c084fc,
+    #818cf8,
+    #38bdf8,
+    #c084fc,
+    #f472b6
+  );
+  padding: 3px;
+  border-radius: 9px;
+  animation: agent-border-spin 4s linear infinite;
+}
+
 /* React Flow controls panel (zoom in/out, fit view) */
 .react-flow__panel.react-flow__controls {
   border-radius: 32px;

@@ -4168,6 +4168,59 @@
         ]
       }
     },
+    "/api/conversations/in-progress/poll/{conversation_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Poll In Progress",
+        "description": "Heartbeat polling for in-progress conversation when WebSocket is disabled.\nReturns status and messages so the client can sync state (new messages, finalized, takeover).\nUses a short (2s) cache to avoid DB hammering; cache is invalidated on update/finalize.",
+        "operationId": "poll_in_progress_api_conversations_in_progress_poll__conversation_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InProgressPollResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/conversations/in-progress/no-agent-update/{conversation_id}": {
       "patch": {
         "tags": [
@@ -7165,6 +7218,63 @@
         ]
       }
     },
+    "/api/genagent/knowledge/kb-batch-tasks-execution": {
+      "get": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Runs the job that sync the KB with files from various sources",
+        "operationId": "summarize_files_from_azure_api_genagent_knowledge_kb_batch_tasks_execution_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kb_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kb Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/workflow": {
       "get": {
         "tags": [
@@ -8007,34 +8117,6 @@
         ]
       }
     },
-    "/api/office365/kb-batch-tasks": {
-      "get": {
-        "tags": [
-          "v1",
-          "Office365"
-        ],
-        "summary": "Runs the job that sync the KB with files from various sources",
-        "operationId": "summarize_files_from_azure_api_office365_kb_batch_tasks_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
     "/api/twilio": {
       "get": {
         "tags": [
@@ -8571,7 +8653,6 @@
           "FileManager"
         ],
         "summary": "Get File Manager Settings",
-        "description": "Return non-sensitive file manager configuration.",
         "operationId": "get_file_manager_settings_api_file_manager_settings_get",
         "responses": {
           "200": {
@@ -15204,6 +15285,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "FileManagerSettings",
               "Other"
             ],
             "title": "Type"
@@ -15253,6 +15335,7 @@
               "Microsoft",
               "Slack",
               "Jira",
+              "FileManagerSettings",
               "Other"
             ],
             "title": "Type"
@@ -15329,6 +15412,7 @@
                   "Microsoft",
                   "Slack",
                   "Jira",
+                  "FileManagerSettings",
                   "Other"
                 ]
               },
@@ -16474,6 +16558,16 @@
               }
             ],
             "title": "Messages"
+          },
+          "thumbs_down_count": {
+            "type": "integer",
+            "title": "Thumbs Down Count",
+            "default": 0
+          },
+          "thumbs_up_count": {
+            "type": "integer",
+            "title": "Thumbs Up Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -17874,6 +17968,28 @@
         },
         "type": "object",
         "title": "InProgressConversationTranscriptFinalize"
+      },
+      "InProgressPollResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptMessageRead"
+            },
+            "type": "array",
+            "title": "Messages",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "InProgressPollResponse",
+        "description": "Lightweight response for in-progress conversation heartbeat polling (no WebSocket)."
       },
       "IntegrationItem": {
         "properties": {
@@ -21526,6 +21642,8 @@
         "enum": [
           "created_at",
           "updated_at",
+          "thumbs_up_count",
+          "thumbs_down_count",
           "id"
         ],
         "title": "SortField"
@@ -21765,6 +21883,17 @@
             "type": "string",
             "maxLength": 50,
             "title": "Type"
+          },
+          "sequence_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Number"
           },
           "id": {
             "type": "string",

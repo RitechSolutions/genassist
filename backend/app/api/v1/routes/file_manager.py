@@ -12,6 +12,8 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.config.settings import file_storage_settings
 from app.core.project_path import DATA_VOLUME
+from app.services.app_settings import AppSettingsService
+from app.schemas.app_settings import AppSettingsCreate
 
 # permissions
 from app.core.permissions.constants import Permissions as P
@@ -22,20 +24,29 @@ router = APIRouter()
 # ==================== Settings Endpoints ====================
 
 @router.get("/settings", dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))])
-async def get_file_manager_settings():
-    """Return non-sensitive file manager configuration."""
-    result = {
-        "file_manager_enabled": file_storage_settings.FILE_MANAGER_ENABLED,
-        "file_manager_provider": file_storage_settings.FILE_MANAGER_PROVIDER,
-    }
+async def get_file_manager_settings(svc: AppSettingsService = Injected(AppSettingsService)):
+    # read from app settings
+    app_settings = await svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+    if not app_settings:
+        # create a new app settings
+        app_settings = await svc.create(AppSettingsCreate(
+            name="File Manager Settings",
+            type="FileManagerSettings",
+            values={
+                "file_manager_enabled": True,
+                "file_manager_provider": file_storage_settings.FILE_MANAGER_PROVIDER or "local",
+                "base_path": str(DATA_VOLUME),
+                "aws_bucket_name": file_storage_settings.AWS_BUCKET_NAME or "",
+                "azure_container_name": file_storage_settings.AZURE_CONTAINER_NAME or "",
+                # "gcs_bucket_name": file_storage_settings.GOOGLE_STORAGE_BUCKET or "",
+                # "sharepoint_site_url": file_storage_settings.SHAREPOINT_SITE_URL or "",
+            },
+            is_active=1 if file_storage_settings.FILE_MANAGER_ENABLED else 0 # default to 1 if enabled, 0 if disabled
+        ))
 
-    provider = file_storage_settings.FILE_MANAGER_PROVIDER
-    if provider == "local":
-        result["base_path"] = file_storage_settings.model_dump().get("base_path", str(DATA_VOLUME))
-    elif provider == "s3":
-        result["aws_bucket_name"] = file_storage_settings.AWS_BUCKET_NAME or ""
-
-    return result
+    # check if the file manager is not enabled from the environment variables
+    app_settings.is_active = 1 if file_storage_settings.FILE_MANAGER_ENABLED and app_settings.is_active == 1 else 0
+    return app_settings
 
 
 # ==================== File Endpoints ====================

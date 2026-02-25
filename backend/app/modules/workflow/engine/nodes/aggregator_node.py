@@ -19,6 +19,34 @@ class AggregatorNode(BaseNode):
     from multiple parallel branches before continuing the workflow.
     """
 
+    def check_if_requirement_satisfied(self) -> bool:
+        """
+        Check if the aggregator is ready to execute.
+
+        When requireAllInputs is True (default), all source nodes must have
+        outputs before proceeding. When False, at least one finished source
+        is enough.
+        """
+        require_all_inputs = self.node_data.get("requireAllInputs", True)
+
+        if require_all_inputs:
+            return super().check_if_requirement_satisfied()
+
+        # Partial mode: proceed if at least one source has output
+        source_nodes = self.get_source_nodes()
+        if not source_nodes:
+            return True
+
+        for source_id in source_nodes:
+            if self.state.get_node_output(source_id) is not None:
+                logger.debug(
+                    f"Aggregator {self.node_id} has at least one ready source ({source_id}), proceeding (requireAllInputs=false)")
+                return True
+
+        logger.debug(
+            f"Aggregator {self.node_id} has no ready sources yet")
+        return False
+
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process an aggregator node by immediately checking for source outputs.
@@ -33,9 +61,10 @@ class AggregatorNode(BaseNode):
         # Get configuration values
         aggregation_strategy = config.get("aggregationStrategy", "merge")
         required_sources = config.get("requiredSources", [])
+        require_all_inputs = config.get("requireAllInputs", True)
 
         logger.info(
-            f"Sync aggregator node {self.node_id} starting with strategy: {aggregation_strategy}")
+            f"Sync aggregator node {self.node_id} starting with strategy: {aggregation_strategy}, requireAllInputs: {require_all_inputs}")
 
         # Get all source nodes connected to this aggregator
         source_nodes = self.get_source_nodes()
@@ -58,7 +87,7 @@ class AggregatorNode(BaseNode):
                 return {"error": f"Required source nodes not found: {missing_sources}", "aggregated_outputs": {}}
 
         # Immediately aggregate available outputs
-        aggregated_outputs = self._aggregate_immediately(source_nodes)
+        aggregated_outputs = self._aggregate_immediately(source_nodes, require_all_inputs)
         aggregated_outputs = self._apply_aggregation_strategy(aggregated_outputs, aggregation_strategy)
         # Set input for tracking
         self.set_node_input({
@@ -79,13 +108,14 @@ class AggregatorNode(BaseNode):
 
 
 
-    def _aggregate_immediately(self, source_nodes: List[str]) -> Dict[str, Any]:
+    def _aggregate_immediately(self, source_nodes: List[str], require_all_inputs: bool = True) -> Dict[str, Any]:
         """
         Immediately aggregate outputs from all source nodes.
-        No waiting - assumes all sources are ready.
 
         Args:
             source_nodes: List of source node IDs to aggregate
+            require_all_inputs: If True, all sources must be ready (default).
+                If False, only include sources that have finished.
 
         Returns:
             Dictionary containing aggregated outputs
@@ -101,10 +131,16 @@ class AggregatorNode(BaseNode):
                     f"Source node {source_id} output: {source_output}")
             else:
                 missing_sources.append(source_id)
-                logger.warning(f"Source node {source_id} not ready - skipping")
+                if require_all_inputs:
+                    logger.warning(f"Source node {source_id} not ready - skipping")
+                else:
+                    logger.info(f"Source node {source_id} not finished - excluded (requireAllInputs=false)")
 
         if missing_sources:
-            logger.warning(f"Some source nodes not ready: {missing_sources}")
+            if require_all_inputs:
+                logger.warning(f"Some source nodes not ready: {missing_sources}")
+            else:
+                logger.info(f"Proceeding without unfinished sources: {missing_sources}")
 
         return aggregated_outputs
 

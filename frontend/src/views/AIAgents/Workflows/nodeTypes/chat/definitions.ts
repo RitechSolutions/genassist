@@ -3,8 +3,10 @@ import {
   ChatOutputNodeData,
   NodeData,
   NodeTypeDefinition,
+  SetStateNodeData,
 } from "../../types/nodes";
 import ChatInputNode from "./chatInputNode";
+import SetStateNode from "../chat/setStateNode";
 
 import { NodeProps } from "reactflow";
 import ChatOutputNode from "./chatOutputNode";
@@ -78,3 +80,42 @@ export const CHAT_OUTPUT_NODE_DEFINITION: NodeTypeDefinition<ChatOutputNodeData>
       },
     }),
   };
+
+export const SET_STATE_NODE_DEFINITION: NodeTypeDefinition<SetStateNodeData> = {
+  type: "setStateNode",
+  label: "Set State",
+  description:
+    "Sets the value of a stateful parameter that persists across workflow executions.",
+  shortDescription: "Set stateful parameter value",
+  configSubtitle:
+    "Configure which stateful parameter to update and what value to set.",
+  category: "io",
+  icon: "Database",
+  defaultData: {
+    name: "Set State",
+    states: [],
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  },
+  component: SetStateNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "setStateNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
