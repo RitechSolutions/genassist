@@ -567,6 +567,15 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                   style={{ width: 20, height: 20, cursor: 'pointer' }}
                 />
               </div>
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Use Heartbeat Polling</label>
+                <input
+                  type="checkbox"
+                  checked={!!featureFlags.usePoll}
+                  onChange={(e) => handleFeatureFlagChange('usePoll', e.target.checked)}
+                  style={{ width: 20, height: 20, cursor: 'pointer' }}
+                />
+              </div>
             </div>
           </>
         )}

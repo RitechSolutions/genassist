@@ -227,3 +227,8 @@ export const probeApiHealth = async (): Promise<boolean> => {
   setServerDown();
   return false;
 };
+
+/** Whether Heartbeat polling is enabled (VITE_USE_POLL=true/false). Defaults to true when unset.
+ *  Note: Vite reads env at dev server start / build time; restart the dev server after changing .env. */
+export const isPollEnabled =
+  (import.meta.env.VITE_USE_POLL ?? "true").toString().toLowerCase() === "true" && !isWsEnabled;

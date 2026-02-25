@@ -9,7 +9,7 @@ import {
   type FeatureFlags,
 } from "genassist-chat-react";
 import { getAgentIntegrationKey } from "@/services/api";
-import { getApiUrl, isWsEnabled } from "@/config/api";
+import { getApiUrl, isWsEnabled, isPollEnabled } from "@/config/api";
 import { Button } from "@/components/button";
 import { ArrowLeft } from "lucide-react";
 import IntegrationCodePanel from "@/views/AIAgents/components/Customer/IntegrationCodePanel";
@@ -33,13 +33,15 @@ export default function ChatAsCustomer() {
   const [chatSettings, setChatSettings] = useState<ChatSettingsConfig>({
     name: "Genassist",
     description: "Support",
+    agentName: "Genassist",
   });
   const [metadata, setMetadata] = useState<Record<string, any>>({});
   const [agentChatInputMetadata, setAgentChatInputMetadata] = useState<Record<string, any>>({});
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({
     useAudio: false,
     useFile: false,
-    useWs: false,
+    useWs: isWsEnabled,
+    usePoll: isPollEnabled,
   });
 
   // Restore persisted metadata on mount
@@ -132,6 +134,7 @@ export default function ChatAsCustomer() {
           >
             <ArrowLeft />
           </Button>
+
           <GenAgentConfigPanel
             theme={theme}
             onThemeChange={setTheme}
@@ -173,7 +176,8 @@ export default function ChatAsCustomer() {
             theme={theme}
             headerTitle="Chat as Customer"
             placeholder="Ask a question..."
-            useWs={isWsEnabled}
+            useWs={featureFlags.useWs}
+            usePoll={featureFlags.usePoll}
             onError={(error) => {
               // ignore
             }}

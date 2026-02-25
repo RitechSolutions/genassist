@@ -1,12 +1,12 @@
 import { GenAgentChat } from "genassist-chat-react";
 import { useEffect, useState } from "react";
 import { getApiUrl } from "@/config/api";
-import { isWsEnabled } from "@/config/api";
+import { isWsEnabled, isPollEnabled } from "@/config/api";
 
 export const GlobalChat = () => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const genassistApiKey = import.meta.env.VITE_GENASSIST_CHAT_APIKEY;  
+  const genassistApiKey = import.meta.env.VITE_GENASSIST_CHAT_APIKEY;
 
   useEffect(() => {
     (async () => {
@@ -46,6 +46,7 @@ export const GlobalChat = () => {
         position: "bottom-right",
       }}
       useFile={true}
+      usePoll={isPollEnabled}
     />
   );
 };
