@@ -518,7 +518,7 @@ const Transcripts = () => {
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-semibold">
                               {isCallTranscript(transcript) ? "Call" : "Chat"} #
-                              {(transcript?.metadata?.title ?? "----").slice(0, 4)|| "Untitled"}{" - "} 
+                              {(transcript?.metadata?.title ?? "----").slice(-4) || "Untitled"}{" - "} 
                               {transcript?.metadata?.topic}
                             </h3>
                             {isLiveTranscript(transcript) && (
