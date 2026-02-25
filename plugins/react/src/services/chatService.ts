@@ -6,6 +6,8 @@ import {
   AgentThinkingConfig,
   AgentWelcomeData,
   FileUploadResponse,
+  InProgressPollResponse,
+  InProgressPollMessage,
 } from "../types";
 import {
   createWebSocket,
@@ -42,6 +44,7 @@ export class ChatService {
   private serverUnavailableMessage: string | undefined;
   private serverUnavailableContactUrl: string | undefined;
   private serverUnavailableContactLabel: string | undefined;
+  private usePoll: boolean = false;
 
   constructor(
     baseUrl: string,
@@ -49,7 +52,8 @@ export class ChatService {
     metadata?: Record<string, any>,
     tenant?: string,
     language?: string,
-    useWs: boolean = true
+    useWs: boolean = true,
+    usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     this.apiKey = apiKey;
@@ -57,6 +61,7 @@ export class ChatService {
     this.tenant = tenant;
     this.language = language;
     this.useWs = useWs;
+    this.usePoll = usePoll;
     // Try to load a saved conversation for this apiKey from localStorage
     this.loadSavedConversation();
   }
@@ -64,6 +69,33 @@ export class ChatService {
   private getStorageKey(): string {
     // Pointer to current conversation metadata for this apiKey
     return `${this.storageKeyBase}:${this.apiKey}`;
+  }
+
+  /**
+   * Handle conversation finalized: emit special message, call finalized handler, persist state.
+   */
+  public handleConversationFinalized(): void {
+    if (this.messageHandler) {
+      const now = Date.now() / 1000;
+      const finalizedMessage: ChatMessage = {
+        create_time: now,
+        start_time: this.conversationCreateTime
+          ? now - this.conversationCreateTime
+          : 0,
+        end_time: this.conversationCreateTime
+          ? now - this.conversationCreateTime + 0.01
+          : 0.01,
+        speaker: "special",
+        text: "Conversation Finalized",
+        type: "finalized",
+      };
+      this.messageHandler(finalizedMessage);
+    }
+    if (this.finalizedHandler) {
+      this.finalizedHandler();
+    }
+    this.isFinalized = true;
+    this.saveConversation();
   }
 
   /**
@@ -108,10 +140,10 @@ export class ChatService {
    */
   private formatAcceptLanguage(langCode: string): string {
     if (!langCode) return '';
-    
+
     // Normalize language code (lowercase, handle common formats)
     const normalized = langCode.toLowerCase().trim();
-    
+
     // Map common language codes to their full locale format
     const languageMap: Record<string, string> = {
       'en': 'en-US',
@@ -123,28 +155,28 @@ export class ChatService {
       'ar': 'ar-SA',
       'sq': 'sq-AL',
     };
-    
+
     // Check if the code already has a region (e.g., "en-US", "es-ES")
     const hasRegion = normalized.includes('-');
-    
+
     // Get the full locale or use the provided code if it already has a region
     const fullLocale = hasRegion ? normalized : (languageMap[normalized] || normalized);
-    
+
     // Extract base language from the full locale (e.g., "en" from "en-US")
     const fullBaseLang = fullLocale.split('-')[0].toLowerCase();
-    
+
     // Build Accept-Language header: primary locale, base language with quality, English fallback
     // Format: "locale,base-lang;q=0.9,en;q=0.8"
     const parts: string[] = [fullLocale];
-    
+
     // fallback
     parts.push(`${fullBaseLang};q=0.9`);
-    
+
     // Add English as fallback if not already the primary language
     if (fullBaseLang !== 'en') {
       parts.push('en;q=0.8');
     }
-    
+
     return parts.join(', ');
   }
 
@@ -323,6 +355,29 @@ export class ChatService {
         error.response.data.message === "Token has expired." ||
         (typeof error.response.data === "string" && error.response.data.includes("Token has expired")))
     );
+  }
+
+  /**
+   * Internal handler for takeover events: emits a special message and invokes takeoverHandler.
+   * Runs only once per conversation (idempotent).
+   */
+  private handleTakeover(now?: number): void {
+    const t = now ?? Date.now() / 1000;
+    if (this.messageHandler) {
+      const takeoverMessage: ChatMessage = {
+        create_time: t,
+        start_time: this.conversationCreateTime ? t - this.conversationCreateTime : 0,
+        end_time: this.conversationCreateTime ? t - this.conversationCreateTime + 0.01 : 0.01,
+        speaker: "special",
+        text: "Supervisor took over",
+        type: "takeover",
+      };
+
+      this.messageHandler(takeoverMessage);
+    }
+    if (this.takeoverHandler) {
+      this.takeoverHandler();
+    }
   }
 
   /**
@@ -550,18 +605,27 @@ export class ChatService {
         {
           headers: this.getHeaders(),
         }
-      );
+      ).catch(e => {
+        const err = e?.response?.data;
+        // Handle error when conversation is finalized
+        if (err?.error_key === 'CONVERSATION_FINALIZED') {
+          this.handleConversationFinalized();
+        } else {
+          throw e;
+        }
+      });
 
       // If not using WebSocket, try to retrieve the response message from the update conversation response
-      if (!this.useWs && this.messageHandler) {
+      if (!this.useWs && this.messageHandler && (!this.useWs || !this.usePoll)) { // usePoll is true when using heartbeat polling
         try {
-          const responseData = response.data as any;
-          
+          const responseData = response?.data as any || {};
+
           if (responseData.messages && Array.isArray(responseData.messages)) {
+
             // Look for the latest agent message in the response
             for (let i = responseData.messages.length - 1; i >= 0; i--) {
               const messageData = responseData.messages[i];
-              
+
               if (
                 messageData.speaker === "agent" &&
                 messageData.text &&
@@ -581,7 +645,7 @@ export class ChatService {
                   text: messageData.text,
                   message_id: messageData.message_id || messageData.id,
                 };
-                
+
                 // Only process if this is a new message we haven't seen before
                 // We can't easily check here, so we'll let the handler manage duplicates
                 this.messageHandler(agentMessage);
@@ -670,24 +734,24 @@ export class ChatService {
     }
 
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
-    
+
     // Build WebSocket URL with proper authentication
     const wsBase = this.baseUrl.replace("http", "ws");
     const topics = ["message", "takeover", "finalize"];
     const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
-    
+
     // Use guest_token if available, otherwise fall back to api_key
-    const authParam = this.guestToken 
+    const authParam = this.guestToken
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
-    
+
     let wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
-    
+
     // Add tenant as query parameter if provided
     if (this.tenant) {
       wsUrl += `&x-tenant-id=${encodeURIComponent(this.tenant)}`;
     }
-    
+
     // Use native browser WebSocket factory
     this.webSocket = createWebSocket(wsUrl);
 
@@ -729,53 +793,9 @@ export class ChatService {
             }
           }
         } else if (data.type === "takeover") {
-          // Handle takeover event
-          // Create special message for the takeover indicator
-          if (this.messageHandler) {
-            const now = Date.now() / 1000;
-            const takeoverMessage: ChatMessage = {
-              create_time: now,
-              start_time: this.conversationCreateTime
-                ? now - this.conversationCreateTime
-                : 0,
-              end_time: this.conversationCreateTime
-                ? now - this.conversationCreateTime + 0.01
-                : 0.01,
-              speaker: "special",
-              text: "Supervisor took over",
-            };
-            this.messageHandler(takeoverMessage);
-          }
-
-          // Call the takeover handler if provided
-          if (this.takeoverHandler) {
-            this.takeoverHandler();
-          }
+          this.handleTakeover();
         } else if (data.type === "finalize") {
-          // Handle finalized event
-          // Create special message for the finalized indicator
-          if (this.messageHandler) {
-            const now = Date.now() / 1000;
-            const finalizedMessage: ChatMessage = {
-              create_time: now,
-              start_time: this.conversationCreateTime
-                ? now - this.conversationCreateTime
-                : 0,
-              end_time: this.conversationCreateTime
-                ? now - this.conversationCreateTime + 0.01
-                : 0.01,
-              speaker: "special",
-              text: "Conversation Finalized",
-            };
-            this.messageHandler(finalizedMessage);
-          }
-
-          // Call the finalized handler if provided
-          if (this.finalizedHandler) {
-            this.finalizedHandler();
-          }
-          this.isFinalized = true;
-          this.saveConversation();
+          this.handleConversationFinalized();
         }
       } catch (error) {
         // ignore
@@ -785,7 +805,7 @@ export class ChatService {
     this.webSocket.onerror = (error: Event) => {
       if (this.connectionStateHandler)
         this.connectionStateHandler("disconnected");
-      
+
       // Log diagnostic
       const diagnostic = createWebSocketDiagnostic(error, wsUrl);
       console.error(`[GenAssist Chat] ${diagnostic}`);
@@ -794,7 +814,7 @@ export class ChatService {
     this.webSocket.onclose = (event: CloseEvent) => {
       if (this.connectionStateHandler)
         this.connectionStateHandler("disconnected");
-      
+
       // Log diagnostic
       if (!event.wasClean) {
         const diagnostic = createWebSocketDiagnostic(event, wsUrl);
@@ -853,15 +873,15 @@ export class ChatService {
       } = {
         feedback,
       };
-      
+
       if (feedback_message) {
         payload.feedback_message = feedback_message;
       }
-      
+
       await axios.patch(url, payload, {
         headers: this.getHeaders(),
       });
-      
+
     } catch (error: any) {
       if (this.isTokenExpiredError(error)) {
         this.resetChatConversation();
@@ -887,4 +907,81 @@ export class ChatService {
       end_time: message.end_time - this.conversationCreateTime,
     };
   }
+
+  /************ Heartbeat polling ************/
+  /**
+   * Poll in-progress conversation (heartbeat when WebSocket is disabled).
+   * Returns status and messages normalized to ChatMessage[].
+   */
+  async pollInProgressConversation(): Promise<{
+    status: string;
+    pollMessages: InProgressPollMessage[];
+  }> {
+    if (!this.conversationId || !this.conversationCreateTime) {
+      throw new Error("Conversation not started");
+    }
+
+    const response = await axios.get<InProgressPollResponse>(
+      `${this.baseUrl}/api/conversations/in-progress/poll/${this.conversationId}`,
+      { headers: this.getHeaders() }
+    );
+
+    const pollMessages = (response.data.messages || []).map((m) =>
+      this.normalizePollMessageToChatMessage(m)
+    );
+
+    return { status: response.data.status, pollMessages };
+  }
+
+  private normalizePollMessageToChatMessage(m: InProgressPollMessage): InProgressPollMessage {
+    let createTime =
+      typeof m.create_time === "number"
+        ? m.create_time
+        : m.create_time
+          ? +new Date(m.create_time)
+          : Math.floor(Date.now() / 1000);
+
+    // Normalize to seconds: ISO string gives ms (>1e12); if so convert. Otherwise assume already seconds.
+    if (createTime >= 1e12) {
+      createTime = Math.round(createTime / 1000);
+    }
+    const startTime =
+      this.conversationCreateTime != null
+        ? createTime - this.conversationCreateTime
+        : m.start_time;
+    const endTime =
+      this.conversationCreateTime != null
+        ? startTime + (m.end_time - m.start_time) || 0.01
+        : m.end_time;
+    return {
+      id: m.id,
+      create_time: createTime,
+      start_time: startTime,
+      end_time: endTime,
+      speaker: m.speaker as "customer" | "agent" | "special",
+      text: m.text,
+      type: m.type,
+      feedback: m.feedback,
+    };
+  }
+
+  async notifyTakeoverFromPoll(): Promise<void> {
+    // Poll already adds the "Supervisor took over" message from the message list.
+    // Only run the handler so UI state updates; do not call handleTakeover() or we duplicate the message.
+    if (this.takeoverHandler) {
+      this.takeoverHandler();
+    }
+  }
+
+  async notifyFinalizedFromPoll(): Promise<void> {
+    // Poll already adds the "Conversation Finalized" message from the message list.
+    // Only update state and run the handler; do not call handleConversationFinalized() or we duplicate the message.
+    if (this.finalizedHandler) {
+      this.finalizedHandler();
+    }
+    this.isFinalized = true;
+    this.saveConversation();
+  }
+
+  /****** End of Heartbeat polling ************/
 }

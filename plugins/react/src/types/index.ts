@@ -106,6 +106,7 @@ export interface GenAgentChatProps {
   tenant: string | undefined;
   metadata?: Record<string, any>; // For passing user information or other metadata
   useWs?: boolean;
+  usePoll?: boolean;
   onError?: (error: Error) => void;
   onTakeover?: () => void;
   onFinalize?: () => void;
@@ -157,4 +158,23 @@ export interface FileUploadResponse {
   file_path: string;
   file_url: string;
   file_id?: string;
+}
+
+/** Message shape returned by in-progress poll API (backend uses datetime for create_time) */
+export interface InProgressPollMessage {
+  id: string;
+  create_time?: string | number;
+  start_time: number;
+  end_time: number;
+  speaker: string;
+  text: string;
+  type?: string;
+  sequence_number?: number;
+  feedback?: MessageFeedback[];
+}
+
+/** Response from GET /api/conversations/in-progress/poll/{conversation_id} */
+export interface InProgressPollResponse {
+  status: string;
+  messages: InProgressPollMessage[];
 }

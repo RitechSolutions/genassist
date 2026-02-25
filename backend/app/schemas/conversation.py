@@ -9,6 +9,14 @@ from app.schemas.transcript_message import TranscriptMessageRead
 from app.schemas.agent_security_settings import AgentSecuritySettingsUpdate
 
 
+class InProgressPollResponse(BaseModel):
+    """Lightweight response for in-progress conversation heartbeat polling (no WebSocket)."""
+    status: str
+    messages: list[TranscriptMessageRead] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AgentMinimalForCache(BaseModel):
     """Minimal agent schema for caching - contains only fields needed for security checks."""
     id: UUID
