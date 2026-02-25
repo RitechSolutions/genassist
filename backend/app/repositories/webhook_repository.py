@@ -59,7 +59,8 @@ class WebhookRepository:
             select(WebhookModel)
             .options(
                 joinedload(WebhookModel.agent).joinedload(AgentModel.operator),
-                joinedload(WebhookModel.app_settings),
+                joinedload(WebhookModel.agent).joinedload(AgentModel.workflow),
+                joinedload(WebhookModel.app_settings)
             )
             .where(WebhookModel.id == webhook_id)
         )
