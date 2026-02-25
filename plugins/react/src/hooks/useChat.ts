@@ -238,29 +238,22 @@ export const useChat = ({
         };
 
         // Track latest create_time we've seen from server/websocket (in seconds)
-        if (normalizedMessage.create_time) {
-          if (
-            normalizedMessage.create_time >
-            (lastServerCreateTimeRef.current || 0)
-          ) {
-            lastServerCreateTimeRef.current = normalizedMessage.create_time;
-          }
+        if (normalizedMessage.create_time && normalizedMessage.create_time > 0) {
+          lastServerCreateTimeRef.current = Math.round(normalizedMessage.create_time) * 1000 / 1000;
         }
 
+        // Add message to messages array
         setMessages((prevMessages) => {
           // Avoid adding duplicate messages with same message_id and type
-          if (normalizedMessage.message_id && normalizedMessage.type) {
-            const exists = prevMessages.some(
-              (m) =>
-                m.message_id === normalizedMessage.message_id &&
-                m.type === normalizedMessage.type,
-            );
+          if (normalizedMessage.message_id) {
+            const exists = prevMessages.some((m) => m.message_id === normalizedMessage.message_id);
             if (exists) {
               return prevMessages;
             }
           }
           return [...prevMessages, normalizedMessage];
         });
+
         // Stop typing animation when agent or system message arrives
         if (
           normalizedMessage.speaker === "agent" ||
@@ -410,15 +403,16 @@ export const useChat = ({
     try {
       const stored = localStorage.getItem(key);
       const parsed: ChatMessage[] = stored ? JSON.parse(stored) : [];
+
       setMessages(parsed);
       // Initialize last seen create_time from cached messages
       if (parsed.length) {
         const maxCreateTime = Math.max(
           ...parsed.map((m) => (m.create_time ? m.create_time : 0)),
         );
-        lastServerCreateTimeRef.current = maxCreateTime;
-      } else {
-        lastServerCreateTimeRef.current = 0;
+
+        // Initialize last seen create_time from cached messages
+        lastServerCreateTimeRef.current = Math.round(maxCreateTime) * 1000 / 1000;
       }
     } catch (error) {
       setMessages([]);
@@ -478,8 +472,7 @@ export const useChat = ({
 
         // Only take messages newer than or equal to last seen create_time (seconds).
         // Use seconds consistently: poll messages are normalized to seconds in chatService.
-        const lastServerCreateTime =
-          Math.floor(Number(lastServerCreateTimeRef.current) || 0);
+        const lastServerCreateTime = Math.floor(Number(lastServerCreateTimeRef.current) || 0);
 
         const newMessagesRaw = (pollMessages || []).filter((m) => {
           const ct = Number((m as any).create_time);
@@ -528,6 +521,7 @@ export const useChat = ({
                     : max,
                 lastServerCreateTime,
               );
+
               lastServerCreateTimeRef.current = maxCreateTimeFromPoll;
               return [...prevMessages, ...toAdd];
             });

@@ -607,7 +607,8 @@ export class ChatService {
         }
       ).catch(e => {
         const err = e?.response?.data;
-        if (err.error_key === 'CONVERSATION_FINALIZED') {
+        // Handle error when conversation is finalized
+        if (err?.error_key === 'CONVERSATION_FINALIZED') {
           this.handleConversationFinalized();
         } else {
           throw e;
