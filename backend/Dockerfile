@@ -47,7 +47,6 @@ RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
-    poppler-utils \
     tesseract-ocr \
     tesseract-ocr-eng \
     libmagic1 \

@@ -27,7 +27,6 @@ from app.services.ml_model_pipeline import (
 )
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.file_system_utils import get_safe_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -330,13 +329,16 @@ async def download_artifact(
         # Sanitize and validate artifact path to prevent path traversal attacks
         safe_path = get_safe_artifact_path(artifact.artifact_path, DATA_VOLUME)
 
-        # Final guard: verify path starts with allowed directory before serving
-        data_volume_str = str(DATA_VOLUME.resolve())
-        if not safe_path.startswith(data_volume_str):
+        # Final guard: resolve and verify path is within allowed directory before serving
+        data_volume_base = DATA_VOLUME.resolve()
+        resolved_artifact_path = Path(safe_path).resolve()
+        try:
+            resolved_artifact_path.relative_to(data_volume_base)
+        except ValueError:
             raise HTTPException(status_code=400, detail="Invalid artifact path")
 
         # Validate file exists
-        if not os.path.exists(safe_path):
+        if not resolved_artifact_path.exists():
             raise HTTPException(
                 status_code=404,
                 detail="Artifact file not found on disk"
@@ -349,11 +351,8 @@ async def download_artifact(
         elif artifact.artifact_type.value == "logs":
             media_type = "text/plain"
 
-        # get safe path from safe_file_path
-        verified_safe_path = get_safe_file_path(safe_path, DATA_VOLUME)
-
         return FileResponse(
-            path=verified_safe_path,
+            path=str(resolved_artifact_path),
             filename=artifact.artifact_name,
             media_type=media_type
         )
