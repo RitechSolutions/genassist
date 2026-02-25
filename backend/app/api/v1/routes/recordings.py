@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Optional
@@ -101,12 +100,15 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
         settings.RECORDINGS_DIR
     )
 
-    # Final guard: verify path starts with allowed directory before serving
-    recordings_dir = str(Path(settings.RECORDINGS_DIR).resolve())
-    if not safe_path.startswith(recordings_dir):
+    # Final guard: resolve and verify path is within allowed directory before serving
+    recordings_base = Path(settings.RECORDINGS_DIR).resolve()
+    resolved_path = Path(safe_path).resolve()
+    try:
+        resolved_path.relative_to(recordings_base)
+    except ValueError:
         raise AppException(error_key=ErrorKey.INVALID_FILE_PATH, status_code=400)
 
-    return FileResponse(safe_path)
+    return FileResponse(str(resolved_path))
 
 
 @router.get("/metrics", dependencies=[
