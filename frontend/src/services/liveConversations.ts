@@ -86,6 +86,18 @@ export const conversationService = {
       return 0;
     }
   },
+
+  fetchConversationsTranscriptsAndData: async (id: string): Promise<BackendTranscript> => {
+    const response = await apiRequest<BackendTranscript>(
+      "get",
+      `/conversations/${id}?include_feedback=true`
+    );
+    if (!response) {
+      throw new Error(`Conversation ${id} not found`);
+    }
+    return response;
+  },
+
   fetchTranscript: async (id: string): Promise<ConversationTranscript> => {
     const response = await apiRequest<BackendTranscript>(
       "get",
