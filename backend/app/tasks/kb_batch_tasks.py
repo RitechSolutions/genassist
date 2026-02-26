@@ -171,25 +171,6 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
 
                 # # if RAG enabled, chunk and vectorize content, and save to vector database
                 if vector_enabled and extracted_content.get("content", None):
-                #     chunks = []
-                #     if chunk_strategy == "recursive":
-                #         separators = [s.strip() for s in chunk_separators.split(",")]
-                #         chunk_config=ChunkConfig(
-                #             type=chunk_strategy,
-                #             chunk_size=chunk_size,
-                #             chunk_overlap=chunk_overlap,
-                #             separators=separators,
-                #             keep_separator=chunk_keep_separator,
-                #             strip_whitespace=chunk_strip_whitespace
-                #         )
-                #         chunks = RecursiveChunker(
-                #             chunk_config
-                #         ).chunk_text(text=extracted_content["content"],metadata=extracted_content.get("metadata", {}))
-                #     else:
-                #         logger.warning(f"Unsupported chunk strategy: {chunk_strategy}. Skipping chunking.")
-                #         chunks = [extracted_content["content"]]
-
-                #     ###### Add other chunking strategies here (semantic, simple, etc.) ######
 
                     # Vectorize chunks and save to vector database
                     rag_service = await agentRAGServiceManager.get_service(kb_item)
@@ -223,25 +204,7 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
                         item = s3_file["key"],
                         destination = destination_key
                     )
-
-                    # s3_client = boto3.client(
-                    #     "s3",
-                    #     aws_access_key_id=keyid_username,
-                    #     aws_secret_access_key=secret_password,
-                    #     region_name=region
-                    # )
-                    #
-                    # s3_client.copy_object(
-                    #     Bucket=bucket_server,
-                    #     CopySource={'Bucket': bucket_server, 'Key': s3_file["key"]},
-                    #     Key=destination_key
-                    # )
-                    # logger.info(f"Copied processed file {s3_file['key']} to {destination_key}")
-                    # # Optionally delete original file
-                    # s3_client.delete_object(Bucket=bucket_server, Key=s3_file["key"])
-                    # logger.info(f"Deleted original file {s3_file['key']} after processing")
-
-                    
+                 
             print(f"Finished processing S3 datasource {ds_item.name} for KB {kb_item.name}\n - {count_success} files processed, \n - {count_skipped} files skipped, and \n - {count_fail} failures.")
 
 

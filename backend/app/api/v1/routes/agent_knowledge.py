@@ -536,11 +536,3 @@ async def summarize_files_from_azure(
     )
 
     return {"status": "started"}
-
-# @router.get("/kb-batch-tasks-execution", 
-#             dependencies=[Depends(auth)],
-#             summary="Runs the job that sync the KB with files from various sources")
-# async def summarize_files_from_azure(
-#     kb_id: Optional[UUID] = None
-# ):
-#     return await batch_process_files_kb_async_with_scope(kb_id)
