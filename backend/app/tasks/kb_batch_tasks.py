@@ -163,11 +163,9 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
                 )
                 count_success += 1
 
-                print(f"Downloaded file {s3_file['key']} with size {s3_file['size']} bytes")
+                logger.info(f"Downloaded file {s3_file['key']} with size {s3_file['size']} bytes")
 
                 extracted_content = await get_content_from_file(mode=processing_mode, file=file_content)
-
-                # print(f"Extracted Content for file {s3_file['key']}: \n\n{extracted_content}")
 
                 # # if RAG enabled, chunk and vectorize content, and save to vector database
                 if vector_enabled and extracted_content.get("content", None):
@@ -176,7 +174,7 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
                     rag_service = await agentRAGServiceManager.get_service(kb_item)
                     rag_doc_id = "KB:" + str(kb_item.id) + "#" + extracted_content.get("file_name", "unknown_file")
                     rag_doc_metadata = extracted_content.get("metadata", {})
-                    print (f"Adding document {rag_doc_id} to RAG service for KB {kb_item.id}\nMetadata: {rag_doc_metadata}\n")
+                    logger.info(f"Adding document {rag_doc_id} to RAG service for KB {kb_item.id}\nMetadata: {rag_doc_metadata}")
 
                     rag_doc_metadata["name"]= extracted_content.get("file_name", "unknown_file")
                     rag_doc_metadata["description"]= f"File in {kb_item.name} from S3 source {ds_item.name}"
@@ -205,7 +203,7 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
                         destination = destination_key
                     )
                  
-            print(f"Finished processing S3 datasource {ds_item.name} for KB {kb_item.name}\n - {count_success} files processed, \n - {count_skipped} files skipped, and \n - {count_fail} failures.")
+            logger.info(f"Finished processing S3 datasource {ds_item.name} for KB {kb_item.name}\n - {count_success} files processed, \n - {count_skipped} files skipped, and \n - {count_fail} failures.")
 
 
 
@@ -397,7 +395,8 @@ async def s3_move_file(
             Key=destination
         )
         logger.info(f"Copied processed file {item} to {destination}")
-        # Optionally delete original file
+
+        # Delete original file after copying (MOVE Logic)
         s3_client.delete_object(Bucket=bucket_name, Key=item)
         logger.info(f"Deleted original file {item} after processing")
     except ClientError as e:
