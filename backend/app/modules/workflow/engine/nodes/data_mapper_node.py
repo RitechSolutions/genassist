@@ -33,8 +33,8 @@ class DataMapperNode(BaseNode):
             return {"error": "No Python script configured for data mapper"}
 
         try:
-            # Execute the Python script
-            response = await execute_python_code(python_script, params={})
+            # Execute the Python script with resolved params from code_params
+            response = await execute_python_code(python_script, params=self.code_params or {})
 
             return response
 

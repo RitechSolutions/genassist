@@ -1,6 +1,10 @@
 import axios, { Method, AxiosRequestConfig, AxiosError } from "axios";
 import { setServerDown, setServerUp } from "@/config/serverStatus";
 
+const AUTH_KEYS = ["access_token", "refresh_token", "token_type", "isAuthenticated", "force_upd_pass_date", "tenant_id"] as const;
+
+const clearAuthStorage = () => AUTH_KEYS.forEach((key) => localStorage.removeItem(key));
+
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (value?: unknown) => void;
@@ -9,13 +13,8 @@ let failedQueue: Array<{
 
 const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach(({ resolve, reject }) => {
-    if (error) {
-      reject(error);
-    } else {
-      resolve(token);
-    }
+    error ? reject(error) : resolve(token);
   });
-
   failedQueue = [];
 };
 
@@ -80,63 +79,37 @@ api.interceptors.response.use(
       if (!refreshToken) {
         isRefreshing = false;
         processQueue(error, null);
-
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        localStorage.removeItem("token_type");
-        localStorage.removeItem("isAuthenticated");
-        localStorage.removeItem("force_upd_pass_date");
-        localStorage.removeItem("tenant_id");
-
+        clearAuthStorage();
         return Promise.reject(error);
       }
 
       try {
         const baseURL = await getApiUrl();
-        const params = new URLSearchParams();
-        params.append("refresh_token", refreshToken);
+        const tenantId = localStorage.getItem("tenant_id");
+        const params = new URLSearchParams({ refresh_token: refreshToken });
 
-        const refreshResponse = await axios.post(
-          `${baseURL}auth/refresh_token`,
-          params,
-          {
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-          }
-        );
+        const { data } = await axios.post(`${baseURL}auth/refresh_token`, params, {
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            ...(tenantId ? { "x-tenant-id": tenantId } : {}),
+          },
+        });
 
-        const { access_token, token_type, force_upd_pass_date } = refreshResponse.data;
-        localStorage.setItem("access_token", access_token);
-        localStorage.setItem("token_type", token_type || "Bearer");
-
-        // Store force_upd_pass_date if provided in refresh response
-        if (force_upd_pass_date) {
-          localStorage.setItem("force_upd_pass_date", force_upd_pass_date);
-        }
-
+        localStorage.setItem("access_token", data.access_token);
+        localStorage.setItem("token_type", data.token_type || "Bearer");
         localStorage.setItem("isAuthenticated", "true");
+        if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
+        if (data.force_upd_pass_date) localStorage.setItem("force_upd_pass_date", data.force_upd_pass_date);
 
-        // Update the Authorization header for the retry
-        originalRequest.headers.Authorization = `${token_type || "Bearer"} ${access_token}`;
-
-        processQueue(null, access_token);
+        originalRequest.headers.Authorization = `${data.token_type || "Bearer"} ${data.access_token}`;
+        processQueue(null, data.access_token);
         isRefreshing = false;
 
-        // Retry the original request
         return api(originalRequest);
       } catch (refreshError) {
-        // If refresh fails, clear tokens and redirect to login and authentication state
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        localStorage.removeItem("token_type");
-        localStorage.removeItem("isAuthenticated");
-        localStorage.removeItem("force_upd_pass_date");
-        localStorage.removeItem("tenant_id");
-
+        clearAuthStorage();
         processQueue(refreshError, null);
         isRefreshing = false;
-
         return Promise.reject(refreshError);
       }
     }

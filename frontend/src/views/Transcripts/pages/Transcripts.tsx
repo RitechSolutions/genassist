@@ -11,6 +11,7 @@ import {
   ThumbsDown,
   Upload,
   ChevronDown,
+  RefreshCw,
 } from "lucide-react";
 import { Card } from "@/components/card";
 import { Button } from "@/components/button";
@@ -32,7 +33,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
@@ -43,6 +44,7 @@ import { Switch } from "@/components/switch";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/useToast";
 import { conversationService } from "@/services/liveConversations";
+import { transformTranscript } from "../helpers/transformers";
 import { UploadMediaDialog } from "@/views/MediaUpload";
 import { getPaginationMeta } from "@/helpers/pagination";
 import { PaginationBar } from "@/components/PaginationBar";
@@ -157,6 +159,35 @@ const Transcripts = () => {
     );
   }, [location.search]);
 
+  // Fetch latest conversation data when opening the dialog
+  useEffect(() => {
+    if (!isModalOpen || !selectedTranscript?.id) return;
+
+    let cancelled = false;
+    const conversationId = selectedTranscript.id;
+
+    const refreshConversation = async () => {
+      try {
+        const backend = await conversationService.fetchConversationsTranscriptsAndData(conversationId);
+        if (cancelled) return;
+        setSelectedTranscript(transformTranscript(backend));
+      } catch {
+        if (!cancelled) {
+          toast({
+            title: "Could not refresh",
+            description: "Failed to load latest conversation data.",
+            variant: "destructive",
+          });
+        }
+      }
+    };
+
+    refreshConversation();
+    return () => {
+      cancelled = true;
+    };
+  }, [isModalOpen, selectedTranscript?.id]);
+
   // Handle filter changes
   const handleSentimentChange = (value: string) => {
     setActiveTab(value);
@@ -192,6 +223,34 @@ const Transcripts = () => {
     setSortDirection(dir);
     setCurrentPage(1);
     updateUrlParams({ page: 1 });
+  };
+
+  const getSortLabel = (): { label: string; icon: ReactNode } | null => {
+    if (!orderBy) return null;
+    const dirLabel = sortDirection === "desc" ? "High→Low" : "Low→High";
+    if (orderBy === "thumbs_down_count") {
+      return {
+        label: `Thumbs Down · ${dirLabel}`,
+        icon: <ThumbsDown className="h-4 w-4 text-red-600 shrink-0" />,
+      };
+    }
+    if (orderBy === "thumbs_up_count") {
+      return {
+        label: `Thumbs Up · ${dirLabel}`,
+        icon: <ThumbsUp className="h-4 w-4 text-green-600 shrink-0" />,
+      };
+    }
+    return null;
+  };
+
+  const activeSort = getSortLabel();
+
+  const handleRefreshConversations = () => {
+    refetch();
+    toast({
+      title: "Refreshing",
+      description: "Conversations are being refreshed.",
+    });
   };
 
   const filteredTranscripts = transcripts.filter((transcript) => {
@@ -337,47 +396,95 @@ const Transcripts = () => {
                     </TabsTrigger>
                   </TabsList>
                 </Tabs>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex h-10 w-[200px] shrink-0 items-center justify-between rounded-full border border-input bg-white px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1"
-                    >
-                      <span>Sort by</span>
-                      <ChevronDown className="h-4 w-4 opacity-50" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-[10rem]">
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="flex items-center gap-2">
-                        <ThumbsDown className="h-4 w-4 text-red-600" />
-                        Thumbs Down
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        <DropdownMenuItem onClick={() => applySort("thumbs_down_count", "desc")}>
-                          High to low
+                <div className="flex items-center gap-2 shrink-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={`flex h-10 shrink-0 items-center justify-between gap-2 rounded-full border px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${
+                          activeSort
+                            ? "min-w-[200px] border-zinc-300 bg-zinc-100 text-foreground"
+                            : "min-w-[140px] w-[200px] border-input bg-white"
+                        }`}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          {activeSort ? (
+                            <>
+                              {activeSort.icon}
+                              <span className="truncate">{activeSort.label}</span>
+                            </>
+                          ) : (
+                            <span>Sort by</span>
+                          )}
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-[10rem]">
+                      {activeSort && (
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setOrderBy("");
+                            setSortDirection("desc");
+                            setCurrentPage(1);
+                            updateUrlParams({ page: 1 });
+                          }}
+                          className="text-muted-foreground"
+                        >
+                          Clear sort
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => applySort("thumbs_down_count", "asc")}>
-                          Low to high
-                        </DropdownMenuItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="flex items-center gap-2">
-                        <ThumbsUp className="h-4 w-4 text-green-600" />
-                        Thumbs Up
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        <DropdownMenuItem onClick={() => applySort("thumbs_up_count", "desc")}>
-                          High to low
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => applySort("thumbs_up_count", "asc")}>
-                          Low to high
-                        </DropdownMenuItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      )}
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger className="flex items-center gap-2">
+                          <ThumbsDown className="h-4 w-4 text-red-600" />
+                          Thumbs Down
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem onClick={() => applySort("thumbs_down_count", "desc")}>
+                            High to low
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => applySort("thumbs_down_count", "asc")}>
+                            Low to high
+                          </DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger className="flex items-center gap-2">
+                          <ThumbsUp className="h-4 w-4 text-green-600" />
+                          Thumbs Up
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem onClick={() => applySort("thumbs_up_count", "desc")}>
+                            High to low
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => applySort("thumbs_up_count", "asc")}>
+                            Low to high
+                          </DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-10 w-10 rounded-full shrink-0"
+                        onClick={handleRefreshConversations}
+                        disabled={loading}
+                        aria-label="Refresh conversations"
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+                          aria-hidden
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Refresh conversations</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
               </div>
 
               <Card className="divide-y bg-white">
@@ -411,7 +518,7 @@ const Transcripts = () => {
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-semibold">
                               {isCallTranscript(transcript) ? "Call" : "Chat"} #
-                              {(transcript?.metadata?.title ?? "----").slice(0, 4)|| "Untitled"}{" - "} 
+                              {(transcript?.metadata?.title ?? "----").slice(-4) || "Untitled"}{" - "} 
                               {transcript?.metadata?.topic}
                             </h3>
                             {isLiveTranscript(transcript) && (
