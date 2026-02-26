@@ -13,8 +13,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { useEffect, useRef, useState, useCallback } from "react";
-import { getAudioUrl, submitConversationFeedback, submitMessageFeedback } from "@/services/transcripts";
+import { useEffect, useRef, useState } from "react";
+import {
+  getAudioUrl,
+  submitConversationFeedback,
+  submitMessageFeedback,
+} from "@/services/transcripts";
 import { Transcript, ConversationFeedbackEntry } from "@/interfaces/transcript.interface";
 import { Input } from "@/components/input";
 import { Button } from "@/components/button";
@@ -28,6 +32,7 @@ import { ScoreCards } from "./ScoreCard";
 import { TranscriptAudioPlayer } from "./TranscriptAudioPlayer";
 import { MessageFeedbackPopover } from "./MessageFeedbackPopover";
 import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
+import { AgentResponseLogDialog } from "@/components/AgentResponseLogDialog";
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
@@ -61,6 +66,8 @@ export function TranscriptDialog({
   const [userFeedback, setUserFeedback] = useState<ConversationFeedbackEntry | null>(null);
   const [localTranscript, setLocalTranscript] = useState<Transcript | null>(transcript);
   const [openPopoverMessageId, setOpenPopoverMessageId] = useState<string | null>(null);
+  const [debugLogOpen, setDebugLogOpen] = useState(false);
+  const [debugMessageId, setDebugMessageId] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalTranscript(transcript);
@@ -652,14 +659,27 @@ useEffect(() => {
                               style={{maxWidth: '400px'}}
                           >
                             <ConversationEntryWrapper entry={entryObj} />
-                            <span className={`block text-[10px] text-right mt-1 ${
-                              isAgent ? "text-white/70" : "text-gray-500"
-                            }`}>
+                            <span
+                              className={`block text-[10px] text-right mt-1 ${
+                                isAgent ? "text-white/70" : "text-gray-500"
+                              }`}
+                            >
                               {isCall
                                 ? formatCallTimestamp(entryObj.start_time)
-                                : formatMessageTime(entryObj.create_time)
-                              }
+                                : formatMessageTime(entryObj.create_time)}
                             </span>
+                            {isAgent && messageId && (
+                              <button
+                                type="button"
+                                className="mt-1 text-[10px] underline text-white/80 hover:text-white"
+                                onClick={() => {
+                                  setDebugMessageId(messageId);
+                                  setDebugLogOpen(true);
+                                }}
+                              >
+                                Debug response
+                              </button>
+                            )}
                             </div>
                           </div>
                         </div>
@@ -744,6 +764,17 @@ useEffect(() => {
             )}
           </div>
         </div>
+
+        <AgentResponseLogDialog
+          isOpen={debugLogOpen}
+          onOpenChange={(open) => {
+            setDebugLogOpen(open);
+            if (!open) {
+              setDebugMessageId(null);
+            }
+          }}
+          messageId={debugMessageId}
+        />
 
       </DialogContent>
     </Dialog>

@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
 import json
-from typing import List
 from uuid import UUID
 
 from app.dependencies.injector import injector
@@ -20,9 +19,9 @@ from app.schemas.conversation_transcript import (
 from app.db.models.conversation import ConversationModel
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
+from app.services.agent_response_log import AgentResponseLogService
 from app.db.base import generate_sequential_uuid
 from app.services.file_manager import FileManagerService
-from app.core.config.settings import file_storage_settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -75,6 +74,7 @@ async def process_conversation_update_with_agent(
     socket_connection_manager = injector.get(SocketConnectionManager)
     agent_config_service = injector.get(AgentConfigService)
     agent_service = injector.get(AgentConfigService)
+    agent_response_log_service = injector.get(AgentResponseLogService)
 
     conversation = await service.get_conversation_by_id(conversation_id)
     if conversation.status == ConversationStatus.FINALIZED.value:
@@ -105,7 +105,7 @@ async def process_conversation_update_with_agent(
 
         if not model.metadata:
             model.metadata = {}
-     
+
         model.metadata["thread_id"] = str(conversation_id)
 
         agent_response = await run_query_agent_logic(
@@ -156,6 +156,20 @@ async def process_conversation_update_with_agent(
     updated_conversation = await service.update_in_progress_conversation(
         conversation_id, model
     )
+
+    # After messages are persisted, log the full agent response tied to the stored message id.
+    if conversation.status == ConversationStatus.IN_PROGRESS.value:
+        try:
+            # The newest message should be the agent reply we just appended
+            last_message = updated_conversation.messages[-1] if updated_conversation.messages else None
+            if last_message:
+                await agent_response_log_service.log_response_for_message(
+                    conversation_id=updated_conversation.id,
+                    transcript_message_id=last_message.id,
+                    agent_response=agent_response,
+                )
+        except Exception as e:
+            logger.warning(f"Failed to persist AgentResponseLog after update: {e}")
     # Notify dashboard a conversation is updated
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(

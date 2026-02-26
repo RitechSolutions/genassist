@@ -199,3 +199,27 @@ export const submitConversationFeedback = async (
     return false;
   }
 };
+
+export interface AgentResponseLog {
+  // Shape is backend-defined; keep flexible on the frontend.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+export const fetchAgentResponseLog = async (
+  messageId: string
+): Promise<AgentResponseLog | null> => {
+  try {
+    const data = await apiRequest<AgentResponseLog>(
+      "GET",
+      `/conversations/message/agent-response-log/${messageId}`,
+      undefined
+    );
+    if (!data) {
+      return null;
+    }
+    return data;
+  } catch (error) {
+    return null;
+  }
+};

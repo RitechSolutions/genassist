@@ -1079,7 +1079,8 @@ function App() {
         serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
         serverUnavailableContactUrl="https://www.ritech.co/"
         serverUnavailableContactLabel="Contact Support"
-        inputDisclaimer={<span><a href="https://genassist.ai">Genassist</a> provides AI-generated content for informational purposes only. While our bots strive for accuracy, AI responses may occasionally be incorrect, incomplete, or biased. Users should independently verify any critical information before taking action</span>}
+        inputDisclaimer={<span>Agent can make mistakes. <a href="https://genassist.ai">Check important info.</a></span>}
+        // inputDisclaimer={<span><a href="https://genassist.ai">Genassist</a> provides AI-generated content for informational purposes only. While our bots strive for accuracy, AI responses may occasionally be incorrect, incomplete, or biased. Users should independently verify any critical information before taking action</span>}
         onError={handleError}
         mode="floating"
         floatingConfig={{

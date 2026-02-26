@@ -29,6 +29,7 @@ from app.services.conversations import ConversationService
 from app.services.conversation_analysis import ConversationAnalysisService
 from app.services.auth import AuthService
 from app.services.audit_logs import AuditLogService
+from app.services.agent_response_log import AgentResponseLogService
 from app.services.audio import AudioService
 from app.services.app_settings import AppSettingsService
 from app.services.api_keys import ApiKeysService
@@ -53,6 +54,7 @@ from app.repositories.datasources import DataSourcesRepository
 from app.repositories.conversations import ConversationRepository
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
 from app.repositories.audit_logs import AuditLogRepository
+from app.repositories.agent_response_log import AgentResponseLogRepository
 from app.repositories.app_settings import AppSettingsRepository
 from app.repositories.api_keys import ApiKeysRepository
 from app.repositories.agent import AgentRepository
@@ -200,6 +202,9 @@ class Dependencies(Module):
 
         binder.bind(AuditLogService, scope=request_scope)
         binder.bind(AuditLogRepository, scope=request_scope)
+
+        binder.bind(AgentResponseLogService, scope=request_scope)
+        binder.bind(AgentResponseLogRepository, scope=request_scope)
 
         binder.bind(ConversationService, scope=request_scope)
         binder.bind(ConversationRepository, scope=request_scope)

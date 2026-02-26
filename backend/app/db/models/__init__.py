@@ -14,6 +14,7 @@ from app.db.models.api_key import ApiKeyModel
 from app.db.models.audit_log import AuditLogModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.conversation import ConversationModel, ConversationAnalysisModel
+from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
 from app.db.utils.event_hooks_config import auto_register_updated_by
@@ -57,6 +58,7 @@ __all__ = [
     "ApiKeyRoleModel",
     "ConversationModel",
     "ConversationAnalysisModel",
+    "AgentResponseLogModel",
     "CustomerModel",
     "DataSourceModel",
     "ToolModel",
@@ -85,6 +87,7 @@ __all__ = [
 models = [
     ConversationModel,
     ConversationAnalysisModel,
+    AgentResponseLogModel,
     UserModel,
     RoleModel,
     PermissionModel,

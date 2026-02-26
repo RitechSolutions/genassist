@@ -23,6 +23,7 @@ from .roles import RolesRepository
 from .tenant import TenantRepository
 from .tool import ToolRepository
 from .transcript_message import TranscriptMessageRepository
+from .agent_response_log import AgentResponseLogRepository
 from .user_types import UserTypesRepository
 from .users import UserRepository
 from .webhook_repository import WebhookRepository

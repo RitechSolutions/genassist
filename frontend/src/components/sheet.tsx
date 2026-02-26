@@ -16,13 +16,17 @@ const SheetPortal = SheetPrimitive.Portal
 const SheetOverlay = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Overlay>
->(({ className, ...props }, ref) => (
+>(({ className, onContextMenu, ...props }, ref) => (
   <SheetPrimitive.Overlay
     className={cn(
       "fixed inset-0 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     style={{ zIndex: 1200 }}
+    onContextMenu={(event) => {
+      onContextMenu?.(event)
+      event.stopPropagation()
+    }}
     {...props}
     ref={ref}
   />
@@ -55,13 +59,29 @@ interface SheetContentProps
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps & { hideOverlay?: boolean; hideDefaultClose?: boolean }
->(({ side = "right", className, children, hideOverlay = false, hideDefaultClose = false, ...props }, ref) => (
+>(
+  (
+    {
+      side = "right",
+      className,
+      children,
+      hideOverlay = false,
+      hideDefaultClose = false,
+      onContextMenu,
+      ...props
+    },
+    ref
+  ) => (
   <SheetPortal>
     {!hideOverlay && <SheetOverlay />}
     <SheetPrimitive.Content
       ref={ref}
       className={cn(sheetVariants({ side }), className)}
       style={{ zIndex: 1201 }}
+      onContextMenu={(event) => {
+        onContextMenu?.(event)
+        event.stopPropagation()
+      }}
       {...props}
     >
       {children}

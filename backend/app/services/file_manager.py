@@ -49,6 +49,11 @@ class FileManagerService:
                 provider_name = app_settings.values.get("file_manager_provider", default_provider_name)
                 config["base_path"] = app_settings.values.get("base_path", base_path)
                 config["AWS_BUCKET_NAME"] = app_settings.values.get("aws_bucket_name", file_storage_settings.AWS_BUCKET_NAME)
+            else:
+                # fallback to the default provider name
+                provider_name = default_provider_name
+                config["base_path"] = base_path
+                config["AWS_BUCKET_NAME"] = file_storage_settings.AWS_BUCKET_NAME
 
             # get the storage provider by name
             self.storage_provider = self.get_storage_provider_by_name(provider_name, config=config)

@@ -1,9 +1,10 @@
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
 from app.core.permissions.constants import Permissions as P
@@ -108,7 +109,16 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     except ValueError:
         raise AppException(error_key=ErrorKey.INVALID_FILE_PATH, status_code=400)
 
-    return FileResponse(str(resolved_path))
+    # Explicit path traversal guard for SAST: ensure path is under base
+    try:
+        base_str = str(recordings_base)
+        path_str = str(resolved_path)
+        if os.path.commonpath([path_str, base_str]) != base_str:
+            raise HTTPException(status_code=400, detail="Invalid file path")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    return FileResponse(path_str)
 
 
 @router.get("/metrics", dependencies=[

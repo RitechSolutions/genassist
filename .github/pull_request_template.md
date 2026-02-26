@@ -13,14 +13,14 @@
 - [ ] 📚 Documentation update
 - [ ] 🔧 Configuration change
 - [ ] 🧪 Test update
+- [ ] 💬 New release chat plugin
+- [ ] 🚀 New platform release
 
 ## Changes Made
 
 <!-- Describe the changes in detail -->
-
 - [ ] Change 1
 - [ ] Change 2
-- [ ] Change 3
 
 ## Testing
 
@@ -51,11 +51,6 @@ Closes #<!-- issue number -->
 
 <!-- Add screenshots to help explain your changes -->
 
-## Additional Notes
-
-<!-- Add any other context about the PR here -->
-
 ---
 
 **Note**: This PR follows Ritech's contribution guidelines for GenAssist. For questions, refer to [CONTRIBUTING.md](../CONTRIBUTING.md) or contact the Ritech team.
-

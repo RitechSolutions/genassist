@@ -54,6 +54,7 @@ from app.schemas.socket_principal import SocketPrincipal
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
 from app.services.transcript_message_service import TranscriptMessageService
+from app.services.agent_response_log import AgentResponseLogService
 from app.services.auth import AuthService
 from app.core.tenant_scope import get_tenant_context
 from app.use_cases.chat_as_client_use_case import (
@@ -616,6 +617,34 @@ async def add_conversation_feedback(
     )
     return {
         "message": f"Successfully added feedback, in conversation id:{conversation_id}"
+    }
+
+
+@router.get(
+    "/message/agent-response-log/{message_id}",
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Conversation.READ)),
+    ],
+)
+async def get_agent_response_log_by_message(
+    message_id: UUID,
+    agent_response_log_service: AgentResponseLogService = Injected(AgentResponseLogService),
+):
+    """
+    Return the stored agent response log associated with a given transcript (message) id.
+    """
+    log_entry = await agent_response_log_service.get_log_for_message(message_id)
+    if not log_entry:
+        raise AppException(ErrorKey.MESSAGE_NOT_FOUND, status_code=404)
+
+    # Return a JSON-serializable view (raw_response is stored as text/json string)
+    return {
+        "id": str(log_entry.id),
+        "conversation_id": str(log_entry.conversation_id),
+        "transcript_message_id": str(log_entry.transcript_message_id),
+        "raw_response": log_entry.raw_response,
+        "logged_at": log_entry.logged_at.isoformat() if log_entry.logged_at else None,
     }
 
 
