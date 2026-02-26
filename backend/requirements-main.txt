@@ -159,7 +159,7 @@ Pygments==2.19.1
 pylint==3.3.6
 pylint-fail-under==0.3.0
 pylint_junit==0.3.5
-pypdf==6.6.2
+pypdf==6.7.2
 PyPika==0.48.9
 pyproject_hooks==1.2.0
 pytest==8.3.5
