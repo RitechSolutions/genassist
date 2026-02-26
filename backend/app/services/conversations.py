@@ -523,7 +523,8 @@ class ConversationService:
         # Process the stale conversations
         for conversation in stale_conversations:
             if len(conversation.messages) < 3:
-                await self.delete_conversation(conversation.id)
+                # soft delete the conversation
+                await self.update_conversation(conversation, is_deleted=True)
                 deleted_count += 1
                 logger.info(
                     f"Deleted stale conversation {conversation.id} (last updated: {conversation.updated_at})"
