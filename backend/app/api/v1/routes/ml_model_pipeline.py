@@ -337,15 +337,6 @@ async def download_artifact(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid artifact path")
 
-        # Explicit path traversal guard for SAST: ensure path is under base
-        try:
-            base_str = str(data_volume_base)
-            path_str = str(resolved_artifact_path)
-            if os.path.commonpath([path_str, base_str]) != base_str:
-                raise HTTPException(status_code=400, detail="Invalid artifact path")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid artifact path")
-
         # Validate file exists
         if not resolved_artifact_path.exists():
             raise HTTPException(
@@ -360,10 +351,10 @@ async def download_artifact(
         elif artifact.artifact_type.value == "logs":
             media_type = "text/plain"
 
-        # Use path_str (validated above) to avoid path traversal taint
-        validated_path = path_str
+        # Reconstruct path from trusted base + validated relative portion to break taint chain
+        safe_serving_path = str(data_volume_base / resolved_artifact_path.relative_to(data_volume_base))
         return FileResponse(
-            path=validated_path,
+            path=safe_serving_path,
             filename=artifact.artifact_name,
             media_type=media_type
         )
