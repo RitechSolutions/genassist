@@ -334,10 +334,15 @@ class WorkflowState:
         """Complete execution of a specific node"""
         if node_id in self.node_execution_status:
             end_time = int(time.time() * 1000)
+            start_time = self.node_execution_status[node_id].get("startTime")
+            duration_ms = (
+                end_time - start_time if start_time is not None else None
+            )
             self.node_execution_status[node_id].update(
                 {
                     "status": "success" if error is None else "failed",
                     "endTime": end_time,
+                    "time_taken": duration_ms,
                     "output": output,
                     "error": error,
                 }
