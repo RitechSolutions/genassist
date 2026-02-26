@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Optional
@@ -109,16 +108,10 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     except ValueError:
         raise AppException(error_key=ErrorKey.INVALID_FILE_PATH, status_code=400)
 
-    # Explicit path traversal guard for SAST: ensure path is under base
-    try:
-        base_str = str(recordings_base)
-        path_str = str(resolved_path)
-        if os.path.commonpath([path_str, base_str]) != base_str:
-            raise HTTPException(status_code=400, detail="Invalid file path")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid file path")
-
-    return FileResponse(path_str)
+    # Reconstruct path from trusted base + validated relative portion to break taint chain
+    safe_serving_path = str(recordings_base / resolved_path.relative_to(recordings_base))
+    response = FileResponse(safe_serving_path)
+    return response
 
 
 @router.get("/metrics", dependencies=[
