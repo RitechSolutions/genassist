@@ -314,8 +314,33 @@ class WorkflowState:
                 successful_nodes / len(self.node_execution_status)
             ) * 100
 
+    def _next_archived_node_key(self, node_id: str) -> str:
+        """Return the next available key for an archived run of this node (e.g. node_id_0, node_id_1)."""
+        prefix = f"{node_id}_"
+        indices = []
+        for key in self.node_execution_status:
+            if key == node_id or key.startswith(prefix):
+                if key == node_id:
+                    indices.append(
+                        -1
+                    )  # current slot, treat as prior run for next index
+                else:
+                    try:
+                        indices.append(int(key[len(prefix) :]))
+                    except ValueError:
+                        pass
+        next_index = max(indices, default=-1) + 1
+        return f"{node_id}_{next_index}"
+
     def start_node_execution(self, node_id: str) -> None:
-        """Start execution of a specific node"""
+        """Start execution of a specific node. If the node was run before, the previous run
+        is kept under a prefixed key (e.g. node_id_0, node_id_1); only the latest run stays as node_id.
+        """
+        if node_id in self.node_execution_status:
+            archived_key = self._next_archived_node_key(node_id)
+            self.node_execution_status[archived_key] = self.node_execution_status.pop(
+                node_id
+            )
         start_time = int(time.time() * 1000)
         self.node_execution_status[node_id] = {
             "type": self.get_node_config(node_id).get("type", ""),
@@ -334,10 +359,15 @@ class WorkflowState:
         """Complete execution of a specific node"""
         if node_id in self.node_execution_status:
             end_time = int(time.time() * 1000)
+            start_time = self.node_execution_status[node_id].get("startTime")
+            duration_ms = (
+                end_time - start_time if start_time is not None else None
+            )
             self.node_execution_status[node_id].update(
                 {
                     "status": "success" if error is None else "failed",
                     "endTime": end_time,
+                    "time_taken": duration_ms,
                     "output": output,
                     "error": error,
                 }
@@ -435,7 +465,7 @@ class WorkflowState:
         }
         self.execution_path = [*self.execution_path, *state.execution_path]
         self.execution_history = [*self.execution_history, *state.execution_history]
-        
+
         # Merge stateful values from sub-workflow session into parent session
         # This ensures stateful values updated in sub-workflows propagate to parent
         # Note: We don't merge conversation_history as it's managed separately
@@ -507,4 +537,4 @@ class WorkflowState:
         from app.modules.workflow.engine.nodes.ml import ml_utils
 
         return ml_utils.sanitize_for_json(response)
-        #return ml_utils.optimize_output_for_response(sanitized)
+        # return ml_utils.optimize_output_for_response(sanitized)
