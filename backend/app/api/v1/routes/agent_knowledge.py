@@ -514,10 +514,33 @@ async def get_form_schemas():
 
 
 #Endpoint to trigger KB batch processing for files from various sources Same way as (e.g. Azure Blob, S3, SharePoint)
-@router.get("/kb-batch-tasks-execution", 
-            dependencies=[Depends(auth)],
-            summary="Runs the job that sync the KB with files from various sources")
+from fastapi import BackgroundTasks
+
+@router.get(
+    "/kb-batch-tasks-execution",
+    dependencies=[Depends(auth)],
+    summary="Runs the job that sync the KB with files from various sources"
+)
 async def summarize_files_from_azure(
+    background_tasks: BackgroundTasks,
     kb_id: Optional[UUID] = None
 ):
-    return await batch_process_files_kb_async_with_scope(kb_id)
+    await asyncio.sleep(2) # simulate some delay before starting the background task
+    if not kb_id:
+        logger.warning("Attempting to run KB batch processing without specifying a KB ID.")
+        return {"status": "error", "message": "kb_id is required"}
+    
+    background_tasks.add_task(
+        batch_process_files_kb_async_with_scope,
+        kb_id
+    )
+
+    return {"status": "started"}
+
+# @router.get("/kb-batch-tasks-execution", 
+#             dependencies=[Depends(auth)],
+#             summary="Runs the job that sync the KB with files from various sources")
+# async def summarize_files_from_azure(
+#     kb_id: Optional[UUID] = None
+# ):
+#     return await batch_process_files_kb_async_with_scope(kb_id)
