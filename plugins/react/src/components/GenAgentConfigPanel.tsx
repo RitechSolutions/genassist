@@ -21,6 +21,7 @@ export interface FeatureFlags {
   useAudio?: boolean;
   useFile?: boolean;
   useWs?: boolean;
+  usePoll?: boolean;
 }
 
 type ParamType = 'string' | 'number' | 'boolean';
@@ -75,6 +76,7 @@ const defaultFeatureFlags: FeatureFlags = {
   useAudio: false,
   useFile: false,
   useWs: false,
+  usePoll: false,
 };
 
 function objectToParams(obj: Record<string, any> | undefined): MetadataParam[] {
@@ -562,6 +564,15 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                   type="checkbox"
                   checked={!!featureFlags.useWs}
                   onChange={(e) => handleFeatureFlagChange('useWs', e.target.checked)}
+                  style={{ width: 20, height: 20, cursor: 'pointer' }}
+                />
+              </div>
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Use Heartbeat Polling</label>
+                <input
+                  type="checkbox"
+                  checked={!!featureFlags.usePoll}
+                  onChange={(e) => handleFeatureFlagChange('usePoll', e.target.checked)}
                   style={{ width: 20, height: 20, cursor: 'pointer' }}
                 />
               </div>

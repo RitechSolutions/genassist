@@ -47,6 +47,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
   nodeId,
 }) => {
   const [formData, setFormData] = useState<Record<string, string>>({});
+  const [fieldTypes, setFieldTypes] = useState<Record<string, SchemaType>>({});
   const [output, setOutput] = useState<string | Record<string, unknown> | null>(
     null
   );
@@ -57,6 +58,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     string,
     unknown
   > | null>(null);
+
+  const SCHEMA_TYPES: SchemaType[] = ["string", "number", "boolean", "object", "array", "any"];
 
   const { updateNodeOutput, getAvailableDataForNode, getNodeOutput } =
     useWorkflowExecution();
@@ -94,7 +97,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
               label: variable,
               type: "string",
               placeholder: `Enter ${variable}`,
-              required: true,
+              required: false,
               defaultValue: "",
               source: "config",
             }))
@@ -102,6 +105,13 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
 
       setInputFields(allFields);
       setAvailableData(availableData);
+
+      // Initialize field types from the field definitions
+      const initialTypes: Record<string, SchemaType> = {};
+      allFields.forEach((field) => {
+        initialTypes[field.id] = (field.type as SchemaType) || "string";
+      });
+      setFieldTypes(initialTypes);
 
       // Initialize form data with available data from workflow execution context
       const initialData: Record<string, string> = {};
@@ -208,6 +218,13 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     }));
   };
 
+  const handleTypeChange = (id: string, newType: SchemaType) => {
+    setFieldTypes((prev) => ({
+      ...prev,
+      [id]: newType,
+    }));
+  };
+
   const handleRun = async () => {
     setIsLoading(true);
     setError(null);
@@ -240,22 +257,18 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           }
         }
 
-        // Try to get the schema field type from inputSchema
-        let fieldType: SchemaType = field.type as SchemaType;
-        if (inputSchema && field.id in inputSchema) {
-          const schemaField = inputSchema[field.id] as SchemaField;
-          fieldType = schemaField.type;
-        }
+        // Use the user-selected type from the dropdown
+        const selectedType: SchemaType = fieldTypes[field.id] || "string";
 
         // Parse the value based on its type
         try {
-          parsedData[field.id] = parseInputValue(value || "", fieldType);
+          parsedData[field.id] = parseInputValue(value || "", selectedType);
         } catch (err) {
           // If parsing fails, validate JSON for object/array types
-          if (fieldType === "object" || fieldType === "array") {
+          if (selectedType === "object" || selectedType === "array") {
             try {
               JSON.parse(value);
-              parsedData[field.id] = value; // Keep as string if JSON is valid but parsing failed
+              parsedData[field.id] = value;
             } catch (jsonErr) {
               setError(`Invalid JSON in field "${field.label}"`);
               setIsLoading(false);
@@ -327,118 +340,110 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
             {inputFields.length > 0 ? (
               <div className="space-y-4">
                 <Label>Input Variables</Label>
-                {inputFields.map((field) => (
-                  <div key={field.id} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor={field.id}>
-                        {field.label}
-                        {field.required && (
-                          <span className="text-red-500 ml-1">*</span>
-                        )}
-                      </Label>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                          {field.source || "config"}
-                        </span>
-                        {availableData &&
-                          getValueFromPath(availableData, field.id) !==
-                            undefined && (
+                {inputFields.map((field) => {
+                  const currentType = fieldTypes[field.id] || "string";
+                  const isPrefilled = availableData && getValueFromPath(availableData, field.id) !== undefined;
+
+                  return (
+                    <div key={field.id} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor={field.id}>
+                          {field.label}
+                          {field.required && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                        </Label>
+                        <div className="flex items-center space-x-2">
+                          <select
+                            value={currentType}
+                            onChange={(e) =>
+                              handleTypeChange(field.id, e.target.value as SchemaType)
+                            }
+                            className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                            disabled={isLoading}
+                          >
+                            {SCHEMA_TYPES.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                            {field.source || "config"}
+                          </span>
+                          {isPrefilled && (
                             <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
                               Prefilled
                             </span>
                           )}
+                        </div>
                       </div>
-                    </div>
-                    {field.type === "textarea" || field.type === "text" ? (
-                      <Textarea
-                        id={field.id}
-                        placeholder={field.placeholder}
-                        value={formData[field.id] || ""}
-                        onChange={(e) =>
-                          handleInputChange(field.id, e.target.value)
-                        }
-                        disabled={isLoading}
-                        className={`flex-1 ${
-                          availableData &&
-                          getValueFromPath(availableData, field.id) !==
-                            undefined
-                            ? "border-blue-300 bg-blue-50"
-                            : ""
-                        }`}
-                      />
-                    ) : field.type === "boolean" ? (
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
+                      {currentType === "boolean" ? (
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={field.id}
+                            checked={formData[field.id] === "true"}
+                            onCheckedChange={(checked) =>
+                              handleInputChange(
+                                field.id,
+                                checked ? "true" : "false"
+                              )
+                            }
+                            disabled={isLoading}
+                          />
+                          <Label
+                            htmlFor={field.id}
+                            className="text-sm font-normal"
+                          >
+                            {field.placeholder || `Enable ${field.label}`}
+                          </Label>
+                        </div>
+                      ) : currentType === "object" || currentType === "array" ? (
+                        <div className="space-y-2">
+                          <Textarea
+                            id={field.id}
+                            placeholder={
+                              field.placeholder ||
+                              `Enter ${
+                                currentType === "object"
+                                  ? "JSON object"
+                                  : "JSON array"
+                              }`
+                            }
+                            value={formData[field.id] || ""}
+                            onChange={(e) =>
+                              handleInputChange(field.id, e.target.value)
+                            }
+                            disabled={isLoading}
+                            className={`flex-1 font-mono text-xs ${
+                              isPrefilled ? "border-blue-300 bg-blue-50" : ""
+                            }`}
+                            rows={3}
+                          />
+                          <p className="text-xs text-gray-500">
+                            {currentType === "object"
+                              ? 'Enter a valid JSON object (e.g., {"key": "value"})'
+                              : 'Enter a valid JSON array (e.g., ["item1", "item2"])'}
+                          </p>
+                        </div>
+                      ) : (
+                        <Input
                           id={field.id}
-                          checked={formData[field.id] === "true"}
-                          onCheckedChange={(checked) =>
-                            handleInputChange(
-                              field.id,
-                              checked ? "true" : "false"
-                            )
-                          }
-                          disabled={isLoading}
-                        />
-                        <Label
-                          htmlFor={field.id}
-                          className="text-sm font-normal"
-                        >
-                          {field.placeholder || `Enable ${field.label}`}
-                        </Label>
-                      </div>
-                    ) : field.type === "object" || field.type === "array" ? (
-                      <div className="space-y-2">
-                        <Textarea
-                          id={field.id}
-                          placeholder={
-                            field.placeholder ||
-                            `Enter ${
-                              field.type === "object"
-                                ? "JSON object"
-                                : "JSON array"
-                            }`
-                          }
+                          type={currentType === "number" ? "number" : "text"}
+                          placeholder={field.placeholder}
                           value={formData[field.id] || ""}
                           onChange={(e) =>
                             handleInputChange(field.id, e.target.value)
                           }
                           disabled={isLoading}
-                          className={`flex-1 font-mono text-xs ${
-                            availableData &&
-                            getValueFromPath(availableData, field.id) !==
-                              undefined
-                              ? "border-blue-300 bg-blue-50"
-                              : ""
+                          className={`flex-1 ${
+                            isPrefilled ? "border-blue-300 bg-blue-50" : ""
                           }`}
-                          rows={3}
                         />
-                        <p className="text-xs text-gray-500">
-                          {field.type === "object"
-                            ? 'Enter a valid JSON object (e.g., {"key": "value"})'
-                            : 'Enter a valid JSON array (e.g., ["item1", "item2"])'}
-                        </p>
-                      </div>
-                    ) : (
-                      <Input
-                        id={field.id}
-                        type={field.type === "number" ? "number" : "text"}
-                        placeholder={field.placeholder}
-                        value={formData[field.id] || ""}
-                        onChange={(e) =>
-                          handleInputChange(field.id, e.target.value)
-                        }
-                        disabled={isLoading}
-                        className={`flex-1 ${
-                          availableData &&
-                          getValueFromPath(availableData, field.id) !==
-                            undefined
-                            ? "border-blue-300 bg-blue-50"
-                            : ""
-                        }`}
-                      />
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="text-sm text-gray-500 italic">

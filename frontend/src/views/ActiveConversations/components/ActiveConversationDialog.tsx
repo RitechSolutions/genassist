@@ -32,8 +32,7 @@ import { formatDuration, formatMessageTime, formatDateTime } from "../helpers/fo
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { Textarea } from "@/components/textarea";
 import { submitConversationFeedback } from "@/services/transcripts";
-import { apiRequest, isWsEnabled } from "@/config/api";
-import { BackendTranscript } from "@/interfaces/transcript.interface";
+import { isWsEnabled } from "@/config/api";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
 import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
 
@@ -105,14 +104,18 @@ function TranscriptDialogContent({
   const feedbackCacheRef = useRef<Map<string, ConversationFeedbackEntry>>(
     new Map()
   );
+  const transcriptMessages = useMemo(() => {
+    const raw = transcript?.messages ?? transcript?.transcript;
+    return Array.isArray(raw) ? raw : [];
+  }, [transcript?.messages, transcript?.transcript]);
+
   const hasSupervisorTakeover = useMemo(() => {
     if (!transcript) return false;
     return (
       transcript.status === "takeover" ||
-      ((transcript.messages ?? transcript.transcript) ?? []).some((entry) => entry.type === "takeover")
+      transcriptMessages.some((entry) => entry.type === "takeover")
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript?.status, transcript?.transcript]);
+  }, [transcript?.status, transcriptMessages]);
 
   const [hasTakenOver, setHasTakenOver] = useState(hasSupervisorTakeover);
   const [userInitiatedTakeOver, setUserInitiatedTakeOver] = useState(false);
@@ -120,7 +123,7 @@ function TranscriptDialogContent({
   const [loading, setLoading] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [localMessages, setLocalMessages] = useState<TranscriptEntry[]>(
-    (transcript?.messages ?? transcript?.transcript) || []
+    () => transcriptMessages
   );
   const [sentMessages, setSentMessages] = useState<TranscriptEntry[]>([]);
   const isSendingRef = useRef(false);
@@ -180,14 +183,13 @@ function TranscriptDialogContent({
   const {
     messages: wsMessages,
     isConnected,
-    sendMessage,
     statistics,
   } = useWebSocketTranscript(
     shouldInitWebSocket
       ? {
           conversationId: transcript.id,
           token,
-          transcriptInitial: (transcript?.messages ?? transcript?.transcript) || [],
+          transcriptInitial: transcriptMessages,
         }
       : {
           conversationId: "",
@@ -316,70 +318,11 @@ function TranscriptDialogContent({
     // Do not clear when backend lacks feedback; use cached value if present
   }, [isOpen, feedbackCount]);
 
-  // Fetch conversation by id to hydrate feedback if not present on the provided transcript
-  useEffect(() => {
-    if (!isOpen || !transcript?.id) return;
-    if (userFeedback) return;
-    (async () => {
-      try {
-        const raw = await apiRequest<BackendTranscript>(
-          "get",
-          `/conversations/${transcript.id}`
-        );
-        if (!raw) return;
-        let fb: ConversationFeedbackEntry[] | undefined;
-        if ((raw as unknown as { feedback?: unknown }).feedback) {
-          const f = (raw as unknown as { feedback?: unknown })
-            .feedback as unknown;
-          if (typeof f === "string") {
-            try {
-              const parsed = JSON.parse(f);
-              if (Array.isArray(parsed))
-                fb = parsed as ConversationFeedbackEntry[];
-            } catch {}
-          } else if (Array.isArray(f)) {
-            fb = f as ConversationFeedbackEntry[];
-          }
-        }
-        if (fb && fb.length > 0) {
-          const latest = fb[fb.length - 1];
-          setUserFeedback(latest);
-          try {
-            feedbackCacheRef.current.set(transcript.id, latest);
-          } catch {}
-        }
-      } catch {}
-    })();
-  }, [isOpen, transcript?.id, userFeedback]);
-
-  useEffect(() => {
-    if (isOpen && transcript) {
-      const baseMessages = [...(((transcript.messages ?? transcript.transcript) || []))];
-
-      for (const sentMsg of sentMessages) {
-        if (
-          !baseMessages.some(
-            (msg) =>
-              msg.text === sentMsg.text &&
-              toEpochMs(msg.create_time) === toEpochMs(sentMsg.create_time)
-          )
-        ) {
-          baseMessages.push(sentMsg);
-        }
-      }
-
-      setLocalMessages(baseMessages);
-
-      if (hasTakenOver) {
-        setIsThinking(false);
-      }
-    }
-  }, [isOpen, transcript, sentMessages, hasTakenOver]);
-
   useEffect(() => {
     if (!isOpen) return;
 
-    const currentMsgs = [...localMessages];
+    // Base messages from transcript (so refetched data from parent is always used)
+    const currentMsgs: TranscriptEntry[] = [...transcriptMessages];
 
     if (wsMessages.length > 0) {
       for (const msg of wsMessages) {
@@ -461,8 +404,7 @@ function TranscriptDialogContent({
           currentMsgs.some((msg) => msg.type === "takeover")
       );
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsMessages, messages, sentMessages, isOpen, userInitiatedTakeOver]);
+  }, [transcriptMessages, transcript, wsMessages, messages, sentMessages, isOpen, userInitiatedTakeOver]);
 
   useEffect(() => {
     if (scrollRef.current) {
