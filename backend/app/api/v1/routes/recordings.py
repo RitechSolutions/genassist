@@ -110,7 +110,8 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
 
     # Reconstruct path from trusted base + validated relative portion to break taint chain
     safe_serving_path = str(recordings_base / resolved_path.relative_to(recordings_base))
-    return FileResponse(safe_serving_path)
+    response = FileResponse(safe_serving_path)
+    return response
 
 
 @router.get("/metrics", dependencies=[

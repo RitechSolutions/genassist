@@ -86,7 +86,7 @@ async def create_pipeline_config(
     """Create a new pipeline configuration."""
     # Ensure model_id matches
     config_data.model_id = model_id
-    
+
     try:
         return await service.create(config_data)
     except AppException as e:
@@ -196,7 +196,7 @@ async def create_pipeline_run(
     """Create and execute a new pipeline run."""
     try:
         run = await service.create(model_id, run_data)
-        
+
         # Queue async execution using Celery app from request
         try:
             celery_app = request.app.celery_app
@@ -218,7 +218,7 @@ async def create_pipeline_run(
                 logger.error(f"Error in fallback task queueing: {str(fallback_error)}", exc_info=True)
                 # Don't fail the request, but log the error
                 # The run is created, it just won't execute automatically
-        
+
         return run
     except AppException as e:
         if e.error_key == ErrorKey.ML_MODEL_NOT_FOUND:
@@ -353,11 +353,13 @@ async def download_artifact(
 
         # Reconstruct path from trusted base + validated relative portion to break taint chain
         safe_serving_path = str(data_volume_base / resolved_artifact_path.relative_to(data_volume_base))
-        return FileResponse(
+
+        response = FileResponse(
             path=safe_serving_path,
             filename=artifact.artifact_name,
             media_type=media_type
         )
+        return response
     except HTTPException:
         raise
     except AppException as e:
