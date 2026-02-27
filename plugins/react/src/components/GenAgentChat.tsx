@@ -429,6 +429,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
     } catch (error) {
       // ignore
+    } finally {
+      // Refocus the input field
+      setTimeout(() => textAreaRef.current?.focus(), 0);
     }
   };
 
@@ -891,6 +894,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     padding: 0,
   };
 
+  const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping;
+
   const sendButtonStyle: React.CSSProperties = {
     backgroundColor: primaryColor,
     color: '#ffffff',
@@ -905,6 +910,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     outline: 'none',
     flexShrink: 0,
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
+  };
+
+  const sendButtonDisabledStyle: React.CSSProperties = {
+    backgroundColor: '#d1d5db',
+    cursor: 'not-allowed',
+    opacity: 0.8,
   };
 
   const rightActionContainerStyle: React.CSSProperties = {
@@ -1153,6 +1164,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           box-sizing: border-box;
         }
         .ga-textarea-nosb::-webkit-scrollbar { width: 0; height: 0; }
+        /* Disclaimer links color */
+        .ga-input-disclaimer a {
+          color: #9ca3af !important;
+          text-decoration: underline;
+        }
+        .ga-input-disclaimer a:hover {
+          color: #6b7280 !important;
+        }
         /* Prevent zoom on mobile - ensure minimum 16px font size */
         @media (max-width: 768px) {
           .ga-textarea-nosb {
@@ -1569,8 +1588,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 ) : (
                   <button
                     type="submit"
-                    style={sendButtonStyle}
-                    disabled={(inputValue.trim() === '' && attachments.length === 0) || isAgentTyping}
+                    style={{ ...sendButtonStyle, ...(isSendDisabled ? sendButtonDisabledStyle : {}) }}
+                    disabled={isSendDisabled}
                   >
                     <ArrowUp size={18} strokeWidth={3} color="#ffffff" />
                   </button>
@@ -1579,7 +1598,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             </div>
 
             {inputDisclaimer && (
-              <div style={disclaimerStyle}>
+              <div className="ga-input-disclaimer" style={disclaimerStyle}>
                 {inputDisclaimer}
               </div>
             )}
