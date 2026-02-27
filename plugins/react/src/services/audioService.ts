@@ -19,7 +19,11 @@ export class AudioService {
 
   constructor(config: AudioServiceConfig) {
     this.baseUrl = config.baseUrl;
-    this.websocketUrl = config.websocketUrl;
+    if (!this.websocketUrl) {
+      this.websocketUrl = this.baseUrl.replace("http", "ws");
+    } else {
+      this.websocketUrl = config.websocketUrl?.endsWith("/") ? config.websocketUrl?.slice(0, -1) : config.websocketUrl;
+    }
     this.apiKey = config.apiKey;
     this.guestToken = config.guestToken || null;
   }
@@ -38,7 +42,7 @@ export class AudioService {
       this.audioChunks = [];
 
       // Build WebSocket URL with proper authentication
-      const wsBase = this.websocketUrl || this.baseUrl.replace('http', 'ws');
+      const wsBase = this.websocketUrl;
       // Use guest_token if available, otherwise fall back to api_key
       const authParam = this.guestToken
         ? `access_token=${encodeURIComponent(this.guestToken)}`

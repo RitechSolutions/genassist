@@ -58,9 +58,10 @@ export class ChatService {
     usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-    this.websocketUrl = websocketUrl?.endsWith("/") ? websocketUrl?.slice(0, -1) : websocketUrl;
     if (!this.websocketUrl) {
       this.websocketUrl = this.baseUrl.replace("http", "ws");
+    } else {
+      this.websocketUrl = websocketUrl?.endsWith("/") ? websocketUrl?.slice(0, -1) : websocketUrl;
     }
     this.apiKey = apiKey;
     this.metadata = metadata;
