@@ -268,8 +268,13 @@ def create_celery():
             "fanout_prefix": True,
             "fanout_patterns": True,
             "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit broker connection pool
+            "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
+        },
+        result_backend_transport_options={
+            "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
         },
         redis_max_connections=settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit result backend connection pool
+        worker_enable_mingle=False,  # Disable mingle to avoid cross-slot errors on startup
         task_serializer="json",
         accept_content=["json"],
         result_serializer="json",
