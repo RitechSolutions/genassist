@@ -128,7 +128,7 @@ class WhisperOptions(BaseModel):
             description="Patience value for beam decoding"
             )
 
-@app.post("/transcribe")
+@app.post("/transcribe-old")
 async def transcribe(file: UploadFile = File(...),
                      whisper_options: Optional[str] = Form(None),
                      model_name: Optional[str] = DEFAULT_WHISPER_MODEL,
@@ -375,7 +375,7 @@ async def transcribe_audio_whisper_chunked(
 
 
 # Endpoint for chunked transcription of long audio files with the same options as the regular endpoint
-@app.post("/transcribe-long")
+@app.post("/transcribe")
 async def transcribe(
     file: UploadFile = File(...),
     whisper_options: Optional[str] = Form(None),

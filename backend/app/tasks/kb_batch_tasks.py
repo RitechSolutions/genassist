@@ -7,13 +7,15 @@ from queue import Full
 from typing import Optional
 
 from aiohttp import ClientError
+from app.modules.data.providers.vector.chunking.base import ChunkConfig
+from app.modules.data.manager import AgentRAGServiceManager
 from celery import shared_task
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import null, true
 
 from app.db.seed.seed_data_config import SeedTestData
 from app.dependencies.injector import injector
-from app.modules.data.providers.vector.chunking import recursive
+from app.modules.data.providers.vector.chunking.recursive import RecursiveChunker
 from app.modules.data.utils.file_extractor import FileTextExtractor
 from app.schemas.recording import RecordingCreate
 from app.services.agent_knowledge import KnowledgeBaseService
@@ -51,7 +53,7 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
     dsService = injector.get(DataSourceService)
     llmService = injector.get(LlmAnalystService)
     kbService = injector.get(KnowledgeBaseService)
-
+    agentRAGServiceManager = injector.get(AgentRAGServiceManager)
     # If kb_id is provided, process only that KB's datasource; otherwise, process all active Azure Blob datasources
     kb_items = []
     if kb_id:
@@ -150,6 +152,7 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
             for s3_file in s3_files.get("files", []):
                 if s3_file.get("size", 0) == 0:
                     logger.info(f"Skipping empty file: {s3_file['key']}")
+                    count_skipped += 1
                     continue
                 file_content = await s3_download_file(
                     api_key = keyid_username, 
@@ -158,34 +161,49 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
                     bucket_name = bucket_server, 
                     item = s3_file["key"]
                 )
+                count_success += 1
 
-                print(f"Downloaded file {s3_file['key']} with size {s3_file['size']} bytes")
+                logger.info(f"Downloaded file {s3_file['key']} with size {s3_file['size']} bytes")
 
                 extracted_content = await get_content_from_file(mode=processing_mode, file=file_content)
 
-                print(f"Extracted Content for file {s3_file['key']}: \n\n{extracted_content}")
-
-                # if RAG enabled, chunk and vectorize content, and save to vector database
+                # # if RAG enabled, chunk and vectorize content, and save to vector database
                 if vector_enabled and extracted_content.get("content", None):
-                    chunks = []
-                    if chunk_strategy == "recursive":
-                        separators = [s.strip() for s in chunk_separators.split(",")]
-                        chunks = recursive(
-                            text=extracted_content["content"],
-                            chunk_size=chunk_size,
-                            chunk_overlap=chunk_overlap,
-                            separators=separators,
-                            keep_separator=chunk_keep_separator,
-                            strip_whitespace=chunk_strip_whitespace
-                        )
-                    else:
-                        logger.warning(f"Unsupported chunk strategy: {chunk_strategy}. Skipping chunking.")
-                        chunks = [extracted_content["content"]]
-
-                    ###### Add other chunking strategies here (semantic, simple, etc.) ######
 
                     # Vectorize chunks and save to vector database
+                    rag_service = await agentRAGServiceManager.get_service(kb_item)
+                    rag_doc_id = "KB:" + str(kb_item.id) + "#" + extracted_content.get("file_name", "unknown_file")
+                    rag_doc_metadata = extracted_content.get("metadata", {})
+                    logger.info(f"Adding document {rag_doc_id} to RAG service for KB {kb_item.id}\nMetadata: {rag_doc_metadata}")
 
+                    rag_doc_metadata["name"]= extracted_content.get("file_name", "unknown_file")
+                    rag_doc_metadata["description"]= f"File in {kb_item.name} from S3 source {ds_item.name}"
+                    rag_doc_metadata["kb_id"] = str(kb_item.id),
+
+                    # Add to knowledge base using simplified manager
+                    res = await rag_service.add_document(
+                        # kb_item, 
+                        rag_doc_id, 
+                        extracted_content["content"], 
+                        rag_doc_metadata,
+                    )
+                    logger.info(f"Document {extracted_content.get('file_name', 'unknown_file')} processed with result: {res}")
+                # Move file to processed folder or delete file after processing based on KB configuration
+                if save_output_path:
+
+                    timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
+                    destination_key = save_output_path.rstrip("/") + "/" + timestamp_str + "_" + s3_file["key"].split("/")[-1]
+
+                    await s3_move_file(
+                        api_key = keyid_username,
+                        api_secret = secret_password,
+                        region = region,
+                        bucket_name = bucket_server,
+                        item = s3_file["key"],
+                        destination = destination_key
+                    )
+                 
+            logger.info(f"Finished processing S3 datasource {ds_item.name} for KB {kb_item.name}\n - {count_success} files processed, \n - {count_skipped} files skipped, and \n - {count_fail} failures.")
 
 
 
@@ -355,7 +373,34 @@ async def s3_download_file(
     except ClientError as e:
         raise Exception(f"S3 download failed: {str(e)}")
     
+#####################
+async def s3_move_file(
+    api_key: str,
+    api_secret: str,
+    region: str,
+    bucket_name: str,
+    item: str, 
+    destination: str
+):
+    try:
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=api_key,
+            aws_secret_access_key=api_secret,
+            region_name=region
+        )
+        s3_client.copy_object(
+            Bucket=bucket_name,
+            CopySource={'Bucket': bucket_name, 'Key': item},
+            Key=destination
+        )
+        logger.info(f"Copied processed file {item} to {destination}")
 
+        # Delete original file after copying (MOVE Logic)
+        s3_client.delete_object(Bucket=bucket_name, Key=item)
+        logger.info(f"Deleted original file {item} after processing")
+    except ClientError as e:
+        raise Exception(f"S3 move failed: {str(e)}")
 
 ############################################
 #  Helper that returns content from the file based on processing mode (none, extract, transcribe, etc.)
@@ -381,8 +426,14 @@ async def get_content_from_file(mode: str, file):
         result = {
                 "file_name": file.name,
                 "file_size": file.length,
-                "last_modified": file.last_modified,
-                "content": None
+                "last_modified": file.last_modified.astimezone(timezone.utc).isoformat() if file.last_modified else None,
+                "content": None,
+                "metadata" :{
+                    "file_name": file.filename,
+                    "file_size": file.length,
+                    "last_modified": file.last_modified.astimezone(timezone.utc).isoformat() if file.last_modified else None,
+                    "extracttion_mode": mode,
+                }
         }
         # Ensure file pointer is at beginning
         if hasattr(file, "seek"):
@@ -413,7 +464,20 @@ async def get_content_from_file(mode: str, file):
             )
             transcribed_recording = await transcribe_audio_whisper(the_file)
            
-            result["content"] = transcribed_recording
+            result["content"] = transcribed_recording.get("text", "")
+            result["file_name"] = file.filename
+            result["file_size"] = file.length
+            result["last_modified"] = file.last_modified.astimezone(timezone.utc).isoformat() if file.last_modified else None,
+            result["metadata"] = {
+                "file_name": file.filename,
+                "file_size": file.length,
+                "last_modified": file.last_modified.astimezone(timezone.utc).isoformat() if file.last_modified else None,
+                "audio_duration": transcribed_recording.get("audio_duration", None),
+                "processing_time": transcribed_recording.get("processing_time", None),
+                "model_name": transcribed_recording.get("model_name", None),
+                "device": transcribed_recording.get("device", None)
+            }
+
 
             return result
 
