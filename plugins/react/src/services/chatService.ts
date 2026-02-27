@@ -17,6 +17,7 @@ export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_update
 
 export class ChatService {
   private baseUrl: string;
+  private websocketUrl: string | undefined;
   private apiKey: string;
   private metadata: Record<string, any> | undefined;
   private conversationId: string | null = null;
@@ -48,6 +49,7 @@ export class ChatService {
 
   constructor(
     baseUrl: string,
+    websocketUrl: string | undefined,
     apiKey: string,
     metadata?: Record<string, any>,
     tenant?: string,
@@ -56,6 +58,10 @@ export class ChatService {
     usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+    this.websocketUrl = websocketUrl?.endsWith("/") ? websocketUrl?.slice(0, -1) : websocketUrl;
+    if (!this.websocketUrl) {
+      this.websocketUrl = this.baseUrl.replace("http", "ws");
+    }
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
@@ -736,7 +742,7 @@ export class ChatService {
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
 
     // Build WebSocket URL with proper authentication
-    const wsBase = this.baseUrl.replace("http", "ws");
+    const wsBase = this.websocketUrl || this.baseUrl.replace("http", "ws");
     const topics = ["message", "takeover", "finalize"];
     const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
 

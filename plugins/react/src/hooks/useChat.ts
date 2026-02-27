@@ -9,6 +9,7 @@ import {
 
 export interface UseChatProps {
   baseUrl: string;
+  websocketUrl?: string;
   apiKey: string;
   tenant?: string | undefined;
   metadata?: Record<string, any>;
@@ -48,6 +49,7 @@ function isNetworkOrServerError(error: any): boolean {
 
 export const useChat = ({
   baseUrl,
+  websocketUrl,
   apiKey,
   tenant,
   metadata,
@@ -219,6 +221,7 @@ export const useChat = ({
 
       chatServiceRef.current = new ChatService(
         baseUrl,
+        websocketUrl,
         apiKey,
         metadata,
         tenant,

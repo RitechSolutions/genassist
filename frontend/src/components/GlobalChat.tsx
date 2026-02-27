@@ -7,6 +7,7 @@ export const GlobalChat = () => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const genassistApiKey = import.meta.env.VITE_GENASSIST_CHAT_APIKEY;
+  const websocketUrl = import.meta.env.VITE_WEBSOCKET_PUBLIC_URL;
 
   useEffect(() => {
     (async () => {
@@ -29,6 +30,7 @@ export const GlobalChat = () => {
   return (
     <GenAgentChat
       baseUrl={baseUrl}
+      websocketUrl={websocketUrl}
       apiKey={genassistApiKey}
       tenant={undefined}
       headerTitle="Genassist Chat"

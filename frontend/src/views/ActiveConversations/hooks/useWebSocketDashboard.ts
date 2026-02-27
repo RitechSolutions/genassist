@@ -33,7 +33,7 @@ export function useWebSocketDashboard({
       const topicsQuery = topics.map(t => `topics=${t}`).join("&");
       const tenant = getTenantId();
       const tenantParam = tenant ? `&x-tenant-id=${tenant}` : "";
-      const wsUrl = `${wsBaseUrl}/conversations/ws/dashboard/list?access_token=${token}&lang=${lang}&${topicsQuery}${tenantParam}`;
+      const wsUrl = `${wsBaseUrl}/ws/dashboard/list?access_token=${token}&lang=${lang}&${topicsQuery}${tenantParam}`;
 
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
@@ -47,6 +47,12 @@ export function useWebSocketDashboard({
       socket.onmessage = (event) => {
         try {
           const data: DashboardWebSocketMessage = JSON.parse(event.data);
+
+          // Respond to server-side heartbeat pings
+          if ((data as unknown as { type: string }).type === "ping") {
+            socket.send(JSON.stringify({ type: "pong" }));
+            return;
+          }
 
           const applyCachedTopic = (conv: ActiveConversation): ActiveConversation => {
             const provided = (conv.topic || "").trim();
@@ -225,9 +231,10 @@ export function useWebSocketDashboard({
 
       socket.onclose = () => {
         setIsConnected(false);
-        if (reconnectAttempts.current < 5) {
+        if (reconnectAttempts.current < 10) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
           reconnectAttempts.current++;
-          setTimeout(connect, Math.min(1000 * reconnectAttempts.current, 10000));
+          setTimeout(connect, delay);
         } else {
           setError(new Error("Failed to reconnect"));
         }

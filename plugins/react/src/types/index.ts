@@ -102,6 +102,7 @@ export type ChatContentBlock =
 // Props for the GenAgentChat component
 export interface GenAgentChatProps {
   baseUrl: string;
+  websocketUrl?: string;
   apiKey: string;
   tenant: string | undefined;
   metadata?: Record<string, any>; // For passing user information or other metadata

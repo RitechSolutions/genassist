@@ -86,7 +86,7 @@ services:
     image: ghcr.io/chroma-core/chroma:1.3.7
     container_name: genassist-chroma
     ports:
-      - "8005:8000" 
+      - "8005:8000"
     volumes:
       - chroma_data:/chroma/chroma
     environment:
@@ -121,6 +121,9 @@ services:
     ports:
       - "6379:6379"
     environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     healthcheck:
       test: ["CMD", "sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
@@ -151,7 +154,6 @@ services:
     networks:
       - genassist-network
     restart: unless-stopped
-
   # Celery beat for periodic tasks
   celery_beat:
     image: ghcr.io/ritechsolutions/genassist-backend:latest
@@ -193,6 +195,36 @@ services:
       celery_worker:
         condition: service_started
       db:
+        condition: service_started
+    networks:
+      - genassist-network
+    restart: unless-stopped
+
+  # WebSocket service (standalone relay)
+  # Builds from ./websocket when image is not available (e.g. local dev or first run)
+  websocket:
+    build:
+      context: ./websocket
+      dockerfile: Dockerfile
+    image: ghcr.io/ritechsolutions/genassist-websocket:latest
+    container_name: genassist-ws
+    ports:
+      - "8002:8002"
+    env_file:
+      - ./websocket/.env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - BACKEND_URL=http://app:8000
+      - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET}
+      - WS_PORT=8002
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_started
+      app:
         condition: service_started
     networks:
       - genassist-network

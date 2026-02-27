@@ -2,12 +2,14 @@ import { createWebSocket } from '../utils/websocket';
 
 interface AudioServiceConfig {
   baseUrl: string;
+  websocketUrl: string | undefined;
   apiKey: string;
   guestToken?: string;
 }
 
 export class AudioService {
   private baseUrl: string;
+  private websocketUrl: string | undefined;
   private apiKey: string;
   private guestToken: string | null = null;
   private ws: WebSocket | null = null;
@@ -17,6 +19,7 @@ export class AudioService {
 
   constructor(config: AudioServiceConfig) {
     this.baseUrl = config.baseUrl;
+    this.websocketUrl = config.websocketUrl;
     this.apiKey = config.apiKey;
     this.guestToken = config.guestToken || null;
   }
@@ -35,9 +38,9 @@ export class AudioService {
       this.audioChunks = [];
 
       // Build WebSocket URL with proper authentication
-      const wsBase = this.baseUrl.replace('http', 'ws');
+      const wsBase = this.websocketUrl || this.baseUrl.replace('http', 'ws');
       // Use guest_token if available, otherwise fall back to api_key
-      const authParam = this.guestToken 
+      const authParam = this.guestToken
         ? `access_token=${encodeURIComponent(this.guestToken)}`
         : `api_key=${encodeURIComponent(this.apiKey)}`;
       const wsUrl = `${wsBase}/api/voice/audio/tts?${authParam}`;
@@ -82,19 +85,19 @@ export class AudioService {
   async playAudio(audioBlob: Blob): Promise<void> {
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
-    
+
     return new Promise((resolve, reject) => {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         resolve();
       };
-      
+
       audio.onerror = (error) => {
         URL.revokeObjectURL(audioUrl);
         reject(error);
       };
-      
+
       audio.play().catch(reject);
     });
   }
-} 
+}
