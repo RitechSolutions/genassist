@@ -135,6 +135,17 @@ services:
       - genassist-network
 
   # ===========================================================================
+  # WEBSOCKET SERVICE
+  # ===========================================================================
+  websocket:
+    image: ${WS_IMAGE:-ghcr.io/ritechsolutions/genassist-websocket:latest}
+    container_name: genassist-ws
+    ports:
+      - "${WS_PORT_EXTERNAL:-8002}:8002"
+    networks:
+      - genassist-network
+
+  # ===========================================================================
   # MONITORING
   # ===========================================================================
   flower:
