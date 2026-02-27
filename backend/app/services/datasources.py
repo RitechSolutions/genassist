@@ -157,7 +157,6 @@ class DataSourceService:
 
         try:
             # if file path is a URL, download the file to a temporary file
-            # if file path is a URL, download the file to a temporary file
             if file_path.startswith("http://") or file_path.startswith("https://"):
                 from app.dependencies.injector import injector
                 from app.services.file_manager import FileManagerService
