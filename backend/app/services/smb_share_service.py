@@ -119,7 +119,7 @@ class SMBShareFSService:
         return resolved_path
 
     def _smb_abspath(self, subpath: str) -> str:
-        """
+        r"""
         Build a UNC path like: \host\share\sub\path
         Use smbclient.path.join to be safe across OSes.
         """
