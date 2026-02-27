@@ -1,6 +1,7 @@
 import os
 import base64
 from uuid import UUID
+import uuid
 from injector import inject
 
 from app.db.models import DataSourceModel
@@ -32,7 +33,7 @@ class DataSourceService:
         self.repository = repository
 
     async def create(self, datasource: DataSourceCreate):
-        datasource.connection_data = self.extract_private_key(
+        datasource.connection_data = await self.extract_private_key(
             datasource.connection_data
         )
         datasource.connection_data = await self.encrypt_connection_data_fields(
@@ -61,7 +62,7 @@ class DataSourceService:
         update_data = datasource_update.model_dump(exclude_unset=True)
 
         if "connection_data" in update_data:
-            update_data["connection_data"] = self.extract_private_key(
+            update_data["connection_data"] = await self.extract_private_key(
                 update_data["connection_data"]
             )
 
@@ -144,7 +145,7 @@ class DataSourceService:
                     )
         return connection_data
 
-    def extract_private_key(self, connection_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def extract_private_key(self, connection_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Reads content from 'private_key_file', stores it in 'private_key',
         and removes the source file and file path property.
@@ -155,6 +156,18 @@ class DataSourceService:
             return connection_data
 
         try:
+            # if file path is a URL, download the file to a temporary file
+            if file_path.startswith("http://") or file_path.startswith("https://"):
+                from app.dependencies.injector import injector
+                from app.services.file_manager import FileManagerService
+                file_manager_service = injector.get(FileManagerService)
+
+                # store the file to a temporary folder
+                temp_file_path = f"/tmp/{uuid.uuid4()}.p8"
+                await file_manager_service.download_file_from_url_to_path(file_path, temp_file_path)
+                # set the file path to the temporary file path
+                file_path = temp_file_path
+
             # Read file content
             if os.path.exists(file_path):
                 with open(file_path, "r") as f:
