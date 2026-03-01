@@ -11,7 +11,15 @@ import { NodeData } from "@/views/AIAgents/Workflows/types/nodes";
 const BASE = "genagent/workflow";
 
 // Get all workflows
-export const getAllWorkflows = () => apiRequest<Workflow[]>("GET", `${BASE}/`);
+export const getAllWorkflows = (params?: { training_only?: boolean }) =>
+  apiRequest<Workflow[]>(
+    "GET",
+    params?.training_only ? `${BASE}/?training_only=true` : `${BASE}/`
+  );
+
+// Get only workflows that contain a Train Model node (for ML model pipeline selection)
+export const getTrainingWorkflows = () =>
+  apiRequest<Workflow[]>("GET", `${BASE}/?training_only=true`);
 
 // Get workflow by ID
 export const getWorkflowById = (id: string) =>

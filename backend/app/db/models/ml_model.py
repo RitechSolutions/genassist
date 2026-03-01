@@ -30,7 +30,6 @@ class MLModel(Base):
     pkl_file: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     pkl_file_id: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     features: Mapped[list] = mapped_column(ARRAY(String), nullable=False)
-    target_variable: Mapped[str] = mapped_column(String(255), nullable=False)
     inference_params: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
@@ -44,5 +43,10 @@ class MLModel(Base):
         back_populates="model",
         cascade="all, delete-orphan"
     )
+
+    @property
+    def pipeline_config_count(self) -> int:
+        """Number of training pipeline configs (for workflow-based models)."""
+        return len(self.pipeline_configs) if self.pipeline_configs else 0
 
 

@@ -100,11 +100,15 @@ async def get_node_dialog_schemas():
     response_model=List[Workflow],
     dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
 )
-async def get_workflows(service: WorkflowService = Injected(WorkflowService)):
+async def get_workflows(
+    training_only: bool = False,
+    service: WorkflowService = Injected(WorkflowService),
+):
     """
-    Get all workflows for the current user
+    Get all workflows for the current user.
+    When training_only=true, returns only workflows that contain a Train Model node.
     """
-    workflows = await service.get_all()
+    workflows = await service.get_all(training_only=training_only)
     return workflows
 
 

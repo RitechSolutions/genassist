@@ -174,6 +174,63 @@ async def upload_pkl_file(
         ) from e
 
 
+@router.post("/analyze-pkl", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.CREATE))
+])
+async def analyze_pkl_file(
+    file: UploadFile = File(...),
+):
+    """
+    Analyze a .pkl file and extract model metadata (model_type, features).
+
+    - Extracts from wrapped format (our trained models) or raw sklearn/XGBoost models
+    - Returns extracted metadata for auto-populating the create model form
+    """
+    from app.core.utils.model_validator import extract_metadata_from_pkl
+
+    if not file.filename or not file.filename.lower().endswith('.pkl'):
+        raise HTTPException(status_code=400, detail="Only .pkl files are allowed")
+
+    try:
+        content = await file.read()
+        if len(content) > MAX_PKL_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File size exceeds maximum of {MAX_PKL_FILE_SIZE // (1024 * 1024)}MB"
+            )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            result = extract_metadata_from_pkl(tmp_path, timeout=15)
+            model_type = result.get("model_type")
+            # Normalize unknown types to "other" for frontend compatibility
+            valid_types = {"xgboost", "random_forest", "linear_regression", "logistic_regression", "other"}
+            if model_type and model_type not in valid_types:
+                model_type = "other"
+            return {
+                "model_type": model_type,
+                "features": result.get("features") or [],
+                "error": result.get("error"),
+            }
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError as e:
+                logger.warning(f"Failed to delete temp file {tmp_path}: {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing pkl file: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error analyzing pkl file: {str(e)}"
+        ) from e
+
+
 @router.get("/cache/stats", dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.READ))

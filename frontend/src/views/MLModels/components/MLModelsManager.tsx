@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import {
   getAllMLModels,
@@ -7,7 +7,11 @@ import {
   updateMLModel,
   deleteMLModel,
   uploadModelFile,
+  analyzePklFile,
 } from "@/services/mlModels";
+import { createPipelineConfig } from "@/services/mlModelPipelines";
+import { getAllWorkflows, createWorkflow } from "@/services/workflows";
+import { Workflow } from "@/interfaces/workflow.interface";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
@@ -20,6 +24,14 @@ import {
   SelectValue,
 } from "@/components/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/label";
+import {
   Upload,
   X,
   Pencil,
@@ -30,8 +42,9 @@ import {
   Trash2,
   Brain,
   FileCode,
-  FileIcon,
   Download,
+  ExternalLink,
+  Workflow as WorkflowIcon,
 } from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -47,17 +60,17 @@ const DEFAULT_FORM_DATA: MLModel = {
   model_type: "xgboost",
   pkl_file: null,
   features: [],
-  target_variable: "",
-  inference_params: {},
 };
 
 const MLModelsManager: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [items, setItems] = useState<MLModel[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [showForm, setShowForm] = useState<boolean>(false);
@@ -70,13 +83,67 @@ const MLModelsManager: React.FC = () => {
   const [editingItem, setEditingItem] = useState<MLModel | null>(null);
   const [formData, setFormData] = useState<MLModel>(DEFAULT_FORM_DATA);
   const [featuresInput, setFeaturesInput] = useState<string>("");
-  const [inferenceParamsKV, setInferenceParamsKV] = useState<
-    { key: string; value: string }[]
-  >([]);
 
+  // Unified create flow: upload pkl OR configure workflow
+  const [sourceType, setSourceType] = useState<"upload" | "workflow">("upload");
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>("");
+  const [cronSchedule, setCronSchedule] = useState<string>("");
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] = useState(false);
+  const [newWorkflowName, setNewWorkflowName] = useState("");
+  const [newWorkflowDescription, setNewWorkflowDescription] = useState("");
+
+  // Fetch on mount and when navigating back to list (e.g. after promote on detail page)
   useEffect(() => {
     fetchItems();
-  }, []);
+  }, [location.pathname]);
+
+  // Fetch workflows when create form is shown
+  useEffect(() => {
+    if (showForm && !editingItem) {
+      fetchWorkflows();
+    }
+  }, [showForm, editingItem]);
+
+  // When a training workflow is selected, extract features and model type from its train model node
+  useEffect(() => {
+    if (!editingItem && sourceType === "workflow" && selectedWorkflowId && workflows.length > 0) {
+      const workflow = workflows.find((w) => w.id === selectedWorkflowId);
+      const trainNode = workflow?.nodes?.find((n) => n.type === "trainModelNode");
+      const nodeData = trainNode?.data as { featureColumns?: string[]; modelType?: string } | undefined;
+      if (nodeData?.featureColumns?.length) {
+        setFormData((prev) => ({
+          ...prev,
+          features: nodeData.featureColumns!,
+          ...(nodeData.modelType &&
+            ["xgboost", "random_forest", "linear_regression", "logistic_regression", "other", "neural_network"].includes(nodeData.modelType) && {
+              model_type: (nodeData.modelType === "neural_network" ? "other" : nodeData.modelType) as MLModel["model_type"],
+            }),
+        }));
+        setFeaturesInput(nodeData.featureColumns!.join(", "));
+        if (nodeData.modelType) {
+          toast.success("Features and model type loaded from workflow");
+        } else {
+          toast.success("Features loaded from workflow");
+        }
+      } else if (nodeData?.modelType && ["xgboost", "random_forest", "linear_regression", "logistic_regression", "other", "neural_network"].includes(nodeData.modelType)) {
+        setFormData((prev) => ({
+          ...prev,
+          model_type: (nodeData.modelType === "neural_network" ? "other" : nodeData.modelType) as MLModel["model_type"],
+        }));
+        toast.success("Model type loaded from workflow");
+      }
+    }
+  }, [selectedWorkflowId, workflows, sourceType, editingItem]);
+
+  const fetchWorkflows = async () => {
+    try {
+      const data = await getAllWorkflows();
+      setWorkflows(data ?? []);
+    } catch (err) {
+      console.error("Error fetching workflows:", err);
+    }
+  };
 
   const fetchItems = async () => {
     try {
@@ -101,9 +168,41 @@ const MLModelsManager: React.FC = () => {
     }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
     setSelectedFile(file);
+
+    if (file?.name.toLowerCase().endsWith(".pkl")) {
+      setIsAnalyzing(true);
+      try {
+        const analysis = await analyzePklFile(file);
+        if (analysis.error) {
+          toast.error(`Could not extract metadata: ${analysis.error}`);
+        } else {
+          setFormData((prev) => ({
+            ...prev,
+            ...(analysis.model_type && {
+              model_type: analysis.model_type as MLModel["model_type"],
+            }),
+            ...(analysis.features?.length > 0 && {
+              features: analysis.features,
+            }),
+          }));
+          if (analysis.features?.length > 0) {
+            setFeaturesInput(analysis.features.join(", "));
+          }
+          if (analysis.model_type || analysis.features?.length) {
+            toast.success("Model metadata extracted from file");
+          }
+        }
+      } catch (err) {
+        toast.error(
+          `Failed to analyze file: ${err instanceof Error ? err.message : String(err)}`
+        );
+      } finally {
+        setIsAnalyzing(false);
+      }
+    }
   };
 
   const uploadFile = async () => {
@@ -140,50 +239,37 @@ const MLModelsManager: React.FC = () => {
     }));
   };
 
-  const syncInferenceParamsToForm = (kv: { key: string; value: string }[]) => {
-    const paramsObject = kv.reduce((acc, { key, value }) => {
-      const trimmedKey = key.trim();
-      if (trimmedKey.length > 0) {
-        acc[trimmedKey] = value;
-      }
-      return acc;
-    }, {} as Record<string, string>);
-    setFormData((prev) => ({
-      ...prev,
-      inference_params: paramsObject,
-    }));
+  const isValidCron = (cron: string): boolean => {
+    if (!cron.trim()) return true;
+    const cronRegex = /^(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*$/;
+    return cronRegex.test(cron.trim());
   };
 
-  const addParamRow = () => {
-    setInferenceParamsKV((prev) => {
-      const next = [...prev, { key: "", value: "" }];
-      syncInferenceParamsToForm(next);
-      return next;
-    });
-  };
-
-  const updateParamKey = (index: number, newKey: string) => {
-    setInferenceParamsKV((prev) => {
-      const next = prev.map((item, i) => (i === index ? { ...item, key: newKey } : item));
-      syncInferenceParamsToForm(next);
-      return next;
-    });
-  };
-
-  const updateParamValue = (index: number, newValue: string) => {
-    setInferenceParamsKV((prev) => {
-      const next = prev.map((item, i) => (i === index ? { ...item, value: newValue } : item));
-      syncInferenceParamsToForm(next);
-      return next;
-    });
-  };
-
-  const removeParamRow = (index: number) => {
-    setInferenceParamsKV((prev) => {
-      const next = prev.filter((_, i) => i !== index);
-      syncInferenceParamsToForm(next);
-      return next;
-    });
+  const handleCreateWorkflow = async () => {
+    if (!newWorkflowName.trim()) {
+      toast.error("Please enter a workflow name");
+      return;
+    }
+    try {
+      const newWorkflow = {
+        name: newWorkflowName,
+        description: newWorkflowDescription,
+        version: "1.0.0",
+        nodes: [],
+        edges: [],
+        agent_id: "",
+      } as Parameters<typeof createWorkflow>[0];
+      const created = await createWorkflow(newWorkflow);
+      toast.success("Workflow created. Configure it in the Workflow Studio.");
+      setShowCreateWorkflowDialog(false);
+      setNewWorkflowName("");
+      setNewWorkflowDescription("");
+      await fetchWorkflows();
+      setSelectedWorkflowId(created.id || "");
+    } catch (error) {
+      toast.error("Failed to create workflow");
+      console.error(error);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -193,7 +279,6 @@ const MLModelsManager: React.FC = () => {
       { label: "name", isEmpty: !formData.name },
       { label: "description", isEmpty: !formData.description },
       { label: "model type", isEmpty: !formData.model_type },
-      { label: "target variable", isEmpty: !formData.target_variable },
     ];
 
     const missingFields = requiredFields
@@ -215,6 +300,17 @@ const MLModelsManager: React.FC = () => {
       return;
     }
 
+    // When creating with workflow path, workflow is required
+    if (!editingItem && sourceType === "workflow" && !selectedWorkflowId) {
+      toast.error("Please select a workflow for training.");
+      return;
+    }
+
+    if (!editingItem && sourceType === "workflow" && cronSchedule && !isValidCron(cronSchedule)) {
+      toast.error("Invalid cron expression. Expected format: * * * * *");
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -222,8 +318,12 @@ const MLModelsManager: React.FC = () => {
 
       const dataToSubmit = { ...formData };
 
-      // if pkl file is selected, upload the file
-      if (selectedFile && (!formData.pkl_file || !formData.pkl_file_id)) {
+      // Upload pkl only when sourceType is "upload" and file is selected
+      if (
+        sourceType === "upload" &&
+        selectedFile &&
+        (!formData.pkl_file || !formData.pkl_file_id)
+      ) {
         const uploadResult = await uploadFile();
 
         if (!uploadResult) {
@@ -243,14 +343,37 @@ const MLModelsManager: React.FC = () => {
         setSuccess(`ML model "${dataToSubmit.name}" updated successfully`);
       } else {
         dataToSubmit.id = uuidv4();
-        await createMLModel(dataToSubmit);
+        const createdModel = await createMLModel(dataToSubmit);
         setSuccess(`ML model "${dataToSubmit.name}" created successfully`);
+
+        // If workflow path: create pipeline config and redirect to detail
+        if (sourceType === "workflow" && selectedWorkflowId && createdModel?.id) {
+          try {
+            await createPipelineConfig(createdModel.id, {
+              model_id: createdModel.id,
+              workflow_id: selectedWorkflowId,
+              cron_schedule: cronSchedule || null,
+              is_default: true,
+            });
+            toast.success("Pipeline configuration added. You can run training from the model detail page.");
+            navigate(`/ml-models/${createdModel.id}`);
+            return; // Skip cleanup - we navigated away
+          } catch (configErr) {
+            toast.error("Model created but pipeline config failed. Add it from the model detail page.");
+            console.error(configErr);
+            navigate(`/ml-models/${createdModel.id}`);
+            return;
+          }
+        }
       }
 
       setFormData(DEFAULT_FORM_DATA);
       setSelectedFile(null);
       setEditingItem(null);
       setShowForm(false);
+      setSourceType("upload");
+      setSelectedWorkflowId("");
+      setCronSchedule("");
       fetchItems();
     } catch (err) {
       let errorMessage = err instanceof Error ? err.message : String(err);
@@ -277,7 +400,9 @@ const MLModelsManager: React.FC = () => {
     setSuccess(null);
     setShowForm(false);
     setFeaturesInput("");
-    setInferenceParamsKV([]);
+    setSourceType("upload");
+    setSelectedWorkflowId("");
+    setCronSchedule("");
   };
 
   const handleEdit = (item: MLModel) => {
@@ -285,15 +410,8 @@ const MLModelsManager: React.FC = () => {
     setFormData({
       ...item,
       features: item.features || [],
-      inference_params: item.inference_params || {},
     });
     setFeaturesInput((item.features || []).join(', '));
-    setInferenceParamsKV(
-      Object.entries(item.inference_params || {}).map(([key, value]) => ({
-        key,
-        value: String(value ?? ""),
-      }))
-    );
     setSelectedFile(null);
     setShowForm(true);
   };
@@ -450,16 +568,73 @@ const MLModelsManager: React.FC = () => {
                       </div>
 
                       <div>
-                        <div className="mb-1">Target Variable</div>
+                        <div className="mb-1">Features</div>
                         <Input
-                          id="target_variable"
-                          name="target_variable"
-                          value={formData.target_variable}
-                          onChange={handleInputChange}
-                          placeholder="e.g., price, category, churn"
+                          value={featuresInput}
+                          onChange={(e) => handleFeaturesInputChange(e.target.value)}
+                          placeholder="Enter features separated by commas (e.g., age, income, credit_score)"
                         />
+                        {formData.features.length > 0 && (
+                          <p className="text-sm text-gray-500 mt-2">
+                            {formData.features.length} feature{formData.features.length !== 1 ? 's' : ''} defined: {formData.features.join(', ')}
+                          </p>
+                        )}
                       </div>
+                    </div>
+                  </div>
+                </div>
 
+                <div className="-mx-6 my-0 border-t border-gray-200" />
+
+                {/* Model Source - create: radios + upload/workflow; edit: upload only */}
+                <div className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                      <h3 className="text-lg font-semibold">Model Source</h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {editingItem ? "Replace the model file if needed." : "How do you want to add this model?"}
+                      </p>
+                    </div>
+
+                    <div className="md:col-span-2 space-y-6">
+                      {!editingItem && (
+                        <div>
+                          <div className="mb-2">Model Source</div>
+                          <div className="flex gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="sourceType"
+                                checked={sourceType === "upload"}
+                                onChange={() => {
+                                  setSourceType("upload");
+                                  setSelectedFile(null);
+                                }}
+                                className="h-4 w-4"
+                              />
+                              <span className="text-sm font-medium">PKL file</span>
+                              <Upload className="h-4 w-4 text-muted-foreground" />
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="sourceType"
+                                checked={sourceType === "workflow"}
+                                onChange={() => {
+                                  setSourceType("workflow");
+                                  setSelectedFile(null);
+                                }}
+                                className="h-4 w-4"
+                              />
+                              <span className="text-sm font-medium">Training Workflow</span>
+                              <WorkflowIcon className="h-4 w-4 text-muted-foreground" />
+                            </label>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Upload section: show when sourceType is "upload" or when editing */}
+                      {(sourceType === "upload" || editingItem) && (
                       <div>
                         <div className="mb-1">Upload Model File (.pkl)</div>
                         <div className="flex flex-col gap-2">
@@ -472,7 +647,7 @@ const MLModelsManager: React.FC = () => {
                               <span className="text-sm font-medium text-muted-foreground">
                                 {selectedFile
                                   ? selectedFile.name
-                                  : formData.pkl_file
+                                  : formData.pkl_file_id
                                   ? "Replace file"
                                   : "Select .pkl file to upload (optional)"}
                               </span>
@@ -481,7 +656,7 @@ const MLModelsManager: React.FC = () => {
                                 type="file"
                                 accept=".pkl"
                                 onChange={handleFileChange}
-                                disabled={isUploading}
+                                disabled={isUploading || isAnalyzing}
                                 className="hidden"
                               />
                             </label>
@@ -508,27 +683,16 @@ const MLModelsManager: React.FC = () => {
                             </div>
                           )}
 
-                          {formData.pkl_file && !formData.pkl_file_id && !selectedFile && (
+                          {formData.pkl_file_id && !selectedFile && (
                             <div className="flex items-center justify-between p-2 bg-muted rounded-md">
                               <div className="flex items-center gap-2">
                                 <FileCode className="h-4 w-4" />
                                 <span className="text-sm">
-                                  File: {formData.pkl_file}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {formData.pkl_file_id && !selectedFile && (
-                            <div className="flex items-center justify-between p-2 bg-muted rounded-md">
-                              <div className="flex items-center gap-2">
-                                <FileIcon className="h-4 w-4" />
-                                <span className="text-sm">
                                   {formData.name}
                                 </span>
                               </div>
-
-                              <Button
+                              {formData.pkl_file_id && (
+                                <Button
                                   type="button"
                                   variant="ghost"
                                   size="icon"
@@ -537,6 +701,7 @@ const MLModelsManager: React.FC = () => {
                                 >
                                   <Download className="h-4 w-4" />
                                 </Button>
+                              )}
                             </div>
                           )}
 
@@ -545,99 +710,79 @@ const MLModelsManager: React.FC = () => {
                               Uploading file... Please wait.
                             </div>
                           )}
+                          {isAnalyzing && (
+                            <div className="p-2 text-sm text-muted-foreground">
+                              Analyzing file to extract metadata...
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                </div>
+                      )}
 
-                <div className="-mx-6 my-0 border-t border-gray-200" />
-
-                {/* Features Section */}
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <h3 className="text-lg font-semibold">Features</h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Enter comma-separated feature names for the model.
-                      </p>
-                    </div>
-
-                    <div className="md:col-span-2 space-y-4">
-                      <div>
-                        <Input
-                          value={featuresInput}
-                          onChange={(e) => handleFeaturesInputChange(e.target.value)}
-                          placeholder="Enter features separated by commas (e.g., age, income, credit_score)"
-                        />
-                        {formData.features.length > 0 && (
-                          <p className="text-sm text-gray-500 mt-2">
-                            {formData.features.length} feature{formData.features.length !== 1 ? 's' : ''} defined: {formData.features.join(', ')}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="-mx-6 my-0 border-t border-gray-200" />
-
-                {/* Inference Parameters Section */}
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <h3 className="text-lg font-semibold">
-                        Inference Parameters
-                      </h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Define parameter names and their default values for inference.
-                      </p>
-                    </div>
-
-                    <div className="md:col-span-2 space-y-4">
-                      <div className="space-y-3">
-                        {inferenceParamsKV.length === 0 && (
-                          <p className="text-sm text-gray-500">No parameters defined yet.</p>
-                        )}
-                        {inferenceParamsKV.map((item, index) => (
-                          <div key={index} className="grid grid-cols-12 gap-2 items-center">
-                            <div className="col-span-5">
-                              <Input
-                                value={item.key}
-                                onChange={(e) => updateParamKey(index, e.target.value)}
-                                placeholder="Parameter name (e.g., temperature)"
-                              />
-                            </div>
-                            <div className="col-span-6">
-                              <Input
-                                value={item.value}
-                                onChange={(e) => updateParamValue(index, e.target.value)}
-                                placeholder="Default value (optional)"
-                              />
-                            </div>
-                            <div className="col-span-1 flex justify-end">
+                      {/* Workflow section: show when sourceType is "workflow" and creating */}
+                      {!editingItem && sourceType === "workflow" && (
+                        <div className="space-y-4 p-4 border rounded-lg bg-gray-50">
+                          <div>
+                            <Label className="text-sm font-medium mb-2 block">Select Training Workflow</Label>
+                            <Select value={selectedWorkflowId} onValueChange={setSelectedWorkflowId}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a workflow" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {workflows
+                                  .filter((w) => w.nodes?.some((n) => n.type === "trainModelNode"))
+                                  .map((workflow) => (
+                                    <SelectItem key={workflow.id} value={workflow.id || ""}>
+                                      {workflow.name} {workflow.version && `(v${workflow.version})`}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                            {workflows.filter((w) => w.nodes?.some((n) => n.type === "trainModelNode")).length === 0 && (
+                              <p className="text-sm text-muted-foreground mt-2">
+                                No workflows with a Train Model node. Add a Train Model node in the Workflow Studio first.
+                              </p>
+                            )}
+                            <div className="mt-2 flex gap-2">
                               <Button
                                 type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeParamRow(index)}
-                                className="h-8 w-8 text-red-500"
+                                variant="link"
+                                size="sm"
+                                className="h-auto p-0"
+                                onClick={() => setShowCreateWorkflowDialog(true)}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Plus className="h-4 w-4 mr-1" />
+                                Create New Workflow
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="link"
+                                size="sm"
+                                className="h-auto p-0"
+                                onClick={() => window.open("/ai-agents", "_blank")}
+                              >
+                                <ExternalLink className="h-4 w-4 mr-1" />
+                                Open Workflow Studio
                               </Button>
                             </div>
                           </div>
-                        ))}
-                        <div>
-                          <Button type="button" variant="secondary" onClick={addParamRow}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Parameter
-                          </Button>
+                          <div>
+                            <Label className="text-sm font-medium mb-2 block">Cron Schedule (Optional)</Label>
+                            <Input
+                              placeholder="* * * * * (e.g., 0 0 * * * for daily at midnight)"
+                              value={cronSchedule}
+                              onChange={(e) => setCronSchedule(e.target.value)}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Leave empty to run manually only. Format: minute hour day month weekday
+                            </p>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
+
               </div>
 
               {/* Submit buttons */}
@@ -692,7 +837,19 @@ const MLModelsManager: React.FC = () => {
                   value={searchQuery}
                   onChange={setSearchQuery}
                 />
-                <Button onClick={() => setShowForm(true)} className="rounded-full">
+                <Button
+                  onClick={() => {
+                    setEditingItem(null);
+                    setFormData(DEFAULT_FORM_DATA);
+                    setFeaturesInput("");
+                    setSourceType("upload");
+                    setSelectedWorkflowId("");
+                    setCronSchedule("");
+                    setSelectedFile(null);
+                    setShowForm(true);
+                  }}
+                  className="rounded-full"
+                >
                   <Plus className="h-4 w-4 mr-2" />
                   Add New
                 </Button>
@@ -736,7 +893,6 @@ const MLModelsManager: React.FC = () => {
                       key={item.id}
                       className="py-4 px-6 hover:bg-gray-50 cursor-pointer transition-colors"
                       onClick={(e) => {
-                        // Don't navigate if clicking on buttons
                         if ((e.target as HTMLElement).closest('button')) {
                           return;
                         }
@@ -758,15 +914,18 @@ const MLModelsManager: React.FC = () => {
                           </p>
                           <div className="flex flex-wrap gap-3 text-sm text-gray-500 mt-1">
                             <span>
-                              <strong>Target:</strong> {item.target_variable}
-                            </span>
-                            <span>
                               <strong>Features:</strong> {item.features.length}
                             </span>
-                            {(item.pkl_file || !!item.pkl_file_id) && (
+                            {!!item.pkl_file_id && (
                               <span className="flex items-center gap-1">
                                 <FileCode className="h-4 w-4" />
                                 Model file uploaded
+                              </span>
+                            )}
+                            {!item.pkl_file_id && item.pkl_file && (item.pipeline_config_count ?? 0) > 0 && (
+                              <span className="flex items-center gap-1">
+                                <WorkflowIcon className="h-4 w-4" />
+                                Training workflow promoted
                               </span>
                             )}
                           </div>
@@ -813,6 +972,43 @@ const MLModelsManager: React.FC = () => {
         itemName={modelToDelete?.name || ""}
         description={`This action cannot be undone. This will permanently delete the ML model "${modelToDelete?.name}".`}
       />
+
+      {/* Create New Workflow Dialog */}
+      <Dialog open={showCreateWorkflowDialog} onOpenChange={setShowCreateWorkflowDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Workflow</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Workflow Name</Label>
+              <Input
+                value={newWorkflowName}
+                onChange={(e) => setNewWorkflowName(e.target.value)}
+                placeholder="Enter workflow name"
+              />
+            </div>
+            <div>
+              <Label>Description (Optional)</Label>
+              <Textarea
+                value={newWorkflowDescription}
+                onChange={(e) => setNewWorkflowDescription(e.target.value)}
+                placeholder="Enter workflow description"
+                rows={3}
+              />
+            </div>
+            <p className="text-sm text-gray-500">
+              After creating, configure the training nodes in the Workflow Studio (AI Agents).
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateWorkflowDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateWorkflow}>Create Workflow</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
