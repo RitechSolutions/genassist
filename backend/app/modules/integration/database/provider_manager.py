@@ -7,11 +7,12 @@ instances per source_id, avoiding repeated initialization and connection overhea
 
 import asyncio
 import logging
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
 from uuid import UUID
+
 from app.dependencies.injector import injector
-from app.services.datasources import DataSourceService
 from app.modules.integration.database import DatabaseManager
+from app.services.datasources import DataSourceService
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,10 @@ class DBProviderManager:
     4. Handles initialization and cleanup
     """
 
-    _instance: Optional['DBProviderManager'] = None
+    _instance: Optional["DBProviderManager"] = None
     _lock = asyncio.Lock()
 
-    def __new__(cls) -> 'DBProviderManager':
+    def __new__(cls) -> "DBProviderManager":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._managers: Dict[str, DatabaseManager] = {}
@@ -38,7 +39,7 @@ class DBProviderManager:
         return cls._instance
 
     @classmethod
-    def get_instance(cls) -> 'DBProviderManager':
+    def get_instance(cls) -> "DBProviderManager":
         """Get the singleton instance"""
         if cls._instance is None:
             cls._instance = cls()
@@ -64,8 +65,7 @@ class DBProviderManager:
                 return manager
             else:
                 # Remove invalid manager
-                logger.warning(
-                    f"Removing invalid manager for source_id {source_id}")
+                logger.warning(f"Removing invalid manager for source_id {source_id}")
                 await self._remove_manager(source_id)
 
         # Ensure we have a lock for this source_id
@@ -75,7 +75,9 @@ class DBProviderManager:
         # Use lock to prevent concurrent initialization
         async with self._initialization_locks[source_id]:
             # Double-check pattern - manager might have been created while waiting
-            if source_id in self._managers and self._is_manager_valid(self._managers[source_id]):
+            if source_id in self._managers and self._is_manager_valid(
+                self._managers[source_id]
+            ):
                 return self._managers[source_id]
 
             try:
@@ -83,8 +85,9 @@ class DBProviderManager:
                 # Get data source configuration
                 ds_service = injector.get(DataSourceService)
                 # Convert source_id to UUID if it's a string
-                source_uuid = UUID(source_id) if isinstance(
-                    source_id, str) else source_id
+                source_uuid = (
+                    UUID(source_id) if isinstance(source_id, str) else source_id
+                )
                 ds = await ds_service.get_by_id(source_uuid, decrypt_sensitive=True)
 
                 if not ds:
@@ -95,35 +98,39 @@ class DBProviderManager:
                 # Create configuration for DatabaseManager
                 # The DatabaseManager expects connection_data fields to be at the top level
                 ds_config = ds.connection_data.copy() if ds.connection_data else {}
-                ds_config.update({
-                    "source_type": ds.source_type,
-                    "name": ds.name,
-                    "sync_source_id": str(ds.id),
-                    "connection_data": ds.connection_data,
-                })
+                ds_config.update(
+                    {
+                        "source_type": ds.source_type,
+                        "name": ds.name,
+                        "sync_source_id": str(ds.id),
+                        "connection_data": ds.connection_data,
+                    }
+                )
 
                 logger.info(f"Datasource config keys: {list(ds_config.keys())}")
                 # Create DatabaseManager
                 manager = DatabaseManager(ds_config)
                 if not manager:
                     logger.error(
-                        f"Failed to create DatabaseManager for source_id {source_id}")
+                        f"Failed to create DatabaseManager for source_id {source_id}"
+                    )
                     return None
-                
+
                 await manager.initialize()
 
                 # Cache the manager
                 self._managers[source_id] = manager
                 logger.info(
-                    f"Created and cached DatabaseManager for source_id {source_id}")
+                    f"Created and cached DatabaseManager for source_id {source_id}"
+                )
                 return manager
 
             except Exception as e:
                 logger.error(
-                    f"Error creating DatabaseManager for source_id {source_id}: {e}")
-                import traceback
-                logger.error(f"Full traceback: {traceback.format_exc()}")
-                return None
+                    f"Error creating DatabaseManager for source_id {source_id}: {e}",
+                    exc_info=True,
+                )
+                raise
 
     def _is_manager_valid(self, manager: DatabaseManager) -> bool:
         """
@@ -137,13 +144,15 @@ class DBProviderManager:
         """
         try:
             # Check if manager has required attributes
-            if not (hasattr(manager, 'config') and
-                    hasattr(manager, 'db_type') and
-                    manager.config is not None):
+            if not (
+                hasattr(manager, "config")
+                and hasattr(manager, "db_type")
+                and manager.config is not None
+            ):
                 return False
 
             # Check if connection is still valid using the manager's internal method
-            if hasattr(manager, '_is_connection_valid'):
+            if hasattr(manager, "_is_connection_valid"):
                 return manager._is_connection_valid()
 
             return True
@@ -151,7 +160,9 @@ class DBProviderManager:
             logger.warning(f"Error checking manager validity: {e}")
             return False
 
-    async def execute_query(self, source_id: str, query: str, parameters: list = None) -> tuple[list[dict], Optional[str]]:
+    async def execute_query(
+        self, source_id: str, query: str, parameters: list = None
+    ) -> tuple[list[dict], Optional[str]]:
         """
         Execute a query using the appropriate DatabaseManager
 
@@ -163,16 +174,17 @@ class DBProviderManager:
         Returns:
             Tuple of (results, error_message)
         """
-        manager = await self.get_database_manager(source_id)
+        try:
+            manager = await self.get_database_manager(source_id)
+        except Exception as e:
+            return [], str(e)
         if not manager:
-            logger.error(f"Could not get manager for source_id {source_id}")
             return [], f"Could not get manager for source_id {source_id}"
 
         try:
             return await manager.execute_query(query, parameters)
         except Exception as e:
-            logger.error(
-                f"Error executing query for source_id {source_id}: {e}")
+            logger.error(f"Error executing query for source_id {source_id}: {e}")
             return [], str(e)
 
     async def get_schema(self, source_id: str) -> Dict[str, Any]:
@@ -185,16 +197,17 @@ class DBProviderManager:
         Returns:
             Database schema information
         """
-        manager = await self.get_database_manager(source_id)
+        try:
+            manager = await self.get_database_manager(source_id)
+        except Exception as e:
+            return {"error": str(e)}
         if not manager:
-            logger.error(f"Could not get manager for source_id {source_id}")
             return {"error": f"Could not get manager for source_id {source_id}"}
 
         try:
             return await manager.get_schema()
         except Exception as e:
-            logger.error(
-                f"Error getting schema for source_id {source_id}: {e}")
+            logger.error(f"Error getting schema for source_id {source_id}: {e}")
             return {"error": str(e)}
 
     async def _remove_manager(self, source_id: str):
@@ -203,11 +216,12 @@ class DBProviderManager:
             manager = self._managers[source_id]
             try:
                 # Disconnect if possible
-                if hasattr(manager, 'disconnect'):
+                if hasattr(manager, "disconnect"):
                     await manager.disconnect()
             except Exception as e:
                 logger.warning(
-                    f"Error disconnecting manager for source_id {source_id}: {e}")
+                    f"Error disconnecting manager for source_id {source_id}: {e}"
+                )
             finally:
                 del self._managers[source_id]
 
@@ -242,8 +256,7 @@ class DBProviderManager:
 
         for source_id in invalid_source_ids:
             await self._remove_manager(source_id)
-            logger.info(
-                f"Cleaned up inactive connection for source_id {source_id}")
+            logger.info(f"Cleaned up inactive connection for source_id {source_id}")
 
         return len(invalid_source_ids)
 
@@ -257,14 +270,13 @@ class DBProviderManager:
             valid_count += 1 if is_valid else 0
             connection_status[source_id] = {
                 "valid": is_valid,
-                "connected": getattr(manager, '_is_connected', False),
-                "last_activity": getattr(manager, '_last_activity', None)
+                "connected": getattr(manager, "_is_connected", False),
+                "last_activity": getattr(manager, "_last_activity", None),
             }
 
         return {
             "total_managers": len(self._managers),
             "valid_managers": valid_count,
             "source_ids": list(self._managers.keys()),
-            "connection_details": connection_status
+            "connection_details": connection_status,
         }
-
