@@ -94,7 +94,7 @@ async def run_query_agent_logic(
                 "agent_id": agent_id,
                 "thread_id": metadata.get("thread_id"),
                 "rag_used": False,
-                "row_agent_response": result        
+                "row_agent_response": result
 
     }
     logger.debug(f"Result: {result}")

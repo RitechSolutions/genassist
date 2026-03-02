@@ -116,14 +116,32 @@ export async function getRagFromSchema(): Promise<DynamicFormSchema> {
   );
 }
 
+/** Fields the PUT /configs/{id} endpoint accepts (AgentUpdate schema). Extra fields cause 422. */
+const AGENT_UPDATE_ALLOWED_KEYS = [
+  "name",
+  "description",
+  "is_active",
+  "welcome_message",
+  "welcome_image",
+  "welcome_title",
+  "possible_queries",
+  "thinking_phrases",
+  "thinking_phrase_delay",
+  "workflow_id",
+  "security_settings",
+] as const;
+
 export async function updateAgentConfig(
   id: string,
   config: AgentConfigUpdate
 ): Promise<AgentConfig> {
+  const payload = Object.fromEntries(
+    AGENT_UPDATE_ALLOWED_KEYS.filter((k) => k in config).map((k) => [k, config[k]])
+  );
   return apiRequest<AgentConfig>(
     "PUT",
     `genagent/agents/configs/${id}`,
-    config
+    payload
   );
 }
 
