@@ -117,6 +117,17 @@ AGENT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         )
     ),
     FieldSchema(
+        name="compactingImportantEntities",
+        type="tags",
+        label="Important Entities to Preserve",
+        required=False,
+        description="Entities that must always be retained in the compaction summary (e.g. 'client name', 'project ID')",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="message_compacting"
+        )
+    ),
+    FieldSchema(
         name="tokenBudget",
         type="number",
         label="Total Token Budget",

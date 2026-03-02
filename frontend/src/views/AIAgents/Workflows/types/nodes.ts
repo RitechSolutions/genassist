@@ -160,6 +160,7 @@ export interface BaseLLMNodeData extends BaseNodeData {
   compactingThreshold?: number;
   compactingKeepRecent?: number;
   compactingModel?: string;
+  compactingImportantEntities?: string[];
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {

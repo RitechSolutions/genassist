@@ -104,6 +104,7 @@ class LLMModelNode(BaseNode):
         """
         try:
             keep_recent = config.get("compactingKeepRecent", 10)
+            important_entities = config.get("compactingImportantEntities") or None
 
             # Get messages to compact
             to_compact = await memory.get_messages_for_compaction(keep_recent)
@@ -123,7 +124,7 @@ class LLMModelNode(BaseNode):
             compactor = MemoryCompactor(llm_model)
 
             existing_summary = await memory.get_compacted_summary()
-            new_summary = await compactor.compact_messages(to_compact, existing_summary)
+            new_summary = await compactor.compact_messages(to_compact, existing_summary, important_entities)
 
             # Store compacted summary
             await memory.set_compacted_summary(new_summary)
