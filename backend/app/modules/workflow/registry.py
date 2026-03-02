@@ -59,23 +59,13 @@ class RegistryItem:
                 user_input_data=user_input_from_form,
             )
         else:
-            # Normal execution
             input_data = {
                 "message": session_message,
                 **metadata,
             }
-
             state = await self.workflow_engine.execute_from_node(
                 input_data=input_data,
                 thread_id=thread_id,
             )
-
-        # Return a special response when workflow is paused for user input
-        if state.status == "paused":
-            return {
-                "status": "awaiting_input",
-                "form_schema": state.paused_form_schema,
-                "node_id": state.paused_node_id,
-            }
 
         return state.format_state_as_response()

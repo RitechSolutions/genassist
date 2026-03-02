@@ -26,6 +26,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 # send message to the socket
 async def send_message_to_socket(
     message: TranscriptSegmentInput,
@@ -120,7 +121,7 @@ async def process_conversation_update_with_agent(
         elapsed_seconds = (now - conversation.created_at).total_seconds()
 
         if agent_response.get("status") == "awaiting_input":
-            # Workflow paused for user input — send form_request message
+            # Workflow paused for user input — send form schema as form_request
             form_schema = agent_response.get("form_schema", {})
             transcript_object = TranscriptSegmentInput(
                 id=generate_sequential_uuid(),

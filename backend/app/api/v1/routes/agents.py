@@ -89,25 +89,20 @@ async def run_query_agent_logic(
             )
     logger.debug(f"Workflow Final Result: {result}")
 
-    # Handle awaiting_input status (workflow paused for user input)
-    if result.get("status") == "awaiting_input":
-        return {
-            "status": "awaiting_input",
-            "form_schema": result.get("form_schema"),
-            "node_id": result.get("node_id"),
-            "agent_id": agent_id,
-            "thread_id": metadata.get("thread_id"),
-        }
-
     backward_compatibility_result = {
                 "status": result.get("status"),
                 "response": result.get("output"),
                 "agent_id": agent_id,
                 "thread_id": metadata.get("thread_id"),
                 "rag_used": False,
-                "row_agent_response": result        
-
+                "row_agent_response": result,
     }
+
+    # Surface pause data so REST callers can easily access form_schema
+    if result.get("status") == "awaiting_input":
+        backward_compatibility_result["form_schema"] = result.get("form_schema")
+        backward_compatibility_result["node_id"] = result.get("node_id")
+
     logger.debug(f"Result: {result}")
     logger.debug(f"Backward compatibility result: {backward_compatibility_result}")
     if backward_compatibility_result.get("status") == "error":

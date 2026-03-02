@@ -41,6 +41,7 @@ export const deleteWorkflow = (id: string) =>
 export interface WorkflowTestPayload {
   input_data: Record<string, any>;
   workflow: Workflow;
+  user_input_data?: Record<string, unknown>;
 }
 
 export interface WorkflowTestResponse {
@@ -80,19 +81,6 @@ export const testWorkflow = (testData: WorkflowTestPayload) =>
   apiRequest<WorkflowTestResponse>(
     "POST",
     `${BASE}/test`,
-    testData as unknown as Record<string, unknown>
-  );
-
-export interface ResumeTestPayload {
-  workflow: Workflow;
-  thread_id: string;
-  user_input_data: Record<string, unknown>;
-}
-
-export const resumeTestWorkflow = (testData: ResumeTestPayload) =>
-  apiRequest<WorkflowTestResponse>(
-    "POST",
-    `${BASE}/test/resume`,
     testData as unknown as Record<string, unknown>
   );
 

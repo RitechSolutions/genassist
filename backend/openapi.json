@@ -7729,57 +7729,6 @@
         }
       }
     },
-    "/api/genagent/workflow/test/resume": {
-      "post": {
-        "tags": [
-          "v1",
-          "Workflows"
-        ],
-        "summary": "Resume Test Workflow",
-        "description": "Resume a paused workflow test after user input submission.\n\nRequest body should contain:\n- workflow: The workflow configuration\n- thread_id: The thread ID from the paused response\n- user_input_data: The user's form submission values",
-        "operationId": "resume_test_workflow_api_genagent_workflow_test_resume_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object",
-                "title": "Test Data"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
     "/api/genagent/workflow/dialog_schema/{node_type}": {
       "get": {
         "tags": [
@@ -15821,6 +15770,7 @@
           },
           "password": {
             "type": "string",
+            "format": "password",
             "title": "Password"
           },
           "scope": {
@@ -15848,6 +15798,7 @@
                 "type": "null"
               }
             ],
+            "format": "password",
             "title": "Client Secret"
           }
         },

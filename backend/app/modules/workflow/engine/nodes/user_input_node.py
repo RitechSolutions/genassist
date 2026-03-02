@@ -1,4 +1,4 @@
-"""User Input node that pauses workflow execution to collect user data via a dynamic form."""
+"""User Input node that pauses workflow execution to collect user data via a form."""
 
 from typing import Any, Dict
 import logging
@@ -75,11 +75,18 @@ class UserInputNode(BaseNode):
     def _extract_provided_values(self, form_fields: list) -> Dict[str, Any] | None:
         """Extract user-provided values from initial_values for single-node tests.
 
-        Only applies when this is a single-node workflow (from the test-node endpoint),
-        where field values are passed directly in initial_values. Guarded by len(nodes)==1
-        to avoid false matches against workflow input keys like "message" or "thread_id".
+        Looks for values under the dedicated '_test_node_input' key first (set by
+        the test-node endpoint). Falls back to matching field names directly in
+        initial_values when only one node exists, to stay backward-compatible.
         """
         initial = self.state.initial_values or {}
+
+        # Preferred: explicit test input key (no collision risk)
+        test_input = initial.get("_test_node_input")
+        if isinstance(test_input, dict) and test_input:
+            return test_input
+
+        # Fallback: single-node workflow (backward compat with old test-node calls)
         nodes = self.state.workflow.get("nodes", [])
         if len(nodes) == 1:
             field_names = {f.get("name") for f in form_fields}
@@ -88,3 +95,14 @@ class UserInputNode(BaseNode):
                 return direct_values
 
         return None
+
+    async def cache_user_input(self, user_input_data: dict) -> None:
+        """Cache user input data for ask_once behavior.
+
+        Called by the engine after resume to persist the user's response
+        so subsequent executions skip the form.
+        """
+        if self.node_data.get("ask_once", True):
+            node_key = f"user_input:{self.node_id}"
+            await self.get_memory().set_metadata(node_key, user_input_data)
+            logger.info(f"UserInputNode {self.node_id}: cached user input for ask_once")

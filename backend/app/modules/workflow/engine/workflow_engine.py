@@ -249,42 +249,26 @@ class WorkflowEngine:
             thread_id=thread_id or str(uuid.uuid4()),
             initial_values=initial_values,
         )
+
+        state.start_execution()
+        state.total_steps = len(self.workflow["nodes"])
+
+        # Execute the start node, then delegate continuation to shared helper.
         try:
-            state.start_execution()
-            state.total_steps = len(self.workflow["nodes"])
+            await self._execute_single_node(start_node_id, state)
+        except WorkflowPausedException:
+            # Start node paused — persist state and return early
+            await state.get_memory().save_paused_workflow_state(
+                state.serialize_for_pause()
+            )
+            logger.info(f"Workflow paused at start node {start_node_id}")
+            return state
+        except Exception:
+            # _execute_single_node already called state.fail_execution()
+            return state
 
-            # Execute from the specified node
-            try:
-                await self._execute_from_node_recursive(
-                    start_node_id, state, set()
-                )
+        await self._continue_execution(state, start_node_id, persist)
 
-                state.complete_execution()
-
-            except WorkflowPausedException:
-                # Workflow paused for user input — save state to Redis
-                await state.get_memory().save_paused_workflow_state(
-                    state.serialize_for_pause()
-                )
-                logger.info(f"Workflow paused and state saved for thread {thread_id}")
-
-            except ValueError as e:
-                state.fail_execution(str(e))
-
-        except Exception as e:
-            state.fail_execution(str(e))
-            raise
-
-        try:
-            if state.status != "paused" and initial_values.get("message") and persist:
-                asyncio.create_task(
-                    state.get_memory().add_input_output(
-                        initial_values.get("message", ""),
-                        state.output
-                    )
-                )
-        except Exception as e:
-            logger.error(f"Error adding message to memory: {e}")
         return state
 
     def _find_starting_nodes(self) -> List[str]:
@@ -503,21 +487,25 @@ class WorkflowEngine:
         Returns:
             WorkflowState with execution results
         """
+        # Deserialize state first — its memory instance reuses the same thread_id
+        # so we avoid creating a redundant ConversationMemory.
+        # We need a temporary memory to fetch the paused state before deserialization.
         from app.modules.workflow.agents.memory import ConversationMemory
-
-        # Get paused state from memory
-        memory = ConversationMemory.get_instance(thread_id=thread_id)
-        paused_state_dict = await memory.get_paused_workflow_state()
+        temp_memory = ConversationMemory.get_instance(thread_id=thread_id)
+        paused_state_dict = await temp_memory.get_paused_workflow_state()
 
         if not paused_state_dict:
-            raise ValueError(f"No paused workflow found for thread {thread_id}")
+            raise ValueError(
+                f"No paused workflow found for thread {thread_id}. "
+                "The paused state may have expired (24h TTL) or was already resumed."
+            )
 
         # Deserialize and resume
         state = WorkflowState.deserialize_from_pause(self.workflow, paused_state_dict)
         state.resume_execution()
 
-        # Clear the paused state from Redis
-        await memory.clear_paused_workflow_state()
+        # Clear the paused state from Redis (use state's own memory from now on)
+        await state.get_memory().clear_paused_workflow_state()
 
         # Inject user input as the output of the paused node
         paused_node_id = state.paused_node_id
@@ -526,14 +514,15 @@ class WorkflowEngine:
 
         state.set_node_output(paused_node_id, user_input_data)
 
-        # Cache user input for ask_once behavior (skip form on future executions)
-        node_config, _ = self.get_node_config(paused_node_id)
-        node_data = node_config.get("data", {})
-        if node_data.get("ask_once", True):
-            node_key = f"user_input:{paused_node_id}"
-            await memory.set_metadata(node_key, user_input_data)
+        # Cache user input for ask_once via the node itself (keeps logic co-located)
+        node = self.executable_node(paused_node_id, state)
+        if isinstance(node, UserInputNode):
+            await node.cache_user_input(user_input_data)
 
-        # Complete the paused node's execution status
+        # Record proper execution tracking for the paused node.
+        # start_node_execution must be called before complete_node_execution
+        # so the node appears in performance metrics with timing data.
+        state.start_node_execution(paused_node_id)
         state.complete_node_execution(paused_node_id, output=user_input_data)
 
         # Continue execution from the next nodes using the standard recursive engine

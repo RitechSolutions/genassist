@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { UserInputFormField } from "../types/nodes";
-import { testWorkflow, resumeTestWorkflow, WorkflowTestResponse } from "@/services/workflows";
+import { testWorkflow, WorkflowTestResponse } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
@@ -141,15 +141,15 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     }
   }, [workflow, executionState?.session, isOpen]);
 
-  // Check if a response indicates a paused workflow (handles both direct and nested formats)
+  // Check if a response indicates a paused workflow
   const isPausedResponse = (res: WorkflowTestResponse): boolean => {
-    return res.status === "paused" || res.state?.status === "paused";
+    return res.status === "awaiting_input" || res.state?.status === "paused";
   };
 
-  // Extract pause info from either the direct response or nested state
+  // Extract pause info from the response
   const extractPauseInfo = (res: WorkflowTestResponse) => {
     const formSchema = (res.form_schema || res.state?.paused_form_schema) as PausedFormSchema | undefined;
-    const threadId = (res.thread_id || res.state?.thread_id) as string | undefined;
+    const threadId = (res.thread_id || res.state?.input?.thread_id) as string | undefined;
     return { formSchema, threadId };
   };
 
@@ -298,9 +298,9 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
         }
       });
 
-      const res = await resumeTestWorkflow({
+      const res = await testWorkflow({
+        input_data: { thread_id: pausedThreadId },
         workflow: workflow,
-        thread_id: pausedThreadId,
         user_input_data: parsedValues,
       });
 

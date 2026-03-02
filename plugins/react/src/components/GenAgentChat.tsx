@@ -916,7 +916,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     padding: 0,
   };
 
-  const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping;
+  // Disable chat input when a form_request is pending (not yet submitted).
+  const hasPendingForm = messages.some((msg, idx) => {
+    if (msg.type !== 'form_request' || msg.speaker !== 'agent') return false;
+    return !submittedForms.has(idx);
+  });
+
+  const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
 
   const sendButtonStyle: React.CSSProperties = {
     backgroundColor: primaryColor,
@@ -1611,13 +1617,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    if ((inputValue.trim() !== '' || attachments.length > 0) && !isAgentTyping) {
+                    if ((inputValue.trim() !== '' || attachments.length > 0) && !isAgentTyping && !hasPendingForm) {
                       submitMessage();
                     }
                   }
                 }}
                 placeholder={inputPlaceholder}
-                disabled={!conversationId || isFinalized || isAgentTyping}
+                disabled={!conversationId || isFinalized || isAgentTyping || hasPendingForm}
                 rows={1}
               />
               <div style={rightActionContainerStyle}>

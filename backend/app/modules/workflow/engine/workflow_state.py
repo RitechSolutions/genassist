@@ -529,7 +529,12 @@ class WorkflowState:
             )
         )
         performance_metrics = self.performance_metrics
-        status = "success"
+
+        if self.status == "paused":
+            status = "awaiting_input"
+        else:
+            status = "success"
+
         response = {
             "status": status,
             "input": _input,
@@ -537,6 +542,12 @@ class WorkflowState:
             "performance_metrics": performance_metrics,
             "state": state,
         }
+
+        # Surface pause data as top-level keys for easy caller access
+        if self.status == "paused":
+            response["form_schema"] = self.paused_form_schema
+            response["node_id"] = self.paused_node_id
+            response["thread_id"] = self.thread_id
 
         # Sanitize response to ensure JSON compliance (handle inf, -inf, nan values)
         # and optimize large arrays with uniform schemas for performance

@@ -493,6 +493,7 @@ class RedisConversationMemory(BaseConversationMemory):
         self._metadata_key = f"{tenant_prefix}:conversation:{self.thread_id}:metadata"
         self._conversation_key = f"{tenant_prefix}:conversation:{self.thread_id}:info"
         self._stateful_key = f"{tenant_prefix}:conversation:{self.thread_id}:stateful"
+        self._paused_key = f"{tenant_prefix}:conversation:{self.thread_id}:paused_workflow"
         self.initialized = False
 
     def _get_tenant_prefix(self) -> str:
@@ -1040,9 +1041,7 @@ class RedisConversationMemory(BaseConversationMemory):
         """Save paused workflow state to Redis with 24h expiry."""
         try:
             redis = await self._get_redis()
-            tenant_prefix = self._get_tenant_prefix()
-            paused_key = f"{tenant_prefix}:conversation:{self.thread_id}:paused_workflow"
-            await redis.setex(paused_key, 86400, json.dumps(state_dict))
+            await redis.setex(self._paused_key, 86400, json.dumps(state_dict))
             logger.info(f"Saved paused workflow state to Redis for thread {self.thread_id}")
         except Exception as e:
             logger.error(f"Failed to save paused workflow state for thread {self.thread_id}: {e}")
@@ -1052,9 +1051,7 @@ class RedisConversationMemory(BaseConversationMemory):
         """Retrieve paused workflow state from Redis."""
         try:
             redis = await self._get_redis()
-            tenant_prefix = self._get_tenant_prefix()
-            paused_key = f"{tenant_prefix}:conversation:{self.thread_id}:paused_workflow"
-            serialized = await redis.get(paused_key)
+            serialized = await redis.get(self._paused_key)
             if serialized:
                 logger.info(f"Retrieved paused workflow state from Redis for thread {self.thread_id}")
                 return json.loads(serialized)
@@ -1067,9 +1064,7 @@ class RedisConversationMemory(BaseConversationMemory):
         """Clear paused workflow state from Redis."""
         try:
             redis = await self._get_redis()
-            tenant_prefix = self._get_tenant_prefix()
-            paused_key = f"{tenant_prefix}:conversation:{self.thread_id}:paused_workflow"
-            await redis.delete(paused_key)
+            await redis.delete(self._paused_key)
             logger.info(f"Cleared paused workflow state from Redis for thread {self.thread_id}")
         except Exception as e:
             logger.error(f"Failed to clear paused workflow state for thread {self.thread_id}: {e}")

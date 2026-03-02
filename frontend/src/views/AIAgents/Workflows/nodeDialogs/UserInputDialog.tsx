@@ -194,7 +194,7 @@ export const UserInputDialog: React.FC<
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="message">Form Message</Label>
+        <Label htmlFor="message">Message</Label>
         <DraggableTextArea
           id="message"
           value={message}
@@ -207,7 +207,7 @@ export const UserInputDialog: React.FC<
       <div className="flex items-center justify-between">
         <div>
           <Label htmlFor="ask_once" className="text-sm font-medium">Ask once per conversation</Label>
-          <p className="text-xs text-muted-foreground">When enabled, the form is shown only once. Subsequent executions use the cached response.</p>
+          <p className="text-xs text-muted-foreground">When enabled, input is collected only once. Subsequent executions use the cached response.</p>
         </div>
         <Switch
           id="ask_once"

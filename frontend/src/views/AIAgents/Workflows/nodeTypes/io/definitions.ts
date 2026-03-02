@@ -11,7 +11,7 @@ export const USER_INPUT_NODE_DEFINITION: NodeTypeDefinition<UserInputNodeData> =
     type: "userInputNode",
     label: "User Input",
     description:
-      "Pauses the workflow to collect structured data from the user via a dynamic form.",
+      "Pauses the workflow to collect user input via a dynamic form.",
     shortDescription: "Collect user input",
     category: "io",
     icon: "ClipboardList",
