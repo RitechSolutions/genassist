@@ -72,6 +72,7 @@ Provide the JSON response:"""
         Args:
             messages: List of message dicts with 'role' and 'content'
             existing_summary: Previous compacted summary to merge with (if any)
+            important_entities: Entities to always be preserved in compaction (e.x. 'customer name', customer id, etc.)
 
         Returns:
             Dictionary with:
