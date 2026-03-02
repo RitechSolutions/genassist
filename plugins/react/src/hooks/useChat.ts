@@ -151,6 +151,7 @@ export const useChat = ({
   );
   const metadataRef = useRef<string>(metadataString);
   const prevBaseUrlRef = useRef<string>(baseUrl);
+  const prevWebsocketUrlRef = useRef<string | undefined>(websocketUrl);
   const prevApiKeyRef = useRef<string>(apiKey);
   const prevTenantRef = useRef<string | undefined>(tenant);
   const prevUseWsRef = useRef<boolean>(useWs);
@@ -191,6 +192,7 @@ export const useChat = ({
   useEffect(() => {
     const metadataChanged = metadataRef.current !== metadataString;
     const baseUrlChanged = prevBaseUrlRef.current !== baseUrl;
+    const websocketUrlChanged = prevWebsocketUrlRef.current !== websocketUrl;
     const apiKeyChanged = prevApiKeyRef.current !== apiKey;
     const tenantChanged = prevTenantRef.current !== tenant;
     const useWsChanged = prevUseWsRef.current !== useWs;
@@ -199,6 +201,7 @@ export const useChat = ({
     const needsReinit =
       !chatServiceRef.current ||
       baseUrlChanged ||
+      websocketUrlChanged ||
       apiKeyChanged ||
       tenantChanged ||
       useWsChanged;
@@ -206,6 +209,7 @@ export const useChat = ({
     if (needsReinit) {
       // Update refs
       if (baseUrlChanged) prevBaseUrlRef.current = baseUrl;
+      if (websocketUrlChanged) prevWebsocketUrlRef.current = websocketUrl;
       if (apiKeyChanged) prevApiKeyRef.current = apiKey;
       if (tenantChanged) prevTenantRef.current = tenant;
       if (useWsChanged) prevUseWsRef.current = useWs;
@@ -377,6 +381,7 @@ export const useChat = ({
     };
   }, [
     baseUrl,
+    websocketUrl,
     apiKey,
     tenant,
     metadataString,

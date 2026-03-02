@@ -743,7 +743,7 @@ export class ChatService {
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
 
     // Build WebSocket URL with proper authentication
-    const wsBase = this.websocketUrl || this.baseUrl.replace("http", "ws");
+    const wsBase = this.websocketUrl || this.baseUrl.replace("http", "ws") + "/api";
     const topics = ["message", "takeover", "finalize"];
     const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
 
@@ -752,7 +752,7 @@ export class ChatService {
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
 
-    let wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    let wsUrl = `${wsBase}/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
 
     // Add tenant as query parameter if provided
     if (this.tenant) {
