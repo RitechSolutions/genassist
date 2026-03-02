@@ -153,7 +153,7 @@ export interface BaseLLMNodeData extends BaseNodeData {
     | "Chain-of-Thought"
     | "ReActAgentLC";
   maxIterations?: number;
-  memoryTrimmingMode?: "message_count" | "token_budget" | "message_compacting";
+  memoryTrimmingMode?: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval";
   maxMessages?: number;
   tokenBudget?: number;
   conversationHistoryTokens?: number;
@@ -161,6 +161,12 @@ export interface BaseLLMNodeData extends BaseNodeData {
   compactingKeepRecent?: number;
   compactingModel?: string;
   compactingImportantEntities?: string[];
+  ragPassthroughThreshold?: number;
+  ragGroupSize?: number;
+  ragGroupOverlap?: number;
+  ragQueryContextMessages?: number;
+  ragTopK?: number;
+  ragRecentMessages?: number;
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {
