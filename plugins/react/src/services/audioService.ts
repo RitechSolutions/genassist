@@ -19,10 +19,10 @@ export class AudioService {
 
   constructor(config: AudioServiceConfig) {
     this.baseUrl = config.baseUrl;
-    if (!this.websocketUrl) {
-      this.websocketUrl = this.baseUrl.replace("http", "ws");
+    if (!config.websocketUrl) {
+      this.websocketUrl = `${this.baseUrl.replace("http", "ws")}/api/voice/audio/tts`;
     } else {
-      this.websocketUrl = config.websocketUrl?.endsWith("/") ? config.websocketUrl?.slice(0, -1) : config.websocketUrl;
+      this.websocketUrl = config.websocketUrl.endsWith("/") ? config.websocketUrl?.slice(0, -1) : config.websocketUrl;
     }
     this.apiKey = config.apiKey;
     this.guestToken = config.guestToken || null;
@@ -47,7 +47,7 @@ export class AudioService {
       const authParam = this.guestToken
         ? `access_token=${encodeURIComponent(this.guestToken)}`
         : `api_key=${encodeURIComponent(this.apiKey)}`;
-      const wsUrl = `${wsBase}/api/voice/audio/tts?${authParam}`;
+      const wsUrl = `${this.websocketUrl}/ws/audio/tts?${authParam}`;
       this.ws = createWebSocket(wsUrl);
 
       this.ws.onopen = () => {

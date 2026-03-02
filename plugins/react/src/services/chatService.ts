@@ -58,11 +58,12 @@ export class ChatService {
     usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-    if (!this.websocketUrl) {
-      this.websocketUrl = this.baseUrl.replace("http", "ws");
-    } else {
-      this.websocketUrl = websocketUrl?.endsWith("/") ? websocketUrl?.slice(0, -1) : websocketUrl;
+
+    if (websocketUrl) {
+      // use new websocket url
+      this.websocketUrl = websocketUrl.endsWith("/") ? websocketUrl.slice(0, -1) : websocketUrl;
     }
+
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
@@ -732,6 +733,10 @@ export class ChatService {
       return;
     }
 
+    if (!this.websocketUrl) {
+      throw new Error("WebSocket URL is required");
+    }
+
     if (this.webSocket) {
       this.webSocket.close();
     }
@@ -743,7 +748,6 @@ export class ChatService {
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
 
     // Build WebSocket URL with proper authentication
-    const wsBase = this.websocketUrl || this.baseUrl.replace("http", "ws") + "/api";
     const topics = ["message", "takeover", "finalize"];
     const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
 
@@ -752,7 +756,8 @@ export class ChatService {
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
 
-    let wsUrl = `${wsBase}/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+
+    let wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
 
     // Add tenant as query parameter if provided
     if (this.tenant) {
