@@ -395,13 +395,13 @@ const AgentForm: React.FC<AgentFormProps> = ({
                       >
                         {/* Background decoration */}
                         <div className="absolute inset-0 bg-grid-pattern opacity-[0.02]"></div>
-                        
+
                         <div className="relative flex flex-col items-center justify-center z-10">
                           {/* Upload icon with cloud */}
                           <div
                             className={`relative w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 ${
-                              isDragOver 
-                                ? "bg-primary/20 scale-110 shadow-lg shadow-primary/30" 
+                              isDragOver
+                                ? "bg-primary/20 scale-110 shadow-lg shadow-primary/30"
                                 : "bg-primary/10 group-hover:bg-primary/15 group-hover:scale-105"
                             }`}
                           >
@@ -479,7 +479,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                               )}
                             </Button>
                           </div>
-                          
+
                           {/* File info */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2">
@@ -538,7 +538,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Loading state */}
                   {imageLoading && (
                     <div className="flex items-center justify-center gap-3 p-4 rounded-lg bg-primary/5 border border-primary/20">
@@ -825,6 +825,7 @@ export const AgentFormDialog = ({
 }: AgentDialogProps) => {
   const formId = "agent-form-dialog";
   const isEditMode = !!data?.id;
+  console.log('iEditMode', isEditMode);
 
   // Prevent body scroll when dialog is open
   React.useEffect(() => {
@@ -832,7 +833,7 @@ export const AgentFormDialog = ({
       // Save the current overflow state
       const previousOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
-      
+
       // Restore previous overflow state on cleanup
       return () => {
         document.body.style.overflow = previousOverflow;
@@ -841,7 +842,7 @@ export const AgentFormDialog = ({
   }, [isOpen]);
 
   return (
-    <Sheet open={isOpen} onOpenChange={onClose} modal={false}>
+    <Sheet open={isOpen} modal={false}>
       <SheetContent hideOverlay={true} className="sm:max-w-lg w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full">
         <SheetHeader className="p-6 pb-4 border-b shrink-0">
           <SheetTitle className="text-xl font-semibold">
