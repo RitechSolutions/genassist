@@ -268,8 +268,13 @@ def create_celery():
             "fanout_prefix": True,
             "fanout_patterns": True,
             "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit broker connection pool
+            "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
+        },
+        result_backend_transport_options={
+            "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
         },
         redis_max_connections=settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit result backend connection pool
+        worker_enable_mingle=False,  # Disable mingle to avoid cross-slot errors on startup
         task_serializer="json",
         accept_content=["json"],
         result_serializer="json",
@@ -295,8 +300,8 @@ def create_celery():
         },
         "cleanup-stale-conversations": {
             "task": "app.tasks.conversations_tasks.cleanup_stale_conversations",
-            # Run every 30 minutes (at :00 and :30)
-            "schedule": crontab(minute=str(settings.CELERY_CLEANUP_STALE_CONVERSATIONS_CRON)),
+            # Run at 2 minutes past every 5 minutes
+             "schedule": crontab(minute="2-59/5"),
             "options": {"expires": 3600},  # Task expires after 1 hour
         },
         "import-s3-files": {

@@ -45,6 +45,91 @@ def find_all_vars(obj_str: str) -> list:
     return re.findall(r"{{[^\s{}]+}}", obj_str)
 
 
+def find_code_param_vars(code_string: str) -> list:
+    """
+    Find all variable names referenced via params.get("varName") or param.get("varName")
+    in a Python code string.
+
+    Matches patterns like:
+        params.get("variableName", None)
+        params.get('variableName', None)
+        param.get("variableName", None)
+
+    Args:
+        code_string: The Python code string to scan
+
+    Returns:
+        List of unique variable names found in params.get() calls
+    """
+    if not code_string:
+        return []
+    matches = re.findall(r'params?\.get\(\s*["\']([^"\']+)["\']', code_string)
+    return list(dict.fromkeys(matches))
+
+
+def extract_code_params(
+    config: dict,
+    state: WorkflowState,
+    source_output: Any,
+    direct_input: Optional[dict] = None,
+) -> dict:
+    """
+    Scan code fields in the config for params.get("varName") patterns,
+    resolve each variable from state/source/direct_input, and return
+    a dictionary of resolved params to be injected at Python execution time.
+
+    This handles cases where Python scripts access variables via
+    params.get("variableName", None) instead of {{variableName}} templates.
+
+    Args:
+        config: The node configuration dictionary (already resolved by replace_config_vars)
+        state: The workflow state object
+        source_output: The source node's output
+        direct_input: Optional direct input dictionary
+
+    Returns:
+        Dictionary of {variable_name: resolved_value} for all params.get() references
+    """
+    if not config:
+        return {}
+
+    if direct_input is None:
+        direct_input = {}
+
+    code_params = {}
+    data = config.get("data", config)
+
+    # Scan known code fields for params.get() patterns
+    code_fields = ["code", "pythonScript"]
+    for field in code_fields:
+        code_string = data.get(field, "")
+        if not code_string:
+            continue
+
+        var_names = find_code_param_vars(code_string)
+        for var_name in var_names:
+            if var_name in code_params:
+                continue
+            resolved_value, _ = _resolve_variable_value(
+                var_name, state, source_output, direct_input
+            )
+            # Only include params that actually resolved to a value.
+            # When the value is None, we omit it so the Python code's
+            # own default in params.get("varName", default) takes effect.
+            if resolved_value is not None:
+                code_params[var_name] = resolved_value
+                logger.debug(
+                    "Resolved code param '%s' = %s", var_name, resolved_value
+                )
+            else:
+                logger.debug(
+                    "Skipping code param '%s' (resolved to None, letting code default apply)",
+                    var_name,
+                )
+
+    return code_params
+
+
 def get_nested_value(obj: Any, path: str) -> Any:
     """
     Safely retrieve a nested value from an object using dot notation.

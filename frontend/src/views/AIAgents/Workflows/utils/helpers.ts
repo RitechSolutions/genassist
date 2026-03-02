@@ -227,6 +227,16 @@ export const extractDynamicVariables = (text: string): Set<string> => {
   const curlyMatches = text.match(/{{([^\s{}]+)}}/g) || [];
   curlyMatches.forEach((v) => variables.add(v.slice(2, -2)));
 
+  // Match param(s).get("variable", <any_default>) format
+  // Also handles escaped quotes (\\") from JSON.stringify
+  const paramGetMatches = text.match(/params?\.get\(\\?"([^"\\]+)\\?"[^)]*\)/g) || [];
+  paramGetMatches.forEach((v) => {
+    const match = v.match(/params?\.get\(\\?"([^"\\]+)\\?"/);
+    if (match && match[1]) {
+      variables.add(match[1]);
+    }
+  });
+
   return variables;
 };
 export const extractDynamicVariablesAsRecord = (

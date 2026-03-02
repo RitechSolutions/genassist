@@ -7,7 +7,7 @@ from typing import Dict, Any, Literal, Optional, List
 import logging
 import time
 from app.modules.workflow.engine.exceptions import WorkflowPausedException
-from app.modules.workflow.engine.utils import replace_config_vars
+from app.modules.workflow.engine.utils import replace_config_vars, extract_code_params
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ class BaseNode(ABC):
         self.output_data = None
         self.execution_start_time: Optional[float] = None
         self.execution_end_time: Optional[float] = None
+        self.code_params: Dict[str, Any] = {}
 
         # Validate configuration
         self._validate_config()
@@ -248,25 +249,25 @@ class BaseNode(ABC):
                 if not workflow:
                     logger.warning("No workflow found in state for node %s", self.node_id)
                     continue
-                
+
                 # Find the node configuration in the workflow
                 node_config = None
                 for n in workflow.get("nodes", []):
                     if n["id"] == source_node_id:
                         node_config = n
                         break
-                
+
                 if not node_config:
                     logger.warning("Node config not found for node %s", source_node_id)
                     continue
-                
+
                 # Get node type and instantiate using the class-level registry
                 node_type = node_config.get("type", "")
                 node_class = WorkflowEngine._node_registry.get(node_type)
                 if not node_class:
                     logger.warning("Unknown node type: %s for node %s", node_type, source_node_id)
                     continue
-                
+
                 node = node_class(source_node_id, node_config, self.get_state())
 
                 if node:
@@ -338,6 +339,15 @@ class BaseNode(ABC):
             # Log replacements for debugging
             if replacements:
                 logger.debug("Node %s variable replacements: %s", self.node_id, replacements)
+
+            # Extract params.get("varName") references from code fields
+            # so Python scripts can access them at execution time
+            self.code_params = extract_code_params(
+                config=resolved_config, state=self.state,
+                source_output=source_output, direct_input=direct_input
+            )
+            if self.code_params:
+                logger.debug("Node %s code params: %s", self.node_id, self.code_params)
 
             self.set_node_input(replacements)
             # Process the node (implemented by subclasses)

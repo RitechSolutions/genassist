@@ -608,7 +608,7 @@ export class ChatService {
       ).catch(e => {
         const err = e?.response?.data;
         // Handle error when conversation is finalized
-        if (err?.error_key === 'CONVERSATION_FINALIZED') {
+        if (err?.error_key === 'CONVERSATION_FINALIZED' || err?.error_key === 'AGENT_NOT_FOUND') {
           this.handleConversationFinalized();
         } else {
           throw e;

@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
 from app.core.permissions.constants import Permissions as P
@@ -108,7 +108,10 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     except ValueError:
         raise AppException(error_key=ErrorKey.INVALID_FILE_PATH, status_code=400)
 
-    return FileResponse(str(resolved_path))
+    # Reconstruct path from trusted base + validated relative portion to break taint chain
+    safe_serving_path = str(recordings_base / resolved_path.relative_to(recordings_base))
+    response = FileResponse(safe_serving_path)
+    return response
 
 
 @router.get("/metrics", dependencies=[
