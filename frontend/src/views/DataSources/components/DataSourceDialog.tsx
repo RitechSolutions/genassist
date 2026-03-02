@@ -142,7 +142,6 @@ export function DataSourceDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     const missingFields: string[] = [];
 
     if (!name) missingFields.push("Name");
@@ -325,7 +324,7 @@ export function DataSourceDialog({
             onUploadComplete={(result) => {
               setConnectionData((prev) => ({
                 ...prev,
-                [field.name]: result.file_path,
+                [field.name]: result.file_path ?? result.file_url,
                 [`${field.name}_original_filename`]: result.original_filename,
               }));
             }}
