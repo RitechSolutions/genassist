@@ -1,13 +1,13 @@
 import { GenAgentChat } from "genassist-chat-react";
 import { useEffect, useState } from "react";
-import { getApiUrl } from "@/config/api";
+import { getApiUrl, getGenassistChatApiKey, getWebsocketUrl } from "@/config/api";
 import { isWsEnabled, isPollEnabled } from "@/config/api";
 
 export const GlobalChat = () => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
+  const [websocketUrl, setWebsocketUrl] = useState<string | null>(null);
+  const [genassistApiKey, setGenassistApiKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const genassistApiKey = import.meta.env.VITE_GENASSIST_CHAT_APIKEY;
-  const websocketUrl = import.meta.env.VITE_WEBSOCKET_PUBLIC_URL;
 
   useEffect(() => {
     (async () => {
@@ -20,10 +20,36 @@ export const GlobalChat = () => {
           err instanceof Error ? err.message : "Failed to initialize chat";
         setError(message);
       }
-    })();
-  }, []);
 
-  if (error || !baseUrl) {
+      // get websocket url
+      try {
+        const websocketUrl = await getWebsocketUrl();
+        setWebsocketUrl(websocketUrl);
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : "Failed to initialize chat";
+        setError(message);
+      }
+
+      // get genassist api key
+      try {
+        const genassistApiKey = await getGenassistChatApiKey();
+        setGenassistApiKey(genassistApiKey);
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : "Failed to initialize chat";
+        setError(message);
+      }
+
+
+      console.log("baseUrl", baseUrl);
+      console.log("websocketUrl", websocketUrl);
+      console.log("genassistApiKey", genassistApiKey);
+
+    })();
+  }, [baseUrl, websocketUrl, genassistApiKey]);
+
+  if (error || !baseUrl || !websocketUrl || !genassistApiKey) {
     return null;
   }
 

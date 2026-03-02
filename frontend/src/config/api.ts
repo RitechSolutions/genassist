@@ -120,6 +120,7 @@ api.interceptors.response.use(
 
 const API_URL = import.meta.env.VITE_PUBLIC_API_URL
 const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_PUBLIC_URL
+const GENASSIST_CHAT_APIKEY = import.meta.env.VITE_GENASSIST_CHAT_APIKEY;
 
 /** Whether WebSocket connections are enabled (VITE_WS=true/false). Defaults to true when unset.
  *  Note: Vite reads env at dev server start / build time; restart the dev server after changing .env. */
@@ -130,13 +131,21 @@ export const getApiUrl = async (): Promise<string> => {
   return ensureTrailingSlash(API_URL);
 };
 
+export const getWebsocketUrl = async (): Promise<string> => {
+  return ensureTrailingSlash(WEBSOCKET_URL);
+};
+
+export const getGenassistChatApiKey = async (): Promise<string> => {
+  return GENASSIST_CHAT_APIKEY;
+};
+
 export const getApiUrlString = ensureTrailingSlash(API_URL);
 
 export const getWsUrl = async (): Promise<string> => {
   if (!isWsEnabled) {
     return Promise.reject(new Error("WebSocket is disabled (VITE_WS=false)"));
   }
-  return WEBSOCKET_URL;
+  return getWebsocketUrl();
 };
 
 export const apiRequest = async <T>(
