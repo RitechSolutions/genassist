@@ -16,13 +16,14 @@ import { DraggableTextArea } from "./custom/DraggableTextArea";
 import { Input } from "@/components/input";
 import { LLMProviderDialog } from "@/views/LlmProviders/components/LLMProviderDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
-import { Info } from "lucide-react";
+import { Info, X } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/RadixTooltip";
+import { Badge } from "@/components/badge";
 
 export interface ModelConfigurationProps {
   id: string;
@@ -40,6 +41,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   const [systemPrompt, setSystemPrompt] = useState(config.systemPrompt);
   const [userPrompt, setUserPrompt] = useState(config.userPrompt);
   const [isCreateProviderOpen, setIsCreateProviderOpen] = useState(false);
+  const [entityInput, setEntityInput] = useState("");
   const queryClient = useQueryClient();
 
   const { data: providers = [] } = useQuery({
@@ -160,6 +162,26 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     onConfigChange({
       ...config,
       compactingModel: providerId,
+    });
+  };
+
+  const handleAddImportantEntity = () => {
+    const trimmed = entityInput.trim();
+    if (!trimmed) return;
+    const current = config.compactingImportantEntities || [];
+    if (current.includes(trimmed)) return;
+    onConfigChange({
+      ...config,
+      compactingImportantEntities: [...current, trimmed],
+    });
+    setEntityInput("");
+  };
+
+  const handleRemoveImportantEntity = (entity: string) => {
+    const current = config.compactingImportantEntities || [];
+    onConfigChange({
+      ...config,
+      compactingImportantEntities: current.filter((e) => e !== entity),
     });
   };
 
@@ -412,6 +434,68 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label>Important Entities to Preserve</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Important entities info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Entities that must always be retained in the compaction summary (e.g. "client name", "project ID")
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    value={entityInput}
+                    onChange={(e) => setEntityInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddImportantEntity();
+                      }
+                    }}
+                    placeholder="e.g. client name"
+                    className="flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddImportantEntity}
+                    className="px-3 py-1.5 rounded-md border border-input bg-background text-sm hover:bg-accent hover:text-accent-foreground"
+                  >
+                    Add
+                  </button>
+                </div>
+                {(config.compactingImportantEntities || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {(config.compactingImportantEntities || []).map((entity) => (
+                      <Badge
+                        key={entity}
+                        variant="secondary"
+                        className="flex items-center gap-1 pr-1"
+                      >
+                        {entity}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveImportantEntity(entity)}
+                          className="ml-0.5 rounded-full hover:bg-muted-foreground/20"
+                          aria-label={`Remove ${entity}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           ) : (
