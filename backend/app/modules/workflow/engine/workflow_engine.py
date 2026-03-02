@@ -250,25 +250,42 @@ class WorkflowEngine:
             initial_values=initial_values,
         )
 
-        state.start_execution()
-        state.total_steps = len(self.workflow["nodes"])
-
-        # Execute the start node, then delegate continuation to shared helper.
         try:
-            await self._execute_single_node(start_node_id, state)
-        except WorkflowPausedException:
-            # Start node paused — persist state and return early
-            await state.get_memory().save_paused_workflow_state(
-                state.serialize_for_pause()
-            )
-            logger.info(f"Workflow paused at start node {start_node_id}")
-            return state
-        except Exception:
-            # _execute_single_node already called state.fail_execution()
-            return state
+            state.start_execution()
+            state.total_steps = len(self.workflow["nodes"])
 
-        await self._continue_execution(state, start_node_id, persist)
+            # Execute from the specified node
+            try:
+                await self._execute_from_node_recursive(
+                    start_node_id, state, set()
+                )
 
+                state.complete_execution()
+
+            except WorkflowPausedException:
+                # Workflow paused for user input — save state to Redis
+                await state.get_memory().save_paused_workflow_state(
+                    state.serialize_for_pause()
+                )
+                logger.info(f"Workflow paused and state saved for thread {thread_id}")
+
+            except ValueError as e:
+                state.fail_execution(str(e))
+
+        except Exception as e:
+            state.fail_execution(str(e))
+            raise
+
+        try:
+            if state.status != "paused" and initial_values.get("message") and persist:
+                asyncio.create_task(
+                    state.get_memory().add_input_output(
+                        initial_values.get("message", ""),
+                        state.output
+                    )
+                )
+        except Exception as e:
+            logger.error(f"Error adding message to memory: {e}")
         return state
 
     def _find_starting_nodes(self) -> List[str]:
