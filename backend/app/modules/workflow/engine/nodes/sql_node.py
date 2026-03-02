@@ -59,7 +59,17 @@ class SQLNode(BaseNode):
             raise AppException(error_key=ErrorKey.MISSING_PARAMETER)
 
         # Get database manager
-        db_manager = await db_provider_manager.get_database_manager(datasource_id)
+        try:
+            db_manager = await db_provider_manager.get_database_manager(datasource_id)
+        except Exception as e:
+            return {
+                "status": 500,
+                "data": {"error": str(e)},
+                "parameters": {
+                    "node_parameters": node_parameters,
+                    "datasource_id": datasource_id,
+                },
+            }
 
         if not db_manager:
             logger.error(
