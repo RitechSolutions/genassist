@@ -22,6 +22,9 @@ interface DynamicFormMessageProps {
   isSubmitting: boolean;
   isSubmitted: boolean;
   primaryColor?: string;
+  fontFamily?: string;
+  /** "card" = inline chat bubble (default), "footer" = compact footer layout */
+  variant?: 'card' | 'footer';
 }
 
 const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
@@ -30,9 +33,13 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
   isSubmitting,
   isSubmitted,
   primaryColor = '#2563eb',
+  fontFamily = 'inherit',
+  variant = 'card',
 }) => {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const isFooter = variant === 'footer';
 
   const handleChange = (name: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -64,48 +71,60 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
     onSubmit(formData);
   };
 
-  const containerStyle: CSSProperties = {
-    backgroundColor: '#f9fafb',
-    border: '1px solid #e5e7eb',
-    borderRadius: '12px',
-    padding: '16px',
-    maxWidth: '100%',
-  };
+  // ── Styles (variant-aware) ──
+
+  const containerStyle: CSSProperties = isFooter
+    ? { width: '100%' }
+    : {
+        backgroundColor: '#f9fafb',
+        border: '1px solid #e5e7eb',
+        borderRadius: '12px',
+        padding: '16px',
+        maxWidth: '100%',
+      };
 
   const messageStyle: CSSProperties = {
-    fontSize: '14px',
+    fontSize: isFooter ? '13px' : '14px',
     color: '#374151',
-    marginBottom: '12px',
+    marginBottom: isFooter ? '8px' : '12px',
     fontWeight: 500,
+    fontFamily,
   };
 
+  const fieldsWrapperStyle: CSSProperties = isFooter
+    ? { maxHeight: '200px', overflowY: 'auto', paddingRight: '4px' }
+    : {};
+
   const fieldContainerStyle: CSSProperties = {
-    marginBottom: '12px',
+    marginBottom: isFooter ? '8px' : '12px',
   };
 
   const labelStyle: CSSProperties = {
     display: 'block',
-    fontSize: '13px',
-    fontWeight: 500,
+    fontSize: isFooter ? '12px' : '13px',
+    fontWeight: 600,
     color: '#374151',
-    marginBottom: '4px',
+    marginBottom: '2px',
+    fontFamily,
   };
 
   const descriptionStyle: CSSProperties = {
-    fontSize: '12px',
+    fontSize: '11px',
     color: '#6b7280',
-    marginBottom: '4px',
+    marginBottom: '3px',
+    fontFamily,
   };
 
   const inputStyle: CSSProperties = {
     width: '100%',
-    padding: '8px 12px',
-    fontSize: '14px',
+    padding: isFooter ? '6px 10px' : '8px 12px',
+    fontSize: isFooter ? '13px' : '14px',
     border: '1px solid #d1d5db',
     borderRadius: '8px',
     outline: 'none',
     boxSizing: 'border-box',
     backgroundColor: isSubmitted ? '#f3f4f6' : '#ffffff',
+    fontFamily,
   };
 
   const selectStyle: CSSProperties = {
@@ -121,16 +140,17 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
 
   const buttonStyle: CSSProperties = {
     width: '100%',
-    padding: '10px 16px',
-    fontSize: '14px',
+    padding: isFooter ? '9px 16px' : '10px 16px',
+    fontSize: isFooter ? '13px' : '14px',
     fontWeight: 600,
     color: '#ffffff',
     backgroundColor: isSubmitted ? '#9ca3af' : primaryColor,
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: isFooter ? '10px' : '8px',
     cursor: isSubmitted || isSubmitting ? 'not-allowed' : 'pointer',
     opacity: isSubmitting ? 0.7 : 1,
-    marginTop: '4px',
+    marginTop: isFooter ? '2px' : '4px',
+    fontFamily,
   };
 
   const checkboxContainerStyle: CSSProperties = {
@@ -143,85 +163,87 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
     <form onSubmit={handleSubmit} style={containerStyle}>
       <div style={messageStyle}>{schema.message}</div>
 
-      {schema.fields.map((field) => (
-        <div key={field.name} style={fieldContainerStyle}>
-          <label style={labelStyle}>
-            {field.label}
-            {field.required && <span style={{ color: '#ef4444', marginLeft: '2px' }}>*</span>}
-          </label>
+      <div style={fieldsWrapperStyle}>
+        {schema.fields.map((field) => (
+          <div key={field.name} style={fieldContainerStyle}>
+            <label style={labelStyle}>
+              {field.label}
+              {field.required && <span style={{ color: '#ef4444', marginLeft: '2px' }}>*</span>}
+            </label>
 
-          {field.description && (
-            <div style={descriptionStyle}>{field.description}</div>
-          )}
+            {field.description && (
+              <div style={descriptionStyle}>{field.description}</div>
+            )}
 
-          {field.type === 'text' && (
-            <input
-              type="text"
-              style={inputStyle}
-              placeholder={field.placeholder || ''}
-              value={(formData[field.name] as string) || ''}
-              onChange={(e) => handleChange(field.name, e.target.value)}
-              disabled={isSubmitted || isSubmitting}
-            />
-          )}
-
-          {field.type === 'number' && (
-            <input
-              type="number"
-              style={inputStyle}
-              placeholder={field.placeholder || ''}
-              value={formData[field.name] !== undefined ? String(formData[field.name]) : ''}
-              onChange={(e) => handleChange(field.name, e.target.value ? Number(e.target.value) : '')}
-              disabled={isSubmitted || isSubmitting}
-            />
-          )}
-
-          {field.type === 'date' && (
-            <input
-              type="date"
-              style={inputStyle}
-              value={(formData[field.name] as string) || ''}
-              onChange={(e) => handleChange(field.name, e.target.value)}
-              disabled={isSubmitted || isSubmitting}
-            />
-          )}
-
-          {field.type === 'select' && (
-            <select
-              style={selectStyle}
-              value={(formData[field.name] as string) || ''}
-              onChange={(e) => handleChange(field.name, e.target.value)}
-              disabled={isSubmitted || isSubmitting}
-            >
-              <option value="">{field.placeholder || 'Select...'}</option>
-              {field.options?.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {field.type === 'boolean' && (
-            <div style={checkboxContainerStyle}>
+            {field.type === 'text' && (
               <input
-                type="checkbox"
-                checked={(formData[field.name] as boolean) || false}
-                onChange={(e) => handleChange(field.name, e.target.checked)}
+                type="text"
+                style={inputStyle}
+                placeholder={field.placeholder || ''}
+                value={(formData[field.name] as string) || ''}
+                onChange={(e) => handleChange(field.name, e.target.value)}
                 disabled={isSubmitted || isSubmitting}
-                style={{ width: '16px', height: '16px' }}
               />
-              <span style={{ fontSize: '14px', color: '#374151' }}>
-                {field.placeholder || 'Yes'}
-              </span>
-            </div>
-          )}
+            )}
 
-          {errors[field.name] && (
-            <div style={errorStyle}>{errors[field.name]}</div>
-          )}
-        </div>
-      ))}
+            {field.type === 'number' && (
+              <input
+                type="number"
+                style={inputStyle}
+                placeholder={field.placeholder || ''}
+                value={formData[field.name] !== undefined ? String(formData[field.name]) : ''}
+                onChange={(e) => handleChange(field.name, e.target.value ? Number(e.target.value) : '')}
+                disabled={isSubmitted || isSubmitting}
+              />
+            )}
+
+            {field.type === 'date' && (
+              <input
+                type="date"
+                style={inputStyle}
+                value={(formData[field.name] as string) || ''}
+                onChange={(e) => handleChange(field.name, e.target.value)}
+                disabled={isSubmitted || isSubmitting}
+              />
+            )}
+
+            {field.type === 'select' && (
+              <select
+                style={selectStyle}
+                value={(formData[field.name] as string) || ''}
+                onChange={(e) => handleChange(field.name, e.target.value)}
+                disabled={isSubmitted || isSubmitting}
+              >
+                <option value="">{field.placeholder || 'Select...'}</option>
+                {field.options?.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {field.type === 'boolean' && (
+              <div style={checkboxContainerStyle}>
+                <input
+                  type="checkbox"
+                  checked={(formData[field.name] as boolean) || false}
+                  onChange={(e) => handleChange(field.name, e.target.checked)}
+                  disabled={isSubmitted || isSubmitting}
+                  style={{ width: '16px', height: '16px' }}
+                />
+                <span style={{ fontSize: '14px', color: '#374151' }}>
+                  {field.placeholder || 'Yes'}
+                </span>
+              </div>
+            )}
+
+            {errors[field.name] && (
+              <div style={errorStyle}>{errors[field.name]}</div>
+            )}
+          </div>
+        ))}
+      </div>
 
       <button
         type="submit"

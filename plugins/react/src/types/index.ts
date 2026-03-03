@@ -143,6 +143,7 @@ export interface GenAgentChatProps {
   serverUnavailableContactUrl?: string; // Optional URL for a contact/support
   serverUnavailableContactLabel?: string; // Label for the contact link
   inputDisclaimer?: string | React.ReactNode; // Disclaimer text or React node shown below the chat input
+  formDisplay?: 'inline' | 'footer'; // Where to render dynamic forms: 'inline' = chat bubble, 'footer' = replaces input. Defaults to 'footer'.
   onConfigLoaded?: (props: { chatInputMetadata?: Record<string, any> }) => void;
 }
 
