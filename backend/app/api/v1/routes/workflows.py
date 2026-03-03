@@ -375,11 +375,8 @@ async def test_individual_node(test_data: Dict[str, Any]):
         }
         workflow_engine = WorkflowEngine(workflow_config)
 
-        # Execute the workflow — wrap input_data under _test_node_input so nodes
-        # like UserInputNode can distinguish test values from workflow-level keys.
-        state = await workflow_engine.execute_from_node(
-            input_data={"_test_node_input": input_data, **input_data},
-        )
+        # Execute the workflow
+        state = await workflow_engine.execute_from_node(input_data=input_data)
 
         return state.format_state_as_response()
 

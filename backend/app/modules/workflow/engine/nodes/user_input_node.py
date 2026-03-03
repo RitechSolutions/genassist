@@ -73,26 +73,21 @@ class UserInputNode(BaseNode):
         )
 
     def _extract_provided_values(self, form_fields: list) -> Dict[str, Any] | None:
-        """Extract user-provided values from initial_values for single-node tests.
+        """Extract pre-filled values from initial_values (e.g. from test-node endpoint).
 
-        Looks for values under the dedicated '_test_node_input' key first (set by
-        the test-node endpoint). Falls back to matching field names directly in
-        initial_values when only one node exists, to stay backward-compatible.
+        Returns a dict of field values if ALL required fields are present in
+        initial_values, None otherwise. Requiring all required fields prevents
+        false matches against unrelated keys like "message" or "thread_id".
         """
         initial = self.state.initial_values or {}
+        field_names = {f.get("name") for f in form_fields}
+        required_names = {f.get("name") for f in form_fields if f.get("required", False)}
 
-        # Preferred: explicit test input key (no collision risk)
-        test_input = initial.get("_test_node_input")
-        if isinstance(test_input, dict) and test_input:
-            return test_input
+        matched = {k: v for k, v in initial.items() if k in field_names}
 
-        # Fallback: single-node workflow (backward compat with old test-node calls)
-        nodes = self.state.workflow.get("nodes", [])
-        if len(nodes) == 1:
-            field_names = {f.get("name") for f in form_fields}
-            direct_values = {k: v for k, v in initial.items() if k in field_names}
-            if direct_values:
-                return direct_values
+        # Only use provided values if all required fields are present
+        if required_names and required_names.issubset(matched.keys()):
+            return matched
 
         return None
 
