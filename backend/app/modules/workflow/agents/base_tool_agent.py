@@ -105,9 +105,6 @@ class BaseToolAgent(ABC):
             )
 
         except Exception as e:
-            from app.modules.workflow.engine.workflow_state import WorkflowPausedException
-            if isinstance(e, WorkflowPausedException):
-                raise
             logger.error(f"Error executing tool {tool_name}: {str(e)}")
             return handle_tool_execution_error(e, tool_name, agent_name)
 

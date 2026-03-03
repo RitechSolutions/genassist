@@ -72,9 +72,6 @@ class ReActAgentLC(BaseToolAgent):
                         result = await original_tool.invoke(**kwargs)
                         return result
                     except Exception as e:
-                        from app.modules.workflow.engine.workflow_state import WorkflowPausedException
-                        if isinstance(e, WorkflowPausedException):
-                            raise
                         logger.error(
                             f"Error executing tool {original_tool.name}: {str(e)}"
                         )
@@ -472,9 +469,6 @@ class ReActAgentLC(BaseToolAgent):
                 )
 
         except Exception as e:
-            from app.modules.workflow.engine.workflow_state import WorkflowPausedException
-            if isinstance(e, WorkflowPausedException):
-                raise
             logger.error(f"Error executing ReActAgentLC query: {str(e)}")
             return create_error_response(
                 str(e), self._get_agent_name(), thread_id=thread_id

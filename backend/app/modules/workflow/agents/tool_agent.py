@@ -217,9 +217,6 @@ class ToolAgent(BaseToolAgent):
                     prompt += continuation_prompt
 
             except Exception as e:
-                from app.modules.workflow.engine.workflow_state import WorkflowPausedException
-                if isinstance(e, WorkflowPausedException):
-                    raise
                 logger.error(
                     f"Error in tool workflow iteration {iteration}: {str(e)}")
                 return create_error_response(

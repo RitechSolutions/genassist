@@ -93,9 +93,6 @@ class SimpleToolAgent(BaseToolAgent):
                 parameters=validated_params
             )
         except Exception as e:
-            from app.modules.workflow.engine.workflow_state import WorkflowPausedException
-            if isinstance(e, WorkflowPausedException):
-                raise
             logger.error(f"SimpleToolAgent error: {str(e)}")
             return create_error_response(str(e), self._get_agent_name())
 

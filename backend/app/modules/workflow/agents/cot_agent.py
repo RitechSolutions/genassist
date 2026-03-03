@@ -126,9 +126,6 @@ class ChainOfThoughtAgent:
                     )
 
             except Exception as e:
-                from app.modules.workflow.engine.workflow_state import WorkflowPausedException
-                if isinstance(e, WorkflowPausedException):
-                    raise
                 logger.error(
                     f"Error in Chain-of-Thought cycle iteration {iteration}: {str(e)}"
                 )

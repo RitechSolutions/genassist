@@ -16,12 +16,12 @@ from app.modules.workflow.agents.memory import (
 logger = logging.getLogger(__name__)
 
 
-class WorkflowPausedException(Exception):
+class WorkflowPausedException(BaseException):
     """Raised when a node (e.g. HumanInTheLoop) needs to pause the workflow.
 
-    This exception propagates through the entire call stack — including
-    tool-builder subflows and agent tool invocations — so the top-level
-    engine can return the pause payload to the caller.
+    Inherits from BaseException (not Exception) so it bypasses all broad
+    `except Exception` handlers automatically, without requiring explicit
+    re-raise checks in every agent and node handler.
     """
 
     def __init__(self, pause_data: dict):
