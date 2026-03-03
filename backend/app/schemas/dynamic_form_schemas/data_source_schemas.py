@@ -6,10 +6,11 @@ All schemas use the unified TypeSchema structure from base.py.
 """
 
 from typing import Dict
+
 from .base import (
+    ConditionalField,
     FieldSchema,
     TypeSchema,
-    ConditionalField,
     convert_typed_schemas_to_dict,
 )
 
@@ -290,6 +291,95 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 required=False,
                 description="Optional: Only sync articles from a specific section. Leave empty to sync all sections.",
                 advanced=True,
+            ),
+        ],
+    ),
+    "gmail": TypeSchema(
+        name="Gmail",
+        fields=[],
+    ),
+    "o365": TypeSchema(
+        name="Office 365",
+        fields=[],
+    ),
+    "smb_share_folder": TypeSchema(
+        name="Network Share/Folder",
+        fields=[
+            FieldSchema(
+                name="use_local_fs",
+                type="boolean",
+                label="Use Local Filesystem",
+                required=True,
+                default=False,
+                description="Toggle to use a local filesystem path instead of an SMB network share",
+            ),
+            FieldSchema(
+                name="local_root",
+                type="text",
+                label="Local Root Path",
+                required=True,
+                description="Absolute path to the local folder",
+                placeholder="/mnt/data",
+                conditional=ConditionalField(field="use_local_fs", value=True),
+            ),
+            FieldSchema(
+                name="smb_host",
+                type="text",
+                label="SMB Host",
+                required=True,
+                description="Hostname or IP address of the SMB server",
+                conditional=ConditionalField(field="use_local_fs", value=False),
+            ),
+            FieldSchema(
+                name="smb_port",
+                type="number",
+                label="SMB Port",
+                required=False,
+                placeholder="445",
+                conditional=ConditionalField(field="use_local_fs", value=False),
+            ),
+            FieldSchema(
+                name="smb_share",
+                type="text",
+                label="SMB Share Name",
+                required=True,
+                description="Name of the SMB share",
+                conditional=ConditionalField(field="use_local_fs", value=False),
+            ),
+            FieldSchema(
+                name="smb_user",
+                type="text",
+                label="SMB Username",
+                required=False,
+                description="Username for SMB authentication",
+                conditional=ConditionalField(field="use_local_fs", value=False),
+            ),
+            FieldSchema(
+                name="smb_password",
+                type="password",
+                label="SMB Password",
+                required=False,
+                description="Password for SMB authentication",
+                conditional=ConditionalField(field="use_local_fs", value=False),
+            ),
+        ],
+    ),
+    "azure_blob": TypeSchema(
+        name="Azure Blob Storage",
+        fields=[
+            FieldSchema(
+                name="connectionstring",
+                type="password",
+                label="Connection String",
+                required=True,
+                description="Azure Blob Storage connection string",
+            ),
+            FieldSchema(
+                name="container",
+                type="text",
+                label="Container Name",
+                required=True,
+                description="Name of the Azure Blob container",
             ),
         ],
     ),
