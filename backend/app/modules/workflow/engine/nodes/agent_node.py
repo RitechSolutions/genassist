@@ -226,6 +226,9 @@ class AgentNode(BaseNode):
             return output
 
         except Exception as e:
+            from app.modules.workflow.engine.workflow_state import WorkflowPausedException
+            if isinstance(e, WorkflowPausedException):
+                raise
             logger.error("Error processing agent node: %s", str(e))
             error_message = f"Error: {str(e)}"
             return {"error": error_message}

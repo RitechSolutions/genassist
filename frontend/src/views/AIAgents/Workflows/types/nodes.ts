@@ -39,8 +39,8 @@ export interface ChatInputNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
 }
 
-// User Input node data — collects structured data from the user mid-flow
-export interface UserInputFormField {
+// Human In The Loop node data — collects structured data from the user mid-flow
+export interface HumanInTheLoopFormField {
   name: string;
   type: "text" | "number" | "select" | "boolean" | "date";
   label: string;
@@ -50,9 +50,9 @@ export interface UserInputFormField {
   options?: Array<{ value: string; label: string }>;
 }
 
-export interface UserInputNodeData extends BaseNodeData {
+export interface HumanInTheLoopNodeData extends BaseNodeData {
   message?: string;
-  form_fields: UserInputFormField[];
+  form_fields: HumanInTheLoopFormField[];
   ask_once?: boolean;
 }
 
@@ -375,7 +375,7 @@ export type NodeData =
   | ThreadRAGNodeData
   | MCPNodeData
   | WorkflowExecutorNodeData
-  | UserInputNodeData
+  | HumanInTheLoopNodeData
   | SetStateNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {

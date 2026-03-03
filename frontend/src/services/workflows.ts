@@ -41,8 +41,8 @@ export const deleteWorkflow = (id: string) =>
 export interface WorkflowTestPayload {
   input_data: Record<string, any>;
   workflow: Workflow;
-  user_input_data?: Record<string, unknown>;
-  user_input_node_id?: string;
+  human_in_the_loop_data?: Record<string, unknown>;
+  human_in_the_loop_node_id?: string;
 }
 
 export interface WorkflowTestResponse {

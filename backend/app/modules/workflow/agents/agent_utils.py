@@ -125,11 +125,14 @@ async def execute_tool_safely(tool: BaseTool, tool_input: Dict[str, Any], tool_n
         logger.error(f"Parameter validation failed for tool {tool_name}: {str(e)}")
         return f"Parameter validation failed: {str(e)}"
     except Exception as e:
+        from app.modules.workflow.engine.workflow_state import WorkflowPausedException
+        if isinstance(e, WorkflowPausedException):
+            raise
         logger.error(f"Error executing tool {tool_name}: {str(e)}")
         return f"Tool execution failed: {str(e)}"
 
 
-def create_tool_execution_info(iteration: int, tool_name: str, tool_input: Dict[str, Any], 
+def create_tool_execution_info(iteration: int, tool_name: str, tool_input: Dict[str, Any],
                                result: str, reasoning: str = "") -> Dict[str, Any]:
     """Create standardized tool execution information"""
     return {

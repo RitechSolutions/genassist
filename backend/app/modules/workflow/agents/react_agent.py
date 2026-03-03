@@ -146,6 +146,9 @@ class ReActAgent(BaseToolAgent):
                 current_prompt += f"\n\n{response_content}\nObservation: {observation}\n"
 
             except Exception as e:
+                from app.modules.workflow.engine.workflow_state import WorkflowPausedException
+                if isinstance(e, WorkflowPausedException):
+                    raise
                 logger.error(
                     f"Error in ReAct cycle iteration {iteration}: {str(e)}")
                 return create_error_response(
@@ -174,6 +177,9 @@ class ReActAgent(BaseToolAgent):
             result["thread_id"] = thread_id
             return result
         except Exception as e:
+            from app.modules.workflow.engine.workflow_state import WorkflowPausedException
+            if isinstance(e, WorkflowPausedException):
+                raise
             logger.error(f"Error executing ReActAgent query: {str(e)}")
             return create_error_response(str(e), self._get_agent_name(), thread_id=thread_id)
 

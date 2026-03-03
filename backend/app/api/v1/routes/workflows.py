@@ -54,7 +54,7 @@ SUPPORTED_NODE_TYPES = [
     "trainModelNode",
     "mcpNode",
     "workflowExecutorNode",
-    "userInputNode",
+    "humanInTheLoopNode",
     "setStateNode"
 ]
 
@@ -292,22 +292,17 @@ async def test_workflow(
         workflow_engine = WorkflowEngine(workflow_config)
 
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
-        user_input_data = test_data.get("user_input_data")
-        user_input_node_id = test_data.get("user_input_node_id")
+        start_node_id = test_data.get("human_in_the_loop_node_id")
 
-        if user_input_data and user_input_node_id:
-            # Re-execute from the user input node with submitted form data
-            input_data["user_input_from_form"] = user_input_data
-            input_data["user_input_node_id"] = user_input_node_id
-            state = await workflow_engine.execute_from_node(
-                start_node_id=user_input_node_id,
-                input_data=input_data,
-                thread_id=thread_id,
-            )
-        else:
-            state = await workflow_engine.execute_from_node(
-                input_data=input_data, thread_id=thread_id
-            )
+        if test_data.get("human_in_the_loop_data"):
+            input_data["human_in_the_loop_from_form"] = test_data["human_in_the_loop_data"]
+            input_data["human_in_the_loop_node_id"] = start_node_id
+
+        state = await workflow_engine.execute_from_node(
+            start_node_id=start_node_id,
+            input_data=input_data,
+            thread_id=thread_id,
+        )
 
         return state.format_state_as_response()
 

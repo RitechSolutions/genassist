@@ -1,22 +1,22 @@
 import {
-  UserInputNodeData,
+  HumanInTheLoopNodeData,
   NodeData,
   NodeTypeDefinition,
 } from "../../types/nodes";
-import UserInputNode from "./userInputNode";
+import HumanInTheLoopNode from "./humanInTheLoopNode";
 import { NodeProps } from "reactflow";
 
-export const USER_INPUT_NODE_DEFINITION: NodeTypeDefinition<UserInputNodeData> =
+export const HUMAN_IN_THE_LOOP_NODE_DEFINITION: NodeTypeDefinition<HumanInTheLoopNodeData> =
   {
-    type: "userInputNode",
-    label: "User Input",
+    type: "humanInTheLoopNode",
+    label: "Human In The Loop",
     description:
-      "Pauses the workflow to collect user input via a dynamic form.",
-    shortDescription: "Collect user input",
+      "Pauses the workflow to collect human input via a dynamic form.",
+    shortDescription: "Collect human input",
     category: "io",
     icon: "ClipboardList",
     defaultData: {
-      name: "User Input",
+      name: "Human In The Loop",
       message: "Please provide the following information:",
       form_fields: [],
       ask_once: true,
@@ -35,10 +35,10 @@ export const USER_INPUT_NODE_DEFINITION: NodeTypeDefinition<UserInputNodeData> =
         },
       ],
     },
-    component: UserInputNode as React.ComponentType<NodeProps<NodeData>>,
+    component: HumanInTheLoopNode as React.ComponentType<NodeProps<NodeData>>,
     createNode: (id, position, data) => ({
       id,
-      type: "userInputNode",
+      type: "humanInTheLoopNode",
       position,
       data: {
         ...data,
