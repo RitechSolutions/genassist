@@ -54,6 +54,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   serverUnavailableContactUrl,
   serverUnavailableContactLabel,
   inputDisclaimer = 'Agent can make mistakes. Check important info.',
+  formDisplay = 'footer',
   onConfigLoaded,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
@@ -708,8 +709,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const fontFamily = theme?.fontFamily || 'Roboto, Arial, sans-serif';
   const fontSize = theme?.fontSize || '14px';
   const fontSizeNumber = typeof fontSize === 'string' ? parseInt(fontSize, 10) : (typeof fontSize === 'number' ? fontSize : 14);
-  const lineHeightPx = Math.round(fontSizeNumber * 1.5);
-  const textAreaMaxHeight = lineHeightPx * 3; // up to 3 lines
 
   // Helper function to convert hex color to rgba
   const hexToRgba = (hex: string, alpha: number): string => {
@@ -921,6 +920,18 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     if (msg.type !== 'form_request' || msg.speaker !== 'agent') return false;
     return !submittedForms.has(idx);
   });
+
+  // Derive the pending form schema + index for footer rendering.
+  const pendingForm = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.type === 'form_request' && msg.speaker === 'agent' && !submittedForms.has(i)) {
+        try { return { schema: JSON.parse(msg.text), index: i }; }
+        catch { /* skip */ }
+      }
+    }
+    return null;
+  }, [messages, submittedForms]);
 
   const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
 
@@ -1432,22 +1443,43 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             }
 
             return messages.filter(applyMessageFilter).map((message, index) => {
-              // Render dynamic form for form_request messages
+              // For form_request messages, show just the message text as an agent bubble
               if (message.type === 'form_request' && message.speaker === 'agent') {
                 try {
                   const formSchema = JSON.parse(message.text);
+                  const isPending = !submittedForms.has(index);
                   return (
                     <div key={index} style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', marginBottom: '8px' }}>
                       <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>
                         {agentName || 'Agent'}
                       </div>
-                      <DynamicFormMessage
-                        schema={formSchema}
-                        onSubmit={(data) => handleFormSubmit(data, index)}
-                        isSubmitting={submittingFormIndex === index}
-                        isSubmitted={submittedForms.has(index)}
-                        primaryColor={primaryColor}
-                      />
+                      {formDisplay === 'inline' && isPending ? (
+                        <DynamicFormMessage
+                          schema={formSchema}
+                          onSubmit={(data) => handleFormSubmit(data, index)}
+                          isSubmitting={submittingFormIndex === index}
+                          isSubmitted={false}
+                          primaryColor={primaryColor}
+                          fontFamily={fontFamily}
+                          variant="card"
+                        />
+                      ) : (
+                        <div style={{
+                          backgroundColor: '#f3f4f6',
+                          borderRadius: '12px',
+                          padding: '10px 14px',
+                          fontSize: '14px',
+                          color: '#374151',
+                          fontFamily,
+                        }}>
+                          {formSchema.message || 'Please fill the form below.'}
+                          {isPending && (
+                            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                              Fill the form below to continue.
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 } catch {
@@ -1582,6 +1614,27 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             >
               {t('buttons.startConversation')}
             </button>
+          </div>
+        ) : pendingForm && formDisplay === 'footer' ? (
+          <div style={{
+            ...inputContainerStyle,
+            flexDirection: 'column',
+            borderTop: '1px solid #e5e7eb',
+          }}>
+            <DynamicFormMessage
+              schema={pendingForm.schema}
+              onSubmit={(data) => handleFormSubmit(data, pendingForm.index)}
+              isSubmitting={submittingFormIndex === pendingForm.index}
+              isSubmitted={false}
+              primaryColor={primaryColor}
+              fontFamily={fontFamily}
+              variant="footer"
+            />
+            {inputDisclaimer && (
+              <div className="ga-input-disclaimer" style={disclaimerStyle}>
+                {inputDisclaimer}
+              </div>
+            )}
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={inputContainerStyle}>
