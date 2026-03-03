@@ -362,9 +362,6 @@ class BaseNode(ABC):
             return result
 
         except Exception as e:
-            from app.modules.workflow.engine.workflow_state import WorkflowPausedException
-            if isinstance(e, WorkflowPausedException):
-                raise
             error_msg = f"Error executing node {self.node_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
             self.complete_execution(error=error_msg)
