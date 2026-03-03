@@ -71,6 +71,8 @@ import TrainDataSourceNode from "./training/trainDataSourceNode";
 import PreprocessingNode from "./training/preprocessingNode";
 import TrainModelNode from "./training/trainModelNode";
 import JiraNode from "./integrations/jiraNode";
+import HumanInTheLoopNode from "./io/humanInTheLoopNode";
+import { HUMAN_IN_THE_LOOP_NODE_DEFINITION } from "./io/definitions";
 
 // A function to re-register if needed
 export const registerAllNodeTypes = () => {
@@ -120,6 +122,8 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(MCP_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(WORKFLOW_EXECUTOR_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(HUMAN_IN_THE_LOOP_NODE_DEFINITION);
 };
 
 // Get node types for React Flow
@@ -155,5 +159,6 @@ export const getNodeTypes = () => {
     trainModelNode: TrainModelNode,
     mcpNode: MCPNode,
     workflowExecutorNode: WorkflowExecutorNode,
+    humanInTheLoopNode: HumanInTheLoopNode,
   };
 };
