@@ -17,6 +17,12 @@ from app.middlewares._middleware import build_middlewares
 from app.middlewares.rate_limit_middleware import init_rate_limiter
 from app.db.multi_tenant_session import multi_tenant_manager
 
+# Ensure repository root (which contains `backend_shared`) is on sys.path for any
+# entrypoint that imports the `app` package directly (e.g. uvicorn, tests, Celery).
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in os.sys.path:
+    os.sys.path.insert(0, str(PROJECT_ROOT))
+
 from celery.schedules import crontab
 from celery import Celery
 
@@ -138,47 +144,9 @@ async def _cleanup_redis_services(app: FastAPI, redis_string, redis_binary):
         logger.error(f"Error closing Redis binary client: {e}")
 
 
-async def _initialize_websocket_services():
-    """
-    Initialize WebSocket-related services.
 
-    This includes:
-    - SocketConnectionManager (WebSocket rooms and Redis Pub/Sub)
-    """
-    from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-
-    logger.info("Initializing WebSocket services...")
-
-    try:
-        # Get instance from DI (Redis dependency already injected)
-        socket_manager = injector.get(SocketConnectionManager)
-
-        # Initialize Redis Pub/Sub subscriber for cross-server broadcasting
-        await socket_manager.initialize_redis_subscriber()
-        logger.info("SocketConnectionManager initialized with Redis Pub/Sub")
-    except Exception as e:
-        logger.error(f"Failed to initialize SocketConnectionManager: {e}")
-        raise
-
-
-async def _cleanup_websocket_services():
-    """
-    Clean up WebSocket-related services.
-
-    This includes:
-    - Closing all WebSocket connections
-    - Shutting down Redis Pub/Sub subscriber
-    """
-    from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-
-    logger.info("Cleaning up WebSocket services...")
-
-    try:
-        socket_manager = injector.get(SocketConnectionManager)
-        await socket_manager.cleanup()
-        logger.info("SocketConnectionManager cleanup complete")
-    except Exception as e:
-        logger.error(f"Error during SocketConnectionManager cleanup: {e}")
+# WebSocket connection management has been moved to the standalone websocket service.
+# The backend's SocketConnectionManager now only publishes to Redis (no subscriber needed).
 
 
 # --------------------------------------------------------------------------- #
@@ -192,7 +160,6 @@ async def _lifespan(app: FastAPI):
 
     Manages initialization and cleanup of:
     - Redis services (connection manager, cache)
-    - WebSocket services (connection manager, pub/sub)
     - Database services (multi-tenant sessions)
     - Application services (permissions, tenants)
     """
@@ -203,7 +170,6 @@ async def _lifespan(app: FastAPI):
 
     # Initialize services in dependency order
     redis_string, redis_binary = await _initialize_redis_services(app)
-    await _initialize_websocket_services()
 
     # Initialize database and application services
     await multi_tenant_manager.initialize()
@@ -221,7 +187,6 @@ async def _lifespan(app: FastAPI):
         logger.info("Starting application shutdown...")
 
         # Clean up services in reverse dependency order
-        await _cleanup_websocket_services()
         await _cleanup_redis_services(app, redis_string, redis_binary)
         await multi_tenant_manager.close_all()
 

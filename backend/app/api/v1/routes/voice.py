@@ -3,16 +3,12 @@ import logging
 import os
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Query
 import httpx
-from app.auth.dependencies import auth, permissions, socket_auth
-from app.services.auth import AuthService
-from app.auth.utils import has_permission, socket_user_id
+from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
-import openai
 
 from app.tasks.audio_tasks import transcribe_audio_files_async
-from app.schemas.socket_principal import SocketPrincipal
 
 logger = logging.getLogger(__name__)
 
@@ -72,34 +68,8 @@ async def get_openai_session_key(lang_code: str = Query(default=""), input_audio
         data = response.json()
         return data["client_secret"]["value"]
 
-@router.websocket("/audio/tts")
-async def ws_tts(
-        websocket: WebSocket,
-        principal: SocketPrincipal = socket_auth(["create:in_progress_conversation"]),
-    ):
 
-    logger.debug("WebSocket connection accepted, user is: %s", principal.user_id)
-    await websocket.accept()
-    
-    text_message = await websocket.receive_text()
-    logger.debug("Received data: %s", text_message)
-    message = json.loads(text_message)["text"]
-
-    #await websocket.send_text('|AUDIO_START|')
-    client = openai.OpenAI()
-    client.api_key = os.getenv("OPENAI_API_KEY")
-
-    with client.audio.speech.with_streaming_response.create(
-                    model="tts-1",
-                    voice="nova",
-                    response_format="mp3",  # Changed to mp3 format
-                    input=message,
-                ) as response:
-                    for chunk in response.iter_bytes(chunk_size=1024):
-                        await websocket.send_bytes(chunk)
-    #await websocket.send_text('|AUDIO_END|')
-    await websocket.close()
-    return {"message": "WebSocket connection closed"}
+# TTS WebSocket endpoint has been moved to the standalone websocket service.
 
 
 @router.get("/run-s3-audio-sync/{item_id}", status_code=200, summary="Trabscribe the content of S3 Bucket  defined Datasource", dependencies=[Depends(auth)])

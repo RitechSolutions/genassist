@@ -3,6 +3,8 @@ This is the main file for the FastAPI application.
 It is used to run the application in development mode.
 """
 import os
+import sys
+from pathlib import Path
 
 # Prefer HF_HOME over deprecated TRANSFORMERS_CACHE (Transformers v5+).
 # Must run before any code that imports transformers/sentence_transformers.
@@ -10,6 +12,11 @@ if "TRANSFORMERS_CACHE" in os.environ:
     if "HF_HOME" not in os.environ:
         os.environ["HF_HOME"] = os.environ["TRANSFORMERS_CACHE"]
     del os.environ["TRANSFORMERS_CACHE"]
+
+# Ensure repository root is on sys.path so shared packages like `backend_shared` resolve
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import logging
 import uvicorn

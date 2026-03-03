@@ -17,6 +17,7 @@ export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_update
 
 export class ChatService {
   private baseUrl: string;
+  private websocketUrl: string | undefined;
   private apiKey: string;
   private metadata: Record<string, any> | undefined;
   private conversationId: string | null = null;
@@ -48,6 +49,7 @@ export class ChatService {
 
   constructor(
     baseUrl: string,
+    websocketUrl: string | undefined,
     apiKey: string,
     metadata?: Record<string, any>,
     tenant?: string,
@@ -56,6 +58,12 @@ export class ChatService {
     usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+
+    if (websocketUrl) {
+      // use new websocket url
+      this.websocketUrl = websocketUrl.endsWith("/") ? websocketUrl.slice(0, -1) : websocketUrl;
+    }
+
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
@@ -726,6 +734,10 @@ export class ChatService {
       return;
     }
 
+    if (!this.websocketUrl) {
+      throw new Error("WebSocket URL is required");
+    }
+
     if (this.webSocket) {
       this.webSocket.close();
     }
@@ -737,7 +749,6 @@ export class ChatService {
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
 
     // Build WebSocket URL with proper authentication
-    const wsBase = this.baseUrl.replace("http", "ws");
     const topics = ["message", "takeover", "finalize"];
     const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
 
@@ -746,7 +757,8 @@ export class ChatService {
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
 
-    let wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+
+    let wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
 
     // Add tenant as query parameter if provided
     if (this.tenant) {
@@ -764,6 +776,14 @@ export class ChatService {
     this.webSocket.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data as string);
+
+        // Respond to server-side heartbeat pings
+        if (data.type === "ping") {
+          if (this.webSocket) {
+            this.webSocket.send(JSON.stringify({ type: "pong" }));
+            return;
+          }
+        }
 
         if (data.type === "message" && this.messageHandler) {
           if (Array.isArray(data.payload)) {

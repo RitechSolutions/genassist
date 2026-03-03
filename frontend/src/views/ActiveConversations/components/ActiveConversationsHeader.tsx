@@ -16,8 +16,8 @@ export function ActiveConversationsHeader({ title }: HeaderProps) {
         </Badge>
       </div>
       <Link to="/transcripts?status=in_progress&status=takeover">
-        <Button 
-          variant="outline" 
+        <Button
+          variant="outline"
           className="h-10 px-4 py-2 rounded-full border-input"
         >
           View all

@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import { Copy } from "lucide-react";
 import { getAgentConfig, getAgentIntegrationKey } from "@/services/api";
-import { getApiUrl } from "@/config/api";
+import { getApiUrl, getWebsocketUrl } from "@/config/api";
 import { getTenantId } from "@/services/auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/tabs";
 import { cn } from "@/helpers/utils";
@@ -77,6 +77,7 @@ export const IntegrationCodePanel = ({
   const agentId = agentIdProp ?? agentIdParam;
   const [configName, setConfigName] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState<string>("");
+  const [websocketUrl, setWebsocketUrl] = useState<string>("");
   const [apiKey, setApiKey] = useState<string>("");
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
@@ -95,6 +96,9 @@ export const IntegrationCodePanel = ({
 
         const fetchedBaseUrl = await getApiUrl();
         setBaseUrl(fetchedBaseUrl);
+
+        const fetchedWebsocketUrl = await getWebsocketUrl();
+        setWebsocketUrl(fetchedWebsocketUrl);
 
         try {
           const fetchedApiKey = await getAgentIntegrationKey(agentId);
@@ -198,11 +202,12 @@ export const IntegrationCodePanel = ({
   const reactInstall = `npm install genassist-chat-react
 # or
 yarn add genassist-chat-react`;
-  
+
   // Build the React usage code with conditional feature flags
   const buildReactUsage = () => {
     const props: string[] = [
       '  baseUrl={process.env.REACT_APP_CHAT_API_URL}',
+      '  websocketUrl={process.env.REACT_APP_WEBSOCKET_URL}',
       '  apiKey={process.env.REACT_APP_CHAT_API_KEY}',
       '  headerTitle="Name"',
       '  agentName="Agent"',
@@ -222,6 +227,9 @@ yarn add genassist-chat-react`;
     if (featureFlags?.useWs) {
       props.push('  useWs={true}');
     }
+    if (featureFlags?.usePoll) {
+      props.push('  usePoll={true}');
+    }
 
     props.push(`  theme={{
     primaryColor: '#2962FF',
@@ -240,9 +248,12 @@ ${props.join('\n')}
   };
 
   const reactUsage = buildReactUsage();
-  const reactEnv = `REACT_APP_CHAT_API_URL=${baseUrl} # change this to your backend url
-REACT_APP_CHAT_API_KEY=${apiKey}
-REACT_APP_TENANT_ID=your-tenant-id # optional, if applicable`;
+  const reactEnv = `
+REACT_APP_CHAT_API_URL=${baseUrl} # change this to your backend url
+REACT_APP_WEBSOCKET_URL=${websocketUrl} # change this to your websocket url
+REACT_APP_CHAT_API_KEY=${apiKey} # change this to your api key
+REACT_APP_TENANT_ID=your-tenant-id # optional, if applicable
+  `;
 
   const flutterDeps = `dependencies:
   gen_agent_chat: ^1.0.0`;
@@ -254,7 +265,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GenAgentChat(
-      url: '${baseUrl}',
+      baseUrl: '${baseUrl}',
+      websocketUrl: '${websocketUrl}',
       apiKey='Enter your API key here',
       metadata: {
       'id': '${SAMPLE_METADATA.id}',
@@ -271,6 +283,7 @@ struct ContentView: View {
   var body: some View {
     GenAgentChatView(
       url: URL(string: "${baseUrl}")!,
+      websocketUrl: URL(string: "${websocketUrl}")!,
       apiKey="Enter your API key here",
       metadata: [
         "id": "${SAMPLE_METADATA.id}",
