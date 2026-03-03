@@ -312,10 +312,12 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       });
 
       const res = await testWorkflow({
-        input_data: { thread_id: pausedThreadId },
+        input_data: {
+          thread_id: pausedThreadId,
+          human_in_the_loop_from_form: parsedValues,
+          ...(pausedNodeId && { human_in_the_loop_node_id: pausedNodeId }),
+        },
         workflow: workflow,
-        human_in_the_loop_data: parsedValues,
-        ...(pausedNodeId && { human_in_the_loop_node_id: pausedNodeId }),
       });
 
       if (!res) {

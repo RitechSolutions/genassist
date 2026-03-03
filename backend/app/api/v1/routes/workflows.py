@@ -292,11 +292,7 @@ async def test_workflow(
         workflow_engine = WorkflowEngine(workflow_config)
 
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
-        start_node_id = test_data.get("human_in_the_loop_node_id")
-
-        if test_data.get("human_in_the_loop_data"):
-            input_data["human_in_the_loop_from_form"] = test_data["human_in_the_loop_data"]
-            input_data["human_in_the_loop_node_id"] = start_node_id
+        start_node_id = input_data.get("human_in_the_loop_node_id")
 
         state = await workflow_engine.execute_from_node(
             start_node_id=start_node_id,
