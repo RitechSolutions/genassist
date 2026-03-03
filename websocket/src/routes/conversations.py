@@ -29,7 +29,7 @@ async def ws_conversation(
     try:
         user = await verifier.verify(
             access_token, api_key,
-            ["read:in_progress_conversation"], tenant_id,
+            ["update:in_progress_conversation"], tenant_id,
         )
     except AuthenticationError as exc:
         await websocket.close(code=4401, reason=exc.detail)
