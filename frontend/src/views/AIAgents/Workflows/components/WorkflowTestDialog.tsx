@@ -28,7 +28,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
-import { UserInputFormField } from "../types/nodes";
+import { HumanInTheLoopFormField } from "../types/nodes";
 import { testWorkflow, WorkflowTestResponse } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
@@ -38,7 +38,7 @@ import JsonViewer from "@/components/JsonViewer";
 
 interface PausedFormSchema {
   message: string;
-  fields: UserInputFormField[];
+  fields: HumanInTheLoopFormField[];
   node_id: string;
 }
 
@@ -72,7 +72,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   const [pausedFormSchema, setPausedFormSchema] = useState<PausedFormSchema | null>(null);
   const [pausedThreadId, setPausedThreadId] = useState<string | null>(null);
   const [pausedNodeId, setPausedNodeId] = useState<string | null>(null);
-  const [userInputFormData, setUserInputFormData] = useState<Record<string, string>>({});
+  const [humanInTheLoopFormData, setHumanInTheLoopFormData] = useState<Record<string, string>>({});
   // Generate thread_id function
   const generateThreadId = () => {
     const newThreadId = uuidv4();
@@ -149,7 +149,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
 
   // Extract pause info from the response
   const extractPauseInfo = (res: WorkflowTestResponse) => {
-    // New path: form_schema is inside res.output (UserInputNode returns it as output)
+    // New path: form_schema is inside res.output (HumanInTheLoopNode returns it as output)
     const output = res.output;
     const formSchema = (
       (output != null && typeof output === "object" && (output as Record<string, unknown>).form_schema) ||
@@ -177,7 +177,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     // Initialize form data for the paused node's fields
     const initialData: Record<string, string> = {};
     formSchema.fields.forEach((f) => { initialData[f.name] = ""; });
-    setUserInputFormData(initialData);
+    setHumanInTheLoopFormData(initialData);
   };
 
   // Handle completed response from test or resume
@@ -301,7 +301,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       // Parse form values based on field types
       const parsedValues: Record<string, unknown> = {};
       pausedFormSchema.fields.forEach((field) => {
-        const val = userInputFormData[field.name] || "";
+        const val = humanInTheLoopFormData[field.name] || "";
         if (field.type === "number") {
           parsedValues[field.name] = val ? Number(val) : 0;
         } else if (field.type === "boolean") {
@@ -314,8 +314,8 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       const res = await testWorkflow({
         input_data: { thread_id: pausedThreadId },
         workflow: workflow,
-        user_input_data: parsedValues,
-        ...(pausedNodeId && { user_input_node_id: pausedNodeId }),
+        human_in_the_loop_data: parsedValues,
+        ...(pausedNodeId && { human_in_the_loop_node_id: pausedNodeId }),
       });
 
       if (!res) {
@@ -341,7 +341,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     setPausedFormSchema(null);
     setPausedThreadId(null);
     setPausedNodeId(null);
-    setUserInputFormData({});
+    setHumanInTheLoopFormData({});
     setResponse(null);
     setError(null);
   };
@@ -634,9 +634,9 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                 <div className="space-y-3">
                   {pausedFormSchema.fields.map((field) => {
                     const fieldKey = `paused-${field.name}`;
-                    const val = userInputFormData[field.name] || "";
+                    const val = humanInTheLoopFormData[field.name] || "";
                     const onChange = (v: string) =>
-                      setUserInputFormData((prev) => ({ ...prev, [field.name]: v }));
+                      setHumanInTheLoopFormData((prev) => ({ ...prev, [field.name]: v }));
 
                     return (
                       <div key={field.name} className="space-y-1">
@@ -723,7 +723,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                     disabled={
                       testing ||
                       pausedFormSchema.fields.some(
-                        (f) => f.required && !userInputFormData[f.name]
+                        (f) => f.required && !humanInTheLoopFormData[f.name]
                       )
                     }
                     className="flex items-center gap-2"

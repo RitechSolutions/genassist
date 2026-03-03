@@ -42,7 +42,7 @@ class RegistryItem:
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
     async def execute(self, session_message: str, metadata: dict) -> dict:
-        """Execute a workflow, or re-execute from a user input node if form data is present."""
+        """Execute a workflow, optionally resuming from a specific node."""
         if self.workflow_engine is None:
             raise ValueError(
                 f"Cannot execute workflow for agent {self.agent_name} ({self.agent_id}): "
@@ -50,25 +50,17 @@ class RegistryItem:
             )
 
         thread_id = metadata.get("thread_id", None)
-        user_input_from_form = metadata.get("user_input_from_form")
-        user_input_node_id = metadata.get("user_input_node_id")
+        start_node_id = metadata.get("human_in_the_loop_node_id")
 
         input_data = {
             "message": session_message,
             **metadata,
         }
 
-        if user_input_from_form is not None and user_input_node_id:
-            # Re-execute workflow starting from the user input node
-            state = await self.workflow_engine.execute_from_node(
-                start_node_id=user_input_node_id,
-                input_data=input_data,
-                thread_id=thread_id,
-            )
-        else:
-            state = await self.workflow_engine.execute_from_node(
-                input_data=input_data,
-                thread_id=thread_id,
-            )
+        state = await self.workflow_engine.execute_from_node(
+            start_node_id=start_node_id,
+            input_data=input_data,
+            thread_id=thread_id,
+        )
 
         return state.format_state_as_response()

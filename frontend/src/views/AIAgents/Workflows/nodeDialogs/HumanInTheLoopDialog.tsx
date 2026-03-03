@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { UserInputNodeData, UserInputFormField } from "../types/nodes";
+import { HumanInTheLoopNodeData, HumanInTheLoopFormField } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
@@ -31,7 +31,7 @@ const FIELD_TYPES = [
   { value: "date", label: "Date" },
 ] as const;
 
-const emptyField: UserInputFormField = {
+const emptyField: HumanInTheLoopFormField = {
   name: "",
   type: "text",
   label: "",
@@ -45,11 +45,11 @@ interface FieldDialogState {
   isOpen: boolean;
   mode: "add" | "edit";
   editIndex: number | null;
-  field: UserInputFormField;
+  field: HumanInTheLoopFormField;
 }
 
-export const UserInputDialog: React.FC<
-  BaseNodeDialogProps<UserInputNodeData, UserInputNodeData>
+export const HumanInTheLoopDialog: React.FC<
+  BaseNodeDialogProps<HumanInTheLoopNodeData, HumanInTheLoopNodeData>
 > = (props) => {
   const { isOpen, onClose, data, onUpdate } = props;
 
@@ -58,7 +58,7 @@ export const UserInputDialog: React.FC<
     data.message || "Please provide the following information:"
   );
   const [askOnce, setAskOnce] = useState(data.ask_once !== false);
-  const [formFields, setFormFields] = useState<UserInputFormField[]>(
+  const [formFields, setFormFields] = useState<HumanInTheLoopFormField[]>(
     data.form_fields || []
   );
   const [fieldDialog, setFieldDialog] = useState<FieldDialogState>({
@@ -126,7 +126,7 @@ export const UserInputDialog: React.FC<
   };
 
   const updateDialogField = (
-    key: keyof UserInputFormField,
+    key: keyof HumanInTheLoopFormField,
     value: unknown
   ) => {
     setFieldDialog((prev) => ({
@@ -188,7 +188,7 @@ export const UserInputDialog: React.FC<
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="User Input"
+          placeholder="Human In The Loop"
           className="break-all w-full"
         />
       </div>

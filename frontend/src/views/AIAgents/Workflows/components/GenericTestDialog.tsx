@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/select";
 import { Play, X } from "lucide-react";
-import { NodeData, UserInputNodeData } from "../types/nodes";
+import { NodeData, HumanInTheLoopNodeData } from "../types/nodes";
 import { testNode, WorkflowTestResponse } from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
@@ -75,11 +75,11 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
   // Extract variables from node config when dialog opens
   useEffect(() => {
     if (isOpen && nodeData) {
-      // Special handling for userInputNode — populate fields from form_fields config
-      if (nodeType === "userInputNode" && "form_fields" in nodeData) {
-        const uiNodeData = nodeData as UserInputNodeData;
+      // Special handling for humanInTheLoopNode — populate fields from form_fields config
+      if (nodeType === "humanInTheLoopNode" && "form_fields" in nodeData) {
+        const uiNodeData = nodeData as HumanInTheLoopNodeData;
         const formFields = uiNodeData.form_fields || [];
-        const userInputFields: GenericTestInputField[] = formFields.map((field) => ({
+        const humanInTheLoopFields: GenericTestInputField[] = formFields.map((field) => ({
           id: field.name,
           label: field.label,
           type: field.type,
@@ -89,10 +89,10 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           source: "form_fields",
           options: field.type === "select" ? field.options : undefined,
         }));
-        setInputFields(userInputFields);
+        setInputFields(humanInTheLoopFields);
         setAvailableData(nodeId ? getAvailableDataForNode(nodeId) : null);
         const initialData: Record<string, string> = {};
-        userInputFields.forEach((field) => { initialData[field.id] = ""; });
+        humanInTheLoopFields.forEach((field) => { initialData[field.id] = ""; });
         setFormData(initialData);
         return;
       }
@@ -255,7 +255,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     }));
   };
 
-  const allFieldsOptional = nodeType === "userInputNode" && inputFields.length > 0 && inputFields.every((f) => !f.required);
+  const allFieldsOptional = nodeType === "humanInTheLoopNode" && inputFields.length > 0 && inputFields.every((f) => !f.required);
 
   const handleSkip = async () => {
     setIsLoading(true);
@@ -326,7 +326,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           const schemaField = inputSchema[field.id] as SchemaField;
           fieldType = schemaField.type;
         }
-        // Map userInputNode field types to schema-compatible types
+        // Map humanInTheLoopNode field types to schema-compatible types
         if (field.source === "form_fields") {
           const typeMap: Record<string, SchemaType> = {
             text: "string", select: "string", date: "string",

@@ -4,7 +4,7 @@ Workflow engine for building and executing workflows with state management.
 
 from app.modules.workflow.utils import process_path_based_input_data
 from app.modules.workflow.engine.base_node import BaseNode
-from app.modules.workflow.engine.workflow_state import WorkflowState
+from app.modules.workflow.engine.workflow_state import WorkflowState, WorkflowPausedException
 from app.modules.workflow.engine.nodes import (
     ChatInputNode,
     ChatOutputNode,
@@ -34,7 +34,7 @@ from app.modules.workflow.engine.nodes import (
     ThreadRAGNode,
     MCPNode,
     WorkflowExecutorNode,
-    UserInputNode,
+    HumanInTheLoopNode,
     SetStateNode
 )
 from typing import Dict, Any, List, Optional, Set
@@ -101,7 +101,7 @@ class WorkflowEngine:
         cls._node_registry["threadRAGNode"] = ThreadRAGNode
         cls._node_registry["mcpNode"] = MCPNode
         cls._node_registry["workflowExecutorNode"] = WorkflowExecutorNode
-        cls._node_registry["userInputNode"] = UserInputNode
+        cls._node_registry["humanInTheLoopNode"] = HumanInTheLoopNode
         cls._node_registry["setStateNode"] = SetStateNode
 
         cls._registry_initialized = True
@@ -132,7 +132,7 @@ class WorkflowEngine:
             "dataMapperNode",
             "toolBuilderNode",
             "aggregatorNode",
-            "userInputNode",
+            "humanInTheLoopNode",
             "setStateNode"
         }
 
@@ -253,11 +253,6 @@ class WorkflowEngine:
             state.start_execution()
             state.total_steps = len(self.workflow["nodes"])
 
-            # Pre-load cached UserInput outputs so downstream nodes can
-            # reference them via {{node_outputs.<id>.<field>}} even when
-            # we're re-executing from a mid-workflow node.
-            await self._preload_cached_user_inputs(state, start_node_id)
-
             # Execute from the specified node
             try:
                 await self._execute_from_node_recursive(
@@ -267,9 +262,17 @@ class WorkflowEngine:
 
                 state.complete_execution()
 
+            except WorkflowPausedException as e:
+                # Workflow paused (e.g. HumanInTheLoop needs user input)
+                state.output = e.pause_data
+                state.status = "completed"
+                state.is_executing = False
+
             except ValueError as e:
                 state.fail_execution(str(e))
 
+        except WorkflowPausedException:
+            pass  # Already handled above
         except Exception as e:
             state.fail_execution(str(e))
             raise
@@ -285,27 +288,6 @@ class WorkflowEngine:
         except Exception as e:
             logger.error(f"Error adding message to memory: {e}")
         return state
-
-    async def _preload_cached_user_inputs(
-        self, state: WorkflowState, start_node_id: str
-    ) -> None:
-        """Pre-load cached UserInput outputs into the state.
-
-        When re-executing from a mid-workflow node, earlier UserInputNodes
-        won't run again. Their cached data (from ask_once) is loaded into
-        node_outputs so downstream nodes can reference them via
-        {{node_outputs.<id>.<field>}}.
-        """
-        memory = state.get_memory()
-        for node in self.workflow["nodes"]:
-            node_id = node["id"]
-            if node.get("type") == "userInputNode" and node_id != start_node_id:
-                if node.get("data", {}).get("ask_once", True):
-                    node_key = f"user_input:{node_id}"
-                    cached = await memory.get_metadata(node_key)
-                    if cached is not None:
-                        state.set_node_output(node_id, cached)
-                        logger.debug(f"Pre-loaded cached user input for node {node_id}")
 
     def _find_starting_nodes(self) -> List[str]:
         """Find nodes with no incoming edges (starting nodes)."""
@@ -424,7 +406,12 @@ class WorkflowEngine:
             # Use return_exceptions=True to handle any individual task failures gracefully
             results = await asyncio.gather(*next_tasks, return_exceptions=True)
 
-            # Log any exceptions that occurred during parallel execution
+            # Re-raise WorkflowPausedException before logging other errors
+            for result in results:
+                if isinstance(result, WorkflowPausedException):
+                    raise result
+
+            # Log any other exceptions that occurred during parallel execution
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     logger.error(
@@ -478,6 +465,8 @@ class WorkflowEngine:
             state.current_step += 1
             return output
 
+        except WorkflowPausedException:
+            raise  # Propagate pause signal to top-level execute_from_node
         except Exception as e:
             logger.error(f"Error executing node {node_id}: {e}")
             state.fail_execution(f"Node {node_id} failed: {str(e)}")

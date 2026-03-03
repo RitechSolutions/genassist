@@ -1,24 +1,24 @@
 import React, { useState } from "react";
 import { NodeProps } from "reactflow";
-import { UserInputNodeData } from "../../types/nodes";
+import { HumanInTheLoopNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import BaseNodeContainer from "../BaseNodeContainer";
 import nodeRegistry from "../../registry/nodeRegistry";
-import { UserInputDialog } from "../../nodeDialogs/UserInputDialog";
+import { HumanInTheLoopDialog } from "../../nodeDialogs/HumanInTheLoopDialog";
 import { NodeContentRow } from "../nodeContent";
 
-export const USER_INPUT_NODE_TYPE = "userInputNode";
+export const HUMAN_IN_THE_LOOP_NODE_TYPE = "humanInTheLoopNode";
 
-const UserInputNode: React.FC<NodeProps<UserInputNodeData>> = ({
+const HumanInTheLoopNode: React.FC<NodeProps<HumanInTheLoopNodeData>> = ({
   id,
   data,
   selected,
 }) => {
-  const nodeDefinition = nodeRegistry.getNodeType(USER_INPUT_NODE_TYPE);
+  const nodeDefinition = nodeRegistry.getNodeType(HUMAN_IN_THE_LOOP_NODE_TYPE);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const color = getNodeColor(nodeDefinition?.category || "io");
 
-  const onUpdate = (updatedData: UserInputNodeData) => {
+  const onUpdate = (updatedData: HumanInTheLoopNodeData) => {
     if (data.updateNodeData) {
       data.updateNodeData(id, {
         ...data,
@@ -52,24 +52,24 @@ const UserInputNode: React.FC<NodeProps<UserInputNodeData>> = ({
         data={data}
         selected={selected}
         iconName={nodeDefinition?.icon || "ClipboardList"}
-        title={data.name || nodeDefinition?.label || "User Input"}
+        title={data.name || nodeDefinition?.label || "Human In The Loop"}
         subtitle={nodeDefinition?.shortDescription}
         color={color}
-        nodeType={USER_INPUT_NODE_TYPE}
+        nodeType={HUMAN_IN_THE_LOOP_NODE_TYPE}
         nodeContent={nodeContent}
         onSettings={() => setIsEditDialogOpen(true)}
       />
 
-      <UserInputDialog
+      <HumanInTheLoopDialog
         isOpen={isEditDialogOpen}
         onClose={() => setIsEditDialogOpen(false)}
         data={data}
         onUpdate={onUpdate}
         nodeId={id}
-        nodeType={USER_INPUT_NODE_TYPE}
+        nodeType={HUMAN_IN_THE_LOOP_NODE_TYPE}
       />
     </>
   );
 };
 
-export default UserInputNode;
+export default HumanInTheLoopNode;

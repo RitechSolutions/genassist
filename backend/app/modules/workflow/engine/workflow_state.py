@@ -16,6 +16,19 @@ from app.modules.workflow.agents.memory import (
 logger = logging.getLogger(__name__)
 
 
+class WorkflowPausedException(Exception):
+    """Raised when a node (e.g. HumanInTheLoop) needs to pause the workflow.
+
+    This exception propagates through the entire call stack — including
+    tool-builder subflows and agent tool invocations — so the top-level
+    engine can return the pause payload to the caller.
+    """
+
+    def __init__(self, pause_data: dict):
+        self.pause_data = pause_data
+        super().__init__("Workflow paused")
+
+
 class WorkflowState:
     """Enhanced class to maintain state during workflow execution with performance tracking"""
 
@@ -512,7 +525,7 @@ class WorkflowState:
         )
         performance_metrics = self.performance_metrics
 
-        # Detect awaiting_input from node output (UserInputNode returns form_schema as output)
+        # Detect awaiting_input from node output (HumanInTheLoopNode returns form_schema as output)
         if isinstance(output, dict) and output.get("status") == "awaiting_input":
             status = "awaiting_input"
         else:

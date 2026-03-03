@@ -462,8 +462,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         .join(', ');
       const nodeId = getFormNodeId(messageIndex);
       await sendMessage(summaryText, [], {
-        user_input_from_form: formData,
-        ...(nodeId && { user_input_node_id: nodeId }),
+        human_in_the_loop_from_form: formData,
+        ...(nodeId && { human_in_the_loop_node_id: nodeId }),
       }, reCaptchaTokenRef.current);
       setSubmittedForms((prev) => new Set(prev).add(messageIndex));
     } catch (error) {
@@ -479,9 +479,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     try {
       const nodeId = getFormNodeId(messageIndex);
       await sendMessage('Skipped', [], {
-        user_input_from_form: {},
-        user_input_cancelled: true,
-        ...(nodeId && { user_input_node_id: nodeId }),
+        human_in_the_loop_from_form: {},
+        human_in_the_loop_cancelled: true,
+        ...(nodeId && { human_in_the_loop_node_id: nodeId }),
       }, reCaptchaTokenRef.current);
       setSubmittedForms((prev) => new Set(prev).add(messageIndex));
     } catch (error) {
