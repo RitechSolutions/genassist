@@ -11,9 +11,8 @@ import {
 } from "@/services/api";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
-import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
-import { ChevronLeft, CheckCircle2, Trash2, Plus, HelpCircle, MessageSquare } from "lucide-react";
+import { ChevronLeft, CheckCircle2, Trash2, Plus, HelpCircle, MessageSquare, X } from "lucide-react";
 // import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import {
   Sheet,
@@ -21,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetDescription,
+  SheetClose,
 } from "@/components/sheet";
 import { Textarea } from "@/components/textarea";
 
@@ -825,7 +825,6 @@ export const AgentFormDialog = ({
 }: AgentDialogProps) => {
   const formId = "agent-form-dialog";
   const isEditMode = !!data?.id;
-  console.log('iEditMode', isEditMode);
 
   // Prevent body scroll when dialog is open
   React.useEffect(() => {
@@ -843,16 +842,20 @@ export const AgentFormDialog = ({
 
   return (
     <Sheet open={isOpen} modal={false}>
-      <SheetContent hideOverlay={true} className="sm:max-w-lg w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full">
-        <SheetHeader className="p-6 pb-4 border-b shrink-0">
+      <SheetContent hideOverlay={true} hideDefaultClose={true} className="sm:max-w-lg w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full">
+        <SheetHeader className="p-6 pb-4 border-b shrink-0 flex flex-row">
           <SheetTitle className="text-xl font-semibold">
             {data?.id ? "Edit Agent" : "Create New Agent"}
-          </SheetTitle>
+
           <SheetDescription>
             {data?.id
               ? "Update your agent's configuration and settings."
               : "Configure your new AI agent with a name, description, and welcome settings."}
           </SheetDescription>
+          </SheetTitle>
+          <SheetClose className="ml-auto self-start" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </SheetClose>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pt-4 pb-6">
           <AgentForm
