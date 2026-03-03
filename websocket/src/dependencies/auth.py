@@ -1,6 +1,6 @@
 from fastapi import WebSocket, Query, WebSocketException, Depends
 from starlette_context import context
-from backend_shared.schemas.auth import AuthenticatedUser
+from schemas.auth import AuthenticatedUser
 from auth.token_verifier import AuthenticationError
 
 

@@ -17,12 +17,6 @@ from app.middlewares._middleware import build_middlewares
 from app.middlewares.rate_limit_middleware import init_rate_limiter
 from app.db.multi_tenant_session import multi_tenant_manager
 
-# Ensure repository root (which contains `backend_shared`) is on sys.path for any
-# entrypoint that imports the `app` package directly (e.g. uvicorn, tests, Celery).
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in os.sys.path:
-    os.sys.path.insert(0, str(PROJECT_ROOT))
-
 from celery.schedules import crontab
 from celery import Celery
 

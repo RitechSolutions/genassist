@@ -5,7 +5,7 @@ import openai
 from fastapi import APIRouter, WebSocket
 
 from dependencies.auth import require_authenticated_user
-from backend_shared.schemas.auth import AuthenticatedUser
+from schemas.auth import AuthenticatedUser
 from config import settings
 
 logger = logging.getLogger(__name__)

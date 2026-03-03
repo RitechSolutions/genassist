@@ -8,7 +8,7 @@ import httpx
 
 from config import settings
 # Shared schemas
-from backend_shared.schemas.auth import VerifyTokenRequest, AuthenticatedUser
+from schemas.auth import VerifyTokenRequest, AuthenticatedUser
 
 logger = logging.getLogger(__name__)
 

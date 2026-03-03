@@ -4,7 +4,7 @@ import time
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from dependencies.auth import require_authenticated_user
-from backend_shared.schemas.auth import AuthenticatedUser
+from schemas.auth import AuthenticatedUser
 
 logger = logging.getLogger(__name__)
 
