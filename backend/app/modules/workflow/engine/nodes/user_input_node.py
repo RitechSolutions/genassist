@@ -1,20 +1,23 @@
-"""User Input node that pauses workflow execution to collect user data via a form."""
+"""User Input node that collects user data via a dynamic form."""
 
 from typing import Any, Dict
 import logging
 
 from app.modules.workflow.engine.base_node import BaseNode
-from app.modules.workflow.engine.exceptions import WorkflowPausedException
 
 logger = logging.getLogger(__name__)
 
 
 class UserInputNode(BaseNode):
     """
-    Pauses workflow to request user input via a dynamic form.
+    Collects user input via a dynamic form.
 
-    On first execution: raises WorkflowPausedException with the form schema.
-    On resume (after user submits): returns user input data for downstream nodes.
+    On first execution (no form data available): returns form_schema as output
+    with next_nodes=[] to halt the workflow. The caller re-executes the workflow
+    from this node once the user submits the form.
+
+    On resume (user submitted form data via user_input_from_form in metadata):
+    returns the submitted data for downstream nodes.
     """
 
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -23,12 +26,9 @@ class UserInputNode(BaseNode):
 
         Priority order:
         1. Cached path (ask_once=True): data was already collected — return from memory.
-        2. Provided values (from test dialog or pre-filled input_data) — return them.
-        3. First time / ask_once=False: pause and show the form.
-
-        Note: The resume path after form submission is handled by
-        WorkflowEngine.resume_from_pause(), which bypasses process() entirely
-        and caches the data to memory when ask_once is enabled.
+        2. Submitted form data (user_input_from_form in input_data) — return it.
+        3. Provided values (from test dialog or pre-filled input_data) — return them.
+        4. First time / ask_once=False: return form schema to request input.
 
         Config keys:
             form_fields: List of field definitions [{name, type, label, required, ...}]
@@ -52,25 +52,39 @@ class UserInputNode(BaseNode):
         if not form_fields:
             raise ValueError(f"UserInputNode {self.node_id}: no form fields configured")
 
-        # 2. Check for provided values (e.g. from test dialog)
+        # 2. Check for submitted form data (from frontend form submission)
+        # Only consume if the form data targets THIS node (avoids consuming data meant for another UserInputNode)
+        user_input_from_form = self.state.initial_values.get("user_input_from_form")
+        user_input_node_id = self.state.initial_values.get("user_input_node_id")
+        if user_input_from_form is not None and user_input_node_id == self.node_id:
+            cancelled = self.state.initial_values.get("user_input_cancelled", False)
+            output_data = {**user_input_from_form, "_cancelled": True} if cancelled else user_input_from_form
+            # Cache for ask_once
+            if ask_once:
+                await self.cache_user_input(user_input_from_form)
+            logger.info(f"UserInputNode {self.node_id}: using submitted form data")
+            return output_data
+
+        # 3. Check for provided values (e.g. from test dialog)
         provided_values = self._extract_provided_values(form_fields)
         if provided_values:
             logger.info(f"UserInputNode {self.node_id}: using provided input values")
             return provided_values
 
-        # 3. Pause for input
+        # 4. Return form schema as output — halts execution via next_nodes: []
         form_schema = {
             "message": message,
             "fields": form_fields,
             "node_id": self.node_id,
         }
 
-        logger.info(f"UserInputNode {self.node_id}: pausing workflow for user input")
-        raise WorkflowPausedException(
-            node_id=self.node_id,
-            form_schema=form_schema,
-            message=message,
-        )
+        logger.info(f"UserInputNode {self.node_id}: requesting user input")
+        return {
+            "status": "awaiting_input",
+            "form_schema": form_schema,
+            "node_id": self.node_id,
+            "next_nodes": [],
+        }
 
     def _extract_provided_values(self, form_fields: list) -> Dict[str, Any] | None:
         """Extract pre-filled values from initial_values (e.g. from test-node endpoint).
@@ -86,15 +100,17 @@ class UserInputNode(BaseNode):
         matched = {k: v for k, v in initial.items() if k in field_names}
 
         # Only use provided values if all required fields are present
-        if required_names and required_names.issubset(matched.keys()):
-            return matched
-
-        return None
+        # (when no fields are required, any matched value is sufficient)
+        if not matched:
+            return None
+        if required_names and not required_names.issubset(matched.keys()):
+            return None
+        return matched
 
     async def cache_user_input(self, user_input_data: dict) -> None:
         """Cache user input data for ask_once behavior.
 
-        Called by the engine after resume to persist the user's response
+        Called after form submission to persist the user's response
         so subsequent executions skip the form.
         """
         if self.node_data.get("ask_once", True):

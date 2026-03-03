@@ -293,12 +293,16 @@ async def test_workflow(
 
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
         user_input_data = test_data.get("user_input_data")
+        user_input_node_id = test_data.get("user_input_node_id")
 
-        if user_input_data and thread_id:
-            # Resume a paused workflow with user-provided input
-            state = await workflow_engine.resume_from_pause(
+        if user_input_data and user_input_node_id:
+            # Re-execute from the user input node with submitted form data
+            input_data["user_input_from_form"] = user_input_data
+            input_data["user_input_node_id"] = user_input_node_id
+            state = await workflow_engine.execute_from_node(
+                start_node_id=user_input_node_id,
+                input_data=input_data,
                 thread_id=thread_id,
-                user_input_data=user_input_data,
             )
         else:
             state = await workflow_engine.execute_from_node(

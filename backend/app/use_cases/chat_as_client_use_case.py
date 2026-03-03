@@ -121,8 +121,9 @@ async def process_conversation_update_with_agent(
         elapsed_seconds = (now - conversation.created_at).total_seconds()
 
         if agent_response.get("status") == "awaiting_input":
-            # Workflow paused for user input — send form schema as form_request
-            form_schema = agent_response.get("form_schema", {})
+            # Workflow requesting user input — send form schema as form_request
+            response_output = agent_response.get("response", {})
+            form_schema = response_output.get("form_schema", {}) if isinstance(response_output, dict) else {}
             transcript_object = TranscriptSegmentInput(
                 id=generate_sequential_uuid(),
                 create_time=now,

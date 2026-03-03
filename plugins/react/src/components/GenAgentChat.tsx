@@ -444,6 +444,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     await submitMessage();
   };
 
+  const getFormNodeId = (messageIndex: number): string | undefined => {
+    const msg = messages[messageIndex];
+    if (msg?.type === 'form_request' && msg.text) {
+      try { return JSON.parse(msg.text).node_id; } catch { /* skip */ }
+    }
+    return undefined;
+  };
+
   const handleFormSubmit = async (formData: Record<string, unknown>, messageIndex: number) => {
     if (submittingFormIndex !== null || isAgentTyping) return;
     setSubmittingFormIndex(messageIndex);
@@ -452,7 +460,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       const summaryText = Object.entries(formData)
         .map(([key, value]) => `${key}: ${value}`)
         .join(', ');
-      await sendMessage(summaryText, [], { user_input_from_form: formData }, reCaptchaTokenRef.current);
+      const nodeId = getFormNodeId(messageIndex);
+      await sendMessage(summaryText, [], {
+        user_input_from_form: formData,
+        ...(nodeId && { user_input_node_id: nodeId }),
+      }, reCaptchaTokenRef.current);
       setSubmittedForms((prev) => new Set(prev).add(messageIndex));
     } catch (error) {
       // ignore
@@ -465,7 +477,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     if (submittingFormIndex !== null || isAgentTyping) return;
     setSubmittingFormIndex(messageIndex);
     try {
-      await sendMessage('Skipped', [], { user_input_from_form: {}, user_input_cancelled: true }, reCaptchaTokenRef.current);
+      const nodeId = getFormNodeId(messageIndex);
+      await sendMessage('Skipped', [], {
+        user_input_from_form: {},
+        user_input_cancelled: true,
+        ...(nodeId && { user_input_node_id: nodeId }),
+      }, reCaptchaTokenRef.current);
       setSubmittedForms((prev) => new Set(prev).add(messageIndex));
     } catch (error) {
       // ignore

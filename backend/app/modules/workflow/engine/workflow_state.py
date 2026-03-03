@@ -2,7 +2,7 @@
 Enhanced workflow state management for execution tracking and performance metrics.
 """
 
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Union
 import logging
 import uuid
 from datetime import datetime
@@ -73,10 +73,6 @@ class WorkflowState:
 
         # Error tracking
         self.errors = []
-
-        # Pause/resume tracking
-        self.paused_node_id: Optional[str] = None
-        self.paused_form_schema: Optional[dict] = None
 
         # Edge data and execution context
         self.source_edges = workflow.get("source_edges", {}) if workflow else {}
@@ -245,20 +241,6 @@ class WorkflowState:
         self.execution_path = []
         self.errors = []
         logger.info(f"Workflow execution started: {self.execution_id}")
-
-    def pause_execution(self, node_id: str, form_schema: dict) -> None:
-        """Pause workflow execution at a specific node for user input."""
-        self.status = "paused"
-        self.is_executing = False
-        self.paused_node_id = node_id
-        self.paused_form_schema = form_schema
-        logger.info(f"Workflow execution paused at node {node_id}: {self.execution_id}")
-
-    def resume_execution(self) -> None:
-        """Resume workflow execution after user input."""
-        self.status = "running"
-        self.is_executing = True
-        logger.info(f"Workflow execution resumed: {self.execution_id}")
 
     def complete_execution(self) -> None:
         """Complete workflow execution"""
@@ -530,7 +512,8 @@ class WorkflowState:
         )
         performance_metrics = self.performance_metrics
 
-        if self.status == "paused":
+        # Detect awaiting_input from node output (UserInputNode returns form_schema as output)
+        if isinstance(output, dict) and output.get("status") == "awaiting_input":
             status = "awaiting_input"
         else:
             status = "success"
@@ -543,41 +526,8 @@ class WorkflowState:
             "state": state,
         }
 
-        # Surface pause data as top-level keys for easy caller access
-        if self.status == "paused":
-            response["form_schema"] = self.paused_form_schema
-            response["node_id"] = self.paused_node_id
-            response["thread_id"] = self.thread_id
-
         # Sanitize response to ensure JSON compliance (handle inf, -inf, nan values)
         # and optimize large arrays with uniform schemas for performance
         from app.modules.workflow.engine.nodes.ml import ml_utils
 
         return ml_utils.sanitize_for_json(response)
-        # return ml_utils.optimize_output_for_response(sanitized)
-
-    # Fields persisted when a workflow is paused for user input.
-    _PAUSE_FIELDS = [
-        "execution_id", "thread_id", "workflow_id", "initial_values",
-        "node_outputs", "node_inputs", "node_execution_status",
-        "execution_path", "execution_history",
-        "paused_node_id", "paused_form_schema",
-        "current_step", "total_steps", "execution_start_time", "status",
-    ]
-
-    def serialize_for_pause(self) -> dict:
-        """Serialize state for persistence when workflow is paused for user input."""
-        return {field: getattr(self, field) for field in self._PAUSE_FIELDS}
-
-    @classmethod
-    def deserialize_from_pause(cls, workflow: dict, data: dict) -> "WorkflowState":
-        """Reconstruct a WorkflowState from serialized pause data to resume execution."""
-        state = cls(
-            workflow=workflow,
-            initial_values=data.get("initial_values", {}),
-            thread_id=data["thread_id"],
-        )
-        for field in cls._PAUSE_FIELDS:
-            if field in data:
-                setattr(state, field, data[field])
-        return state

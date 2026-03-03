@@ -71,6 +71,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   // Dynamic pause/resume state
   const [pausedFormSchema, setPausedFormSchema] = useState<PausedFormSchema | null>(null);
   const [pausedThreadId, setPausedThreadId] = useState<string | null>(null);
+  const [pausedNodeId, setPausedNodeId] = useState<string | null>(null);
   const [userInputFormData, setUserInputFormData] = useState<Record<string, string>>({});
   // Generate thread_id function
   const generateThreadId = () => {
@@ -148,20 +149,31 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
 
   // Extract pause info from the response
   const extractPauseInfo = (res: WorkflowTestResponse) => {
-    const formSchema = (res.form_schema || res.state?.paused_form_schema) as PausedFormSchema | undefined;
+    // New path: form_schema is inside res.output (UserInputNode returns it as output)
+    const output = res.output;
+    const formSchema = (
+      (output != null && typeof output === "object" && (output as Record<string, unknown>).form_schema) ||
+      res.form_schema ||
+      res.state?.paused_form_schema
+    ) as PausedFormSchema | undefined;
+    const nodeId = (
+      (output != null && typeof output === "object" && (output as Record<string, unknown>).node_id) ||
+      res.node_id
+    ) as string | undefined;
     const threadId = (res.thread_id || res.state?.input?.thread_id) as string | undefined;
-    return { formSchema, threadId };
+    return { formSchema, threadId, nodeId };
   };
 
   // Handle paused response from test or resume
   const handlePausedResponse = (res: WorkflowTestResponse) => {
-    const { formSchema, threadId } = extractPauseInfo(res);
+    const { formSchema, threadId, nodeId } = extractPauseInfo(res);
     if (!formSchema || !formSchema.fields) {
       setError("Workflow paused but no form schema received");
       return;
     }
     setPausedFormSchema(formSchema);
     setPausedThreadId(threadId || null);
+    setPausedNodeId(nodeId || formSchema.node_id || null);
     // Initialize form data for the paused node's fields
     const initialData: Record<string, string> = {};
     formSchema.fields.forEach((f) => { initialData[f.name] = ""; });
@@ -172,6 +184,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   const handleCompletedResponse = (res: WorkflowTestResponse) => {
     setPausedFormSchema(null);
     setPausedThreadId(null);
+    setPausedNodeId(null);
     const truncatedResponse = {
       ...res,
       output: truncateNodeOutput(res.output),
@@ -302,6 +315,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
         input_data: { thread_id: pausedThreadId },
         workflow: workflow,
         user_input_data: parsedValues,
+        ...(pausedNodeId && { user_input_node_id: pausedNodeId }),
       });
 
       if (!res) {
@@ -326,6 +340,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
   const handleStartOver = () => {
     setPausedFormSchema(null);
     setPausedThreadId(null);
+    setPausedNodeId(null);
     setUserInputFormData({});
     setResponse(null);
     setError(null);

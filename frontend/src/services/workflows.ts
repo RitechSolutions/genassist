@@ -42,6 +42,7 @@ export interface WorkflowTestPayload {
   input_data: Record<string, any>;
   workflow: Workflow;
   user_input_data?: Record<string, unknown>;
+  user_input_node_id?: string;
 }
 
 export interface WorkflowTestResponse {

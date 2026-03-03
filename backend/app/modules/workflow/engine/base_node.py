@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Literal, Optional, List
 import logging
 import time
-from app.modules.workflow.engine.exceptions import WorkflowPausedException
 from app.modules.workflow.engine.utils import replace_config_vars, extract_code_params
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -362,8 +361,6 @@ class BaseNode(ABC):
 
             return result
 
-        except WorkflowPausedException:
-            raise  # Must bubble up to pause the workflow
         except Exception as e:
             error_msg = f"Error executing node {self.node_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)

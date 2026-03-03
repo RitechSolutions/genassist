@@ -42,7 +42,7 @@ class RegistryItem:
             logger.warning(f"Agent {self.agent_name} ({self.agent_id}) has no workflow assigned")
 
     async def execute(self, session_message: str, metadata: dict) -> dict:
-        """Execute a workflow, or resume a paused one if user_input_from_form is present."""
+        """Execute a workflow, or re-execute from a user input node if form data is present."""
         if self.workflow_engine is None:
             raise ValueError(
                 f"Cannot execute workflow for agent {self.agent_name} ({self.agent_id}): "
@@ -51,20 +51,21 @@ class RegistryItem:
 
         thread_id = metadata.get("thread_id", None)
         user_input_from_form = metadata.get("user_input_from_form")
-        user_input_cancelled = metadata.get("user_input_cancelled", False)
+        user_input_node_id = metadata.get("user_input_node_id")
 
-        if user_input_from_form is not None and thread_id:
-            # Resume a paused workflow with user-provided form data
-            state = await self.workflow_engine.resume_from_pause(
+        input_data = {
+            "message": session_message,
+            **metadata,
+        }
+
+        if user_input_from_form is not None and user_input_node_id:
+            # Re-execute workflow starting from the user input node
+            state = await self.workflow_engine.execute_from_node(
+                start_node_id=user_input_node_id,
+                input_data=input_data,
                 thread_id=thread_id,
-                user_input_data=user_input_from_form,
-                cancelled=user_input_cancelled,
             )
         else:
-            input_data = {
-                "message": session_message,
-                **metadata,
-            }
             state = await self.workflow_engine.execute_from_node(
                 input_data=input_data,
                 thread_id=thread_id,

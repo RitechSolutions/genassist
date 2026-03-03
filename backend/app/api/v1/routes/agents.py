@@ -98,11 +98,6 @@ async def run_query_agent_logic(
                 "row_agent_response": result,
     }
 
-    # Surface pause data so REST callers can easily access form_schema
-    if result.get("status") == "awaiting_input":
-        backward_compatibility_result["form_schema"] = result.get("form_schema")
-        backward_compatibility_result["node_id"] = result.get("node_id")
-
     logger.debug(f"Result: {result}")
     logger.debug(f"Backward compatibility result: {backward_compatibility_result}")
     if backward_compatibility_result.get("status") == "error":
