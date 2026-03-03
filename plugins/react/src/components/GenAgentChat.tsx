@@ -461,6 +461,19 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
   };
 
+  const handleFormCancel = async (messageIndex: number) => {
+    if (submittingFormIndex !== null || isAgentTyping) return;
+    setSubmittingFormIndex(messageIndex);
+    try {
+      await sendMessage('Skipped', [], { user_input_from_form: {}, user_input_cancelled: true }, reCaptchaTokenRef.current);
+      setSubmittedForms((prev) => new Set(prev).add(messageIndex));
+    } catch (error) {
+      // ignore
+    } finally {
+      setSubmittingFormIndex(null);
+    }
+  };
+
   const handleQuickAction = async (text: string) => {
     if (!text.trim()) return;
     if (isAgentTyping) return; // Prevent sending while agent is thinking/typing
@@ -1457,6 +1470,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                         <DynamicFormMessage
                           schema={formSchema}
                           onSubmit={(data) => handleFormSubmit(data, index)}
+                          onCancel={() => handleFormCancel(index)}
                           isSubmitting={submittingFormIndex === index}
                           isSubmitted={false}
                           primaryColor={primaryColor}
@@ -1624,6 +1638,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             <DynamicFormMessage
               schema={pendingForm.schema}
               onSubmit={(data) => handleFormSubmit(data, pendingForm.index)}
+              onCancel={() => handleFormCancel(pendingForm.index)}
               isSubmitting={submittingFormIndex === pendingForm.index}
               isSubmitted={false}
               primaryColor={primaryColor}

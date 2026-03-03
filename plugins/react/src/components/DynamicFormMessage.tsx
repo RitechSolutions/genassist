@@ -19,6 +19,7 @@ interface FormSchema {
 interface DynamicFormMessageProps {
   schema: FormSchema;
   onSubmit: (data: Record<string, unknown>) => void;
+  onCancel?: () => void;
   isSubmitting: boolean;
   isSubmitted: boolean;
   primaryColor?: string;
@@ -30,6 +31,7 @@ interface DynamicFormMessageProps {
 const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
   schema,
   onSubmit,
+  onCancel,
   isSubmitting,
   isSubmitted,
   primaryColor = '#2563eb',
@@ -40,6 +42,8 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const isFooter = variant === 'footer';
+  const allFieldsOptional = schema.fields.every((f) => !f.required);
+  const showCancel = !!onCancel && allFieldsOptional && !isSubmitted;
 
   const handleChange = (name: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -245,13 +249,32 @@ const DynamicFormMessage: React.FC<DynamicFormMessageProps> = ({
         ))}
       </div>
 
-      <button
-        type="submit"
-        style={buttonStyle}
-        disabled={isSubmitted || isSubmitting}
-      >
-        {isSubmitted ? 'Submitted' : isSubmitting ? 'Submitting...' : 'Submit'}
-      </button>
+      <div style={{ display: 'flex', gap: '8px', marginTop: isFooter ? '2px' : '4px' }}>
+        {showCancel && (
+          <button
+            type="button"
+            style={{
+              ...buttonStyle,
+              marginTop: 0,
+              backgroundColor: 'transparent',
+              color: '#6b7280',
+              border: '1px solid #d1d5db',
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+            }}
+            disabled={isSubmitting}
+            onClick={onCancel}
+          >
+            Skip
+          </button>
+        )}
+        <button
+          type="submit"
+          style={{ ...buttonStyle, marginTop: 0 }}
+          disabled={isSubmitted || isSubmitting}
+        >
+          {isSubmitted ? 'Submitted' : isSubmitting ? 'Submitting...' : 'Submit'}
+        </button>
+      </div>
     </form>
   );
 };

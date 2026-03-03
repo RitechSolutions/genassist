@@ -255,6 +255,38 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     }));
   };
 
+  const allFieldsOptional = nodeType === "userInputNode" && inputFields.length > 0 && inputFields.every((f) => !f.required);
+
+  const handleSkip = async () => {
+    setIsLoading(true);
+    setError(null);
+    setOutput(null);
+
+    try {
+      const response = await testNode({
+        input_data: {},
+        node_type: nodeType,
+        node_config: nodeData,
+      });
+
+      if (response && response.output !== undefined) {
+        const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
+        setOutput(Object.assign({}, response, { output: truncatedOutput }));
+        if (nodeId) {
+          updateNodeOutput(nodeId, truncatedOutput, nodeType, nodeData.name || nodeType);
+        }
+      } else {
+        setOutput(response);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      setError(errorMessage);
+      setOutput({ status: "error", output: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRun = async () => {
     setIsLoading(true);
     setError(null);
@@ -549,6 +581,11 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
             <X className="h-4 w-4 mr-2" />
             Close
           </Button>
+          {allFieldsOptional && (
+            <Button variant="outline" onClick={handleSkip} disabled={isLoading}>
+              Skip
+            </Button>
+          )}
           <Button
             onClick={handleRun}
             disabled={

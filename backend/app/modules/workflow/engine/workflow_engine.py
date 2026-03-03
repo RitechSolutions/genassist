@@ -488,6 +488,7 @@ class WorkflowEngine:
         thread_id: str,
         user_input_data: dict,
         persist: Optional[bool] = True,
+        cancelled: bool = False,
     ) -> WorkflowState:
         """
         Resume a paused workflow with user-provided input.
@@ -500,6 +501,7 @@ class WorkflowEngine:
             thread_id: Thread ID of the paused workflow
             user_input_data: User's form submission data
             persist: Whether to persist conversation to memory
+            cancelled: Whether the user skipped/cancelled the form
 
         Returns:
             WorkflowState with execution results
@@ -529,7 +531,9 @@ class WorkflowEngine:
         if not paused_node_id:
             raise ValueError("No paused node ID found in state")
 
-        state.set_node_output(paused_node_id, user_input_data)
+        # Mark the output with _cancelled so downstream nodes can detect a skip
+        output_data = {**user_input_data, "_cancelled": True} if cancelled else user_input_data
+        state.set_node_output(paused_node_id, output_data)
 
         # Cache user input for ask_once via the node itself (keeps logic co-located)
         node = self.executable_node(paused_node_id, state)
@@ -540,7 +544,7 @@ class WorkflowEngine:
         # start_node_execution must be called before complete_node_execution
         # so the node appears in performance metrics with timing data.
         state.start_node_execution(paused_node_id)
-        state.complete_node_execution(paused_node_id, output=user_input_data)
+        state.complete_node_execution(paused_node_id, output=output_data)
 
         # Continue execution from the next nodes using the standard recursive engine
         await self._continue_execution(state, paused_node_id, persist)

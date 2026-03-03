@@ -51,12 +51,14 @@ class RegistryItem:
 
         thread_id = metadata.get("thread_id", None)
         user_input_from_form = metadata.get("user_input_from_form")
+        user_input_cancelled = metadata.get("user_input_cancelled", False)
 
-        if user_input_from_form and thread_id:
+        if user_input_from_form is not None and thread_id:
             # Resume a paused workflow with user-provided form data
             state = await self.workflow_engine.resume_from_pause(
                 thread_id=thread_id,
                 user_input_data=user_input_from_form,
+                cancelled=user_input_cancelled,
             )
         else:
             input_data = {
