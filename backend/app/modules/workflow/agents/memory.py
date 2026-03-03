@@ -103,18 +103,6 @@ class BaseConversationMemory:
         """
         raise NotImplementedError
 
-    async def save_paused_workflow_state(self, state_dict: dict) -> None:
-        """Save paused workflow state for later resume."""
-        raise NotImplementedError
-
-    async def get_paused_workflow_state(self) -> dict | None:
-        """Retrieve paused workflow state, or None if not paused."""
-        raise NotImplementedError
-
-    async def clear_paused_workflow_state(self) -> None:
-        """Clear paused workflow state after resume."""
-        raise NotImplementedError
-
     async def needs_compaction(self, threshold: int) -> bool:
         """
         Check if conversation needs compaction based on total message count.
@@ -301,20 +289,6 @@ class InMemoryConversationMemory(BaseConversationMemory):
 
         return selected_messages
 
-    async def save_paused_workflow_state(self, state_dict: dict) -> None:
-        """Save paused workflow state in memory."""
-        self.metadata["_paused_workflow_state"] = state_dict
-        logger.info(f"Saved paused workflow state in-memory for thread {self.thread_id}")
-
-    async def get_paused_workflow_state(self) -> dict | None:
-        """Retrieve paused workflow state from memory."""
-        return self.metadata.get("_paused_workflow_state")
-
-    async def clear_paused_workflow_state(self) -> None:
-        """Clear paused workflow state from memory."""
-        self.metadata.pop("_paused_workflow_state", None)
-        logger.info(f"Cleared paused workflow state in-memory for thread {self.thread_id}")
-
     async def needs_compaction(self, threshold: int) -> bool:
         """Check if compaction is needed at threshold intervals"""
         total_messages = len(self.messages)
@@ -493,7 +467,6 @@ class RedisConversationMemory(BaseConversationMemory):
         self._metadata_key = f"{tenant_prefix}:conversation:{self.thread_id}:metadata"
         self._conversation_key = f"{tenant_prefix}:conversation:{self.thread_id}:info"
         self._stateful_key = f"{tenant_prefix}:conversation:{self.thread_id}:stateful"
-        self._paused_key = f"{tenant_prefix}:conversation:{self.thread_id}:paused_workflow"
         self.initialized = False
 
     def _get_tenant_prefix(self) -> str:
@@ -1037,38 +1010,6 @@ class RedisConversationMemory(BaseConversationMemory):
             )
             raise
 
-    async def save_paused_workflow_state(self, state_dict: dict) -> None:
-        """Save paused workflow state to Redis with 24h expiry."""
-        try:
-            redis = await self._get_redis()
-            await redis.setex(self._paused_key, 86400, json.dumps(state_dict))
-            logger.info(f"Saved paused workflow state to Redis for thread {self.thread_id}")
-        except Exception as e:
-            logger.error(f"Failed to save paused workflow state for thread {self.thread_id}: {e}")
-            raise
-
-    async def get_paused_workflow_state(self) -> dict | None:
-        """Retrieve paused workflow state from Redis."""
-        try:
-            redis = await self._get_redis()
-            serialized = await redis.get(self._paused_key)
-            if serialized:
-                logger.info(f"Retrieved paused workflow state from Redis for thread {self.thread_id}")
-                return json.loads(serialized)
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get paused workflow state for thread {self.thread_id}: {e}")
-            raise
-
-    async def clear_paused_workflow_state(self) -> None:
-        """Clear paused workflow state from Redis."""
-        try:
-            redis = await self._get_redis()
-            await redis.delete(self._paused_key)
-            logger.info(f"Cleared paused workflow state from Redis for thread {self.thread_id}")
-        except Exception as e:
-            logger.error(f"Failed to clear paused workflow state for thread {self.thread_id}: {e}")
-            raise
     async def get_stateful_value(self, key: str, default: Any = None) -> Any:
         """Get a stateful parameter value from Redis"""
         try:
