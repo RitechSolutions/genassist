@@ -39,6 +39,23 @@ export interface ChatInputNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
 }
 
+// Human In The Loop node data — collects structured data from the user mid-flow
+export interface HumanInTheLoopFormField {
+  name: string;
+  type: "text" | "number" | "select" | "boolean" | "date";
+  label: string;
+  required?: boolean;
+  placeholder?: string;
+  description?: string;
+  options?: Array<{ value: string; label: string }>;
+}
+
+export interface HumanInTheLoopNodeData extends BaseNodeData {
+  message?: string;
+  form_fields: HumanInTheLoopFormField[];
+  ask_once?: boolean;
+}
+
 // Prompt Template node data
 export interface TemplateNodeData extends BaseNodeData {
   template: string;
@@ -160,6 +177,7 @@ export interface BaseLLMNodeData extends BaseNodeData {
   compactingThreshold?: number;
   compactingKeepRecent?: number;
   compactingModel?: string;
+  compactingImportantEntities?: string[];
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {
@@ -358,6 +376,7 @@ export type NodeData =
   | ThreadRAGNodeData
   | MCPNodeData
   | WorkflowExecutorNodeData
+  | HumanInTheLoopNodeData
   | SetStateNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {

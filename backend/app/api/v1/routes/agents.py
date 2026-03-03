@@ -88,15 +88,16 @@ async def run_query_agent_logic(
             metadata=metadata
             )
     logger.debug(f"Workflow Final Result: {result}")
+
     backward_compatibility_result = {
                 "status": result.get("status"),
                 "response": result.get("output"),
                 "agent_id": agent_id,
                 "thread_id": metadata.get("thread_id"),
                 "rag_used": False,
-                "row_agent_response": result        
-
+                "row_agent_response": result
     }
+
     logger.debug(f"Result: {result}")
     logger.debug(f"Backward compatibility result: {backward_compatibility_result}")
     if backward_compatibility_result.get("status") == "error":

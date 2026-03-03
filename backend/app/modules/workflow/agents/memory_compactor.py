@@ -32,7 +32,7 @@ You will receive a series of messages from a conversation{previous_compaction_pr
 - Context and conversation flow
 - User preferences and stated goals
 - Key decisions or conclusions
-
+{important_entities_prompt}
 {previous_expansion_prompt}
 
 Respond with a JSON object in this exact format:
@@ -63,7 +63,8 @@ Provide the JSON response:"""
     async def compact_messages(
         self,
         messages: List[Dict[str, Any]],
-        existing_summary: Optional[Dict[str, Any]] = None
+        existing_summary: Optional[Dict[str, Any]] = None,
+        important_entities: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Compact a list of messages into entity store and prose summary.
@@ -71,6 +72,7 @@ Provide the JSON response:"""
         Args:
             messages: List of message dicts with 'role' and 'content'
             existing_summary: Previous compacted summary to merge with (if any)
+            important_entities: Entities to always be preserved in compaction (e.x. 'customer name', customer id, etc.)
 
         Returns:
             Dictionary with:
@@ -86,19 +88,33 @@ Provide the JSON response:"""
         # Format conversation history for LLM
         history_text = self._format_messages_for_compaction(messages, existing_summary)
 
+        # Build important entities instruction if provided
+        if important_entities:
+            entities_list = "\n".join(f"  - {e}" for e in important_entities)
+            important_entities_prompt = (
+                f"\nIMPORTANT: Always preserve any information related to these specific entities "
+                f"in both the entity store and prose summary — never omit or summarise them away:\n"
+                f"{entities_list}"
+            )
+        else:
+            important_entities_prompt = ""
+
         # Call LLM to generate compacted representation
         try:
             # add existing summary explanation to the prompt if it exists, otherwise just pass messages
-            prompt = self.COMPACTION_PROMPT.format(conversation_history=history_text,
-                                                   previous_compaction_prompt=" and previous summary done for "
-                                                                              "messages before the latest ones "
-                                                                              "included "
-                                                                              "below" if existing_summary else "",
-                                                   previous_expansion_prompt="Expand or update the previous "
-                                                                             "compaction summary with "
-                                                                             "new data as necessary, while loosing "
-                                                                             "the least amount of previous context." if
-                                                   existing_summary else "")
+            prompt = self.COMPACTION_PROMPT.format(
+                conversation_history=history_text,
+                important_entities_prompt=important_entities_prompt,
+                previous_compaction_prompt=" and previous summary done for "
+                                           "messages before the latest ones "
+                                           "included "
+                                           "below" if existing_summary else "",
+                previous_expansion_prompt="Expand or update the previous "
+                                          "compaction summary with "
+                                          "new data as necessary, while loosing "
+                                          "the least amount of previous context." if
+                existing_summary else ""
+            )
 
             response = await self.llm_model.ainvoke([
                 SystemMessage(content="You are a helpful assistant that compacts conversation history."),
