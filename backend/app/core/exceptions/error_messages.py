@@ -154,7 +154,7 @@ ERROR_MESSAGES = {
         ErrorKey.USERNAME_ALREADY_EXISTS: "Username already exists.",
         ErrorKey.USER_NOT_FOUND: "User not found.",
         ErrorKey.OPERATOR_NOT_FOUND: "Operator not found.",
-        ErrorKey.TRANSCRIPT_PARSE_ERROR: "There was an error parsing the transcript.",
+        ErrorKey.TRANSCRIPT_PARSE_ERROR: "There was an error parsing the transcript. Summary, title or metrics may be missing.",
         ErrorKey.INVALID_USERNAME_OR_PASSWORD: "Invalid username or password.",
         ErrorKey.INSUFFICIENT_PERMISSIONS: "Insufficient permissions for this action.",
         ErrorKey.API_KEY_MISSING: "Api key is required.",

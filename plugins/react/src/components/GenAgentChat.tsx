@@ -7,6 +7,7 @@ import { VoiceInput } from './VoiceInput';
 import { AudioService } from '../services/audioService';
 import { Paperclip, MoreVertical, RefreshCw, Globe, X, ArrowUp, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
 import { ChatBubble } from './ChatBubble';
+import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
 
@@ -53,6 +54,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   serverUnavailableContactUrl,
   serverUnavailableContactLabel,
   inputDisclaimer = 'Agent can make mistakes. Check important info.',
+  formDisplay = 'footer',
   onConfigLoaded,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
@@ -115,6 +117,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentWithFile[]>([]);
+  const [submittedForms, setSubmittedForms] = useState<Set<number>>(new Set());
+  const [submittingFormIndex, setSubmittingFormIndex] = useState<number | null>(null);
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
   const [fileErrorToast, setFileErrorToast] = useState<string | null>(null);
   const fileErrorToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -440,6 +444,53 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     await submitMessage();
   };
 
+  const getFormNodeId = (messageIndex: number): string | undefined => {
+    const msg = messages[messageIndex];
+    if (msg?.type === 'form_request' && msg.text) {
+      try { return JSON.parse(msg.text).node_id; } catch { /* skip */ }
+    }
+    return undefined;
+  };
+
+  const handleFormSubmit = async (formData: Record<string, unknown>, messageIndex: number) => {
+    if (submittingFormIndex !== null || isAgentTyping) return;
+    setSubmittingFormIndex(messageIndex);
+    try {
+      // Build a readable summary from the form data
+      const summaryText = Object.entries(formData)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', ');
+      const nodeId = getFormNodeId(messageIndex);
+      await sendMessage(summaryText, [], {
+        human_in_the_loop_from_form: formData,
+        ...(nodeId && { human_in_the_loop_node_id: nodeId }),
+      }, reCaptchaTokenRef.current);
+      setSubmittedForms((prev) => new Set(prev).add(messageIndex));
+    } catch (error) {
+      // ignore
+    } finally {
+      setSubmittingFormIndex(null);
+    }
+  };
+
+  const handleFormCancel = async (messageIndex: number) => {
+    if (submittingFormIndex !== null || isAgentTyping) return;
+    setSubmittingFormIndex(messageIndex);
+    try {
+      const nodeId = getFormNodeId(messageIndex);
+      await sendMessage('Skipped', [], {
+        human_in_the_loop_from_form: {},
+        human_in_the_loop_cancelled: true,
+        ...(nodeId && { human_in_the_loop_node_id: nodeId }),
+      }, reCaptchaTokenRef.current);
+      setSubmittedForms((prev) => new Set(prev).add(messageIndex));
+    } catch (error) {
+      // ignore
+    } finally {
+      setSubmittingFormIndex(null);
+    }
+  };
+
   const handleQuickAction = async (text: string) => {
     if (!text.trim()) return;
     if (isAgentTyping) return; // Prevent sending while agent is thinking/typing
@@ -616,6 +667,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
     await resetConversation(reCaptchaTokenRef.current);
     setSelectedFaqQuery(null); // Clear FAQ query on reset
+    setSubmittedForms(new Set()); // Clear form submission state so new forms are interactive
+    setSubmittingFormIndex(null);
     setShowResetConfirm(false);
   };
 
@@ -686,8 +739,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const fontFamily = theme?.fontFamily || 'Roboto, Arial, sans-serif';
   const fontSize = theme?.fontSize || '14px';
   const fontSizeNumber = typeof fontSize === 'string' ? parseInt(fontSize, 10) : (typeof fontSize === 'number' ? fontSize : 14);
-  const lineHeightPx = Math.round(fontSizeNumber * 1.5);
-  const textAreaMaxHeight = lineHeightPx * 3; // up to 3 lines
 
   // Helper function to convert hex color to rgba
   const hexToRgba = (hex: string, alpha: number): string => {
@@ -894,7 +945,25 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     padding: 0,
   };
 
-  const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping;
+  // Disable chat input when a form_request is pending (not yet submitted).
+  const hasPendingForm = messages.some((msg, idx) => {
+    if (msg.type !== 'form_request' || msg.speaker !== 'agent') return false;
+    return !submittedForms.has(idx);
+  });
+
+  // Derive the pending form schema + index for footer rendering.
+  const pendingForm = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.type === 'form_request' && msg.speaker === 'agent' && !submittedForms.has(i)) {
+        try { return { schema: JSON.parse(msg.text), index: i }; }
+        catch { /* skip */ }
+      }
+    }
+    return null;
+  }, [messages, submittedForms]);
+
+  const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
 
   const sendButtonStyle: React.CSSProperties = {
     backgroundColor: primaryColor,
@@ -1404,6 +1473,51 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             }
 
             return messages.filter(applyMessageFilter).map((message, index) => {
+              // For form_request messages, show just the message text as an agent bubble
+              if (message.type === 'form_request' && message.speaker === 'agent') {
+                try {
+                  const formSchema = JSON.parse(message.text);
+                  const isPending = !submittedForms.has(index);
+                  return (
+                    <div key={index} style={{ display: 'flex', flexDirection: 'column', maxWidth: '85%', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>
+                        {agentName || 'Agent'}
+                      </div>
+                      {formDisplay === 'inline' && isPending ? (
+                        <DynamicFormMessage
+                          schema={formSchema}
+                          onSubmit={(data) => handleFormSubmit(data, index)}
+                          onCancel={() => handleFormCancel(index)}
+                          isSubmitting={submittingFormIndex === index}
+                          isSubmitted={false}
+                          primaryColor={primaryColor}
+                          fontFamily={fontFamily}
+                          variant="card"
+                        />
+                      ) : (
+                        <div style={{
+                          backgroundColor: '#f3f4f6',
+                          borderRadius: '12px',
+                          padding: '10px 14px',
+                          fontSize: '14px',
+                          color: '#374151',
+                          fontFamily,
+                        }}>
+                          {formSchema.message || 'Please fill the form below.'}
+                          {isPending && (
+                            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                              Fill the form below to continue.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                } catch {
+                  // Fall through to normal rendering if JSON parse fails
+                }
+              }
+
               const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
               const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
               const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
@@ -1532,6 +1646,28 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               {t('buttons.startConversation')}
             </button>
           </div>
+        ) : pendingForm && formDisplay === 'footer' ? (
+          <div style={{
+            ...inputContainerStyle,
+            flexDirection: 'column',
+            borderTop: '1px solid #e5e7eb',
+          }}>
+            <DynamicFormMessage
+              schema={pendingForm.schema}
+              onSubmit={(data) => handleFormSubmit(data, pendingForm.index)}
+              onCancel={() => handleFormCancel(pendingForm.index)}
+              isSubmitting={submittingFormIndex === pendingForm.index}
+              isSubmitted={false}
+              primaryColor={primaryColor}
+              fontFamily={fontFamily}
+              variant="footer"
+            />
+            {inputDisclaimer && (
+              <div className="ga-input-disclaimer" style={disclaimerStyle}>
+                {inputDisclaimer}
+              </div>
+            )}
+          </div>
         ) : (
           <form onSubmit={handleSubmit} style={inputContainerStyle}>
             <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0 }}>
@@ -1566,13 +1702,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    if ((inputValue.trim() !== '' || attachments.length > 0) && !isAgentTyping) {
+                    if ((inputValue.trim() !== '' || attachments.length > 0) && !isAgentTyping && !hasPendingForm) {
                       submitMessage();
                     }
                   }
                 }}
                 placeholder={inputPlaceholder}
-                disabled={!conversationId || isFinalized || isAgentTyping}
+                disabled={!conversationId || isFinalized || isAgentTyping || hasPendingForm}
                 rows={1}
               />
               <div style={rightActionContainerStyle}>

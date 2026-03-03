@@ -129,7 +129,7 @@ async def execute_tool_safely(tool: BaseTool, tool_input: Dict[str, Any], tool_n
         return f"Tool execution failed: {str(e)}"
 
 
-def create_tool_execution_info(iteration: int, tool_name: str, tool_input: Dict[str, Any], 
+def create_tool_execution_info(iteration: int, tool_name: str, tool_input: Dict[str, Any],
                                result: str, reasoning: str = "") -> Dict[str, Any]:
     """Create standardized tool execution information"""
     return {
