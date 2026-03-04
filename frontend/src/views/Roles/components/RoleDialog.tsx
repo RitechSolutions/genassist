@@ -53,6 +53,17 @@ export function RoleDialog({
   );
   const [permissionsLoading, setPermissionsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [areAllPermissionsSelected, setAreAllPermissionsSelected] = useState(false);
+
+  const handleToggleAllPermissions = () => {
+    if (areAllPermissionsSelected) {
+      setSelectedPermissionIds([]);
+    } else {
+      setSelectedPermissionIds(allPermissions.map((permission) => permission.id));
+    }
+
+    setAreAllPermissionsSelected(!areAllPermissionsSelected);
+  };
 
   useEffect(() => {
     setDialogMode(mode);
@@ -213,7 +224,17 @@ export function RoleDialog({
                 />
               </div>
 
-              <Label>Permissions</Label>
+              <div className="flex items-center justify-between">
+                <Label>Permissions</Label>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={areAllPermissionsSelected}
+                    onCheckedChange={handleToggleAllPermissions}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-sm font-medium">Select All</span>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto pr-1">
                 {allPermissions.length === 0
                   ? Array.from({ length: 6 }).map((_, index) => (
