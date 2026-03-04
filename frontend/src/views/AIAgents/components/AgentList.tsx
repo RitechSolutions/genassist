@@ -168,11 +168,15 @@ const AgentList: React.FC<AgentListProps> = ({
     const agentName = agent.name;
     const isActive = !!agent.is_active;
     const truncatedPrompt = agent.possible_queries?.join(" ") ?? "";
+    const isAgentModalOpen =
+      settingsLoadingAgentId === agent.id && settingsDialogOpen;
 
     return (
       <div
         key={agent.id}
-        className={`px-6 py-4 hover:bg-muted/50 cursor-pointer`}
+        className={`px-6 py-4 hover:bg-muted/50 cursor-pointer ${
+          settingsDialogOpen && !isAgentModalOpen ? "blur-sm" : ""
+        }`}
         onClick={() => {
           handleOpenWorkflow(agent.id);
         }}
