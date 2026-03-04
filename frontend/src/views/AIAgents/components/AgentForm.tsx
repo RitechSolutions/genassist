@@ -844,8 +844,8 @@ export const AgentFormDialog = ({
     <Sheet open={isOpen} modal={false}>
       <SheetContent hideOverlay={true} hideDefaultClose={true} className="sm:max-w-lg w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full">
         <SheetHeader className="p-6 pb-4 border-b shrink-0 flex flex-row">
-          <SheetTitle className="text-xl font-semibold">
-            {data?.id ? "Edit Agent" : "Create New Agent"}
+          <SheetTitle className="text-xl font-semibold truncate">
+            {data?.id ? `Edit (${data?.name})` : "Create New Agent"}
 
           <SheetDescription>
             {data?.id
@@ -874,7 +874,7 @@ export const AgentFormDialog = ({
             Cancel
           </Button>
           <Button type="submit" form={formId}>
-            {isEditMode ? "Update Agent" : "Create Agent"}
+            {isEditMode ? `Update Agent` : "Create Agent"}
           </Button>
         </div>
       </SheetContent>
