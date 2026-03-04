@@ -16,6 +16,19 @@ from app.modules.workflow.agents.memory import (
 logger = logging.getLogger(__name__)
 
 
+class WorkflowPausedException(BaseException):
+    """Raised when a node (e.g. HumanInTheLoop) needs to pause the workflow.
+
+    Inherits from BaseException (not Exception) so it bypasses all broad
+    `except Exception` handlers automatically, without requiring explicit
+    re-raise checks in every agent and node handler.
+    """
+
+    def __init__(self, pause_data: dict):
+        self.pause_data = pause_data
+        super().__init__("Workflow paused")
+
+
 class WorkflowState:
     """Enhanced class to maintain state during workflow execution with performance tracking"""
 
@@ -241,18 +254,6 @@ class WorkflowState:
         self.execution_path = []
         self.errors = []
         logger.info(f"Workflow execution started: {self.execution_id}")
-
-    def pause_execution(self) -> None:
-        """Pause workflow execution"""
-        self.status = "paused"
-        self.is_executing = False
-        logger.info(f"Workflow execution paused: {self.execution_id}")
-
-    def resume_execution(self) -> None:
-        """Resume workflow execution"""
-        self.status = "running"
-        self.is_executing = True
-        logger.info(f"Workflow execution resumed: {self.execution_id}")
 
     def complete_execution(self) -> None:
         """Complete workflow execution"""
@@ -523,7 +524,13 @@ class WorkflowState:
             )
         )
         performance_metrics = self.performance_metrics
-        status = "success"
+
+        # Detect awaiting_input from node output (HumanInTheLoopNode returns form_schema as output)
+        if isinstance(output, dict) and output.get("status") == "awaiting_input":
+            status = "awaiting_input"
+        else:
+            status = "success"
+
         response = {
             "status": status,
             "input": _input,
@@ -537,4 +544,3 @@ class WorkflowState:
         from app.modules.workflow.engine.nodes.ml import ml_utils
 
         return ml_utils.sanitize_for_json(response)
-        # return ml_utils.optimize_output_for_response(sanitized)

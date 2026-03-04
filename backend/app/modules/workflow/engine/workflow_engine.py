@@ -4,7 +4,7 @@ Workflow engine for building and executing workflows with state management.
 
 from app.modules.workflow.utils import process_path_based_input_data
 from app.modules.workflow.engine.base_node import BaseNode
-from app.modules.workflow.engine.workflow_state import WorkflowState
+from app.modules.workflow.engine.workflow_state import WorkflowState, WorkflowPausedException
 from app.modules.workflow.engine.nodes import (
     ChatInputNode,
     ChatOutputNode,
@@ -34,7 +34,8 @@ from app.modules.workflow.engine.nodes import (
     ThreadRAGNode,
     MCPNode,
     WorkflowExecutorNode,
-    SetStateNode,
+    HumanInTheLoopNode,
+    SetStateNode
 )
 from typing import Dict, Any, List, Optional, Set
 import logging
@@ -100,6 +101,7 @@ class WorkflowEngine:
         cls._node_registry["threadRAGNode"] = ThreadRAGNode
         cls._node_registry["mcpNode"] = MCPNode
         cls._node_registry["workflowExecutorNode"] = WorkflowExecutorNode
+        cls._node_registry["humanInTheLoopNode"] = HumanInTheLoopNode
         cls._node_registry["setStateNode"] = SetStateNode
 
         cls._registry_initialized = True
@@ -108,13 +110,13 @@ class WorkflowEngine:
     def _node_needs_db_access(self, node_type: str) -> bool:
         """
         Determine if a node type requires database access.
-        
+
         This helps optimize connection pool usage by only creating DB connections
         for nodes that actually need them.
-        
+
         Args:
             node_type: The type identifier of the node
-            
+
         Returns:
             True if the node needs DB access, False otherwise
         """
@@ -130,25 +132,26 @@ class WorkflowEngine:
             "dataMapperNode",
             "toolBuilderNode",
             "aggregatorNode",
-            "setStateNode",
+            "humanInTheLoopNode",
+            "setStateNode"
         }
-        
+
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)
         return node_type not in no_db_nodes
-    
+
     def __init__(self, workflow_config: Dict[str, Any]):
         """
         Initialize the workflow engine with a workflow configuration.
 
         Args:
             workflow_config: Workflow configuration dictionary with 'nodes' and optional 'edges'
-        
+
         Raises:
             ValueError: If workflow_config is missing required fields
         """
         # Initialize the class-level node registry if not already done
         self.__class__._initialize_node_registry()
-        
+
         # Validate workflow structure
         if not workflow_config:
             raise ValueError("workflow_config is required")
@@ -253,13 +256,23 @@ class WorkflowEngine:
             # Execute from the specified node
             try:
                 await self._execute_from_node_recursive(
-                    start_node_id, state, set()
+                    start_node_id, state, set(),
+                    skip_requirement_check=True,
                 )
 
                 state.complete_execution()
+
+            except WorkflowPausedException as e:
+                # Workflow paused (e.g. HumanInTheLoop needs user input)
+                state.output = e.pause_data
+                state.status = "completed"
+                state.is_executing = False
+
             except ValueError as e:
                 state.fail_execution(str(e))
 
+        except WorkflowPausedException:
+            pass  # Already handled above
         except Exception as e:
             state.fail_execution(str(e))
             raise
@@ -298,7 +311,8 @@ class WorkflowEngine:
         return starting_nodes
 
     async def _execute_from_node_recursive(
-        self, node_id: str, state: WorkflowState, visited: Set[str]
+        self, node_id: str, state: WorkflowState, visited: Set[str],
+        skip_requirement_check: bool = False,
     ) -> None:
         """Recursively execute nodes starting from a specific node."""
         if node_id in visited:
@@ -309,15 +323,16 @@ class WorkflowEngine:
         node_output: Optional[dict] = None
 
         # Check if aggregator requirements are satisfied
+        # (skip for the starting node — its upstream nodes may not have run)
         node = self.executable_node(node_id, state)
-        executable_node = node.check_if_requirement_satisfied()
-        if executable_node:
-            # All sources are ready, execute the aggregator
+        if skip_requirement_check:
+            node_output = await self._execute_single_node(node_id, state)
+        elif node.check_if_requirement_satisfied():
             node_output = await self._execute_single_node(node_id, state)
         else:
             # Requirements not satisfied, skip execution and continue flow
             logger.debug(
-                f"Aggregator {node_id} requirements not satisfied, skipping execution"
+                f"Node {node_id} requirements not satisfied, skipping execution"
             )
             return
 
@@ -391,7 +406,12 @@ class WorkflowEngine:
             # Use return_exceptions=True to handle any individual task failures gracefully
             results = await asyncio.gather(*next_tasks, return_exceptions=True)
 
-            # Log any exceptions that occurred during parallel execution
+            # Re-raise WorkflowPausedException before logging other errors
+            for result in results:
+                if isinstance(result, WorkflowPausedException):
+                    raise result
+
+            # Log any other exceptions that occurred during parallel execution
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     logger.error(
@@ -407,8 +427,6 @@ class WorkflowEngine:
             next_nodes.append(edge["target"])
 
         return next_nodes
-
-   
 
     def get_node_config(self, node_id: str):
         """Get the node config and type."""
@@ -434,7 +452,7 @@ class WorkflowEngine:
     ) -> Any:
         """
         Execute a single node.
-        
+
         Note: Request scope creation is handled at the parallel execution level
         to optimize connection pool usage. This method executes within the
         existing scope (either from the main request or from parallel execution).
@@ -447,6 +465,8 @@ class WorkflowEngine:
             state.current_step += 1
             return output
 
+        except WorkflowPausedException:
+            raise  # Propagate pause signal to top-level execute_from_node
         except Exception as e:
             logger.error(f"Error executing node {node_id}: {e}")
             state.fail_execution(f"Node {node_id} failed: {str(e)}")
@@ -461,3 +481,4 @@ class WorkflowEngine:
             "edge_count": len(self.workflow["edges"]),
             "registered": True,
         }
+

@@ -13,20 +13,34 @@ import { Label } from "@/components/label";
 import { Textarea } from "@/components/textarea";
 import { Checkbox } from "@/components/checkbox";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/select";
+import {
   Loader2,
   Send,
   ChevronDown,
   ChevronRight,
   RefreshCw,
-  RefreshCw as GenerateIcon,
+  ClipboardList,
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
+import { HumanInTheLoopFormField } from "../types/nodes";
 import { testWorkflow, WorkflowTestResponse } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { getValueFromPath, parseInputValue, truncateNodeOutput, valueToString } from "../utils/helpers";
 import JsonViewer from "@/components/JsonViewer";
+
+interface PausedFormSchema {
+  message: string;
+  fields: HumanInTheLoopFormField[];
+  node_id: string;
+}
 
 interface WorkflowTestDialogProps {
   isOpen: boolean;
@@ -54,6 +68,11 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     new Set()
   );
 
+  // Dynamic pause/resume state
+  const [pausedFormSchema, setPausedFormSchema] = useState<PausedFormSchema | null>(null);
+  const [pausedThreadId, setPausedThreadId] = useState<string | null>(null);
+  const [pausedNodeId, setPausedNodeId] = useState<string | null>(null);
+  const [humanInTheLoopFormData, setHumanInTheLoopFormData] = useState<Record<string, string>>({});
   // Generate thread_id function
   const generateThreadId = () => {
     const newThreadId = uuidv4();
@@ -107,7 +126,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
           }
 
           // Convert to string for input fields
-          initialInputs[key] = value !== undefined 
+          initialInputs[key] = value !== undefined
             ? valueToString(value, field.type)
             : "";
         });
@@ -122,6 +141,59 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
       }
     }
   }, [workflow, executionState?.session, isOpen]);
+
+  // Check if a response indicates a paused workflow
+  const isPausedResponse = (res: WorkflowTestResponse): boolean => {
+    return res.status === "awaiting_input" || res.state?.status === "paused";
+  };
+
+  // Extract pause info from the response
+  const extractPauseInfo = (res: WorkflowTestResponse) => {
+    // New path: form_schema is inside res.output (HumanInTheLoopNode returns it as output)
+    const output = res.output;
+    const formSchema = (
+      (output != null && typeof output === "object" && (output as Record<string, unknown>).form_schema) ||
+      res.form_schema ||
+      res.state?.paused_form_schema
+    ) as PausedFormSchema | undefined;
+    const nodeId = (
+      (output != null && typeof output === "object" && (output as Record<string, unknown>).node_id) ||
+      res.node_id
+    ) as string | undefined;
+    const threadId = (res.thread_id || res.state?.input?.thread_id) as string | undefined;
+    return { formSchema, threadId, nodeId };
+  };
+
+  // Handle paused response from test or resume
+  const handlePausedResponse = (res: WorkflowTestResponse) => {
+    const { formSchema, threadId, nodeId } = extractPauseInfo(res);
+    if (!formSchema || !formSchema.fields) {
+      setError("Workflow paused but no form schema received");
+      return;
+    }
+    setPausedFormSchema(formSchema);
+    setPausedThreadId(threadId || null);
+    setPausedNodeId(nodeId || formSchema.node_id || null);
+    // Initialize form data for the paused node's fields
+    const initialData: Record<string, string> = {};
+    formSchema.fields.forEach((f) => { initialData[f.name] = ""; });
+    setHumanInTheLoopFormData(initialData);
+  };
+
+  // Handle completed response from test or resume
+  const handleCompletedResponse = (res: WorkflowTestResponse) => {
+    setPausedFormSchema(null);
+    setPausedThreadId(null);
+    setPausedNodeId(null);
+    const truncatedResponse = {
+      ...res,
+      output: truncateNodeOutput(res.output),
+    };
+    setResponse(truncatedResponse as WorkflowTestResponse);
+    if (onUpdateWorkflowTestInputs) {
+      onUpdateWorkflowTestInputs(testInput);
+    }
+  };
 
   // Handle test workflow
   const handleTestWorkflow = async () => {
@@ -156,12 +228,13 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
     setTesting(true);
     setError(null);
     setResponse(null);
+    setPausedFormSchema(null);
 
     try {
       // Parse input values based on their schema types
       const parsedInputs: Record<string, unknown> = {
         message: testInput.message || "",
-        thread_id: testInput.thread_id || uuidv4(), // Use provided thread_id or generate new one
+        thread_id: testInput.thread_id || uuidv4(),
       };
 
       if (inputSchema) {
@@ -194,25 +267,85 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
         });
       }
 
-      const response = await testWorkflow({
+      const res = await testWorkflow({
         input_data: parsedInputs,
         workflow: workflow,
       });
-      // Truncate arrays in the output to a default of 4 items
-      const truncatedResponse = {
-        ...response,
-        output: truncateNodeOutput(response.output),
-      };
-      setResponse(truncatedResponse as WorkflowTestResponse);
-      // Update workflow.testInput with the latest changes
-      if (onUpdateWorkflowTestInputs) {
-        onUpdateWorkflowTestInputs(testInput);
+
+      if (!res) {
+        setError("No response received from server");
+        return;
+      }
+
+      if (isPausedResponse(res)) {
+        handlePausedResponse(res);
+      } else {
+        handleCompletedResponse(res);
       }
     } catch (err) {
-      setError("Failed to test workflow. Please try again.");
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to test workflow: ${msg}`);
     } finally {
       setTesting(false);
     }
+  };
+
+  // Handle resuming a paused workflow with user input
+  const handleResumeWorkflow = async () => {
+    if (!workflow || !pausedThreadId || !pausedFormSchema) return;
+
+    setTesting(true);
+    setError(null);
+
+    try {
+      // Parse form values based on field types
+      const parsedValues: Record<string, unknown> = {};
+      pausedFormSchema.fields.forEach((field) => {
+        const val = humanInTheLoopFormData[field.name] || "";
+        if (field.type === "number") {
+          parsedValues[field.name] = val ? Number(val) : 0;
+        } else if (field.type === "boolean") {
+          parsedValues[field.name] = val === "true";
+        } else {
+          parsedValues[field.name] = val;
+        }
+      });
+
+      const res = await testWorkflow({
+        input_data: {
+          thread_id: pausedThreadId,
+          human_in_the_loop_from_form: parsedValues,
+          ...(pausedNodeId && { human_in_the_loop_node_id: pausedNodeId }),
+        },
+        workflow: workflow,
+      });
+
+      if (!res) {
+        setError("No response received from server");
+        return;
+      }
+
+      if (isPausedResponse(res)) {
+        handlePausedResponse(res);
+      } else {
+        handleCompletedResponse(res);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to resume workflow: ${msg}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  // Reset test state for a fresh run
+  const handleStartOver = () => {
+    setPausedFormSchema(null);
+    setPausedThreadId(null);
+    setPausedNodeId(null);
+    setHumanInTheLoopFormData({});
+    setResponse(null);
+    setError(null);
   };
 
   // Get message role icon and color
@@ -281,7 +414,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                     message: e.target.value,
                   }))
                 }
-                disabled={testing}
+                disabled={testing || !!pausedFormSchema}
                 className={`flex-1 ${
                   prefilledFields.has("message")
                     ? "border-blue-300 bg-blue-50"
@@ -335,7 +468,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                           disabled={testing}
                           title="Generate new Thread ID"
                         >
-                          <GenerateIcon className="h-4 w-4" />
+                          <RefreshCw className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
@@ -352,7 +485,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                         const isBoolean = field.type === "boolean";
                         const isObjectOrArray = field.type === "object" || field.type === "array";
                         const isNumber = field.type === "number";
-                        
+
                         return (
                           <div key={key} className="space-y-2">
                             <div className="flex items-center justify-between">
@@ -384,7 +517,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                       [key]: String(checked),
                                     }))
                                   }
-                                  disabled={testing}
+                                  disabled={testing || !!pausedFormSchema}
                                   className={
                                     prefilledFields.has(key)
                                       ? "border-blue-300"
@@ -411,7 +544,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                     [key]: e.target.value,
                                   }))
                                 }
-                                disabled={testing}
+                                disabled={testing || !!pausedFormSchema}
                                 className={`flex-1 font-mono text-sm ${
                                   prefilledFields.has(key)
                                     ? "border-blue-300 bg-blue-50"
@@ -431,7 +564,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                     [key]: e.target.value,
                                   }))
                                 }
-                                disabled={testing}
+                                disabled={testing || !!pausedFormSchema}
                                 className={`flex-1 ${
                                   prefilledFields.has(key)
                                     ? "border-blue-300 bg-blue-50"
@@ -447,30 +580,176 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
               </div>
             )}
 
-            <div className="flex gap-2">
-              <Button
-                onClick={handleTestWorkflow}
-                disabled={testing || !workflow}
-                className="flex items-center gap-2"
-              >
-                {testing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
+            {/* Test / Debug buttons — shown when not paused */}
+            {!pausedFormSchema && (
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleTestWorkflow}
+                  disabled={testing || !workflow}
+                  className="flex items-center gap-2"
+                >
+                  {testing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                  Test
+                </Button>
+                <Button
+                  onClick={() => setIsDebugMode(!isDebugMode)}
+                  className="flex items-center gap-2"
+                  style={{
+                    backgroundColor: isDebugMode ? "#000" : "#fff",
+                    color: isDebugMode ? "#fff" : "#000",
+                  }}
+                >
+                  {"Debug"}
+                </Button>
+              </div>
+            )}
+
+            {/* Paused Workflow — Dynamic User Input Form */}
+            {pausedFormSchema && (
+              <div className="space-y-4 p-4 border-2 border-blue-200 rounded-lg bg-blue-50/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5 text-blue-600" />
+                    <span className="font-medium text-blue-700">
+                      Workflow Paused — User Input Required
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-gray-500"
+                    onClick={handleStartOver}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Start Over
+                  </Button>
+                </div>
+
+                {pausedFormSchema.message && (
+                  <p className="text-sm text-gray-600">{pausedFormSchema.message}</p>
                 )}
-                Test
-              </Button>
-              <Button
-                onClick={() => setIsDebugMode(!isDebugMode)}
-                className="flex items-center gap-2"
-                style={{
-                  backgroundColor: isDebugMode ? "#000" : "#fff",
-                  color: isDebugMode ? "#fff" : "#000",
-                }}
-              >
-                {"Debug"}
-              </Button>
-            </div>
+
+                <div className="space-y-3">
+                  {pausedFormSchema.fields.map((field) => {
+                    const fieldKey = `paused-${field.name}`;
+                    const val = humanInTheLoopFormData[field.name] || "";
+                    const onChange = (v: string) =>
+                      setHumanInTheLoopFormData((prev) => ({ ...prev, [field.name]: v }));
+
+                    return (
+                      <div key={field.name} className="space-y-1">
+                        <Label htmlFor={fieldKey} className="text-sm">
+                          {field.label}
+                          {field.required && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                          <span className="text-xs text-gray-500 ml-2">
+                            ({field.type})
+                          </span>
+                        </Label>
+                        {field.type === "boolean" ? (
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id={fieldKey}
+                              checked={val === "true"}
+                              onCheckedChange={(checked) =>
+                                onChange(String(checked))
+                              }
+                              disabled={testing}
+                            />
+                            <Label
+                              htmlFor={fieldKey}
+                              className="text-sm font-normal cursor-pointer"
+                            >
+                              {val === "true" ? "True" : "False"}
+                            </Label>
+                          </div>
+                        ) : field.type === "select" &&
+                          field.options &&
+                          field.options.length > 0 ? (
+                          <Select
+                            value={val}
+                            onValueChange={onChange}
+                            disabled={testing}
+                          >
+                            <SelectTrigger className="text-sm">
+                              <SelectValue
+                                placeholder={
+                                  field.placeholder ||
+                                  `Select ${field.label}`
+                                }
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {field.options.map((opt) => (
+                                <SelectItem
+                                  key={opt.value}
+                                  value={opt.value}
+                                >
+                                  {opt.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            id={fieldKey}
+                            type={
+                              field.type === "number"
+                                ? "number"
+                                : field.type === "date"
+                                ? "date"
+                                : "text"
+                            }
+                            placeholder={
+                              field.placeholder ||
+                              `Enter ${field.label}`
+                            }
+                            value={val}
+                            onChange={(e) => onChange(e.target.value)}
+                            disabled={testing}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleResumeWorkflow}
+                    disabled={
+                      testing ||
+                      pausedFormSchema.fields.some(
+                        (f) => f.required && !humanInTheLoopFormData[f.name]
+                      )
+                    }
+                    className="flex items-center gap-2"
+                  >
+                    {testing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                    Resume
+                  </Button>
+                  <Button
+                    onClick={() => setIsDebugMode(!isDebugMode)}
+                    className="flex items-center gap-2"
+                    style={{
+                      backgroundColor: isDebugMode ? "#000" : "#fff",
+                      color: isDebugMode ? "#fff" : "#000",
+                    }}
+                  >
+                    {"Debug"}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-md">

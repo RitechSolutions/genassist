@@ -7,6 +7,7 @@ import json
 from typing import Dict, Any
 
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.workflow_state import WorkflowPausedException
 
 logger = logging.getLogger(__name__)
 
@@ -80,4 +81,10 @@ class ToolBuilderNode(BaseNode):
             persist=False,
         )
         self.get_state().update_nodes_from_another_state(state)
+
+        # If the subflow was paused (e.g. HumanInTheLoop), propagate the pause
+        # up through the agent so the top-level engine can return the form to the user
+        if isinstance(state.output, dict) and state.output.get("status") == "awaiting_input":
+            raise WorkflowPausedException(state.output)
+
         return state.get_last_node_output()

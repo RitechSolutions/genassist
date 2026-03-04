@@ -172,7 +172,6 @@ class BaseConversationMemory:
             Chat history with compacted context
         """
         raise NotImplementedError
-
     async def get_stateful_value(self, key: str, default: Any = None) -> Any:
         """Get a stateful parameter value"""
         raise NotImplementedError
@@ -437,9 +436,6 @@ class InMemoryConversationMemory(BaseConversationMemory):
             parts.append(f"\nSummary represents {summary['compacted_message_count']} earlier messages")
 
         return "\n".join(parts)
-
-
-
     async def get_stateful_value(self, key: str, default: Any = None) -> Any:
         """Get a stateful parameter value from in-memory storage"""
         return self.metadata.get(f"stateful_{key}", default)
