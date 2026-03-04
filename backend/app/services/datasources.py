@@ -153,121 +153,45 @@ class DataSourceService:
         cd = dict(connection_data or {})
 
         if datasource_id:
-            stored = await self.get_by_id(datasource_id, decrypt_sensitive=True)
-            base = dict(stored.connection_data or {})
+            stored_raw = await self.repository.get_by_id(datasource_id)
+            raw_conn = dict((stored_raw.connection_data if stored_raw else None) or {})
+            decrypted_conn = await self.decrypt_connection_data_fields(dict(raw_conn))
+
+            base = dict(decrypted_conn)
             for k, v in cd.items():
-                if v is not None and v != "":
-                    base[k] = v
+                if v is None or v == "":
+                    continue
+                if k in self.encrypted_fields and v == raw_conn.get(k):
+                    pass  # unchanged encrypted field — keep stored decrypted value
+                else:
+                    base[k] = v  # new plaintext value from user
             cd = base
 
         if "private_key_file" in cd:
-            cd = await self.extract_private_key(cd)
+            cd = await self.extract_private_key(cd, delete_file=False)
 
         try:
             if source_type == "S3":
                 from app.core.utils.s3_utils import S3Client
-
-                client = S3Client(
-                    bucket_name=cd["bucket_name"],
-                    aws_access_key_id=cd.get("access_key"),
-                    aws_secret_access_key=cd.get("secret_key"),
-                    region_name=cd.get("region"),
-                )
-                client.list_files(prefix=cd.get("prefix", ""), max_keys=1)
-                return {
-                    "success": True,
-                    "message": "Successfully connected to S3 bucket.",
-                }
-
+                return S3Client.test_connection(cd)
             elif source_type == "Database":
-                from app.modules.integration.database.database_manager import (
-                    DatabaseManager,
-                )
-
-                db_cd = dict(cd)
-                for field in ["database_password", "ssh_tunnel_private_key"]:
-                    if db_cd.get(field):
-                        db_cd[field] = encrypt_key(db_cd[field])
-                manager = DatabaseManager(db_cd)
-                await manager.connect()
-                await manager.disconnect()
-                return {
-                    "success": True,
-                    "message": "Successfully connected to database.",
-                }
-
+                from app.modules.integration.database.database_manager import DatabaseManager
+                return await DatabaseManager.test_connection(cd)
             elif source_type == "Snowflake":
-                from app.modules.integration.snowflake.snowflake_manager import (
-                    SnowflakeManager,
-                )
-
-                sf_cd = dict(cd)
-                if sf_cd.get("password"):
-                    sf_cd["password"] = encrypt_key(sf_cd["password"])
-                manager = SnowflakeManager(sf_cd)
-                await manager.connect()
-                await manager.disconnect()
-                return {
-                    "success": True,
-                    "message": "Successfully connected to Snowflake.",
-                }
-
+                from app.modules.integration.snowflake.snowflake_manager import SnowflakeManager
+                return await SnowflakeManager.test_connection(cd)
             elif source_type == "Zendesk":
-                import httpx
-
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(
-                        f"https://{cd['subdomain']}.zendesk.com/api/v2/users/me.json",
-                        auth=(f"{cd['email']}/token", cd["api_token"]),
-                        timeout=10.0,
-                    )
-                    response.raise_for_status()
-                return {
-                    "success": True,
-                    "message": "Successfully connected to Zendesk.",
-                }
-
+                from app.services.connection_tester import test_zendesk
+                return await test_zendesk(cd)
             elif source_type == "smb_share_folder":
                 from app.services.smb_share_service import SMBShareFSService
-
-                async with SMBShareFSService(
-                    smb_host=cd.get("smb_host"),
-                    smb_share=cd.get("smb_share"),
-                    smb_user=cd.get("smb_user"),
-                    smb_pass=cd.get("smb_password"),
-                    smb_port=cd.get("smb_port"),
-                    use_local_fs=cd.get("use_local_fs", False),
-                    local_root=cd.get("local_root"),
-                ):
-                    pass
-                return {
-                    "success": True,
-                    "message": "Successfully connected to network share.",
-                }
-
+                return await SMBShareFSService.test_connection(cd)
             elif source_type == "azure_blob":
                 from app.services.AzureStorageService import AzureStorageService
-
-                service = AzureStorageService(
-                    connection_string=cd["connectionstring"],
-                    container_name=cd.get("container"),
-                )
-                service.bucket_exists(cd.get("container"))
-                return {
-                    "success": True,
-                    "message": "Successfully connected to Azure Blob Storage.",
-                }
-
+                return AzureStorageService.test_connection(cd)
             elif source_type == "URL":
-                import httpx
-
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(
-                        cd["url"], timeout=10.0, follow_redirects=True
-                    )
-                    response.raise_for_status()
-                return {"success": True, "message": "URL is accessible."}
-
+                from app.services.connection_tester import test_url
+                return await test_url(cd)
             else:
                 return {
                     "success": False,
@@ -278,7 +202,7 @@ class DataSourceService:
             logger.error(f"Test connection failed for {source_type}: {e}")
             return {"success": False, "message": str(e)}
 
-    async def extract_private_key(self, connection_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def extract_private_key(self, connection_data: Dict[str, Any], delete_file: bool = True) -> Dict[str, Any]:
         """
         Reads content from 'private_key_file', stores it in 'private_key',
         and removes the source file and file path property.
@@ -312,9 +236,9 @@ class DataSourceService:
                 ).decode("utf-8")
                 connection_data["private_key"] = private_key
 
-                # Delete file from memory
-                os.remove(file_path)
-                logger.info(f"Private key extracted and file deleted: {file_path}")
+                if delete_file:
+                    os.remove(file_path)
+                    logger.info(f"Private key extracted and file deleted: {file_path}")
             else:
                 logger.warning(
                     f"Private key file path provided but file not found: {file_path}"

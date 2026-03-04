@@ -306,7 +306,7 @@ export function DataSourceDialog({
           </DialogHeader>
 
           <div className="px-6 pb-6 space-y-4">
-            {/* Section 1: Name + Source Type */}
+            {/* Name & Source Type */}
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
@@ -350,7 +350,6 @@ export function DataSourceDialog({
               )}
             </div>
 
-            {/* Section 2: Fields */}
             {sourceType && (
               <>
                 {sourceType === "gmail" && (
@@ -393,7 +392,7 @@ export function DataSourceDialog({
                   />
                 )}
 
-                {/* Regular (non-advanced) fields */}
+                {/* Required fields */}
                 {!isOAuthType && schema && (
                   <SchemaFormRenderer
                     schema={schema}
@@ -403,7 +402,7 @@ export function DataSourceDialog({
                   />
                 )}
 
-                {/* Active + Advanced toggles */}
+                {/* Active & Advanced toggles */}
                 <div className="flex items-center gap-2 border-t pt-4">
                   <div className="flex items-center gap-2">
                     <Label htmlFor="is_active">Active</Label>
@@ -426,7 +425,7 @@ export function DataSourceDialog({
                   )}
                 </div>
 
-                {/* Advanced fields (below toggles) */}
+                {/* Advanced fields */}
                 {!isOAuthType && showAdvanced && schema?.fields && (
                   <SchemaFormRenderer
                     schema={schema as DataSourceConfig}
@@ -437,22 +436,9 @@ export function DataSourceDialog({
                   />
                 )}
 
-                {/* Test Connection */}
+                {/* Test connection */}
                 {!isOAuthType && (
                   <div className="space-y-2">
-                    <Button
-                      type="button"
-                      className="w-full"
-                      onClick={handleTestConnection}
-                      disabled={isTesting}
-                    >
-                      {isTesting ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Plug className="mr-2 h-4 w-4" />
-                      )}
-                      Test Connection
-                    </Button>
                     <div className="flex justify-end">
                       {testStatus?.success === true ? (
                         <Badge
@@ -491,7 +477,7 @@ export function DataSourceDialog({
                         <AlertDescription>
                           Connection failed. Please verify your settings.
                           {testStatus.message && (
-                            <span className="block mt-1 text-xs opacity-75">
+                            <span className="block mt-1 text-xs opacity-75 break-all">
                               {testStatus.message}
                             </span>
                           )}
@@ -501,10 +487,25 @@ export function DataSourceDialog({
                       <Alert>
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
-                          Please test your connection before saving.
+                          {mode === "edit"
+                            ? "Please test if changes were made."
+                            : "Please test your connection before saving."}
                         </AlertDescription>
                       </Alert>
                     )}
+                    <Button
+                      type="button"
+                      className="w-full"
+                      onClick={handleTestConnection}
+                      disabled={isTesting}
+                    >
+                      {isTesting ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Plug className="mr-2 h-4 w-4" />
+                      )}
+                      Test Connection
+                    </Button>
                   </div>
                 )}
               </>

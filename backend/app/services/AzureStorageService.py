@@ -54,6 +54,15 @@ class AzureStorageService:
         self._container_name = name
         return self._service.get_container_client(name)
 
+    @staticmethod
+    def test_connection(cd: dict) -> dict:
+        service = AzureStorageService(
+            connection_string=cd["connectionstring"],
+            container_name=cd.get("container"),
+        )
+        service.bucket_exists(cd.get("container"))
+        return {"success": True, "message": "Successfully connected to Azure Blob Storage."}
+
     # ────────────────────────────────────────────────────────────────
     # 1. Check if container exists
     def bucket_exists(self, container_name: Optional[str] = None) -> bool:
