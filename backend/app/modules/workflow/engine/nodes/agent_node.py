@@ -94,21 +94,16 @@ class AgentNode(BaseNode):
             from app.modules.workflow.agents.conversation_rag_indexer import ConversationRAGIndexer
 
             thread_rag = injector.get(ThreadScopedRAG)
-            try:
-                indexer = ConversationRAGIndexer(
-                    thread_rag=thread_rag,
-                    group_size=config.get("ragGroupSize", 4),
-                    group_overlap=config.get("ragGroupOverlap", 2),
-                    top_k=config.get("ragTopK", 3),
-                    query_context_messages=config.get("ragQueryContextMessages", 3),
-                    passthrough_threshold=config.get("ragPassthroughThreshold", 30),
-                    recent_messages=config.get("ragRecentMessages", 6),
-                )
-            except ValueError as e:
-                logger.error(f"Invalid RAG config: {e}. Falling back to message_count.")
-                return await memory.get_messages(
-                    max_messages=config.get("ragRecentMessages", 6)
-                )
+
+            indexer = ConversationRAGIndexer(
+                thread_rag=thread_rag,
+                group_size=config.get("ragGroupSize", 4),
+                group_overlap=config.get("ragGroupOverlap", 2),
+                top_k=config.get("ragTopK", 3),
+                query_context_messages=config.get("ragQueryContextMessages", 3),
+                passthrough_threshold=config.get("ragPassthroughThreshold", 30),
+                recent_messages=config.get("ragRecentMessages", 6),
+            )
 
             return await indexer.assemble_context(
                 thread_id=memory.thread_id,

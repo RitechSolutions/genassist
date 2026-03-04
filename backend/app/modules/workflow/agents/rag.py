@@ -66,7 +66,7 @@ def _create_default_config(chat_id: str) -> AgentRAGConfig:
 
     # Configure ChromaDB vector database
     vector_db_config = VectorDBConfig(
-        type="chroma",
+        type="pgvector",
         collection_name=f"chat_{chat_id}"
     )
 

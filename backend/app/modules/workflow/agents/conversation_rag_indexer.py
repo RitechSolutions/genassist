@@ -17,6 +17,9 @@ import hashlib
 import logging
 from typing import Any, Dict, List
 
+from app.modules.workflow.agents.rag import ThreadScopedRAG
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +31,7 @@ class ConversationRAGIndexer:
 
     def __init__(
         self,
-        thread_rag,
+        thread_rag: ThreadScopedRAG,
         group_size: int = 4,
         group_overlap: int = 2,
         top_k: int = 3,
