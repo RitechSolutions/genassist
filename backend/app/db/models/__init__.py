@@ -17,6 +17,7 @@ from app.db.models.conversation import ConversationModel, ConversationAnalysisMo
 from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
+from app.db.models.translation import TranslationModel
 from app.db.utils.event_hooks_config import auto_register_updated_by
 from .agent import AgentModel
 from .agent_security_settings import AgentSecuritySettingsModel
@@ -61,6 +62,7 @@ __all__ = [
     "AgentResponseLogModel",
     "CustomerModel",
     "DataSourceModel",
+    "TranslationModel",
     "ToolModel",
     "KnowledgeBaseModel",
     "AgentModel",
@@ -101,6 +103,7 @@ models = [
     JobModel,
     DataSourceModel,
     CustomerModel,
+    TranslationModel,
     ApiKeyModel,
     ApiKeyRoleModel,
     UserTypeModel,

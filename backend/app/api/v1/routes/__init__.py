@@ -42,7 +42,8 @@ from app.api.v1.routes import (
     mcp,
     mcp_servers,
     customers,
-    file_manager
+    file_manager,
+    translations,
 )
 
 # Disable redirect slashes for all routes
@@ -64,6 +65,9 @@ router.include_router(
 router.include_router(app_settings.router, prefix="/app-settings", tags=["AppSettings"])
 router.include_router(
     feature_flags.router, prefix="/feature-flags", tags=["FeatureFlags"]
+)
+router.include_router(
+    translations.router, prefix="/translations", tags=["Translations"]
 )
 router.include_router(audit_logs.router, prefix="/audit-logs", tags=["Audit Logs"])
 router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
@@ -124,7 +128,7 @@ router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenA
 
 router.include_router(azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"])
 
-router.include_router(public_registration.router, prefix="/public-registration", tags=["Public Registration"])  
+router.include_router(public_registration.router, prefix="/public-registration", tags=["Public Registration"])
 router.include_router(workflow_manager.router, prefix="/workflow-manager", tags=["Workflow Manager"])
 router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP Servers"])
