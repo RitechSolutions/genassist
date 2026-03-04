@@ -466,8 +466,6 @@ class InMemoryConversationMemory(BaseConversationMemory):
 
         return "\n".join(parts)
 
-
-
     async def get_messages_by_range(self, start: int, end: int) -> List[Dict[str, Any]]:
         """Get messages by absolute chronological index [start, end)."""
         start = max(0, start)

@@ -26,6 +26,7 @@ from .aggregator_node import AggregatorNode
 from .thread_rag_node import ThreadRAGNode
 from .mcp_node import MCPNode
 from .workflow_executor_node import WorkflowExecutorNode
+from .human_in_the_loop_node import HumanInTheLoopNode
 from .set_state_node import SetStateNode
 
 __all__ = [
@@ -57,5 +58,6 @@ __all__ = [
     "ThreadRAGNode",
     "MCPNode",
     "WorkflowExecutorNode",
-    "SetStateNode",
+    "HumanInTheLoopNode",
+    "SetStateNode"
 ]

@@ -54,12 +54,12 @@ class AgentUpdate(BaseModel):
     thinking_phrase_delay: Optional[int] = None
     workflow_id: Optional[UUID] = None
     security_settings: Optional[AgentSecuritySettingsUpdate] = None
-    model_config = ConfigDict(extra='forbid', from_attributes=True)
+
+    model_config = ConfigDict(extra='ignore', from_attributes=True)
 
 
 class AgentRead(AgentBase):
     id: UUID
-    model_config = ConfigDict(extra='ignore')  # shared rules
     user_id: Optional[UUID] = None
     operator_id: UUID
     operator: Optional[OperatorReadMinimal] = None
@@ -71,6 +71,8 @@ class AgentRead(AgentBase):
     welcome_image: Optional[bytes] = Field(None, exclude=True)
     # Flag to indicate if agent has a welcome image (avoids unnecessary fetch)
     has_welcome_image: bool = False
+
+    model_config = ConfigDict(extra='ignore')  # shared rules
 
     @model_validator(mode='before')
     @classmethod
