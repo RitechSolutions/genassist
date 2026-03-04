@@ -15,7 +15,8 @@ Sliding-window formula:
 """
 import hashlib
 import logging
-from typing import Any, Dict, List
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from app.modules.workflow.agents.rag import ThreadScopedRAG
 
@@ -38,6 +39,7 @@ class ConversationRAGIndexer:
         query_context_messages: int = 3,
         passthrough_threshold: int = 30,
         recent_messages: int = 6,
+        max_history_hours: int = 0,
     ):
         """
         Args:
@@ -53,6 +55,8 @@ class ConversationRAGIndexer:
                 are passed through verbatim without any vector operations.
             recent_messages: Number of most-recent messages always included
                 verbatim in context alongside retrieved groups.
+            max_history_hours: Exclude retrieved groups whose latest message is
+                older than this many hours. 0 disables the filter (no age limit).
         """
         if group_size < 2 or group_size % 2 != 0:
             raise ValueError("group_size must be a positive even integer (>= 2)")
@@ -69,6 +73,7 @@ class ConversationRAGIndexer:
         self.query_context_messages = query_context_messages
         self.passthrough_threshold = passthrough_threshold
         self.recent_messages = recent_messages
+        self.max_history_hours = max_history_hours
         self._step = group_size - group_overlap  # always >= 1
 
     # ------------------------------------------------------------------
@@ -122,12 +127,21 @@ class ConversationRAGIndexer:
                 continue
 
             doc_id = self._group_doc_id(thread_id, group_start, group_end)
-            group_text = self._format_group_as_text(messages, group_start)
+            group_text = self._format_group_as_text(messages, group_start, group_end)
+
+            timestamps = [m["timestamp"] for m in messages if m.get("timestamp")]
+            extra_metadata = {
+                "group_start": group_start,
+                "group_end": group_end,
+                "earliest_timestamp": min(timestamps) if timestamps else None,
+                "latest_timestamp": max(timestamps) if timestamps else None,
+            }
 
             await self.thread_rag.add_message(
                 chat_id=thread_id,
                 message=group_text,
                 message_id=doc_id,
+                extra_metadata=extra_metadata,
             )
             logger.debug(
                 f"[ConversationRAGIndexer] Indexed group [{group_start}:{group_end})"
@@ -208,13 +222,44 @@ class ConversationRAGIndexer:
         if not retrieved:
             return recent_msgs
 
-        # Step 6: deduplicate — skip retrieved content already covered by the
-        # verbatim recent window (avoid repeating the same messages twice).
+        # Step 6: deduplicate and age-filter retrieved groups.
+        # - Age filter: skip groups whose latest_timestamp is older than max_history_hours
+        #   (when max_history_hours > 0).
+        # - Dedup: skip groups that overlap the verbatim recent window, using
+        #   group_end index comparison when available; text check as fallback.
         recent_text = self._format_messages_as_text(recent_msgs)
+        cutoff: Optional[datetime] = (
+            datetime.now() - timedelta(hours=self.max_history_hours)
+            if self.max_history_hours > 0
+            else None
+        )
         relevant_parts = []
         for result in retrieved:
             content = result.get("content", "").strip()
-            if content and content not in recent_text:
+            if not content:
+                continue
+            meta = result.get("metadata", {})
+            if cutoff is not None:
+                latest_ts = meta.get("latest_timestamp")
+                if latest_ts:
+                    try:
+                        if datetime.fromisoformat(latest_ts) < cutoff:
+                            continue
+                    except ValueError:
+                        pass
+            group_end_meta = meta.get("group_end")
+            # A group "overlaps recent" if any of its messages fall inside the
+            # verbatim window [recent_start, total). When group_end metadata is
+            # present (docs indexed after the metadata enrichment change) we use
+            # an exact index comparison: group_end > recent_start means at least
+            # one message in the group is already shown verbatim. For older docs
+            # without that metadata we fall back to a text substring check.
+            overlaps_recent = (
+                group_end_meta > recent_start
+                if group_end_meta is not None
+                else content in recent_text
+            )
+            if not overlaps_recent:
                 relevant_parts.append(content)
 
         if not relevant_parts:
@@ -270,10 +315,10 @@ class ConversationRAGIndexer:
 
     @staticmethod
     def _format_group_as_text(
-        messages: List[Dict[str, Any]], start_index: int
+        messages: List[Dict[str, Any]], start_index: int, end_index: int
     ) -> str:
         """Format a group of messages into a single indexable text block."""
-        lines = [f"[Conversation group starting at message {start_index}]"]
+        lines = [f"[Conversation history — messages {start_index} to {end_index - 1}]"]
         for msg in messages:
             role = msg.get("role", "unknown").capitalize()
             content = msg.get("content", "")

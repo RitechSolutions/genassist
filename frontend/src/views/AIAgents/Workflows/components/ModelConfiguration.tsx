@@ -139,6 +139,10 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     onConfigChange({ ...config, ragRecentMessages: Number.parseInt(e.target.value) || 6 });
   };
 
+  const handleRagMaxHistoryHoursChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({ ...config, ragMaxHistoryHours: Number.parseInt(e.target.value) || 0 });
+  };
+
   const handleMaxMessagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onConfigChange({
       ...config,
@@ -705,6 +709,35 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                   value={config.ragRecentMessages ?? 6}
                   onChange={handleRagRecentMessagesChange}
                   placeholder="6"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`rag-max-history-hours-${id}`}>Max History Age (hours)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Max history age info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Exclude retrieved history older than this many hours. Set to 0 to disable (no age limit).
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`rag-max-history-hours-${id}`}
+                  type="number"
+                  min={0}
+                  max={8760}
+                  step={1}
+                  value={config.ragMaxHistoryHours ?? 0}
+                  onChange={handleRagMaxHistoryHoursChange}
+                  placeholder="0"
                 />
               </div>
             </>

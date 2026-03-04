@@ -184,6 +184,7 @@ export interface BaseLLMNodeData extends BaseNodeData {
   ragQueryContextMessages?: number;
   ragTopK?: number;
   ragRecentMessages?: number;
+  ragMaxHistoryHours?: number;
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {

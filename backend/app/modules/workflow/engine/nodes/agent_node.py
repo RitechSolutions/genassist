@@ -103,6 +103,7 @@ class AgentNode(BaseNode):
                 query_context_messages=config.get("ragQueryContextMessages", 3),
                 passthrough_threshold=config.get("ragPassthroughThreshold", 30),
                 recent_messages=config.get("ragRecentMessages", 6),
+                max_history_hours=config.get("ragMaxHistoryHours", 0),
             )
 
             return await indexer.assemble_context(

@@ -12,7 +12,7 @@ Set the OPENAI_API_KEY environment variable before use.
 """
 import asyncio
 import logging
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 import uuid
 
 from injector import inject
@@ -152,7 +152,13 @@ class ThreadScopedRAG:
                 logger.error(f"Error creating AgentRAGService for chat {chat_id}: {e}")
                 return None
 
-    async def add_message(self, chat_id: str, message: str, message_id: str):
+    async def add_message(
+        self,
+        chat_id: str,
+        message: str,
+        message_id: str,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+    ):
         """
         Add a message to the chat's vector store.
 
@@ -160,6 +166,7 @@ class ThreadScopedRAG:
             chat_id: Chat identifier
             message: Message content
             message_id: Unique message identifier
+            extra_metadata: Optional additional metadata to store alongside the document
         """
         service = await self._get_service(chat_id)
         if not service:
@@ -170,7 +177,8 @@ class ThreadScopedRAG:
             metadata = {
                 "message_id": message_id,
                 "chat_id": chat_id,
-                "is_chunked": False
+                "is_chunked": False,
+                **(extra_metadata or {}),
             }
             result = await service.add_document(message_id, message, metadata, legra_finalize=False)
             if not any(result.values()):

@@ -219,6 +219,21 @@ AGENT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         )
     ),
     FieldSchema(
+        name="ragMaxHistoryHours",
+        type="number",
+        label="Max History Age (hours)",
+        required=False,
+        default=0,
+        min=0,
+        max=8760,
+        step=1,
+        description="Exclude retrieved groups older than this many hours. Set to 0 to disable (no age limit).",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="rag_retrieval"
+        )
+    ),
+    FieldSchema(
         name="tokenBudget",
         type="number",
         label="Total Token Budget",
