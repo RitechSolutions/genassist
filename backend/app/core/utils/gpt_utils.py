@@ -182,3 +182,11 @@ def retry_async(max_attempts=3, fallback=None, exception_message="Retry failed")
             raise last_error or Exception(exception_message)
         return wrapper
     return decorator
+
+def clean_markdown(text: str) -> str:
+    """Strip markdown formatting characters from a string."""
+    text = re.sub(r'\*+', '', text)         # Remove ** bold / * italic
+    text = re.sub(r'#+\s*', '', text)       # Remove ### headers
+    text = re.sub(r'\n{2,}', '\n', text)    # Collapse multiple newlines into one
+    return text.strip()
+

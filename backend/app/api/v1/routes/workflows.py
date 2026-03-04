@@ -54,7 +54,8 @@ SUPPORTED_NODE_TYPES = [
     "trainModelNode",
     "mcpNode",
     "workflowExecutorNode",
-    "setStateNode",
+    "humanInTheLoopNode",
+    "setStateNode"
 ]
 
 
@@ -291,8 +292,12 @@ async def test_workflow(
         workflow_engine = WorkflowEngine(workflow_config)
 
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
+        start_node_id = input_data.get("human_in_the_loop_node_id")
+
         state = await workflow_engine.execute_from_node(
-            input_data=input_data, thread_id=thread_id
+            start_node_id=start_node_id,
+            input_data=input_data,
+            thread_id=thread_id,
         )
 
         return state.format_state_as_response()
@@ -303,7 +308,6 @@ async def test_workflow(
     except Exception as e:
         logger.error(f"Error testing workflow with new engine: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @router.get(
@@ -407,7 +411,7 @@ async def generate_python_template(
 
             # Compose the LLM prompt
             llm_prompt = f"""
-You are an expert Python developer. You are given a Python function template below. 
+You are an expert Python developer. You are given a Python function template below.
             Modify the function so that inside the 'executable_function', you add the following logic described by the user, you do not change anything else from the template, including comments:
 
 ---

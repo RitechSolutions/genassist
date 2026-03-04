@@ -11,8 +11,15 @@ import { Label } from "@/components/label";
 import { Textarea } from "@/components/textarea";
 import { Input } from "@/components/input";
 import { Checkbox } from "@/components/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/select";
 import { Play, X } from "lucide-react";
-import { NodeData } from "../types/nodes";
+import { NodeData, HumanInTheLoopNodeData } from "../types/nodes";
 import { testNode, WorkflowTestResponse } from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
@@ -26,7 +33,8 @@ export interface GenericTestInputField {
   placeholder?: string;
   required?: boolean;
   defaultValue?: string;
-  source?: string; // Added source property
+  source?: string;
+  options?: Array<{ value: string; label: string }>;
 }
 
 interface GenericTestDialogProps {
@@ -67,6 +75,28 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
   // Extract variables from node config when dialog opens
   useEffect(() => {
     if (isOpen && nodeData) {
+      // Special handling for humanInTheLoopNode — populate fields from form_fields config
+      if (nodeType === "humanInTheLoopNode" && "form_fields" in nodeData) {
+        const uiNodeData = nodeData as HumanInTheLoopNodeData;
+        const formFields = uiNodeData.form_fields || [];
+        const humanInTheLoopFields: GenericTestInputField[] = formFields.map((field) => ({
+          id: field.name,
+          label: field.label,
+          type: field.type,
+          placeholder: field.placeholder || `Enter ${field.label}`,
+          required: field.required || false,
+          defaultValue: "",
+          source: "form_fields",
+          options: field.type === "select" ? field.options : undefined,
+        }));
+        setInputFields(humanInTheLoopFields);
+        setAvailableData(nodeId ? getAvailableDataForNode(nodeId) : null);
+        const initialData: Record<string, string> = {};
+        humanInTheLoopFields.forEach((field) => { initialData[field.id] = ""; });
+        setFormData(initialData);
+        return;
+      }
+
       let variables = extractVariablesFromNodeConfig(nodeData);
       variables = variables.filter((v) => v !== "direct_input");
       const schemaFields = extractInputSchemaFields(nodeData);
@@ -225,6 +255,38 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     }));
   };
 
+  const allFieldsOptional = nodeType === "humanInTheLoopNode" && inputFields.length > 0 && inputFields.every((f) => !f.required);
+
+  const handleSkip = async () => {
+    setIsLoading(true);
+    setError(null);
+    setOutput(null);
+
+    try {
+      const response = await testNode({
+        input_data: {},
+        node_type: nodeType,
+        node_config: nodeData,
+      });
+
+      if (response && response.output !== undefined) {
+        const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
+        setOutput(Object.assign({}, response, { output: truncatedOutput }));
+        if (nodeId) {
+          updateNodeOutput(nodeId, truncatedOutput, nodeType, nodeData.name || nodeType);
+        }
+      } else {
+        setOutput(response);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "An error occurred";
+      setError(errorMessage);
+      setOutput({ status: "error", output: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRun = async () => {
     setIsLoading(true);
     setError(null);
@@ -257,15 +319,28 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           }
         }
 
-        // Use the user-selected type from the dropdown
-        const selectedType: SchemaType = fieldTypes[field.id] || "string";
+        // Determine the field type for parsing
+        let fieldType: SchemaType = fieldTypes[field.id] || (field.type as SchemaType) || "string";
+        // For inputSchema fields, prefer the schema type
+        if (inputSchema && field.id in inputSchema) {
+          const schemaField = inputSchema[field.id] as SchemaField;
+          fieldType = schemaField.type;
+        }
+        // Map humanInTheLoopNode field types to schema-compatible types
+        if (field.source === "form_fields") {
+          const typeMap: Record<string, SchemaType> = {
+            text: "string", select: "string", date: "string",
+            number: "number", boolean: "boolean",
+          };
+          fieldType = typeMap[field.type] || "string";
+        }
 
         // Parse the value based on its type
         try {
-          parsedData[field.id] = parseInputValue(value || "", selectedType);
+          parsedData[field.id] = parseInputValue(value || "", fieldType);
         } catch (err) {
           // If parsing fails, validate JSON for object/array types
-          if (selectedType === "object" || selectedType === "array") {
+          if (fieldType === "object" || fieldType === "array") {
             try {
               JSON.parse(value);
               parsedData[field.id] = value;
@@ -426,10 +501,27 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
                               : 'Enter a valid JSON array (e.g., ["item1", "item2"])'}
                           </p>
                         </div>
+                      ) : field.options && field.options.length > 0 ? (
+                        <Select
+                          value={formData[field.id] || ""}
+                          onValueChange={(val) => handleInputChange(field.id, val)}
+                          disabled={isLoading}
+                        >
+                          <SelectTrigger className="text-sm">
+                            <SelectValue placeholder={field.placeholder || `Select ${field.label}`} />
+                          </SelectTrigger>
+                          <SelectContent className="z-[1300]">
+                            {field.options.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       ) : (
                         <Input
                           id={field.id}
-                          type={currentType === "number" ? "number" : "text"}
+                          type={currentType === "number" ? "number" : field.type === "date" ? "date" : "text"}
                           placeholder={field.placeholder}
                           value={formData[field.id] || ""}
                           onChange={(e) =>
@@ -489,6 +581,11 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
             <X className="h-4 w-4 mr-2" />
             Close
           </Button>
+          {allFieldsOptional && (
+            <Button variant="outline" onClick={handleSkip} disabled={isLoading}>
+              Skip
+            </Button>
+          )}
           <Button
             onClick={handleRun}
             disabled={
