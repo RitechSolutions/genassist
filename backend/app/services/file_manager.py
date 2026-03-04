@@ -307,12 +307,15 @@ class FileManagerService:
             file_id: File ID to delete
             delete_from_storage: Whether to delete from storage provider as well
         """
-        if delete_from_storage and self.storage_provider:
+        if delete_from_storage:
             file = await self.repository.get_file_by_id(file_id)
-            try:
-                await self.storage_provider.delete_file(file.storage_path)
-            except Exception as e:
-                logger.warning(f"Failed to delete file from storage: {e}")
+            await self._initialize_storage_provider(file.storage_provider)
+            if self.storage_provider and self.storage_provider.is_initialized():
+                try:
+                    # file.path is the storage key (S3 object key or path relative to base_path).
+                    await self.storage_provider.delete_file(file.path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete file from storage: {e}")
 
         await self.repository.delete_file(file_id)
 
