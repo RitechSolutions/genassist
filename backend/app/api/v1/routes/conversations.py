@@ -652,7 +652,7 @@ async def get_agent_response_log_by_message(
 async def websocket_endpoint(
     websocket: WebSocket,
     conversation_id: UUID,
-    principal: SocketPrincipal = socket_auth(["read:in_progress_conversation"]),
+    principal: SocketPrincipal = socket_auth([P.Conversation.READ_IN_PROGRESS]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
     socket_connection_manager: SocketConnectionManager = Injected(
@@ -697,7 +697,7 @@ async def websocket_endpoint(
 @router.websocket("/ws/dashboard/list")
 async def websocket_dashboard_endpoint(
     websocket: WebSocket,
-    principal: SocketPrincipal = socket_auth(["read:in_progress_conversation"]),
+    principal: SocketPrincipal = socket_auth([P.Dashboard.READ]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
     socket_connection_manager: SocketConnectionManager = Injected(

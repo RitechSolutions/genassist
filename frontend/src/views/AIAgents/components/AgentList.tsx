@@ -175,7 +175,7 @@ const AgentList: React.FC<AgentListProps> = ({
       <div
         key={agent.id}
         className={`px-6 py-4 hover:bg-muted/50 cursor-pointer ${
-          settingsDialogOpen && !isAgentModalOpen ? "blur-sm" : ""
+          settingsDialogOpen && !isAgentModalOpen ? "blur-sm opacity-50 bg-muted/100" : ""
         }`}
         onClick={() => {
           handleOpenWorkflow(agent.id);
