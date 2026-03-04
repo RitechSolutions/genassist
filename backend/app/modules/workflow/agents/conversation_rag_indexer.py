@@ -249,7 +249,7 @@ class ConversationRAGIndexer:
                         pass
             group_end_meta = meta.get("group_end")
             # A group "overlaps recent" if any of its messages fall inside the
-            # verbatim window [recent_start, total). When group_end metadata is
+            # verbatim window (recent_start, total). When group_end metadata is
             # present (docs indexed after the metadata enrichment change) we use
             # an exact index comparison: group_end > recent_start means at least
             # one message in the group is already shown verbatim. For older docs
