@@ -25,10 +25,17 @@ import {
   SelectValue,
 } from "@/components/select";
 import { toast } from "react-hot-toast";
-import { AlertCircle, CheckCircle, Loader2, Plug } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle,
+  HelpCircle,
+  Loader2,
+  Plug,
+} from "lucide-react";
 import { Alert, AlertDescription } from "@/components/alert";
 import { Badge } from "@/components/badge";
 import {
+  ConnectionStatus,
   DataSource,
   DataSourceConfig,
 } from "@/interfaces/dataSource.interface";
@@ -69,10 +76,7 @@ export function DataSourceDialog({
     DataSource | undefined
   >();
   const [isTesting, setIsTesting] = useState(false);
-  const [testStatus, setTestStatus] = useState<{
-    success: boolean;
-    message: string;
-  } | null>(null);
+  const [testStatus, setTestStatus] = useState<ConnectionStatus | null>(null);
 
   const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["dataSourceSchemas"],
@@ -138,6 +142,7 @@ export function DataSourceDialog({
     setSourceType(dataSource.source_type);
     setConnectionData(dataSource.connection_data);
     setIsActive(dataSource.is_active === 1);
+    setTestStatus(dataSource.connection_status ?? null);
   };
 
   const getSchemaDefaults = (
@@ -170,9 +175,17 @@ export function DataSourceDialog({
         connectionData,
         dataSourceId,
       );
-      setTestStatus(result);
+      setTestStatus({
+        status: result.success ? "Connected" : "Error",
+        last_tested_at: new Date().toISOString(),
+        message: result.message,
+      });
     } catch {
-      setTestStatus({ success: false, message: "Test failed." });
+      setTestStatus({
+        status: "Error",
+        last_tested_at: new Date().toISOString(),
+        message: "Test failed.",
+      });
     } finally {
       setIsTesting(false);
     }
@@ -259,6 +272,7 @@ export function DataSourceDialog({
         name,
         source_type: sourceType,
         connection_data: connectionData,
+        connection_status: testStatus ?? undefined,
         is_active: isActive ? 1 : 0,
       };
 
@@ -439,21 +453,21 @@ export function DataSourceDialog({
                 {/* Test connection */}
                 {!isOAuthType && (
                   <div className="space-y-2">
-                    <div className="flex justify-end">
-                      {testStatus?.success === true ? (
+                    <div className={`flex justify-end${isTesting ? " invisible" : ""}`}>
+                      {testStatus?.status === "Connected" ? (
                         <Badge
                           variant="default"
                           className="text-green-700 bg-green-100"
                         >
                           <CheckCircle className="w-3 h-3 mr-1" /> Connected
                         </Badge>
-                      ) : testStatus?.success === false ? (
+                      ) : testStatus?.status === "Error" ? (
                         <Badge variant="destructive">
                           <AlertCircle className="w-3 h-3 mr-1" /> Error
                         </Badge>
                       ) : (
                         <Badge variant="outline">
-                          <AlertCircle className="w-3 h-3 mr-1" /> Not Connected
+                          <HelpCircle className="w-3 h-3 mr-1" /> Untested
                         </Badge>
                       )}
                     </div>
@@ -464,14 +478,14 @@ export function DataSourceDialog({
                           Testing connection, please wait…
                         </AlertDescription>
                       </Alert>
-                    ) : testStatus?.success === true ? (
+                    ) : testStatus?.status === "Connected" ? (
                       <Alert variant="success">
                         <CheckCircle className="h-4 w-4" />
                         <AlertDescription>
                           {testStatus.message}
                         </AlertDescription>
                       </Alert>
-                    ) : testStatus?.success === false ? (
+                    ) : testStatus?.status === "Error" ? (
                       <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
@@ -487,9 +501,7 @@ export function DataSourceDialog({
                       <Alert>
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
-                          {mode === "edit"
-                            ? "Please test if changes were made."
-                            : "Please test your connection before saving."}
+                          This configuration has not been tested. Verify it works before saving.
                         </AlertDescription>
                       </Alert>
                     )}

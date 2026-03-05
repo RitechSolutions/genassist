@@ -1,8 +1,15 @@
+export interface ConnectionStatus {
+  status: "Untested" | "Connected" | "Error";
+  last_tested_at: string | null;
+  message: string | null;
+}
+
 export interface DataSource {
   id?: string;
   name: string;
   source_type: string;
   connection_data: Record<string, string | number | boolean>;
+  connection_status?: ConnectionStatus | null;
   is_active: number;
   oauth_status?: "connected" | "disconnected" | "pending" | "error";
   oauth_email?: string;
