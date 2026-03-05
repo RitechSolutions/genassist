@@ -66,7 +66,7 @@ export function DataSourceCard({
     if (["gmail", "o365"].includes(dataSource.source_type)) {
       if (dataSource.connection_data.user_email !== undefined) {
         return (
-          <Badge variant="default" className="text-green-700 bg-green-100">
+          <Badge variant="success">
             <CheckCircle className="w-3 h-3 mr-1" />
             Connected
           </Badge>
@@ -84,7 +84,7 @@ export function DataSourceCard({
 
     if (status === "Connected") {
       return (
-        <Badge variant="default" className="text-green-700 bg-green-100">
+        <Badge variant="success">
           <CheckCircle className="w-3 h-3 mr-1" />
           Connected
         </Badge>
@@ -93,7 +93,7 @@ export function DataSourceCard({
 
     if (status === "Error") {
       return (
-        <Badge variant="default" className="text-red-700 bg-red-100">
+        <Badge variant="destructive">
           <AlertCircle className="w-3 h-3 mr-1" />
           Error
         </Badge>
