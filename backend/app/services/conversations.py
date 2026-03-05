@@ -18,7 +18,7 @@ from app.core.utils.bi_utils import (
     calculate_duration_from_transcript,
     calculate_incremental_word_counts,
 )
-from app.cache.redis_cache import make_key_builder
+from app.cache.redis_cache import make_key_builder, invalidate_conversation_cache
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
@@ -524,7 +524,8 @@ class ConversationService:
         for conversation in stale_conversations:
             if len(conversation.messages) < 3:
                 # soft delete the conversation
-                await self.update_conversation(conversation, is_deleted=True)
+                conversation.is_deleted = True
+                await self.update_conversation(conversation)
                 deleted_count += 1
                 logger.info(
                     f"Deleted stale conversation {conversation.id} (last updated: {conversation.updated_at})"
@@ -545,6 +546,8 @@ class ConversationService:
                         f"Failed to finalize conversation {conversation.id}: {str(e)}"
                     )
                     failed_count += 1
+
+            await invalidate_conversation_cache(conversation.id)
 
         return {
             "deleted_count": deleted_count,
