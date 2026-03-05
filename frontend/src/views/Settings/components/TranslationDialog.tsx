@@ -160,12 +160,13 @@ export function TranslationDialog({
         });
         toast.success("Translation created successfully.");
       } else {
-        if (!translationToEdit) {
-          setError("Translation is missing for update");
+        const updateKey = translationToEdit?.key || key.trim();
+        if (!updateKey) {
+          setError("Translation key is missing for update");
           return;
         }
 
-        await updateTranslation(translationToEdit.key, {
+        await updateTranslation(updateKey, {
           default: defaultValue.trim() || null,
           en: en.trim() || null,
           es: es.trim() || null,

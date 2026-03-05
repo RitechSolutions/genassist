@@ -41,6 +41,9 @@ interface AgentFormData {
   description: string;
   welcome_message?: string;
   welcome_title?: string;
+  input_disclaimer?: string;
+  input_disclaimer_link_url?: string;
+  input_disclaimer_link_label?: string;
   thinking_phrase_delay?: number;
   possible_queries?: string[];
   thinking_phrases?: string[];
@@ -131,6 +134,9 @@ const AgentForm: React.FC<AgentFormProps> = ({
       description: "",
       welcome_message: "",
       welcome_title: "",
+      input_disclaimer: "",
+      input_disclaimer_link_url: "",
+      input_disclaimer_link_label: "",
       thinking_phrase_delay: 0,
       possible_queries: [],
       thinking_phrases: [],
@@ -687,6 +693,12 @@ const AgentForm: React.FC<AgentFormProps> = ({
                           placeholder="Enter a sample query"
                           className="flex-1"
                         />
+                        {isEditMode && (
+                          <TranslationTrigger
+                            translationKey={`agent.${id}.possible_queries.${index}`}
+                            currentValue={query}
+                          />
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
@@ -751,6 +763,12 @@ const AgentForm: React.FC<AgentFormProps> = ({
                           placeholder="I think...|Getting the data..."
                           className="flex-1"
                         />
+                        {isEditMode && (
+                          <TranslationTrigger
+                            translationKey={`agent.${id}.thinking_phrases.${index}`}
+                            currentValue={phrase}
+                          />
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
@@ -789,6 +807,68 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     </p>
                   </div>
                 )}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="input_disclaimer">Disclaimer</Label>
+                  {isEditMode && id && (
+                    <TranslationTrigger
+                      translationKey={`agent.${id}.input_disclaimer`}
+                      currentValue={formData.input_disclaimer || ""}
+                    />
+                  )}
+                </div>
+                <Input
+                  id="input_disclaimer"
+                  name="input_disclaimer"
+                  value={formData.input_disclaimer}
+                  onChange={handleInputChange}
+                  placeholder="e.g. Agent can make mistakes."
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="input_disclaimer_link_url"
+                      className="text-muted-foreground text-xs"
+                    >
+                      Disclaimer link URL
+                    </Label>
+                    <Input
+                      id="input_disclaimer_link_url"
+                      name="input_disclaimer_link_url"
+                      type="url"
+                      value={formData.input_disclaimer_link_url}
+                      onChange={handleInputChange}
+                      placeholder="https://example.com/info"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label
+                        htmlFor="input_disclaimer_link_label"
+                        className="text-muted-foreground text-xs"
+                      >
+                        Link label
+                      </Label>
+                      {isEditMode && id && (
+                        <TranslationTrigger
+                          translationKey={`agent.${id}.input_disclaimer_link_label`}
+                          currentValue={formData.input_disclaimer_link_label || ""}
+                        />
+                      )}
+                    </div>
+                    <Input
+                      id="input_disclaimer_link_label"
+                      name="input_disclaimer_link_label"
+                      value={formData.input_disclaimer_link_label}
+                      onChange={handleInputChange}
+                      placeholder="e.g. Check important info."
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The link is displayed after the disclaimer text.
+                </p>
               </div>
             </div>
           </div>

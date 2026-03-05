@@ -49,6 +49,9 @@ export interface StartConversationResponse {
   agent_thinking_phrases?: string[];
   agent_thinking_phrase_delay?: number; // seconds
   agent_chat_input_metadata?: Record<string, unknown>; // Metadata keys/defaults from the workflow's Chat Input node
+  agent_input_disclaimer?: string;
+  agent_input_disclaimer_link_url?: string;
+  agent_input_disclaimer_link_label?: string;
   create_time?: number;
   guest_token?: string;
 }
@@ -59,6 +62,9 @@ export interface AgentWelcomeData {
   message?: string | null;
   imageUrl?: string | null;
   possibleQueries?: string[];
+  inputDisclaimer?: string | null;
+  inputDisclaimerLinkUrl?: string | null;
+  inputDisclaimerLinkLabel?: string | null;
 }
 
 export interface AgentThinkingConfig {
@@ -142,7 +148,6 @@ export interface GenAgentChatProps {
   serverUnavailableMessage?: string; // Custom message when server is down
   serverUnavailableContactUrl?: string; // Optional URL for a contact/support
   serverUnavailableContactLabel?: string; // Label for the contact link
-  inputDisclaimer?: string | React.ReactNode; // Disclaimer text or React node shown below the chat input
   formDisplay?: 'inline' | 'footer'; // Where to render dynamic forms: 'inline' = chat bubble, 'footer' = replaces input. Defaults to 'footer'.
   onConfigLoaded?: (props: { chatInputMetadata?: Record<string, any> }) => void;
 }

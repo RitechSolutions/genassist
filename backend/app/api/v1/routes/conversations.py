@@ -142,12 +142,55 @@ async def start(
     # Use model_dump with json mode to ensure all values are JSON-serializable (UUIDs converted to strings)
     agent_data = agent_read.model_dump(mode="json")
 
+    accept_lang = request.headers.get("accept-language")
+
     # Resolve localized welcome message via translations, if possible
     welcome_message = agent_data.get("welcome_message")
     welcome_message = await translations_service.get_by_key_lang(
         f"agent.{agent.id}.welcome_message",
-        request.headers.get("accept-language"),
+        accept_lang,
         default=welcome_message,
+    )
+
+    welcome_title = agent_data.get("welcome_title")
+    welcome_title = await translations_service.get_by_key_lang(
+        f"agent.{agent.id}.welcome_title",
+        accept_lang,
+        default=welcome_title,
+    )
+
+    possible_queries = agent_data.get("possible_queries") or []
+    resolved_queries = []
+    for idx, query in enumerate(possible_queries):
+        resolved = await translations_service.get_by_key_lang(
+            f"agent.{agent.id}.possible_queries.{idx}",
+            accept_lang,
+            default=query,
+        )
+        resolved_queries.append(resolved or query)
+
+    thinking_phrases = agent_data.get("thinking_phrases") or []
+    resolved_phrases = []
+    for idx, phrase in enumerate(thinking_phrases):
+        resolved = await translations_service.get_by_key_lang(
+            f"agent.{agent.id}.thinking_phrases.{idx}",
+            accept_lang,
+            default=phrase,
+        )
+        resolved_phrases.append(resolved or phrase)
+
+    input_disclaimer = agent_data.get("input_disclaimer")
+    input_disclaimer = await translations_service.get_by_key_lang(
+        f"agent.{agent.id}.input_disclaimer",
+        accept_lang,
+        default=input_disclaimer,
+    )
+
+    input_disclaimer_link_label = agent_data.get("input_disclaimer_link_label")
+    input_disclaimer_link_label = await translations_service.get_by_key_lang(
+        f"agent.{agent.id}.input_disclaimer_link_label",
+        accept_lang,
+        default=input_disclaimer_link_label,
     )
 
     response = {
@@ -155,12 +198,15 @@ async def start(
         "conversation_id": str(conversation.id),
         "agent_id": str(agent.id),
         "agent_welcome_message": welcome_message,
-        "agent_welcome_title": agent_data.get("welcome_title"),
-        "agent_possible_queries": agent_data.get("possible_queries"),
-        "agent_thinking_phrases": agent_data.get("thinking_phrases"),
+        "agent_welcome_title": welcome_title,
+        "agent_possible_queries": resolved_queries,
+        "agent_thinking_phrases": resolved_phrases,
         "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
         "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
         "agent_chat_input_metadata": agent_data.get("workflow"),
+        "agent_input_disclaimer": input_disclaimer,
+        "agent_input_disclaimer_link_url": agent_data.get("input_disclaimer_link_url"),
+        "agent_input_disclaimer_link_label": input_disclaimer_link_label,
     }
 
     # If agent requires authentication, generate and return a guest JWT token

@@ -53,7 +53,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   serverUnavailableMessage,
   serverUnavailableContactUrl,
   serverUnavailableContactLabel,
-  inputDisclaimer = 'Agent can make mistakes. Check important info.',
   formDisplay = 'footer',
   onConfigLoaded,
 }): React.ReactElement => {
@@ -162,6 +161,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     welcomeTitle,
     welcomeImageUrl,
     welcomeMessage,
+    inputDisclaimer,
+    inputDisclaimerLinkUrl,
+    inputDisclaimerLinkLabel,
     thinkingPhrases,
     thinkingDelayMs,
   } = useChat({
@@ -1164,6 +1166,26 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     fontFamily,
   };
 
+  const showAgentDisclaimer = Boolean(inputDisclaimer || inputDisclaimerLinkUrl);
+  const agentDisclaimerContent = showAgentDisclaimer && (
+    <>
+      {inputDisclaimer && <span>{inputDisclaimer}</span>}
+      {inputDisclaimerLinkUrl && (
+        <>
+          {inputDisclaimer && ' '}
+          <a
+            href={inputDisclaimerLinkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: primaryColor || '#6366f1', textDecoration: 'underline' }}
+          >
+            {inputDisclaimerLinkLabel || inputDisclaimerLinkUrl}
+          </a>
+        </>
+      )}
+    </>
+  );
+
   const getResponsiveDimensions = () => {
     const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
     // If fullscreen on mobile, use full viewport
@@ -1662,9 +1684,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               fontFamily={fontFamily}
               variant="footer"
             />
-            {inputDisclaimer && (
+            {agentDisclaimerContent && (
               <div className="ga-input-disclaimer" style={disclaimerStyle}>
-                {inputDisclaimer}
+                {agentDisclaimerContent}
               </div>
             )}
           </div>
@@ -1733,9 +1755,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               </div>
             </div>
 
-            {inputDisclaimer && (
+            {agentDisclaimerContent && (
               <div className="ga-input-disclaimer" style={disclaimerStyle}>
-                {inputDisclaimer}
+                {agentDisclaimerContent}
               </div>
             )}
             </div>

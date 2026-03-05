@@ -77,6 +77,9 @@ export const useChat = ({
   const [welcomeTitle, setWelcomeTitle] = useState<string | null>(null);
   const [welcomeImageUrl, setWelcomeImageUrl] = useState<string | null>(null);
   const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
+  const [inputDisclaimer, setInputDisclaimer] = useState<string | null>(null);
+  const [inputDisclaimerLinkUrl, setInputDisclaimerLinkUrl] = useState<string | null>(null);
+  const [inputDisclaimerLinkLabel, setInputDisclaimerLinkLabel] = useState<string | null>(null);
   const [thinkingPhrases, setThinkingPhrases] = useState<string[]>([]);
   const [thinkingDelayMs, setThinkingDelayMs] = useState<number>(1000);
   const [chatInputMetadata, setChatInputMetadata] = useState<
@@ -125,6 +128,9 @@ export const useChat = ({
     setWelcomeTitle(null);
     setWelcomeImageUrl(null);
     setWelcomeMessage(null);
+    setInputDisclaimer(null);
+    setInputDisclaimerLinkUrl(null);
+    setInputDisclaimerLinkLabel(null);
     setPossibleQueries([]);
     setThinkingPhrases([]);
     setThinkingDelayMs(1000);
@@ -290,6 +296,9 @@ export const useChat = ({
         setWelcomeTitle(data.title ?? null);
         setWelcomeImageUrl(data.imageUrl ?? null);
         setWelcomeMessage(data.message ?? null);
+        setInputDisclaimer(data.inputDisclaimer ?? null);
+        setInputDisclaimerLinkUrl(data.inputDisclaimerLinkUrl ?? null);
+        setInputDisclaimerLinkLabel(data.inputDisclaimerLinkLabel ?? null);
         if (data.possibleQueries && data.possibleQueries.length > 0) {
           setPossibleQueries(data.possibleQueries);
         }
@@ -323,6 +332,9 @@ export const useChat = ({
           setWelcomeTitle(welcome.title || null);
           setWelcomeImageUrl(welcome.imageUrl || null);
           setWelcomeMessage(welcome.message || null);
+          setInputDisclaimer(welcome.inputDisclaimer ?? null);
+          setInputDisclaimerLinkUrl(welcome.inputDisclaimerLinkUrl ?? null);
+          setInputDisclaimerLinkLabel(welcome.inputDisclaimerLinkLabel ?? null);
         }
         const thinking = chatServiceRef.current.getThinkingConfig?.();
         if (thinking) {
@@ -612,6 +624,9 @@ export const useChat = ({
       setWelcomeTitle(null);
       setWelcomeImageUrl(null);
       setWelcomeMessage(null);
+      setInputDisclaimer(null);
+      setInputDisclaimerLinkUrl(null);
+      setInputDisclaimerLinkLabel(null);
       setThinkingPhrases([]);
       setThinkingDelayMs(1000);
       lastServerCreateTimeRef.current = 0;
@@ -646,6 +661,9 @@ export const useChat = ({
           setWelcomeTitle(welcome.title || null);
           setWelcomeImageUrl(welcome.imageUrl || null);
           setWelcomeMessage(welcome.message || null);
+          setInputDisclaimer(welcome.inputDisclaimer ?? null);
+          setInputDisclaimerLinkUrl(welcome.inputDisclaimerLinkUrl ?? null);
+          setInputDisclaimerLinkLabel(welcome.inputDisclaimerLinkLabel ?? null);
         }
         if (chatServiceRef.current.getThinkingConfig) {
           const thinking = chatServiceRef.current.getThinkingConfig();
@@ -844,6 +862,9 @@ export const useChat = ({
           setWelcomeTitle(welcome.title || null);
           setWelcomeImageUrl(welcome.imageUrl || null);
           setWelcomeMessage(welcome.message || null);
+          setInputDisclaimer(welcome.inputDisclaimer ?? null);
+          setInputDisclaimerLinkUrl(welcome.inputDisclaimerLinkUrl ?? null);
+          setInputDisclaimerLinkLabel(welcome.inputDisclaimerLinkLabel ?? null);
         }
         if (chatServiceRef.current.getThinkingConfig) {
           const thinking = chatServiceRef.current.getThinkingConfig();
@@ -937,6 +958,9 @@ export const useChat = ({
     welcomeTitle,
     welcomeImageUrl,
     welcomeMessage,
+    inputDisclaimer,
+    inputDisclaimerLinkUrl,
+    inputDisclaimerLinkLabel,
     thinkingPhrases,
     thinkingDelayMs,
     chatInputMetadata,
