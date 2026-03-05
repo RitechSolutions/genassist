@@ -327,6 +327,9 @@ class ConversationRepository:
 
 
     async def get_stale_conversations(self, cutoff_time: datetime.datetime) -> Sequence[ConversationModel]:
+        # add a limit to the query to prevent too many conversations from being returned
+        limit = 100
+
         query = (
             select(ConversationModel).options(
                     selectinload(ConversationModel.messages)
@@ -334,7 +337,8 @@ class ConversationRepository:
             .where(
                     ConversationModel.status == ConversationStatus.IN_PROGRESS.value,
                     ConversationModel.updated_at < cutoff_time
-                    ))
+                    )
+            ).limit(limit)
         result = await self.db.execute(query)
         return result.scalars().all()
 
