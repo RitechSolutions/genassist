@@ -200,7 +200,6 @@ services:
       - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
       - DB_HOST=db
       - DB_PORT=5432
-      - CELERY_ENABLE_TRANSCRIBE_AUDIO_FILES_FROM_SMB_TASK=false
     depends_on:
       redis:
         condition: service_healthy
