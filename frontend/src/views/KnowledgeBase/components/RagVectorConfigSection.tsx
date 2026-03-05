@@ -146,7 +146,7 @@ const RagVectorConfigSection: React.FC<RagVectorConfigSectionProps> = ({
 
         const conditionalFields =
           controlValue && section.conditional_fields
-            ? section.conditional_fields[controlValue] ?? []
+            ? section.conditional_fields[controlValue as string] ?? []
             : [];
 
         return (

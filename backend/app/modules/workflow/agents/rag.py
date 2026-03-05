@@ -38,7 +38,7 @@ DEFAULT_CHUNK_OVERLAP = 100
 EMBEDDING_MODEL = "text-embedding-ada-002"
 
 
-def _create_default_config(
+def _create_config(
     chat_id: str,
     config_overrides: Optional[Dict[str, Any]] = None,
 ) -> AgentRAGConfig:
@@ -180,7 +180,7 @@ class ThreadScopedRAG:
 
             try:
                 # Create service, applying any user-supplied overrides
-                config = _create_default_config(chat_id, config_overrides)
+                config = _create_config(chat_id, config_overrides)
                 service = AgentRAGService(config)
 
                 # Initialize service
@@ -254,6 +254,7 @@ class ThreadScopedRAG:
             message_id: Unique message identifier
             chunk_long_messages: Whether to chunk long messages (handled by AgentRAGService)
             filename: Optional filename for file content
+            config_overrides: Rag related configurations to override defaults
         """
         service = await self._get_service(chat_id, config_overrides)
         if not service:

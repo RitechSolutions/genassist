@@ -77,8 +77,6 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
     <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
-      title="Configure Per Chat RAG"
-      description="Configure the RAG node to retrieve context or add messages to the chat RAG"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
