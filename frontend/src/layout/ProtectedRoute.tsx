@@ -82,11 +82,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   const required = normalize(requiredPermissions);
   const hasFullAccess = permissions.includes("*");
+  const hasPermission = required.some((p) => permissions.includes(p));
 
   if (
     required.length > 0 &&
     !hasFullAccess &&
-    !required.every((p) => permissions.includes(p))
+    !hasPermission
   ) {
     return <Navigate to="/unauthorized" replace />;
   }
