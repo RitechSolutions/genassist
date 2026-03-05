@@ -16,7 +16,7 @@ DASHBOARD_ROOM = "DASHBOARD"
 @router.websocket("/dashboard/list")
 async def ws_dashboard(
     websocket: WebSocket,
-    auth_user: AuthenticatedUser = require_authenticated_user(required_permissions=["read:dashboard"]),
+    auth_user: AuthenticatedUser = require_authenticated_user(required_permissions=["*", "read:dashboard"]),
     lang: str = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
 ):

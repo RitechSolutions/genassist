@@ -1068,7 +1068,7 @@ function App() {
         baseUrl={chatSettings.baseUrl}
         websocketUrl={chatSettings.websocketUrl}
         apiKey={chatSettings.apiKey}
-        tenant=""
+        tenant={chatSettings.tenant || undefined}
         metadata={metadata}
         theme={theme}
         useAudio={featureFlags.useAudio}

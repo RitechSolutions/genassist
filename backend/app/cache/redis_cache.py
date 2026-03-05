@@ -168,6 +168,10 @@ async def invalidate_agent_cache(agent_id: UUID, user_id: UUID):
     await invalidate_cache("agents:get_by_id_full", agent_id)
     await invalidate_cache("agents:get_by_user_id", user_id)
 
+async def invalidate_conversation_cache(conversation_id: UUID):
+    await invalidate_cache("conversations:get_conversation_by_id_with_operator_agent", conversation_id)
+    await invalidate_cache("conversations:in_progress_poll", conversation_id)
+
 async def invalidate_llm_provider_cache(provider_id: UUID | None):
     if provider_id:
         await invalidate_cache("llm_providers:get_by_id", str(provider_id))

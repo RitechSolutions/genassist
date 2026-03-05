@@ -46,6 +46,7 @@ class ConversationPermissions:
     CREATE_IN_PROGRESS = "create:in_progress_conversation"
     UPDATE_IN_PROGRESS = "update:in_progress_conversation"
     TAKEOVER_IN_PROGRESS = "takeover_in_progress_conversation"
+    READ_IN_PROGRESS = "read:in_progress_conversation"
 
 
 class DataSourcePermissions:
