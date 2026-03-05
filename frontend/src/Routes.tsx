@@ -111,7 +111,6 @@ export const RoutesProvider = () => {
               path: "dashboard",
               element: <Index />,
             },
-            
             {
               path: "transcripts",
               element: (
@@ -189,7 +188,7 @@ export const RoutesProvider = () => {
             {
               path: "fine-tune",
               element: (
-                <ProtectedRoute requiredPermissions={["*"]}>
+                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
                   <FineTune />
                 </ProtectedRoute>
               ),
@@ -197,7 +196,7 @@ export const RoutesProvider = () => {
             {
               path: "fine-tune/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*"]}>
+                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
                   <FineTuneJobDetail />
                 </ProtectedRoute>
               ),
@@ -237,7 +236,7 @@ export const RoutesProvider = () => {
             {
               path: "tools",
               element: (
-                <ProtectedRoute requiredPermissions={["*"]}>
+                <ProtectedRoute requiredPermissions={["*", "update:app_settings"]}>
                   <Tools />
                 </ProtectedRoute>
               ),
@@ -245,7 +244,7 @@ export const RoutesProvider = () => {
             {
               path: "tools/create",
               element: (
-                <ProtectedRoute requiredPermissions={["*"]}>
+                <ProtectedRoute requiredPermissions={["*", "update:app_settings"]}>
                   <CreateTool />
                 </ProtectedRoute>
               ),
@@ -253,7 +252,7 @@ export const RoutesProvider = () => {
             {
               path: "tools/edit/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*"]}>
+                <ProtectedRoute requiredPermissions={["*", "update:app_settings"]}>
                   <CreateTool />
                 </ProtectedRoute>
               ),
@@ -277,7 +276,7 @@ export const RoutesProvider = () => {
             {
               path: "knowledge-base",
               element: (
-                <ProtectedRoute requiredPermissions={["*"]}>
+                <ProtectedRoute requiredPermissions={["*", "update:knowledge_base"]}>
                   <KnowledgeBase />
                 </ProtectedRoute>
               ),
@@ -285,7 +284,7 @@ export const RoutesProvider = () => {
             {
               path: "ml-models",
               element: (
-                <ProtectedRoute requiredPermissions={["*"]}>
+                <ProtectedRoute requiredPermissions={["*", "update:ml_model"]}>
                   <MLModels />
                 </ProtectedRoute>
               ),
@@ -293,7 +292,7 @@ export const RoutesProvider = () => {
             {
               path: "ml-models/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*"]}>
+                <ProtectedRoute requiredPermissions={["*", "update:ml_model"]}>
                   <MLModelDetail />
                 </ProtectedRoute>
               ),
