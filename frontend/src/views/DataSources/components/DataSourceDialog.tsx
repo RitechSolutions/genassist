@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -73,7 +73,13 @@ export function DataSourceDialog({
     staleTime: 3000,
   });
 
-  const dataSourceSchemas = data ?? {};
+  const dataSourceSchemas = useMemo(() => {
+    if (!data) return {};
+
+    return Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [key.toLowerCase(), value]),
+    );
+  }, [data]);
 
   useEffect(() => {
     const initializeForm = async () => {
