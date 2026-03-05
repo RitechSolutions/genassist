@@ -1,8 +1,4 @@
-export interface ConnectionStatus {
-  status: "Untested" | "Connected" | "Error";
-  last_tested_at: string | null;
-  message: string | null;
-}
+import type { ConnectionStatus } from "./connectionStatus.interface";
 
 export interface DataSource {
   id?: string;

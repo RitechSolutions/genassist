@@ -1,13 +1,9 @@
-from datetime import datetime
+from typing import Any, Dict, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Any, Dict, Literal, Optional
 
+from pydantic import BaseModel, ConfigDict, Field
 
-class ConnectionStatus(BaseModel):
-    status: Literal["Untested", "Connected", "Error"] = "Untested"
-    last_tested_at: Optional[datetime] = None
-    message: Optional[str] = None
+from app.schemas.common import ConnectionStatus
 
 
 class DataSourceBase(BaseModel):

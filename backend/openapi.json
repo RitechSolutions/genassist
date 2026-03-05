@@ -16337,7 +16337,8 @@
           }
         },
         "type": "object",
-        "title": "ConnectionStatus"
+        "title": "ConnectionStatus",
+        "description": "Reusable connection test status for integrations"
       },
       "ConversationAnalysisRead": {
         "properties": {
