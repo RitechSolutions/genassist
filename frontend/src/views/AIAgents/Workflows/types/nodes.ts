@@ -185,6 +185,7 @@ export interface BaseLLMNodeData extends BaseNodeData {
   ragTopK?: number;
   ragRecentMessages?: number;
   ragMaxHistoryHours?: number;
+  ragVectorConfig?: Record<string, unknown>;
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {
@@ -316,6 +317,8 @@ export interface ThreadRAGNodeData extends BaseNodeData {
   top_k?: number;
   // For add action
   message?: string;
+  // Vector store config (embedding, vector DB, chunking)
+  ragVectorConfig?: Record<string, unknown>;
 }
 
 // MCP Node Data

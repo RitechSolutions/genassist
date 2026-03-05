@@ -104,6 +104,14 @@ class AgentNode(BaseNode):
                 passthrough_threshold=config.get("ragPassthroughThreshold", 30),
                 recent_messages=config.get("ragRecentMessages", 6),
                 max_history_hours=config.get("ragMaxHistoryHours", 0),
+                rag_config_overrides={
+                    **(config.get("ragVectorConfig") or {}),
+                    # Always override chunking: ConversationRAGIndexer already
+                    # groups messages into the correct semantic unit, so each
+                    # group must be stored as a single vector document.
+                    "chunk_size": 100_000,
+                    "chunk_overlap": 0,
+                },
             )
 
             return await indexer.assemble_context(

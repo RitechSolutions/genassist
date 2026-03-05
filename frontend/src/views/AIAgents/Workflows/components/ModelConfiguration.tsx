@@ -24,6 +24,7 @@ import {
   TooltipTrigger,
 } from "@/components/RadixTooltip";
 import { Badge } from "@/components/badge";
+import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
 
 export interface ModelConfigurationProps {
   id: string;
@@ -140,7 +141,11 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   };
 
   const handleRagMaxHistoryHoursChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onConfigChange({ ...config, ragMaxHistoryHours: Number.parseInt(e.target.value) || 0 });
+    onConfigChange({ ...config, ragMaxHistoryHours: Number.parseInt(e.target.value) || 10000 });
+  };
+
+  const handleRagVectorConfigChange = (ragVectorConfig: Record<string, unknown>) => {
+    onConfigChange({ ...config, ragVectorConfig });
   };
 
   const handleMaxMessagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -725,7 +730,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                       </button>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs text-balance">
-                      Exclude retrieved history older than this many hours. Set to 0 to disable (no age limit).
+                      Exclude retrieved history older than this many hours. Set to 0 to disable (no age limit). Default 10000 ≈ ~416 days.
                     </TooltipContent>
                   </Tooltip>
                 </div>
@@ -733,11 +738,18 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                   id={`rag-max-history-hours-${id}`}
                   type="number"
                   min={0}
-                  max={8760}
+                  max={100000}
                   step={1}
-                  value={config.ragMaxHistoryHours ?? 0}
+                  value={config.ragMaxHistoryHours ?? 100000}
                   onChange={handleRagMaxHistoryHoursChange}
-                  placeholder="0"
+                  placeholder="100000"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Vector Store Configuration</Label>
+                <RagVectorConfigSection
+                  config={(config.ragVectorConfig as Record<string, unknown>) ?? {}}
+                  onChange={handleRagVectorConfigChange}
                 />
               </div>
             </>

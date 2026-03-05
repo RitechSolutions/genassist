@@ -40,6 +40,7 @@ class ConversationRAGIndexer:
         passthrough_threshold: int = 30,
         recent_messages: int = 6,
         max_history_hours: int = 0,
+        rag_config_overrides: Optional[Dict[str, Any]] = None,
     ):
         """
         Args:
@@ -57,6 +58,8 @@ class ConversationRAGIndexer:
                 verbatim in context alongside retrieved groups.
             max_history_hours: Exclude retrieved groups whose latest message is
                 older than this many hours. 0 disables the filter (no age limit).
+            rag_config_overrides: Optional embedding/vectordb/chunking config dict
+                forwarded to ThreadScopedRAG on first service creation per chat.
         """
         if group_size < 2 or group_size % 2 != 0:
             raise ValueError("group_size must be a positive even integer (>= 2)")
@@ -74,6 +77,7 @@ class ConversationRAGIndexer:
         self.passthrough_threshold = passthrough_threshold
         self.recent_messages = recent_messages
         self.max_history_hours = max_history_hours
+        self.rag_config_overrides = rag_config_overrides
         self._step = group_size - group_overlap  # always >= 1
 
     # ------------------------------------------------------------------
@@ -142,6 +146,7 @@ class ConversationRAGIndexer:
                 message=group_text,
                 message_id=doc_id,
                 extra_metadata=extra_metadata,
+                config_overrides=self.rag_config_overrides,
             )
             logger.debug(
                 f"[ConversationRAGIndexer] Indexed group [{group_start}:{group_end})"
@@ -212,6 +217,7 @@ class ConversationRAGIndexer:
                 chat_id=thread_id,
                 query=query,
                 top_k=self.top_k,
+                config_overrides=self.rag_config_overrides,
             )
         except Exception as e:
             logger.error(
