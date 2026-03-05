@@ -8,6 +8,8 @@ import Index from "@/views/Index";
 import Transcripts from "./views/Transcripts";
 import Operators from "./views/Operators";
 import Analytics from "@/views/Analytics";
+import AgentPerformancePage from "@/views/Analytics/pages/AgentPerformancePage";
+import NodeAnalyticsPage from "@/views/Analytics/pages/NodeAnalyticsPage";
 import Notifications from "@/views/Notifications";
 import Settings from "./views/Settings";
 import NotFound from "@/views/NotFound";
@@ -134,6 +136,22 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
                   <Analytics />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "analytics/agent-performance",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:dashboard"]}>
+                  <AgentPerformancePage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "analytics/node-analytics",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:dashboard"]}>
+                  <NodeAnalyticsPage />
                 </ProtectedRoute>
               ),
             },
