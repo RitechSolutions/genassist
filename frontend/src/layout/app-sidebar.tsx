@@ -110,12 +110,12 @@ const mainMenuItems: MenuItem[] = [
       {
         title: "Knowledge Base",
         url: "/knowledge-base",
-        permissionsRequired: ["*"],
+        permissionsRequired: ["*", "update:knowledge_base"],
       },
       {
         title: "ML Models",
         url: "/ml-models",
-        permissionsRequired: ["*"],
+        permissionsRequired: ["*", "update:ml_model"],
       },
       {
         title: "Data Sources",
@@ -163,7 +163,7 @@ const mainMenuItems: MenuItem[] = [
       {
         title: "Fine-Tune",
         url: "/fine-tune",
-        permissionsRequired: ["*"],
+        permissionsRequired: ["*", "update:llm_provider"],
       },
     ],
   },

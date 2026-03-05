@@ -3,6 +3,7 @@ import { Permission } from "@/interfaces/permission.interface";
 import toast from "react-hot-toast";
 
 export const getAllPermissions = async (): Promise<Permission[]> => {
+  // eslint-disable-next-line no-useless-catch
   try {
     const data = await apiRequest<Permission[]>("GET", "/permissions/");
     return data || [];
@@ -84,7 +85,7 @@ export const saveRolePermissions = async (
     );
 
     await Promise.all([...addPromises, ...deletePromises]);
-    
+
   } catch (error) {
     toast.error("Failed to update role permissions.");
   }

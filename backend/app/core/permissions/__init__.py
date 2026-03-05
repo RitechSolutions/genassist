@@ -4,7 +4,7 @@ Permission management module.
 Provides automatic permission discovery, constants, and database synchronization.
 """
 import logging
-from typing import Set
+from typing import Optional, Set
 from app.core.permissions.constants import get_all_permission_constants
 
 logger = logging.getLogger(__name__)
@@ -101,25 +101,12 @@ async def _sync_permissions_to_all_tenants(all_permissions: set, multi_tenant_ma
         # Sync permissions to each tenant database
         for tenant_slug, tenant_name in tenants:
             try:
-                logger.info(f"Syncing to tenant: {tenant_name} ({tenant_slug})")
-
-                # Get tenant session factory
-                tenant_session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_slug)
-
-                async with tenant_session_factory() as session:
-                    from app.core.permissions.sync import sync_permissions_to_db
-
-                    stats = await sync_permissions_to_db(
-                        session,
-                        all_permissions,
-                        update_existing=False,
-                        verbose=False  # Less verbose for tenant syncs
-                    )
-
-                logger.info(
-                    f"  ✓ Tenant {tenant_slug}: "
-                    f"{stats['added']} added, {stats['updated']} updated, "
-                    f"{stats['orphaned']} orphaned"
+                await sync_permissions_for_tenant(
+                    tenant_slug=tenant_slug,
+                    tenant_name=tenant_name,
+                    all_permissions=all_permissions,
+                    update_existing=False,
+                    verbose=False,  # Less verbose for tenant syncs
                 )
                 success_count += 1
 
@@ -133,6 +120,58 @@ async def _sync_permissions_to_all_tenants(all_permissions: set, multi_tenant_ma
 
     except Exception as e:
         logger.error(f"Error syncing permissions to tenants: {e}", exc_info=True)
+
+
+async def sync_permissions_for_tenant(
+    tenant_slug: str,
+    tenant_name: Optional[str] = None,
+    all_permissions: Optional[Set[str]] = None,
+    update_existing: bool = False,
+    verbose: bool = False,
+) -> dict:
+    """
+    Sync permissions to a single tenant database.
+
+    This can be called from other services to ensure a specific tenant is
+    up-to-date with the latest permission definitions.
+
+    Args:
+        tenant_slug: The tenant slug to sync.
+        tenant_name: Optional human-readable tenant name for logging.
+        all_permissions: Optional pre-discovered permission set. If not provided,
+            permissions will be discovered automatically.
+        update_existing: Whether to update existing permissions.
+        verbose: Whether to use verbose logging in the underlying sync.
+
+    Returns:
+        A stats dictionary from sync_permissions_to_db with keys:
+        "added", "updated", and "orphaned".
+    """
+    from app.core.permissions.sync import sync_permissions_to_db
+    from app.db.multi_tenant_session import multi_tenant_manager
+
+    if all_permissions is None:
+        all_permissions = discover_all_permissions()
+
+    display_name = f"{tenant_name} ({tenant_slug})" if tenant_name else tenant_slug
+    logger.info(f"Syncing permissions to tenant: {display_name}")
+
+    tenant_session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_slug)
+    async with tenant_session_factory() as session:
+        stats = await sync_permissions_to_db(
+            session,
+            all_permissions,
+            update_existing=update_existing,
+            verbose=verbose,
+        )
+
+    logger.info(
+        f"  ✓ Tenant {tenant_slug}: "
+        f"{stats['added']} added, {stats['updated']} updated, "
+        f"{stats['orphaned']} orphaned"
+    )
+
+    return stats
 
 
 def discover_all_permissions() -> Set[str]:
