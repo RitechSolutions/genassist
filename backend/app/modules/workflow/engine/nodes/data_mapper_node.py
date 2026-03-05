@@ -26,7 +26,9 @@ class DataMapperNode(BaseNode):
         """
         # Get configuration values (already resolved by BaseNode)
         python_script = config.get("pythonScript", "")
-
+        input_data = self.input_data if self.input_data else {}
+        input_data["python_script"] = python_script
+        self.set_node_input(input_data)
         if not python_script:
             logger.warning("No Python script configured for data mapper")
             # Return empty result if no script
@@ -34,14 +36,13 @@ class DataMapperNode(BaseNode):
 
         try:
             # Execute the Python script with resolved params from code_params
-            response = await execute_python_code(python_script, params=self.code_params or {})
+            response = await execute_python_code(
+                python_script, params=self.code_params or {}
+            )
 
             return response
 
         except Exception as e:
             error_msg = f"Error processing data mapper: {str(e)}"
             logger.error(error_msg)
-            return {
-                "error": error_msg,
-                "input": python_script
-            }
+            return {"error": error_msg, "input": python_script}
