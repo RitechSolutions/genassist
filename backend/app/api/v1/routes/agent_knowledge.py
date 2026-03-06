@@ -33,6 +33,7 @@ from app.services.file_manager import FileManagerService
 from app.schemas.file import FileBase, FileUploadResponse
 from app.core.config.settings import file_storage_settings
 from app.services.app_settings import AppSettingsService
+from app.db.models.file import StorageProvider
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ async def create_knowledge_item(
     item: KBCreate = Body(...),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """Create a new knowledge base item"""
     # store url content as text in content field if all rag stores are False
@@ -99,10 +101,26 @@ async def create_knowledge_item(
 
     result = await knowledge_service.create(item)
 
+    if result.files and len(result.files) > 0:
+        for file in result.files:
+            if isinstance(file, dict) and file.get("file_id"):
+                file_id = file.get("file_id")
+                file_obj = await file_manager_service.get_file_by_id(UUID(str(file_id)))
+                if file_obj and file_obj.storage_provider != StorageProvider.LOCAL:
+                    file["storage_provider"] = file_obj.storage_provider
+                    file["file_url"] = await file_manager_service.get_file_url(file_obj)
+
     # Load knowledge item using simplified manager
-    asyncio.create_task(rag_manager.load_knowledge_items(
+    task = asyncio.create_task(rag_manager.load_knowledge_items(
         [result], action="create"))
 
+    def _log_task_result(t: asyncio.Task) -> None:
+        try:
+            t.result()
+        except Exception:  # noqa: BLE001
+            logger.exception("RAG create task failed")
+
+    task.add_done_callback(_log_task_result)
     return result
 
 
@@ -118,6 +136,7 @@ async def update_knowledge_item(
     item: KBBase = Body(...),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     logger.info(f"update_knowledge_item route : item_id = {item_id}")
     """Update an existing knowledge base item"""
@@ -137,9 +156,27 @@ async def update_knowledge_item(
 
     result = await knowledge_service.update(item_id, item)
 
+    if result.files and len(result.files) > 0:
+        for file in result.files:
+            if isinstance(file, dict) and file.get("file_id"):
+                file_id = file.get("file_id")
+                file_obj = await file_manager_service.get_file_by_id(UUID(str(file_id)))
+                if file_obj and file_obj.storage_provider != StorageProvider.LOCAL:
+                    file["storage_provider"] = file_obj.storage_provider
+                    file["file_url"] = await file_manager_service.get_file_url(file_obj)
+
+
     # Load knowledge item using simplified manager
-    _ = asyncio.create_task(
+    task = asyncio.create_task(
         rag_manager.load_knowledge_items([result], action="update"))
+
+    def _log_task_result(t: asyncio.Task) -> None:
+        try:
+            t.result()
+        except Exception:  # noqa: BLE001
+            logger.exception("RAG update task failed")
+
+    task.add_done_callback(_log_task_result)
 
     return result
 
@@ -155,6 +192,7 @@ async def delete_knowledge(
     kb_id: UUID,
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """Delete a knowledge base item"""
     # Check if item exists
@@ -164,6 +202,13 @@ async def delete_knowledge(
     doc_ids = await rag_manager.get_document_ids(kb)
     for doc_id in doc_ids:
         await rag_manager.delete_document(kb, doc_id)
+
+    # Delete all files from file manager service
+    if kb.files and len(kb.files) > 0:
+        for file in kb.files:
+            if isinstance(file, dict) and file.get("file_id"):
+                file_id = file.get("file_id")
+                await file_manager_service.delete_file(UUID(str(file_id)))
 
     await knowledge_service.delete(kb_id)
 
@@ -529,7 +574,7 @@ async def summarize_files_from_azure(
     if not kb_id:
         logger.warning("Attempting to run KB batch processing without specifying a KB ID.")
         return {"status": "error", "message": "kb_id is required"}
-    
+
     background_tasks.add_task(
         batch_process_files_kb_async_with_scope,
         kb_id
