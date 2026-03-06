@@ -49,7 +49,7 @@ class TokenVerifier:
         required_permissions: list[str],
         tenant_id: str,
     ) -> AuthenticatedUser:
-        cache_key = self._cache_key(access_token, api_key)
+        cache_key = self._cache_key(access_token, api_key, required_permissions, tenant_id)
 
         # Check cache
         cached = self._cache.get(cache_key)
@@ -95,8 +95,23 @@ class TokenVerifier:
 
         return user
 
-    def _cache_key(self, access_token: str | None, api_key: str | None) -> str:
-        raw = access_token or api_key or ""
+    def _cache_key(
+        self,
+        access_token: str | None,
+        api_key: str | None,
+        required_permissions: list[str],
+        tenant_id: str,
+    ) -> str:
+        """
+        Cache is keyed by token/api key + tenant + required permissions.
+
+        This ensures that if different endpoints require different permission sets,
+        we won't incorrectly reuse an authentication result that was validated
+        for a weaker or different permission set.
+        """
+        token_raw = access_token or api_key or ""
+        perms_part = ",".join(sorted(required_permissions))
+        raw = f"{token_raw}|{tenant_id}|{perms_part}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
     async def _sweep_loop(self):

@@ -730,12 +730,9 @@ export class ChatService {
   }
 
   connectWebSocket(): void {
-    if (!this.useWs) {
+    if (!this.useWs || !this.websocketUrl) {
+      console.warn("WebSocket is disabled or URL is not set");
       return;
-    }
-
-    if (!this.websocketUrl) {
-      throw new Error("WebSocket URL is required");
     }
 
     if (this.webSocket) {

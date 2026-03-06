@@ -72,11 +72,13 @@ async def verify_ws_token(
     else:
         raise AppException(status_code=400, error_key=ErrorKey.MISSING_PARAMETER, error_detail="Either access_token or api_key is required")
 
-
-
     # Check required permissions
     if body.required_permissions:
-        if not ("*" in perms) and not set(body.required_permissions).issubset(set(perms)):
+        # permissions without wildcard
+        _perm_without_wildcard = [p for p in perms if p != "*"]
+
+        # check if the required permissions are subset of the user permissions
+        if not ("*" in perms) and not set(_perm_without_wildcard).issubset(set(perms)):
             raise AppException(status_code=403, error_key=ErrorKey.INSUFFICIENT_PERMISSIONS, error_detail="Insufficient permissions")
 
     return VerifyTokenResponse(

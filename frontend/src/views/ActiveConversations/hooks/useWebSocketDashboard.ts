@@ -33,7 +33,7 @@ export function useWebSocketDashboard({
       const topicsQuery = topics.map(t => `topics=${t}`).join("&");
       const tenant = getTenantId();
       const tenantParam = tenant ? `&x-tenant-id=${tenant}` : "";
-      const wsUrl = `${wsBaseUrl}/conversations/ws/dashboard/list?access_token=${token}&lang=${lang}&${topicsQuery}${tenantParam}`;
+      const wsUrl = `${wsBaseUrl}/ws/dashboard/list?access_token=${token}&lang=${lang}&${topicsQuery}${tenantParam}`;
 
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
@@ -52,7 +52,7 @@ export function useWebSocketDashboard({
             const provided = (conv.topic || "").trim();
             if (provided && provided !== "Unknown") {
               try { conversationService.setCachedTopic(conv.id, provided); } catch (err)
-              { // ignore 
+              { // ignore
               }
               return conv;
             }
@@ -97,7 +97,7 @@ export function useWebSocketDashboard({
               if (!stats || !stats.conversation_id) break;
               if (typeof stats.topic !== "string" || stats.topic.trim() === "") break;
               try { conversationService.setCachedTopic(stats.conversation_id, stats.topic as string); } catch (err)
-              { 
+              {
                 // ignore
               }
               setConversations(prev => prev.map(c => c.id === stats.conversation_id ? { ...c, topic: stats.topic as string } : c));
@@ -106,7 +106,7 @@ export function useWebSocketDashboard({
             case "update": {
               const payload = data.payload as ConversationDataPayload;
               if (!payload.conversation_id) return;
-              
+
               // Check if conversation is finalized/completed in the update
               const status = (payload as unknown as { status?: string })?.status;
               if (status === "finalized" || status === "completed") {
@@ -114,7 +114,7 @@ export function useWebSocketDashboard({
                 setTotal(prev => Math.max(0, prev - 1));
                 return;
               }
-              
+
               setConversations(prev => {
                 const index = prev.findIndex(c => c.id === payload.conversation_id);
                 const existing = index !== -1 ? prev[index] : undefined;
@@ -123,11 +123,11 @@ export function useWebSocketDashboard({
                   type: existing?.type || "chat",
                   status: existing?.status || "in-progress",
                   transcript: (Array.isArray((payload as { messages?: unknown }).messages)
-                    ? ((payload as { messages?: unknown }).messages as ActiveConversation["transcript"]) 
+                    ? ((payload as { messages?: unknown }).messages as ActiveConversation["transcript"])
                     : (typeof payload.transcript === "string"
                         ? payload.transcript
                         : (Array.isArray(payload.transcript)
-                          ? (payload.transcript as ActiveConversation["transcript"]) 
+                          ? (payload.transcript as ActiveConversation["transcript"])
                           : existing?.transcript || ""))),
                   sentiment: existing?.sentiment || "neutral",
                   timestamp: payload.create_time || existing?.timestamp || new Date().toISOString(),
@@ -203,8 +203,8 @@ export function useWebSocketDashboard({
               // Handle takeover event update conversation status
               const payload = data.payload as { conversation_id?: string; supervisor_id?: string };
               if (payload.conversation_id) {
-                setConversations(prev => prev.map(c => 
-                  c.id === payload.conversation_id 
+                setConversations(prev => prev.map(c =>
+                  c.id === payload.conversation_id
                     ? { ...c, status: "takeover" as const, supervisor_id: payload.supervisor_id || c.supervisor_id }
                     : c
                 ));
