@@ -350,6 +350,39 @@ class ConversationService:
 
         return ConversationAnalysisRead.model_validate(conversation_analysis)
 
+    async def re_analyze_conversation(
+        self, conversation_id: UUID, llm_analyst_id: UUID = seed_test_data.llm_analyst_kpi_analyzer_id
+    ) -> None:
+        """
+        Run analysis for an already-finalized conversation that has no analysis entry.
+        Skips the status update — conversation must already be FINALIZED.
+        """
+        conversation = await self.conversation_repo.fetch_conversation_by_id(conversation_id)
+        if not conversation:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND)
+
+        messages = await self.transcript_message_repo.get_messages_by_type(
+            conversation_id, TranscriptMessageType.MESSAGE.value
+        )
+        message_type_segments = transcript_messages_to_json(
+            messages, exclude_fields={"feedback", "type", "sequence_number"}
+        )
+        if message_type_segments == "[]":
+            raise ValueError(f"No messages found for conversation {conversation_id}")
+
+        llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
+        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
+            message_type_segments, llm_analyst=llm_analyst
+        )
+        conversation_analysis = (
+            await self.conversation_analysis_service.create_conversation_analysis(
+                gpt_analysis, llm_analyst_id, conversation_id
+            )
+        )
+        await self.operator_statistics_service.update_from_analysis(
+            conversation_analysis, conversation.operator_id, conversation.duration
+        )
+
     async def store_zendesk_analysis(
         self,
         saved_conversation: ConversationModel,

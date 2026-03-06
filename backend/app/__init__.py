@@ -309,6 +309,14 @@ def create_celery():
             "options": {"expires": 3600},  # Task expires after 1 hour
         }
 
+    if settings.CELERY_BACKFILL_MISSING_CONVERSATION_ANALYSIS:
+        beat_schedule["backfill-problematic-conversation-analyses"] = {
+            "task": "app.tasks.conversations_tasks.backfill_missing_conversation_analyses",
+            # Run at 3 minutes past every 10 minutes
+            "schedule": crontab(minute="3-59/10"),
+            "options": {"expires": 3600},  # Task expires after 1 hour
+            }
+
     if settings.CELERY_ENABLE_IMPORT_S3_FILES_TASK:
         beat_schedule["import-s3-files"] = {
             "task": "app.tasks.s3_tasks.import_s3_files_to_kb",
