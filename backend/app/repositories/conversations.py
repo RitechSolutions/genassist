@@ -446,3 +446,20 @@ class ConversationRepository:
         )
         result = await self.db.execute(query)
         return result.unique().scalars().first()
+
+    async def get_finalized_without_analysis(self, limit: int = 100) -> Sequence[ConversationModel]:
+        """Return finalized conversations that have no conversation_analysis row."""
+        query = (
+            select(ConversationModel)
+            .outerjoin(
+                ConversationAnalysisModel,
+                ConversationAnalysisModel.conversation_id == ConversationModel.id,
+            )
+            .where(
+                ConversationModel.status == ConversationStatus.FINALIZED.value,
+                ConversationAnalysisModel.id.is_(None),
+            )
+            .limit(limit)
+        )
+        result = await self.db.execute(query)
+        return result.scalars().all()
