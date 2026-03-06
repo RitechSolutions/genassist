@@ -47,6 +47,7 @@ services:
     env_file:
       - .env
     environment:
+      - HF_HUB_OFFLINE=1            # Use cached Hugging Face models only (no network calls)
       - VECTOR_DB_TYPE=chroma
       - CHROMA_COLLECTION_NAME=default
       - CHROMA_HOST=chroma
@@ -168,6 +169,7 @@ services:
     env_file:
       - .env
     environment:
+      - HF_HUB_OFFLINE=1            # Use cached Hugging Face models only (no network calls)
       - DB_HOST=genassist_db
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -198,6 +200,7 @@ services:
     env_file:
       - .env
     environment:
+      - HF_HUB_OFFLINE=1            # Use cached Hugging Face models only (no network calls)
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
