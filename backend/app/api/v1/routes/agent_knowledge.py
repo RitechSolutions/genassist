@@ -3,6 +3,7 @@ from typing import List, Dict, Optional
 import os
 import uuid
 import shutil
+import asyncio
 from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.core.exceptions.error_messages import ErrorKey
@@ -22,7 +23,10 @@ from app.modules.data.providers.legra import (
 )
 from app.schemas.agent_knowledge import KBBase, KBCreate, KBRead
 from app.services.agent_knowledge import KnowledgeBaseService
-import asyncio
+from app.services.agent_knowledge_utils import (
+    populate_remote_file_metadata,
+    schedule_rag_load,
+)
 from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 from app.core.project_path import DATA_VOLUME
@@ -101,26 +105,11 @@ async def create_knowledge_item(
 
     result = await knowledge_service.create(item)
 
-    if result.files and len(result.files) > 0:
-        for file in result.files:
-            if isinstance(file, dict) and file.get("file_id"):
-                file_id = file.get("file_id")
-                file_obj = await file_manager_service.get_file_by_id(UUID(str(file_id)))
-                if file_obj and file_obj.storage_provider != StorageProvider.LOCAL:
-                    file["storage_provider"] = file_obj.storage_provider
-                    file["file_url"] = await file_manager_service.get_file_url(file_obj)
+    # Enrich files with storage metadata when using remote providers (S3, etc.)
+    await populate_remote_file_metadata(result, file_manager_service)
 
-    # Load knowledge item using simplified manager
-    task = asyncio.create_task(rag_manager.load_knowledge_items(
-        [result], action="create"))
-
-    def _log_task_result(t: asyncio.Task) -> None:
-        try:
-            t.result()
-        except Exception:  # noqa: BLE001
-            logger.exception("RAG create task failed")
-
-    task.add_done_callback(_log_task_result)
+    # Load knowledge item using simplified manager in the background
+    schedule_rag_load(rag_manager, result, action="create")
     return result
 
 
@@ -156,28 +145,11 @@ async def update_knowledge_item(
 
     result = await knowledge_service.update(item_id, item)
 
-    if result.files and len(result.files) > 0:
-        for file in result.files:
-            if isinstance(file, dict) and file.get("file_id"):
-                file_id = file.get("file_id")
-                file_obj = await file_manager_service.get_file_by_id(UUID(str(file_id)))
-                if file_obj and file_obj.storage_provider != StorageProvider.LOCAL:
-                    file["storage_provider"] = file_obj.storage_provider
-                    file["file_url"] = await file_manager_service.get_file_url(file_obj)
-
+    # Enrich files with storage metadata when using remote providers (S3, etc.)
+    await populate_remote_file_metadata(result, file_manager_service)
 
     # Load knowledge item using simplified manager
-    task = asyncio.create_task(
-        rag_manager.load_knowledge_items([result], action="update"))
-
-    def _log_task_result(t: asyncio.Task) -> None:
-        try:
-            t.result()
-        except Exception:  # noqa: BLE001
-            logger.exception("RAG update task failed")
-
-    task.add_done_callback(_log_task_result)
-
+    schedule_rag_load(rag_manager, result, action="update")
     return result
 
 
