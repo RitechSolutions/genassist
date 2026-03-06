@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
+import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
 
 type ThreadRAGDialogProps = BaseNodeDialogProps<
   ThreadRAGNodeData,
@@ -32,6 +33,10 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
   const [topK, setTopK] = useState(data.top_k || 5);
   // Add action fields
   const [message, setMessage] = useState(data.message || "");
+  // Vector store config
+  const [ragVectorConfig, setRagVectorConfig] = useState<Record<string, unknown>>(
+    data.ragVectorConfig ?? {}
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -40,6 +45,7 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
       setQuery(data.query || "");
       setTopK(data.top_k || 5);
       setMessage(data.message || "");
+      setRagVectorConfig(data.ragVectorConfig ?? {});
     }
   }, [isOpen, data]);
 
@@ -48,6 +54,7 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
       ...data,
       name,
       action,
+      ragVectorConfig,
     };
 
     if (action === "retrieve") {
@@ -70,8 +77,6 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
     <NodeConfigPanel
       isOpen={isOpen}
       onClose={onClose}
-      title="Configure Per Chat RAG"
-      description="Configure the RAG node to retrieve context or add messages to the chat RAG"
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -165,6 +170,18 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
           </div>
         </>
       )}
+
+      <div className="space-y-2 pt-2 border-t border-border">
+        <Label className="text-sm font-medium">Vector Store Configuration</Label>
+        <p className="text-xs text-muted-foreground">
+          Embedding provider, vector database, and chunking strategy. Settings
+          are applied on the first operation for this chat thread.
+        </p>
+        <RagVectorConfigSection
+          config={ragVectorConfig}
+          onChange={setRagVectorConfig}
+        />
+      </div>
     </NodeConfigPanel>
   );
 };

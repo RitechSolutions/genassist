@@ -110,7 +110,7 @@ export function Office365Connection({
   const getStatusBadge = () => {
     if (isConnected) {
       return (
-        <Badge variant="default" className="text-green-700 bg-green-100">
+        <Badge variant="success">
           <CheckCircle className="w-3 h-3 mr-1" /> Connected
         </Badge>
       );
