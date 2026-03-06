@@ -89,6 +89,9 @@ const AgentList: React.FC<AgentListProps> = ({
     description: string;
     welcome_message?: string;
     welcome_title?: string;
+    input_disclaimer?: string;
+    input_disclaimer_link_url?: string;
+    input_disclaimer_link_label?: string;
     thinking_phrase_delay?: number;
     possible_queries?: string[];
     thinking_phrases?: string[];
@@ -112,6 +115,9 @@ const AgentList: React.FC<AgentListProps> = ({
         description: config.description ?? "",
         welcome_message: config.welcome_message ?? "",
         welcome_title: config.welcome_title ?? "",
+        input_disclaimer: config.input_disclaimer ?? "",
+        input_disclaimer_link_url: config.input_disclaimer_link_url ?? "",
+        input_disclaimer_link_label: config.input_disclaimer_link_label ?? "",
         thinking_phrase_delay: config.thinking_phrase_delay ?? 0,
         possible_queries: config.possible_queries ?? [],
         thinking_phrases: config.thinking_phrases ?? [],

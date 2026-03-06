@@ -23,6 +23,12 @@ class AgentBase(BaseModel):
                                            description="Welcome image blob displayed when starting a conversation with an agent.")
     welcome_title: Optional[str] = Field(None, max_length=200,
                                          description="Welcome title displayed when starting a conversation with an agent.")
+    input_disclaimer: Optional[str] = Field(None, max_length=500,
+                                             description="Disclaimer text shown below the chat input (e.g. 'Agent can make mistakes.').")
+    input_disclaimer_link_url: Optional[str] = Field(None, max_length=500,
+                                                     description="URL for the disclaimer link (e.g. terms or info page).")
+    input_disclaimer_link_label: Optional[str] = Field(None, max_length=200,
+                                                      description="Label for the disclaimer link (e.g. 'Check important info.').")
     possible_queries: list[str] = Field(...,
                                         description="Possible queries, suggested when starting a conversation with an agent.")
     thinking_phrases: Optional[list[str]] = Field(
@@ -49,6 +55,9 @@ class AgentUpdate(BaseModel):
     welcome_message: Optional[str] = None
     welcome_image: Optional[bytes] = None
     welcome_title: Optional[str] = None
+    input_disclaimer: Optional[str] = None
+    input_disclaimer_link_url: Optional[str] = None
+    input_disclaimer_link_label: Optional[str] = None
     possible_queries: Optional[list[str]] = None
     thinking_phrases: Optional[list[str]] = None
     thinking_phrase_delay: Optional[int] = None

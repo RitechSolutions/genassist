@@ -56,6 +56,7 @@ from app.services.conversations import ConversationService
 from app.services.transcript_message_service import TranscriptMessageService
 from app.services.agent_response_log import AgentResponseLogService
 from app.services.auth import AuthService
+from app.services.translations import TranslationsService
 from app.core.tenant_scope import get_tenant_context
 from app.use_cases.chat_as_client_use_case import (
     process_conversation_update_with_agent,
@@ -67,6 +68,46 @@ from app.services.file_manager import FileManagerService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get(
+    "/in-progress/agent-info",
+    dependencies=[
+        Depends(auth),
+        Depends(get_agent_for_start),  # Get agent early for CORS and auth
+        Depends(permissions(P.Conversation.CREATE_IN_PROGRESS)),
+    ],
+)
+async def get_agent_info(
+    request: Request,
+    translations_service: TranslationsService = Injected(TranslationsService),
+):
+    """
+    Return agent metadata needed before a conversation starts (e.g. supported languages).
+    """
+    agent = getattr(request.state, "agent", None)
+    if not agent:
+        logger.debug("agent not found")
+        raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
+
+    available_languages = await translations_service.get_languages_for_prefix(
+        f"agent.{agent.id}."
+    )
+
+    response = {
+        "agent_id": str(agent.id),
+        "agent_available_languages": available_languages,
+    }
+
+    agent_security_settings = (
+        agent.security_settings
+        if agent and hasattr(agent, "security_settings")
+        else None
+    )
+    json_response = JSONResponse(content=response)
+    apply_agent_cors_headers(request, json_response, agent_security_settings)
+    return json_response
+
 
 @router.get(
     "/{conversation_id}",
@@ -102,6 +143,7 @@ async def start(
     model: ConversationStartWithRecaptchaToken,
     service: ConversationService = Injected(ConversationService),
     auth_service: AuthService = Injected(AuthService),
+    translations_service: TranslationsService = Injected(TranslationsService),
 ):
     """
     Create a new in-progress conversation and store the partial transcript.
@@ -139,17 +181,75 @@ async def start(
     # Use model_dump with json mode to ensure all values are JSON-serializable (UUIDs converted to strings)
     agent_data = agent_read.model_dump(mode="json")
 
+    accept_lang = request.headers.get("accept-language")
+
+    # Resolve localized welcome message via translations, if possible
+    welcome_message = agent_data.get("welcome_message")
+    welcome_message = await translations_service.get_by_key_lang(
+        f"agent.{agent.id}.welcome_message",
+        accept_lang,
+        default=welcome_message,
+    )
+
+    welcome_title = agent_data.get("welcome_title")
+    welcome_title = await translations_service.get_by_key_lang(
+        f"agent.{agent.id}.welcome_title",
+        accept_lang,
+        default=welcome_title,
+    )
+
+    possible_queries = agent_data.get("possible_queries") or []
+    resolved_queries = []
+    for idx, query in enumerate(possible_queries):
+        resolved = await translations_service.get_by_key_lang(
+            f"agent.{agent.id}.possible_queries.{idx}",
+            accept_lang,
+            default=query,
+        )
+        resolved_queries.append(resolved or query)
+
+    thinking_phrases = agent_data.get("thinking_phrases") or []
+    resolved_phrases = []
+    for idx, phrase in enumerate(thinking_phrases):
+        resolved = await translations_service.get_by_key_lang(
+            f"agent.{agent.id}.thinking_phrases.{idx}",
+            accept_lang,
+            default=phrase,
+        )
+        resolved_phrases.append(resolved or phrase)
+
+    input_disclaimer = agent_data.get("input_disclaimer")
+    input_disclaimer = await translations_service.get_by_key_lang(
+        f"agent.{agent.id}.input_disclaimer",
+        accept_lang,
+        default=input_disclaimer,
+    )
+
+    input_disclaimer_link_label = agent_data.get("input_disclaimer_link_label")
+    input_disclaimer_link_label = await translations_service.get_by_key_lang(
+        f"agent.{agent.id}.input_disclaimer_link_label",
+        accept_lang,
+        default=input_disclaimer_link_label,
+    )
+    available_languages = await translations_service.get_languages_for_prefix(
+        f"agent.{agent.id}."
+    )
+
     response = {
         "message": "Conversation started",
         "conversation_id": str(conversation.id),
         "agent_id": str(agent.id),
-        "agent_welcome_message": agent_data.get("welcome_message"),
-        "agent_welcome_title": agent_data.get("welcome_title"),
-        "agent_possible_queries": agent_data.get("possible_queries"),
-        "agent_thinking_phrases": agent_data.get("thinking_phrases"),
+        "agent_welcome_message": welcome_message,
+        "agent_welcome_title": welcome_title,
+        "agent_possible_queries": resolved_queries,
+        "agent_thinking_phrases": resolved_phrases,
         "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
         "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
         "agent_chat_input_metadata": agent_data.get("workflow"),
+        "agent_input_disclaimer": input_disclaimer,
+        "agent_input_disclaimer_link_url": agent_data.get("input_disclaimer_link_url"),
+        "agent_input_disclaimer_link_label": input_disclaimer_link_label,
+        "agent_available_languages": available_languages,
     }
 
     # If agent requires authentication, generate and return a guest JWT token
@@ -400,7 +500,7 @@ async def update(
 
     # process attachments from metadata
     await process_attachments_from_metadata(
-        base_url=str(request.base_url).rstrip('/'),
+        base_url=str(request.base_url).rstrip("/"),
         conversation_id=conversation_id,
         model=model,
         tenant_id=tenant_id,
@@ -475,7 +575,8 @@ async def finalize(
     )
 
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
-        conversation_id= conversation_id, llm_analyst_id=finalize.llm_analyst_id,
+        conversation_id=conversation_id,
+        llm_analyst_id=finalize.llm_analyst_id,
     )
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
     return finalized_conversation_analysis
@@ -540,7 +641,11 @@ async def get_conversations_list(
     total = await conversations_service.count_conversations(conversation_filter)
 
     # Calculate pagination info
-    page = (conversation_filter.skip // conversation_filter.limit) + 1 if conversation_filter.limit > 0 else 1
+    page = (
+        (conversation_filter.skip // conversation_filter.limit) + 1
+        if conversation_filter.limit > 0
+        else 1
+    )
     has_more = (conversation_filter.skip + len(conversations)) < total
 
     return ConversationPaginatedResponse(
@@ -548,7 +653,7 @@ async def get_conversations_list(
         total=total,
         page=page,
         page_size=conversation_filter.limit,
-        has_more=has_more
+        has_more=has_more,
     )
 
 
@@ -578,8 +683,10 @@ async def add_message_feedback(
     ),
     conversation_service: ConversationService = Injected(ConversationService),
 ):
-    _, conversation_id = await transcript_message_service.add_transcript_message_feedback(
-        message_id, transcript_feedback
+    _, conversation_id = (
+        await transcript_message_service.add_transcript_message_feedback(
+            message_id, transcript_feedback
+        )
     )
 
     # Get the conversation and update thumbs up/down counts
@@ -629,7 +736,9 @@ async def add_conversation_feedback(
 )
 async def get_agent_response_log_by_message(
     message_id: UUID,
-    agent_response_log_service: AgentResponseLogService = Injected(AgentResponseLogService),
+    agent_response_log_service: AgentResponseLogService = Injected(
+        AgentResponseLogService
+    ),
 ):
     """
     Return the stored agent response log associated with a given transcript (message) id.
