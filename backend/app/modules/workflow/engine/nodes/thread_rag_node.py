@@ -8,7 +8,7 @@ This node allows workflows to:
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.agents.rag import ThreadScopedRAG
@@ -54,13 +54,15 @@ class ThreadRAGNode(BaseNode):
             logger.error(error_msg)
             return {"error": error_msg}
 
+        rag_config_overrides = config.get("ragVectorConfig") or None
+
         try:
             if action == "add":
-                return await self._add_message(thread_rag, chat_id, config)
+                return await self._add_message(thread_rag, chat_id, config, rag_config_overrides)
             elif action == "retrieve":
-                return await self._retrieve(thread_rag, chat_id, config)
+                return await self._retrieve(thread_rag, chat_id, config, rag_config_overrides)
             elif action == "add_file":
-                return await self._add_file(thread_rag, chat_id, config)
+                return await self._add_file(thread_rag, chat_id, config, rag_config_overrides)
             else:
                 error_msg = f"Unknown action: {action}. Supported actions: add, retrieve, add_file"
                 logger.error(error_msg)
@@ -72,7 +74,8 @@ class ThreadRAGNode(BaseNode):
             return {"error": error_msg}
 
     async def _add_message(
-        self, thread_rag: ThreadScopedRAG, chat_id: str, config: Dict[str, Any]
+        self, thread_rag: ThreadScopedRAG, chat_id: str, config: Dict[str, Any],
+        rag_config_overrides: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Add a message to chat history"""
         message = config.get("message")
@@ -95,10 +98,14 @@ class ThreadRAGNode(BaseNode):
                 message_id=message_id,
                 chunk_long_messages=chunk_long_messages,
                 filename=filename,
+                config_overrides=rag_config_overrides,
             )
         else:
             await thread_rag.add_message(
-                chat_id=chat_id, message=message, message_id=message_id
+                chat_id=chat_id,
+                message=message,
+                message_id=message_id,
+                config_overrides=rag_config_overrides,
             )
 
         return {
@@ -109,7 +116,8 @@ class ThreadRAGNode(BaseNode):
         }
 
     async def _retrieve(
-        self, thread_rag: ThreadScopedRAG, chat_id: str, config: Dict[str, Any]
+        self, thread_rag: ThreadScopedRAG, chat_id: str, config: Dict[str, Any],
+        rag_config_overrides: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Retrieve relevant context from chat history"""
         query = config.get("query")
@@ -118,7 +126,10 @@ class ThreadRAGNode(BaseNode):
 
         top_k = config.get("top_k", 5)
 
-        results = await thread_rag.retrieve(chat_id=chat_id, query=query, top_k=top_k)
+        results = await thread_rag.retrieve(
+            chat_id=chat_id, query=query, top_k=top_k,
+            config_overrides=rag_config_overrides,
+        )
 
         return {
             "success": True,
@@ -130,7 +141,8 @@ class ThreadRAGNode(BaseNode):
         }
 
     async def _add_file(
-        self, thread_rag: ThreadScopedRAG, chat_id: str, config: Dict[str, Any]
+        self, thread_rag: ThreadScopedRAG, chat_id: str, config: Dict[str, Any],
+        rag_config_overrides: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Add file content to chat history"""
         file_content = config.get("file_content")

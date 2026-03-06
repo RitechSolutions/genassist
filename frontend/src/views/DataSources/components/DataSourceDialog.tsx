@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import {
   getDataSourceFormSchemas,
   updateDataSource,
   getDataSource,
+  testConnection,
 } from "@/services/dataSources";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
@@ -25,13 +26,16 @@ import {
 } from "@/components/select";
 import { toast } from "react-hot-toast";
 import { Loader2 } from "lucide-react";
-import { DataSource, DataSourceField } from "@/interfaces/dataSource.interface";
+import { ConnectionTestPanel } from "@/components/ConnectionTestPanel";
+import type { ConnectionStatus } from "@/interfaces/connectionStatus.interface";
+import {
+  DataSource,
+  DataSourceConfig,
+} from "@/interfaces/dataSource.interface";
 import { useQuery } from "@tanstack/react-query";
 import { GmailConnection } from "./GmailConnection";
 import { Office365Connection } from "./Office365Connection";
-import { SmbShareFolderConnection } from "./SmbShareFolderConnection";
-import { AzureBlobConnection } from "./AzureBlobConnection";
-import { FileUploader } from "@/components/FileUploader";
+import { SchemaFormRenderer } from "@/components/SchemaFormRenderer";
 
 interface DataSourceDialogProps {
   isOpen: boolean;
@@ -64,6 +68,8 @@ export function DataSourceDialog({
   const [currentDataSource, setCurrentDataSource] = useState<
     DataSource | undefined
   >();
+  const [isTesting, setIsTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<ConnectionStatus | null>(null);
 
   const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["dataSourceSchemas"],
@@ -73,7 +79,13 @@ export function DataSourceDialog({
     staleTime: 3000,
   });
 
-  const dataSourceSchemas = data ?? {};
+  const dataSourceSchemas = useMemo(() => {
+    if (!data) return {};
+
+    return Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [key.toLowerCase(), value]),
+    );
+  }, [data]);
 
   useEffect(() => {
     const initializeForm = async () => {
@@ -120,6 +132,7 @@ export function DataSourceDialog({
     setConnectionData({});
     setIsActive(true);
     setShowAdvanced(false);
+    setTestStatus(null);
   };
 
   const populateFormWithDataSource = (dataSource: DataSource) => {
@@ -128,16 +141,53 @@ export function DataSourceDialog({
     setSourceType(dataSource.source_type);
     setConnectionData(dataSource.connection_data);
     setIsActive(dataSource.is_active === 1);
+    setTestStatus(dataSource.connection_status ?? null);
+  };
+
+  const getSchemaDefaults = (
+    type: string,
+  ): Record<string, string | number | boolean> => {
+    const schema = dataSourceSchemas[type];
+    if (!schema) return {};
+    const defaults: Record<string, string | number | boolean> = {};
+    for (const field of schema.fields) {
+      if (field.default !== undefined && field.default !== null) {
+        defaults[field.name] = field.default;
+      }
+    }
+    return defaults;
   };
 
   const handleConnectionDataChange = (
-    field: DataSourceField,
-    value: string | number,
+    fieldName: string,
+    value: string | number | boolean,
   ) => {
-    setConnectionData((prev) => ({
-      ...prev,
-      [field.name]: value,
-    }));
+    setConnectionData((prev) => ({ ...prev, [fieldName]: value }));
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestStatus(null);
+    try {
+      const result = await testConnection(
+        sourceType,
+        connectionData,
+        dataSourceId,
+      );
+      setTestStatus({
+        status: result.success ? "Connected" : "Error",
+        last_tested_at: new Date().toISOString(),
+        message: result.message,
+      });
+    } catch {
+      setTestStatus({
+        status: "Error",
+        last_tested_at: new Date().toISOString(),
+        message: "Test failed.",
+      });
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -170,7 +220,8 @@ export function DataSourceDialog({
 
       if (oauthDataSource.oauth_status !== "connected") {
         toast.error(
-          `Please authorize ${sourceType === "o365" ? "Office 365" : "Gmail"
+          `Please authorize ${
+            sourceType === "o365" ? "Office 365" : "Gmail"
           } access before saving.`,
         );
         return;
@@ -178,58 +229,39 @@ export function DataSourceDialog({
     } else {
       const schema = dataSourceSchemas?.[sourceType];
       if (!schema) {
-        // Allow creation for known manual integrations even if schema is missing
-        if (["smb_share_folder"].includes(sourceType)) {
-          const useLocalFs = Boolean(connectionData.use_local_fs);
+        toast.error(
+          "Schema not loaded yet. Please wait a moment and try again.",
+        );
+        return;
+      }
 
-          if (useLocalFs) {
-            if (!connectionData.local_root) {
-              toast.error(
-                "Local Root Path is required when using Local Filesystem.",
-              );
-              return;
-            }
-          } else {
-            if (!connectionData.smb_host) {
-              toast.error(
-                "SMB Host is required when not using Local Filesystem.",
-              );
-              return;
-            }
-            if (!connectionData.smb_share) {
-              toast.error(
-                "SMB Share Name is required when not using Local Filesystem.",
-              );
-              return;
-            }
-          }
-        } else if (["azure_blob"].includes(sourceType)) {
-          if (!connectionData.connectionstring || !connectionData.container) {
-            toast.error(
-              "ConnectionString and Container Name are required when using Azure Blob",
-            );
-            return;
-          }
+      const isFieldVisible = (field: {
+        conditional?: { field: string; value: string | number | boolean };
+      }) => {
+        if (!field.conditional) return true;
+        return (
+          connectionData[field.conditional.field] === field.conditional.value
+        );
+      };
+
+      const schemaMissing = schema.fields
+        .filter(
+          (field) =>
+            field.required &&
+            isFieldVisible(field) &&
+            (connectionData[field.name] === undefined ||
+              connectionData[field.name] === null ||
+              connectionData[field.name] === ""),
+        )
+        .map((field) => field.label);
+
+      if (schemaMissing.length > 0) {
+        if (schemaMissing.length === 1) {
+          toast.error(`${schemaMissing[0]} is required.`);
         } else {
-          toast.error(
-            "Schema not loaded yet. Please wait a moment and try again.",
-          );
-          return;
+          toast.error(`Please provide: ${schemaMissing.join(", ")}.`);
         }
-      } else {
-        // Normal schema validation (only validate visible required fields)
-        const schemaMissing = schema.fields
-          .filter((field) => field.required && isFieldVisible(field) && !connectionData[field.name])
-          .map((field) => field.label);
-
-        if (schemaMissing.length > 0) {
-          if (schemaMissing.length === 1) {
-            toast.error(`${schemaMissing[0]} is required.`);
-          } else {
-            toast.error(`Please provide: ${schemaMissing.join(", ")}.`);
-          }
-          return;
-        }
+        return;
       }
     }
 
@@ -239,6 +271,7 @@ export function DataSourceDialog({
         name,
         source_type: sourceType,
         connection_data: connectionData,
+        connection_status: testStatus ?? undefined,
         is_active: isActive ? 1 : 0,
       };
 
@@ -268,101 +301,9 @@ export function DataSourceDialog({
     }
   };
 
-  const renderField = (field: DataSourceField) => {
-    const value = connectionData[field.name] ?? field.default;
-
-    switch (field.type) {
-      case "select":
-        return (
-          <Select
-            value={value as string}
-            onValueChange={(val) => handleConnectionDataChange(field, val)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={`Select ${field.label}`} />
-            </SelectTrigger>
-            <SelectContent>
-              {field.options?.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-      case "number":
-        return (
-          <Input
-            type="number"
-            value={value as number}
-            onChange={(e) =>
-              handleConnectionDataChange(field, parseFloat(e.target.value))
-            }
-            // min={field.min}
-            // max={field.max}
-            // step={field.step}
-            placeholder={field.label}
-          />
-        );
-      case "password":
-        return (
-          <Input
-            type="password"
-            value={value as string}
-            onChange={(e) => handleConnectionDataChange(field, e.target.value)}
-            placeholder={field.label}
-          />
-        );
-      case "files":
-        return (
-          <FileUploader
-            label=""
-            initialServerFilePath={(value as string) || ""}
-            initialOriginalFileName={
-              (connectionData[`${field.name}_original_filename`] as string) || ""
-            }
-            onUploadComplete={(result) => {
-              setConnectionData((prev) => ({
-                ...prev,
-                [field.name]: result.file_path ?? result.file_url,
-                [`${field.name}_original_filename`]: result.original_filename,
-              }));
-            }}
-            onRemove={() => {
-              setConnectionData((prev) => ({
-                ...prev,
-                [field.name]: "",
-                [`${field.name}_original_filename`]: "",
-              }));
-            }}
-            placeholder={field.placeholder || `Upload ${field.label}`}
-          />
-        );
-      default:
-        return (
-          <Input
-            type="text"
-            value={value as string}
-            onChange={(e) => handleConnectionDataChange(field, e.target.value)}
-            placeholder={field.placeholder || field.label}
-          />
-        );
-    }
-  };
-
-  const isFieldVisible = (field: DataSourceField): boolean => {
-    if (!field.conditional) return true;
-    return connectionData[field.conditional.field] === field.conditional.value;
-  };
-
-  const requiredFields =
-    dataSourceSchemas[sourceType]?.fields.filter(
-      (f) => f.required && isFieldVisible(f)
-    ) ?? [];
-  const optionalFields =
-    dataSourceSchemas[sourceType]?.fields.filter(
-      (f) => !f.required && isFieldVisible(f)
-    ) ?? [];
+  const isOAuthType = ["gmail", "o365"].includes(sourceType);
+  const schema = dataSourceSchemas[sourceType];
+  const hasAdvancedFields = schema?.fields.some((f) => !f.required) ?? false;
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -378,6 +319,7 @@ export function DataSourceDialog({
           </DialogHeader>
 
           <div className="px-6 pb-6 space-y-4">
+            {/* Name & Source Type */}
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
@@ -399,7 +341,9 @@ export function DataSourceDialog({
                   value={sourceType}
                   onValueChange={(value) => {
                     setSourceType(value);
-                    setConnectionData({});
+                    setConnectionData(getSchemaDefaults(value));
+                    setTestStatus(null);
+                    setShowAdvanced(false);
                   }}
                 >
                   <SelectTrigger
@@ -409,18 +353,6 @@ export function DataSourceDialog({
                     <SelectValue placeholder="Select Source Type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem key="gmail" value="gmail">
-                      Gmail
-                    </SelectItem>
-                    <SelectItem key="o365" value="o365">
-                      Office365
-                    </SelectItem>
-                    <SelectItem key="smb_share_folder" value="smb_share_folder">
-                      Network Share/Folder
-                    </SelectItem>
-                    <SelectItem key="azure_blob" value="azure_blob">
-                      Azure Blob Storage
-                    </SelectItem>
                     {Object.entries(dataSourceSchemas).map(([type, schema]) => (
                       <SelectItem key={type} value={type}>
                         {schema.name}
@@ -439,93 +371,52 @@ export function DataSourceDialog({
                       currentDataSource ||
                       (dataSourceId
                         ? ({
-                          id: dataSourceId,
-                          oauth_status: "disconnected",
-                          name,
-                          source_type: sourceType,
-                          connection_data: connectionData,
-                          is_active: 0,
-                        } as DataSource)
+                            id: dataSourceId,
+                            oauth_status: "disconnected",
+                            name,
+                            source_type: sourceType,
+                            connection_data: connectionData,
+                            is_active: 0,
+                          } as DataSource)
                         : undefined)
                     }
                     dataSourceName={name}
                     onDataSourceCreated={(id) => setDataSourceId(id)}
                   />
                 )}
+
                 {sourceType === "o365" && (
                   <Office365Connection
                     dataSource={
                       currentDataSource ||
                       (dataSourceId
                         ? ({
-                          id: dataSourceId,
-                          oauth_status: "disconnected",
-                          name,
-                          source_type: sourceType,
-                          connection_data: connectionData,
-                          is_active: 0,
-                        } as DataSource)
+                            id: dataSourceId,
+                            oauth_status: "disconnected",
+                            name,
+                            source_type: sourceType,
+                            connection_data: connectionData,
+                            is_active: 0,
+                          } as DataSource)
                         : undefined)
                     }
                     dataSourceName={name}
                     onDataSourceCreated={(id) => setDataSourceId(id)}
                   />
                 )}
-                {sourceType === "smb_share_folder" && (
-                  <SmbShareFolderConnection
-                    dataSource={
-                      currentDataSource ||
-                      (dataSourceId
-                        ? ({
-                          id: dataSourceId,
-                          name,
-                          source_type: sourceType,
-                          connection_data: connectionData,
-                          is_active: 0,
-                        } as DataSource)
-                        : undefined)
-                    }
-                    dataSourceName={name}
-                    connectionData={connectionData ?? {}}
-                    onConnectionDataChange={(field, value) =>
-                      setConnectionData((prev) => ({ ...prev, [field]: value }))
-                    }
-                  />
-                )}
-                {sourceType === "azure_blob" && (
-                  <AzureBlobConnection
-                    dataSourceName={name}
-                    connectionData={connectionData ?? {}}
-                    onConnectionDataChange={(field, value) =>
-                      setConnectionData((prev) => ({ ...prev, [field]: value }))
-                    }
+
+                {/* Required fields */}
+                {!isOAuthType && schema && (
+                  <SchemaFormRenderer
+                    schema={schema}
+                    connectionData={connectionData}
+                    onChange={handleConnectionDataChange}
+                    showAdvanced={false}
                   />
                 )}
 
-                {!["gmail", "o365", "smb_share_folder"].includes(
-                  sourceType,
-                ) && (
-                    <div className="space-y-4">
-                      {requiredFields.map((field) => (
-                        <div key={field.name} className="space-y-2">
-                          <Label htmlFor={field.name}>
-                            {field.label}
-                            {field.required && (
-                              <span className="text-red-500 ml-1">*</span>
-                            )}
-                          </Label>
-                          {renderField(field)}
-                          {field.description && (
-                            <p className="text-sm text-muted-foreground">
-                              {field.description}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                <div className="flex items-center justify-between pt-4 border-t">
+                {/* Active & Advanced toggles */}
+                <div className="flex items-center gap-2 border-t pt-4">
                   <div className="flex items-center gap-2">
                     <Label htmlFor="is_active">Active</Label>
                     <Switch
@@ -534,7 +425,8 @@ export function DataSourceDialog({
                       onCheckedChange={setIsActive}
                     />
                   </div>
-                  {optionalFields.length > 0 && (
+                  <div className="flex-1" />
+                  {!isOAuthType && hasAdvancedFields && (
                     <div className="flex items-center gap-2">
                       <Label htmlFor="show_advanced">Advanced</Label>
                       <Switch
@@ -546,20 +438,24 @@ export function DataSourceDialog({
                   )}
                 </div>
 
-                {showAdvanced && (
-                  <div className="space-y-4">
-                    {optionalFields.map((field) => (
-                      <div key={field.name} className="space-y-2">
-                        <Label htmlFor={field.name}>{field.label}</Label>
-                        {renderField(field)}
-                        {field.description && (
-                          <p className="text-sm text-muted-foreground">
-                            {field.description}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                {/* Advanced fields */}
+                {!isOAuthType && showAdvanced && schema?.fields && (
+                  <SchemaFormRenderer
+                    schema={schema as DataSourceConfig}
+                    connectionData={connectionData}
+                    onChange={handleConnectionDataChange}
+                    showAdvanced={true}
+                    advancedOnly
+                  />
+                )}
+
+                {/* Test connection */}
+                {!isOAuthType && (
+                  <ConnectionTestPanel
+                    isTesting={isTesting}
+                    testStatus={testStatus}
+                    onTest={handleTestConnection}
+                  />
                 )}
               </>
             )}

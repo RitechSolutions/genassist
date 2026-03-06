@@ -24,6 +24,7 @@ import {
   TooltipTrigger,
 } from "@/components/RadixTooltip";
 import { Badge } from "@/components/badge";
+import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
 
 export interface ModelConfigurationProps {
   id: string;
@@ -108,11 +109,43 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     });
   };
 
-  const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget" | "message_compacting") => {
+  const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval") => {
     onConfigChange({
       ...config,
       memoryTrimmingMode: mode,
     });
+  };
+
+  const handleRagPassthroughThresholdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({ ...config, ragPassthroughThreshold: Number.parseInt(e.target.value) || 30 });
+  };
+
+  const handleRagGroupSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({ ...config, ragGroupSize: Number.parseInt(e.target.value) || 4 });
+  };
+
+  const handleRagGroupOverlapChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({ ...config, ragGroupOverlap: Number.parseInt(e.target.value) || 0 });
+  };
+
+  const handleRagQueryContextMessagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({ ...config, ragQueryContextMessages: Number.parseInt(e.target.value) || 3 });
+  };
+
+  const handleRagTopKChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({ ...config, ragTopK: Number.parseInt(e.target.value) || 3 });
+  };
+
+  const handleRagRecentMessagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({ ...config, ragRecentMessages: Number.parseInt(e.target.value) || 6 });
+  };
+
+  const handleRagMaxHistoryHoursChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onConfigChange({ ...config, ragMaxHistoryHours: Number.parseInt(e.target.value) || 10000 });
+  };
+
+  const handleRagVectorConfigChange = (ragVectorConfig: Record<string, unknown>) => {
+    onConfigChange({ ...config, ragVectorConfig });
   };
 
   const handleMaxMessagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -322,6 +355,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                 <SelectItem value="message_count">Last N Messages</SelectItem>
                 <SelectItem value="token_budget">Token Budget</SelectItem>
                 <SelectItem value="message_compacting">Message Compacting</SelectItem>
+                <SelectItem value="rag_retrieval">RAG Retrieval</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -496,6 +530,227 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     ))}
                   </div>
                 )}
+              </div>
+            </>
+          ) : config.memoryTrimmingMode === "rag_retrieval" ? (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`rag-passthrough-${id}`}>Passthrough Threshold (messages)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Passthrough threshold info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Below this total message count, all messages are passed verbatim to the LLM without any vector operations.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`rag-passthrough-${id}`}
+                  type="number"
+                  min={4}
+                  max={500}
+                  step={1}
+                  value={config.ragPassthroughThreshold ?? 30}
+                  onChange={handleRagPassthroughThresholdChange}
+                  placeholder="30"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`rag-group-size-${id}`}>Group Size (messages)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Group size info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Number of messages per indexed group. Must be even — each pair is one Q&amp;A exchange.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`rag-group-size-${id}`}
+                  type="number"
+                  min={2}
+                  max={20}
+                  step={2}
+                  value={config.ragGroupSize ?? 4}
+                  onChange={handleRagGroupSizeChange}
+                  placeholder="4"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`rag-group-overlap-${id}`}>Group Overlap (messages)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Group overlap info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Overlapping messages between consecutive groups, preserving context at group boundaries. Must be less than group size.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`rag-group-overlap-${id}`}
+                  type="number"
+                  min={0}
+                  max={(config.ragGroupSize ?? 4) - 1}
+                  step={1}
+                  value={config.ragGroupOverlap ?? 2}
+                  onChange={handleRagGroupOverlapChange}
+                  placeholder="2"
+                />
+                {(config.ragGroupOverlap ?? 2) >= (config.ragGroupSize ?? 4) && (
+                  <p className="text-xs text-destructive">Overlap must be less than group size</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`rag-query-context-${id}`}>Query Context Messages</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Query context info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Recent messages combined with the current message to form a richer retrieval query embedding.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`rag-query-context-${id}`}
+                  type="number"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={config.ragQueryContextMessages ?? 3}
+                  onChange={handleRagQueryContextMessagesChange}
+                  placeholder="3"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`rag-top-k-${id}`}>Retrieved Groups (top-k)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Top-k info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Maximum number of historical message groups to retrieve from the vector store per request.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`rag-top-k-${id}`}
+                  type="number"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={config.ragTopK ?? 3}
+                  onChange={handleRagTopKChange}
+                  placeholder="3"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`rag-recent-messages-${id}`}>Recent Messages (verbatim)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Recent messages info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Most recent messages always included verbatim in context alongside the retrieved historical groups.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`rag-recent-messages-${id}`}
+                  type="number"
+                  min={2}
+                  max={50}
+                  step={2}
+                  value={config.ragRecentMessages ?? 6}
+                  onChange={handleRagRecentMessagesChange}
+                  placeholder="6"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`rag-max-history-hours-${id}`}>Max History Age (hours)</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Max history age info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      Exclude retrieved history older than this many hours. Set to 0 to disable (no age limit). Default 10000 ≈ ~416 days.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input
+                  id={`rag-max-history-hours-${id}`}
+                  type="number"
+                  min={0}
+                  max={100000}
+                  step={1}
+                  value={config.ragMaxHistoryHours ?? 100000}
+                  onChange={handleRagMaxHistoryHoursChange}
+                  placeholder="100000"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Vector Store Configuration</Label>
+                <RagVectorConfigSection
+                  config={(config.ragVectorConfig as Record<string, unknown>) ?? {}}
+                  onChange={handleRagVectorConfigChange}
+                />
               </div>
             </>
           ) : (

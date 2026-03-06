@@ -180,7 +180,7 @@ const KnowledgeBaseManager: React.FC = () => {
 
   /* File types that are supported by the file extractor */
   const acceptedFileTypes = [".pdf", ".docx", ".doc", ".txt", ".csv", ".xls", ".xlsx", ".pptx", ".ppt", ".html", ".htm", ".yaml", ".yml", ".json", ".jsonl", ".md"];
-  
+
   useEffect(() => {
     fetchItems();
   }, []);
@@ -251,7 +251,7 @@ const KnowledgeBaseManager: React.FC = () => {
 
     fetchLLMAnalysts();
   }, []);
-  
+
   const fetchSources = useCallback(async () => {
     if (formData.type && formData.type in targetTypes) {
       const allSources = await getAllDataSources();
@@ -313,7 +313,7 @@ const KnowledgeBaseManager: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // get the files
     const files = e.target.files ? Array.from(e.target.files) : [];
-    
+
     // set the selected files
     setSelectedFiles([...files]);
 
@@ -1136,7 +1136,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                   multiple
                                   onChange={handleFileChange}
                                   disabled={isUploading}
-                                  accept={acceptedFileTypes.join(",")}  
+                                  accept={acceptedFileTypes.join(",")}
                                   className="hidden"
                                 />
                               </label>

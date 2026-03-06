@@ -225,6 +225,17 @@ class S3Client:
             logger.error(f"Error deleting file from S3: {str(e)}")
             return False
 
+    @staticmethod
+    def test_connection(cd: dict) -> dict:
+        client = S3Client(
+            bucket_name=cd["bucket_name"],
+            aws_access_key_id=cd.get("access_key"),
+            aws_secret_access_key=cd.get("secret_key"),
+            region_name=cd.get("region"),
+        )
+        client.list_files(prefix=cd.get("prefix", ""), max_keys=1)
+        return {"success": True, "message": "Successfully connected to S3 bucket."}
+
     def generate_presigned_url(self, operation: str, params: Dict[str, Any], expires_in: int) -> str:
         """
         Generate a presigned URL for an S3 operation.

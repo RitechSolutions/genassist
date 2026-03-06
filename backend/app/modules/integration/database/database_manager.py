@@ -103,6 +103,23 @@ class DatabaseManager:
             logger.error(f"Error loading configuration from {config_path}: {e}")
             return {}
 
+    @staticmethod
+    async def test_connection(cd: dict) -> dict:
+        from app.core.utils.encryption_utils import encrypt_key
+        db_cd = dict(cd)
+        for field in ["database_password", "ssh_tunnel_private_key"]:
+            if db_cd.get(field):
+                db_cd[field] = encrypt_key(db_cd[field])
+        manager = DatabaseManager(db_cd)
+        try:
+            await manager.connect()
+            if manager.engine:
+                async with manager.engine.connect() as conn:
+                    await conn.execute(text("SELECT 1"))
+        finally:
+            await manager.disconnect()
+        return {"success": True, "message": "Successfully connected to database."}
+
     async def connect(self):
         """Establishes an async connection to the database using SQLAlchemy."""
 
