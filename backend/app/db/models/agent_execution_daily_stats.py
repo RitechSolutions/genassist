@@ -69,6 +69,11 @@ class AgentExecutionDailyStatsModel(Base):
         nullable=True,
     )
 
+    total_response_ms: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
     total_nodes_executed: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -76,6 +81,11 @@ class AgentExecutionDailyStatsModel(Base):
     )
 
     avg_success_rate: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    total_success_rate_sum: Mapped[float | None] = mapped_column(
         Float,
         nullable=True,
     )
