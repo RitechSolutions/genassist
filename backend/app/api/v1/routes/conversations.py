@@ -71,6 +71,45 @@ router = APIRouter()
 
 
 @router.get(
+    "/in-progress/agent-info",
+    dependencies=[
+        Depends(auth),
+        Depends(get_agent_for_start),  # Get agent early for CORS and auth
+        Depends(permissions(P.Conversation.CREATE_IN_PROGRESS)),
+    ],
+)
+async def get_agent_info(
+    request: Request,
+    translations_service: TranslationsService = Injected(TranslationsService),
+):
+    """
+    Return agent metadata needed before a conversation starts (e.g. supported languages).
+    """
+    agent = getattr(request.state, "agent", None)
+    if not agent:
+        logger.debug("agent not found")
+        raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
+
+    available_languages = await translations_service.get_languages_for_prefix(
+        f"agent.{agent.id}."
+    )
+
+    response = {
+        "agent_id": str(agent.id),
+        "agent_available_languages": available_languages,
+    }
+
+    agent_security_settings = (
+        agent.security_settings
+        if agent and hasattr(agent, "security_settings")
+        else None
+    )
+    json_response = JSONResponse(content=response)
+    apply_agent_cors_headers(request, json_response, agent_security_settings)
+    return json_response
+
+
+@router.get(
     "/{conversation_id}",
     response_model=ConversationRead,
     dependencies=[
@@ -192,6 +231,9 @@ async def start(
         accept_lang,
         default=input_disclaimer_link_label,
     )
+    available_languages = await translations_service.get_languages_for_prefix(
+        f"agent.{agent.id}."
+    )
 
     response = {
         "message": "Conversation started",
@@ -207,6 +249,7 @@ async def start(
         "agent_input_disclaimer": input_disclaimer,
         "agent_input_disclaimer_link_url": agent_data.get("input_disclaimer_link_url"),
         "agent_input_disclaimer_link_label": input_disclaimer_link_label,
+        "agent_available_languages": available_languages,
     }
 
     # If agent requires authentication, generate and return a guest JWT token

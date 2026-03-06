@@ -46,6 +46,7 @@ export interface StartConversationResponse {
   agent_welcome_title?: string;
   agent_welcome_image_url?: string;
   agent_id?: string;
+  agent_available_languages?: string[];
   agent_thinking_phrases?: string[];
   agent_thinking_phrase_delay?: number; // seconds
   agent_chat_input_metadata?: Record<string, unknown>; // Metadata keys/defaults from the workflow's Chat Input node
@@ -54,6 +55,11 @@ export interface StartConversationResponse {
   agent_input_disclaimer_link_label?: string;
   create_time?: number;
   guest_token?: string;
+}
+
+export interface AgentInfoResponse {
+  agent_id?: string;
+  agent_available_languages?: string[];
 }
 
 // Agent welcome/config info

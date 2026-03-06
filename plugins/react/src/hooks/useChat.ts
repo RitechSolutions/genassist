@@ -82,6 +82,9 @@ export const useChat = ({
   const [inputDisclaimerLinkLabel, setInputDisclaimerLinkLabel] = useState<string | null>(null);
   const [thinkingPhrases, setThinkingPhrases] = useState<string[]>([]);
   const [thinkingDelayMs, setThinkingDelayMs] = useState<number>(1000);
+  const [availableLanguages, setAvailableLanguages] = useState<string[] | null>(
+    null,
+  );
   const [chatInputMetadata, setChatInputMetadata] = useState<
     Record<string, unknown>
   >({});
@@ -193,6 +196,7 @@ export const useChat = ({
 
   // Initialize chat service - only when baseUrl, apiKey, tenant, useWs, or metadata actually change
   useEffect(() => {
+    let cancelled = false;
     const metadataChanged = metadataRef.current !== metadataString;
     const baseUrlChanged = prevBaseUrlRef.current !== baseUrl;
     const apiKeyChanged = prevApiKeyRef.current !== apiKey;
@@ -232,6 +236,7 @@ export const useChat = ({
         useWs,
         usePoll,
       );
+      setAvailableLanguages(null);
 
       // Set up handlers
       chatServiceRef.current.setMessageHandler((message: ChatMessage) => {
@@ -310,6 +315,15 @@ export const useChat = ({
         serverUnavailableContactLabel,
       );
 
+      const service = chatServiceRef.current;
+      void (async () => {
+        const info = await service.fetchAgentInfo?.();
+        if (cancelled || !info) return;
+        if (Array.isArray(info.agent_available_languages)) {
+          setAvailableLanguages(info.agent_available_languages);
+        }
+      })();
+
       // Check for a saved conversation and connect to it
       const convId = chatServiceRef.current.getConversationId();
       if (convId) {
@@ -344,6 +358,10 @@ export const useChat = ({
         const meta = chatServiceRef.current.getChatInputMetadata?.();
         if (meta && typeof meta === "object" && Object.keys(meta).length > 0) {
           setChatInputMetadata(meta);
+        }
+        const langs = chatServiceRef.current.getAvailableLanguages?.();
+        if (Array.isArray(langs)) {
+          setAvailableLanguages(langs);
         }
         onConfigLoadedRef.current?.({ chatInputMetadata: meta ?? {} });
       }
@@ -382,7 +400,7 @@ export const useChat = ({
 
     // Cleanup only on unmount
     return () => {
-      // Only cleanup on unmount, not on every dependency change
+      cancelled = true;
     };
   }, [
     baseUrl,
@@ -669,6 +687,12 @@ export const useChat = ({
           const thinking = chatServiceRef.current.getThinkingConfig();
           setThinkingPhrases(thinking.phrases || []);
           setThinkingDelayMs(thinking.delayMs || 1000);
+        }
+        if (chatServiceRef.current.getAvailableLanguages) {
+          const langs = chatServiceRef.current.getAvailableLanguages();
+          if (Array.isArray(langs)) {
+            setAvailableLanguages(langs);
+          }
         }
         const meta = chatServiceRef.current.getChatInputMetadata?.();
         if (meta && typeof meta === "object" && Object.keys(meta).length > 0) {
@@ -963,6 +987,7 @@ export const useChat = ({
     inputDisclaimerLinkLabel,
     thinkingPhrases,
     thinkingDelayMs,
+    availableLanguages,
     chatInputMetadata,
   };
 };

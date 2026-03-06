@@ -110,3 +110,21 @@ class TranslationsService:
         await self.repository.delete(key)
         # Invalidate cached list so next read does not return the deleted translation
         await invalidate_cache("translations:get_all", None)
+
+    async def get_languages_for_prefix(self, prefix: str) -> List[str]:
+        """
+        Return language codes that have at least one non-empty translation
+        for keys matching the given prefix.
+        """
+        rows = await self.repository.get_by_prefix(prefix)
+        supported_languages = ["en", "es", "fr", "de", "pt", "zh"]
+        found: set[str] = set()
+
+        for translation in rows:
+            for lang in supported_languages:
+                value = getattr(translation, lang, None)
+                if isinstance(value, str) and value.strip():
+                    found.add(lang)
+
+        # Preserve stable ordering based on supported_languages
+        return [lang for lang in supported_languages if lang in found]

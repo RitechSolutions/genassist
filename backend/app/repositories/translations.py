@@ -31,6 +31,13 @@ class TranslationsRepository:
         )
         return result.scalars().first()
 
+    async def get_by_prefix(self, prefix: str) -> List[TranslationModel]:
+        result = await self.db.execute(
+            select(TranslationModel).where(TranslationModel.key.startswith(prefix))
+        )
+        rows: Sequence[TranslationModel] = result.scalars().all()
+        return list(rows)
+
     async def update(self, key: str, dto: TranslationUpdate) -> Optional[TranslationModel]:
         obj = await self.get_by_key(key)
         if not obj:
