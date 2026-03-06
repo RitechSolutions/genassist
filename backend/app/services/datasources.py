@@ -207,26 +207,31 @@ class DataSourceService:
         if "private_key_file" in cd:
             cd = await self.extract_private_key(cd, delete_file=False)
 
+        source_type_lower = (source_type or "").lower()
         try:
-            if source_type == "S3":
+            if source_type_lower == "s3":
                 from app.core.utils.s3_utils import S3Client
                 return S3Client.test_connection(cd)
-            elif source_type == "Database":
-                from app.modules.integration.database.database_manager import DatabaseManager
+            elif source_type_lower == "database":
+                from app.modules.integration.database.database_manager import (
+                    DatabaseManager,
+                )
                 return await DatabaseManager.test_connection(cd)
-            elif source_type == "Snowflake":
-                from app.modules.integration.snowflake.snowflake_manager import SnowflakeManager
+            elif source_type_lower == "snowflake":
+                from app.modules.integration.snowflake.snowflake_manager import (
+                    SnowflakeManager,
+                )
                 return await SnowflakeManager.test_connection(cd)
-            elif source_type == "Zendesk":
+            elif source_type_lower == "zendesk":
                 from app.services.connection_tester import test_zendesk
                 return await test_zendesk(cd)
-            elif source_type == "smb_share_folder":
+            elif source_type_lower == "smb_share_folder":
                 from app.services.smb_share_service import SMBShareFSService
                 return await SMBShareFSService.test_connection(cd)
-            elif source_type == "azure_blob":
+            elif source_type_lower == "azure_blob":
                 from app.services.AzureStorageService import AzureStorageService
                 return AzureStorageService.test_connection(cd)
-            elif source_type == "URL":
+            elif source_type_lower == "url":
                 from app.services.connection_tester import test_url
                 return await test_url(cd)
             else:
