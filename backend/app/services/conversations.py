@@ -1,26 +1,28 @@
-import os
-from uuid import UUID
 import json
-from datetime import datetime, timezone
 import logging
+import os
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
+from uuid import UUID
+
 from fastapi import Depends
+from fastapi_cache.coder import PickleCoder
+from fastapi_cache.decorator import cache
 from fastapi_injector import Injected
 from injector import inject
+
 from app.auth.utils import (
     get_current_operator_id,
     get_current_user_id,
     is_current_user_supervisor_or_admin,
-)
+    )
+from app.cache.redis_cache import invalidate_conversation_cache, make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.bi_utils import (
     calculate_duration_from_transcript,
     calculate_incremental_word_counts,
-)
-from app.cache.redis_cache import make_key_builder, invalidate_conversation_cache
-from fastapi_cache.coder import PickleCoder
-from fastapi_cache.decorator import cache
+    )
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
 from app.core.utils.enums.message_feedback_enum import Feedback
@@ -28,7 +30,7 @@ from app.core.utils.enums.transcript_message_type import TranscriptMessageType
 from app.core.utils.transcript_utils import (
     schema_to_transcript_message,
     transcript_messages_to_json,
-)
+    )
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.message_model import TranscriptMessageModel
 from app.db.seed.seed_data_config import seed_test_data
@@ -39,13 +41,13 @@ from app.schemas.conversation import (
     ConversationCreate,
     ConversationWithOperatorAgentRead,
     InProgressPollResponse,
-)
+    )
 from app.schemas.conversation_analysis import ConversationAnalysisRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
     InProgConvTranscrUpdate,
     TranscriptSegmentInput,
-)
+    )
 from app.schemas.filter import ConversationFilter
 from app.schemas.transcript_message import TranscriptMessageRead
 from app.services.conversation_analysis import ConversationAnalysisService
@@ -347,6 +349,8 @@ class ConversationService:
         )
         if store_in_zendesk:
             await self.store_zendesk_analysis(saved_conversation, conversation_analysis)
+
+        await invalidate_conversation_cache(conversation_id)
 
         return ConversationAnalysisRead.model_validate(conversation_analysis)
 
