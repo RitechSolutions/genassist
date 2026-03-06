@@ -32,7 +32,6 @@ RUN npm install
 #RUN npm audit fix --legacy-peer-deps
 
 # Build the application
-
 RUN npm run build
 
 # Use a lightweight web server to serve the built files

@@ -27,16 +27,17 @@ class PythonToolNode(BaseNode):
         # Get configuration values (already resolved by BaseNode)
         code = config.get("code", "")
         unwrap = config.get("unwrap", False)
-        # Correct dict unpacking and set_node_input usage
-        input_data = self.input_data if self.input_data else {}
-        input_data["python_script"] = code
-        self.set_node_input(input_data)
 
         # Validate code
         if not code:
             error_msg = "No Python code specified for Python tool"
             logger.error(error_msg)
-            return {"status": 400, "data": {"error": error_msg}}
+            return {
+                "status": 400,
+                "data": {"error": error_msg}
+            }
+
+        self.set_node_input(code)
 
         try:
             # Execute the Python code with resolved params from code_params
@@ -48,4 +49,7 @@ class PythonToolNode(BaseNode):
         except Exception as e:
             error_msg = f"Error processing Python tool: {str(e)}"
             logger.error(error_msg)
-            return {"status": 500, "data": {"error": error_msg}}
+            return {
+                "status": 500,
+                "data": {"error": error_msg}
+            }

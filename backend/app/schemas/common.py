@@ -1,18 +1,8 @@
-from datetime import datetime
-from typing import Generic, List, Literal, Optional, TypeVar
+from typing import Generic, List, TypeVar
 
 from pydantic import BaseModel
 
 from app.schemas.filter import BaseFilterModel
-
-
-class ConnectionStatus(BaseModel):
-    """Reusable connection test status for integrations"""
-
-    status: Literal["Untested", "Connected", "Error"] = "Untested"
-    last_tested_at: Optional[datetime] = None
-    message: Optional[str] = None
-
 
 T = TypeVar("T")
 

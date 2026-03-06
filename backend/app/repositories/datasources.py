@@ -22,7 +22,6 @@ class DataSourcesRepository:
             name=datasource_data.name,
             source_type=datasource_data.source_type,
             connection_data=datasource_data.connection_data,
-            connection_status=datasource_data.connection_status,
             is_active=datasource_data.is_active,
         )
         self.db.add(new_datasource)

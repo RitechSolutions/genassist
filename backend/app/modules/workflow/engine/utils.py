@@ -11,9 +11,6 @@ from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
 
-# JSON fields whose values are treated as executable code (Python, etc.)
-CODE_FIELD_NAMES = ["code", "pythonScript", "pythonCode"]
-
 
 def flatten_dict(data: dict, prefix: str = "", separator: str = ".") -> dict:
     """Flatten a nested dictionary using dot notation
@@ -71,7 +68,7 @@ def find_code_param_vars(code_string: str) -> list:
 
 
 def extract_code_params(
-    data: dict,
+    config: dict,
     state: WorkflowState,
     source_output: Any,
     direct_input: Optional[dict] = None,
@@ -93,16 +90,18 @@ def extract_code_params(
     Returns:
         Dictionary of {variable_name: resolved_value} for all params.get() references
     """
-    if not data:
+    if not config:
         return {}
 
     if direct_input is None:
         direct_input = {}
 
     code_params = {}
+    data = config.get("data", config)
 
     # Scan known code fields for params.get() patterns
-    for field in CODE_FIELD_NAMES:
+    code_fields = ["code", "pythonScript"]
+    for field in code_fields:
         code_string = data.get(field, "")
         if not code_string:
             continue
@@ -119,7 +118,9 @@ def extract_code_params(
             # own default in params.get("varName", default) takes effect.
             if resolved_value is not None:
                 code_params[var_name] = resolved_value
-                logger.debug("Resolved code param '%s' = %s", var_name, resolved_value)
+                logger.debug(
+                    "Resolved code param '%s' = %s", var_name, resolved_value
+                )
             else:
                 logger.debug(
                     "Skipping code param '%s' (resolved to None, letting code default apply)",
@@ -161,6 +162,21 @@ def get_nested_value(obj: Any, path: str) -> Any:
             return None
 
     return current
+
+
+def _resolve_variable_from_state(var_name: str, state: WorkflowState) -> Optional[Any]:
+    """
+    Resolve a variable value from the workflow state.
+
+    Args:
+        var_name: The variable name to resolve
+        state: The workflow state object
+
+    Returns:
+        The resolved value, or None if not found
+    """
+    state_value = state.get_value(var_name)
+    return state_value if state_value is not None else None
 
 
 def _resolve_variable_from_source(var_name: str, source_output: Any) -> Any:
@@ -369,7 +385,8 @@ def _is_in_code_field_context(json_string: str, var_start: int) -> bool:
     if colon_pos == -1:
         return False
 
-    # Look backwards from colon to find any of the known code field names
+    # Look backwards from colon to find "code"
+    code_pattern = '"code"'
     pattern_end = colon_pos
     # Skip whitespace before colon
     for i in range(colon_pos - 1, -1, -1):
@@ -377,13 +394,11 @@ def _is_in_code_field_context(json_string: str, var_start: int) -> bool:
             pattern_end = i + 1
             break
 
-    # Check if any known code field name appears just before the colon
-    for field_name in CODE_FIELD_NAMES:
-        code_pattern = f'"{field_name}"'
-        if pattern_end >= len(code_pattern):
-            potential_match = json_string[pattern_end - len(code_pattern) : pattern_end]
-            if potential_match == code_pattern:
-                return True
+    # Check if "code" appears just before the colon
+    if pattern_end >= len(code_pattern):
+        potential_match = json_string[pattern_end - len(code_pattern):pattern_end]
+        if potential_match == code_pattern:
+            return True
 
     return False
 
@@ -404,54 +419,39 @@ def _encode_replacement_value(
         The encoded replacement string
     """
     try:
+        # Always encode the replacement value as JSON first
+        json_encoded = json.dumps(replacement_value)
+
         # Check if the variable is in a string context
         var_start = json_string.find(var_pattern)
         in_string_context = _is_in_string_context(json_string, var_start)
         in_code_context = _is_in_code_field_context(json_string, var_start)
 
-        # Always encode the replacement value as JSON first
-        json_encoded = json.dumps(replacement_value)
-
         if isinstance(replacement_value, str):
-            if in_string_context:
-                # For strings inside JSON string fields, remove outer quotes
-                # The JSON encoding already properly escapes all special characters.
-                json_replacement = json_encoded[1:-1]
-                logger.debug(
-                    f"Replaced {var_name} with escaped string content: {json_replacement}"
-                )
-            else:
-                # In non-string context (e.g. whole JSON value), use JSON as-is
-                json_replacement = json_encoded
-                logger.debug(
-                    f"Replaced {var_name} with JSON string value for object context: {json_replacement}"
-                )
+            # For strings, always remove quotes since template provides them
+            # The JSON encoding already properly escapes all special characters
+            json_replacement = json_encoded[1:-1]
+            logger.debug(
+                f"Replaced {var_name} with escaped string content: {json_replacement}"
+            )
         else:
-            # Non-string values (objects, lists, numbers, bools, None)
+            # For objects, behavior depends on context
             if in_string_context:
+                # In string context, escape quotes so object can be embedded in string
+                json_replacement = json_encoded.replace('"', '\\"')
+
+                # Special handling for code context: if JSON with escape sequences is being inserted
+                # into Python code, we need to handle escape sequences to avoid "invalid escape" errors
+                # We replace escape sequences like \\n with spaces to prevent issues while preserving
+                # JSON validity (converting to actual characters would break JSON structure)
                 if in_code_context:
-                    # Original behavior for code fields:
-                    # escape quotes so JSON can be embedded safely in Python code strings,
-                    # then fix problematic escape sequences (like \n) for Python.
-                    json_replacement = json_encoded.replace('"', '\\"')
                     json_replacement = _convert_json_escapes_for_code_context(
                         json_replacement
                     )
-                    logger.debug(
-                        f"Replaced {var_name} with escaped JSON object for code string context: {json_replacement}"
-                    )
-                else:
-                    # Plain JSON string field (e.g. templates):
-                    # 1) Convert the value to JSON text
-                    # 2) Treat that JSON text as a string value and JSON-encode it again,
-                    #    then strip outer quotes so it fits into the existing JSON string.
-                    # This avoids manual quote replacement which was double-escaping
-                    # sequences like \"beard\" -> \\\\\"beard\\\\\".
-                    json_text = json.dumps(replacement_value)
-                    json_replacement = json.dumps(json_text)[1:-1]
-                    logger.debug(
-                        f"Replaced {var_name} with JSON text for string context: {json_replacement}"
-                    )
+
+                logger.debug(
+                    f"Replaced {var_name} with escaped JSON object for string context: {json_replacement}"
+                )
             else:
                 # In object context, use the JSON as-is
                 json_replacement = json_encoded

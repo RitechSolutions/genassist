@@ -6,7 +6,7 @@ from starlette_context import context
 from typing import Callable, Awaitable
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from typing import Optional
-from fastapi import Depends, Query, Request, WebSocketException
+from fastapi import Depends, Header, Query, Request, WebSocketException
 from fastapi_injector import Injected
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -116,7 +116,7 @@ def socket_auth(required_permissions: list[str]):
             # Extract tenant information from WebSocket (priority: query param > header > subdomain)
             resolved_tenant_id = None
             tenant_slug = None
-            
+
             # lowercase the tenant header name to make the check case-insensitive
             tenant_header_name = settings.TENANT_HEADER_NAME.lower()
 
@@ -309,8 +309,8 @@ async def auth_for_conversation_update(
     # check if agent.security_settings.token_based_auth is true
     # Check if security_settings exists and token_based_auth is enabled
     token_based_auth = (
-        agent.security_settings.token_based_auth 
-        if agent.security_settings and agent.security_settings.token_based_auth 
+        agent.security_settings.token_based_auth
+        if agent.security_settings and agent.security_settings.token_based_auth
         else False
     )
     if token_based_auth:
@@ -320,3 +320,11 @@ async def auth_for_conversation_update(
     else:
         # Standard auth accepts both API key and JWT
         await auth(request, api_key, user)
+
+
+def verify_internal_secret(x_internal_secret: str = Header(...)):
+    """Validate the shared secret header for internal service-to-service calls."""
+    if not settings.WS_INTERNAL_SECRET:
+        raise AppException(status_code=503, error_key=ErrorKey.INTERNAL_SERVER_ERROR, error_detail="WS_INTERNAL_SECRET not configured")
+    if x_internal_secret != settings.WS_INTERNAL_SECRET:
+        raise AppException(status_code=403, error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, error_detail="Invalid internal secret")

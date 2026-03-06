@@ -1,19 +1,12 @@
-from typing import Optional
 from uuid import UUID
-
 from fastapi import APIRouter, Depends
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
-from app.core.permissions.constants import Permissions as P
-from app.schemas.datasource import (
-    DataSourceBase,
-    DataSourceCreate,
-    DataSourceRead,
-    DataSourceUpdate,
-)
-from app.schemas.dynamic_form_schemas import DATA_SOURCE_SCHEMAS_DICT
+from app.schemas.datasource import DataSourceRead, DataSourceCreate, DataSourceUpdate
 from app.services.datasources import DataSourceService
+from app.schemas.dynamic_form_schemas import DATA_SOURCE_SCHEMAS_DICT
+from app.core.permissions.constants import Permissions as P
 
 router = APIRouter()
 
@@ -79,14 +72,3 @@ async def delete(
 ):
     await service.delete(datasource_id)
     return {"message": "Datasource deleted successfully"}
-
-
-@router.post("/test-connection", dependencies=[Depends(auth)])
-async def test_connection(
-    datasource: DataSourceBase,
-    datasource_id: Optional[UUID] = None,
-    service: DataSourceService = Injected(DataSourceService),
-):
-    return await service.test_connection(
-        datasource.source_type, datasource.connection_data, datasource_id
-    )

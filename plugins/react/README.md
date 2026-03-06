@@ -19,8 +19,8 @@ import { GenAgentChat } from 'genassist-chat-react';
 function App() {
   return (
     <div style={{ height: '600px', width: '400px' }}>
-      <GenAgentChat 
-        baseUrl="https://your-api-base-url.com" 
+      <GenAgentChat
+        baseUrl="https://your-api-base-url.com"
         apiKey="your-api-key"
         tenant="your-tenant-id"
       />
@@ -56,8 +56,8 @@ function App() {
 
   return (
     <div style={{ height: '600px', width: '400px' }}>
-      <GenAgentChat 
-        baseUrl="https://your-api-base-url.com" 
+      <GenAgentChat
+        baseUrl="https://your-api-base-url.com"
         apiKey="your-api-key"
         tenant="your-tenant-id"
         userData={userData}
@@ -124,7 +124,7 @@ The component interacts with the following endpoints:
 
 1. Start Conversation: `POST /api/conversations/in-progress/start`
 2. Update Conversation: `POST /api/conversations/in-progress/update/{conversation_id}`
-3. WebSocket: `/api/conversations/ws/{conversation_id}?access_token={token}&lang=en&topics=message&topics=takeover`
+3. WebSocket:  `WS /conversations/{conversation_id}?access_token={token}&lang=en&topics=message&topics=takeover`
 
 ## Run
 ./

@@ -83,44 +83,6 @@ class LLMModelNode(BaseNode):
                     as_string=True,
                     max_messages=999  # Large number to get all messages
                 )
-        elif trimming_mode == "rag_retrieval":
-            # Note: same structure and code as in AI agent node, this can be extracted to remove code duplication by a benevolent engineer
-            # RAG-based retrieval mode:
-            # - Below passthrough_threshold: all messages passed verbatim
-            # - Above threshold: lazily index message groups into vector DB,
-            #   retrieve semantically relevant groups + keep recent messages verbatim
-            from app.dependencies.injector import injector
-            from app.modules.workflow.agents.rag import ThreadScopedRAG
-            from app.modules.workflow.agents.conversation_rag_indexer import ConversationRAGIndexer
-
-            thread_rag = injector.get(ThreadScopedRAG)
-            try:
-                indexer = ConversationRAGIndexer(
-                    thread_rag=thread_rag,
-                    group_size=config.get("ragGroupSize", 4),
-                    group_overlap=config.get("ragGroupOverlap", 2),
-                    top_k=config.get("ragTopK", 3),
-                    query_context_messages=config.get("ragQueryContextMessages", 3),
-                    passthrough_threshold=config.get("ragPassthroughThreshold", 30),
-                    recent_messages=config.get("ragRecentMessages", 6),
-                )
-            except ValueError as e:
-                logger.error(f"Invalid RAG config: {e}. Falling back to message_count.")
-                return await memory.get_chat_history(
-                    as_string=True,
-                    max_messages=config.get("ragRecentMessages", 6),
-                )
-
-            context_msgs = await indexer.assemble_context(
-                thread_id=memory.thread_id,
-                memory=memory,
-                current_user_message=user_prompt,
-            )
-            history_parts = []
-            for msg in context_msgs:
-                prefix = f"{msg['role'].capitalize()}: "
-                history_parts.append(f"{prefix}{msg['content']}")
-            return "\n".join(history_parts)
         else:
             # Message count mode - simple last N messages
             max_messages = config.get("maxMessages", 10)
