@@ -136,6 +136,8 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
               )}
               {agentIds.map((agentId, i) => {
                 const color = COLORS[i % COLORS.length];
+                // Only show gradient fill for single agent; lines-only for multiple to avoid overlap
+                const showFill = agentIds.length === 1;
                 return (
                   <Area
                     key={agentId}
@@ -145,7 +147,7 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
                     strokeWidth={2}
                     dot={false}
                     activeDot={{ r: 4, strokeWidth: 0 }}
-                    fill={`url(#grad-${agentId})`}
+                    fill={showFill ? `url(#grad-${agentId})` : "transparent"}
                   />
                 );
               })}

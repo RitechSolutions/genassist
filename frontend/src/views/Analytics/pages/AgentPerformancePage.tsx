@@ -34,6 +34,7 @@ import type {
 import type { AgentListItem } from "@/interfaces/ai-agent.interface";
 import { getAgentConfigsList } from "@/services/api";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
+import { ExportButton } from "@/components/ui/ExportButton";
 
 const LS_KEY = (agentId: string) => `analytics_escalation_node_${agentId}`;
 
@@ -316,6 +317,12 @@ const AgentPerformancePage = () => {
       ? format(dateRange.from, "MMM d, yyyy")
       : "All time";
 
+  const exportParams = {
+    agent_id: agentFilter !== "all" ? agentFilter : undefined,
+    from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+    to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+  };
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
@@ -375,6 +382,12 @@ const AgentPerformancePage = () => {
                     </PopoverContent>
                   </Popover>
 
+                  <ExportButton
+                    endpoint="/analytics/agents/export"
+                    params={exportParams}
+                    filename="agent-performance"
+                    disabled={loading || items.length === 0}
+                  />
                 </div>
               </header>
 

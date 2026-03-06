@@ -15,6 +15,7 @@ export interface Column<T> {
   header: string;
   key: string;
   cell: (item: T, index: number) => React.ReactNode;
+  description?: string;
   sortable?: boolean;
   sortValue?: (item: T) => string | number;
 }
@@ -116,7 +117,7 @@ export function DataTable<T extends { id?: string | number }>({
     ? processedData.slice(pagination.startIndex, pagination.endIndex)
     : processedData;
 
-  const SortIcon = ({ col }: { col: Column<T> }) => {
+  const sortIcon = (col: Column<T>) => {
     if (!col.sortable) return null;
     if (sortKey !== col.key || sortDir === null)
       return <ArrowUpDown className="w-3 h-3 ml-1 text-muted-foreground/50 inline-block" />;
@@ -137,7 +138,7 @@ export function DataTable<T extends { id?: string | number }>({
                 className={column.sortable ? "cursor-pointer select-none hover:text-zinc-900" : undefined}
               >
                 {column.header}
-                <SortIcon col={column} />
+                {sortIcon(column)}
               </TableHead>
             ))}
           </TableRow>

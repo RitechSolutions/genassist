@@ -68,7 +68,11 @@ class AnalyticsReadRepository:
             func.coalesce(func.sum(AgentExecutionDailyStatsModel.execution_count), 0).label("total_executions"),
             func.coalesce(func.sum(AgentExecutionDailyStatsModel.success_count), 0).label("total_success"),
             func.coalesce(func.sum(AgentExecutionDailyStatsModel.error_count), 0).label("total_errors"),
-            func.avg(AgentExecutionDailyStatsModel.avg_response_ms).label("avg_response_ms"),
+            # Weighted average: avoids averaging daily averages when execution counts differ
+            (
+                func.sum(AgentExecutionDailyStatsModel.avg_response_ms * AgentExecutionDailyStatsModel.execution_count)
+                / func.nullif(func.sum(AgentExecutionDailyStatsModel.execution_count), 0)
+            ).label("avg_response_ms"),
             func.avg(AgentExecutionDailyStatsModel.avg_success_rate).label("avg_success_rate"),
             func.coalesce(func.sum(AgentExecutionDailyStatsModel.rag_used_count), 0).label("total_rag_used"),
             func.coalesce(func.sum(AgentExecutionDailyStatsModel.unique_conversations), 0).label("total_unique_conversations"),
@@ -100,7 +104,11 @@ class AnalyticsReadRepository:
             func.sum(NodeExecutionDailyStatsModel.execution_count).label("execution_count"),
             func.sum(NodeExecutionDailyStatsModel.success_count).label("success_count"),
             func.sum(NodeExecutionDailyStatsModel.failure_count).label("failure_count"),
-            func.avg(NodeExecutionDailyStatsModel.avg_execution_ms).label("avg_execution_ms"),
+            # Weighted average via pre-stored total_execution_ms sum
+            (
+                func.sum(NodeExecutionDailyStatsModel.total_execution_ms)
+                / func.nullif(func.sum(NodeExecutionDailyStatsModel.execution_count), 0)
+            ).label("avg_execution_ms"),
             func.sum(NodeExecutionDailyStatsModel.total_execution_ms).label("total_execution_ms"),
         ).where(
             NodeExecutionDailyStatsModel.agent_id == agent_id,

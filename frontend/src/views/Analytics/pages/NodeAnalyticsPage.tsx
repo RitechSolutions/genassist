@@ -24,6 +24,7 @@ import type { NodeDailyStatsItem } from "@/interfaces/analyticsReports.interface
 import type { AgentListItem } from "@/interfaces/ai-agent.interface";
 import { getAgentConfigsList } from "@/services/api";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
+import { ExportButton } from "@/components/ui/ExportButton";
 
 
 const NodeAnalyticsPage = () => {
@@ -93,19 +94,19 @@ const NodeAnalyticsPage = () => {
   }
 
   const agentBreakdown = useMemo<AgentNodeBreakdown[]>(() => {
-    const map = new Map<string, AgentNodeBreakdown>();
+    // Use a separate accumulator type to track weighted-average state
+    interface Acc extends AgentNodeBreakdown { _total_ms: number; _ms_count: number; }
+    const map = new Map<string, Acc>();
     for (const item of items) {
       const id = `${item.agent_id}__${item.node_type}`;
-      const existing = map.get(id);
-      if (existing) {
-        existing.execution_count += item.execution_count;
-        existing.success_count += item.success_count;
-        existing.failure_count += item.failure_count;
+      const acc = map.get(id);
+      if (acc) {
+        acc.execution_count += item.execution_count;
+        acc.success_count += item.success_count;
+        acc.failure_count += item.failure_count;
         if (item.avg_execution_ms != null) {
-          existing.avg_execution_ms =
-            existing.avg_execution_ms != null
-              ? (existing.avg_execution_ms + item.avg_execution_ms) / 2
-              : item.avg_execution_ms;
+          acc._total_ms += item.avg_execution_ms * item.execution_count;
+          acc._ms_count += item.execution_count;
         }
       } else {
         map.set(id, {
@@ -116,10 +117,17 @@ const NodeAnalyticsPage = () => {
           success_count: item.success_count,
           failure_count: item.failure_count,
           avg_execution_ms: item.avg_execution_ms,
+          _total_ms: item.avg_execution_ms != null ? item.avg_execution_ms * item.execution_count : 0,
+          _ms_count: item.avg_execution_ms != null ? item.execution_count : 0,
         });
       }
     }
-    return [...map.values()].sort((a, b) => b.execution_count - a.execution_count);
+    return [...map.values()]
+      .map(({ _total_ms, _ms_count, ...row }) => ({
+        ...row,
+        avg_execution_ms: _ms_count > 0 ? _total_ms / _ms_count : null,
+      }))
+      .sort((a, b) => b.execution_count - a.execution_count);
   }, [items]);
 
   const agentBreakdownColumns: Column<AgentNodeBreakdown>[] = useMemo(
@@ -176,6 +184,13 @@ const NodeAnalyticsPage = () => {
     [agentNameMap]
   );
 
+  const exportParams = {
+    agent_id: agentFilter !== "all" ? agentFilter : undefined,
+    node_type: nodeTypeFilter !== "all" ? nodeTypeFilter : undefined,
+    from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+    to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+  };
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full overflow-x-hidden">
@@ -206,7 +221,7 @@ const NodeAnalyticsPage = () => {
                     <SelectContent>
                       <SelectItem value="all">All agents</SelectItem>
                       {agents.map((a) => (
-                        <SelectItem id={a.id} value={a.id}>
+                        <SelectItem key={a.id} value={a.id}>
                           {a.name}
                         </SelectItem>
                       ))}
@@ -252,6 +267,12 @@ const NodeAnalyticsPage = () => {
                     </SelectContent>
                   </Select>
 
+                  <ExportButton
+                    endpoint="/analytics/nodes/export"
+                    params={exportParams}
+                    filename="node-analytics"
+                    disabled={loading || agentBreakdown.length === 0}
+                  />
                 </div>
               </header>
 
