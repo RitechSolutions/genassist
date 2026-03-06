@@ -118,6 +118,52 @@ export interface CSVAnalysisResult {
   }>;
 }
 
+export interface PKLAnalysisResult {
+  model_type: string | null;
+  features: string[];
+  error?: string | null;
+}
+
+export const analyzePklFile = async (
+  file: File,
+): Promise<PKLAnalysisResult> => {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const baseURL = await getApiUrl();
+    const token = localStorage.getItem("access_token");
+    const tokenType = localStorage.getItem("token_type");
+    const tenantId = localStorage.getItem("tenant_id");
+
+    const headers: Record<string, string> = {};
+
+    if (token && tokenType) {
+      headers["Authorization"] = `${tokenType} ${token}`;
+    }
+
+    if (tenantId) {
+      headers["x-tenant-id"] = tenantId;
+    }
+
+    const response = await fetch(`${baseURL}${BASE}/analyze-pkl`, {
+      method: "POST",
+      body: formData,
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `API error: ${response.status}`);
+    }
+
+    return (await response.json()) as PKLAnalysisResult;
+  } catch (error) {
+    console.error("Error analyzing PKL file:", error);
+    throw error;
+  }
+};
+
 export const analyzeCSV = async (
   fileUrl: string,
   pythonCode?: string,

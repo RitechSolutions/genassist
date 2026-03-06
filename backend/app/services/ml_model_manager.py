@@ -30,10 +30,21 @@ _MODEL_LOAD_EXECUTOR = ThreadPoolExecutor(
 ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
 
 
+def _unwrap_model(obj: Any) -> Any:
+    """
+    Unwrap model from payload if saved in wrapped format (model + metadata).
+    Returns the raw model for prediction.
+    """
+    if isinstance(obj, dict) and "model" in obj:
+        return obj["model"]
+    return obj
+
+
 def _load_pickle_sync(pkl_file: str) -> Any:
     """
     Synchronous function to load pickle file.
     This will be executed in a thread pool to avoid blocking the event loop.
+    Handles both raw models and wrapped format (model + metadata).
     """
     # Try multiple loading methods
     load_errors = []
@@ -41,7 +52,8 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     # Method 1: Try pickle with default encoding (works best for XGBoost in thread pool)
     try:
         with open(pkl_file, 'rb') as f:
-            model = pickle.load(f)
+            obj = pickle.load(f)
+        model = _unwrap_model(obj)
         logger.info(f"Loaded model using pickle (default) from {pkl_file}")
         return model
     except Exception as e:
@@ -50,7 +62,8 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     # Method 2: Try pickle with latin1 encoding
     try:
         with open(pkl_file, 'rb') as f:
-            model = pickle.load(f, encoding='latin1')
+            obj = pickle.load(f, encoding='latin1')
+        model = _unwrap_model(obj)
         logger.info(f"Loaded model using pickle (latin1) from {pkl_file}")
         return model
     except Exception as e:
@@ -59,7 +72,8 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     # Method 3: Try joblib (may have threading issues with XGBoost)
     try:
         import joblib  # type: ignore
-        model = joblib.load(pkl_file)
+        obj = joblib.load(pkl_file)
+        model = _unwrap_model(obj)
         logger.info(f"Loaded model using joblib from {pkl_file}")
         return model
     except ImportError:
