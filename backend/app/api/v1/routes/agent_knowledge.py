@@ -3,6 +3,7 @@ from typing import List, Dict, Optional
 import os
 import uuid
 import shutil
+import asyncio
 from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.core.exceptions.error_messages import ErrorKey
@@ -22,7 +23,10 @@ from app.modules.data.providers.legra import (
 )
 from app.schemas.agent_knowledge import KBBase, KBCreate, KBRead
 from app.services.agent_knowledge import KnowledgeBaseService
-import asyncio
+from app.services.agent_knowledge_utils import (
+    populate_remote_file_metadata,
+    schedule_rag_load,
+)
 from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 from app.core.project_path import DATA_VOLUME
@@ -33,6 +37,7 @@ from app.services.file_manager import FileManagerService
 from app.schemas.file import FileBase, FileUploadResponse
 from app.core.config.settings import file_storage_settings
 from app.services.app_settings import AppSettingsService
+from app.db.models.file import StorageProvider
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -91,6 +96,7 @@ async def create_knowledge_item(
     item: KBCreate = Body(...),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """Create a new knowledge base item"""
     # store url content as text in content field if all rag stores are False
@@ -99,10 +105,11 @@ async def create_knowledge_item(
 
     result = await knowledge_service.create(item)
 
-    # Load knowledge item using simplified manager
-    asyncio.create_task(rag_manager.load_knowledge_items(
-        [result], action="create"))
+    # Enrich files with storage metadata when using remote providers (S3, etc.)
+    await populate_remote_file_metadata(result, file_manager_service)
 
+    # Load knowledge item using simplified manager in the background
+    schedule_rag_load(rag_manager, result, action="create")
     return result
 
 
@@ -118,6 +125,7 @@ async def update_knowledge_item(
     item: KBBase = Body(...),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     logger.info(f"update_knowledge_item route : item_id = {item_id}")
     """Update an existing knowledge base item"""
@@ -137,10 +145,11 @@ async def update_knowledge_item(
 
     result = await knowledge_service.update(item_id, item)
 
-    # Load knowledge item using simplified manager
-    _ = asyncio.create_task(
-        rag_manager.load_knowledge_items([result], action="update"))
+    # Enrich files with storage metadata when using remote providers (S3, etc.)
+    await populate_remote_file_metadata(result, file_manager_service)
 
+    # Load knowledge item using simplified manager
+    schedule_rag_load(rag_manager, result, action="update")
     return result
 
 
@@ -155,6 +164,7 @@ async def delete_knowledge(
     kb_id: UUID,
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
     rag_manager: AgentRAGServiceManager = Injected(AgentRAGServiceManager),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """Delete a knowledge base item"""
     # Check if item exists
@@ -164,6 +174,13 @@ async def delete_knowledge(
     doc_ids = await rag_manager.get_document_ids(kb)
     for doc_id in doc_ids:
         await rag_manager.delete_document(kb, doc_id)
+
+    # Delete all files from file manager service
+    if kb.files and len(kb.files) > 0:
+        for file in kb.files:
+            if isinstance(file, dict) and file.get("file_id"):
+                file_id = file.get("file_id")
+                await file_manager_service.delete_file(UUID(str(file_id)))
 
     await knowledge_service.delete(kb_id)
 
@@ -529,7 +546,7 @@ async def summarize_files_from_azure(
     if not kb_id:
         logger.warning("Attempting to run KB batch processing without specifying a KB ID.")
         return {"status": "error", "message": "kb_id is required"}
-    
+
     background_tasks.add_task(
         batch_process_files_kb_async_with_scope,
         kb_id
