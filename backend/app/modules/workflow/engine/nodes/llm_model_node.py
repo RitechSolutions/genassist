@@ -84,6 +84,7 @@ class LLMModelNode(BaseNode):
                     max_messages=999  # Large number to get all messages
                 )
         elif trimming_mode == "rag_retrieval":
+            # Note: same structure and code as in AI agent node, this can be extracted to remove code duplication by a benevolent engineer
             # RAG-based retrieval mode:
             # - Below passthrough_threshold: all messages passed verbatim
             # - Above threshold: lazily index message groups into vector DB,
