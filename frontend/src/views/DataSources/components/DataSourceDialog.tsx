@@ -92,7 +92,7 @@ export function DataSourceDialog({
       if (isOpen) {
         resetForm();
         if (mode === "create" && defaultSourceType) {
-          setSourceType(defaultSourceType);
+          setSourceType(defaultSourceType.toLowerCase() as string);
         }
         if (dataSourceToEdit && mode === "edit") {
           if (
@@ -138,7 +138,7 @@ export function DataSourceDialog({
   const populateFormWithDataSource = (dataSource: DataSource) => {
     setDataSourceId(dataSource.id);
     setName(dataSource.name);
-    setSourceType(dataSource.source_type);
+    setSourceType(dataSource.source_type.toLowerCase() as string);
     setConnectionData(dataSource.connection_data);
     setIsActive(dataSource.is_active === 1);
     setTestStatus(dataSource.connection_status ?? null);
@@ -340,7 +340,7 @@ export function DataSourceDialog({
                 <Select
                   value={sourceType}
                   onValueChange={(value) => {
-                    setSourceType(value);
+                    setSourceType(value.toLowerCase() as string);
                     setConnectionData(getSchemaDefaults(value));
                     setTestStatus(null);
                     setShowAdvanced(false);
