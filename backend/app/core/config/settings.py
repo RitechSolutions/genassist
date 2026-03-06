@@ -62,6 +62,10 @@ class ProjectSettings(BaseSettings):
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
 
+    # Number of latest messages used for in-progress hostility scoring.
+    # If the conversation has fewer messages than this, all messages are used.
+    HOSTILITY_SCORE_MESSAGE_COUNT: int = 20
+
     FERNET_KEY: Optional[str]
 
     # === LLM Keys ===

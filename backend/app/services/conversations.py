@@ -17,6 +17,7 @@ from app.auth.utils import (
     is_current_user_supervisor_or_admin,
     )
 from app.cache.redis_cache import invalidate_conversation_cache, make_key_builder
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.bi_utils import (
@@ -245,8 +246,10 @@ class ConversationService:
                 conversation_id,
             )
         )
+        hostility_limit = settings.HOSTILITY_SCORE_MESSAGE_COUNT
+        tone_messages = all_messages[-hostility_limit:]
         transcript_json = transcript_messages_to_json(
-            all_messages, exclude_fields={"feedback", "type", "sequence_number"}
+            tone_messages, exclude_fields={"feedback", "type", "sequence_number"}
         )
 
         # Update conversation
