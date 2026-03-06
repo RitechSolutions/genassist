@@ -284,6 +284,14 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 advanced=True,
             ),
             FieldSchema(
+                name="category_id",
+                type="number",
+                label="Category ID",
+                required=False,
+                description="Optional: Only sync articles from a specific category. Leave empty to sync all categories.",
+                advanced=True,
+            ),
+            FieldSchema(
                 name="section_id",
                 type="number",
                 label="Section ID",
