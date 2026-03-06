@@ -170,7 +170,7 @@ export interface BaseLLMNodeData extends BaseNodeData {
     | "Chain-of-Thought"
     | "ReActAgentLC";
   maxIterations?: number;
-  memoryTrimmingMode?: "message_count" | "token_budget" | "message_compacting";
+  memoryTrimmingMode?: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval";
   maxMessages?: number;
   tokenBudget?: number;
   conversationHistoryTokens?: number;
@@ -178,6 +178,14 @@ export interface BaseLLMNodeData extends BaseNodeData {
   compactingKeepRecent?: number;
   compactingModel?: string;
   compactingImportantEntities?: string[];
+  ragPassthroughThreshold?: number;
+  ragGroupSize?: number;
+  ragGroupOverlap?: number;
+  ragQueryContextMessages?: number;
+  ragTopK?: number;
+  ragRecentMessages?: number;
+  ragMaxHistoryHours?: number;
+  ragVectorConfig?: Record<string, unknown>;
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {
@@ -309,6 +317,8 @@ export interface ThreadRAGNodeData extends BaseNodeData {
   top_k?: number;
   // For add action
   message?: string;
+  // Vector store config (embedding, vector DB, chunking)
+  ragVectorConfig?: Record<string, unknown>;
 }
 
 // MCP Node Data

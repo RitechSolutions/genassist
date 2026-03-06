@@ -264,12 +264,14 @@ class ZendeskConnector:
     async def fetch_articles(
         self,
         locale: Optional[str] = None,
+        category_id: Optional[int] = None,
         section_id: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Fetch all articles from Zendesk Help Center.
         Args:
             locale: Optional locale filter (e.g., "en-us")
+            category_id: Optional category ID to filter articles
             section_id: Optional section ID to filter articles
         Returns:
             List of article dictionaries
@@ -277,8 +279,13 @@ class ZendeskConnector:
         all_articles = []
         url: Optional[str] = f"{self.help_center_url}/articles.json"
 
+        if category_id:
+            url = f"{self.help_center_url}/categories/{category_id}/articles.json"
+            logger.info("Fetching articles from category ID", extra={"category_id": category_id})
+
         if section_id:
             url = f"{self.help_center_url}/sections/{section_id}/articles.json"
+            logger.info("Fetching articles from section ID", extra={"section_id": section_id})
 
         params = {}
         if locale:
