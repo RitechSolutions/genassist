@@ -145,7 +145,71 @@ class DataSourceService:
                     )
         return connection_data
 
-    async def extract_private_key(self, connection_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def test_connection(
+        self,
+        source_type: Optional[str],
+        connection_data: Optional[Dict[str, Any]],
+        datasource_id: Optional[UUID] = None,
+    ) -> Dict[str, Any]:
+        cd = dict(connection_data or {})
+
+        if datasource_id:
+            stored_raw = await self.repository.get_by_id(datasource_id)
+            raw_conn = dict((stored_raw.connection_data if stored_raw else None) or {})
+            decrypted_conn = await self.decrypt_connection_data_fields(dict(raw_conn))
+
+            base = dict(decrypted_conn)
+            for k, v in cd.items():
+                if v is None or v == "":
+                    continue
+                if k in self.encrypted_fields and v == raw_conn.get(k):
+                    pass  # unchanged encrypted field — keep stored decrypted value
+                else:
+                    base[k] = v  # new plaintext value from user
+            cd = base
+
+        if "private_key_file" in cd:
+            cd = await self.extract_private_key(cd, delete_file=False)
+
+        source_type_lower = (source_type or "").lower()
+        try:
+            if source_type_lower == "s3":
+                from app.core.utils.s3_utils import S3Client
+                return S3Client.test_connection(cd)
+            elif source_type_lower == "database":
+                from app.modules.integration.database.database_manager import (
+                    DatabaseManager,
+                )
+                return await DatabaseManager.test_connection(cd)
+            elif source_type_lower == "snowflake":
+                from app.modules.integration.snowflake.snowflake_manager import (
+                    SnowflakeManager,
+                )
+                return await SnowflakeManager.test_connection(cd)
+            elif source_type_lower == "zendesk":
+                from app.services.connection_tester import test_zendesk
+                return await test_zendesk(cd)
+            elif source_type_lower == "smb_share_folder":
+                from app.services.smb_share_service import SMBShareFSService
+                return await SMBShareFSService.test_connection(cd)
+            elif source_type_lower == "azure_blob":
+                from app.services.AzureStorageService import AzureStorageService
+                return AzureStorageService.test_connection(cd)
+            elif source_type_lower == "url":
+                from app.services.connection_tester import test_url
+                return await test_url(cd)
+            else:
+                return {
+                    "success": False,
+                    "message": f"Test connection is not supported for {source_type}.",
+                }
+
+        except Exception as e:
+            logger.error(f"Test connection failed for {source_type}: {e}")
+            return {"success": False, "message": str(e)}
+
+    async def extract_private_key(self, connection_data: Dict[str, Any], delete_file: bool = True) -> Dict[str, Any]:
         """
         Reads content from 'private_key_file', stores it in 'private_key',
         and removes the source file and file path property.
