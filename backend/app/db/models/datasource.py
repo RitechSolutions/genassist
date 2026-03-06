@@ -15,6 +15,7 @@ class DataSourceModel(Base):
     name: Mapped[Optional[str]] = mapped_column(String(255))
     source_type: Mapped[Optional[str]] = mapped_column(String(255))
     connection_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    connection_status: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
 
     # Relationship to KnowledgeBaseModel

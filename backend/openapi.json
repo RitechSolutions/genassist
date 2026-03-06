@@ -3376,6 +3376,73 @@
         }
       }
     },
+    "/api/datasources/test-connection": {
+      "post": {
+        "tags": [
+          "v1",
+          "Datasources"
+        ],
+        "summary": "Test Connection",
+        "operationId": "test_connection_api_datasources_test_connection_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "datasource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Datasource Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSourceBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audio/analyze_recording": {
       "post": {
         "tags": [
@@ -16232,6 +16299,46 @@
         ],
         "title": "Body_upload_welcome_image_api_genagent_agents_configs__agent_id__welcome_image_post"
       },
+      "ConnectionStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "Untested",
+              "Connected",
+              "Error"
+            ],
+            "title": "Status",
+            "default": "Untested"
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "title": "ConnectionStatus",
+        "description": "Reusable connection test status for integrations"
+      },
       "ConversationAnalysisRead": {
         "properties": {
           "conversation_id": {
@@ -17241,6 +17348,71 @@
         "title": "DashboardSummaryStats",
         "description": "Summary statistics for the dashboard header."
       },
+      "DataSourceBase": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "connection_data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Data"
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "DataSourceBase"
+      },
       "DataSourceCreate": {
         "properties": {
           "name": {
@@ -17257,6 +17429,16 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Connection Data"
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "type": "integer",
@@ -17311,6 +17493,16 @@
               }
             ],
             "title": "Connection Data"
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [
@@ -17374,6 +17566,16 @@
               }
             ],
             "title": "Connection Data"
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [

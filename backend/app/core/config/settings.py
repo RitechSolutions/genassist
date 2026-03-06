@@ -45,6 +45,7 @@ class ProjectSettings(BaseSettings):
     # Celery Beat task toggles (enable/disable periodic jobs)
     CELERY_ENABLE_RUN_EXAMPLE_TASK: bool = True
     CELERY_ENABLE_CLEANUP_STALE_CONVERSATIONS_TASK: bool = True
+    CELERY_BACKFILL_MISSING_CONVERSATION_ANALYSIS: bool = True
     CELERY_ENABLE_IMPORT_S3_FILES_TASK: bool = True
     CELERY_ENABLE_TRANSCRIBE_S3_FILES_TASK: bool = True
     CELERY_ENABLE_ZENDESK_ANALYSIS_TASK: bool = True
