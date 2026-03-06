@@ -2,16 +2,13 @@ import asyncio
 import logging
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Body, Depends, Query, Request, WebSocket
+from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi_injector import Injected
-from starlette.websockets import WebSocketDisconnect
-from app.core.exceptions.exception_handler import send_socket_error
 from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.auth.dependencies import (
     auth,
     permissions,
-    socket_auth,
     auth_for_conversation_update,
 )
 from app.auth.utils import get_current_user_id
@@ -50,7 +47,6 @@ from app.schemas.conversation_transcript import (
 )
 from app.cache.redis_cache import invalidate_cache
 from app.schemas.filter import ConversationFilter
-from app.schemas.socket_principal import SocketPrincipal
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
 from app.services.transcript_message_service import TranscriptMessageService
@@ -647,94 +643,5 @@ async def get_agent_response_log_by_message(
         "logged_at": log_entry.logged_at.isoformat() if log_entry.logged_at else None,
     }
 
-
-@router.websocket("/ws/{conversation_id}")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    conversation_id: UUID,
-    principal: SocketPrincipal = socket_auth([P.Conversation.READ_IN_PROGRESS]),
-    lang: Optional[str] = Query(default="en"),
-    topics: list[str] = Query(default=["message"]),
-    socket_connection_manager: SocketConnectionManager = Injected(
-        SocketConnectionManager
-    ),
-):
-    tenant_id = principal.tenant_id
-    await socket_connection_manager.connect(
-        websocket=websocket,
-        room_id=conversation_id,
-        user_id=principal.user_id,
-        permissions=principal.permissions,
-        tenant_id=tenant_id,
-        topics=topics,
-    )
-
-    try:
-        while True:
-            data = await websocket.receive_text()
-            logger.debug("Received data: %s", data)
-    except WebSocketDisconnect:
-        logger.debug(
-            f"WebSocket disconnected for conversation {conversation_id} (tenant: {tenant_id})"
-        )
-        await socket_connection_manager.disconnect(
-            websocket, conversation_id, tenant_id
-        )
-    except Exception as e:
-        logger.exception("Unexpected WebSocket error: %s", e)
-        # Attempt to disconnect even if we don't know the exact room/tenant
-        try:
-            await socket_connection_manager.disconnect(
-                websocket, conversation_id, tenant_id
-            )
-        except Exception:
-            # Fallback: disconnect without room info (searches all rooms)
-            await socket_connection_manager.disconnect(websocket, None, None)
-        await send_socket_error(websocket, ErrorKey.INTERNAL_ERROR, lang)
-        await websocket.close(code=1011)
-
-
-@router.websocket("/ws/dashboard/list")
-async def websocket_dashboard_endpoint(
-    websocket: WebSocket,
-    principal: SocketPrincipal = socket_auth([P.Dashboard.READ]),
-    lang: Optional[str] = Query(default="en"),
-    topics: list[str] = Query(default=["message"]),
-    socket_connection_manager: SocketConnectionManager = Injected(
-        SocketConnectionManager
-    ),
-):
-    """
-    Websocket endpoint for dashboard to receive messages from the server.
-    """
-    tenant_id = principal.tenant_id
-    await socket_connection_manager.connect(
-        websocket,
-        SocketRoomType.DASHBOARD,
-        principal.user_id,
-        principal.permissions,
-        tenant_id=tenant_id,
-        topics=topics,
-    )
-
-    try:
-        while True:
-            data = await websocket.receive_text()
-            logger.debug("Received data: %s", data)
-    except WebSocketDisconnect:
-        logger.debug(f"WebSocket disconnected for dashboard (tenant: {tenant_id})")
-        await socket_connection_manager.disconnect(
-            websocket, SocketRoomType.DASHBOARD, tenant_id
-        )
-    except Exception as e:
-        logger.exception("Unexpected WebSocket error: %s", e)
-        # Attempt to disconnect even if we don't know the exact room/tenant
-        try:
-            await socket_connection_manager.disconnect(
-                websocket, SocketRoomType.DASHBOARD, tenant_id
-            )
-        except Exception:
-            # Fallback: disconnect without room info (searches all rooms)
-            await socket_connection_manager.disconnect(websocket, None, None)
-        await send_socket_error(websocket, ErrorKey.INTERNAL_ERROR, lang)
-        await websocket.close(code=1011)
+# WebSocket endpoints have been moved to the standalone websocket service.
+# The backend now only publishes to Redis via SocketConnectionManager.broadcast().

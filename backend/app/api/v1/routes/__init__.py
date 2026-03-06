@@ -42,7 +42,8 @@ from app.api.v1.routes import (
     mcp,
     mcp_servers,
     customers,
-    file_manager
+    file_manager,
+    internal,
 )
 
 # Disable redirect slashes for all routes
@@ -129,3 +130,4 @@ router.include_router(workflow_manager.router, prefix="/workflow-manager", tags=
 router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP Servers"])
 router.include_router(customers.router, prefix="/customers", tags=["Customers"])
+router.include_router(internal.router, prefix="/internal", tags=["Internal"])

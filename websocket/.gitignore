@@ -1,0 +1,10 @@
+# .env file
+.env
+
+# all __pycache__ directories
+**/__pycache__/
+
+
+# .DS_Store
+.DS_Store
+

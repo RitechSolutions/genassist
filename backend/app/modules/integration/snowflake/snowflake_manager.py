@@ -141,17 +141,6 @@ class SnowflakeManager:
     # Public API
     # ---------------------------
 
-    @staticmethod
-    async def test_connection(cd: dict) -> dict:
-        from app.core.utils.encryption_utils import encrypt_key
-        sf_cd = dict(cd)
-        if sf_cd.get("password"):
-            sf_cd["password"] = encrypt_key(sf_cd["password"])
-        manager = SnowflakeManager(sf_cd)
-        await manager.connect()
-        await manager.disconnect()
-        return {"success": True, "message": "Successfully connected to Snowflake."}
-
     async def connect(self):
         """
         Establish a connection to Snowflake. If you're inside an async app,

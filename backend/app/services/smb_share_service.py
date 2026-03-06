@@ -75,32 +75,21 @@ class SMBShareFSService:
     # --------------------------------------------------------------------------
     # Context management (register/unregister SMB session)
     # --------------------------------------------------------------------------
-    @staticmethod
-    async def test_connection(cd: dict) -> dict:
-        async with SMBShareFSService(
-            smb_host=cd.get("smb_host"),
-            smb_share=cd.get("smb_share"),
-            smb_user=cd.get("smb_user"),
-            smb_pass=cd.get("smb_password"),
-            smb_port=cd.get("smb_port"),
-            use_local_fs=cd.get("use_local_fs", False),
-            local_root=cd.get("local_root"),
-        ):
-            pass
-        return {"success": True, "message": "Successfully connected to network share."}
-
     async def __aenter__(self):
         if not self.use_local_fs:
             # smbclient keeps an internal connection cache.
             # Register credentials for this host so subsequent calls use them.
-            kwargs = {"username": self.smb_user, "password": self.smb_pass}
-            if self.smb_port is not None:
-                kwargs["port"] = self.smb_port
-            await asyncio.to_thread(register_session, self.smb_host, **kwargs)
+            await asyncio.to_thread(
+                register_session,
+                self.smb_host,
+                username=self.smb_user,
+                password=self.smb_pass,
+                port=self.smb_port,
+            )
             self._session_registered = True
         else:
-            if not self.local_root.exists():
-                raise FileNotFoundError(f"Local root path does not exist: {self.local_root}")
+            # Ensure local root exists (create if missing for parity with previous code)
+            self.local_root.mkdir(parents=True, exist_ok=True)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
