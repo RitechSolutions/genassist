@@ -4,18 +4,19 @@ Train Data Source node implementation using the BaseNode class.
 This node fetches training data from databases or CSV files for ML model training.
 """
 
-from typing import Dict, Any
+import asyncio
 import logging
 import os
-import asyncio
 from pathlib import Path
+from typing import Any, Dict
 from uuid import UUID
-from app.modules.workflow.engine.base_node import BaseNode
+
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.modules.integration.database.provider_manager import DBProviderManager
-from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.core.project_path import DATA_VOLUME
+from app.modules.integration.database.provider_manager import DBProviderManager
+from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.nodes.ml import ml_utils
 
 logger = logging.getLogger(__name__)
 
@@ -220,14 +221,17 @@ class TrainDataSourceNode(BaseNode):
             if not csv_file_path and csv_file_id:
                 from app.dependencies.injector import injector
                 from app.services.file_manager import FileManagerService
+
                 file_manager_service = injector.get(FileManagerService)
                 dest_file_path = f"{DATA_VOLUME}/train/{csv_file_id}.csv"
 
                 logger.info(f"Downloading CSV file to: {dest_file_path}")
 
                 # download the file to the destination path
-                await file_manager_service.download_file_to_path(csv_file_id, dest_file_path)
-                
+                await file_manager_service.download_file_to_path(
+                    csv_file_id, dest_file_path
+                )
+
                 # set the csv file path to the destination path
                 csv_file_path = dest_file_path
 
@@ -291,13 +295,7 @@ class TrainDataSourceNode(BaseNode):
             data_source_id: Data source identifier
 
         Returns:
-            DatabaseManager instance or None if not found
+            DatabaseManager instance or None if datasource not found
         """
-        try:
-            db_provider_manager = DBProviderManager.get_instance()
-            return await db_provider_manager.get_database_manager(data_source_id)
-        except Exception as e:
-            logger.error(
-                f"Error getting database manager for {data_source_id}: {str(e)}"
-            )
-            return None
+        db_provider_manager = DBProviderManager.get_instance()
+        return await db_provider_manager.get_database_manager(data_source_id)

@@ -268,8 +268,13 @@ def create_celery():
             "fanout_prefix": True,
             "fanout_patterns": True,
             "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit broker connection pool
+            "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
+        },
+        result_backend_transport_options={
+            "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
         },
         redis_max_connections=settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit result backend connection pool
+        worker_enable_mingle=False,  # Disable mingle to avoid cross-slot errors on startup
         task_serializer="json",
         accept_content=["json"],
         result_serializer="json",
@@ -285,39 +290,51 @@ def create_celery():
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
     )
 
-    # Configure periodic tasks
-    celery_app.conf.beat_schedule = {
-        "run-example-task": {
+    # Configure periodic tasks (conditionally enabled via settings)
+    beat_schedule = {}
+
+    if settings.CELERY_ENABLE_RUN_EXAMPLE_TASK:
+        beat_schedule["run-example-task"] = {
             "task": "app.tasks.base.example_periodic_task",
             # Run at the start of every 5th minute (0, 5, 10, 15, etc.)
             "schedule": crontab(minute="*/5"),
             "options": {"expires": 3600},  # Task expires after 1 hour
-        },
-        "cleanup-stale-conversations": {
+        }
+
+    if settings.CELERY_ENABLE_CLEANUP_STALE_CONVERSATIONS_TASK:
+        beat_schedule["cleanup-stale-conversations"] = {
             "task": "app.tasks.conversations_tasks.cleanup_stale_conversations",
-            # Run at 2 minutes past every 5 minutes
-             "schedule": crontab(minute="2-59/5"),
+            # Run at 2 minutes past every 10 minutes
+             "schedule": crontab(minute="2-59/10"),
             "options": {"expires": 3600},  # Task expires after 1 hour
-        },
-        "import-s3-files": {
+        }
+
+    if settings.CELERY_ENABLE_IMPORT_S3_FILES_TASK:
+        beat_schedule["import-s3-files"] = {
             "task": "app.tasks.s3_tasks.import_s3_files_to_kb",
             "schedule": crontab(hour="*/1"),  # Run every 1 hours
             "options": {"expires": 3000},  # Task expires after 50mins
-        },
-        "transcribe-s3-files": {
+        }
+
+    if settings.CELERY_ENABLE_TRANSCRIBE_S3_FILES_TASK:
+        beat_schedule["transcribe-s3-files"] = {
             "task": "app.tasks.audio_tasks.transcribe_audio_files_from_s3",
             "schedule": crontab(hour="*/1"),  # Run every 1 hours
             "options": {"expires": 3000},  # Task expires after 50mins
-        },
-        "run-zendesk-analysis-every-hour": {
+        }
+
+    if settings.CELERY_ENABLE_ZENDESK_ANALYSIS_TASK:
+        beat_schedule["run-zendesk-analysis-every-hour"] = {
             "task": "app.tasks.zendesk_tasks.analyze_zendesk_tickets_task",
             # Run at the start of every hour
             "schedule": crontab(minute="0", hour="*"),
             "options": {
                 "expires": 3600,  # Task expires after 1 hour
             },
-        },
-        "import-zendesk-articles-to-kb": {
+        }
+
+    if settings.CELERY_ENABLE_IMPORT_ZENDESK_ARTICLES_TASK:
+        beat_schedule["import-zendesk-articles-to-kb"] = {
             "task": "app.tasks.zendesk_article_sync_tasks.import_zendesk_articles_to_kb",
             # Run every 15 minutes to check for knowledge bases due for sync
             # The task itself has cron-based scheduling logic, so this just checks periodically
@@ -325,34 +342,45 @@ def create_celery():
             "options": {
                 "expires": 900,  # Task expires after 15 minutes
             },
-        },
-        "import-sharepoint-files-to-kb": {
+        }
+
+    if settings.CELERY_ENABLE_IMPORT_SHAREPOINT_FILES_TASK:
+        beat_schedule["import-sharepoint-files-to-kb"] = {
             "task": "app.tasks.sharepoint_tasks.import_sharepoint_files_to_kb",
             "schedule": crontab(hour="*/1"),  # Run every 1 hours
             "options": {"expires": 3000},  # Task expires after 50mins
-        },
-        "transcribe-audio-files-from-smb": {
+        }
+
+    if settings.CELERY_ENABLE_TRANSCRIBE_AUDIO_FILES_FROM_SMB_TASK:
+        beat_schedule["transcribe-audio-files-from-smb"] = {
             "task": "app.tasks.share_folder_tasks.transcribe_audio_files_from_smb",
             "schedule": crontab(hour="*/1"),  # Run every 1 hours
             "options": {
                 "expires": 3000,  # Task expires after 50mins
             },
-        },
-        # Sync active fine-tuning jobs every 2 minutes
-        "sync-active-fine-tuning-jobs": {
+        }
+
+    # Sync active fine-tuning jobs every 2 minutes
+    if settings.CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK:
+        beat_schedule["sync-active-fine-tuning-jobs"] = {
             "task": "app.tasks.fine_tune_job_sync_tasks.sync_active_fine_tuning_jobs",
             "schedule": 120.0,  # Every 2 minutes (120 seconds)
-        },
-        # Check for scheduled ML model pipeline runs every minute
-        "check-scheduled-pipeline-runs": {
+        }
+
+    # Check for scheduled ML model pipeline runs every minute
+    if settings.CELERY_ENABLE_CHECK_SCHEDULED_PIPELINE_RUNS_TASK:
+        beat_schedule["check-scheduled-pipeline-runs"] = {
             "task": "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs",
             "schedule": 60.0,  # Every minute (60 seconds)
-        },
-        # Sync active KB's jobs every 5 minutes
-        "summarize-files-from-azure": {
+        }
+
+    # Sync active KB's jobs every 5 minutes
+    if settings.CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK:
+        beat_schedule["summarize-files-from-azure"] = {
             "task": "app.tasks.kb_batch_tasks.batch_process_files_kb",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
-        },
-    }
+        }
+
+    celery_app.conf.beat_schedule = beat_schedule
 
     return celery_app

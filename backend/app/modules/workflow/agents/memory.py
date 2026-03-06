@@ -173,6 +173,34 @@ class BaseConversationMemory:
         """
         raise NotImplementedError
 
+    async def get_messages_by_range(self, start: int, end: int) -> List[Dict[str, Any]]:
+        """
+        Get messages by absolute chronological index [start, end).
+
+        Args:
+            start: Inclusive start index (0 = oldest message)
+            end: Exclusive end index
+
+        Returns:
+            List of message dicts in chronological order
+        """
+        raise NotImplementedError
+
+    async def get_total_message_count(self) -> int:
+        """Return the total number of messages stored."""
+        raise NotImplementedError
+
+    async def get_rag_indexed_count(self) -> int:
+        """
+        Return how many messages have been covered by complete RAG groups
+        indexed into the vector store. This is the high-water-mark end index.
+        """
+        raise NotImplementedError
+
+    async def set_rag_indexed_count(self, count: int) -> None:
+        """Persist the RAG high-water-mark index."""
+        raise NotImplementedError
+
     async def get_stateful_value(self, key: str, default: Any = None) -> Any:
         """Get a stateful parameter value"""
         raise NotImplementedError
@@ -438,7 +466,25 @@ class InMemoryConversationMemory(BaseConversationMemory):
 
         return "\n".join(parts)
 
+    async def get_messages_by_range(self, start: int, end: int) -> List[Dict[str, Any]]:
+        """Get messages by absolute chronological index [start, end)."""
+        start = max(0, start)
+        end = min(len(self.messages), end)
+        if start >= end:
+            return []
+        return [m.to_dict() for m in self.messages[start:end]]
 
+    async def get_total_message_count(self) -> int:
+        """Return the total number of messages stored."""
+        return len(self.messages)
+
+    async def get_rag_indexed_count(self) -> int:
+        """Return the RAG high-water-mark index from in-memory metadata."""
+        return self.metadata.get("rag_indexed_count", 0)
+
+    async def set_rag_indexed_count(self, count: int) -> None:
+        """Persist the RAG high-water-mark index in in-memory metadata."""
+        self.metadata["rag_indexed_count"] = count
 
     async def get_stateful_value(self, key: str, default: Any = None) -> Any:
         """Get a stateful parameter value from in-memory storage"""
@@ -1013,6 +1059,64 @@ class RedisConversationMemory(BaseConversationMemory):
                 f"Failed to delete conversation from Redis for thread {self.thread_id}: {e}"
             )
             raise
+
+    async def get_messages_by_range(self, start: int, end: int) -> List[Dict[str, Any]]:
+        """
+        Get messages by absolute chronological index [start, end).
+
+        Redis stores messages newest-first via lpush, so chronological index i
+        maps to Redis index (total - 1 - i). For range [start, end):
+            redis_start = total - end
+            redis_end   = total - start - 1
+        lrange returns newest-first within that slice; reversed() restores
+        chronological order.
+        """
+        try:
+            redis = await self._get_redis()
+            total = await redis.llen(self._message_key)  # type: ignore
+
+            if total == 0 or start >= end:
+                return []
+
+            start = max(0, start)
+            end = min(int(total), end)
+
+            redis_start = int(total) - end
+            redis_end = int(total) - start - 1
+
+            raw = await redis.lrange(self._message_key, redis_start, redis_end)  # type: ignore
+            messages = []
+            for msg_json in reversed(raw):
+                try:
+                    messages.append(json.loads(msg_json))
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse message in get_messages_by_range: {e}")
+            return messages
+
+        except Exception as e:
+            logger.error(
+                f"Failed to get messages by range for thread {self.thread_id}: {e}"
+            )
+            return []
+
+    async def get_total_message_count(self) -> int:
+        """Return the total number of messages stored in Redis."""
+        try:
+            redis = await self._get_redis()
+            return int(await redis.llen(self._message_key))  # type: ignore
+        except Exception as e:
+            logger.error(
+                f"Failed to get message count for thread {self.thread_id}: {e}"
+            )
+            return 0
+
+    async def get_rag_indexed_count(self) -> int:
+        """Return the RAG high-water-mark index from Redis metadata."""
+        return await self.get_metadata("rag_indexed_count", 0)
+
+    async def set_rag_indexed_count(self, count: int) -> None:
+        """Persist the RAG high-water-mark index in Redis metadata."""
+        await self.set_metadata("rag_indexed_count", count)
 
     async def get_stateful_value(self, key: str, default: Any = None) -> Any:
         """Get a stateful parameter value from Redis"""

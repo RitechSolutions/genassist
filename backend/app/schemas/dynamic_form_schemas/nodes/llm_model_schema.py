@@ -47,7 +47,8 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         options=[
             {"value": "message_count", "label": "Last N Messages"},
             {"value": "token_budget", "label": "Token Budget"},
-            {"value": "message_compacting", "label": "Message Compacting"}
+            {"value": "message_compacting", "label": "Message Compacting"},
+            {"value": "rag_retrieval", "label": "RAG Retrieval"}
         ],
         description="How to limit conversation history"
     ),
@@ -104,6 +105,107 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         conditional=ConditionalField(
             field="memoryTrimmingMode",
             value="message_compacting"
+        )
+    ),
+    FieldSchema(
+        name="compactingImportantEntities",
+        type="tags",
+        label="Important Entities to Preserve",
+        required=False,
+        description="Entities that must always be retained in the compaction summary (e.g. 'client name', 'project ID')",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="message_compacting"
+        )
+    ),
+    FieldSchema(
+        name="ragPassthroughThreshold",
+        type="number",
+        label="Passthrough Threshold (messages)",
+        required=False,
+        default=30,
+        min=4,
+        max=500,
+        step=1,
+        description="Number of messages below which ALL messages are passed verbatim (no RAG)",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="rag_retrieval"
+        )
+    ),
+    FieldSchema(
+        name="ragGroupSize",
+        type="number",
+        label="Group Size (messages)",
+        required=False,
+        default=4,
+        min=2,
+        max=20,
+        step=2,
+        description="Number of messages per indexed group (must be even; each pair = 1 Q&A exchange)",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="rag_retrieval"
+        )
+    ),
+    FieldSchema(
+        name="ragGroupOverlap",
+        type="number",
+        label="Group Overlap (messages)",
+        required=False,
+        default=2,
+        min=0,
+        max=18,
+        step=1,
+        description="Number of overlapping messages between consecutive groups (must be less than group size)",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="rag_retrieval"
+        )
+    ),
+    FieldSchema(
+        name="ragQueryContextMessages",
+        type="number",
+        label="Query Context Messages",
+        required=False,
+        default=3,
+        min=1,
+        max=10,
+        step=1,
+        description="Number of recent messages combined with current message for a richer retrieval query",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="rag_retrieval"
+        )
+    ),
+    FieldSchema(
+        name="ragTopK",
+        type="number",
+        label="Retrieved Groups (top-k)",
+        required=False,
+        default=3,
+        min=1,
+        max=10,
+        step=1,
+        description="Maximum number of historical groups to retrieve from the vector store",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="rag_retrieval"
+        )
+    ),
+    FieldSchema(
+        name="ragRecentMessages",
+        type="number",
+        label="Recent Messages (verbatim)",
+        required=False,
+        default=6,
+        min=2,
+        max=50,
+        step=2,
+        description="Most recent messages always included verbatim in context alongside retrieved groups",
+        conditional=ConditionalField(
+            field="memoryTrimmingMode",
+            value="rag_retrieval"
         )
     ),
     FieldSchema(

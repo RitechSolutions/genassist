@@ -6,6 +6,7 @@ from app.db.models.tenant import TenantModel
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.core.config.settings import settings
 from app.repositories.tenant import TenantRepository
+from app.core.permissions import sync_permissions_for_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,10 @@ class TenantService:
             committed = True
             await self.repository.db.refresh(tenant)
             logger.info(f"Created tenant: {name} ({slug})")
+
+            # sync permissions to the tenant database
+            await sync_permissions_for_tenant(tenant_slug=slug, tenant_name=name)
+            logger.info(f"Synced permissions to tenant database: {slug}")
             return tenant
         finally:
             if not committed:

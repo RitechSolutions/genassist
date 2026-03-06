@@ -84,6 +84,41 @@ class AgentNode(BaseNode):
                 return await memory.get_messages(
                     max_messages=999  # Large number to get all messages
                 )
+        elif trimming_mode == "rag_retrieval":
+            # RAG-based retrieval mode:
+            # - Below passthrough_threshold: all messages passed verbatim
+            # - Above threshold: lazily index message groups into vector DB,
+            #   retrieve semantically relevant groups + keep recent messages verbatim
+            from app.dependencies.injector import injector
+            from app.modules.workflow.agents.rag import ThreadScopedRAG
+            from app.modules.workflow.agents.conversation_rag_indexer import ConversationRAGIndexer
+
+            thread_rag = injector.get(ThreadScopedRAG)
+
+            indexer = ConversationRAGIndexer(
+                thread_rag=thread_rag,
+                group_size=config.get("ragGroupSize", 4),
+                group_overlap=config.get("ragGroupOverlap", 2),
+                top_k=config.get("ragTopK", 3),
+                query_context_messages=config.get("ragQueryContextMessages", 3),
+                passthrough_threshold=config.get("ragPassthroughThreshold", 30),
+                recent_messages=config.get("ragRecentMessages", 6),
+                max_history_hours=config.get("ragMaxHistoryHours", 0),
+                rag_config_overrides={
+                    **(config.get("ragVectorConfig") or {}),
+                    # Always override chunking: ConversationRAGIndexer already
+                    # groups messages into the correct semantic unit, so each
+                    # group must be stored as a single vector document.
+                    "chunk_size": 100_000,
+                    "chunk_overlap": 0,
+                },
+            )
+
+            return await indexer.assemble_context(
+                thread_id=memory.thread_id,
+                memory=memory,
+                current_user_message=user_prompt,
+            )
         else:
             # Message count mode - simple last N messages
             max_messages = config.get("maxMessages", 10)
@@ -102,6 +137,7 @@ class AgentNode(BaseNode):
         """
         try:
             keep_recent = config.get("compactingKeepRecent", 10)
+            important_entities = config.get("compactingImportantEntities") or None
 
             # Get messages to compact
             to_compact = await memory.get_messages_for_compaction(keep_recent)
@@ -121,7 +157,7 @@ class AgentNode(BaseNode):
             compactor = MemoryCompactor(llm_model)
 
             existing_summary = await memory.get_compacted_summary()
-            new_summary = await compactor.compact_messages(to_compact, existing_summary)
+            new_summary = await compactor.compact_messages(to_compact, existing_summary, important_entities)
 
             # Store compacted summary
             await memory.set_compacted_summary(new_summary)

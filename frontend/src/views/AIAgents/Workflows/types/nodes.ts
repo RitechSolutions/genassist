@@ -39,6 +39,23 @@ export interface ChatInputNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
 }
 
+// Human In The Loop node data — collects structured data from the user mid-flow
+export interface HumanInTheLoopFormField {
+  name: string;
+  type: "text" | "number" | "select" | "boolean" | "date";
+  label: string;
+  required?: boolean;
+  placeholder?: string;
+  description?: string;
+  options?: Array<{ value: string; label: string }>;
+}
+
+export interface HumanInTheLoopNodeData extends BaseNodeData {
+  message?: string;
+  form_fields: HumanInTheLoopFormField[];
+  ask_once?: boolean;
+}
+
 // Prompt Template node data
 export interface TemplateNodeData extends BaseNodeData {
   template: string;
@@ -153,13 +170,22 @@ export interface BaseLLMNodeData extends BaseNodeData {
     | "Chain-of-Thought"
     | "ReActAgentLC";
   maxIterations?: number;
-  memoryTrimmingMode?: "message_count" | "token_budget" | "message_compacting";
+  memoryTrimmingMode?: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval";
   maxMessages?: number;
   tokenBudget?: number;
   conversationHistoryTokens?: number;
   compactingThreshold?: number;
   compactingKeepRecent?: number;
   compactingModel?: string;
+  compactingImportantEntities?: string[];
+  ragPassthroughThreshold?: number;
+  ragGroupSize?: number;
+  ragGroupOverlap?: number;
+  ragQueryContextMessages?: number;
+  ragTopK?: number;
+  ragRecentMessages?: number;
+  ragMaxHistoryHours?: number;
+  ragVectorConfig?: Record<string, unknown>;
 }
 // Agent Node Data
 export interface AgentNodeData extends BaseLLMNodeData {
@@ -291,6 +317,8 @@ export interface ThreadRAGNodeData extends BaseNodeData {
   top_k?: number;
   // For add action
   message?: string;
+  // Vector store config (embedding, vector DB, chunking)
+  ragVectorConfig?: Record<string, unknown>;
 }
 
 // MCP Node Data
@@ -358,6 +386,7 @@ export type NodeData =
   | ThreadRAGNodeData
   | MCPNodeData
   | WorkflowExecutorNodeData
+  | HumanInTheLoopNodeData
   | SetStateNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
