@@ -4,10 +4,8 @@ import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
-
+from app.core.config.settings import settings
 from fastapi import Depends
-from fastapi_cache.coder import PickleCoder
-from fastapi_cache.decorator import cache
 from fastapi_injector import Injected
 from injector import inject
 
@@ -16,13 +14,15 @@ from app.auth.utils import (
     get_current_user_id,
     is_current_user_supervisor_or_admin,
     )
-from app.cache.redis_cache import invalidate_conversation_cache, make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.bi_utils import (
     calculate_duration_from_transcript,
     calculate_incremental_word_counts,
-    )
+)
+from app.cache.redis_cache import make_key_builder, invalidate_conversation_cache
+from fastapi_cache.coder import PickleCoder
+from fastapi_cache.decorator import cache
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
 from app.core.utils.enums.message_feedback_enum import Feedback
@@ -245,8 +245,10 @@ class ConversationService:
                 conversation_id,
             )
         )
+        hostility_limit = settings.HOSTILITY_SCORE_MESSAGE_COUNT
+        tone_messages = all_messages[-hostility_limit:]
         transcript_json = transcript_messages_to_json(
-            all_messages, exclude_fields={"feedback", "type", "sequence_number"}
+            tone_messages, exclude_fields={"feedback", "type", "sequence_number"}
         )
 
         # Update conversation
