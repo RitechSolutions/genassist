@@ -16,8 +16,9 @@ import {
   createTranslation,
   updateTranslation,
   getTranslationByKey,
+  getLanguages,
 } from "@/services/translations";
-import { Translation } from "@/interfaces/translation.interface";
+import { Language, Translation } from "@/interfaces/translation.interface";
 
 interface TranslationDialogProps {
   isOpen: boolean;
@@ -43,14 +44,14 @@ export function TranslationDialog({
   const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
   const [key, setKey] = useState("");
   const [defaultValue, setDefaultValue] = useState("");
-  const [en, setEn] = useState("");
-  const [es, setEs] = useState("");
-  const [fr, setFr] = useState("");
-  const [de, setDe] = useState("");
-  const [pt, setPt] = useState("");
-  const [zh, setZh] = useState("");
+  const [translations, setTranslations] = useState<Record<string, string>>({});
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    getLanguages().then(setLanguages).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setDialogMode(mode);
@@ -63,22 +64,14 @@ export function TranslationDialog({
     const init = async () => {
       setError("");
 
-      // Explicit edit with provided translation object (used from Translations page)
       if (translationToEdit && mode === "edit") {
         setDialogMode("edit");
         setKey(translationToEdit.key || "");
         setDefaultValue(translationToEdit.default || "");
-        setEn(translationToEdit.en || "");
-        setEs(translationToEdit.es || "");
-        setFr(translationToEdit.fr || "");
-        setDe(translationToEdit.de || "");
-        setPt(translationToEdit.pt || "");
-        setZh(translationToEdit.zh || "");
+        setTranslations({ ...translationToEdit.translations });
         return;
       }
 
-      // When an initial key is provided (e.g. inline translation from another form),
-      // try to load existing translation by key; if none, prefill default value.
       if (initialKey) {
         const existing = await getTranslationByKey(initialKey);
         if (cancelled) return;
@@ -87,27 +80,16 @@ export function TranslationDialog({
           setDialogMode("edit");
           setKey(existing.key || "");
           setDefaultValue(existing.default || "");
-          setEn(existing.en || "");
-          setEs(existing.es || "");
-          setFr(existing.fr || "");
-          setDe(existing.de || "");
-          setPt(existing.pt || "");
-          setZh(existing.zh || "");
+          setTranslations({ ...existing.translations });
         } else {
           setDialogMode("create");
           setKey(initialKey);
           setDefaultValue(initialDefaultValue || "");
-          setEn("");
-          setEs("");
-          setFr("");
-          setDe("");
-          setPt("");
-          setZh("");
+          setTranslations({});
         }
         return;
       }
 
-      // Plain create mode (used from Translations list "Add" button)
       setDialogMode("create");
       resetForm();
     };
@@ -122,18 +104,17 @@ export function TranslationDialog({
   const resetForm = () => {
     setKey("");
     setDefaultValue("");
-    setEn("");
-    setEs("");
-    setFr("");
-    setDe("");
-    setPt("");
-    setZh("");
+    setTranslations({});
   };
 
   const title =
     dialogMode === "create" ? "Add Translation" : "Edit Translation";
   const submitLabel = dialogMode === "create" ? "Create" : "Update";
   const loadingLabel = dialogMode === "create" ? "Creating..." : "Updating...";
+
+  const handleTranslationChange = (code: string, value: string) => {
+    setTranslations((prev) => ({ ...prev, [code]: value }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,16 +128,20 @@ export function TranslationDialog({
     try {
       setIsSubmitting(true);
 
+      // Build translations dict, omitting empty values
+      const cleanTranslations: Record<string, string> = {};
+      for (const [code, value] of Object.entries(translations)) {
+        const trimmed = value.trim();
+        if (trimmed) {
+          cleanTranslations[code] = trimmed;
+        }
+      }
+
       if (dialogMode === "create") {
         await createTranslation({
           key: key.trim(),
           default: defaultValue.trim() || null,
-          en: en.trim() || null,
-          es: es.trim() || null,
-          fr: fr.trim() || null,
-          de: de.trim() || null,
-          pt: pt.trim() || null,
-          zh: zh.trim() || null,
+          translations: cleanTranslations,
         });
         toast.success("Translation created successfully.");
       } else {
@@ -168,12 +153,7 @@ export function TranslationDialog({
 
         await updateTranslation(updateKey, {
           default: defaultValue.trim() || null,
-          en: en.trim() || null,
-          es: es.trim() || null,
-          fr: fr.trim() || null,
-          de: de.trim() || null,
-          pt: pt.trim() || null,
-          zh: zh.trim() || null,
+          translations: cleanTranslations,
         });
         toast.success("Translation updated successfully.");
       }
@@ -227,61 +207,22 @@ export function TranslationDialog({
               />
             </div>
 
-            <div className="space-y-4">
-              <div className="grid gap-2">
-                <Label htmlFor="translation-en">English (en)</Label>
-                <Textarea
-                  id="translation-en"
-                  value={en}
-                  onChange={(e) => setEn(e.target.value)}
-                  rows={2}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="translation-es">Spanish (es)</Label>
-                <Textarea
-                  id="translation-es"
-                  value={es}
-                  onChange={(e) => setEs(e.target.value)}
-                  rows={2}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="translation-fr">French (fr)</Label>
-                <Textarea
-                  id="translation-fr"
-                  value={fr}
-                  onChange={(e) => setFr(e.target.value)}
-                  rows={2}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="translation-de">German (de)</Label>
-                <Textarea
-                  id="translation-de"
-                  value={de}
-                  onChange={(e) => setDe(e.target.value)}
-                  rows={2}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="translation-pt">Portuguese (pt)</Label>
-                <Textarea
-                  id="translation-pt"
-                  value={pt}
-                  onChange={(e) => setPt(e.target.value)}
-                  rows={2}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="translation-zh">Chinese (zh)</Label>
-                <Textarea
-                  id="translation-zh"
-                  value={zh}
-                  onChange={(e) => setZh(e.target.value)}
-                  rows={2}
-                />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {languages.map((lang) => (
+                <div key={lang.id} className="grid gap-2">
+                  <Label htmlFor={`translation-${lang.code}`}>
+                    {lang.name} ({lang.code})
+                  </Label>
+                  <Textarea
+                    id={`translation-${lang.code}`}
+                    value={translations[lang.code] || ""}
+                    onChange={(e) =>
+                      handleTranslationChange(lang.code, e.target.value)
+                    }
+                    rows={2}
+                  />
+                </div>
+              ))}
             </div>
           </div>
 
@@ -312,4 +253,3 @@ export function TranslationDialog({
     </Dialog>
   );
 }
-

@@ -26,16 +26,7 @@ export function pairsToObject(pairs: Array<{key: string, value: unknown}>): Reco
 export const getTranslationCount = (translation: Translation | null): number => {
   if (!translation) return 0;
 
-  const locales: Array<keyof Pick<
-    Translation,
-    "en" | "es" | "fr" | "de" | "pt" | "zh"
-  >> = ["en", "es", "fr", "de", "pt", "zh"];
-
-  return locales.reduce((count, locale) => {
-    const value = translation[locale];
-    if (typeof value === "string" && value.trim().length > 0) {
-      return count + 1;
-    }
-    return count;
-  }, 0);
+  return Object.values(translation.translations).filter(
+    (v) => typeof v === "string" && v.trim().length > 0
+  ).length;
 };

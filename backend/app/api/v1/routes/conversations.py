@@ -105,9 +105,7 @@ async def get_agent_info(
     }
 
     agent_security_settings = (
-        agent.security_settings
-        if agent and hasattr(agent, "security_settings")
-        else None
+        agent.security_settings if hasattr(agent, "security_settings") else None
     )
     json_response = JSONResponse(content=response)
     apply_agent_cors_headers(request, json_response, agent_security_settings)
@@ -191,54 +189,36 @@ async def start(
 
     accept_lang = request.headers.get("accept-language")
 
-    # Resolve localized welcome message via translations, if possible
-    welcome_message = agent_data.get("welcome_message")
-    welcome_message = await translations_service.get_by_key_lang(
-        f"agent.{agent.id}.welcome_message",
-        accept_lang,
-        default=welcome_message,
-    )
-
-    welcome_title = agent_data.get("welcome_title")
-    welcome_title = await translations_service.get_by_key_lang(
-        f"agent.{agent.id}.welcome_title",
-        accept_lang,
-        default=welcome_title,
-    )
-
+    # Build a batch of all translation keys to resolve in a single pass
+    agent_prefix = f"agent.{agent.id}"
     possible_queries = agent_data.get("possible_queries") or []
-    resolved_queries = []
-    for idx, query in enumerate(possible_queries):
-        resolved = await translations_service.get_by_key_lang(
-            f"agent.{agent.id}.possible_queries.{idx}",
-            accept_lang,
-            default=query,
-        )
-        resolved_queries.append(resolved or query)
-
     thinking_phrases = agent_data.get("thinking_phrases") or []
-    resolved_phrases = []
+
+    translation_items: dict[str, str | None] = {
+        f"{agent_prefix}.welcome_message": agent_data.get("welcome_message"),
+        f"{agent_prefix}.welcome_title": agent_data.get("welcome_title"),
+        f"{agent_prefix}.input_disclaimer": agent_data.get("input_disclaimer"),
+        f"{agent_prefix}.input_disclaimer_link_label": agent_data.get("input_disclaimer_link_label"),
+    }
+    for idx, query in enumerate(possible_queries):
+        translation_items[f"{agent_prefix}.possible_queries.{idx}"] = query
     for idx, phrase in enumerate(thinking_phrases):
-        resolved = await translations_service.get_by_key_lang(
-            f"agent.{agent.id}.thinking_phrases.{idx}",
-            accept_lang,
-            default=phrase,
-        )
-        resolved_phrases.append(resolved or phrase)
+        translation_items[f"{agent_prefix}.thinking_phrases.{idx}"] = phrase
 
-    input_disclaimer = agent_data.get("input_disclaimer")
-    input_disclaimer = await translations_service.get_by_key_lang(
-        f"agent.{agent.id}.input_disclaimer",
-        accept_lang,
-        default=input_disclaimer,
-    )
+    resolved = await translations_service.resolve_many(translation_items, accept_lang)
 
-    input_disclaimer_link_label = agent_data.get("input_disclaimer_link_label")
-    input_disclaimer_link_label = await translations_service.get_by_key_lang(
-        f"agent.{agent.id}.input_disclaimer_link_label",
-        accept_lang,
-        default=input_disclaimer_link_label,
-    )
+    welcome_message = resolved.get(f"{agent_prefix}.welcome_message")
+    welcome_title = resolved.get(f"{agent_prefix}.welcome_title")
+    input_disclaimer = resolved.get(f"{agent_prefix}.input_disclaimer")
+    input_disclaimer_link_label = resolved.get(f"{agent_prefix}.input_disclaimer_link_label")
+    resolved_queries = [
+        resolved.get(f"{agent_prefix}.possible_queries.{idx}") or query
+        for idx, query in enumerate(possible_queries)
+    ]
+    resolved_phrases = [
+        resolved.get(f"{agent_prefix}.thinking_phrases.{idx}") or phrase
+        for idx, phrase in enumerate(thinking_phrases)
+    ]
     available_languages = await translations_service.get_languages_for_prefix(
         f"agent.{agent.id}."
     )
@@ -290,9 +270,7 @@ async def start(
 
     # Apply agent-specific CORS headers
     agent_security_settings = (
-        agent.security_settings
-        if agent and hasattr(agent, "security_settings")
-        else None
+        agent.security_settings if hasattr(agent, "security_settings") else None
     )
 
     json_response = JSONResponse(content=response)
@@ -391,16 +369,17 @@ async def update_no_agent(
     transcript_json = [segment.model_dump() for segment in model.messages]
 
     tenant_id = get_tenant_context()
-    _ = asyncio.create_task(
-        socket_connection_manager.broadcast(
-            msg_type="message",
-            payload=transcript_json[0],
-            room_id=conversation_id,
-            current_user_id=get_current_user_id(),
-            required_topic="message",
-            tenant_id=tenant_id,
+    if transcript_json:
+        _ = asyncio.create_task(
+            socket_connection_manager.broadcast(
+                msg_type="message",
+                payload=transcript_json[0],
+                room_id=conversation_id,
+                current_user_id=get_current_user_id(),
+                required_topic="message",
+                tenant_id=tenant_id,
+            )
         )
-    )
 
     if conversation.status == ConversationStatus.TAKE_OVER.value:
         if any(
@@ -418,7 +397,6 @@ async def update_no_agent(
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
 
     # Notify dashboard a conversation is updated
-    tenant_id = get_tenant_context()
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="update",
@@ -444,7 +422,6 @@ async def update_no_agent(
     )
 
     # broadcast statistics
-    tenant_id = get_tenant_context()
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="statistics",
@@ -529,7 +506,6 @@ async def update(
         updated_conversation
     )
 
-    agent = getattr(request.state, "agent", None)
     agent_security_settings = (
         agent.security_settings
         if agent and hasattr(agent, "security_settings")
@@ -673,7 +649,7 @@ async def get_conversations_list(
     "/filter/count",
     dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
 )
-async def get(
+async def get_conversation_count(
     conversation_filter: ConversationFilter = Depends(),
     conversations_service: ConversationService = Injected(ConversationService),
 ):

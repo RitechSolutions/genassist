@@ -22,7 +22,6 @@ import {
   X,
   Languages,
 } from "lucide-react";
-// import { createWorkflow, updateWorkflow } from "@/services/workflows";
 import {
   Sheet,
   SheetContent,
@@ -196,13 +195,15 @@ const AgentForm: React.FC<AgentFormProps> = ({
 
   // Load existing image when editing (only if agent has one)
   React.useEffect(() => {
+    let objectUrl: string | null = null;
+
     const loadExistingImage = async () => {
       // Only fetch if agent has a welcome image
       if (isEditMode && id && data?.has_welcome_image) {
         try {
           const imageBlob = await getWelcomeImage(id);
-          const imageUrl = URL.createObjectURL(imageBlob);
-          setImagePreview(imageUrl);
+          objectUrl = URL.createObjectURL(imageBlob);
+          setImagePreview(objectUrl);
         } catch (error) {
           // Image failed to load
         }
@@ -210,6 +211,12 @@ const AgentForm: React.FC<AgentFormProps> = ({
     };
 
     loadExistingImage();
+
+    return () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
   }, [isEditMode, id, data?.has_welcome_image]);
 
   const handleInputChange = (
@@ -421,7 +428,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
         err instanceof Error ? err.message : "Unknown error occurred.";
 
       if (
-        (errorMessage.includes("email") && errorMessage.includes("exist")) ||
+        errorMessage.includes("already exists") ||
         errorMessage.includes("400")
       )
         errorMessage = "An agent with this name already exists.";

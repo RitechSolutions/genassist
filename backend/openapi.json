@@ -2562,6 +2562,88 @@
         }
       }
     },
+    "/api/translations/languages": {
+      "get": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "List Languages",
+        "operationId": "list_languages_api_translations_languages_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LanguageRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Languages Api Translations Languages Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "Create Language",
+        "operationId": "create_language_api_translations_languages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LanguageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LanguageRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/translations": {
       "get": {
         "tags": [
@@ -5090,8 +5172,8 @@
           "v1",
           "Conversations"
         ],
-        "summary": "Get",
-        "operationId": "get_api_conversations_filter_count_get",
+        "summary": "Get Conversation Count",
+        "operationId": "get_conversation_count_api_conversations_filter_count_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -20595,6 +20677,53 @@
         "title": "KBRead",
         "description": "Response model"
       },
+      "LanguageCreate": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "LanguageCreate"
+      },
+      "LanguageRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "is_active"
+        ],
+        "title": "LanguageRead"
+      },
       "LlmAnalyst": {
         "properties": {
           "name": {
@@ -23954,71 +24083,13 @@
             ],
             "title": "Default"
           },
-          "en": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "En"
-          },
-          "es": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Es"
-          },
-          "fr": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fr"
-          },
-          "de": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "De"
-          },
-          "pt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pt"
-          },
-          "zh": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Zh"
+          "translations": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Translations",
+            "default": {}
           }
         },
         "type": "object",
@@ -24029,6 +24100,11 @@
       },
       "TranslationRead": {
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
           "key": {
             "type": "string",
             "title": "Key"
@@ -24044,82 +24120,19 @@
             ],
             "title": "Default"
           },
-          "en": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "En"
-          },
-          "es": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Es"
-          },
-          "fr": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fr"
-          },
-          "de": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "De"
-          },
-          "pt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pt"
-          },
-          "zh": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Zh"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
+          "translations": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Translations",
+            "default": {}
           }
         },
         "type": "object",
         "required": [
-          "key",
-          "id"
+          "id",
+          "key"
         ],
         "title": "TranslationRead"
       },
@@ -24136,71 +24149,19 @@
             ],
             "title": "Default"
           },
-          "en": {
+          "translations": {
             "anyOf": [
               {
-                "type": "string"
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "En"
-          },
-          "es": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Es"
-          },
-          "fr": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fr"
-          },
-          "de": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "De"
-          },
-          "pt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pt"
-          },
-          "zh": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Zh"
+            "title": "Translations"
           }
         },
         "type": "object",

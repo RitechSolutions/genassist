@@ -16,10 +16,6 @@ export function Translations() {
     setRefreshKey((prev) => prev + 1);
   };
 
-  const handleTranslationSaved = () => {
-    setRefreshKey((prev) => prev + 1);
-  };
-
   const handleOpenCreate = () => {
     setDialogMode("create");
     setTranslationToEdit(null);
@@ -55,8 +51,8 @@ export function Translations() {
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         mode={dialogMode}
-        translationToEdit={translationToEdit || undefined}
-        onTranslationSaved={handleTranslationSaved}
+        translationToEdit={translationToEdit}
+        onTranslationSaved={handleRefresh}
       />
     </PageLayout>
   );

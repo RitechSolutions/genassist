@@ -6,14 +6,46 @@ from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
 from app.schemas.translation import (
+    LanguageCreate,
+    LanguageRead,
     TranslationCreate,
     TranslationRead,
     TranslationUpdate,
 )
-from app.services.translations import TranslationsService
+from app.services.translations import LanguagesService, TranslationsService
 
 
 router = APIRouter()
+
+
+# --- Language endpoints ---
+
+
+@router.get(
+    "/languages",
+    response_model=List[LanguageRead],
+    dependencies=[Depends(auth), Depends(permissions(P.AppSettings.READ))],
+)
+async def list_languages(
+    svc: LanguagesService = Injected(LanguagesService),
+):
+    return await svc.get_all()
+
+
+@router.post(
+    "/languages",
+    response_model=LanguageRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.AppSettings.CREATE))],
+)
+async def create_language(
+    dto: LanguageCreate,
+    svc: LanguagesService = Injected(LanguagesService),
+):
+    return await svc.create(dto)
+
+
+# --- Translation endpoints ---
 
 
 @router.get(

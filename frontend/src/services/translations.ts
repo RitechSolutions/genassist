@@ -1,18 +1,24 @@
 import { apiRequest } from "@/config/api";
-import { Translation } from "@/interfaces/translation.interface";
+import { Language, Translation } from "@/interfaces/translation.interface";
 
 export type TranslationPayload = {
   key: string;
   default?: string | null;
-  en?: string | null;
-  es?: string | null;
-  fr?: string | null;
-  de?: string | null;
-  pt?: string | null;
-  zh?: string | null;
+  translations: Record<string, string>;
 };
 
-export type TranslationUpdatePayload = Partial<Omit<TranslationPayload, "key">>;
+export type TranslationUpdatePayload = {
+  default?: string | null;
+  translations?: Record<string, string>;
+};
+
+export const getLanguages = async (): Promise<Language[]> => {
+  const data = await apiRequest<Language[]>("GET", "translations/languages");
+  if (!data || !Array.isArray(data)) {
+    return [];
+  }
+  return data;
+};
 
 export const getTranslations = async (): Promise<Translation[]> => {
   const data = await apiRequest<Translation[]>("GET", "translations");
@@ -71,9 +77,6 @@ export const getTranslationByKey = async (
     );
     return data;
   } catch (_error) {
-    // If translation does not exist or request fails, treat as missing
     return null;
   }
 };
-
-

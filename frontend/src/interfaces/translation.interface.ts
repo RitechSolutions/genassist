@@ -2,11 +2,12 @@ export interface Translation {
   id?: string;
   key: string;
   default?: string | null;
-  en?: string | null;
-  es?: string | null;
-  fr?: string | null;
-  de?: string | null;
-  pt?: string | null;
-  zh?: string | null;
+  translations: Record<string, string>;
 }
 
+export interface Language {
+  id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+}

@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/card";
 import { DataTable } from "@/components/DataTable";
 import { TableCell, TableRow } from "@/components/table";
 import { Button } from "@/components/button";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { deleteTranslation, getTranslations } from "@/services/translations";
-import { Translation } from "@/interfaces/translation.interface";
+import {
+  deleteTranslation,
+  getTranslations,
+  getLanguages,
+} from "@/services/translations";
+import { Language, Translation } from "@/interfaces/translation.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface TranslationsCardProps {
   searchQuery: string;
   refreshKey?: number;
-  onEditTranslation: (translation: Translation | null, mode: "create" | "edit") => void;
+  onEditTranslation: (
+    translation: Translation | null,
+    mode: "create" | "edit"
+  ) => void;
   onRefresh: () => void;
 }
 
@@ -23,12 +29,17 @@ export function TranslationsCard({
   onRefresh,
 }: TranslationsCardProps) {
   const [translations, setTranslations] = useState<Translation[]>([]);
+  const [languages, setLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [translationToDelete, setTranslationToDelete] =
     useState<Translation | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    getLanguages().then(setLanguages).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const fetchTranslations = async () => {
@@ -52,6 +63,18 @@ export function TranslationsCard({
     fetchTranslations();
   }, [refreshKey]);
 
+  const headers = useMemo(() => {
+    const base = [
+      { label: "Key", className: "w-40" },
+      { label: "Default", className: "w-40" },
+    ];
+    const langHeaders = languages.map((lang) => ({
+      label: lang.code.toUpperCase(),
+      className: "w-32",
+    }));
+    return [...base, ...langHeaders, { label: "Actions", className: "w-28" }];
+  }, [languages]);
+
   const handleDeleteClick = (row: Translation) => {
     if (!row.key) return;
     setTranslationToDelete(row);
@@ -66,8 +89,9 @@ export function TranslationsCard({
       await deleteTranslation(translationToDelete.key);
       toast.success("Translation deleted.");
 
-      const fresh = await getTranslations();
-      setTranslations(fresh);
+      setTranslations((prev) =>
+        prev.filter((t) => t.key !== translationToDelete.key)
+      );
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to delete translation."
@@ -87,12 +111,7 @@ export function TranslationsCard({
       const values = [
         t.key,
         t.default,
-        t.en,
-        t.es,
-        t.fr,
-        t.de,
-        t.pt,
-        t.zh,
+        ...Object.values(t.translations),
       ]
         .filter(Boolean)
         .map((v) => String(v).toLowerCase());
@@ -101,18 +120,6 @@ export function TranslationsCard({
     });
   }, [translations, searchQuery]);
 
-  const headers = [
-    { label: "Key", className: "w-40" },
-    { label: "Default", className: "w-40" },
-    { label: "EN", className: "w-32" },
-    { label: "ES", className: "w-32" },
-    { label: "FR", className: "w-32" },
-    { label: "DE", className: "w-32" },
-    { label: "PT", className: "w-32" },
-    { label: "ZH", className: "w-32" },
-    { label: "Actions", className: "w-28" },
-  ];
-
   const renderRow = (row: Translation) => {
     const cellClass =
       "max-w-[140px] truncate whitespace-nowrap overflow-hidden text-ellipsis align-middle";
@@ -120,31 +127,21 @@ export function TranslationsCard({
       "max-w-[200px] truncate whitespace-nowrap overflow-hidden text-ellipsis align-middle";
 
     return (
-      <TableRow key={row.id || row.key || Math.random().toString()}>
+      <TableRow key={row.id || row.key}>
         <TableCell className={cellClass} title={row.key}>
           {row.key}
         </TableCell>
         <TableCell className={longCellClass} title={row.default ?? ""}>
           {row.default ?? ""}
         </TableCell>
-        <TableCell className={cellClass} title={row.en ?? ""}>
-          {row.en ?? ""}
-        </TableCell>
-        <TableCell className={cellClass} title={row.es ?? ""}>
-          {row.es ?? ""}
-        </TableCell>
-        <TableCell className={cellClass} title={row.fr ?? ""}>
-          {row.fr ?? ""}
-        </TableCell>
-        <TableCell className={cellClass} title={row.de ?? ""}>
-          {row.de ?? ""}
-        </TableCell>
-        <TableCell className={cellClass} title={row.pt ?? ""}>
-          {row.pt ?? ""}
-        </TableCell>
-        <TableCell className={cellClass} title={row.zh ?? ""}>
-          {row.zh ?? ""}
-        </TableCell>
+        {languages.map((lang) => {
+          const value = row.translations[lang.code] ?? "";
+          return (
+            <TableCell key={lang.id} className={cellClass} title={value}>
+              {value}
+            </TableCell>
+          );
+        })}
         <TableCell>
           <div className="flex items-center gap-1">
             <Button
