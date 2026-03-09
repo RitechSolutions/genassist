@@ -18,8 +18,10 @@ def get_agent_cors_origins(agent_security_settings) -> list[str]:
     default_origins = [
         "http://localhost:8080",
         "http://localhost:3000",
+        "http://localhost:8022",  # plugin-js example widget
         "http://127.0.0.1:8080",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:8022",
     ]
 
     # Start with default origins
