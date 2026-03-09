@@ -1,7 +1,7 @@
 """translation_support
 
 Revision ID: bbf0dbf460f4
-Revises: 410a77facee8
+Revises: f3c9e2b7a1d4
 Create Date: 2026-03-04 16:01:25.274570
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "bbf0dbf460f4"
-down_revision: Union[str, None] = "410a77facee8"
+down_revision: Union[str, None] = "f3c9e2b7a1d4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -4056,6 +4056,35 @@
         }
       }
     },
+    "/api/conversations/in-progress/agent-info": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Get Agent Info",
+        "description": "Return agent metadata needed before a conversation starts (e.g. supported languages).",
+        "operationId": "get_agent_info_api_conversations_in_progress_agent_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/conversations/{conversation_id}": {
       "get": {
         "tags": [
@@ -15198,6 +15227,45 @@
             "title": "Welcome Title",
             "description": "Welcome title displayed when starting a conversation with an agent."
           },
+          "input_disclaimer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer",
+            "description": "Disclaimer text shown below the chat input (e.g. 'Agent can make mistakes.')."
+          },
+          "input_disclaimer_link_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer Link Url",
+            "description": "URL for the disclaimer link (e.g. terms or info page)."
+          },
+          "input_disclaimer_link_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer Link Label",
+            "description": "Label for the disclaimer link (e.g. 'Check important info.')."
+          },
           "possible_queries": {
             "items": {
               "type": "string"
@@ -15506,6 +15574,45 @@
             ],
             "title": "Welcome Title",
             "description": "Welcome title displayed when starting a conversation with an agent."
+          },
+          "input_disclaimer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer",
+            "description": "Disclaimer text shown below the chat input (e.g. 'Agent can make mistakes.')."
+          },
+          "input_disclaimer_link_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer Link Url",
+            "description": "URL for the disclaimer link (e.g. terms or info page)."
+          },
+          "input_disclaimer_link_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer Link Label",
+            "description": "Label for the disclaimer link (e.g. 'Check important info.')."
           },
           "possible_queries": {
             "items": {
@@ -16335,6 +16442,39 @@
               }
             ],
             "title": "Welcome Title"
+          },
+          "input_disclaimer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer"
+          },
+          "input_disclaimer_link_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer Link Url"
+          },
+          "input_disclaimer_link_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer Link Label"
           },
           "possible_queries": {
             "anyOf": [
