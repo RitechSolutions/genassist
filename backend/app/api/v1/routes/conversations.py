@@ -697,7 +697,7 @@ async def websocket_endpoint(
 @router.websocket("/ws/dashboard/list")
 async def websocket_dashboard_endpoint(
     websocket: WebSocket,
-    principal: SocketPrincipal = socket_auth([P.Dashboard.READ]),
+    principal: SocketPrincipal = socket_auth([P.Conversation.READ_IN_PROGRESS]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
     socket_connection_manager: SocketConnectionManager = Injected(

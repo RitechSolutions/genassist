@@ -183,16 +183,12 @@ async def clear_conversation_memory_cache(conversation_id: UUID) -> None:
     tenant_prefix = f"tenant:{tenant_id}:" if tenant_id else ""
     conv_str = str(conversation_id)
 
-    keys = [
-        f"{tenant_prefix}:conversation:{conv_str}:info",
-        f"{tenant_prefix}:conversation:{conv_str}:messages",
-        f"{tenant_prefix}:conversation:{conv_str}:metadata",
-        f"{tenant_prefix}:conversation:{conv_str}:stateful",
-    ]
+    pattern = f"{tenant_prefix}:conversation:{conv_str}:*"
 
     try:
         redis = injector.get(RedisString)
-        deleted = await redis.delete(*keys)
+        keys = [key async for key in redis.scan_iter(pattern)]
+        deleted = await redis.delete(*keys) if keys else 0
         logger.debug(f"Cleared {deleted} conversation memory keys for {conversation_id}")
     except Exception as e:
         logger.error(f"Failed to clear conversation memory cache for {conversation_id}: {e}")
