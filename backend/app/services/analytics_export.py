@@ -688,6 +688,14 @@ MEDIA_TYPES = {
 
 EXTENSIONS = {"csv": "csv", "xlsx": "xlsx", "pdf": "pdf"}
 
+VALID_FORMATS = frozenset(MEDIA_TYPES.keys())
+
+
+async def get_agent_names(repo) -> dict[str, str]:
+    """Build {agent_id: agent_name} lookup from the agent repository."""
+    agents = await repo.get_all_full()
+    return {str(a.id): a.name for a in agents}
+
 
 def export_agent_stats(
     fmt: str,

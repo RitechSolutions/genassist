@@ -16,20 +16,13 @@ from app.schemas.analytics import (
     NodeDailyStatsListResponse,
     NodeTypeBreakdownResponse,
 )
-from app.services.analytics_export import EXTENSIONS, export_agent_stats, export_node_stats
+from app.services.analytics_export import EXTENSIONS, VALID_FORMATS, export_agent_stats, export_node_stats, get_agent_names
 from app.services.analytics_read import AnalyticsReadService
 from app.services.audio import AudioService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_VALID_FORMATS = {"csv", "xlsx", "pdf"}
-
-
-async def _get_agent_names(repo: AgentRepository) -> dict[str, str]:
-    agents = await repo.get_all_full()
-    return {str(a.id): a.name for a in agents}
 
 
 @router.get(
@@ -88,12 +81,12 @@ async def export_agent_performance(
     service: AnalyticsReadService = Injected(AnalyticsReadService),
     agent_repo: AgentRepository = Injected(AgentRepository),
 ) -> StreamingResponse:
-    if fmt not in _VALID_FORMATS:
-        raise HTTPException(status_code=400, detail=f"format must be one of: {', '.join(sorted(_VALID_FORMATS))}")
+    if fmt not in VALID_FORMATS:
+        raise HTTPException(status_code=400, detail=f"format must be one of: {', '.join(sorted(VALID_FORMATS))}")
 
     try:
         summary, daily = await _fetch_agent_data(service, agent_id, from_date, to_date)
-        agent_names = await _get_agent_names(agent_repo)
+        agent_names = await get_agent_names(agent_repo)
 
         node_breakdown = None
         if agent_id is not None:
@@ -155,14 +148,14 @@ async def export_node_analytics(
     service: AnalyticsReadService = Injected(AnalyticsReadService),
     agent_repo: AgentRepository = Injected(AgentRepository),
 ) -> StreamingResponse:
-    if fmt not in _VALID_FORMATS:
-        raise HTTPException(status_code=400, detail=f"format must be one of: {', '.join(sorted(_VALID_FORMATS))}")
+    if fmt not in VALID_FORMATS:
+        raise HTTPException(status_code=400, detail=f"format must be one of: {', '.join(sorted(VALID_FORMATS))}")
 
     try:
         daily = await service.get_node_daily_stats(
             agent_id=agent_id, node_type=node_type, from_date=from_date, to_date=to_date
         )
-        agent_names = await _get_agent_names(agent_repo)
+        agent_names = await get_agent_names(agent_repo)
 
         content, media_type = export_node_stats(
             fmt=fmt,

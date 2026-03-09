@@ -38,11 +38,9 @@ class AnalyticsAggregationService:
 
         logger.info(f"Aggregating analytics: since={since.isoformat()} until={now.isoformat()}")
 
-        logs = await self.repo.get_response_logs_since(since, now)
-        logger.info(f"Processing {len(logs)} agent response logs")
-
-        if not logs:
-            return {"agent_stats_upserted": 0, "node_stats_upserted": 0}
+        BATCH_SIZE = 1000
+        offset = 0
+        total_processed = 0
 
         # Accumulators keyed by (agent_id, stat_date)
         agent_buckets: dict[tuple, dict] = defaultdict(
@@ -72,109 +70,126 @@ class AnalyticsAggregationService:
             }
         )
 
-        for log in logs:
-            try:
-                payload = json.loads(log.raw_response)
-            except (json.JSONDecodeError, TypeError):
-                logger.warning(f"Could not parse raw_response for log id={log.id}")
-                continue
+        while True:
+            logs = await self.repo.get_response_logs_since(since, now, limit=BATCH_SIZE, offset=offset)
+            if not logs:
+                break
 
-            agent_id_raw = payload.get("agent_id")
-            if not agent_id_raw:
-                continue
+            logger.info(f"Processing batch of {len(logs)} logs (offset={offset})")
 
-            try:
-                agent_id = UUID(str(agent_id_raw))
-            except (ValueError, AttributeError):
-                continue
-
-            stat_date = log.logged_at.date()
-            agent_key = (agent_id, stat_date)
-            ab = agent_buckets[agent_key]
-
-            # Execution status
-            status = (payload.get("status") or "").lower()
-            ab["execution_count"] += 1
-            if status in ("success", "completed"):
-                ab["success_count"] += 1
-            else:
-                ab["error_count"] += 1
-
-            # Conversation tracking + thumbs (deduplicated by conversation_id)
-            conv_id = log.conversation_id
-            if conv_id:
-                conv_id_str = str(conv_id)
-                ab["conversation_ids"].add(conv_id_str)
-                if log.conversation is not None:
-                    conv_status = (log.conversation.status or "").lower()
-                    if conv_status == "finalized":
-                        ab["finalized_conversation_ids"].add(conv_id_str)
-                    else:
-                        ab["in_progress_conversation_ids"].add(conv_id_str)
-                    if conv_id_str not in ab["thumbs_data"]:
-                        ab["thumbs_data"][conv_id_str] = (
-                            log.conversation.thumbs_up_count or 0,
-                            log.conversation.thumbs_down_count or 0,
-                        )
-
-            # Response timing — camelCase keys from row_agent_response.performance_metrics
-            row_response = payload.get("row_agent_response") or {}
-            perf = row_response.get("performance_metrics") or row_response.get("performanceMetrics") or {}
-            total_ms = perf.get("totalExecutionTime") or perf.get("total_execution_time_ms")
-            if total_ms is not None:
+            for log in logs:
                 try:
-                    ab["response_ms_values"].append(float(total_ms))
-                except (TypeError, ValueError):
-                    pass
-
-            # RAG used — top-level boolean field
-            if payload.get("rag_used"):
-                ab["rag_used_count"] += 1
-
-            # Node-level stats — nodeExecutionStatus is a dict keyed by node UUID
-            state = row_response.get("state") or {}
-            node_statuses_raw = state.get("nodeExecutionStatus") or payload.get("nodeExecutionStatus") or {}
-
-            # Support both dict (keyed by UUID) and list formats
-            if isinstance(node_statuses_raw, dict):
-                node_list = list(node_statuses_raw.values())
-            else:
-                node_list = node_statuses_raw
-
-            for node in node_list:
-                if not isinstance(node, dict):
+                    payload = json.loads(log.raw_response)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Could not parse raw_response for log id={log.id}")
                     continue
 
-                ntype = node.get("type") or node.get("node_type") or ""
-                nstatus = (node.get("status") or "").lower()
-                n_ms = node.get("time_taken") or node.get("execution_time_ms")
+                agent_id_raw = payload.get("agent_id")
+                if not agent_id_raw:
+                    continue
 
-                ab["total_nodes_executed"] += 1
+                try:
+                    agent_id = UUID(str(agent_id_raw))
+                except (ValueError, AttributeError):
+                    continue
 
-                node_key = (agent_id, ntype, stat_date)
-                nb = node_buckets[node_key]
-                nb["execution_count"] += 1
+                stat_date = log.logged_at.date()
+                agent_key = (agent_id, stat_date)
+                ab = agent_buckets[agent_key]
 
-                if nstatus in ("success", "completed"):
-                    nb["success_count"] += 1
+                # Execution status
+                status = (payload.get("status") or "").lower()
+                ab["execution_count"] += 1
+                if status in ("success", "completed"):
+                    ab["success_count"] += 1
                 else:
-                    nb["failure_count"] += 1
+                    ab["error_count"] += 1
 
-                if n_ms is not None:
+                # Conversation tracking + thumbs (deduplicated by conversation_id)
+                conv_id = log.conversation_id
+                if conv_id:
+                    conv_id_str = str(conv_id)
+                    ab["conversation_ids"].add(conv_id_str)
+                    if log.conversation is not None:
+                        conv_status = (log.conversation.status or "").lower()
+                        if conv_status == "finalized":
+                            ab["finalized_conversation_ids"].add(conv_id_str)
+                        else:
+                            ab["in_progress_conversation_ids"].add(conv_id_str)
+                        if conv_id_str not in ab["thumbs_data"]:
+                            ab["thumbs_data"][conv_id_str] = (
+                                log.conversation.thumbs_up_count or 0,
+                                log.conversation.thumbs_down_count or 0,
+                            )
+
+                # Response timing — camelCase keys from row_agent_response.performance_metrics
+                row_response = payload.get("row_agent_response") or {}
+                perf = row_response.get("performance_metrics") or row_response.get("performanceMetrics") or {}
+                total_ms = perf.get("totalExecutionTime") or perf.get("total_execution_time_ms")
+                if total_ms is not None:
                     try:
-                        nb["execution_ms_values"].append(float(n_ms))
+                        ab["response_ms_values"].append(float(total_ms))
                     except (TypeError, ValueError):
                         pass
 
-            # Node success rate for this log
-            if node_list:
-                total_nodes = len(node_list)
-                success_nodes = sum(
-                    1
-                    for n in node_list
-                    if isinstance(n, dict) and (n.get("status") or "").lower() in ("success", "completed")
-                )
-                ab["node_success_rates"].append(success_nodes / total_nodes)
+                # RAG used — top-level boolean field
+                if payload.get("rag_used"):
+                    ab["rag_used_count"] += 1
+
+                # Node-level stats — nodeExecutionStatus is a dict keyed by node UUID
+                state = row_response.get("state") or {}
+                node_statuses_raw = state.get("nodeExecutionStatus") or payload.get("nodeExecutionStatus") or {}
+
+                # Support both dict (keyed by UUID) and list formats
+                if isinstance(node_statuses_raw, dict):
+                    node_list = list(node_statuses_raw.values())
+                else:
+                    node_list = node_statuses_raw
+
+                for node in node_list:
+                    if not isinstance(node, dict):
+                        continue
+
+                    ntype = node.get("type") or node.get("node_type") or ""
+                    nstatus = (node.get("status") or "").lower()
+                    n_ms = node.get("time_taken") or node.get("execution_time_ms")
+
+                    ab["total_nodes_executed"] += 1
+
+                    node_key = (agent_id, ntype, stat_date)
+                    nb = node_buckets[node_key]
+                    nb["execution_count"] += 1
+
+                    if nstatus in ("success", "completed"):
+                        nb["success_count"] += 1
+                    else:
+                        nb["failure_count"] += 1
+
+                    if n_ms is not None:
+                        try:
+                            nb["execution_ms_values"].append(float(n_ms))
+                        except (TypeError, ValueError):
+                            pass
+
+                # Node success rate for this log
+                if node_list:
+                    total_nodes = len(node_list)
+                    success_nodes = sum(
+                        1
+                        for n in node_list
+                        if isinstance(n, dict) and (n.get("status") or "").lower() in ("success", "completed")
+                    )
+                    ab["node_success_rates"].append(success_nodes / total_nodes)
+
+            total_processed += len(logs)
+            if len(logs) < BATCH_SIZE:
+                break
+            offset += BATCH_SIZE
+
+        logger.info(f"Processed {total_processed} total agent response logs")
+
+        if total_processed == 0:
+            return {"agent_stats_upserted": 0, "node_stats_upserted": 0}
 
         # Build agent stats rows
         agent_stats = []

@@ -390,10 +390,11 @@ def create_celery():
         }
 
     # Aggregate agent analytics twice daily (2 AM + 2 PM UTC)
-    beat_schedule["aggregate-agent-analytics"] = {
-        "task": "app.tasks.analytics_aggregation_tasks.aggregate_agent_analytics",
-        "schedule": crontab(minute="0", hour="2,14"),
-        "options": {"expires": 7200},  # Task expires after 2 hours
-    }
+    if settings.CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK:
+        beat_schedule["aggregate-agent-analytics"] = {
+            "task": "app.tasks.analytics_aggregation_tasks.aggregate_agent_analytics",
+            "schedule": crontab(minute="0", hour="2,14"),
+            "options": {"expires": 7200},  # Task expires after 2 hours
+        }
 
     return celery_app

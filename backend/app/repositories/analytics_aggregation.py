@@ -27,9 +27,9 @@ class AnalyticsAggregationRepository:
         return result.scalar_one_or_none()
 
     async def get_response_logs_since(
-        self, since: datetime, until: datetime
+        self, since: datetime, until: datetime, *, limit: int = 1000, offset: int = 0
     ) -> list[AgentResponseLogModel]:
-        """Fetch agent response logs within [since, until] that are not soft-deleted."""
+        """Fetch a batch of agent response logs within [since, until] that are not soft-deleted."""
         stmt = (
             select(AgentResponseLogModel)
             .where(
@@ -38,6 +38,8 @@ class AnalyticsAggregationRepository:
                 AgentResponseLogModel.is_deleted == 0,
             )
             .order_by(AgentResponseLogModel.logged_at)
+            .limit(limit)
+            .offset(offset)
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
