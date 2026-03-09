@@ -10,6 +10,44 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task
+def backfill_missing_conversation_analyses():
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(backfill_missing_conversation_analyses_with_scope())
+
+
+async def backfill_missing_conversation_analyses_with_scope():
+    from app.tasks.base import run_task_with_tenant_support
+    return await run_task_with_tenant_support(
+        backfill_missing_conversation_analyses_async,
+        "backfill missing conversation analyses",
+    )
+
+
+async def backfill_missing_conversation_analyses_async():
+    """Re-run analysis for finalized conversations that have no analysis entry."""
+    from app.repositories.conversations import ConversationRepository
+
+    conversation_repo = injector.get(ConversationRepository)
+    conversations = await conversation_repo.get_finalized_without_analysis()
+    if not conversations:
+        return None
+
+    conversation_srv = injector.get(ConversationService)
+    success_count = 0
+    failed_count = 0
+    for conv in conversations:
+        try:
+            await conversation_srv.re_analyze_conversation(conv.id)
+            success_count += 1
+            logger.info(f"Backfilled analysis for conversation {conv.id}")
+        except Exception as e:
+            failed_count += 1
+            logger.error(f"Failed to backfill analysis for conversation {conv.id}: {e}")
+
+    return {"backfilled": success_count, "failed": failed_count}
+
+
+@shared_task
 def cleanup_stale_conversations():
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(cleanup_stale_conversations_async_with_scope())
