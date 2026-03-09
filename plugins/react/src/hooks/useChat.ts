@@ -634,9 +634,7 @@ export const useChat = ({
       setWelcomeTitle(null);
       setWelcomeImageUrl(null);
       setWelcomeMessage(null);
-      setInputDisclaimer(null);
-      setInputDisclaimerLinkUrl(null);
-      setInputDisclaimerLinkLabel(null);
+      setInputDisclaimerHtml(null);
       setThinkingPhrases([]);
       setThinkingDelayMs(1000);
       lastServerCreateTimeRef.current = 0;
