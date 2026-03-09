@@ -1,21 +1,23 @@
 import { useState } from "react";
+import { subDays } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
 import { AnalyticsMetricsSection } from "../components/AnalyticsMetricsSection";
+import { AnalyticsFilters } from "../components/AnalyticsFilters";
 import { useAnalyticsData } from "../hooks/useAnalyticsData";
+import { useAgentsList } from "../hooks/useAgentsList";
 
 const AnalyticsPage = () => {
-  const [timeFrame, setTimeFrame] = useState("7days");
-  const { metrics, loading, error } = useAnalyticsData();
   const isMobile = useIsMobile();
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: subDays(new Date(), 7),
+    to: new Date(),
+  });
+  const [agentFilter, setAgentFilter] = useState("all");
+  const { agents } = useAgentsList();
+  const { metrics, loading, refreshing, error } = useAnalyticsData(dateRange, agentFilter);
 
   return (
     <SidebarProvider>
@@ -27,30 +29,24 @@ const AnalyticsPage = () => {
             <div className="max-w-7xl mx-auto">
               <header className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                  <h1 className="text-2xl sm:text-3xl font-bold mb-1 sm:mb-2 animate-fade-down">Analytics</h1>
-                  <p className="text-sm sm:text-base text-muted-foreground animate-fade-up">Track and analyze your performance metrics</p>
+                  <h1 className="text-2xl sm:text-3xl font-bold mb-1 sm:mb-2 animate-fade-down">AI Insights</h1>
+                  <p className="text-sm sm:text-base text-muted-foreground animate-fade-up">AI-generated metrics from conversation analysis</p>
                 </div>
-                <Select 
-                  defaultValue="7days" 
-                  onValueChange={setTimeFrame}
-                >
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder="Select time period" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="7days">Last 7 Days</SelectItem>
-                    <SelectItem value="30days">Last 30 Days</SelectItem>
-                    <SelectItem value="6months">Last 6 Months</SelectItem>
-                    <SelectItem value="12months">Last 12 Months</SelectItem>
-                  </SelectContent>
-                </Select>
+                <AnalyticsFilters
+                  agents={agents}
+                  agentFilter={agentFilter}
+                  onAgentFilterChange={setAgentFilter}
+                  dateRange={dateRange}
+                  onDateRangeChange={setDateRange}
+                />
               </header>
 
               <AnalyticsMetricsSection
-                timeFrame={timeFrame}
+                dateRange={dateRange}
+                agentId={agentFilter}
                 metrics={metrics}
                 loading={loading}
+                refreshing={refreshing}
                 error={error}
               />
             </div>
@@ -61,4 +57,4 @@ const AnalyticsPage = () => {
   );
 };
 
-export default AnalyticsPage; 
+export default AnalyticsPage;

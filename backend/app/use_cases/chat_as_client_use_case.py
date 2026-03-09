@@ -20,6 +20,7 @@ from app.db.models.conversation import ConversationModel
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
 from app.services.agent_response_log import AgentResponseLogService
+from app.services.analytics_realtime import update_stats_incrementally
 from app.db.base import generate_sequential_uuid
 from app.services.file_manager import FileManagerService
 import logging
@@ -181,6 +182,10 @@ async def process_conversation_update_with_agent(
                     conversation_id=updated_conversation.id,
                     transcript_message_id=last_message.id,
                     agent_response=agent_response,
+                )
+                # Fire incremental analytics update in background
+                _ = asyncio.create_task(
+                    update_stats_incrementally(agent_response)
                 )
         except Exception as e:
             logger.warning(f"Failed to persist AgentResponseLog after update: {e}")

@@ -64,6 +64,10 @@ from redis.asyncio import Redis
 from app.modules.data.manager import AgentRAGServiceManager
 from app.repositories.file_manager import FileManagerRepository
 from app.services.file_manager import FileManagerService
+from app.repositories.analytics_aggregation import AnalyticsAggregationRepository
+from app.repositories.analytics_read import AnalyticsReadRepository
+from app.services.analytics_aggregation import AnalyticsAggregationService
+from app.services.analytics_read import AnalyticsReadService
 # Multi-tenant session manager
 from app.core.tenant_scope import tenant_scope
 from app.db.multi_tenant_session import multi_tenant_manager
@@ -298,3 +302,9 @@ class Dependencies(Module):
         # File Manager services
         binder.bind(FileManagerRepository, scope=request_scope)
         binder.bind(FileManagerService, scope=request_scope)
+
+        # Analytics services
+        binder.bind(AnalyticsAggregationRepository, scope=request_scope)
+        binder.bind(AnalyticsAggregationService, scope=request_scope)
+        binder.bind(AnalyticsReadRepository, scope=request_scope)
+        binder.bind(AnalyticsReadService, scope=request_scope)

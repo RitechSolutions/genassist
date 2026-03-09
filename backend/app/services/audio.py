@@ -3,8 +3,7 @@ import json
 import shutil
 import uuid
 from pathlib import Path
-from fastapi import UploadFile, Depends
-from fastapi_injector import Injected
+from fastapi import UploadFile
 from injector import inject
 
 from app.core.config.settings import settings
@@ -96,8 +95,21 @@ class AudioService:
         # Ask GPT the question
         return self.gpt_question_answerer_service.answer_question(transcript_json, question)
 
-    async def fetch_and_calculate_metrics(self):
-        return await self.recording_repo.get_metrics()
+    async def fetch_and_calculate_metrics(
+        self,
+        from_date: datetime.datetime | None = None,
+        to_date: datetime.datetime | None = None,
+        agent_id: uuid.UUID | None = None,
+    ):
+        return await self.recording_repo.get_metrics(from_date=from_date, to_date=to_date, agent_id=agent_id)
+
+    async def fetch_metrics_per_day(
+        self,
+        from_date: datetime.datetime | None = None,
+        to_date: datetime.datetime | None = None,
+        agent_id: uuid.UUID | None = None,
+    ):
+        return await self.recording_repo.get_metrics_per_day(from_date=from_date, to_date=to_date, agent_id=agent_id)
 
     async def _separate_speakers_gpt(self, transcription_object, llm_analyst: LlmAnalystModel)-> list[dict]:
         transcript_data = extract_transcript_from_whisper_model(transcription_object)
