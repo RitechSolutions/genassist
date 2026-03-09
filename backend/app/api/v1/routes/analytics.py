@@ -1,6 +1,6 @@
 import io
 import logging
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +18,7 @@ from app.schemas.analytics import (
 )
 from app.services.analytics_export import EXTENSIONS, export_agent_stats, export_node_stats
 from app.services.analytics_read import AnalyticsReadService
+from app.services.audio import AudioService
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,53 @@ async def get_node_type_breakdown(
     return await service.get_node_type_breakdown(
         agent_id=agent_id, from_date=from_date, to_date=to_date
     )
+
+
+@router.get(
+    "/metrics",
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Dashboard.READ)),
+    ],
+    summary="Get aggregated conversation KPI metrics",
+)
+async def get_metrics(
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
+    agent_id: UUID | None = None,
+    service: AudioService = Injected(AudioService),
+):
+    try:
+        return await service.fetch_and_calculate_metrics(
+            from_date=from_date, to_date=to_date, agent_id=agent_id
+        )
+    except Exception as e:
+        logger.error(f"Error fetching metrics: {e}")
+        return {"error": "Error fetching metrics"}
+
+
+@router.get(
+    "/metrics/daily",
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Dashboard.READ)),
+    ],
+    summary="Get daily KPI metric averages",
+)
+async def get_metrics_daily(
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
+    agent_id: UUID | None = None,
+    service: AudioService = Injected(AudioService),
+):
+    try:
+        items = await service.fetch_metrics_per_day(
+            from_date=from_date, to_date=to_date, agent_id=agent_id
+        )
+        return {"items": items}
+    except Exception as e:
+        logger.error(f"Error fetching daily metrics: {e}")
+        return {"items": []}
 
 
 def _build_streaming_response(content: bytes, media_type: str, filename_base: str, fmt: str) -> StreamingResponse:

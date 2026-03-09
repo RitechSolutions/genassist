@@ -1,14 +1,10 @@
 import { useEffect, useState, useMemo } from "react";
-import { format } from "date-fns";
-import { CalendarIcon } from "lucide-react";
+import { format, subDays } from "date-fns";
 import { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Card, CardContent } from "@/components/card";
-import { Button } from "@/components/button";
-import { Calendar } from "@/components/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
 import {
   Select,
   SelectContent,
@@ -19,32 +15,39 @@ import {
 import { Info } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { NodeBreakdownChart } from "../components/reports/NodeBreakdownChart";
+import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { useAgentsList } from "../hooks/useAgentsList";
 import { fetchNodeDailyStats } from "@/services/analyticsReports";
 import type { NodeDailyStatsItem } from "@/interfaces/analyticsReports.interface";
-import type { AgentListItem } from "@/interfaces/ai-agent.interface";
-import { getAgentConfigsList } from "@/services/api";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
 import { ExportButton } from "@/components/ui/ExportButton";
 
 
+interface AgentNodeBreakdown {
+  id: string;
+  agent_id: string;
+  node_type: string;
+  execution_count: number;
+  success_count: number;
+  failure_count: number;
+  avg_execution_ms: number | null;
+}
+
 const NodeAnalyticsPage = () => {
   const isMobile = useIsMobile();
 
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: subDays(new Date(), 7),
+    to: new Date(),
+  });
   const [agentFilter, setAgentFilter] = useState("all");
   const [nodeTypeFilter, setNodeTypeFilter] = useState("all");
 
-  const [agents, setAgents] = useState<AgentListItem[]>([]);
+  const { agents, agentNameMap } = useAgentsList();
   const [nodeTypeOptions, setNodeTypeOptions] = useState<string[]>([]);
   const [items, setItems] = useState<NodeDailyStatsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getAgentConfigsList(1, 100)
-      .then((r) => setAgents(r.items))
-      .catch(() => {});
-  }, []);
 
   const loadData = async (
     range: DateRange | undefined,
@@ -77,21 +80,6 @@ const NodeAnalyticsPage = () => {
   useEffect(() => {
     loadData(dateRange, nodeTypeFilter, agentFilter);
   }, [dateRange, nodeTypeFilter, agentFilter]);
-
-  const agentNameMap = useMemo(
-    () => Object.fromEntries(agents.map((a) => [a.id, a.name])),
-    [agents]
-  );
-
-  interface AgentNodeBreakdown {
-    id: string;
-    agent_id: string;
-    node_type: string;
-    execution_count: number;
-    success_count: number;
-    failure_count: number;
-    avg_execution_ms: number | null;
-  }
 
   const agentBreakdown = useMemo<AgentNodeBreakdown[]>(() => {
     // Use a separate accumulator type to track weighted-average state
@@ -212,46 +200,13 @@ const NodeAnalyticsPage = () => {
                 </div>
 
                 {/* Filters */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Agent filter */}
-                  <Select value={agentFilter} onValueChange={setAgentFilter}>
-                    <SelectTrigger className="w-44">
-                      <SelectValue placeholder="All agents" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All agents</SelectItem>
-                      {agents.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          {a.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  {/* Date range */}
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="gap-2 min-w-[200px] justify-start">
-                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                        <span>{dateRange?.from
-                          ? dateRange.to
-                            ? `${format(dateRange.from, "MMM d")} – ${format(dateRange.to, "MMM d, yyyy")}`
-                            : format(dateRange.from, "MMM d, yyyy")
-                          : "Pick date range"
-                        }</span>
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="end">
-                      <Calendar
-                        mode="range"
-                        selected={dateRange}
-                        onSelect={setDateRange}
-                        numberOfMonths={2}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-
+                <AnalyticsFilters
+                  agents={agents}
+                  agentFilter={agentFilter}
+                  onAgentFilterChange={setAgentFilter}
+                  dateRange={dateRange}
+                  onDateRangeChange={setDateRange}
+                >
                   {/* Node type filter */}
                   <Select value={nodeTypeFilter} onValueChange={setNodeTypeFilter}>
                     <SelectTrigger className="w-44">
@@ -273,7 +228,7 @@ const NodeAnalyticsPage = () => {
                     filename="node-analytics"
                     disabled={loading || agentBreakdown.length === 0}
                   />
-                </div>
+                </AnalyticsFilters>
               </header>
 
               {/* Empty-data notice */}

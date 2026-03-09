@@ -1,14 +1,11 @@
 import { useEffect, useState, useMemo } from "react";
-import { format } from "date-fns";
-import { CalendarIcon, Settings2, TrendingDown, ShieldCheck } from "lucide-react";
+import { format, subDays } from "date-fns";
+import { Settings2, TrendingDown, ShieldCheck, ThumbsUp, ThumbsDown } from "lucide-react";
 import { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Card, CardContent } from "@/components/card";
-import { Button } from "@/components/button";
-import { Calendar } from "@/components/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
 import {
   Select,
   SelectContent,
@@ -21,6 +18,8 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { SummaryStatsCards } from "../components/reports/SummaryStatsCards";
 import { AgentExecutionChart } from "../components/reports/AgentExecutionChart";
 import { AgentNodeBreakdownDialog } from "../components/reports/AgentNodeBreakdownDialog";
+import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { useAgentsList } from "../hooks/useAgentsList";
 import {
   fetchAgentStatsSummary,
   fetchAgentDailyStats,
@@ -31,20 +30,37 @@ import type {
   AgentDailyStatsItem,
   NodeTypeBreakdownItem,
 } from "@/interfaces/analyticsReports.interface";
-import type { AgentListItem } from "@/interfaces/ai-agent.interface";
-import { getAgentConfigsList } from "@/services/api";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
 import { ExportButton } from "@/components/ui/ExportButton";
 
 const LS_KEY = (agentId: string) => `analytics_escalation_node_${agentId}`;
 
+interface AgentAggregated {
+  id: string;
+  agent_id: string;
+  unique_conversations: number;
+  finalized_conversations: number;
+  in_progress_conversations: number;
+  execution_count: number;
+  success_count: number;
+  error_count: number;
+  avg_response_ms: number | null;
+  total_nodes_executed: number;
+  rag_used_count: number;
+  thumbs_up_count: number;
+  thumbs_down_count: number;
+}
+
 const AgentPerformancePage = () => {
   const isMobile = useIsMobile();
 
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: subDays(new Date(), 7),
+    to: new Date(),
+  });
   const [agentFilter, setAgentFilter] = useState("all");
 
-  const [agents, setAgents] = useState<AgentListItem[]>([]);
+  const { agents, agentNameMap } = useAgentsList();
   const [summary, setSummary] = useState<AgentStatsSummaryResponse | null>(null);
   const [items, setItems] = useState<AgentDailyStatsItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,12 +70,6 @@ const AgentPerformancePage = () => {
   // Escalation node config
   const [nodeBreakdown, setNodeBreakdown] = useState<NodeTypeBreakdownItem[]>([]);
   const [escalationNode, setEscalationNode] = useState<string>("");
-
-  useEffect(() => {
-    getAgentConfigsList(1, 100)
-      .then((r) => setAgents(r.items))
-      .catch(() => {});
-  }, []);
 
   const loadData = async (range: DateRange | undefined, agentId: string) => {
     setLoading(true);
@@ -83,8 +93,9 @@ const AgentPerformancePage = () => {
     }
   };
 
-  // Fetch node breakdown + load escalation node from localStorage when agent/range changes
   useEffect(() => {
+    loadData(dateRange, agentFilter);
+
     if (agentFilter !== "all") {
       setEscalationNode(localStorage.getItem(LS_KEY(agentFilter)) ?? "");
       fetchAgentNodeBreakdown(agentFilter, {
@@ -97,10 +108,6 @@ const AgentPerformancePage = () => {
       setEscalationNode("");
       setNodeBreakdown([]);
     }
-  }, [agentFilter, dateRange]);
-
-  useEffect(() => {
-    loadData(dateRange, agentFilter);
   }, [dateRange, agentFilter]);
 
   const handleEscalationNodeChange = (value: string) => {
@@ -124,28 +131,7 @@ const AgentPerformancePage = () => {
       : null;
   const containmentRate = escalationRate !== null ? 1 - escalationRate : null;
 
-  const agentNameMap = useMemo(
-    () => Object.fromEntries(agents.map((a) => [a.id, a.name])),
-    [agents]
-  );
-
   // When all agents shown: aggregate daily rows into one row per agent
-  interface AgentAggregated {
-    id: string;
-    agent_id: string;
-    unique_conversations: number;
-    finalized_conversations: number;
-    in_progress_conversations: number;
-    execution_count: number;
-    success_count: number;
-    error_count: number;
-    avg_response_ms: number | null;
-    total_nodes_executed: number;
-    rag_used_count: number;
-    thumbs_up_count: number;
-    thumbs_down_count: number;
-  }
-
   const aggregatedItems = useMemo<AgentAggregated[]>(() => {
     const map = new Map<string, AgentAggregated & { _totalMs: number; _msCount: number }>();
     for (const item of items) {
@@ -254,7 +240,7 @@ const AgentPerformancePage = () => {
         cell: (item: AgentAggregated) => item.rag_used_count.toLocaleString(),
       },
       {
-        header: "👍",
+        header: <ThumbsUp className="w-4 h-4 text-emerald-600" />,
         key: "thumbs_up_count",
         description: "Positive feedback given by users on responses.",
         cell: (item: AgentAggregated) => (
@@ -264,7 +250,7 @@ const AgentPerformancePage = () => {
         ),
       },
       {
-        header: "👎",
+        header: <ThumbsDown className="w-4 h-4 text-rose-500" />,
         key: "thumbs_down_count",
         description: "Negative feedback given by users on responses.",
         cell: (item: AgentAggregated) => (
@@ -310,13 +296,6 @@ const AgentPerformancePage = () => {
       ? agents.find((a) => a.id === agentFilter)?.name
       : undefined;
 
-  const dateLabel =
-    dateRange?.from && dateRange?.to
-      ? `${format(dateRange.from, "MMM d, yyyy")} – ${format(dateRange.to, "MMM d, yyyy")}`
-      : dateRange?.from
-      ? format(dateRange.from, "MMM d, yyyy")
-      : "All time";
-
   const exportParams = {
     agent_id: agentFilter !== "all" ? agentFilter : undefined,
     from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
@@ -344,60 +323,21 @@ const AgentPerformancePage = () => {
                 </div>
 
                 {/* Filters */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <Select value={agentFilter} onValueChange={setAgentFilter}>
-                    <SelectTrigger className="w-44">
-                      <SelectValue placeholder="All agents" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All agents</SelectItem>
-                      {agents.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          {a.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="gap-2 min-w-[200px] justify-start">
-                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                        <span>{dateRange?.from
-                          ? dateRange.to
-                            ? `${format(dateRange.from, "MMM d")} – ${format(dateRange.to, "MMM d, yyyy")}`
-                            : format(dateRange.from, "MMM d, yyyy")
-                          : "Pick date range"
-                        }</span>
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="end">
-                      <Calendar
-                        mode="range"
-                        selected={dateRange}
-                        onSelect={setDateRange}
-                        numberOfMonths={2}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-
+                <AnalyticsFilters
+                  agents={agents}
+                  agentFilter={agentFilter}
+                  onAgentFilterChange={setAgentFilter}
+                  dateRange={dateRange}
+                  onDateRangeChange={setDateRange}
+                >
                   <ExportButton
                     endpoint="/analytics/agents/export"
                     params={exportParams}
                     filename="agent-performance"
                     disabled={loading || items.length === 0}
                   />
-                </div>
+                </AnalyticsFilters>
               </header>
-
-              {/* Active filters label */}
-              {(dateRange || agentFilter !== "all") && (
-                <p className="text-xs text-muted-foreground -mt-2">
-                  Showing: {dateLabel}
-                  {selectedAgentName ? ` · ${selectedAgentName}` : ""}
-                </p>
-              )}
 
               {/* Empty-data notice */}
               {!loading && items.length === 0 && !error && (

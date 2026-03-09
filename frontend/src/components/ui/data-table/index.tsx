@@ -12,7 +12,7 @@ import { Loader2, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { PaginationBar } from "@/components/PaginationBar";
 import { getPaginationMeta } from "@/helpers/pagination";
 export interface Column<T> {
-  header: string;
+  header: React.ReactNode;
   key: string;
   cell: (item: T, index: number) => React.ReactNode;
   description?: string;

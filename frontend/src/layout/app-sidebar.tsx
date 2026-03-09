@@ -85,7 +85,7 @@ const mainMenuItems: MenuItem[] = [
     permissionsRequired: ["read:dashboard"],
     children: [
       {
-        title: "Overview",
+        title: "AI Insights",
         url: "/analytics",
         permissionsRequired: ["read:dashboard"],
       },

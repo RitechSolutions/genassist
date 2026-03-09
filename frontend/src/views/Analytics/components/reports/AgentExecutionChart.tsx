@@ -46,7 +46,11 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
   // Pivot: { date, [agentId]: successCount }
   const pivot = new Map<string, Record<string, number>>();
   for (const date of dates) {
-    pivot.set(date, {});
+    const row: Record<string, number> = {};
+    for (const agentId of agentIds) {
+      row[agentId] = 0;
+    }
+    pivot.set(date, row);
   }
   for (const item of items) {
     pivot.get(item.stat_date)![item.agent_id] = item.success_count;
