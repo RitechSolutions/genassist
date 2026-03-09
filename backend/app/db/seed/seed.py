@@ -87,6 +87,7 @@ async def seed_data(session: AsyncSession, injector: Injector):
     metrics_permissions = create_crud_permissions("metrics")
     recording_permissions = create_crud_permissions("recording")
     conversation_permissions = create_crud_permissions("conversation")
+    dashboard_permissions = create_crud_permissions("dashboard")
 
     audit_log_permissions = create_crud_permissions("audit_log")
     conversation_in_progress_permissions = create_crud_permissions(
@@ -119,7 +120,7 @@ async def seed_data(session: AsyncSession, injector: Injector):
             conversation_permissions + llm_analyst_permissions + llm_provider_permissions + operator_permissions +
             data_sources_permissions + role_permissions + audit_log_permissions +
             conversation_in_progress_permissions + metrics_permissions +
-            non_standard_crud_permissions + app_settings_permissions + feature_flag_permissions
+            non_standard_crud_permissions + app_settings_permissions + feature_flag_permissions + dashboard_permissions
     ):
         admin_role.role_permissions.append(
             RolePermissionModel(permission=permission))
@@ -155,11 +156,21 @@ async def seed_data(session: AsyncSession, injector: Injector):
             agent_role.role_permissions.append(
                 RolePermissionModel(permission=permission))
 
+    # Assign dashboard permissions to all roles
+    for permission in dashboard_permissions:
+        # add the permission to other roles as well
+        supervisor_role.role_permissions.append(
+            RolePermissionModel(permission=permission))
+        api_role.role_permissions.append(
+            RolePermissionModel(permission=permission))
+        agent_role.role_permissions.append(
+            RolePermissionModel(permission=permission))
+
     # Add all permissions and roles
     session.add_all(
         user_permissions + llm_analyst_permissions + llm_provider_permissions +
         operator_permissions + data_sources_permissions + non_standard_crud_permissions +
-        app_settings_permissions + feature_flag_permissions +
+        app_settings_permissions + feature_flag_permissions + dashboard_permissions +
         [admin_role, supervisor_role, operator_role, api_role, agent_role]
     )
 

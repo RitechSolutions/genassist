@@ -1066,7 +1066,7 @@ function App() {
       <GenAgentChat
         baseUrl={chatSettings.baseUrl}
         apiKey={chatSettings.apiKey}
-        tenant=""
+        tenant={chatSettings.tenant || undefined}
         metadata={metadata}
         theme={theme}
         useAudio={featureFlags.useAudio}

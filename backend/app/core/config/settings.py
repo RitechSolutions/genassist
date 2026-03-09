@@ -41,12 +41,32 @@ class ProjectSettings(BaseSettings):
     CELERY_REDIS_MAX_CONNECTIONS: int = (
         50  # Max connections for Celery broker & backend
     )
+
+    # Celery Beat task toggles (enable/disable periodic jobs)
+    CELERY_ENABLE_RUN_EXAMPLE_TASK: bool = True
+    CELERY_ENABLE_CLEANUP_STALE_CONVERSATIONS_TASK: bool = True
+    CELERY_BACKFILL_MISSING_CONVERSATION_ANALYSIS: bool = True
+    CELERY_ENABLE_IMPORT_S3_FILES_TASK: bool = True
+    CELERY_ENABLE_TRANSCRIBE_S3_FILES_TASK: bool = True
+    CELERY_ENABLE_ZENDESK_ANALYSIS_TASK: bool = True
+    CELERY_ENABLE_IMPORT_ZENDESK_ARTICLES_TASK: bool = True
+    CELERY_ENABLE_IMPORT_SHAREPOINT_FILES_TASK: bool = True
+    CELERY_ENABLE_TRANSCRIBE_AUDIO_FILES_FROM_SMB_TASK: bool = True
+    CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK: bool = True
+    CELERY_ENABLE_CHECK_SCHEDULED_PIPELINE_RUNS_TASK: bool = True
+    CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
+    CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
+
     # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
     # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
     CELERY_WORKER_POOL: str = "solo"
 
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
+
+    # Number of latest messages used for in-progress hostility scoring.
+    # If the conversation has fewer messages than this, all messages are used.
+    HOSTILITY_SCORE_MESSAGE_COUNT: int = 20
 
     FERNET_KEY: Optional[str]
 

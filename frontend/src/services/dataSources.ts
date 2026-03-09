@@ -76,6 +76,18 @@ export const getDataSourceFormSchemas =
     }
   };
 
+export const testConnection = async (
+  source_type: string,
+  connection_data: Record<string, string | number | boolean>,
+  datasource_id?: string,
+): Promise<{ success: boolean; message: string }> => {
+  const params = datasource_id ? `?datasource_id=${datasource_id}` : "";
+  return apiRequest("POST", `datasources/test-connection${params}`, {
+    source_type,
+    connection_data,
+  });
+};
+
 // Gmail OAuth specific functions
 export const getGmailClientId = async (): Promise<string> => {
   try {

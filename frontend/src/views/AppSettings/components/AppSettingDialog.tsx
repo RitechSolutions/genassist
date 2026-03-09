@@ -61,9 +61,7 @@ export function AppSettingDialog({
   const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["appSettingSchemas"],
     queryFn: () => getAppSettingsFormSchemas(),
-    refetchInterval: 5000,
     refetchOnWindowFocus: false,
-    staleTime: 3000,
   });
 
   const appSettingSchemas = data ?? {};
