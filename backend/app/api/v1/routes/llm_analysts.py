@@ -6,9 +6,15 @@ from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
 from app.schemas.llm import LlmAnalyst, LlmAnalystCreate, LlmAnalystUpdate
 from app.services.llm_analysts import LlmAnalystService
+from app.services.gpt_kpi_analyzer import AVAILABLE_ENRICHMENTS
 
 
 router = APIRouter()
+
+
+@router.get("/available-enrichments", dependencies=[Depends(auth)])
+async def get_available_enrichments():
+    return AVAILABLE_ENRICHMENTS
 
 
 @router.get("", response_model=list[LlmAnalyst], dependencies=[
