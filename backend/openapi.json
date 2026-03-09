@@ -15106,6 +15106,153 @@
         ],
         "title": "AgentCreate"
       },
+      "AgentDailyStatsItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "stat_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Stat Date"
+          },
+          "execution_count": {
+            "type": "integer",
+            "title": "Execution Count"
+          },
+          "success_count": {
+            "type": "integer",
+            "title": "Success Count"
+          },
+          "error_count": {
+            "type": "integer",
+            "title": "Error Count"
+          },
+          "avg_response_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Response Ms"
+          },
+          "min_response_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Response Ms"
+          },
+          "max_response_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Response Ms"
+          },
+          "total_nodes_executed": {
+            "type": "integer",
+            "title": "Total Nodes Executed"
+          },
+          "avg_success_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Success Rate"
+          },
+          "rag_used_count": {
+            "type": "integer",
+            "title": "Rag Used Count"
+          },
+          "unique_conversations": {
+            "type": "integer",
+            "title": "Unique Conversations"
+          },
+          "finalized_conversations": {
+            "type": "integer",
+            "title": "Finalized Conversations",
+            "default": 0
+          },
+          "in_progress_conversations": {
+            "type": "integer",
+            "title": "In Progress Conversations",
+            "default": 0
+          },
+          "thumbs_up_count": {
+            "type": "integer",
+            "title": "Thumbs Up Count",
+            "default": 0
+          },
+          "thumbs_down_count": {
+            "type": "integer",
+            "title": "Thumbs Down Count",
+            "default": 0
+          },
+          "last_aggregated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Aggregated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agent_id",
+          "stat_date",
+          "execution_count",
+          "success_count",
+          "error_count",
+          "total_nodes_executed",
+          "rag_used_count",
+          "unique_conversations",
+          "last_aggregated_at"
+        ],
+        "title": "AgentDailyStatsItem"
+      },
+      "AgentDailyStatsListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentDailyStatsItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "AgentDailyStatsListResponse"
+      },
       "AgentExecuteRequest": {
         "properties": {
           "agent_id": {
