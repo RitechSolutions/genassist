@@ -41,7 +41,7 @@ export function useWebSocketTranscript({
     getWsUrl()
       .then((wsBaseUrl) => {
         if (cancelled || !isWsEnabled) return;
-        const wsUrl = `${wsBaseUrl}/conversations/ws/${conversationId}?access_token=${token}&lang=en&${queryString}${tenantParam}`;
+        const wsUrl = `${wsBaseUrl}/ws/conversations/${conversationId}?access_token=${token}&lang=en&${queryString}${tenantParam}`;
 
         socket = new WebSocket(wsUrl);
         socketRef.current = socket;
