@@ -1,9 +1,10 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 from uuid import UUID
 
 from injector import inject
 
 from app.repositories.agent_response_log import AgentResponseLogRepository
+from app.schemas.filter import AgentResponseLogFilter
 
 
 @inject
@@ -38,4 +39,13 @@ class AgentResponseLogService:
         Get the stored agent response log for a given transcript message id.
         """
         return await self.repo.get_by_transcript_message_id(transcript_message_id)
+
+    async def get_logs_by_filter(
+        self,
+        agent_response_log_filter: AgentResponseLogFilter,
+    ) -> List:
+        """
+        Get agent response logs matching the given filter.
+        """
+        return await self.repo.get_by_filter(agent_response_log_filter)
 
