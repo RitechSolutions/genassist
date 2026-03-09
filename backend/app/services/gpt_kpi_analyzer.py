@@ -48,6 +48,8 @@ class GptKpiAnalyzer:
         last_response = ""
         user_prompt = ""
 
+        system_msg = SystemMessage(content=self._build_system_prompt(llm_analyst.prompt))
+
         for attempt in range(1, max_attempts + 1):
             try:
                 # Modify prompt on retry attempts
@@ -58,7 +60,6 @@ class GptKpiAnalyzer:
                         transcript, error_hint=last_error_msg, attempt=attempt
                     )
 
-                system_msg = SystemMessage(content=llm_analyst.prompt)
                 user_msg = HumanMessage(content=user_prompt)
 
                 response = await llm.ainvoke([system_msg, user_msg])
@@ -110,58 +111,61 @@ class GptKpiAnalyzer:
             for seg in segments
         )
 
+    def _build_system_prompt(self, base_prompt: str) -> str:
+        """Combine the tenant-configured base prompt with the fixed analysis format instructions."""
+        return f"""{base_prompt}
+
+You are a customer experience expert specializing in call center analysis.
+
+Always respond in exactly this format:
+
+**A) Title:** <one from: {ConversationTopic.as_csv()}>
+
+**B) Summary:**
+- Operator performance assessment
+- Customer satisfaction
+- Key improvement points
+
+**C) KPI Metrics, Tone, and Sentiment Analysis (JSON Format):**
+Provide the following KPI metrics, overall tone, and sentiment percentages as a JSON object:
+
+```json
+{{
+    "Response Time": (integer 0-10),
+    "Customer Satisfaction": (integer 0-10),
+    "Quality of Service": (integer 0-10),
+    "Efficiency": (integer 0-10),
+    "Resolution Rate": (integer 0-10),
+    "Operator Knowledge": (integer 0-10),
+    "Tone": "(choose one from: Hostile, Frustrated, Friendly, Polite, Neutral, Professional)",
+    "Sentiment": {{
+        "positive": (float between 0-100),
+        "neutral": (float between 0-100),
+        "negative": (float between 0-100)
+    }}
+}}
+```
+
+The JSON metrics should be integers between 0 and 10, Tone must be one of the listed values, and sentiment percentages must sum up to 100%."""
+
     def _create_user_prompt(
         self, transcript_text: str, error_hint: str = None, attempt: int = 1
     ) -> str:
-        """Create the analysis prompt for ChatGPT, optionally appending retry hints."""
+        """Create the user message for ChatGPT, optionally appending retry hints."""
         retry_instruction = ""
         if error_hint and attempt > 1:
             retry_instruction = f"""
-            **Note:** This is attempt #{attempt}. The previous attempt failed with the following error:
-            "{error_hint}"
+**Note:** This is attempt #{attempt}. The previous attempt failed with the following error:
+"{error_hint}"
 
-            Please make sure your response strictly follows the requested format and especially corrects the issue that might have caused that error.
-            """
+Please make sure your response strictly follows the requested format and especially corrects the issue that might have caused that error.
+"""
 
-        return f"""
-            You are a customer experience expert. Please analyze this call center conversation transcript and provide 
-            your response in the following format:
+        return f"""Analyze this transcript:
 
-            **A) Title:**
-            - Select the most appropriate title from the following list: {ConversationTopic.as_csv()}
+{transcript_text}
 
-            **B) Summary:**
-            - Assess the operator's performance and whether the customer was satisfied
-            - Identify key points of improvement
-
-            **C) KPI Metrics, Tone, and Sentiment Analysis (JSON Format):**
-            Provide the following KPI metrics, overall tone, and sentiment percentages as a JSON object:
-
-            ```json
-            {{
-                "Response Time": (integer 0-10),
-                "Customer Satisfaction": (integer 0-10),
-                "Quality of Service": (integer 0-10),
-                "Efficiency": (integer 0-10),
-                "Resolution Rate": (integer 0-10),
-                "Operator Knowledge": (integer 0-10),
-                "Tone": "(choose one from: Hostile, Frustrated, Friendly, Polite, Neutral, Professional)",
-                "Sentiment": {{
-                    "positive": (float between 0-100),
-                    "neutral": (float between 0-100),
-                    "negative": (float between 0-100)
-                }}
-            }}
-            ```
-
-            Transcript:
-            {transcript_text}
-
-            Remember to maintain the exact format specified above. The JSON metrics should be integers between 0 and 10, 
-            Tone must be one of the listed values, and sentiment percentages must sum up to 100%.
-
-            {retry_instruction}
-        """
+{retry_instruction}"""
 
     async def partial_hostility_analysis(
         self,
