@@ -1,6 +1,6 @@
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 class LlmProviderBase(BaseModel):
@@ -42,6 +42,7 @@ class LlmAnalystBase(BaseModel):
     llm_provider_id: UUID
     prompt: Optional[str]
     is_active: Optional[int]
+    context_enrichments: Optional[List[str]] = None
 
     model_config = ConfigDict(
         from_attributes = True
@@ -69,3 +70,4 @@ class LlmAnalystUpdate(BaseModel):
     llm_provider_id: Optional[UUID] = None
     prompt: Optional[str] = None
     is_active: Optional[int] = None
+    context_enrichments: Optional[List[str]] = None

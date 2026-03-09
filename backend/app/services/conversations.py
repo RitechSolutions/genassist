@@ -331,7 +331,7 @@ class ConversationService:
         llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
 
         gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
-            message_type_segments, llm_analyst=llm_analyst
+            message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
         )
 
         conversation_analysis = (
@@ -378,7 +378,7 @@ class ConversationService:
 
         llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
         gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
-            message_type_segments, llm_analyst=llm_analyst
+            message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
         )
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(

@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import List
+from typing import List, Optional
+from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -18,6 +19,17 @@ from app.core.utils.bi_utils import clean_gpt_json_response
 
 logger = logging.getLogger(__name__)
 
+AVAILABLE_ENRICHMENTS = [
+    {
+        "key": "zendesk_ticket_created",
+        "name": "Zendesk Ticket Status",
+        "description": (
+            "Whether a Zendesk ticket was opened during the conversation. "
+            "Use this to inform scoring, e.g. Resolution Rate: 10 if no ticket created, 0 if ticket was created."
+        ),
+    },
+]
+
 
 class GptKpiAnalyzer:
 
@@ -26,6 +38,7 @@ class GptKpiAnalyzer:
         transcript: str,
         llm_analyst: LlmAnalyst,
         max_attempts=3,
+        conversation_id: Optional[UUID] = None,
     ) -> AnalysisResult:
         """Analyze transcript using ChatGPT (LangChain) with retry on failure."""
 
@@ -49,15 +62,19 @@ class GptKpiAnalyzer:
         user_prompt = ""
 
         system_msg = SystemMessage(content=self._build_system_prompt(llm_analyst.prompt))
+        enrichment_context = await self._fetch_enrichment_context(
+            conversation_id, llm_analyst.context_enrichments or []
+        )
 
         for attempt in range(1, max_attempts + 1):
             try:
                 # Modify prompt on retry attempts
                 if attempt == 1:
-                    user_prompt = self._create_user_prompt(transcript)
+                    user_prompt = self._create_user_prompt(transcript, enrichment_context=enrichment_context)
                 else:
                     user_prompt = self._create_user_prompt(
-                        transcript, error_hint=last_error_msg, attempt=attempt
+                        transcript, enrichment_context=enrichment_context,
+                        error_hint=last_error_msg, attempt=attempt
                     )
 
                 user_msg = HumanMessage(content=user_prompt)
@@ -148,10 +165,38 @@ Provide the following KPI metrics, overall tone, and sentiment percentages as a 
 
 The JSON metrics should be integers between 0 and 10, Tone must be one of the listed values, and sentiment percentages must sum up to 100%."""
 
-    def _create_user_prompt(
-        self, transcript_text: str, error_hint: str = None, attempt: int = 1
+    async def _fetch_enrichment_context(
+        self, conversation_id: Optional[UUID], enrichment_keys: list
     ) -> str:
-        """Create the user message for ChatGPT, optionally appending retry hints."""
+        """Fetch per-conversation context for each enabled enrichment key."""
+        if not conversation_id or not enrichment_keys:
+            return ""
+
+        from app.dependencies.injector import injector
+        from app.services.agent_response_log import AgentResponseLogService
+        from app.schemas.filter import AgentResponseLogFilter
+
+        log_service = injector.get(AgentResponseLogService)
+        lines = []
+
+        if "zendesk_ticket_created" in enrichment_keys:
+            logs = await log_service.get_logs_by_filter(
+                AgentResponseLogFilter(
+                    conversation_id=conversation_id,
+                    node_type="zendeskTicketNode",
+                )
+            )
+            created = len(logs) > 0
+            lines.append(f"- Zendesk ticket created: {'Yes' if created else 'No'}")
+
+        return "\n".join(lines)
+
+    def _create_user_prompt(
+        self, transcript_text: str, enrichment_context: str = "",
+        error_hint: str = None, attempt: int = 1
+    ) -> str:
+        """Create the user message for ChatGPT, optionally prepending enrichment context and retry hints."""
+        context_block = f"Additional Context:\n{enrichment_context}\n\n" if enrichment_context else ""
         retry_instruction = ""
         if error_hint and attempt > 1:
             retry_instruction = f"""
@@ -161,7 +206,7 @@ The JSON metrics should be integers between 0 and 10, Tone must be one of the li
 Please make sure your response strictly follows the requested format and especially corrects the issue that might have caused that error.
 """
 
-        return f"""Analyze this transcript:
+        return f"""{context_block}Analyze this transcript:
 
 {transcript_text}
 
