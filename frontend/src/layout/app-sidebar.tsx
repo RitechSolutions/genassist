@@ -81,8 +81,25 @@ const mainMenuItems: MenuItem[] = [
   {
     title: "Analytics",
     icon: LineChart,
-    url: "/analytics",
-    permissionsRequired: ["read:metrics"],
+    url: "#",
+    permissionsRequired: ["read:dashboard"],
+    children: [
+      {
+        title: "AI Insights",
+        url: "/analytics",
+        permissionsRequired: ["read:dashboard"],
+      },
+      {
+        title: "Agent Performance",
+        url: "/analytics/agent-performance",
+        permissionsRequired: ["read:dashboard"],
+      },
+      {
+        title: "Node Analytics",
+        url: "/analytics/node-analytics",
+        permissionsRequired: ["read:dashboard"],
+      },
+    ],
   },
   {
     title: "Conversations",
@@ -210,6 +227,11 @@ const getInitialAdminToolsState = () => {
   return savedState ? JSON.parse(savedState) : false;
 };
 
+const getInitialAnalyticsState = () => {
+  const saved = localStorage.getItem("isAnalyticsOpen");
+  return saved ? JSON.parse(saved) : false;
+};
+
 const getInitialConversationsState = () => {
   const savedState = localStorage.getItem("isIntegrationOpen");
   return savedState ? JSON.parse(savedState) : false;
@@ -230,6 +252,7 @@ export function AppSidebar() {
     getInitialConversationsState
   );
   const [isGenAgentOpen, setIsGenAgentOpen] = useState(getInitialGenAgentState);
+  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(getInitialAnalyticsState);
   const { isEnabled } = useFeatureFlag();
 
   const location = useLocation();
@@ -280,6 +303,10 @@ export function AppSidebar() {
       [];
     if (llmChildren.some((child) => child.url === currentPath)) {
       setIsAdminToolsOpen(true);
+    }
+
+    if (currentPath.startsWith("/analytics")) {
+      setIsAnalyticsOpen(true);
     }
   }, [currentPath]);
 
@@ -343,10 +370,19 @@ export function AppSidebar() {
     });
   };
 
+  const handleToggleAnalytics = () => {
+    setIsAnalyticsOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem("isAnalyticsOpen", JSON.stringify(next));
+      return next;
+    });
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("isLLMSettingsOpen");
     localStorage.removeItem("isIntegrationOpen");
     localStorage.removeItem("isAdminOpen");
+    localStorage.removeItem("isAnalyticsOpen");
     logout();
     toast.success("Logged out successfully.");
     window.location.href = "/login";
@@ -459,14 +495,57 @@ export function AppSidebar() {
                 <SidebarMenuItem
                   key={index}
                   className={
-                    ["Integrations", "Admin", "LLM Settings"].includes(
+                    ["Integrations", "Admin", "LLM Settings", "Analytics"].includes(
                       item.title
                     )
                       ? "h-fit"
                       : menuItemClasses
                   }
                 >
-                  {item.title === "Integrations" && item.children ? (
+                  {item.title === "Analytics" && item.children ? (
+                    <div>
+                      <div onClick={handleToggleAnalytics}>
+                        <SidebarMenuButton className={parentMenuClasses}>
+                          {item.icon && <item.icon className="w-4 h-4" />}
+                          <span>{item.title}</span>
+                          <div className="ml-auto transition-transform duration-200">
+                            {isAnalyticsOpen ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </div>
+                        </SidebarMenuButton>
+                      </div>
+                      {isAnalyticsOpen && (
+                        <div className="relative ml-6 space-y-1 pt-1">
+                          <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
+                          <div>
+                            {item.children.map((child, childIndex) => (
+                              <div
+                                key={childIndex}
+                                className={`${menuItemClasses} relative`}
+                              >
+                                <Link
+                                  to={child.url}
+                                  className={`${submenuLinkClasses} ${
+                                    child.url === currentPath
+                                      ? activeSubmenuClasses
+                                      : ""
+                                  }`}
+                                >
+                                  {child.icon && (
+                                    <child.icon className="w-4 h-4 mr-2" />
+                                  )}
+                                  <span>{child.title}</span>
+                                </Link>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : item.title === "Integrations" && item.children ? (
                     <div>
                       <div onClick={handleToggleIntegration}>
                         <SidebarMenuButton className={parentMenuClasses}>

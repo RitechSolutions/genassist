@@ -1,23 +1,44 @@
-import { MetricCard } from "@/components/analytics/MetricCard";
 import { PerformanceChart } from "@/components/analytics/PerformanceChart";
-import { Timer, SmileIcon, Award, CheckCircle } from "lucide-react";
-import { generateTimeData } from "../helpers/timeDataGenerator";
-import { generateMetricData } from "../helpers/metricDataGenerator";
-import { MetricsAPIResponse } from "@/interfaces/analytics.interface";
+import { Card } from "@/components/card";
+import { Tooltip } from "@/components/tooltip";
+import {
+  Timer,
+  SmileIcon,
+  Award,
+  CheckCircle,
+  Zap,
+  ThumbsUp,
+  ThumbsDown,
+  MessageSquare,
+  type LucideIcon,
+} from "lucide-react";
+import type { FetchedMetricsData } from "@/services/metrics";
+import type { DateRange } from "react-day-picker";
+
+interface MetricItem {
+  title: string;
+  value: string;
+  icon: LucideIcon;
+  color: string;
+  description?: string;
+}
 
 interface AnalyticsMetricsSectionProps {
-  timeFrame: string;
-  metrics: MetricsAPIResponse | null;
+  dateRange?: DateRange;
+  agentId?: string;
+  metrics: FetchedMetricsData | null;
   loading: boolean;
+  refreshing?: boolean;
   error: Error | null;
 }
 
-export const AnalyticsMetricsSection = ({ timeFrame, metrics, loading, error }: AnalyticsMetricsSectionProps) => {
-  const defaultMetrics = {
+const PLACEHOLDER_COUNT = 8;
+
+export const AnalyticsMetricsSection = ({ dateRange, agentId, metrics, loading, refreshing, error }: AnalyticsMetricsSectionProps) => {
+  const defaultMetrics: FetchedMetricsData = {
     "Customer Satisfaction": "0%",
     "Resolution Rate": "0%",
     "Positive Sentiment": "0%",
-    "Neutral Sentiment": "0%",
     "Negative Sentiment": "0%",
     "Efficiency": "0%",
     "Response Time": "0%",
@@ -27,55 +48,80 @@ export const AnalyticsMetricsSection = ({ timeFrame, metrics, loading, error }: 
 
   const formattedData = metrics || defaultMetrics;
 
-  const metricCards = [
+  const metricCards: MetricItem[] = [
     {
-      title: "Response Time",
+      title: "Responsiveness",
       value: formattedData["Response Time"],
-      trend: "-12%",
       icon: Timer,
-      data: generateMetricData(timeFrame, parseFloat(formattedData["Response Time"]), 1).map(item => ({
-        name: "Response Time", value: item.value
-      })),
+      description: "AI-evaluated score of how promptly the operator responded during takeover conversations. Higher is better.",
       color: "#3b82f6",
-      format: (value: number) => `${value.toFixed(1)}%`,
     },
     {
       title: "Customer Satisfaction",
       value: formattedData["Customer Satisfaction"],
-      trend: "+5%",
       icon: SmileIcon,
-      data: generateMetricData(timeFrame, parseFloat(formattedData["Customer Satisfaction"]), 10).map(item => ({
-        name: "Customer Satisfaction", value: item.value
-      })),
+      description: "AI-evaluated score of how satisfied the customer appeared during the conversation.",
       color: "#10b981",
-      format: (value: number) => `${value.toFixed(1)}%`,
     },
     {
       title: "Quality of Service",
       value: formattedData["Quality of Service"],
-      trend: "+0.3%",
       icon: Award,
-      data: generateMetricData(timeFrame, parseFloat(formattedData["Quality of Service"]), 0.5).map(item => ({
-        name: "Quality of Service", value: item.value
-      })),
+      description: "AI-evaluated score of overall service quality, including accuracy, tone, and completeness.",
       color: "#8b5cf6",
-      format: (value: number) => `${value.toFixed(1)}%`,
     },
     {
       title: "Resolution Rate",
       value: formattedData["Resolution Rate"],
-      trend: "+8%",
       icon: CheckCircle,
-      data: generateMetricData(timeFrame, parseFloat(formattedData["Resolution Rate"]), 8).map(item => ({
-        name: "Resolution Rate", value: item.value
-      })),
+      description: "AI-evaluated score of how well customer issues were resolved, based on conversation analysis.",
       color: "#f59e0b",
-      format: (value: number) => `${value.toFixed(1)}%`,
+    },
+    {
+      title: "Efficiency",
+      value: formattedData["Efficiency"],
+      icon: Zap,
+      description: "AI-evaluated score of how efficiently the agent handled the conversation.",
+      color: "#06b6d4",
+    },
+    {
+      title: "Positive Sentiment",
+      value: formattedData["Positive Sentiment"],
+      icon: ThumbsUp,
+      description: "Average positive sentiment detected across analyzed conversations.",
+      color: "#22c55e",
+    },
+    {
+      title: "Negative Sentiment",
+      value: formattedData["Negative Sentiment"],
+      icon: ThumbsDown,
+      description: "Average negative sentiment detected across analyzed conversations.",
+      color: "#ef4444",
+    },
+    {
+      title: "Analyzed",
+      value: formattedData["total_analyzed_audios"].toLocaleString(),
+      icon: MessageSquare,
+      description: "Total number of conversations analyzed in the selected period.",
+      color: "#6b7280",
     },
   ];
 
   if (loading) {
-    return <div className="text-center py-8">Loading analytics data...</div>;
+    return (
+      <div className="space-y-6 sm:space-y-8">
+        <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
+            {Array.from({ length: PLACEHOLDER_COUNT }).map((_, i) => (
+              <div key={i} className="flex flex-col gap-3 py-2 sm:py-0">
+                <div className="h-7 w-16 bg-zinc-100 rounded animate-pulse" />
+                <div className="h-4 w-20 bg-zinc-100 rounded animate-pulse" />
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   if (error) {
@@ -83,14 +129,48 @@ export const AnalyticsMetricsSection = ({ timeFrame, metrics, loading, error }: 
   }
 
   return (
-    <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
-        {metricCards.map((metric) => (
-          <MetricCard key={metric.title} {...metric} />
+    <div className={refreshing ? "opacity-70 transition-opacity duration-200" : "transition-opacity duration-200"}>
+      <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up mb-6 sm:mb-8">
+        {[metricCards.slice(0, 4), metricCards.slice(4)].map((row, rowIndex) => (
+          <div key={rowIndex}>
+            {rowIndex > 0 && <div className="border-t border-zinc-200 my-4 sm:my-5" />}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
+              {row.map((metric, index) => {
+                const Icon = metric.icon;
+                const isLastInRow = index === row.length - 1;
+                return (
+                  <div key={metric.title} className="relative">
+                    <div className="flex flex-col gap-1 py-2 sm:py-0">
+                      <div className="text-xl sm:text-2xl font-bold text-foreground leading-tight">
+                        {metric.value}
+                      </div>
+                      <div className="flex items-center gap-1 text-sm font-medium text-muted-foreground">
+                        <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: metric.color }} />
+                        <span className="truncate">{metric.title}</span>
+                        {metric.description && (
+                          <Tooltip
+                            content={<span className="whitespace-normal max-w-[200px] block">{metric.description}</span>}
+                            iconClassName="w-3 h-3"
+                            contentClassName="w-48 text-center"
+                          />
+                        )}
+                      </div>
+                    </div>
+                    {!isLastInRow && (
+                      <>
+                        <div className="hidden sm:block absolute right-0 top-1/2 -translate-y-1/2 h-16 w-0 border-l border-zinc-200" />
+                        <div className="sm:hidden border-b border-zinc-100 mt-3" />
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         ))}
-      </div>
+      </Card>
 
-      <PerformanceChart timeSeriesData={generateTimeData(timeFrame)} />
-    </>
+      <PerformanceChart dateRange={dateRange} agentId={agentId} />
+    </div>
   );
 };

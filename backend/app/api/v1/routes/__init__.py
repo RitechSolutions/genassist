@@ -44,6 +44,7 @@ from app.api.v1.routes import (
     customers,
     file_manager,
     internal,
+    analytics
 )
 
 # Disable redirect slashes for all routes
@@ -107,6 +108,7 @@ router.include_router(
 router.include_router(
     file_manager.router, prefix="/file-manager", tags=["FileManager"]
 )
+router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 
 
 router.include_router(ml_models.router, prefix="/ml-models", tags=["ML Models"])
@@ -125,7 +127,7 @@ router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenA
 
 router.include_router(azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"])
 
-router.include_router(public_registration.router, prefix="/public-registration", tags=["Public Registration"])  
+router.include_router(public_registration.router, prefix="/public-registration", tags=["Public Registration"])
 router.include_router(workflow_manager.router, prefix="/workflow-manager", tags=["Workflow Manager"])
 router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP Servers"])
