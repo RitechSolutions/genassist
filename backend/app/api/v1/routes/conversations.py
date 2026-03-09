@@ -60,6 +60,11 @@ from app.use_cases.chat_as_client_use_case import (
 from app.core.permissions.constants import Permissions as P
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
 from app.services.file_manager import FileManagerService
+from app.services.analytics_realtime import (
+    update_conversation_started,
+    update_conversation_finalized,
+    update_feedback_given,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -131,6 +136,9 @@ async def start(
     agent_read = AgentRead.model_validate(agent)
     model.operator_id = agent.operator_id
     conversation = await service.start_in_progress_conversation(model)
+
+    # Increment conversation counters in background
+    _ = asyncio.create_task(update_conversation_started(agent.id))
 
     # Use model_dump with json mode to ensure all values are JSON-serializable (UUIDs converted to strings)
     agent_data = agent_read.model_dump(mode="json")
@@ -473,6 +481,10 @@ async def finalize(
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
         conversation_id= conversation_id, llm_analyst_id=finalize.llm_analyst_id,
     )
+
+    # Increment finalized conversation counters in background
+    _ = asyncio.create_task(update_conversation_finalized(conversation_id))
+
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
     return finalized_conversation_analysis
 
@@ -588,6 +600,10 @@ async def add_message_feedback(
 
     # Persist the updated conversation
     await conversation_service.update_conversation(conversation)
+
+    # Fire incremental analytics update for thumbs in background
+    is_thumbs_up = transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD)
+    _ = asyncio.create_task(update_feedback_given(conversation_id, is_thumbs_up))
 
     return {
         "message": f"Successfully added message feedback, "
