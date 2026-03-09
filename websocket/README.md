@@ -26,8 +26,9 @@ This architecture allows the backend to remain stateless while the WebSocket ser
                                             ▼                                              ▼
                                     ┌───────────────────────────────────────────────────────────────┐
                                     │                        Redis                                  │
-                                    │  Subscribes: websocket:*   Publishes: websocket:{room}         │
-                                    │  Publishes:  ws_upstream:{tenant}:{room}                       │
+                                    │  Backend → WS: websocket:{tenant_id}:{room_id} (pattern:      │
+                                    │               websocket:*)                                     │
+                                    │  WS → Backend:  ws_upstream:{tenant_id}:{room_id}             │
                                     └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -51,10 +52,10 @@ Redis is the message bus between the backend and the WebSocket service:
 
 | Channel pattern | Direction | Description |
 |-----------------|-----------|-------------|
-| `websocket:{tenant_id}:{room_id}` | Backend → WebSocket | Backend publishes broadcast messages. WebSocket subscribes via `websocket:*` pattern and delivers to connected clients in the room. |
+| `websocket:{tenant_id}:{room_id}` | Backend → WebSocket | Backend publishes broadcast messages as JSON. The WebSocket service subscribes via the `websocket:*` pattern and delivers to connected clients in the room. |
 | `ws_upstream:{tenant_id}:{room_id}` | WebSocket → Backend | Client-sent messages. WebSocket publishes; backend (or other consumers) can subscribe to process them. |
 
-**Downstream message format** (Backend → WebSocket):
+**Downstream message format** (Backend → WebSocket service via Redis):
 
 ```json
 {
@@ -66,7 +67,16 @@ Redis is the message bus between the backend and the WebSocket service:
 }
 ```
 
-**Upstream message format** (WebSocket → Backend):
+When the WebSocket service delivers this to connected clients, it sends a simplified payload:
+
+```json
+{
+  "type": "message",
+  "payload": { ... }
+}
+```
+
+**Upstream message format** (WebSocket → Backend via Redis):
 
 ```json
 {
@@ -82,15 +92,37 @@ Redis is the message bus between the backend and the WebSocket service:
 - **TTS endpoint** (`/ws/audio/tts`): Uses `OPENAI_API_KEY` to stream text-to-speech.
 - **Twilio media stream** (`/ws/media-stream/{agent_id}`): Uses OpenAI Realtime API for transcription and TTS for voice responses.
 
+## Client Connection Parameters
+
+For authenticated endpoints, clients connect with query parameters:
+
+- `access_token` **or** `api_key` (required): Credentials used by the WebSocket service to call the backend `/api/internal/ws/verify-token` endpoint.
+- `x-tenant-id` (optional, default `master`): Tenant context passed to the backend for authorization and used for room isolation.
+- `topics` (optional, repeatable): Limits which categories of events the client receives (e.g. `topics=message&topics=statistics`). The backend can set `required_topic` on Redis messages to target only connections subscribed to those topics.
+- `lang` (optional, default `en`): Language hint for downstream processing.
+
 ## WebSocket Endpoints
 
 | Path | Auth | Description |
 |------|------|-------------|
-| `/ws/conversations/{conversation_id}` | Token or API key | Conversation room. Receives real-time messages; client messages published upstream. |
+| `/ws/conversations/{conversation_id}` | Token or API key | Conversation room. Receives real-time messages; client messages published upstream. Supports topic filters via the `topics` query parameter. |
 | `/ws/dashboard/list` | Token or API key | Dashboard room for global/system updates. |
 | `/ws/audio/tts` | Token or API key | Text-to-speech streaming (OpenAI TTS). |
 | `/ws/media-stream/{agent_id}` | None (Twilio) | Twilio Media Stream bridge: Twilio ↔ OpenAI Realtime ↔ Backend agent. |
 | `/ws/test` | None | Simple test endpoint (health checks). |
+
+### Heartbeats
+
+The service runs an application-level heartbeat loop:
+
+- Periodically sends `{"type": "ping"}` messages to all active connections.
+- Tracks the last time any message was received from each client.
+- Closes connections that have not responded within `HEARTBEAT_INTERVAL + HEARTBEAT_TIMEOUT` seconds.
+
+Clients should either:
+
+- Rely on protocol-level WebSocket ping/pong (handled by the browser/ASGI stack), or
+- Explicitly respond with `{"type": "pong"}` to application-level pings.
 
 ## Configuration
 
@@ -103,6 +135,9 @@ Environment variables (see `.env.example`):
 | `WS_PORT` | `8002` | Port for WebSocket server |
 | `REDIS_HOST` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_DB` | `0` | Redis database index |
+| `REDIS_PASSWORD` | _empty_ | Redis password (optional) |
+| `REDIS_SSL` | `false` | Use TLS for Redis connection |
 | `HEARTBEAT_INTERVAL` | `30` | Seconds between ping frames |
 | `HEARTBEAT_TIMEOUT` | `10` | Seconds to wait for pong before disconnecting |
 | `AUTH_CACHE_MAX_SIZE` | `10000` | LRU cache size for verified tokens |
