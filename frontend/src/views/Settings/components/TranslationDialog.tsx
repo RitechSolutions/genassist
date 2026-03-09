@@ -119,7 +119,8 @@ export function TranslationDialog({
         } else {
           setDialogMode("create");
           setKey(initialKey);
-          const firstLang = languagesRef.current[0]?.code ?? "en";
+          const firstLang = languagesRef.current.find((l) => l.code === "en")?.code
+            ?? languagesRef.current[0]?.code ?? "en";
           setRows(
             initialDefaultValue
               ? [{ langCode: firstLang, value: initialDefaultValue }]
