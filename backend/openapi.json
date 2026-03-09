@@ -15320,6 +15320,29 @@
         ],
         "title": "AgentDailyStatsListResponse"
       },
+      "AgentExecuteRequest": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "thread_id",
+          "text"
+        ],
+        "title": "AgentExecuteRequest"
+      },
       "AgentListItem": {
         "properties": {
           "id": {
