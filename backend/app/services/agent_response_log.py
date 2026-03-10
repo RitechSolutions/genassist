@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from injector import inject
@@ -48,4 +48,39 @@ class AgentResponseLogService:
         Get agent response logs matching the given filter.
         """
         return await self.repo.get_by_filter(agent_response_log_filter)
+
+    async def build_enrichment_context(
+        self,
+        conversation_id: Optional[UUID],
+        enrichment_keys: List[str],
+    ) -> str:
+        """
+        Build a context string from enabled enrichment keys for prompt injection.
+        Each enabled key is resolved by querying the agent response logs for the
+        relevant node type and appending a human-readable fact line.
+        """
+        if not conversation_id or not enrichment_keys:
+            return ""
+
+        lines = []
+
+        if "zendesk_ticket_created" in enrichment_keys:
+            logs = await self.get_logs_by_filter(
+                AgentResponseLogFilter(
+                    conversation_id=conversation_id,
+                    node_type="zendeskTicketNode",
+                )
+            )
+            lines.append(f"- Zendesk ticket created: {'Yes' if logs else 'No'}")
+
+        if "knowledge_base_used" in enrichment_keys:
+            logs = await self.get_logs_by_filter(
+                AgentResponseLogFilter(
+                    conversation_id=conversation_id,
+                    node_type="knowledgeBaseNode",
+                )
+            )
+            lines.append(f"- Knowledge base queried: {'Yes' if logs else 'No'}")
+
+        return "\n".join(lines)
 

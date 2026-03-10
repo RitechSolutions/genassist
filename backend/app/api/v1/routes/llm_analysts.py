@@ -6,7 +6,7 @@ from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
 from app.schemas.llm import LlmAnalyst, LlmAnalystCreate, LlmAnalystUpdate
 from app.services.llm_analysts import LlmAnalystService
-from app.services.gpt_kpi_analyzer import AVAILABLE_ENRICHMENTS
+from app.schemas.dynamic_form_schemas.llm_analyst_enrichments import AVAILABLE_ENRICHMENTS
 
 
 router = APIRouter()

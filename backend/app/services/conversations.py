@@ -467,7 +467,7 @@ class ConversationService:
         if llm_analyst and llm_analyst.is_active:
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(
-                    transcript, llm_analyst=llm_analyst
+                    transcript, llm_analyst=llm_analyst, conversation_id=conversation.id
                 )
             )
         else:

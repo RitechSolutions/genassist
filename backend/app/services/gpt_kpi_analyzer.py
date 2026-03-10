@@ -3,6 +3,7 @@ import logging
 from typing import List, Optional
 from uuid import UUID
 
+from injector import inject
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.exceptions.exception_classes import AppException
@@ -15,20 +16,10 @@ from app.schemas.conversation_analysis import AnalysisResult
 from app.schemas.conversation_transcript import TranscriptSegment
 from app.schemas.llm import LlmAnalyst
 from app.core.utils.bi_utils import clean_gpt_json_response
+from app.services.agent_response_log import AgentResponseLogService
 
 
 logger = logging.getLogger(__name__)
-
-AVAILABLE_ENRICHMENTS = [
-    {
-        "key": "zendesk_ticket_created",
-        "name": "Zendesk Ticket Status",
-        "description": (
-            "Whether a Zendesk ticket was opened during the conversation. "
-            "Use this to inform scoring, e.g. Resolution Rate: 10 if no ticket created, 0 if ticket was created."
-        ),
-    },
-]
 
 
 class GptKpiAnalyzer:
@@ -46,6 +37,7 @@ class GptKpiAnalyzer:
 
         llm_provider = injector.get(LLMProvider)
         llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
+        agent_logs_service = injector.get(AgentResponseLogService)
 
         if (
             transcript is None
@@ -62,7 +54,8 @@ class GptKpiAnalyzer:
         user_prompt = ""
 
         system_msg = SystemMessage(content=self._build_system_prompt(llm_analyst.prompt))
-        enrichment_context = await self._fetch_enrichment_context(
+
+        enrichment_context = await agent_logs_service.build_enrichment_context(
             conversation_id, llm_analyst.context_enrichments or []
         )
 
@@ -165,32 +158,6 @@ Provide the following KPI metrics, overall tone, and sentiment percentages as a 
 
 The JSON metrics should be integers between 0 and 10, Tone must be one of the listed values, and sentiment percentages must sum up to 100%."""
 
-    async def _fetch_enrichment_context(
-        self, conversation_id: Optional[UUID], enrichment_keys: list
-    ) -> str:
-        """Fetch per-conversation context for each enabled enrichment key."""
-        if not conversation_id or not enrichment_keys:
-            return ""
-
-        from app.dependencies.injector import injector
-        from app.services.agent_response_log import AgentResponseLogService
-        from app.schemas.filter import AgentResponseLogFilter
-
-        log_service = injector.get(AgentResponseLogService)
-        lines = []
-
-        if "zendesk_ticket_created" in enrichment_keys:
-            logs = await log_service.get_logs_by_filter(
-                AgentResponseLogFilter(
-                    conversation_id=conversation_id,
-                    node_type="zendeskTicketNode",
-                )
-            )
-            created = len(logs) > 0
-            lines.append(f"- Zendesk ticket created: {'Yes' if created else 'No'}")
-
-        return "\n".join(lines)
-
     def _create_user_prompt(
         self, transcript_text: str, enrichment_context: str = "",
         error_hint: str = None, attempt: int = 1
@@ -216,18 +183,23 @@ Please make sure your response strictly follows the requested format and especia
         self,
         transcript_segments: str,
         llm_analyst: LlmAnalyst,
+        conversation_id: Optional[UUID] = None,
     ) -> dict:
 
         from app.dependencies.injector import injector
 
         llm_provider = injector.get(LLMProvider)
         llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
+        agent_logs_service = injector.get(AgentResponseLogService)
 
-        # Create a short prompt for hostility detection
-        # We'll ask for a JSON response with "sentiment" and "hostile_score"
         system_msg = SystemMessage(content=llm_analyst.prompt)
 
-        user_prompt = f"""
+        enrichment_context = await agent_logs_service.build_enrichment_context(
+            conversation_id, llm_analyst.context_enrichments or []
+        )
+        context_block = f"Additional Context:\n{enrichment_context}\n\n" if enrichment_context else ""
+
+        user_prompt = f"""{context_block}
         You are an impartial conversation analyst.
 
         Task:
