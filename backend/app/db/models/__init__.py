@@ -19,6 +19,7 @@ from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsMo
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
 from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
+from app.db.models.translation import LanguageModel, TranslationKeyModel, TranslationValueModel
 from app.db.utils.event_hooks_config import auto_register_updated_by
 from .agent import AgentModel
 from .agent_security_settings import AgentSecuritySettingsModel
@@ -65,6 +66,9 @@ __all__ = [
     "NodeExecutionDailyStatsModel",
     "CustomerModel",
     "DataSourceModel",
+    "LanguageModel",
+    "TranslationKeyModel",
+    "TranslationValueModel",
     "ToolModel",
     "KnowledgeBaseModel",
     "AgentModel",
@@ -107,6 +111,9 @@ models = [
     JobModel,
     DataSourceModel,
     CustomerModel,
+    LanguageModel,
+    TranslationKeyModel,
+    TranslationValueModel,
     ApiKeyModel,
     ApiKeyRoleModel,
     UserTypeModel,

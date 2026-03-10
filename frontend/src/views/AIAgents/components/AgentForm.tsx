@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import {
@@ -12,8 +12,16 @@ import {
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
-import { ChevronLeft, CheckCircle2, Trash2, Plus, HelpCircle, MessageSquare, X } from "lucide-react";
-// import { createWorkflow, updateWorkflow } from "@/services/workflows";
+import {
+  ChevronLeft,
+  CheckCircle2,
+  Trash2,
+  Plus,
+  HelpCircle,
+  MessageSquare,
+  X,
+  Languages,
+} from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -23,6 +31,10 @@ import {
   SheetClose,
 } from "@/components/sheet";
 import { Textarea } from "@/components/textarea";
+import { TranslationDialog } from "@/views/Settings/components/TranslationDialog";
+import { DisclaimerEditor } from "@/components/DisclaimerEditor";
+import { getTranslationByKey } from "@/services/translations";
+import { getTranslationCount } from "../utils";
 
 interface AgentFormData {
   id?: string;
@@ -30,6 +42,7 @@ interface AgentFormData {
   description: string;
   welcome_message?: string;
   welcome_title?: string;
+  input_disclaimer_html?: string;
   thinking_phrase_delay?: number;
   possible_queries?: string[];
   thinking_phrases?: string[];
@@ -50,6 +63,91 @@ interface AgentFormProps {
   // Form ID for external button association
   formId?: string;
 }
+
+interface TranslationTriggerProps {
+  translationKey: string;
+  currentValue: string;
+}
+
+const TranslationTrigger: React.FC<TranslationTriggerProps> = ({
+  translationKey,
+  currentValue,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [refreshCounter, setRefreshCounter] = useState(0);
+  const [translationCount, setTranslationCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTranslationCount = async () => {
+      if (!translationKey) {
+        setTranslationCount(0);
+        return;
+      }
+
+      const translation = await getTranslationByKey(translationKey);
+      if (cancelled) return;
+
+      const count = getTranslationCount(translation);
+      setTranslationCount(count);
+    };
+
+    void loadTranslationCount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [translationKey, refreshCounter]);
+
+  const handleOpen = () => {
+    setIsOpen(true);
+  };
+
+  const handleSaved = () => {
+    // trigger any external refresh logic in future if needed
+    setRefreshCounter((prev) => prev + 1);
+  };
+
+  const hasTranslations = translationCount > 0;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={handleOpen}
+        className={`inline-flex items-center gap-1.5 h-6 rounded-full border border-dashed px-2 transition-colors ${
+          hasTranslations
+            ? "border-primary text-primary"
+            : "border-muted-foreground/40 text-muted-foreground hover:text-primary hover:border-primary"
+        }`}
+        title={
+          hasTranslations
+            ? `Manage translations (${translationCount})`
+            : "Manage translations"
+        }
+      >
+        <Languages className="h-3.5 w-3.5" />
+        {hasTranslations && (
+          <span className="text-sm font-medium leading-none">
+            {translationCount}
+          </span>
+        )}
+      </button>
+      {/* Keyed by translationKey and refreshCounter so dialog re-initializes when needed */}
+      <TranslationDialog
+        key={`${translationKey}-${refreshCounter}`}
+        isOpen={isOpen}
+        onOpenChange={setIsOpen}
+        mode="create"
+        translationToEdit={null}
+        initialKey={translationKey}
+        initialDefaultValue={currentValue}
+        onTranslationSaved={handleSaved}
+      />
+    </>
+  );
+};
 
 const AgentForm: React.FC<AgentFormProps> = ({
   data,
@@ -74,6 +172,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
       description: "",
       welcome_message: "",
       welcome_title: "",
+      input_disclaimer_html: "",
       thinking_phrase_delay: 0,
       possible_queries: [],
       thinking_phrases: [],
@@ -93,13 +192,15 @@ const AgentForm: React.FC<AgentFormProps> = ({
 
   // Load existing image when editing (only if agent has one)
   React.useEffect(() => {
+    let objectUrl: string | null = null;
+
     const loadExistingImage = async () => {
       // Only fetch if agent has a welcome image
       if (isEditMode && id && data?.has_welcome_image) {
         try {
           const imageBlob = await getWelcomeImage(id);
-          const imageUrl = URL.createObjectURL(imageBlob);
-          setImagePreview(imageUrl);
+          objectUrl = URL.createObjectURL(imageBlob);
+          setImagePreview(objectUrl);
         } catch (error) {
           // Image failed to load
         }
@@ -107,10 +208,16 @@ const AgentForm: React.FC<AgentFormProps> = ({
     };
 
     loadExistingImage();
+
+    return () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
   }, [isEditMode, id, data?.has_welcome_image]);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
@@ -118,7 +225,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
       [name]: name === "thinking_phrase_delay" ? Number(value) || 0 : value,
     }));
   };
-
 
   const handlePossibleQueryChange = (index: number, value: string) => {
     setFormData((prev) => {
@@ -312,22 +418,21 @@ const AgentForm: React.FC<AgentFormProps> = ({
       }
 
       toast.success(
-        `Workflow ${isEditMode ? "updated" : "created"} successfully.`
+        `Agent ${isEditMode ? "updated" : "created"} successfully.`,
       );
     } catch (err: unknown) {
       let errorMessage =
         err instanceof Error ? err.message : "Unknown error occurred.";
 
       if (
-        (errorMessage.includes("email") && errorMessage.includes("exist")) ||
+        errorMessage.includes("already exists") ||
         errorMessage.includes("400")
       )
         errorMessage = "An agent with this name already exists.";
 
       toast.error(
-        `Failed to ${isEditMode ? "update" : "create"} agent: ${errorMessage}`
+        `Failed to ${isEditMode ? "update" : "create"} agent: ${errorMessage}`,
       );
-
     } finally {
       setLoading(false);
     }
@@ -407,7 +512,9 @@ const AgentForm: React.FC<AgentFormProps> = ({
                           >
                             <svg
                               className={`w-8 h-8 transition-all duration-300 ${
-                                isDragOver ? "text-primary scale-110" : "text-primary/80 group-hover:text-primary"
+                                isDragOver
+                                  ? "text-primary scale-110"
+                                  : "text-primary/80 group-hover:text-primary"
                               }`}
                               fill="none"
                               stroke="currentColor"
@@ -431,10 +538,14 @@ const AgentForm: React.FC<AgentFormProps> = ({
                           <div className="text-center space-y-1.5">
                             <p
                               className={`text-base font-semibold transition-colors duration-200 ${
-                                isDragOver ? "text-primary" : "text-foreground/90 group-hover:text-primary"
+                                isDragOver
+                                  ? "text-primary"
+                                  : "text-foreground/90 group-hover:text-primary"
                               }`}
                             >
-                              {isDragOver ? "Drop your image here" : "Choose a file or drag & drop"}
+                              {isDragOver
+                                ? "Drop your image here"
+                                : "Choose a file or drag & drop"}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               Click to select or drag and drop
@@ -443,7 +554,9 @@ const AgentForm: React.FC<AgentFormProps> = ({
                               <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-background/80 border text-xs font-medium text-muted-foreground">
                                 PNG, JPG, GIF
                               </span>
-                              <span className="text-xs text-muted-foreground">•</span>
+                              <span className="text-xs text-muted-foreground">
+                                •
+                              </span>
                               <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-background/80 border text-xs font-medium text-muted-foreground">
                                 up to 5MB
                               </span>
@@ -490,7 +603,10 @@ const AgentForm: React.FC<AgentFormProps> = ({
                                 {imageFile && (
                                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                     <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-background/80 border font-medium">
-                                      {(imageFile.size / 1024 / 1024).toFixed(2)} MB
+                                      {(imageFile.size / 1024 / 1024).toFixed(
+                                        2,
+                                      )}{" "}
+                                      MB
                                     </span>
                                     <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-green-50 border border-green-200 text-green-700 font-medium">
                                       <CheckCircle2 className="h-3 w-3 mr-1" />
@@ -543,13 +659,23 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   {imageLoading && (
                     <div className="flex items-center justify-center gap-3 p-4 rounded-lg bg-primary/5 border border-primary/20">
                       <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent"></div>
-                      <span className="text-sm font-medium text-primary">Uploading image...</span>
+                      <span className="text-sm font-medium text-primary">
+                        Uploading image...
+                      </span>
                     </div>
                   )}
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="welcome_title">Welcome Title</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="welcome_title">Welcome Title</Label>
+                  {isEditMode && id && (
+                    <TranslationTrigger
+                      translationKey={`agent.${id}.welcome_title`}
+                      currentValue={formData.welcome_title || ""}
+                    />
+                  )}
+                </div>
                 <Input
                   id="welcome_title"
                   name="welcome_title"
@@ -559,7 +685,15 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="welcome_message">Welcome Message</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="welcome_message">Welcome Message</Label>
+                  {isEditMode && id && (
+                    <TranslationTrigger
+                      translationKey={`agent.${id}.welcome_message`}
+                      currentValue={formData.welcome_message || ""}
+                    />
+                  )}
+                </div>
                 <Textarea
                   id="welcome_message"
                   name="welcome_message"
@@ -607,6 +741,12 @@ const AgentForm: React.FC<AgentFormProps> = ({
                           placeholder="Enter a sample query"
                           className="flex-1"
                         />
+                        {isEditMode && (
+                          <TranslationTrigger
+                            translationKey={`agent.${id}.possible_queries.${index}`}
+                            currentValue={query}
+                          />
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
@@ -655,7 +795,8 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 {formData.thinking_phrases.length > 0 ? (
                   <div className="px-4 py-3 space-y-3 bg-white">
                     <p className="text-xs text-muted-foreground">
-                      Separate multiple phrases with | (e.g., "Thinking...|Processing...")
+                      Separate multiple phrases with | (e.g.,
+                      "Thinking...|Processing...")
                     </p>
                     {formData.thinking_phrases.map((phrase, index) => (
                       <div key={index} className="flex items-center gap-2">
@@ -670,6 +811,12 @@ const AgentForm: React.FC<AgentFormProps> = ({
                           placeholder="I think...|Getting the data..."
                           className="flex-1"
                         />
+                        {isEditMode && (
+                          <TranslationTrigger
+                            translationKey={`agent.${id}.thinking_phrases.${index}`}
+                            currentValue={phrase}
+                          />
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
@@ -682,7 +829,10 @@ const AgentForm: React.FC<AgentFormProps> = ({
                       </div>
                     ))}
                     <div className="pt-2 border-t border-border space-y-2">
-                      <Label htmlFor="thinking_phrase_delay" className="text-muted-foreground">
+                      <Label
+                        htmlFor="thinking_phrase_delay"
+                        className="text-muted-foreground"
+                      >
                         Delay between phrases (seconds)
                       </Label>
                       <Input
@@ -700,10 +850,31 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 ) : (
                   <div className="px-4 py-6 bg-white text-center">
                     <p className="text-sm text-muted-foreground">
-                      No thinking phrases added. These appear while the agent is processing.
+                      No thinking phrases added. These appear while the agent is
+                      processing.
                     </p>
                   </div>
                 )}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Disclaimer</Label>
+                  {isEditMode && id && (
+                    <TranslationTrigger
+                      translationKey={`agent.${id}.input_disclaimer_html`}
+                      currentValue={formData.input_disclaimer_html || ""}
+                    />
+                  )}
+                </div>
+                <DisclaimerEditor
+                  value={formData.input_disclaimer_html || ""}
+                  onChange={(html) =>
+                    setFormData((prev) => ({ ...prev, input_disclaimer_html: html }))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Supports text, bold, font size, and links.
+                </p>
               </div>
             </div>
           </div>
@@ -715,15 +886,19 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 plain ? "pt-6 mt-2 border-t" : ""
               }`}
             >
-              <Button type="button" variant="outline" onClick={() => onClose?.()}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onClose?.()}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={loading}>
                 {loading
                   ? "Saving..."
                   : isEditMode
-                  ? "Update Agent"
-                  : "Create Agent"}
+                    ? "Update Agent"
+                    : "Create Agent"}
               </Button>
             </div>
           )}
@@ -759,7 +934,7 @@ export const AgentFormPage: React.FC = () => {
           setLoading(true);
           const config = await getAgentConfig(id);
           const cleanedQueries = config.possible_queries?.filter(
-            (q) => q.trim() !== ""
+            (q) => q.trim() !== "",
           );
           const cleanedThinkingPhrases = Array.isArray(config.thinking_phrases)
             ? config.thinking_phrases.filter((p) => p.trim() !== "")
@@ -831,7 +1006,7 @@ export const AgentFormDialog = ({
     if (isOpen) {
       // Save the current overflow state
       const previousOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
+      document.body.style.overflow = "hidden";
 
       // Restore previous overflow state on cleanup
       return () => {
@@ -847,11 +1022,11 @@ export const AgentFormDialog = ({
           <SheetTitle className="text-xl font-semibold truncate">
             {data?.id ? `Edit (${data?.name})` : "Create New Agent"}
 
-          <SheetDescription>
-            {data?.id
-              ? "Update your agent's configuration and settings."
-              : "Configure your new AI agent with a name, description, and welcome settings."}
-          </SheetDescription>
+            <SheetDescription>
+              {data?.id
+                ? "Update your agent's configuration and settings."
+                : "Configure your new AI agent with a name, description, and welcome settings."}
+            </SheetDescription>
           </SheetTitle>
           <SheetClose className="ml-auto self-start" onClick={onClose}>
             <X className="h-4 w-4" />
