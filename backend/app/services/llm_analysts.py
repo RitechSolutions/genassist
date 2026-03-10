@@ -7,7 +7,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.repositories.llm_analysts import LlmAnalystRepository
 from app.repositories.llm_providers import LlmProviderRepository
-from app.schemas.llm import LlmAnalystCreate, LlmAnalystUpdate
+from app.schemas.llm import LlmAnalyst, LlmAnalystCreate, LlmAnalystUpdate
 
 @inject
 class LlmAnalystService:
@@ -25,11 +25,11 @@ class LlmAnalystService:
         model = await self.repository.get_by_id(llm_analyst.id)
         return model
 
-    async def get_by_id(self, llm_analyst_id: UUID, throw_not_found: bool = True):
+    async def get_by_id(self, llm_analyst_id: UUID, throw_not_found: bool = True) -> LlmAnalyst:
         obj = await self._read_by_id(llm_analyst_id, throw_not_found=throw_not_found)
         return obj
 
-    async def _read_by_id(self, llm_analyst_id: UUID, throw_not_found: bool = True):
+    async def _read_by_id(self, llm_analyst_id: UUID, throw_not_found: bool = True) -> LlmAnalyst:
         obj = await self.repository.get_by_id(llm_analyst_id)
         if not obj and throw_not_found:
             raise AppException(error_key=ErrorKey.LLM_ANALYST_NOT_FOUND, status_code=404)

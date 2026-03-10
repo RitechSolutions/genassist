@@ -5706,6 +5706,34 @@
         }
       }
     },
+    "/api/llm-analyst/available-enrichments": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmAnalyst"
+        ],
+        "summary": "Get Available Enrichments",
+        "operationId": "get_available_enrichments_api_llm_analyst_available_enrichments_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/llm-analyst": {
       "get": {
         "tags": [
@@ -20254,6 +20282,20 @@
             ],
             "title": "Is Active"
           },
+          "context_enrichments": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Enrichments"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -20324,6 +20366,20 @@
               }
             ],
             "title": "Is Active"
+          },
+          "context_enrichments": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Enrichments"
           }
         },
         "type": "object",
@@ -20381,6 +20437,20 @@
               }
             ],
             "title": "Is Active"
+          },
+          "context_enrichments": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Enrichments"
           }
         },
         "type": "object",

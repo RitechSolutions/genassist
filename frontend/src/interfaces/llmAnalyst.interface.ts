@@ -15,5 +15,12 @@ export interface LLMProvider {
     is_active: number;
     llm_provider_id: string;
     llm_provider?: LLMProvider;
+    context_enrichments?: string[];
+  }
+
+  export interface AvailableEnrichment {
+    key: string;
+    name: string;
+    description: string;
   }
 

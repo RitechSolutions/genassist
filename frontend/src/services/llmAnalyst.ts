@@ -1,5 +1,5 @@
 import { apiRequest } from "@/config/api";
-import { LLMAnalyst, LLMProvider } from "@/interfaces/llmAnalyst.interface";
+import { AvailableEnrichment, LLMAnalyst, LLMProvider } from "@/interfaces/llmAnalyst.interface";
 
 export const getAllLLMAnalysts = async (): Promise<LLMAnalyst[]> => {
   try {
@@ -60,6 +60,14 @@ export const getAllLLMProviders = async (): Promise<LLMProvider[]> => {
   try {
     const response = await apiRequest<LLMProvider[]>("GET", "llm-providers/");
     return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getAvailableEnrichments = async (): Promise<AvailableEnrichment[]> => {
+  try {
+    return await apiRequest<AvailableEnrichment[]>("GET", "llm-analyst/available-enrichments");
   } catch (error) {
     throw error;
   }
