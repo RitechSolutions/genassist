@@ -20,16 +20,18 @@ AVAILABLE_ENRICHMENTS: List[EnrichmentSchema] = [
         "key": "zendesk_ticket_created",
         "name": "Zendesk Ticket Status",
         "description": (
-            "Whether a Zendesk ticket was opened during the conversation. "
-            "Use this to inform scoring, e.g. Resolution Rate: 10 if no ticket created, 0 if ticket was created."
+            "Appends to the prompt: 'Zendesk ticket created: Yes/No'. "
+            "Add instructions in your prompt referencing this, e.g. "
+            "'Score Resolution Rate 0 if a Zendesk ticket was created, 10 if not.'"
         ),
     },
     {
         "key": "knowledge_base_used",
         "name": "Knowledge Base Usage",
         "description": (
-            "Whether the agent queried a knowledge base during the conversation. "
-            "Use this to assess Operator Knowledge: a higher score may be warranted when the agent leveraged available knowledge resources."
+            "Appends to the prompt: 'Knowledge base queried: Yes/No'. "
+            "Add instructions in your prompt referencing this, e.g. "
+            "'Score Operator Knowledge higher if the agent queried the knowledge base.'"
         ),
     },
 ]
