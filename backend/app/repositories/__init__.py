@@ -8,6 +8,7 @@ from .conversation_analysis import ConversationAnalysisRepository
 from .conversations import ConversationRepository
 from .datasources import DataSourcesRepository
 from .feature_flag import FeatureFlagRepository
+from .translations import LanguagesRepository, TranslationsRepository
 from .file_repository import FileRepository
 from .knowledge_base import KnowledgeBaseRepository
 from .llm_analysts import LlmAnalystRepository
