@@ -24,3 +24,8 @@ export interface LLMProvider {
     description: string;
   }
 
+  export interface AvailableNodeType {
+    node_type: string;
+    label: string;
+  }
+

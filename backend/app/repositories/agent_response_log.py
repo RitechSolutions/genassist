@@ -58,7 +58,7 @@ class AgentResponseLogRepository:
         """
         Fetch log entries matching the given filter.
         conversation_id is applied at the DB level; node_type is applied
-        in Python by inspecting state.nodeExecutionStatus[*].type in raw_response.
+        in Python by inspecting raw_response.row_agent_response.state.nodeExecutionStatus[*].type.
         """
         stmt = select(AgentResponseLogModel).where(
             AgentResponseLogModel.conversation_id == agent_response_log_filter.conversation_id
@@ -73,7 +73,7 @@ class AgentResponseLogRepository:
         for row in rows:
             try:
                 payload = json.loads(row.raw_response)
-                node_statuses = payload.get("state", {}).get("nodeExecutionStatus", [])
+                node_statuses = payload.get("row_agent_response", {}).get("state", {}).get("nodeExecutionStatus", [])
                 if isinstance(node_statuses, dict):
                     node_statuses = node_statuses.values()
                 if any(n.get("type") == agent_response_log_filter.node_type for n in node_statuses):

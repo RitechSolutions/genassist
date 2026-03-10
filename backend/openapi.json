@@ -5734,6 +5734,34 @@
         ]
       }
     },
+    "/api/llm-analyst/available-node-types": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmAnalyst"
+        ],
+        "summary": "Get Available Node Types",
+        "operationId": "get_available_node_types_api_llm_analyst_available_node_types_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/llm-analyst": {
       "get": {
         "tags": [

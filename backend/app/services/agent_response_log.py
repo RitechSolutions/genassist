@@ -5,6 +5,7 @@ from injector import inject
 
 from app.repositories.agent_response_log import AgentResponseLogRepository
 from app.schemas.filter import AgentResponseLogFilter
+from app.schemas.dynamic_form_schemas.nodes import NODE_TYPE_LABELS
 
 
 @inject
@@ -81,6 +82,18 @@ class AgentResponseLogService:
                 )
             )
             lines.append(f"- Knowledge base queried: {'Yes' if logs else 'No'}")
+
+        for key in enrichment_keys:
+            if key.startswith("node:"):
+                node_type = key[5:]
+                label = NODE_TYPE_LABELS.get(node_type, node_type)
+                logs = await self.get_logs_by_filter(
+                    AgentResponseLogFilter(
+                        conversation_id=conversation_id,
+                        node_type=node_type,
+                    )
+                )
+                lines.append(f"- {label} node used: {'Yes' if logs else 'No'}")
 
         return "\n".join(lines)
 

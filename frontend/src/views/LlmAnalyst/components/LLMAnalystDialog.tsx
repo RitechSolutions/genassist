@@ -20,8 +20,9 @@ import {
   updateLLMAnalyst,
   getAllLLMProviders,
   getAvailableEnrichments,
+  getAvailableNodeTypes,
 } from "@/services/llmAnalyst";
-import { AvailableEnrichment, LLMAnalyst, LLMProvider } from "@/interfaces/llmAnalyst.interface";
+import { AvailableEnrichment, AvailableNodeType, LLMAnalyst, LLMProvider } from "@/interfaces/llmAnalyst.interface";
 import {
   Select,
   SelectTrigger,
@@ -58,12 +59,15 @@ export function LLMAnalystDialog({
   const [isCreateProviderOpen, setIsCreateProviderOpen] = useState(false);
   const [availableEnrichments, setAvailableEnrichments] = useState<AvailableEnrichment[]>([]);
   const [selectedEnrichments, setSelectedEnrichments] = useState<string[]>([]);
+  const [availableNodeTypes, setAvailableNodeTypes] = useState<AvailableNodeType[]>([]);
+  const [nodeTypeSearch, setNodeTypeSearch] = useState("");
 
   useEffect(() => {
     if (isOpen) {
       resetForm();
       fetchProviders();
       fetchEnrichments();
+      fetchNodeTypes();
       if (analystToEdit && mode === "edit") {
         populateFormWithAnalyst(analystToEdit);
       }
@@ -91,6 +95,15 @@ export function LLMAnalystDialog({
     }
   };
 
+  const fetchNodeTypes = async () => {
+    try {
+      const result = await getAvailableNodeTypes();
+      setAvailableNodeTypes(result);
+    } catch {
+      // non-critical, silently ignore
+    }
+  };
+
   const populateFormWithAnalyst = (analyst: LLMAnalyst) => {
     setAnalystId(analyst.id);
     setName(analyst.name);
@@ -107,6 +120,7 @@ export function LLMAnalystDialog({
     setPrompt("");
     setIsActive(true);
     setSelectedEnrichments([]);
+    setNodeTypeSearch("");
   };
 
   const toggleEnrichment = (key: string) => {
@@ -251,7 +265,7 @@ export function LLMAnalystDialog({
                   <p className="text-xs text-muted-foreground">
                     Select additional conversation data to include when analyzing transcripts.
                   </p>
-                  <ScrollArea className="border rounded-lg p-2 max-h-48">
+                  <ScrollArea className="border rounded-lg p-2 h-48">
                     <div className="space-y-1">
                       {availableEnrichments.map((enrichment) => (
                         <div
@@ -277,6 +291,47 @@ export function LLMAnalystDialog({
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
+
+              {availableNodeTypes.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Node Enrichments</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Appends "{`<Node> node used: Yes/No`}" to the prompt for each selected node. Reference this in your prompt instructions.
+                  </p>
+                  <Input
+                    placeholder="Search nodes..."
+                    value={nodeTypeSearch}
+                    onChange={(e) => setNodeTypeSearch(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <ScrollArea className="border rounded-lg p-2 h-48">
+                    <div className="space-y-1">
+                      {availableNodeTypes
+                        .filter((n) =>
+                          n.label.toLowerCase().includes(nodeTypeSearch.toLowerCase())
+                        )
+                        .map((n) => (
+                          <div
+                            key={n.node_type}
+                            className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50"
+                          >
+                            <Checkbox
+                              id={`node-${n.node_type}`}
+                              checked={selectedEnrichments.includes(`node:${n.node_type}`)}
+                              onCheckedChange={() => toggleEnrichment(`node:${n.node_type}`)}
+                            />
+                            <label
+                              htmlFor={`node-${n.node_type}`}
+                              className="text-sm cursor-pointer"
+                            >
+                              {n.label}
+                            </label>
+                          </div>
+                        ))}
                     </div>
                   </ScrollArea>
                 </div>

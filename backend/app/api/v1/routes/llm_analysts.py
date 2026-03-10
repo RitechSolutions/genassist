@@ -7,6 +7,7 @@ from app.auth.dependencies import auth, permissions
 from app.schemas.llm import LlmAnalyst, LlmAnalystCreate, LlmAnalystUpdate
 from app.services.llm_analysts import LlmAnalystService
 from app.schemas.dynamic_form_schemas.llm_analyst_enrichments import AVAILABLE_ENRICHMENTS
+from app.schemas.dynamic_form_schemas.nodes import NODE_TYPE_LABELS
 
 
 router = APIRouter()
@@ -15,6 +16,11 @@ router = APIRouter()
 @router.get("/available-enrichments", dependencies=[Depends(auth)])
 async def get_available_enrichments():
     return AVAILABLE_ENRICHMENTS
+
+
+@router.get("/available-node-types", dependencies=[Depends(auth)])
+async def get_available_node_types():
+    return [{"node_type": k, "label": v} for k, v in NODE_TYPE_LABELS.items()]
 
 
 @router.get("", response_model=list[LlmAnalyst], dependencies=[
