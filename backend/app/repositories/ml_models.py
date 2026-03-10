@@ -2,6 +2,7 @@ from uuid import UUID
 from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from app.core.exceptions.error_messages import ErrorKey
@@ -31,12 +32,11 @@ class MLModelsRepository:
                 pkl_file=ml_model_data.pkl_file,
                 pkl_file_id=ml_model_data.pkl_file_id,
                 features=ml_model_data.features,
-                target_variable=ml_model_data.target_variable,
                 inference_params=ml_model_data.inference_params,
             )
             self.db.add(new_ml_model)
             await self.db.commit()
-            await self.db.refresh(new_ml_model)
+            await self.db.refresh(new_ml_model, attribute_names=["pipeline_configs"])
             return new_ml_model
         except IntegrityError as e:
             await self.db.rollback()
@@ -47,9 +47,10 @@ class MLModelsRepository:
 
     async def get_by_id(self, ml_model_id: UUID) -> MLModel:
         """Fetch ML model by ID."""
-        query = select(MLModel).where(
-            MLModel.id == ml_model_id,
-            MLModel.is_deleted == 0
+        query = (
+            select(MLModel)
+            .where(MLModel.id == ml_model_id, MLModel.is_deleted == 0)
+            .options(selectinload(MLModel.pipeline_configs))
         )
         result = await self.db.execute(query)
         ml_model = result.scalars().first()
@@ -69,10 +70,11 @@ class MLModelsRepository:
         return result.scalars().first()
 
     async def get_all(self) -> List[MLModel]:
-        """Fetch all ML models."""
+        """Fetch all ML models with pipeline config count for list badges."""
         query = (
             select(MLModel)
             .where(MLModel.is_deleted == 0)
+            .options(selectinload(MLModel.pipeline_configs))
             .order_by(MLModel.created_at.desc())
         )
         result = await self.db.execute(query)
@@ -95,7 +97,7 @@ class MLModelsRepository:
                 pass
 
             await self.db.commit()
-            await self.db.refresh(ml_model)
+            await self.db.refresh(ml_model, attribute_names=["pipeline_configs"])
             return ml_model
         except IntegrityError as e:
             await self.db.rollback()

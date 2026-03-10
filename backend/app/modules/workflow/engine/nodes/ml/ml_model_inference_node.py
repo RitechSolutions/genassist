@@ -245,7 +245,6 @@ class MLModelInferenceNode(BaseNode):
                     "model_id": str(model_id),
                     "model_name": ml_model.name,
                     "model_type": ml_model.model_type.value if hasattr(ml_model.model_type, 'value') else ml_model.model_type,
-                    "target_variable": ml_model.target_variable,
                     "features_used": ml_model.features,
                     "batch_size": batch_size,
                     "input_data": input_data_by_column,  # Dictionary organized by column

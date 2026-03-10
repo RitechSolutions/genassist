@@ -20,7 +20,6 @@ class MLModelBase(BaseModel):
     pkl_file: Optional[str] = Field(None, max_length=500, description="Path to the uploaded .pkl file")
     pkl_file_id: Optional[str] = Field(None, max_length=500, description="File manager ID for the uploaded .pkl file")
     features: Optional[list[str]] = Field(None, description="List of feature names used by the model")
-    target_variable: Optional[str] = Field(None, max_length=255, description="The prediction target variable")
     inference_params: Optional[Dict[str, Any]] = Field(None, description="Key-value pairs for inference configuration")
 
 
@@ -29,7 +28,6 @@ class MLModelCreate(MLModelBase):
     description: str = Field(..., description="Description of what the model does")
     model_type: ModelType = Field(..., description="Type of machine learning model")
     features: list[str] = Field(..., min_length=1, description="List of feature names (must not be empty)")
-    target_variable: str = Field(..., max_length=255, description="The prediction target variable")
 
     @field_validator('features')
     @classmethod
@@ -47,6 +45,7 @@ class MLModelRead(MLModelBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
+    pipeline_config_count: Optional[int] = Field(0, description="Number of training pipeline configs (workflow-based)")
 
     model_config = ConfigDict(
         from_attributes=True,

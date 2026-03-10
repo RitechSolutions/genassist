@@ -204,8 +204,15 @@ class TrainModelNode(BaseNode):
                 metrics = self._evaluate_model(model, X_val, y_val, is_classification)
                 logger.info(f"Validation metrics: {metrics}")
 
-            # Save model to .pkl file
-            pkl_file_path = await self._save_model(model, name, self.state.thread_id)
+            # Save model to .pkl file with metadata for extraction on load
+            pkl_file_path = await self._save_model(
+                model=model,
+                name=name,
+                thread_id=self.state.thread_id,
+                model_type=model_type,
+                target_column=target_column,
+                feature_columns=feature_columns,
+            )
 
             # Prepare response
             result = {
@@ -451,14 +458,25 @@ class TrainModelNode(BaseNode):
 
         return metrics
 
-    async def _save_model(self, model: Any, name: str, thread_id: str) -> str:
+    async def _save_model(
+        self,
+        model: Any,
+        name: str,
+        thread_id: str,
+        model_type: str,
+        target_column: str,
+        feature_columns: list,
+    ) -> str:
         """
-        Save trained model to a .pkl file.
+        Save trained model to a .pkl file with metadata for extraction on load.
 
         Args:
             model: Trained model object
             name: Model name
             thread_id: Thread ID for directory organization
+            model_type: Type of model (xgboost, random_forest, etc.)
+            target_column: Name of the target column
+            feature_columns: List of feature column names
 
         Returns:
             Path to saved .pkl file
@@ -474,9 +492,17 @@ class TrainModelNode(BaseNode):
             filename = f"{safe_name}_{unique_id}.pkl"
             file_path = models_dir / filename
 
-            # Save model using pickle
+            # Save wrapped payload with model and metadata for extraction on load
+            payload = {
+                "model": model,
+                "metadata": {
+                    "model_type": model_type,
+                    "target_column": target_column,
+                    "feature_columns": feature_columns,
+                },
+            }
             with open(file_path, "wb") as f:
-                pickle.dump(model, f)
+                pickle.dump(payload, f)
 
             logger.info(f"Saved model to: {file_path}")
             return str(file_path)

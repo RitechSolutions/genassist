@@ -20,8 +20,8 @@ class WorkflowService:
         self.repository = repository
 
     # ---------- READ ----------
-    async def get_all(self) -> List[WorkflowInDB]:
-        orm_objs = await self.repository.get_all()
+    async def get_all(self, *, training_only: bool = False) -> List[WorkflowInDB]:
+        orm_objs = await self.repository.get_all(training_only=training_only)
         return [WorkflowInDB.model_validate(o, from_attributes=True) for o in orm_objs]
 
     async def get_by_id(self, workflow_id: UUID) -> WorkflowInDB:

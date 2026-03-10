@@ -256,17 +256,20 @@ class MLModelPipelineRunService:
         # Optionally update model file and metrics
         if promote_data.update_model_file and execution_output:
             model_file_path = execution_output.get("model_file_path")
-            target_column = execution_output.get("target_column")
             feature_columns = execution_output.get("feature_columns")
+            model_type = execution_output.get("model_type")
             if model_file_path:
-                from app.schemas.ml_model import MLModelUpdate
+                from app.schemas.ml_model import MLModelUpdate, ModelType
 
                 try:
-                    update_data = MLModelUpdate(
-                        pkl_file=model_file_path,
-                        target_variable=target_column,
-                        features=feature_columns,
-                    )
+                    update_dict = {
+                        "pkl_file": model_file_path,
+                        "pkl_file_id": None,
+                        "features": feature_columns,
+                    }
+                    if model_type and model_type in [e.value for e in ModelType]:
+                        update_dict["model_type"] = ModelType(model_type)
+                    update_data = MLModelUpdate(**update_dict)
                     await self.model_repository.update(
                         model_id, update_data.model_dump(exclude_unset=True)
                     )

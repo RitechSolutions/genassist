@@ -2,7 +2,7 @@ from uuid import UUID
 import os
 import uuid
 import tempfile
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Body, Request
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Body, Request
 from fastapi_injector import Injected
 from typing import Optional
 
@@ -174,6 +174,83 @@ async def upload_pkl_file(
         ) from e
 
 
+@router.post("/analyze-pkl", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.CREATE))
+])
+async def analyze_pkl_file(
+    file: Optional[UploadFile] = File(None),
+    pkl_file_url: Optional[str] = Form(None),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+):
+    """
+    Analyze a .pkl file and extract model metadata (model_type, features).
+
+    Provide either:
+    - file: multipart .pkl file upload, or
+    - pkl_file_url: URL to the .pkl file (e.g. S3 / file manager URL). FileManagerService
+      downloads the file to a temp path before extraction.
+
+    Extracts from wrapped format (our trained models) or raw sklearn/XGBoost models.
+    Returns extracted metadata for auto-populating the create model form.
+    """
+    from app.core.utils.model_validator import extract_metadata_from_pkl
+
+    tmp_path = None
+    try:
+        if pkl_file_url:
+            if not pkl_file_url.strip().lower().endswith(".pkl"):
+                raise HTTPException(status_code=400, detail="URL must point to a .pkl file")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as tmp:
+                tmp_path = tmp.name
+            ok = await file_manager_service.download_file_from_url_to_path(pkl_file_url.strip(), tmp_path)
+            if not ok:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Failed to download file from URL",
+                )
+        elif file and file.filename and file.filename.lower().endswith(".pkl"):
+            content = await file.read()
+            if len(content) > MAX_PKL_FILE_SIZE:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File size exceeds maximum of {MAX_PKL_FILE_SIZE // (1024 * 1024)}MB",
+                )
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide either 'file' (multipart .pkl) or 'pkl_file_url' (URL to .pkl file)",
+            )
+
+        result = extract_metadata_from_pkl(tmp_path, timeout=15)
+        model_type = result.get("model_type")
+        valid_types = {"xgboost", "random_forest", "linear_regression", "logistic_regression", "other"}
+        if model_type and model_type not in valid_types:
+            model_type = "other"
+        return {
+            "model_type": model_type,
+            "features": result.get("features") or [],
+            "error": result.get("error"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing pkl file: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error analyzing pkl file: {str(e)}",
+        ) from e
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError as e:
+                logger.warning(f"Failed to delete temp file {tmp_path}: {e}")
+
+
 @router.get("/cache/stats", dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.READ))
@@ -220,30 +297,36 @@ async def validate_model_file(
     """
     from app.core.utils.model_validator import validate_pickle_file_safe, get_model_info
 
-    # Get model from database
     ml_model = await service.get_by_id(ml_model_id)
 
-    if not ml_model.pkl_file or not ml_model.pkl_file_id:
+    if not ml_model.pkl_file and not ml_model.pkl_file_id:
         raise HTTPException(
             status_code=400,
             detail="Model has no PKL file configured"
         )
 
-    # if ml_model.pkl_file is none and we have a pkl_file_id, get the file from the file manager service
-    if not ml_model.pkl_file and ml_model.pkl_file_id:
-        # get the file from the file manager service
+    # Resolve to a local path: download from file manager when local file is missing.
+    pkl_path_for_validation = ml_model.pkl_file
+    temp_pkl_path = None
+    if ml_model.pkl_file_id and (not ml_model.pkl_file or not os.path.exists(ml_model.pkl_file)):
         from app.dependencies.injector import injector
-        from app.services.file_manager import FileManagerService
         file_manager_service = injector.get(FileManagerService)
         file = await file_manager_service.get_file_by_id(ml_model.pkl_file_id)
         if not file:
-            raise HTTPException(
-                status_code=404,
-                detail="PKL file not found"
-            )
+            raise HTTPException(status_code=404, detail="PKL file not found")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as tmp:
+            temp_pkl_path = tmp.name
+        await file_manager_service.download_file_to_path(ml_model.pkl_file_id, temp_pkl_path)
+        pkl_path_for_validation = temp_pkl_path
 
-    # Get model info
-    info = get_model_info(ml_model.pkl_file)
+    try:
+        info = get_model_info(pkl_path_for_validation)
+    finally:
+        if temp_pkl_path and os.path.exists(temp_pkl_path):
+            try:
+                os.unlink(temp_pkl_path)
+            except OSError:
+                pass
 
     return {
         "model_id": str(ml_model_id),

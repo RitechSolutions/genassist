@@ -28,9 +28,16 @@ import {
   FileCode,
   Calendar,
   RefreshCcw,
+  Upload,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/badge";
-import { getMLModel } from "@/services/mlModels";
+import {
+  getMLModel,
+  uploadModelFile,
+  updateMLModel,
+  analyzePklFile,
+} from "@/services/mlModels";
 import { MLModel } from "@/interfaces/ml-model.interface";
 import {
   getModelPipelineConfigs,
@@ -79,6 +86,9 @@ const MLModelDetail: React.FC = () => {
   const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] = useState(false);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>("");
   const [cronSchedule, setCronSchedule] = useState<string>("");
+  const [runImmediately, setRunImmediately] = useState(false);
+  const [promoteWhenComplete, setPromoteWhenComplete] = useState(false);
+  const [isCreatingConfig, setIsCreatingConfig] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState("");
   const [newWorkflowDescription, setNewWorkflowDescription] = useState("");
   const [isCreatingRun, setIsCreatingRun] = useState(false);
@@ -86,6 +96,11 @@ const MLModelDetail: React.FC = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRefetching, setIsRefetching] = useState(false);
+  const [selectedPklFile, setSelectedPklFile] = useState<File | null>(null);
+  const [pklAnalysis, setPklAnalysis] = useState<{ model_type?: string; features?: string[] } | null>(null);
+  const [isUploadingPkl, setIsUploadingPkl] = useState(false);
+  const [isAnalyzingPkl, setIsAnalyzingPkl] = useState(false);
+  const [showReplacePkl, setShowReplacePkl] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -140,9 +155,7 @@ const MLModelDetail: React.FC = () => {
   const fetchWorkflows = async () => {
     try {
       const allWorkflows = await getAllWorkflows();
-      // Show all workflows - user can select any workflow for training pipeline
-      // Filtering by training nodes is optional but we show all for flexibility
-      setWorkflows(allWorkflows);
+      setWorkflows(allWorkflows ?? []);
     } catch (error) {
       console.error("Error fetching workflows:", error);
     }
@@ -152,6 +165,18 @@ const MLModelDetail: React.FC = () => {
     if (!cron.trim()) return true; // Empty is valid (no schedule)
     const cronRegex = /^(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*\s+(((\*|\d+)(-\d+)?)(\/\d+)?)(,((\*|\d+)(-\d+)?)(\/\d+)?)*$/;
     return cronRegex.test(cron.trim());
+  };
+
+  const pollRunUntilComplete = async (runId: string, maxAttempts = 120): Promise<boolean> => {
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const run = await getPipelineRun(id!, runId);
+      if (!run) return false;
+      if (run.status === "completed") return true;
+      if (run.status === "failed") return false;
+      if (run.status === "cancelled") return false;
+    }
+    return false;
   };
 
   const handleCreateConfig = async () => {
@@ -165,21 +190,50 @@ const MLModelDetail: React.FC = () => {
       return;
     }
 
+    setIsCreatingConfig(true);
     try {
-      await createPipelineConfig(id, {
+      const config = await createPipelineConfig(id, {
         model_id: id,
         workflow_id: selectedWorkflowId,
         cron_schedule: cronSchedule || null,
         is_default: pipelineConfigs.length === 0,
       });
       toast.success("Pipeline configuration created successfully");
+
+      if (runImmediately && config.id) {
+        const run = await createPipelineRun(id, {
+          model_id: id,
+          pipeline_config_id: config.id,
+          workflow_id: selectedWorkflowId,
+        });
+        toast.success("Pipeline run started");
+
+        if (promoteWhenComplete && run.id) {
+          toast.loading("Waiting for pipeline to complete...", { id: "promote-wait" });
+          const completed = await pollRunUntilComplete(run.id);
+          toast.dismiss("promote-wait");
+          if (completed) {
+            await promotePipelineRun(id, run.id);
+            toast.success("Pipeline completed and promoted successfully");
+            fetchModel();
+          } else {
+            toast.error("Pipeline did not complete in time or failed. Promote manually from the run history.");
+          }
+        }
+      }
+
       setShowConfigDialog(false);
       setSelectedWorkflowId("");
       setCronSchedule("");
+      setRunImmediately(false);
+      setPromoteWhenComplete(false);
       fetchPipelineConfigs();
+      fetchPipelineRuns();
     } catch (error) {
       toast.error("Failed to create pipeline configuration");
       console.error(error);
+    } finally {
+      setIsCreatingConfig(false);
     }
   };
 
@@ -239,6 +293,7 @@ const MLModelDetail: React.FC = () => {
     try {
       await promotePipelineRun(id, runId);
       toast.success("Pipeline run promoted as default configuration");
+      fetchModel();
       fetchPipelineConfigs();
       fetchPipelineRuns();
     } catch (error) {
@@ -324,6 +379,67 @@ const MLModelDetail: React.FC = () => {
       other: "Other",
     };
     return labels[type] || type;
+  };
+
+  const handlePklFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setSelectedPklFile(file);
+    setPklAnalysis(null);
+
+    if (file?.name.toLowerCase().endsWith(".pkl") && id) {
+      setIsAnalyzingPkl(true);
+      try {
+        const analysis = await analyzePklFile(file);
+        if (analysis.error) {
+          toast.error(`Could not extract metadata: ${analysis.error}`);
+        } else {
+          setPklAnalysis({
+            model_type: analysis.model_type ?? undefined,
+            features: analysis.features,
+          });
+          if (analysis.model_type || analysis.features?.length) {
+            toast.success("Model metadata extracted from file");
+          }
+        }
+      } catch (err) {
+        toast.error(
+          `Failed to analyze file: ${err instanceof Error ? err.message : String(err)}`
+        );
+      } finally {
+        setIsAnalyzingPkl(false);
+      }
+    }
+  };
+
+  const handleUploadPkl = async () => {
+    if (!id || !selectedPklFile) return;
+
+    setIsUploadingPkl(true);
+    try {
+      const uploadResult = await uploadModelFile(selectedPklFile);
+      const updatePayload: Parameters<typeof updateMLModel>[1] = {
+        pkl_file: uploadResult.file_path,
+        ...(uploadResult.file_id && { pkl_file_id: uploadResult.file_id }),
+      };
+      if (pklAnalysis?.model_type && ["xgboost", "random_forest", "linear_regression", "logistic_regression", "other"].includes(pklAnalysis.model_type)) {
+        updatePayload.model_type = pklAnalysis.model_type as MLModel["model_type"];
+      }
+      if (pklAnalysis?.features?.length) {
+        updatePayload.features = pklAnalysis.features;
+      }
+      await updateMLModel(id, updatePayload);
+      toast.success("Model file uploaded successfully");
+      setSelectedPklFile(null);
+      setPklAnalysis(null);
+      setShowReplacePkl(false);
+      fetchModel();
+    } catch (error) {
+      toast.error(
+        `Failed to upload: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      setIsUploadingPkl(false);
+    }
   };
 
   const downloadModelFile = async (fileId: string) => {
@@ -419,61 +535,165 @@ const MLModelDetail: React.FC = () => {
         </Button>
         <div>
           <h2 className="text-3xl font-bold">{model.name}</h2>
-          <p className="text-zinc-400 font-normal">{model.description}</p>
         </div>
       </div>
 
       {/* Section 1: Model Details */}
       <div className="rounded-lg border bg-white p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xl font-semibold mb-6">Model Information</h3>
-          {model.pkl_file_id && (
-            <Button variant="outline" size="sm" onClick={() => downloadModelFile(model.pkl_file_id as string)}>
-              <Download className="h-4 w-4 mr-2" />
-              Download Model File
-            </Button>
-          )}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div>
-            <Label className="text-sm text-gray-500 mb-1 block">Model Type</Label>
-            <p className="text-sm font-medium">{getModelTypeLabel(model.model_type)}</p>
-          </div>
-          <div>
-            <Label className="text-sm text-gray-500 mb-1 block">Target Variable</Label>
-            <p className="text-sm font-medium">{model.target_variable}</p>
-          </div>
-          <div>
-            <Label className="text-sm text-gray-500 mb-1 block">Features</Label>
-            <p className="text-sm font-medium">{model.features.length} feature{model.features.length > 1 ? "s" : ""}</p>
-            <p className="text-xs text-gray-500 mt-1">{model.features.join(", ")}</p>
-          </div>
-          {model.created_at && (
+        <h3 className="text-xl font-semibold mb-6">Model Information</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
             <div>
-              <Label className="text-sm text-gray-500 mb-1 block">Created At</Label>
-              <p className="text-sm font-medium">
-                {new Date(model.created_at).toLocaleString()}
-              </p>
+              <Label className="text-sm text-gray-500 mb-1 block">Model Type</Label>
+              <p className="text-sm font-medium">{getModelTypeLabel(model.model_type)}</p>
             </div>
-          )}
-          {model.updated_at && (
+            {model.created_at && (
+              <div>
+                <Label className="text-sm text-gray-500 mb-1 block">Created At</Label>
+                <p className="text-sm font-medium">
+                  {new Date(model.created_at).toLocaleString()}
+                </p>
+              </div>
+            )}
+            {model.updated_at && (
+              <div>
+                <Label className="text-sm text-gray-500 mb-1 block">Updated At</Label>
+                <p className="text-sm font-medium">
+                  {new Date(model.updated_at).toLocaleString()}
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="space-y-4">
             <div>
-              <Label className="text-sm text-gray-500 mb-1 block">Updated At</Label>
-              <p className="text-sm font-medium">
-                {new Date(model.updated_at).toLocaleString()}
-              </p>
+              <Label className="text-sm text-gray-500 mb-1 block">Description</Label>
+              <p className="text-sm font-medium">{model.description || "—"}</p>
             </div>
-          )}
+            <div>
+              <Label className="text-sm text-gray-500 mb-1 block">Features</Label>
+              <p className="text-sm font-medium">{model.features.length} feature{model.features.length > 1 ? "s" : ""}</p>
+              <p className="text-xs text-gray-500 mt-1">{model.features.join(", ")}</p>
+            </div>
+          </div>
         </div>
 
-        {model.inference_params && Object.keys(model.inference_params).length > 0 && (
-          <div className="mt-6 pt-6 border-t">
-            <Label className="text-sm text-gray-500 mb-2 block">Inference Parameters</Label>
-            <div className="bg-gray-50 rounded-md p-4">
-              <JsonViewer data={model.inference_params} />
+        {/* Add or Replace Pickle File - at the end */}
+        <div className="mt-6 pt-6 border-t">
+          {model.pkl_file_id ? (
+            showReplacePkl ? (
+              <div className="p-4 border rounded-lg bg-gray-50 w-full">
+                <Label className="text-sm font-medium mb-2 block">Replace Model PKL File (.pkl)</Label>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-border rounded-md cursor-pointer hover:bg-gray-100 transition-colors">
+                      <Upload className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {selectedPklFile ? selectedPklFile.name : "Select .pkl file"}
+                      </span>
+                      <input
+                        id="pkl-file-upload-replace"
+                        type="file"
+                        accept=".pkl"
+                        onChange={handlePklFileChange}
+                        disabled={isUploadingPkl || isAnalyzingPkl}
+                        className="hidden"
+                      />
+                    </label>
+                    {selectedPklFile && (
+                      <>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={handleUploadPkl}
+                          disabled={isUploadingPkl}
+                        >
+                          {isUploadingPkl ? "Uploading..." : "Upload"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => { setSelectedPklFile(null); setPklAnalysis(null); }}
+                          className="h-8 w-8"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                    <Button variant="ghost" size="sm" onClick={() => { setShowReplacePkl(false); setSelectedPklFile(null); setPklAnalysis(null); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                  {isAnalyzingPkl && <span className="text-sm text-muted-foreground">Analyzing file...</span>}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowReplacePkl(true)}
+                >
+                  <Upload className="h-4 w-4 mr-1 inline" />
+                  Replace model pkl file
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => downloadModelFile(model.pkl_file_id as string)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Model File
+                </Button>
+              </div>
+            )
+          ) : (
+            <div className="p-4 border rounded-lg bg-gray-50">
+              <Label className="text-sm font-medium mb-2 block">Add Model PKL File (.pkl)</Label>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-border rounded-md cursor-pointer hover:bg-gray-100 transition-colors">
+                    <Upload className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium text-muted-foreground">
+                      {selectedPklFile ? selectedPklFile.name : "Select .pkl file"}
+                    </span>
+                    <input
+                      id="pkl-file-upload-add"
+                      type="file"
+                      accept=".pkl"
+                      onChange={handlePklFileChange}
+                      disabled={isUploadingPkl || isAnalyzingPkl}
+                      className="hidden"
+                    />
+                  </label>
+                  {selectedPklFile && (
+                    <>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={handleUploadPkl}
+                        disabled={isUploadingPkl}
+                      >
+                        {isUploadingPkl ? "Uploading..." : "Upload"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => { setSelectedPklFile(null); setPklAnalysis(null); }}
+                        className="h-8 w-8"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+                {selectedPklFile && (
+                  <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <FileCode className="h-4 w-4" />
+                    {(selectedPklFile.size / 1024).toFixed(1)} KB
+                  </span>
+                )}
+                {isAnalyzingPkl && <span className="text-sm text-muted-foreground">Analyzing file...</span>}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Section 2: Training Pipeline & Runs */}
@@ -492,13 +712,9 @@ const MLModelDetail: React.FC = () => {
             <div className="text-center py-12">
               <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h4 className="font-medium text-lg mb-2">No pipeline configuration</h4>
-              <p className="text-sm text-gray-500 mb-4">
+              <p className="text-sm text-gray-500">
                 Configure a training workflow to start training this model.
               </p>
-              <Button onClick={() => setShowConfigDialog(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Configure Pipeline
-              </Button>
             </div>
           ) : (
             <div className="space-y-4">
@@ -585,7 +801,7 @@ const MLModelDetail: React.FC = () => {
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-semibold">Pipeline Execution History</h3>
             {pipelineRuns.length > 0 && (
-              <Badge variant="outline">{pipelineRuns.length} runs</Badge>
+              <Badge variant="outline">{pipelineRuns.length} {pipelineRuns.length === 1 ? "run" : "runs"}</Badge>
             )}
           </div>
 
@@ -681,7 +897,16 @@ const MLModelDetail: React.FC = () => {
       </div>
 
       {/* Create Configuration Dialog */}
-      <Dialog open={showConfigDialog} onOpenChange={setShowConfigDialog}>
+      <Dialog
+        open={showConfigDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRunImmediately(false);
+            setPromoteWhenComplete(false);
+          }
+          setShowConfigDialog(open);
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Configure Training Pipeline</DialogTitle>
@@ -694,13 +919,20 @@ const MLModelDetail: React.FC = () => {
                   <SelectValue placeholder="Select a workflow" />
                 </SelectTrigger>
                 <SelectContent>
-                  {workflows.map((workflow) => (
-                    <SelectItem key={workflow.id} value={workflow.id || ""}>
-                      {workflow.name} {workflow.version && `(v${workflow.version})`}
-                    </SelectItem>
-                  ))}
+                  {workflows
+                    .filter((w) => w.nodes?.some((n) => n.type === "trainModelNode"))
+                    .map((workflow) => (
+                      <SelectItem key={workflow.id} value={workflow.id || ""}>
+                        {workflow.name} {workflow.version && `(v${workflow.version})`}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
+              {workflows.filter((w) => w.nodes?.some((n) => n.type === "trainModelNode")).length === 0 && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  No workflows with a Train Model node. Add a Train Model node in the Workflow Studio first.
+                </p>
+              )}
               <div className="mt-2 flex gap-2">
                 <Button
                   variant="link"
@@ -736,12 +968,39 @@ const MLModelDetail: React.FC = () => {
                 Leave empty to run manually only. Format: minute hour day month weekday
               </p>
             </div>
+            <div className="space-y-3 pt-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={runImmediately}
+                  onChange={(e) => {
+                    setRunImmediately(e.target.checked);
+                    if (!e.target.checked) setPromoteWhenComplete(false);
+                  }}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <span className="text-sm font-medium">Run pipeline immediately</span>
+              </label>
+              {runImmediately && (
+                <label className="flex items-center gap-2 cursor-pointer ml-6">
+                  <input
+                    type="checkbox"
+                    checked={promoteWhenComplete}
+                    onChange={(e) => setPromoteWhenComplete(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <span className="text-sm font-medium">Promote when complete</span>
+                </label>
+              )}
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowConfigDialog(false)}>
+            <Button variant="outline" onClick={() => setShowConfigDialog(false)} disabled={isCreatingConfig}>
               Cancel
             </Button>
-            <Button onClick={handleCreateConfig}>Create Configuration</Button>
+            <Button onClick={handleCreateConfig} disabled={isCreatingConfig}>
+              {isCreatingConfig ? "Creating..." : "Create Configuration"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
