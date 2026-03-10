@@ -256,6 +256,7 @@ def create_celery():
             "app.tasks.share_folder_tasks",
             "app.tasks.ml_model_pipeline_tasks",
             "app.tasks.kb_batch_tasks",
+            "app.tasks.analytics_aggregation_tasks"
         ],
     )
 
