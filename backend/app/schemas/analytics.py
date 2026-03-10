@@ -68,6 +68,9 @@ class NodeDailyStatsItem(BaseModel):
     execution_count: int
     success_count: int
     failure_count: int
+    unique_conversations: int = 0
+    thumbs_up_count: int = 0
+    thumbs_down_count: int = 0
     avg_execution_ms: Optional[float] = None
     min_execution_ms: Optional[float] = None
     max_execution_ms: Optional[float] = None
@@ -90,6 +93,9 @@ class NodeTypeBreakdownItem(BaseModel):
     execution_count: int
     success_count: int
     failure_count: int
+    unique_conversations: int = 0
+    thumbs_up_count: int = 0
+    thumbs_down_count: int = 0
     success_rate: Optional[float] = None
     avg_execution_ms: Optional[float] = None
     total_execution_ms: Optional[float] = None

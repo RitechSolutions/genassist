@@ -1,10 +1,15 @@
 import { useState, useEffect, useRef, useTransition } from "react";
-import { fetchMetrics, type FetchedMetricsData } from "@/services/metrics";
+import {
+  fetchMetricsWithComparison,
+  type FetchedMetricsData,
+  type MetricsDeltas,
+} from "@/services/metrics";
 import { toMetricsApiParams } from "@/helpers/analyticsParams";
 import type { DateRange } from "react-day-picker";
 
 export const useAnalyticsData = (dateRange: DateRange | undefined, agentId?: string) => {
   const [metrics, setMetrics] = useState<FetchedMetricsData | null>(null);
+  const [deltas, setDeltas] = useState<MetricsDeltas | null>(null);
   const [initialLoading, setInitialLoading] = useState<boolean>(true);
   const [refreshing, startRefresh] = useTransition();
   const [error, setError] = useState<Error | null>(null);
@@ -16,9 +21,10 @@ export const useAnalyticsData = (dateRange: DateRange | undefined, agentId?: str
 
     const doFetch = async () => {
       try {
-        const data = await fetchMetrics(params);
+        const data = await fetchMetricsWithComparison(params);
         if (fetchId !== fetchIdRef.current) return;
-        setMetrics(data);
+        setMetrics(data?.current ?? null);
+        setDeltas(data?.deltas ?? null);
         setError(null);
       } catch (err) {
         if (fetchId !== fetchIdRef.current) return;
@@ -39,5 +45,5 @@ export const useAnalyticsData = (dateRange: DateRange | undefined, agentId?: str
     }
   }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), agentId]);
 
-  return { metrics, loading: initialLoading, refreshing, error };
+  return { metrics, deltas, loading: initialLoading, refreshing, error };
 };

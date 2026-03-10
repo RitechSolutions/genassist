@@ -67,6 +67,8 @@ class AnalyticsAggregationService:
                 "success_count": 0,
                 "failure_count": 0,
                 "execution_ms_values": [],
+                "conversation_ids": set(),
+                "thumbs_data": {},
             }
         )
 
@@ -160,6 +162,14 @@ class AnalyticsAggregationService:
                     nb = node_buckets[node_key]
                     nb["execution_count"] += 1
 
+                    if conv_id:
+                        nb["conversation_ids"].add(conv_id_str)
+                        if conv_id_str not in nb["thumbs_data"] and log.conversation is not None:
+                            nb["thumbs_data"][conv_id_str] = (
+                                log.conversation.thumbs_up_count or 0,
+                                log.conversation.thumbs_down_count or 0,
+                            )
+
                     if nstatus in ("success", "completed"):
                         nb["success_count"] += 1
                     else:
@@ -224,6 +234,7 @@ class AnalyticsAggregationService:
         node_stats = []
         for (agent_id, node_type, stat_date), nb in node_buckets.items():
             ms_vals = nb["execution_ms_values"]
+            node_thumbs = list(nb["thumbs_data"].values())
             node_stats.append(
                 {
                     "agent_id": agent_id,
@@ -236,6 +247,9 @@ class AnalyticsAggregationService:
                     "min_execution_ms": min(ms_vals) if ms_vals else None,
                     "max_execution_ms": max(ms_vals) if ms_vals else None,
                     "total_execution_ms": sum(ms_vals) if ms_vals else None,
+                    "unique_conversations": len(nb["conversation_ids"]),
+                    "thumbs_up_count": sum(t[0] for t in node_thumbs),
+                    "thumbs_down_count": sum(t[1] for t in node_thumbs),
                 }
             )
 

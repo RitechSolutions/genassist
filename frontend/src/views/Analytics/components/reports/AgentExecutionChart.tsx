@@ -43,7 +43,7 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
   const dates = Array.from(dateSet).sort();
   const agentIds = Array.from(agentSet);
 
-  // Pivot: { date, [agentId]: successCount }
+  // Pivot: { date, [agentId]: unique_conversations }
   const pivot = new Map<string, Record<string, number>>();
   for (const date of dates) {
     const row: Record<string, number> = {};
@@ -53,7 +53,7 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
     pivot.set(date, row);
   }
   for (const item of items) {
-    pivot.get(item.stat_date)![item.agent_id] = item.success_count;
+    pivot.get(item.stat_date)![item.agent_id] = item.unique_conversations;
   }
 
   const data = dates.map((date) => ({
@@ -61,26 +61,20 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
     ...pivot.get(date),
   }));
 
-  const totalSuccess = items.reduce((s, i) => s + i.success_count, 0);
-  const totalErrors = items.reduce((s, i) => s + i.error_count, 0);
+  const totalConversations = items.reduce((s, i) => s + i.unique_conversations, 0);
 
   return (
     <Card className="bg-white shadow-sm">
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <CardTitle className="text-sm font-semibold text-zinc-700">
-            Daily Execution Trend
+            Daily Conversations
           </CardTitle>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-              Success
-              <span className="font-semibold text-zinc-700 ml-0.5">{totalSuccess.toLocaleString()}</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" />
-              Errors
-              <span className="font-semibold text-zinc-700 ml-0.5">{totalErrors.toLocaleString()}</span>
+              Total
+              <span className="font-semibold text-zinc-700 ml-0.5">{totalConversations.toLocaleString()}</span>
             </span>
           </div>
         </div>
@@ -140,7 +134,6 @@ export function AgentExecutionChart({ items, loading, agentNameMap }: AgentExecu
               )}
               {agentIds.map((agentId, i) => {
                 const color = COLORS[i % COLORS.length];
-                // Only show gradient fill for single agent; lines-only for multiple to avoid overlap
                 const showFill = agentIds.length === 1;
                 return (
                   <Area

@@ -4014,6 +4014,167 @@
             }
           },
           {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "customer_satisfaction_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Min"
+            }
+          },
+          {
+            "name": "customer_satisfaction_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Max"
+            }
+          },
+          {
+            "name": "quality_of_service_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Min"
+            }
+          },
+          {
+            "name": "quality_of_service_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Max"
+            }
+          },
+          {
+            "name": "resolution_rate_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Min"
+            }
+          },
+          {
+            "name": "resolution_rate_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Max"
+            }
+          },
+          {
+            "name": "efficiency_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Min"
+            }
+          },
+          {
+            "name": "efficiency_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Max"
+            }
+          },
+          {
             "name": "hostility_positive_max",
             "in": "query",
             "required": false,
@@ -4097,6 +4258,22 @@
                 }
               ],
               "title": "Customer Id"
+            }
+          },
+          {
+            "name": "exclude_empty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Empty"
             }
           },
           {
@@ -4677,6 +4854,167 @@
             }
           },
           {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "customer_satisfaction_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Min"
+            }
+          },
+          {
+            "name": "customer_satisfaction_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Max"
+            }
+          },
+          {
+            "name": "quality_of_service_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Min"
+            }
+          },
+          {
+            "name": "quality_of_service_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Max"
+            }
+          },
+          {
+            "name": "resolution_rate_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Min"
+            }
+          },
+          {
+            "name": "resolution_rate_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Max"
+            }
+          },
+          {
+            "name": "efficiency_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Min"
+            }
+          },
+          {
+            "name": "efficiency_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Max"
+            }
+          },
+          {
             "name": "hostility_positive_max",
             "in": "query",
             "required": false,
@@ -4760,6 +5098,22 @@
                 }
               ],
               "title": "Customer Id"
+            }
+          },
+          {
+            "name": "exclude_empty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Empty"
             }
           },
           {
@@ -5003,6 +5357,167 @@
             }
           },
           {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "customer_satisfaction_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Min"
+            }
+          },
+          {
+            "name": "customer_satisfaction_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Max"
+            }
+          },
+          {
+            "name": "quality_of_service_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Min"
+            }
+          },
+          {
+            "name": "quality_of_service_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Max"
+            }
+          },
+          {
+            "name": "resolution_rate_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Min"
+            }
+          },
+          {
+            "name": "resolution_rate_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Max"
+            }
+          },
+          {
+            "name": "efficiency_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Min"
+            }
+          },
+          {
+            "name": "efficiency_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Max"
+            }
+          },
+          {
             "name": "hostility_positive_max",
             "in": "query",
             "required": false,
@@ -5086,6 +5601,22 @@
                 }
               ],
               "title": "Customer Id"
+            }
+          },
+          {
+            "name": "exclude_empty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Empty"
             }
           },
           {
@@ -9377,6 +9908,16 @@
               ],
               "title": "To Date"
             }
+          },
+          {
+            "name": "compare",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Compare"
+            }
           }
         ],
         "responses": {
@@ -9384,9 +9925,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentStatsSummaryResponse"
-                }
+                "schema": {}
               }
             }
           },
@@ -9882,6 +10421,16 @@
                 }
               ],
               "title": "Agent Id"
+            }
+          },
+          {
+            "name": "compare",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Compare"
             }
           }
         ],
@@ -15922,117 +16471,6 @@
         "title": "AgentStatsResponse",
         "description": "Your Agents section response."
       },
-      "AgentStatsSummaryResponse": {
-        "properties": {
-          "agent_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Id"
-          },
-          "from_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "From Date"
-          },
-          "to_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "To Date"
-          },
-          "total_executions": {
-            "type": "integer",
-            "title": "Total Executions"
-          },
-          "total_success": {
-            "type": "integer",
-            "title": "Total Success"
-          },
-          "total_errors": {
-            "type": "integer",
-            "title": "Total Errors"
-          },
-          "avg_response_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Avg Response Ms"
-          },
-          "avg_success_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Avg Success Rate"
-          },
-          "total_rag_used": {
-            "type": "integer",
-            "title": "Total Rag Used"
-          },
-          "total_unique_conversations": {
-            "type": "integer",
-            "title": "Total Unique Conversations"
-          },
-          "total_finalized_conversations": {
-            "type": "integer",
-            "title": "Total Finalized Conversations",
-            "default": 0
-          },
-          "total_in_progress_conversations": {
-            "type": "integer",
-            "title": "Total In Progress Conversations",
-            "default": 0
-          },
-          "total_thumbs_up": {
-            "type": "integer",
-            "title": "Total Thumbs Up",
-            "default": 0
-          },
-          "total_thumbs_down": {
-            "type": "integer",
-            "title": "Total Thumbs Down",
-            "default": 0
-          }
-        },
-        "type": "object",
-        "required": [
-          "total_executions",
-          "total_success",
-          "total_errors",
-          "total_rag_used",
-          "total_unique_conversations"
-        ],
-        "title": "AgentStatsSummaryResponse"
-      },
       "AgentUpdate": {
         "properties": {
           "name": {
@@ -21811,6 +22249,21 @@
             "type": "integer",
             "title": "Failure Count"
           },
+          "unique_conversations": {
+            "type": "integer",
+            "title": "Unique Conversations",
+            "default": 0
+          },
+          "thumbs_up_count": {
+            "type": "integer",
+            "title": "Thumbs Up Count",
+            "default": 0
+          },
+          "thumbs_down_count": {
+            "type": "integer",
+            "title": "Thumbs Down Count",
+            "default": 0
+          },
           "avg_execution_ms": {
             "anyOf": [
               {
@@ -21906,6 +22359,21 @@
           "failure_count": {
             "type": "integer",
             "title": "Failure Count"
+          },
+          "unique_conversations": {
+            "type": "integer",
+            "title": "Unique Conversations",
+            "default": 0
+          },
+          "thumbs_up_count": {
+            "type": "integer",
+            "title": "Thumbs Up Count",
+            "default": 0
+          },
+          "thumbs_down_count": {
+            "type": "integer",
+            "title": "Thumbs Down Count",
+            "default": 0
           },
           "success_rate": {
             "anyOf": [
@@ -23125,7 +23593,11 @@
           "updated_at",
           "thumbs_up_count",
           "thumbs_down_count",
-          "id"
+          "id",
+          "customer_satisfaction",
+          "quality_of_service",
+          "resolution_rate",
+          "efficiency"
         ],
         "title": "SortField"
       },

@@ -17,7 +17,7 @@ const AnalyticsPage = () => {
   });
   const [agentFilter, setAgentFilter] = useState("all");
   const { agents } = useAgentsList();
-  const { metrics, loading, refreshing, error } = useAnalyticsData(dateRange, agentFilter);
+  const { metrics, deltas, loading, refreshing, error } = useAnalyticsData(dateRange, agentFilter);
 
   return (
     <SidebarProvider>
@@ -45,6 +45,7 @@ const AnalyticsPage = () => {
                 dateRange={dateRange}
                 agentId={agentFilter}
                 metrics={metrics}
+                deltas={deltas}
                 loading={loading}
                 refreshing={refreshing}
                 error={error}

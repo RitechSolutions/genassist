@@ -30,27 +30,50 @@ interface PaginatedConversationsResponse {
   has_more: boolean;
 }
 
+export interface FetchTranscriptsParams {
+  limit?: number;
+  skip?: number;
+  sentiment?: string;
+  hostility_neutral_max?: number;
+  hostility_positive_max?: number;
+  include_feedback?: boolean;
+  conversation_status?: string[];
+  order_by?: string;
+  sort_direction?: string;
+  agent_id?: string;
+  customer_satisfaction_min?: number;
+  customer_satisfaction_max?: number;
+  quality_of_service_min?: number;
+  quality_of_service_max?: number;
+  resolution_rate_min?: number;
+  resolution_rate_max?: number;
+  efficiency_min?: number;
+  efficiency_max?: number;
+}
+
 export const fetchTranscripts = async (
-  limit?: number,
-  skip?: number,
-  sentiment?: string,
-  hostility_neutral_max?: number,
-  hostility_positive_max?: number,
-  include_feedback?: boolean,
-  conversation_status?: string[],
-  order_by?: string,
-  sort_direction?: string
+  params: FetchTranscriptsParams & {
+    scoreFilters?: Record<string, number | undefined>;
+    from_date?: string;
+    to_date?: string;
+    exclude_empty?: boolean;
+  } = {},
 ): Promise<FetchTranscriptsResult> => {
   try {
+    const {
+      limit, skip, sentiment, hostility_neutral_max, hostility_positive_max,
+      include_feedback, conversation_status, order_by, sort_direction,
+      agent_id, scoreFilters, from_date, to_date, exclude_empty,
+    } = params;
+
     let url = "conversations/";
 
     // Clamp limit to backend maximum
     const safeLimit =
       typeof limit === "number" && limit > 0
         ? Math.min(limit, MAX_BACKEND_LIMIT)
-        : 20; // Default to 20 if not specified
+        : 20;
 
-    // Add pagination and filter parameters
     const queryParams = new URLSearchParams();
     if (skip) queryParams.append("skip", String(skip));
     queryParams.append("limit", String(safeLimit));
@@ -68,6 +91,15 @@ export const fetchTranscripts = async (
     }
     if (order_by) queryParams.append("order_by", order_by);
     if (sort_direction) queryParams.append("sort_direction", sort_direction);
+    if (agent_id) queryParams.append("agent_id", agent_id);
+    if (from_date) queryParams.append("from_date", from_date);
+    if (to_date) queryParams.append("to_date", to_date);
+    if (exclude_empty) queryParams.append("exclude_empty", "true");
+    if (scoreFilters) {
+      Object.entries(scoreFilters).forEach(([key, val]) => {
+        if (val !== undefined) queryParams.append(key, String(val));
+      });
+    }
 
     if (queryParams.toString()) {
       url += `?${queryParams.toString()}`;

@@ -1,6 +1,6 @@
 from typing import Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timedelta
 from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, cast, Date
@@ -96,16 +96,15 @@ class RecordingsRepository:
 
         return new_recording
 
-    async def get_metrics(
+    async def _get_raw_metrics(
         self,
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         agent_id: Optional[UUID] = None,
-    ):
-        # TODO fetch from operators instead
-        # Aggregate sums and counts directly from the DB
+    ) -> dict:
+        """Return numeric metric averages (already scaled to 0-100 for display)."""
         query = select(
-            func.count(ConversationAnalysisModel.id),  # total_files
+            func.count(ConversationAnalysisModel.id),
             func.avg(ConversationAnalysisModel.customer_satisfaction),
             func.avg(ConversationAnalysisModel.resolution_rate),
             func.avg(ConversationAnalysisModel.positive_sentiment),
@@ -131,19 +130,95 @@ class RecordingsRepository:
         ) = result.one()
 
         if total_files == 0:
-            return self.get_default_metrics()
+            return {
+                "customer_satisfaction": 0, "resolution_rate": 0,
+                "positive_sentiment": 0, "neutral_sentiment": 0, "negative_sentiment": 0,
+                "efficiency": 0, "response_time": 0, "quality_of_service": 0,
+                "total_analyzed_audios": 0,
+            }
 
-        return self._format_metrics(
-            total_files,
-            avg_customer_satisfaction,
-            avg_resolution_rate,
-            avg_positive,
-            avg_neutral,
-            avg_negative,
-            avg_efficiency,
-            avg_response_time,
-            avg_quality_of_service,
-        )
+        return {
+            "customer_satisfaction": round((avg_customer_satisfaction or 0) * 10),
+            "resolution_rate": round((avg_resolution_rate or 0) * 10),
+            "positive_sentiment": round(avg_positive or 0),
+            "neutral_sentiment": round(avg_neutral or 0),
+            "negative_sentiment": round(avg_negative or 0),
+            "efficiency": round((avg_efficiency or 0) * 10),
+            "response_time": round((avg_response_time or 0) * 10),
+            "quality_of_service": round((avg_quality_of_service or 0) * 10),
+            "total_analyzed_audios": total_files,
+        }
+
+    @staticmethod
+    def _format_raw_metrics(raw: dict) -> dict:
+        """Convert raw numeric metrics to the formatted string response."""
+        return {
+            "Customer Satisfaction": f"{raw['customer_satisfaction']}%",
+            "Resolution Rate": f"{raw['resolution_rate']}%",
+            "Positive Sentiment": f"{raw['positive_sentiment']}%",
+            "Neutral Sentiment": f"{raw['neutral_sentiment']}%",
+            "Negative Sentiment": f"{raw['negative_sentiment']}%",
+            "Efficiency": f"{raw['efficiency']}%",
+            "Response Time": f"{raw['response_time']}%",
+            "Quality of Service": f"{raw['quality_of_service']}%",
+            "total_analyzed_audios": raw["total_analyzed_audios"],
+        }
+
+    async def get_metrics(
+        self,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        agent_id: Optional[UUID] = None,
+    ):
+        raw = await self._get_raw_metrics(from_date, to_date, agent_id)
+        return self._format_raw_metrics(raw)
+
+    async def get_metrics_with_comparison(
+        self,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        agent_id: Optional[UUID] = None,
+    ) -> dict:
+        """Return current metrics, previous-period metrics, and deltas."""
+        current_raw = await self._get_raw_metrics(from_date, to_date, agent_id)
+
+        if from_date is None or to_date is None:
+            return {
+                "current": self._format_raw_metrics(current_raw),
+                "previous": None,
+                "deltas": None,
+            }
+
+        duration = to_date - from_date
+        prev_to = from_date - timedelta(days=1)
+        prev_from = prev_to - duration
+        previous_raw = await self._get_raw_metrics(prev_from, prev_to, agent_id)
+
+        # Compute deltas (percentage-point difference)
+        delta_keys = [
+            "customer_satisfaction", "resolution_rate", "positive_sentiment",
+            "negative_sentiment", "efficiency", "response_time", "quality_of_service",
+        ]
+        # Map raw keys to display keys
+        display_key_map = {
+            "customer_satisfaction": "Customer Satisfaction",
+            "resolution_rate": "Resolution Rate",
+            "positive_sentiment": "Positive Sentiment",
+            "negative_sentiment": "Negative Sentiment",
+            "efficiency": "Efficiency",
+            "response_time": "Response Time",
+            "quality_of_service": "Quality of Service",
+        }
+        deltas = {
+            display_key_map[k]: current_raw[k] - previous_raw[k]
+            for k in delta_keys
+        }
+
+        return {
+            "current": self._format_raw_metrics(current_raw),
+            "previous": self._format_raw_metrics(previous_raw),
+            "deltas": deltas,
+        }
 
 
     async def get_metrics_per_day(
@@ -160,6 +235,7 @@ class RecordingsRepository:
                 func.avg(ConversationAnalysisModel.customer_satisfaction).label("satisfaction"),
                 func.avg(ConversationAnalysisModel.quality_of_service).label("quality_of_service"),
                 func.avg(ConversationAnalysisModel.resolution_rate).label("resolution_rate"),
+                func.avg(ConversationAnalysisModel.efficiency).label("efficiency"),
             )
             .join(
                 ConversationModel,
@@ -179,6 +255,7 @@ class RecordingsRepository:
                 "satisfaction": round(float(row.satisfaction or 0) * 10, 2),
                 "quality_of_service": round(float(row.quality_of_service or 0) * 10, 2),
                 "resolution_rate": round(float(row.resolution_rate or 0) * 10, 2),
+                "efficiency": round(float(row.efficiency or 0) * 10, 2),
             }
             for row in rows
         ]

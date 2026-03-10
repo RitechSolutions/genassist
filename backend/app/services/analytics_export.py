@@ -171,13 +171,13 @@ def _export_agents_csv(
 
     # summary
     success_rate = (summary.total_success / summary.total_executions * 100) if summary.total_executions > 0 else 0
+    total_feedback = summary.total_thumbs_up + summary.total_thumbs_down
+    satisfaction = f"{summary.total_thumbs_up / total_feedback * 100:.0f}%" if total_feedback > 0 else "—"
     w.writerow(["Summary"])
     w.writerow(["Conversations", summary.total_unique_conversations])
-    w.writerow(["Total Executions", summary.total_executions])
-    w.writerow(["Success Rate", f"{success_rate:.1f}%"])
+    w.writerow(["Success Rate", f"{success_rate:.1f}% ({summary.total_success} of {summary.total_executions})"])
     w.writerow(["Avg Response Time", _fmt_ms(summary.avg_response_ms)])
-    w.writerow(["Thumbs Up", summary.total_thumbs_up])
-    w.writerow(["Thumbs Down", summary.total_thumbs_down])
+    w.writerow(["Satisfaction", f"{satisfaction} ({summary.total_thumbs_up} positive, {summary.total_thumbs_down} negative)"])
     w.writerow([])
 
     # data section
@@ -185,17 +185,15 @@ def _export_agents_csv(
         # per-day
         w.writerow(["By Date"])
         _csv_write_rows(w,
-            ["Date", "Conversations", "Executions", "Success", "Errors", "Avg Response (ms)", "Nodes Executed", "RAG Used", "Thumbs Up", "Thumbs Down"],
+            ["Date", "Conversations", "Completed", "In Progress", "Success Rate", "Avg Response (ms)", "Thumbs Up", "Thumbs Down"],
             [
                 [
                     str(i.stat_date),
                     i.unique_conversations,
-                    i.execution_count,
-                    i.success_count,
-                    i.error_count,
+                    i.finalized_conversations,
+                    i.in_progress_conversations,
+                    f"{i.success_count / i.execution_count * 100:.1f}% ({i.success_count}/{i.execution_count})" if i.execution_count > 0 else "—",
                     round(i.avg_response_ms) if i.avg_response_ms is not None else "",
-                    i.total_nodes_executed,
-                    i.rag_used_count,
                     i.thumbs_up_count,
                     i.thumbs_down_count,
                 ]
@@ -207,17 +205,15 @@ def _export_agents_csv(
         w.writerow(["By Agent"])
         rows_agg = _aggregate_agent_items(items)
         _csv_write_rows(w,
-            ["Agent", "Conversations", "Executions", "Success", "Errors", "Avg Response (ms)", "Nodes Executed", "RAG Used", "Thumbs Up", "Thumbs Down"],
+            ["Agent", "Conversations", "Completed", "In Progress", "Success Rate", "Avg Response (ms)", "Thumbs Up", "Thumbs Down"],
             [
                 [
                     _agent_name(a["agent_id"], agent_names),
                     a["unique_conversations"],
-                    a["execution_count"],
-                    a["success_count"],
-                    a["error_count"],
+                    a["finalized_conversations"],
+                    a["in_progress_conversations"],
+                    f"{a['success_count'] / a['execution_count'] * 100:.1f}% ({a['success_count']}/{a['execution_count']})" if a["execution_count"] > 0 else "—",
                     round(a["avg_response_ms"]) if a["avg_response_ms"] is not None else "",
-                    a["total_nodes_executed"],
-                    a["rag_used_count"],
                     a["thumbs_up_count"],
                     a["thumbs_down_count"],
                 ]
@@ -362,13 +358,13 @@ def _export_agents_excel(
     ws_sum.write(3, 0, "Summary", sectionfmt)
 
     success_rate = (summary.total_success / summary.total_executions * 100) if summary.total_executions > 0 else 0
+    total_feedback = summary.total_thumbs_up + summary.total_thumbs_down
+    satisfaction = f"{summary.total_thumbs_up / total_feedback * 100:.0f}%" if total_feedback > 0 else "—"
     metrics = [
         ("Conversations", summary.total_unique_conversations),
-        ("Total Executions", summary.total_executions),
-        ("Success Rate", f"{success_rate:.1f}%"),
+        ("Success Rate", f"{success_rate:.1f}% ({summary.total_success} of {summary.total_executions})"),
         ("Avg Response Time", _fmt_ms(summary.avg_response_ms)),
-        ("Thumbs Up", summary.total_thumbs_up),
-        ("Thumbs Down", summary.total_thumbs_down),
+        ("Satisfaction", f"{satisfaction} ({summary.total_thumbs_up} positive, {summary.total_thumbs_down} negative)"),
     ]
     start_row = 4
     _xl_write_table(ws_sum, start_row, ["Metric", "Value"], [[m, v] for m, v in metrics], header_fmt, alt_fmt, plain_fmt)
@@ -380,35 +376,31 @@ def _export_agents_excel(
     ws_data.set_column(1, 9, 14)
 
     if agent_id:
-        headers = ["Date", "Conversations", "Executions", "Success", "Errors", "Avg Response (ms)", "Nodes Executed", "RAG Used", "Thumbs Up", "Thumbs Down"]
+        headers = ["Date", "Conversations", "Completed", "In Progress", "Success Rate", "Avg Response (ms)", "Thumbs Up", "Thumbs Down"]
         data_rows = [
             [
                 str(i.stat_date),
                 i.unique_conversations,
-                i.execution_count,
-                i.success_count,
-                i.error_count,
+                i.finalized_conversations,
+                i.in_progress_conversations,
+                f"{i.success_count / i.execution_count * 100:.1f}%" if i.execution_count > 0 else "—",
                 round(i.avg_response_ms) if i.avg_response_ms is not None else "",
-                i.total_nodes_executed,
-                i.rag_used_count,
                 i.thumbs_up_count,
                 i.thumbs_down_count,
             ]
             for i in sorted(items, key=lambda x: x.stat_date)
         ]
     else:
-        headers = ["Agent", "Conversations", "Executions", "Success", "Errors", "Avg Response (ms)", "Nodes Executed", "RAG Used", "Thumbs Up", "Thumbs Down"]
+        headers = ["Agent", "Conversations", "Completed", "In Progress", "Success Rate", "Avg Response (ms)", "Thumbs Up", "Thumbs Down"]
         rows_agg = _aggregate_agent_items(items)
         data_rows = [
             [
                 _agent_name(a["agent_id"], agent_names),
                 a["unique_conversations"],
-                a["execution_count"],
-                a["success_count"],
-                a["error_count"],
+                a["finalized_conversations"],
+                a["in_progress_conversations"],
+                f"{a['success_count'] / a['execution_count'] * 100:.1f}%" if a["execution_count"] > 0 else "—",
                 round(a["avg_response_ms"]) if a["avg_response_ms"] is not None else "",
-                a["total_nodes_executed"],
-                a["rag_used_count"],
                 a["thumbs_up_count"],
                 a["thumbs_down_count"],
             ]
@@ -558,16 +550,16 @@ def _export_agents_pdf(
 
     # Summary table
     success_rate = (summary.total_success / summary.total_executions * 100) if summary.total_executions > 0 else 0
+    total_feedback = summary.total_thumbs_up + summary.total_thumbs_down
+    satisfaction = f"{summary.total_thumbs_up / total_feedback * 100:.0f}%" if total_feedback > 0 else "—"
     sum_rows = [
         ["Conversations", str(summary.total_unique_conversations)],
-        ["Total Executions", str(summary.total_executions)],
-        ["Success Rate", f"{success_rate:.1f}%"],
+        ["Success Rate", f"{success_rate:.1f}% ({summary.total_success} of {summary.total_executions})"],
         ["Avg Response Time", _fmt_ms(summary.avg_response_ms)],
-        ["Thumbs Up", str(summary.total_thumbs_up)],
-        ["Thumbs Down", str(summary.total_thumbs_down)],
+        ["Satisfaction", f"{satisfaction} ({summary.total_thumbs_up} pos, {summary.total_thumbs_down} neg)"],
     ]
     _pdf_section_header(pdf, "Summary")
-    _pdf_table(pdf, ["Metric", "Value"], sum_rows, [70, 80])
+    _pdf_table(pdf, ["Metric", "Value"], sum_rows, [70, 100])
 
     # Data table
     if agent_id:
@@ -576,21 +568,19 @@ def _export_agents_pdf(
             [
                 str(i.stat_date),
                 str(i.unique_conversations),
-                str(i.execution_count),
-                str(i.success_count),
-                str(i.error_count),
+                str(i.finalized_conversations),
+                str(i.in_progress_conversations),
+                f"{i.success_count / i.execution_count * 100:.1f}%" if i.execution_count > 0 else "—",
                 _fmt_ms(i.avg_response_ms),
-                str(i.total_nodes_executed),
-                str(i.rag_used_count),
                 str(i.thumbs_up_count),
                 str(i.thumbs_down_count),
             ]
             for i in sorted(items, key=lambda x: x.stat_date)
         ]
         _pdf_table(pdf,
-            ["Date", "Conv.", "Exec.", "Success", "Errors", "Avg (ms)", "Nodes", "RAG", "Thumbs Up", "Thumbs Down"],
+            ["Date", "Conv.", "Completed", "In Prog.", "Success Rate", "Avg (ms)", "Thumbs Up", "Thumbs Down"],
             data_rows,
-            [26, 20, 22, 22, 22, 28, 22, 20, 20, 20],
+            [26, 22, 26, 24, 30, 28, 26, 26],
         )
     else:
         _pdf_section_header(pdf, "By Agent")
@@ -599,21 +589,19 @@ def _export_agents_pdf(
             [
                 _agent_name(a["agent_id"], agent_names),
                 str(a["unique_conversations"]),
-                str(a["execution_count"]),
-                str(a["success_count"]),
-                str(a["error_count"]),
+                str(a["finalized_conversations"]),
+                str(a["in_progress_conversations"]),
+                f"{a['success_count'] / a['execution_count'] * 100:.1f}%" if a["execution_count"] > 0 else "—",
                 _fmt_ms(a["avg_response_ms"]),
-                str(a["total_nodes_executed"]),
-                str(a["rag_used_count"]),
                 str(a["thumbs_up_count"]),
                 str(a["thumbs_down_count"]),
             ]
             for a in rows_agg
         ]
         _pdf_table(pdf,
-            ["Agent", "Conv.", "Exec.", "Success", "Errors", "Avg (ms)", "Nodes", "RAG", "Thumbs Up", "Thumbs Down"],
+            ["Agent", "Conv.", "Completed", "In Prog.", "Success Rate", "Avg (ms)", "Thumbs Up", "Thumbs Down"],
             data_rows,
-            [40, 18, 20, 20, 20, 26, 22, 18, 18, 18],
+            [40, 22, 26, 24, 30, 28, 26, 26],
         )
 
     # Node breakdown
