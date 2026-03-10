@@ -214,8 +214,8 @@ export function LLMAnalystDialog({
                 <Label htmlFor="prompt">Prompt</Label>
                 <Textarea
                   id="prompt"
-                  value={prompt.trim().replace(/\s+/g, " ")}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value.replace(/\s+/g, ' '))}
                   placeholder="System prompt"
                   rows={6}
                 />
