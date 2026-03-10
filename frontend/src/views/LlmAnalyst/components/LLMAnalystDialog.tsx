@@ -265,34 +265,32 @@ export function LLMAnalystDialog({
                   <p className="text-xs text-muted-foreground">
                     Select additional conversation data to include when analyzing transcripts.
                   </p>
-                  <ScrollArea className="border rounded-lg p-2 h-48">
-                    <div className="space-y-1">
-                      {availableEnrichments.map((enrichment) => (
-                        <div
-                          key={enrichment.key}
-                          className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50"
-                        >
-                          <Checkbox
-                            id={`enrichment-${enrichment.key}`}
-                            checked={selectedEnrichments.includes(enrichment.key)}
-                            onCheckedChange={() => toggleEnrichment(enrichment.key)}
-                            className="mt-0.5"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <label
-                              htmlFor={`enrichment-${enrichment.key}`}
-                              className="text-sm font-medium cursor-pointer"
-                            >
-                              {enrichment.name}
-                            </label>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {enrichment.description}
-                            </p>
-                          </div>
+                  <div className="border rounded-lg p-2 space-y-1 overflow-y-auto max-h-40">
+                    {availableEnrichments.map((enrichment) => (
+                      <div
+                        key={enrichment.key}
+                        className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          id={`enrichment-${enrichment.key}`}
+                          checked={selectedEnrichments.includes(enrichment.key)}
+                          onCheckedChange={() => toggleEnrichment(enrichment.key)}
+                          className="mt-0.5"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <label
+                            htmlFor={`enrichment-${enrichment.key}`}
+                            className="text-sm font-medium cursor-pointer"
+                          >
+                            {enrichment.name}
+                          </label>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {enrichment.description}
+                          </p>
                         </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
