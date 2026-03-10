@@ -418,7 +418,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
       }
 
       toast.success(
-        `Workflow ${isEditMode ? "updated" : "created"} successfully.`,
+        `Agent ${isEditMode ? "updated" : "created"} successfully.`,
       );
     } catch (err: unknown) {
       let errorMessage =
