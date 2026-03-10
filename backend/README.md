@@ -37,6 +37,11 @@ Create virtual environment and install requirements\
     pip install -r requirements-rag.txt
     ```
 
+    Used only for development
+    ```bash
+    pip install -r requirements-dev.txt
+    ```
+
     create .env file from example and put config values
 
     If using HF model for the first time, go to https://hf.co/pyannote/segmentation to accept license agreeement
