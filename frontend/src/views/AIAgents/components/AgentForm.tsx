@@ -58,6 +58,8 @@ interface AgentFormProps {
   // When true, navigate to workflow after creating an agent
   redirectOnCreate?: boolean;
   onCreated?: (agentId: string) => void;
+  /** Called after a successful save (create or update). Use for e.g. refreshing lists. */
+  onSaved?: () => void;
   // When true, hides internal buttons (for external rendering)
   hideButtons?: boolean;
   // Form ID for external button association
@@ -155,6 +157,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
   onClose,
   redirectOnCreate = true,
   onCreated,
+  onSaved,
   hideButtons = false,
   formId,
 }: AgentFormProps) => {
@@ -384,6 +387,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
         await updateAgentConfig(id, dataToSubmit);
         agentId = id;
         setSuccess(true);
+        onSaved?.();
         onClose?.();
       } else {
         const { id: _, ...dataToSubmit } = formData;
@@ -400,6 +404,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
         } else {
           // When redirect is disabled, mark success and let the parent handle next steps.
           setSuccess(true);
+          onSaved?.();
           onClose?.();
         }
       }
@@ -989,6 +994,7 @@ interface AgentDialogProps {
   // disable redirect after create
   redirectOnCreate?: boolean;
   onCreated?: (agentId: string) => void;
+  onSaved?: () => void;
 }
 
 export const AgentFormDialog = ({
@@ -997,6 +1003,7 @@ export const AgentFormDialog = ({
   data,
   redirectOnCreate,
   onCreated,
+  onSaved,
 }: AgentDialogProps) => {
   const formId = "agent-form-dialog";
   const isEditMode = !!data?.id;
@@ -1039,6 +1046,7 @@ export const AgentFormDialog = ({
             onClose={onClose}
             redirectOnCreate={redirectOnCreate}
             onCreated={onCreated}
+            onSaved={onSaved}
             hideButtons={true}
             formId={formId}
           />
