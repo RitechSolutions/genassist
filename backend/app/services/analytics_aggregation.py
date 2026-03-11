@@ -1,11 +1,12 @@
 import json
 import logging
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from injector import inject
 
+from app.core.utils.date_time_utils import utc_now
 from app.repositories.analytics_aggregation import AnalyticsAggregationRepository
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ class AnalyticsAggregationService:
         4. Groups metrics by (agent_id, date) and (agent_id, node_type, date).
         5. Upserts both summary tables.
         """
-        now = datetime.now(timezone.utc)
+        now = utc_now()
         last_ts = await self.repo.get_last_aggregation_timestamp()
         if last_ts is not None:
             # Incremental: only process logs since the last aggregation

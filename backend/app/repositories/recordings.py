@@ -1,6 +1,8 @@
 from typing import Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime
+
+from app.core.utils.date_time_utils import previous_period
 from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, cast, Date
@@ -8,6 +10,41 @@ from app.db.models.recording import RecordingModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.agent import AgentModel
 from app.schemas.recording import RecordingCreate
+
+# Metric definitions: (raw_key, display_key, scale_factor)
+# KPIs are stored as 0-10 in the DB (scale 10 → 0-100%), sentiments as 0-100 (scale 1).
+_METRICS = [
+    ("customer_satisfaction", "Customer Satisfaction", 10),
+    ("resolution_rate",       "Resolution Rate",       10),
+    ("positive_sentiment",    "Positive Sentiment",     1),
+    ("neutral_sentiment",     "Neutral Sentiment",      1),
+    ("negative_sentiment",    "Negative Sentiment",     1),
+    ("efficiency",            "Efficiency",             10),
+    ("response_time",         "Response Time",          10),
+    ("quality_of_service",    "Quality of Service",     10),
+]
+
+_METRIC_KEYS = [m[0] for m in _METRICS]
+_DISPLAY_KEY_MAP = {m[0]: m[1] for m in _METRICS}
+_SCALE_MAP = {m[0]: m[2] for m in _METRICS}
+
+_EMPTY_RAW_METRICS = {k: 0 for k in _METRIC_KEYS} | {"total_analyzed_audios": 0}
+
+
+def scale_raw_metrics(averages: dict[str, float | None], total: int) -> dict:
+    """Scale DB averages to 0-100 display values using each metric's scale factor."""
+    return {
+        k: round((averages.get(k) or 0) * _SCALE_MAP[k])
+        for k in _METRIC_KEYS
+    } | {"total_analyzed_audios": total}
+
+
+def format_raw_metrics(raw: dict) -> dict:
+    """Convert raw numeric metrics (0-100) to the formatted display response."""
+    result = {_DISPLAY_KEY_MAP[k]: f"{raw[k]}%" for k in _METRIC_KEYS}
+    result["total_analyzed_audios"] = raw["total_analyzed_audios"]
+    return result
+
 
 @inject
 class RecordingsRepository:
@@ -41,46 +78,6 @@ class RecordingsRepository:
             query = query.where(ConversationModel.conversation_date <= to_date)
         return query
 
-    @staticmethod
-    def get_default_metrics() -> dict:
-        """Return default metrics values when no analyzed audio files exist."""
-        return {
-            "Customer Satisfaction": "0%",
-            "Resolution Rate": "0%",
-            "Positive Sentiment": "0%",
-            "Neutral Sentiment": "0%",
-            "Negative Sentiment": "0%",
-            "Efficiency": "0%",
-            "Response Time": "0%",
-            "Quality of Service": "0%",
-            "total_analyzed_audios": 0,
-        }
-
-    def _format_metrics(
-        self,
-        total_files: int,
-        avg_customer_satisfaction: Optional[float],
-        avg_resolution_rate: Optional[float],
-        avg_positive: Optional[float],
-        avg_neutral: Optional[float],
-        avg_negative: Optional[float],
-        avg_efficiency: Optional[float],
-        avg_response_time: Optional[float],
-        avg_quality_of_service: Optional[float],
-    ) -> dict:
-        """Format metrics values into the response dictionary."""
-        return {
-            "Customer Satisfaction": f"{round((avg_customer_satisfaction or 0) * 10)}%",
-            "Resolution Rate": f"{round((avg_resolution_rate or 0) * 10)}%",
-            "Positive Sentiment": f"{round(avg_positive or 0)}%",
-            "Neutral Sentiment": f"{round(avg_neutral or 0)}%",
-            "Negative Sentiment": f"{round(avg_negative or 0)}%",
-            "Efficiency": f"{round((avg_efficiency or 0) * 10)}%",
-            "Response Time": f"{round((avg_response_time or 0) * 10)}%",
-            "Quality of Service": f"{round((avg_quality_of_service or 0) * 10)}%",
-            "total_analyzed_audios": total_files,
-        }
-
     async def save_recording(self, rec_path, recording_create: RecordingCreate):
         new_recording = RecordingModel(
                 file_path=rec_path,
@@ -105,64 +102,20 @@ class RecordingsRepository:
         """Return numeric metric averages (already scaled to 0-100 for display)."""
         query = select(
             func.count(ConversationAnalysisModel.id),
-            func.avg(ConversationAnalysisModel.customer_satisfaction),
-            func.avg(ConversationAnalysisModel.resolution_rate),
-            func.avg(ConversationAnalysisModel.positive_sentiment),
-            func.avg(ConversationAnalysisModel.neutral_sentiment),
-            func.avg(ConversationAnalysisModel.negative_sentiment),
-            func.avg(ConversationAnalysisModel.efficiency),
-            func.avg(ConversationAnalysisModel.response_time),
-            func.avg(ConversationAnalysisModel.quality_of_service),
+            *[func.avg(getattr(ConversationAnalysisModel, k)) for k in _METRIC_KEYS],
         )
         query = self._apply_filters(query, from_date, to_date, agent_id)
         result = await self.db.execute(query)
 
-        (
-            total_files,
-            avg_customer_satisfaction,
-            avg_resolution_rate,
-            avg_positive,
-            avg_neutral,
-            avg_negative,
-            avg_efficiency,
-            avg_response_time,
-            avg_quality_of_service,
-        ) = result.one()
+        row = result.one()
+        total_files = row[0]
 
         if total_files == 0:
-            return {
-                "customer_satisfaction": 0, "resolution_rate": 0,
-                "positive_sentiment": 0, "neutral_sentiment": 0, "negative_sentiment": 0,
-                "efficiency": 0, "response_time": 0, "quality_of_service": 0,
-                "total_analyzed_audios": 0,
-            }
+            return dict(_EMPTY_RAW_METRICS)
 
-        return {
-            "customer_satisfaction": round((avg_customer_satisfaction or 0) * 10),
-            "resolution_rate": round((avg_resolution_rate or 0) * 10),
-            "positive_sentiment": round(avg_positive or 0),
-            "neutral_sentiment": round(avg_neutral or 0),
-            "negative_sentiment": round(avg_negative or 0),
-            "efficiency": round((avg_efficiency or 0) * 10),
-            "response_time": round((avg_response_time or 0) * 10),
-            "quality_of_service": round((avg_quality_of_service or 0) * 10),
-            "total_analyzed_audios": total_files,
-        }
+        averages = dict(zip(_METRIC_KEYS, row[1:]))
+        return scale_raw_metrics(averages, total_files)
 
-    @staticmethod
-    def _format_raw_metrics(raw: dict) -> dict:
-        """Convert raw numeric metrics to the formatted string response."""
-        return {
-            "Customer Satisfaction": f"{raw['customer_satisfaction']}%",
-            "Resolution Rate": f"{raw['resolution_rate']}%",
-            "Positive Sentiment": f"{raw['positive_sentiment']}%",
-            "Neutral Sentiment": f"{raw['neutral_sentiment']}%",
-            "Negative Sentiment": f"{raw['negative_sentiment']}%",
-            "Efficiency": f"{raw['efficiency']}%",
-            "Response Time": f"{raw['response_time']}%",
-            "Quality of Service": f"{raw['quality_of_service']}%",
-            "total_analyzed_audios": raw["total_analyzed_audios"],
-        }
 
     async def get_metrics(
         self,
@@ -171,7 +124,7 @@ class RecordingsRepository:
         agent_id: Optional[UUID] = None,
     ):
         raw = await self._get_raw_metrics(from_date, to_date, agent_id)
-        return self._format_raw_metrics(raw)
+        return format_raw_metrics(raw)
 
     async def get_metrics_with_comparison(
         self,
@@ -184,39 +137,24 @@ class RecordingsRepository:
 
         if from_date is None or to_date is None:
             return {
-                "current": self._format_raw_metrics(current_raw),
+                "current": format_raw_metrics(current_raw),
                 "previous": None,
                 "deltas": None,
             }
 
-        duration = to_date - from_date
-        prev_to = from_date - timedelta(days=1)
-        prev_from = prev_to - duration
+        prev_from, prev_to = previous_period(from_date, to_date)
         previous_raw = await self._get_raw_metrics(prev_from, prev_to, agent_id)
 
-        # Compute deltas (percentage-point difference)
-        delta_keys = [
-            "customer_satisfaction", "resolution_rate", "positive_sentiment",
-            "negative_sentiment", "efficiency", "response_time", "quality_of_service",
-        ]
-        # Map raw keys to display keys
-        display_key_map = {
-            "customer_satisfaction": "Customer Satisfaction",
-            "resolution_rate": "Resolution Rate",
-            "positive_sentiment": "Positive Sentiment",
-            "negative_sentiment": "Negative Sentiment",
-            "efficiency": "Efficiency",
-            "response_time": "Response Time",
-            "quality_of_service": "Quality of Service",
-        }
+        # Compute deltas (percentage-point difference) — exclude neutral_sentiment
+        delta_keys = [k for k in _METRIC_KEYS if k != "neutral_sentiment"]
         deltas = {
-            display_key_map[k]: current_raw[k] - previous_raw[k]
+            _DISPLAY_KEY_MAP[k]: current_raw[k] - previous_raw[k]
             for k in delta_keys
         }
 
         return {
-            "current": self._format_raw_metrics(current_raw),
-            "previous": self._format_raw_metrics(previous_raw),
+            "current": format_raw_metrics(current_raw),
+            "previous": format_raw_metrics(previous_raw),
             "deltas": deltas,
         }
 

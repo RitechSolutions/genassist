@@ -1,5 +1,7 @@
 import logging
-from datetime import date, timedelta
+from datetime import date
+
+from app.core.utils.date_time_utils import previous_period
 from uuid import UUID
 
 from injector import inject
@@ -105,9 +107,7 @@ class AnalyticsReadRepository:
         if from_date is None or to_date is None:
             return {"current": current, "previous": None}
 
-        duration = (to_date - from_date).days
-        prev_to = from_date - timedelta(days=1)
-        prev_from = prev_to - timedelta(days=duration)
+        prev_from, prev_to = previous_period(from_date, to_date)
         previous = await self.get_agent_stats_summary(agent_id, prev_from, prev_to)
 
         return {"current": current, "previous": previous}

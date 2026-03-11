@@ -1,5 +1,7 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
+
+from app.core.utils.date_time_utils import utc_now
 from uuid import UUID
 
 from injector import inject
@@ -59,7 +61,7 @@ class AnalyticsAggregationRepository:
         if not stats_list:
             return
 
-        now = datetime.now(timezone.utc)
+        now = utc_now()
         rows = []
         for s in stats_list:
             rows.append(
@@ -126,7 +128,7 @@ class AnalyticsAggregationRepository:
         if not stats_list:
             return
 
-        now = datetime.now(timezone.utc)
+        now = utc_now()
         rows = []
         for s in stats_list:
             rows.append(
