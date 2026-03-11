@@ -39,6 +39,7 @@ from app.api.v1.routes import (
     azure_blob_router,
     public_registration,
     workflow_manager,
+    workflow_builder,
     mcp,
     mcp_servers,
     customers,
@@ -132,6 +133,7 @@ router.include_router(azure_blob_router.router, prefix="/azure-blob-storage", ta
 
 router.include_router(public_registration.router, prefix="/public-registration", tags=["Public Registration"])
 router.include_router(workflow_manager.router, prefix="/workflow-manager", tags=["Workflow Manager"])
+router.include_router(workflow_builder.router, prefix="/workflow-builder", tags=["Workflow Builder"])
 router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP Servers"])
 router.include_router(customers.router, prefix="/customers", tags=["Customers"])

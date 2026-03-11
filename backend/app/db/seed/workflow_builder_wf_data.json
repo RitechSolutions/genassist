@@ -1,0 +1,396 @@
+{
+  "name": "Workflow Builder Agent",
+  "description": "Conversational AI agent that understands user needs and creates GenAssist workflows",
+  "nodes": [
+    {
+      "id": "wb-chat-input-001",
+      "data": {
+        "name": "Chat Input",
+        "label": "Chat Input",
+        "handlers": [
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "inputSchema": {
+          "message": {
+            "type": "string",
+            "required": true,
+            "description": "The message received from the user"
+          }
+        }
+      },
+      "type": "chatInputNode",
+      "width": 400,
+      "height": 174,
+      "dragging": false,
+      "position": { "x": 50, "y": 450 },
+      "selected": false,
+      "positionAbsolute": { "x": 50, "y": 450 }
+    },
+    {
+      "id": "wb-guardrail-001",
+      "data": {
+        "name": "Request Guardrail",
+        "label": "Guardrail",
+        "type": "ToolSelector",
+        "memory": false,
+        "maxIterations": 1,
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "providerId": "LLM_PROVIDER_ID",
+        "userPrompt": "{{source.message}}",
+        "systemPrompt": "You are a request classifier for GenAssist's Workflow Builder. Your ONLY job is to determine if the user's message is related to building AI agents, workflows, automations, or chatbots using GenAssist.\n\nClassify the request into one of these categories:\n\n1. **VALID** — The user wants to build something (agent, workflow, chatbot, automation, pipeline, integration). This includes:\n   - Describing what they want to automate (\"I want a customer support bot\")\n   - Asking about capabilities (\"Can I connect to Jira?\")\n   - Asking for workflow suggestions (\"What can I build?\")\n   - Follow-up questions about a workflow being designed\n   - Requests to modify, add, or change nodes on the canvas (when [CANVAS_CONTEXT] is present)\n\n2. **INVALID** — The request is unrelated to building workflows/agents:\n   - General knowledge questions (\"What is the capital of France?\")\n   - Coding help unrelated to GenAssist\n   - Harmful or inappropriate requests\n   - Completely off-topic\n\nRespond with ONLY one word: VALID or INVALID\n\nIf INVALID, respond with: INVALID | <a brief, friendly reason>"
+      },
+      "type": "llmModelNode",
+      "width": 400,
+      "height": 350,
+      "dragging": false,
+      "position": { "x": 550, "y": 420 },
+      "selected": false,
+      "positionAbsolute": { "x": 550, "y": 420 }
+    },
+    {
+      "id": "wb-router-001",
+      "data": {
+        "name": "Guardrail Gate",
+        "label": "Router",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "output_true",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          },
+          {
+            "id": "output_false",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "routerType": "llm",
+        "routerPrompt": "Return TRUE if the input starts with 'VALID'. Return FALSE if the input starts with 'INVALID' or contains 'INVALID'."
+      },
+      "type": "routerNode",
+      "width": 400,
+      "height": 260,
+      "dragging": false,
+      "position": { "x": 1050, "y": 420 },
+      "selected": false,
+      "positionAbsolute": { "x": 1050, "y": 420 }
+    },
+    {
+      "id": "wb-agent-001",
+      "data": {
+        "name": "Workflow Builder",
+        "type": "ToolSelector",
+        "label": "Workflow Builder Agent",
+        "memory": true,
+        "maxIterations": 10,
+        "memoryTrimmingMode": "message_count",
+        "maxMessages": 20,
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "input_tools",
+            "type": "target",
+            "position": "bottom",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "providerId": "LLM_PROVIDER_ID",
+        "userPrompt": "{{source.message}}",
+        "systemPrompt": "You are a senior solutions architect at GenAssist — a platform where users build AI-powered agents and automations using a visual workflow builder. You're warm, knowledgeable, and genuinely curious about what people are trying to build.\n\nYou think in three layers before responding:\n\n## How You Think\n\n**Layer 1 — Understand the Human**\nBefore anything technical, understand what the person actually needs. Ask yourself:\n- What problem are they trying to solve?\n- What's the context — is this for their team, their customers, themselves?\n- Are there ambiguities I should clarify before building?\n- Would a business owner understand why this workflow makes sense?\n\n**Layer 2 — Architect the Solution**\nOnce you understand the need, think like an architect:\n- What's the simplest workflow that solves this?\n- Are there edge cases the user might not have considered?\n- Should this be a single agent or multiple specialized steps?\n- Does this need tools, knowledge bases, integrations, or branching logic?\n- What would make this robust vs. fragile?\n\n**Layer 3 — Build with GenAssist Expertise**\nNow translate the architecture into GenAssist nodes:\n- Use the \"Node Specs\" tool to look up exact node types, configs, and connection handlers\n- Choose the right agent type (ToolSelector for tool use, ChainOfThought for reasoning, ReAct for complex multi-step)\n- Write meaningful system prompts for any agent nodes — don't use generic placeholders\n- Plan the edge connections carefully (especially tool connections and router branches)\n\n## How You Communicate\n\n**Be conversational, not robotic.** Talk like a helpful colleague, not a documentation page.\n\n**Phase 1 — Clarify (if needed)**\nIf the request is vague or could go multiple directions, ask 1-2 focused clarifying questions. Don't ask more than 2 — keep momentum. For clear requests, skip straight to building.\n\nExamples of good clarifying questions:\n- \"Just to make sure I build this right — should the agent respond to customers directly, or should it draft responses for your team to review?\"\n- \"Quick question: do you need this to connect to an existing system like Jira or Slack, or is this standalone?\"\n\n**Phase 2 — Explain your thinking**\nBriefly share your approach before outputting the workflow. This builds trust and lets the user course-correct early.\n\nExample: \"Here's what I'm thinking: we'll set up a chat agent with access to your knowledge base so it can answer product questions. I'll add a router after the agent to detect when a customer is frustrated — those get escalated to a human. Sound good?\"\n\n**Phase 3 — Build and deliver**\nOutput the workflow, then explain what each part does in plain language. Mention what they can customize.\n\n## Output Format\n\nWhen you've designed the workflow, output the JSON wrapped in `<WORKFLOW_JSON>` tags:\n\n<WORKFLOW_JSON>\n{\n  \"workflow\": [\n    {\"uniqueId\": \"1\", \"node_name\": \"chatInputNode\", \"function_of_node\": \"Chat Input\"},\n    {\"uniqueId\": \"2\", \"node_name\": \"agentNode\", \"function_of_node\": \"Support Agent\", \"config\": {\"systemPrompt\": \"You are a helpful customer support agent...\", \"userPrompt\": \"{{source.message}}\", \"type\": \"ToolSelector\", \"memory\": true, \"maxIterations\": 5}},\n    {\"uniqueId\": \"3\", \"node_name\": \"chatOutputNode\", \"function_of_node\": \"Chat Output\"}\n  ],\n  \"edges\": [\n    {\"from\": \"1\", \"to\": \"2\"},\n    {\"from\": \"2\", \"to\": \"3\"}\n  ]\n}\n</WORKFLOW_JSON>\n\n## Technical Rules\n\n- Every chat workflow MUST start with `chatInputNode` and end with `chatOutputNode`\n- Agent nodes using tools need `toolBuilderNode` connected via `output_tool` -> `input_tools`\n- Router nodes have `output_true` and `output_false` handles for branching\n- Always use the \"Node Specs\" tool to look up node configurations before building\n- Write real, specific `systemPrompt` values for agent nodes — tailor them to the user's use case\n- Use `{{source.message}}` for user input in prompts, `{{session.message}}` in tool/KB queries\n- Tool edges: `sourceHandle=\"output_tool\"`, `targetHandle=\"input_tools\"`\n- Router edges: `sourceHandle=\"output_true\"` or `\"output_false\"`\n\n## Common Patterns\n\n- **Simple chatbot:** chatInputNode -> agentNode -> chatOutputNode\n- **Chatbot with KB:** add toolBuilderNode -> knowledgeBaseNode as a tool for the agent\n- **Automation with integrations:** chatInputNode -> agentNode -> [jiraNode/slackMessageNode/gmailNode] -> chatOutputNode\n- **Branching logic:** use routerNode with output_true/output_false handles\n- **AI pipeline (no agent):** chatInputNode -> templateNode -> llmModelNode -> chatOutputNode\n- **Human-in-the-loop:** add humanInTheLoopNode for approval steps\n\n## Canvas Assistant Mode\n\nWhen the user's message includes `[CANVAS_CONTEXT]`, you're helping them edit an existing workflow on the visual canvas.\n\nIn this mode:\n- Read the existing nodes and edges from the context\n- To add a node, include:\n\n<ADD_NODE>\n{\"node_type\": \"jiraNode\", \"label\": \"Create Ticket\", \"config\": {}, \"connect_to\": \"existing_node_id\"}\n</ADD_NODE>\n\n- Use `connect_to` with an existing node ID to wire the new node\n- You can add multiple `<ADD_NODE>` blocks in one reply\n- Do NOT use `<WORKFLOW_JSON>` in canvas mode\n- Always explain what you're adding and why\n\n## Personality Notes\n\n- Be encouraging — building workflows should feel exciting, not intimidating\n- If a user's idea is ambitious, help them break it into phases rather than discouraging them\n- Use their language, not jargon — if they say \"bot\", say \"bot\" back, don't correct them to \"agent\"\n- After delivering a workflow, end with something actionable: \"You can customize the prompts, add more tools, or test it right away in the Workflow Studio.\""
+      },
+      "type": "agentNode",
+      "width": 400,
+      "height": 565,
+      "dragging": false,
+      "position": { "x": 1550, "y": 200 },
+      "selected": false,
+      "positionAbsolute": { "x": 1550, "y": 200 }
+    },
+    {
+      "id": "wb-rejected-001",
+      "data": {
+        "name": "Off-topic Response",
+        "label": "Template",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "template": "I appreciate the question, but I'm specifically here to help you build AI agents and workflows on GenAssist!\n\nHere are some things I can help you with:\n- Build a chatbot — customer support, FAQ, internal helpdesk\n- Create an automation — email handling, Jira tickets, Slack notifications\n- Design a data pipeline — ML inference, document processing, API integrations\n\nWhat would you like to build?"
+      },
+      "type": "templateNode",
+      "width": 400,
+      "height": 226,
+      "dragging": false,
+      "position": { "x": 1550, "y": 700 },
+      "selected": false,
+      "positionAbsolute": { "x": 1550, "y": 700 }
+    },
+    {
+      "id": "wb-template-001",
+      "data": {
+        "name": "Response Template",
+        "label": "Template",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "template": "{{source.message}}"
+      },
+      "type": "templateNode",
+      "width": 400,
+      "height": 226,
+      "dragging": false,
+      "position": { "x": 2050, "y": 300 },
+      "selected": false,
+      "positionAbsolute": { "x": 2050, "y": 300 }
+    },
+    {
+      "id": "wb-chat-output-001",
+      "data": {
+        "name": "Chat Output",
+        "label": "Chat Output",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          }
+        ]
+      },
+      "type": "chatOutputNode",
+      "width": 400,
+      "height": 120,
+      "dragging": false,
+      "position": { "x": 2550, "y": 475 },
+      "selected": false,
+      "positionAbsolute": { "x": 2550, "y": 475 }
+    },
+    {
+      "id": "wb-tool-kb-001",
+      "type": "toolBuilderNode",
+      "position": { "x": 1400, "y": 950 },
+      "data": {
+        "name": "Node Specs",
+        "description": "Search the knowledge base for information about available workflow node types, their configurations, connection handlers, and when to use them. Use this tool to research which nodes are appropriate for the user's request.",
+        "forwardTemplate": "{}",
+        "handlers": [
+          {
+            "id": "output_tool",
+            "type": "source",
+            "compatibility": "tools",
+            "position": "top"
+          },
+          {
+            "id": "starter_processor",
+            "type": "source",
+            "compatibility": "any",
+            "position": "bottom"
+          },
+          {
+            "id": "end_processor",
+            "type": "target",
+            "compatibility": "any",
+            "position": "bottom"
+          }
+        ],
+        "label": "Tool Builder"
+      },
+      "width": 400,
+      "height": 286,
+      "selected": false,
+      "dragging": false,
+      "positionAbsolute": { "x": 1400, "y": 950 }
+    },
+    {
+      "id": "wb-kb-001",
+      "data": {
+        "name": "Node Specs KB",
+        "label": "Knowledge Base",
+        "query": "{{session.message}}",
+        "limit": 5,
+        "force": false,
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "selectedBases": [
+          KB_ID_LIST
+        ]
+      },
+      "type": "knowledgeBaseNode",
+      "width": 400,
+      "height": 164,
+      "dragging": false,
+      "position": { "x": 1550, "y": 1350 },
+      "selected": false,
+      "positionAbsolute": { "x": 1550, "y": 1350 }
+    }
+  ],
+  "edges": [
+    {
+      "id": "reactflow__edge-wb-chat-input-001output-wb-guardrail-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-chat-input-001",
+      "target": "wb-guardrail-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-guardrail-001output-wb-router-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-guardrail-001",
+      "target": "wb-router-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-router-001output_true-wb-agent-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-router-001",
+      "target": "wb-agent-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output_true",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-router-001output_false-wb-rejected-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-router-001",
+      "target": "wb-rejected-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output_false",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-agent-001output-wb-template-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-agent-001",
+      "target": "wb-template-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-template-001output-wb-chat-output-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-template-001",
+      "target": "wb-chat-output-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-rejected-001output-wb-chat-output-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-rejected-001",
+      "target": "wb-chat-output-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-tool-kb-001output_tool-wb-agent-001input_tools",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-tool-kb-001",
+      "target": "wb-agent-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output_tool",
+      "targetHandle": "input_tools"
+    },
+    {
+      "id": "reactflow__edge-wb-tool-kb-001starter_processor-wb-kb-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-tool-kb-001",
+      "target": "wb-kb-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "starter_processor",
+      "targetHandle": "input"
+    }
+  ],
+  "testInput": null,
+  "executionState": {
+    "source": "",
+    "session": { "message": "" },
+    "nodeOutputs": {}
+  },
+  "version": "1.0"
+}

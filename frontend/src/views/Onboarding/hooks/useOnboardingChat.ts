@@ -34,7 +34,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
 
     const chat = new ChatService(onboardingBaseUrl, onboardingApiKey, undefined, tenant);
     chatRef.current = chat;
-    chat.resetConversation();
+    chat.resetChatConversation();
     setIsChatReady(true);
 
     const handleWelcomeData = (data: AgentWelcomeData) => {
@@ -120,9 +120,6 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
   useEffect(() => {
     if (!hasConfig || !isChatReady) return;
     if (chatRef.current?.getConversationId?.()) return;
-
-    // if the registration status is existing, skip the conversation
-    if (registrationStatus === "existing") return;
 
     startConversationIfNeeded().catch((err: unknown) => {
       if (!isMountedRef.current) return;

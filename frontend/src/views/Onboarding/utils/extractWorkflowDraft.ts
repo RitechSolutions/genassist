@@ -1,13 +1,22 @@
 export interface WorkflowDraftNode {
   uniqueId: string;
   node_name: string;
-  next_node_id: string | null;
+  next_node_id?: string | null;
   function_of_node: string;
+  config?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+export interface WorkflowDraftEdge {
+  from: string;
+  to: string;
+  sourceHandle?: string;
+  targetHandle?: string;
 }
 
 export interface WorkflowDraft {
   workflow: WorkflowDraftNode[];
+  edges?: WorkflowDraftEdge[];
   [key: string]: unknown;
 }
 
@@ -19,7 +28,8 @@ const isWorkflowDraftNode = (value: unknown): value is WorkflowDraftNode => {
   if (typeof value.uniqueId !== "string" || value.uniqueId.trim().length === 0) return false;
   if (typeof value.node_name !== "string" || value.node_name.trim().length === 0) return false;
   if (typeof value.function_of_node !== "string" || value.function_of_node.trim().length === 0) return false;
-  if (!(value.next_node_id === null || typeof value.next_node_id === "string")) return false;
+  // next_node_id is optional in the enhanced format (edges are used instead)
+  if (value.next_node_id !== undefined && !(value.next_node_id === null || typeof value.next_node_id === "string")) return false;
   return true;
 };
 

@@ -8,6 +8,14 @@ import { fetchUserPermissions } from "@/services/auth";
 import { TermsAndPolicyNotice } from "@/components/TermsAndPolicyNotice";
 import { AuthMockupPanel } from "@/components/AuthMockupPanel";
 import { useFeatureFlag } from "@/context/FeatureFlagContext";
+import {
+  createWorkflowFromWizard,
+  createWorkflowFromBuilder,
+} from "@/services/workflows";
+import {
+  WORKFLOW_DRAFT_STORAGE_KEY,
+  AGENT_NAME_STORAGE_KEY,
+} from "@/views/Onboarding/pages/Onboarding";
 
 interface ForceUpdateInfo {
   username: string;
@@ -111,6 +119,50 @@ const LoginPage = () => {
           await fetchUserPermissions();
         } catch (error) {
           // ignore
+        }
+
+        // Check for pending onboarding workflow draft
+        const pendingDraft = localStorage.getItem(WORKFLOW_DRAFT_STORAGE_KEY);
+        const pendingName = localStorage.getItem(AGENT_NAME_STORAGE_KEY);
+        const cameFromOnboarding = location.state?.from?.pathname === "/onboarding";
+
+        if (cameFromOnboarding && pendingDraft && pendingName) {
+          try {
+            let hasEdges = false;
+            try {
+              const parsed = JSON.parse(pendingDraft);
+              hasEdges = Array.isArray(parsed?.edges) && parsed.edges.length > 0;
+            } catch {
+              // not valid JSON, fall through to wizard
+            }
+
+            const wizardResponse = hasEdges
+              ? await createWorkflowFromBuilder({ workflow_name: pendingName, workflow_json: pendingDraft })
+              : await createWorkflowFromWizard({ workflow_name: pendingName, workflow_json: pendingDraft });
+
+            // Clean up onboarding data
+            localStorage.removeItem(WORKFLOW_DRAFT_STORAGE_KEY);
+            localStorage.removeItem(AGENT_NAME_STORAGE_KEY);
+            localStorage.setItem("skip_onboarding", "true");
+            window.dispatchEvent(new Event("skip-onboarding"));
+
+            toast.success("Agent created successfully!");
+
+            if (wizardResponse?.agent_id) {
+              window.location.href = `/ai-agents/workflow/${wizardResponse.agent_id}`;
+            } else if (wizardResponse?.url) {
+              window.location.href = wizardResponse.url;
+            } else if (wizardResponse?.id) {
+              window.location.href = `/ai-agents/workflow/${wizardResponse.id}`;
+            } else {
+              window.location.href = "/dashboard";
+            }
+            return;
+          } catch (error) {
+            toast.error("Failed to create workflow. Redirecting to dashboard.");
+            localStorage.removeItem(WORKFLOW_DRAFT_STORAGE_KEY);
+            localStorage.removeItem(AGENT_NAME_STORAGE_KEY);
+          }
         }
 
         toast.success("Logged in successfully.");

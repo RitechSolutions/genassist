@@ -24,6 +24,8 @@ import NodePanel from "./components/panels/NodePanel";
 import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
 import ChatInputBar from "./components/panels/ChatInputBar";
+import CanvasAssistantPanel from "./components/panels/CanvasAssistantPanel";
+import { useCanvasAssistant } from "./hooks/useCanvasAssistant";
 import { useSchemaValidation } from "./hooks/useSchemaValidation";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
@@ -223,6 +225,16 @@ const GraphFlowContent: React.FC = () => {
     },
     [setNodes]
   );
+
+  // Canvas AI assistant
+  const [showAssistantPanel, setShowAssistantPanel] = useState(true);
+  const assistant = useCanvasAssistant({
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    updateNodeData,
+  });
 
   // Restore functions to nodes after loading
   const restoreNodeFunctions = (loadedNodes: Node[]): Node[] => {
@@ -671,20 +683,23 @@ const GraphFlowContent: React.FC = () => {
             />
 
             {showChatInput && (
-              <ChatInputBar
-                onSendMessage={(message) => {
-                  // Open test dialog with the message pre-filled
-                  setCurrentTestConfig({
-                    ...workflow,
-                    nodes: nodes,
-                    edges: edges,
-                    testInput: { message },
-                  });
-                  setShowNodePanel(false);
-                  setTestDialogOpen(true);
-                }}
-                disabled={!workflow?.nodes?.some((node) => node.type === "chatInputNode")}
-              />
+              <>
+                {showAssistantPanel && (
+                  <CanvasAssistantPanel
+                    messages={assistant.messages}
+                    isThinking={assistant.isThinking}
+                    onClose={() => setShowAssistantPanel(false)}
+                  />
+                )}
+                <ChatInputBar
+                  onSendMessage={(message) => {
+                    setShowAssistantPanel(true);
+                    assistant.sendMessage(message);
+                  }}
+                  disabled={assistant.isThinking}
+                  placeholder="Ask AI to add nodes to your workflow..."
+                />
+              </>
             )}
           </div>
         </div>
