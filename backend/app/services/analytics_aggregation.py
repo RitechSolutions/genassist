@@ -28,13 +28,13 @@ class AnalyticsAggregationService:
         """
         now = datetime.now(timezone.utc)
         last_ts = await self.repo.get_last_aggregation_timestamp()
-        # Always reprocess from start of today UTC so today's row is a full
-        # recount (not just the incremental slice since the last run).
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         if last_ts is not None:
-            since = min(last_ts, today_start)
+            # Incremental: only process logs since the last aggregation
+            since = last_ts
         else:
-            since = now - timedelta(days=30)
+            # First run: process all historical logs
+            earliest = await self.repo.get_earliest_log_timestamp()
+            since = earliest if earliest is not None else now
 
         logger.info(f"Aggregating analytics: since={since.isoformat()} until={now.isoformat()}")
 

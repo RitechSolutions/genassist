@@ -26,6 +26,12 @@ class AnalyticsAggregationRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_earliest_log_timestamp(self) -> datetime | None:
+        """Return the earliest logged_at across all agent response logs."""
+        stmt = select(func.min(AgentResponseLogModel.logged_at))
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_response_logs_since(
         self, since: datetime, until: datetime, *, limit: int = 1000, offset: int = 0
     ) -> list[AgentResponseLogModel]:
