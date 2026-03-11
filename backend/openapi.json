@@ -266,7 +266,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "date"
+                  "format": "date-time"
                 },
                 {
                   "type": "null"
@@ -774,7 +774,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "date"
+                  "format": "date-time"
                 },
                 {
                   "type": "null"
@@ -1185,7 +1185,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "date"
+                  "format": "date-time"
                 },
                 {
                   "type": "null"
@@ -1564,7 +1564,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "date"
+                  "format": "date-time"
                 },
                 {
                   "type": "null"
@@ -4381,7 +4381,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "date"
+                  "format": "date-time"
                 },
                 {
                   "type": "null"
@@ -5221,7 +5221,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "date"
+                  "format": "date-time"
                 },
                 {
                   "type": "null"
@@ -5724,7 +5724,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "date"
+                  "format": "date-time"
                 },
                 {
                   "type": "null"
@@ -7213,7 +7213,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "format": "date"
+                  "format": "date-time"
                 },
                 {
                   "type": "null"
