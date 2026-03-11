@@ -17,6 +17,7 @@ class LlmAnalystModel(Base):
     llm_provider_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("llm_providers.id"), nullable=False)
     prompt: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
+    context_enrichments: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
 
     llm_provider = relationship('LlmProvidersModel', back_populates="llm_analysts", foreign_keys=[llm_provider_id],
                                 uselist=False)

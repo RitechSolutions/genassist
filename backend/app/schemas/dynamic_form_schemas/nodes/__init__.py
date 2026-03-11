@@ -28,6 +28,36 @@ from .preprocessing_schema import PREPROCESSING_NODE_DIALOG_SCHEMA
 from .train_model_schema import TRAIN_MODEL_NODE_DIALOG_SCHEMA
 from .human_in_the_loop_schema import HUMAN_IN_THE_LOOP_NODE_DIALOG_SCHEMA
 
+NODE_TYPE_LABELS: Dict[str, str] = {
+    "chatInputNode": "Chat Input",
+    "chatOutputNode": "Chat Output",
+    "routerNode": "Router",
+    "agentNode": "Agent",
+    "apiToolNode": "API Tool",
+    "openApiNode": "Open API",
+    "templateNode": "Template",
+    "llmModelNode": "LLM Model",
+    "knowledgeBaseNode": "Knowledge Base",
+    "dataMapperNode": "Data Mapper",
+    "toolBuilderNode": "Tool Builder",
+    "slackMessageNode": "Slack Message",
+    "calendarEventNode": "Calendar Event",
+    "readMailsNode": "Read Mails",
+    "gmailNode": "Gmail",
+    "whatsappToolNode": "WhatsApp",
+    "zendeskTicketNode": "Zendesk Ticket",
+    "pythonCodeNode": "Python Code",
+    "sqlNode": "SQL",
+    "aggregatorNode": "Aggregator",
+    "jiraNode": "Jira",
+    "mlModelInferenceNode": "ML Model Inference",
+    "trainDataSourceNode": "Train Data Source",
+    "threadRAGNode": "Thread RAG",
+    "preprocessingNode": "Preprocessing",
+    "trainModelNode": "Train Model",
+    "humanInTheLoopNode": "Human in the Loop",
+}
+
 NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "chatInputNode": CHAT_INPUT_NODE_DIALOG_SCHEMA,
     "chatOutputNode": CHAT_OUTPUT_NODE_DIALOG_SCHEMA,

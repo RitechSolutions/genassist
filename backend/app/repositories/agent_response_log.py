@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 from uuid import UUID
 import json
 
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.db.models.agent_response_log import AgentResponseLogModel
+from app.schemas.filter import AgentResponseLogFilter
 
 
 @inject
@@ -49,3 +50,35 @@ class AgentResponseLogRepository:
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
+
+    async def get_by_filter(
+        self,
+        agent_response_log_filter: AgentResponseLogFilter,
+    ) -> List[AgentResponseLogModel]:
+        """
+        Fetch log entries matching the given filter.
+        conversation_id is applied at the DB level; node_type is applied
+        in Python by inspecting raw_response.row_agent_response.state.nodeExecutionStatus[*].type.
+        """
+        stmt = select(AgentResponseLogModel).where(
+            AgentResponseLogModel.conversation_id == agent_response_log_filter.conversation_id
+        )
+        result = await self.db.execute(stmt)
+        rows = result.scalars().all()
+
+        if agent_response_log_filter.node_type is None:
+            return list(rows)
+
+        matched = []
+        for row in rows:
+            try:
+                payload = json.loads(row.raw_response)
+                node_statuses = payload.get("row_agent_response", {}).get("state", {}).get("nodeExecutionStatus", [])
+                if isinstance(node_statuses, dict):
+                    node_statuses = node_statuses.values()
+                if any(n.get("type") == agent_response_log_filter.node_type for n in node_statuses):
+                    matched.append(row)
+            except (json.JSONDecodeError, AttributeError):
+                continue
+
+        return matched

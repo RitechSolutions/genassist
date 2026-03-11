@@ -174,7 +174,7 @@ class AudioService:
 
         llm_analyst_kpi_analyzer = await self.llm_analyst_service.get_by_id(model.llm_analyst_kpi_analyzer_id)
 
-        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(separated_speakers_str, llm_analyst=llm_analyst_kpi_analyzer)
+        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(separated_speakers_str, llm_analyst=llm_analyst_kpi_analyzer, conversation_id=saved_conversation.id)
 
         saved_conversation_analysis = await self.conversation_analysis_service.create_conversation_analysis(
                 gpt_analysis, model.llm_analyst_kpi_analyzer_id,
@@ -255,7 +255,7 @@ class AudioService:
 
         llm_analyst = await self.llm_analyst_service.get_by_id(model.llm_analyst_id)
 
-        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(transcript_string, llm_analyst=llm_analyst)
+        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(transcript_string, llm_analyst=llm_analyst, conversation_id=saved_conversation.id)
 
         conservation_analysis = await self.conversation_analysis_service.create_conversation_analysis(gpt_analysis,
                                                                    model.llm_analyst_id, saved_conversation.id)
@@ -336,7 +336,7 @@ class AudioService:
 
         llm_analyst_kpi_analyzer = await self.llm_analyst_service.get_by_id(model.llm_analyst_kpi_analyzer_id)
 
-        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(separated_speakers_str, llm_analyst=llm_analyst_kpi_analyzer)
+        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(separated_speakers_str, llm_analyst=llm_analyst_kpi_analyzer, conversation_id=saved_conversation.id)
 
         saved_conversation_analysis = await self.conversation_analysis_service.create_conversation_analysis(
                 gpt_analysis, model.llm_analyst_kpi_analyzer_id,
