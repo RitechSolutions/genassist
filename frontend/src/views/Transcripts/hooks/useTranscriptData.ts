@@ -72,11 +72,13 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
     } else {
       try {
         setLoading(true);
-        const { items: backendData, total: backendTotal } = await fetchTranscripts({
+        const params = {
           limit, skip, sentiment, hostility_neutral_max, hostility_positive_max,
           include_feedback, conversation_status, order_by, sort_direction,
           agent_id, scoreFilters, from_date, to_date, exclude_empty,
-        });
+        };
+
+        const { items: backendData, total: backendTotal } = await fetchTranscripts(params);
 
         if (!backendData || !Array.isArray(backendData)) {
           throw new Error("Invalid backend data format");
