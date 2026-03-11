@@ -5,6 +5,7 @@ export type MetricsApiParams = {
   from_date?: string;
   to_date?: string;
   agent_id?: string;
+  compare?: string;
 };
 
 export function toMetricsApiParams(
@@ -23,6 +24,7 @@ export function buildQueryString(params?: MetricsApiParams): string {
   if (params?.from_date) searchParams.set("from_date", params.from_date);
   if (params?.to_date) searchParams.set("to_date", params.to_date);
   if (params?.agent_id) searchParams.set("agent_id", params.agent_id);
+  if (params?.compare) searchParams.set("compare", params.compare);
   const qs = searchParams.toString();
   return qs ? `?${qs}` : "";
 }

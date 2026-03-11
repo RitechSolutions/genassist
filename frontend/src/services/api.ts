@@ -124,6 +124,7 @@ const AGENT_UPDATE_ALLOWED_KEYS = [
   "welcome_message",
   "welcome_image",
   "welcome_title",
+  "input_disclaimer_html",
   "possible_queries",
   "thinking_phrases",
   "thinking_phrase_delay",

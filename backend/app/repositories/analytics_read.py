@@ -1,5 +1,7 @@
 import logging
 from datetime import date
+
+from app.core.utils.date_time_utils import previous_period
 from uuid import UUID
 
 from injector import inject
@@ -93,6 +95,23 @@ class AnalyticsReadRepository:
         row = result.mappings().one()
         return dict(row)
 
+    async def get_agent_stats_summary_with_comparison(
+        self,
+        agent_id: UUID | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> dict:
+        """Return current summary, previous-period summary, and computed deltas."""
+        current = await self.get_agent_stats_summary(agent_id, from_date, to_date)
+
+        if from_date is None or to_date is None:
+            return {"current": current, "previous": None}
+
+        prev_from, prev_to = previous_period(from_date, to_date)
+        previous = await self.get_agent_stats_summary(agent_id, prev_from, prev_to)
+
+        return {"current": current, "previous": previous}
+
     async def get_node_type_breakdown(
         self,
         agent_id: UUID,
@@ -110,6 +129,9 @@ class AnalyticsReadRepository:
                 / func.nullif(func.sum(NodeExecutionDailyStatsModel.execution_count), 0)
             ).label("avg_execution_ms"),
             func.sum(NodeExecutionDailyStatsModel.total_execution_ms).label("total_execution_ms"),
+            func.coalesce(func.sum(NodeExecutionDailyStatsModel.unique_conversations), 0).label("unique_conversations"),
+            func.coalesce(func.sum(NodeExecutionDailyStatsModel.thumbs_up_count), 0).label("thumbs_up_count"),
+            func.coalesce(func.sum(NodeExecutionDailyStatsModel.thumbs_down_count), 0).label("thumbs_down_count"),
         ).where(
             NodeExecutionDailyStatsModel.agent_id == agent_id,
             NodeExecutionDailyStatsModel.is_deleted == 0,

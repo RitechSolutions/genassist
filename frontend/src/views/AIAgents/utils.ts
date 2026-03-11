@@ -1,3 +1,5 @@
+import { Translation } from "@/interfaces/translation.interface";
+
 export function pairsToObject(pairs: Array<{key: string, value: unknown}>): Record<string, unknown> {
     return pairs.reduce((obj, pair) => {
       if (typeof pair.value === 'string') {
@@ -20,3 +22,11 @@ export function pairsToObject(pairs: Array<{key: string, value: unknown}>): Reco
       value
     }));
   } 
+  
+export const getTranslationCount = (translation: Translation | null): number => {
+  if (!translation) return 0;
+
+  return Object.values(translation.translations).filter(
+    (v) => typeof v === "string" && v.trim().length > 0
+  ).length;
+};

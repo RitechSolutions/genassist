@@ -2,7 +2,7 @@ import datetime
 from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 from injector import inject
-from sqlalchemy import asc, desc, func, and_, or_
+from sqlalchemy import asc, desc, func, and_, or_, nulls_last
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import contains_eager, joinedload, selectinload
@@ -10,6 +10,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
+from app.core.utils.enums.sort_direction_enum import SortDirection
 from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination
 from app.db.models.conversation import ConversationModel
 from app.db.models.message_model import TranscriptMessageModel
@@ -22,6 +23,16 @@ from app.core.utils.bi_utils import (
 from app.db.models.conversation import ConversationAnalysisModel
 from app.db.models.operator import OperatorModel
 from app.db.models import AgentModel
+
+# KPI score fields on ConversationAnalysisModel (0-10 scale).
+# Used for sorting, filtering, and join detection.
+ANALYSIS_SCORE_FIELDS = frozenset({
+    "customer_satisfaction",
+    "quality_of_service",
+    "resolution_rate",
+    "efficiency",
+})
+
 
 
 @inject
@@ -186,21 +197,8 @@ class ConversationRepository:
         await self.db.refresh(conversation)
         return conversation
 
-    async def fetch_conversations_with_relations(
-        self,
-        conversation_filter: ConversationFilter,
-        include_messages: bool = True,
-    ) -> List[ConversationModel]:
-        """
-        Fetch conversations with recording and optional messages
-
-        Note: include_messages=True may impact performance for large result sets.
-        """
-        query = select(ConversationModel).options(
-            joinedload(ConversationModel.recording)
-        )
-
-        # Apply existing filters (from your current implementation)
+    def _apply_base_filters(self, query, conversation_filter: ConversationFilter):
+        """Apply all shared WHERE clauses so fetch and count stay in sync."""
         if conversation_filter.minimum_hostility_score:
             query = query.where(
                 ConversationModel.in_progress_hostility_score
@@ -226,26 +224,20 @@ class ConversationRepository:
                 ConversationModel.customer_id == conversation_filter.customer_id
             )
 
-        # filter based on sentiment score
-        if conversation_filter.sentiment:
-            if (
-                conversation_filter.hostility_positive_max is None
-                or conversation_filter.hostility_neutral_max is None
-            ):
-                raise AppException(error_key=ErrorKey.REQUIRED_INTERVAL_VALUES)
-            query = (
-                query.outerjoin(ConversationModel.analysis)
-                .options(contains_eager(ConversationModel.analysis))
-                .where(self._sentiment_predicate(conversation_filter))
-            )
-        else:
-            query = query.options(selectinload(ConversationModel.analysis))
+        # Agent filter: join Operator → Agent (FK is AgentModel.operator_id → operators.id)
+        if conversation_filter.agent_id:
+            query = query.join(
+                OperatorModel, ConversationModel.operator_id == OperatorModel.id
+            ).join(
+                AgentModel, AgentModel.operator_id == OperatorModel.id
+            ).where(AgentModel.id == conversation_filter.agent_id)
 
-        # Conditional topic filtering: finalized status checks analysis, others check model
+        if conversation_filter.exclude_empty:
+            query = query.where(ConversationModel.word_count > 0)
+
+        # Conditional topic filtering
         if conversation_filter.conversation_topics:
-            # Build topic filtering condition based on status
             topic_condition = or_(
-                # For finalized conversations: check topic in conversationanalysis
                 and_(
                     ConversationModel.status == ConversationStatus.FINALIZED.value,
                     ConversationModel.analysis.has(
@@ -257,7 +249,6 @@ class ConversationRepository:
                         )
                     ),
                 ),
-                # For all other conversations: check topic in conversationmodel
                 and_(
                     ConversationModel.status != ConversationStatus.FINALIZED.value,
                     ConversationModel.topic.in_(
@@ -268,8 +259,73 @@ class ConversationRepository:
                     ),
                 ),
             )
-
             query = query.where(topic_condition)
+
+        return query
+
+    def _needs_analysis_join(self, conversation_filter: ConversationFilter) -> bool:
+        """Return True when we must outerjoin ConversationAnalysisModel."""
+        if conversation_filter.sentiment:
+            return True
+        if (
+            conversation_filter.order_by
+            and conversation_filter.order_by.value in ANALYSIS_SCORE_FIELDS
+        ):
+            return True
+        # Score range filters
+        for field in ANALYSIS_SCORE_FIELDS:
+            for attr in (f"{field}_min", f"{field}_max"):
+                if getattr(conversation_filter, attr, None) is not None:
+                    return True
+        return False
+
+    def _apply_score_range_filters(self, query, conversation_filter: ConversationFilter):
+        """Apply WHERE clauses for AI insight score range filters."""
+        for name in ANALYSIS_SCORE_FIELDS:
+            col = getattr(ConversationAnalysisModel, name)
+            min_val = getattr(conversation_filter, f"{name}_min", None)
+            max_val = getattr(conversation_filter, f"{name}_max", None)
+            if min_val is not None:
+                query = query.where(col >= min_val)
+            if max_val is not None:
+                query = query.where(col <= max_val)
+        return query
+
+    async def fetch_conversations_with_relations(
+        self,
+        conversation_filter: ConversationFilter,
+        include_messages: bool = True,
+    ) -> List[ConversationModel]:
+        """
+        Fetch conversations with recording and optional messages
+
+        Note: include_messages=True may impact performance for large result sets.
+        """
+        query = select(ConversationModel).options(
+            joinedload(ConversationModel.recording)
+        )
+
+        query = self._apply_base_filters(query, conversation_filter)
+
+        # Determine analysis join strategy once
+        needs_join = self._needs_analysis_join(conversation_filter)
+
+        if needs_join:
+            if conversation_filter.sentiment and (
+                conversation_filter.hostility_positive_max is None
+                or conversation_filter.hostility_neutral_max is None
+            ):
+                raise AppException(error_key=ErrorKey.REQUIRED_INTERVAL_VALUES)
+
+            query = (
+                query.outerjoin(ConversationModel.analysis)
+                .options(contains_eager(ConversationModel.analysis))
+            )
+            if conversation_filter.sentiment:
+                query = query.where(self._sentiment_predicate(conversation_filter))
+            query = self._apply_score_range_filters(query, conversation_filter)
+        else:
+            query = query.options(selectinload(ConversationModel.analysis))
 
         if include_messages:
             query = query.options(
@@ -278,12 +334,18 @@ class ConversationRepository:
                 )
             )
             query = filter_conversation_messages_create_time(conversation_filter, query)
-        else:
-            # Just load analysis for sentiment/topic info
-            query = query.options(selectinload(ConversationModel.analysis))
-
         # ——— dynamic ordering ———
-        query = add_dynamic_ordering(ConversationModel, conversation_filter, query)
+        if (
+            conversation_filter.order_by
+            and conversation_filter.order_by.value in ANALYSIS_SCORE_FIELDS
+        ):
+            col = getattr(ConversationAnalysisModel, conversation_filter.order_by.value)
+            if conversation_filter.sort_direction == SortDirection.DESC:
+                query = query.order_by(nulls_last(desc(col)))
+            else:
+                query = query.order_by(nulls_last(asc(col)))
+        else:
+            query = add_dynamic_ordering(ConversationModel, conversation_filter, query)
 
         # Pagination
         query = add_pagination(conversation_filter, query)
@@ -292,15 +354,15 @@ class ConversationRepository:
         return result.scalars().all()
 
     @staticmethod
-    def _sentiment_predicate(filter: ConversationFilter):
+    def _sentiment_predicate(conversation_filter: ConversationFilter):
         """Return a SQLAlchemy boolean expression that is TRUE when the
-        conversation should be treated as `filter.sentiment` sentiment. There are two paths either in progress
-        conversation where its decided based on some intervals where in_progress_hostility_score falls,
-        or if the conversation has been finalized we check the scores of its analysis.
+        conversation should be treated as the requested sentiment. There are two paths:
+        in-progress conversations where it's decided based on hostility score intervals,
+        or finalized conversations where we check the analysis scores.
         """
 
         cm = ConversationModel
-        ca = ConversationAnalysisModel  # shorthand
+        ca = ConversationAnalysisModel
 
         # ── finalized branch ────────────────────────────────────────────
         pos_final = (ca.positive_sentiment > ca.negative_sentiment) & (
@@ -317,19 +379,19 @@ class ConversationRepository:
 
         # ── in-progress branch (score-based) ───────────────────────────
         positive_progress = (
-            cm.in_progress_hostility_score <= filter.hostility_positive_max
+            cm.in_progress_hostility_score <= conversation_filter.hostility_positive_max
         )
         neutral_progress = (
-            cm.in_progress_hostility_score > filter.hostility_positive_max
-        ) & (cm.in_progress_hostility_score <= filter.hostility_neutral_max)
+            cm.in_progress_hostility_score > conversation_filter.hostility_positive_max
+        ) & (cm.in_progress_hostility_score <= conversation_filter.hostility_neutral_max)
         negative_progress = (
-            cm.in_progress_hostility_score > filter.hostility_neutral_max
+            cm.in_progress_hostility_score > conversation_filter.hostility_neutral_max
         )
 
-        if filter.sentiment is Sentiment.POSITIVE:
+        if conversation_filter.sentiment is Sentiment.POSITIVE:
             finalized_clause = pos_final
             in_progress_clause = positive_progress
-        elif filter.sentiment is Sentiment.NEGATIVE:
+        elif conversation_filter.sentiment is Sentiment.NEGATIVE:
             finalized_clause = neg_final
             in_progress_clause = negative_progress
         else:  # Sentiment.NEUTRAL
@@ -343,18 +405,27 @@ class ConversationRepository:
 
     async def count_conversations(self, conversation_filter: ConversationFilter) -> int:
         """
-        Return the number of conversations whose status matches the
-        values provided in `conversation_filter.conversation_status`.
-        If no statuses are supplied, it simply returns the total row count.
+        Return the total count of conversations matching ALL active filters.
         """
         query = select(func.count(ConversationModel.id))
+        query = self._apply_base_filters(query, conversation_filter)
 
-        if conversation_filter.conversation_status:
-            query = query.where(
-                ConversationModel.status.in_(
-                    [status.value for status in conversation_filter.conversation_status]
-                )
+        # Sentiment and score range filters need the analysis join
+        needs_join = self._needs_analysis_join(conversation_filter)
+        if needs_join:
+            if conversation_filter.sentiment and (
+                conversation_filter.hostility_positive_max is None
+                or conversation_filter.hostility_neutral_max is None
+            ):
+                raise AppException(error_key=ErrorKey.REQUIRED_INTERVAL_VALUES)
+
+            query = query.outerjoin(
+                ConversationAnalysisModel,
+                ConversationAnalysisModel.conversation_id == ConversationModel.id,
             )
+            if conversation_filter.sentiment:
+                query = query.where(self._sentiment_predicate(conversation_filter))
+            query = self._apply_score_range_filters(query, conversation_filter)
 
         result = await self.db.execute(query)
         return result.scalar_one()

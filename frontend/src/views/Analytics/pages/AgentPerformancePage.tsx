@@ -21,7 +21,7 @@ import { AgentNodeBreakdownDialog } from "../components/reports/AgentNodeBreakdo
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
 import { useAgentsList } from "../hooks/useAgentsList";
 import {
-  fetchAgentStatsSummary,
+  fetchAgentStatsSummaryWithComparison,
   fetchAgentDailyStats,
   fetchAgentNodeBreakdown,
 } from "@/services/analyticsReports";
@@ -34,6 +34,17 @@ import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
 import { ExportButton } from "@/components/ui/ExportButton";
 
 const LS_KEY = (agentId: string) => `analytics_escalation_node_${agentId}`;
+
+function getResponseTimeColor(ms: number): string {
+  if (ms < 3000) return "text-emerald-600";
+  if (ms < 10000) return "text-amber-600";
+  return "text-rose-600";
+}
+
+function formatResponseTime(ms: number | null): string {
+  if (ms == null) return "—";
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)}s`;
+}
 
 interface AgentAggregated {
   id: string;
@@ -62,6 +73,7 @@ const AgentPerformancePage = () => {
 
   const { agents, agentNameMap } = useAgentsList();
   const [summary, setSummary] = useState<AgentStatsSummaryResponse | null>(null);
+  const [previousSummary, setPreviousSummary] = useState<AgentStatsSummaryResponse | null>(null);
   const [items, setItems] = useState<AgentDailyStatsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,11 +92,12 @@ const AgentPerformancePage = () => {
         to_date: range?.to ? format(range.to, "yyyy-MM-dd") : undefined,
         agent_id: agentId !== "all" ? agentId : undefined,
       };
-      const [summaryData, dailyData] = await Promise.all([
-        fetchAgentStatsSummary(params),
+      const [comparisonData, dailyData] = await Promise.all([
+        fetchAgentStatsSummaryWithComparison(params),
         fetchAgentDailyStats(params),
       ]);
-      setSummary(summaryData);
+      setSummary(comparisonData?.current ?? null);
+      setPreviousSummary(comparisonData?.previous ?? null);
       setItems(dailyData?.items ?? []);
     } catch {
       setError("Failed to load analytics data.");
@@ -121,13 +134,13 @@ const AgentPerformancePage = () => {
     }
   };
 
-  // Derived escalation metrics
+  // Derived escalation metrics (conversation-based)
   const escalationItem = nodeBreakdown.find((n) => n.node_type === escalationNode);
-  const totalExec = summary?.total_executions ?? 0;
+  const totalConversations = summary?.total_unique_conversations ?? 0;
 
   const escalationRate =
-    escalationItem && totalExec > 0
-      ? escalationItem.execution_count / totalExec
+    escalationItem && totalConversations > 0
+      ? escalationItem.unique_conversations / totalConversations
       : null;
   const containmentRate = escalationRate !== null ? 1 - escalationRate : null;
 
@@ -178,71 +191,57 @@ const AgentPerformancePage = () => {
   }, [items]);
 
   const statsColumns = useMemo(() => {
-    const statCols = [
+    const statCols: Column<AgentAggregated>[] = [
       {
         header: "Conversations",
         key: "unique_conversations",
-        description: "Unique chat sessions in the period. 'fin' = completed, 'prog' = still open.",
+        description: "Unique chat sessions in the period.",
         cell: (item: AgentAggregated) => (
           <div className="flex flex-col gap-0.5">
             <span className="font-medium">{item.unique_conversations.toLocaleString()}</span>
             {(item.finalized_conversations + item.in_progress_conversations) > 0 && (
               <span className="text-xs text-muted-foreground/70">
-                {item.finalized_conversations} fin · {item.in_progress_conversations} prog
+                {item.finalized_conversations} completed · {item.in_progress_conversations} in progress
               </span>
             )}
           </div>
         ),
       },
       {
-        header: "Executions",
-        key: "execution_count",
-        description: "Total number of workflow runs triggered by this agent.",
-        cell: (item: AgentAggregated) => item.execution_count.toLocaleString(),
-      },
-      {
-        header: "Success",
+        header: "Success Rate",
         key: "success_count",
-        description: "Executions that completed without any errors.",
-        cell: (item: AgentAggregated) => (
-          <span className="text-green-600 font-medium">
-            {item.success_count.toLocaleString()}
-          </span>
-        ),
+        description: "Percentage of executions that completed without errors.",
+        cell: (item: AgentAggregated) => {
+          const rate = item.execution_count > 0
+            ? ((item.success_count / item.execution_count) * 100).toFixed(1)
+            : "0.0";
+          const hasErrors = item.error_count > 0;
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span className={`font-medium ${hasErrors ? "text-amber-600" : "text-emerald-600"}`}>
+                {rate}%
+              </span>
+              <span className="text-xs text-muted-foreground/70">
+                {item.success_count} of {item.execution_count}
+              </span>
+            </div>
+          );
+        },
       },
       {
-        header: "Errors",
-        key: "error_count",
-        description: "Executions that ended with an unhandled error.",
-        cell: (item: AgentAggregated) => (
-          <span className={item.error_count > 0 ? "text-red-500 font-medium" : "text-zinc-400"}>
-            {item.error_count.toLocaleString()}
-          </span>
-        ),
-      },
-      {
-        header: "Avg Response (ms)",
+        header: "Avg Response",
         key: "avg_response_ms",
-        description: "Weighted average time from workflow start to final response.",
-        cell: (item: AgentAggregated) =>
-          item.avg_response_ms != null ? `${Math.round(item.avg_response_ms)} ms` : "—",
-      },
-      {
-        header: "Nodes Executed",
-        key: "total_nodes_executed",
-        description: "Total number of individual workflow nodes run across all executions.",
-        cell: (item: AgentAggregated) => item.total_nodes_executed.toLocaleString(),
-      },
-      {
-        header: "RAG Used",
-        key: "rag_used_count",
-        description: "Executions where a knowledge base (RAG) lookup was performed.",
-        cell: (item: AgentAggregated) => item.rag_used_count.toLocaleString(),
+        description: "Average time from request to response.",
+        cell: (item: AgentAggregated) => (
+          <span className={item.avg_response_ms != null ? getResponseTimeColor(item.avg_response_ms) + " font-medium" : "text-zinc-400"}>
+            {formatResponseTime(item.avg_response_ms)}
+          </span>
+        ),
       },
       {
         header: <ThumbsUp className="w-4 h-4 text-emerald-600" />,
         key: "thumbs_up_count",
-        description: "Positive feedback given by users on responses.",
+        description: "Positive feedback from users.",
         cell: (item: AgentAggregated) => (
           <span className="text-emerald-600 font-medium">
             {item.thumbs_up_count.toLocaleString()}
@@ -252,7 +251,7 @@ const AgentPerformancePage = () => {
       {
         header: <ThumbsDown className="w-4 h-4 text-rose-500" />,
         key: "thumbs_down_count",
-        description: "Negative feedback given by users on responses.",
+        description: "Negative feedback from users.",
         cell: (item: AgentAggregated) => (
           <span className={item.thumbs_down_count > 0 ? "text-rose-500 font-medium" : "text-zinc-400"}>
             {item.thumbs_down_count.toLocaleString()}
@@ -291,11 +290,6 @@ const AgentPerformancePage = () => {
     ];
   }, [agentFilter, agentNameMap]);
 
-  const selectedAgentName =
-    agentFilter !== "all"
-      ? agents.find((a) => a.id === agentFilter)?.name
-      : undefined;
-
   const exportParams = {
     agent_id: agentFilter !== "all" ? agentFilter : undefined,
     from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
@@ -318,7 +312,7 @@ const AgentPerformancePage = () => {
                     Agent Performance
                   </h1>
                   <p className="text-sm text-muted-foreground animate-fade-up">
-                    Pre-aggregated daily execution statistics per agent
+                    Daily performance metrics per agent
                   </p>
                 </div>
 
@@ -351,17 +345,24 @@ const AgentPerformancePage = () => {
                 </Card>
               )}
 
-              {/* Summary cards */}
-              <SummaryStatsCards summary={summary} loading={loading} error={error} />
+              {/* Summary cards — containment rate promoted to top-level KPI */}
+              <SummaryStatsCards
+                summary={summary}
+                previousSummary={previousSummary}
+                dateRange={dateRange}
+                loading={loading}
+                error={error}
+                containmentRate={containmentRate}
+              />
 
-              {/* Escalation / Containment — only when a specific agent is selected */}
+              {/* Escalation tracking — only when a specific agent is selected */}
               {agentFilter !== "all" && (
                 <div className="space-y-3">
-                  {/* Escalation node selector */}
+                  {/* Escalation node config */}
                   <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex items-center gap-1.5 text-xs text-zinc-500">
                       <Settings2 className="w-3.5 h-3.5" />
-                      <span>Tracked node:</span>
+                      <span>Escalation node:</span>
                     </div>
                     <Select
                       value={escalationNode || "__none__"}
@@ -381,20 +382,15 @@ const AgentPerformancePage = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                    {escalationNode && (
-                      <span className="text-xs text-muted-foreground">
-                        Saved — this persists per agent
-                      </span>
-                    )}
                   </div>
 
-                  {/* Derived metric cards */}
+                  {/* Escalation / Containment detail cards */}
                   {escalationRate !== null && (
                     <div className="grid grid-cols-2 gap-4">
                       {/* Trigger Rate */}
                       <div className="bg-white rounded-xl border-t-2 border-orange-400 border-x border-b border-border p-4 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
-                          <p className="text-xs text-muted-foreground">Trigger Rate</p>
+                          <p className="text-xs text-muted-foreground">Escalation Rate</p>
                           <TrendingDown className="w-3.5 h-3.5 text-orange-400" />
                         </div>
                         <p className="text-3xl font-bold text-zinc-900 leading-none">
@@ -408,8 +404,18 @@ const AgentPerformancePage = () => {
                             />
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            {escalationItem!.execution_count.toLocaleString()} of {totalExec.toLocaleString()} hit <span className="font-medium text-zinc-600">{nodeTypeLabel(escalationNode)}</span>
+                            {escalationItem!.unique_conversations.toLocaleString()} of {totalConversations.toLocaleString()} conversations escalated to <span className="font-medium text-zinc-600">{nodeTypeLabel(escalationNode)}</span>
                           </p>
+                          <div className="flex items-center gap-3 pt-1">
+                            <span className="flex items-center gap-1 text-xs text-emerald-600">
+                              <ThumbsUp className="w-3 h-3" />
+                              {escalationItem!.thumbs_up_count.toLocaleString()}
+                            </span>
+                            <span className="flex items-center gap-1 text-xs text-rose-500">
+                              <ThumbsDown className="w-3 h-3" />
+                              {escalationItem!.thumbs_down_count.toLocaleString()}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -430,8 +436,18 @@ const AgentPerformancePage = () => {
                             />
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            Resolved without reaching <span className="font-medium text-zinc-600">{nodeTypeLabel(escalationNode)}</span>
+                            Conversations resolved without escalation
                           </p>
+                          <div className="flex items-center gap-3 pt-1">
+                            <span className="flex items-center gap-1 text-xs text-emerald-600">
+                              <ThumbsUp className="w-3 h-3" />
+                              {Math.max(0, (summary?.total_thumbs_up ?? 0) - escalationItem!.thumbs_up_count).toLocaleString()}
+                            </span>
+                            <span className="flex items-center gap-1 text-xs text-rose-500">
+                              <ThumbsDown className="w-3 h-3" />
+                              {Math.max(0, (summary?.total_thumbs_down ?? 0) - escalationItem!.thumbs_down_count).toLocaleString()}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -439,10 +455,10 @@ const AgentPerformancePage = () => {
                 </div>
               )}
 
-              {/* Daily execution chart */}
+              {/* Daily conversations chart */}
               <AgentExecutionChart items={items} loading={loading} agentNameMap={agentNameMap} />
 
-              {/* Daily stats table */}
+              {/* Stats table */}
               <div>
                 <DataTable
                   data={agentFilter === "all" ? aggregatedItems : (items as unknown as AgentAggregated[])}

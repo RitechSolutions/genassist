@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AgentListItem, AgentConfig } from "@/interfaces/ai-agent.interface";
 import { Button } from "@/components/button";
@@ -74,12 +74,15 @@ const AgentList: React.FC<AgentListProps> = ({
     return () => observer.disconnect();
   }, [hasMore, loadingMore, loadMore]);
 
-  const activeAgents = agents.filter((agent) => agent.is_active);
-  const inactiveAgents = agents.filter((agent) => !agent.is_active);
-  const filteredAgents = agents.filter((agent) => {
-    const agentName = agent.name;
-    return agentName.toLowerCase().includes(searchTerm.toLowerCase());
-  });
+  const activeCount = useMemo(() => agents.filter((a) => a.is_active).length, [agents]);
+  const inactiveCount = useMemo(() => agents.length - activeCount, [agents, activeCount]);
+  const filteredAgents = useMemo(
+    () =>
+      agents.filter((agent) =>
+        agent.name.toLowerCase().includes(searchTerm.toLowerCase())
+      ),
+    [agents, searchTerm]
+  );
 
   const [openAgentForm, setOpenAgentForm] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
@@ -89,6 +92,7 @@ const AgentList: React.FC<AgentListProps> = ({
     description: string;
     welcome_message?: string;
     welcome_title?: string;
+    input_disclaimer_html?: string;
     thinking_phrase_delay?: number;
     possible_queries?: string[];
     thinking_phrases?: string[];
@@ -112,6 +116,7 @@ const AgentList: React.FC<AgentListProps> = ({
         description: config.description ?? "",
         welcome_message: config.welcome_message ?? "",
         welcome_title: config.welcome_title ?? "",
+        input_disclaimer_html: config.input_disclaimer_html ?? "",
         thinking_phrase_delay: config.thinking_phrase_delay ?? 0,
         possible_queries: config.possible_queries ?? [],
         thinking_phrases: config.thinking_phrases ?? [],
@@ -128,14 +133,13 @@ const AgentList: React.FC<AgentListProps> = ({
         error instanceof Error ? error.message : "Failed to load agent settings"
       );
     } finally {
-      // setSettingsLoadingAgentId(null);
+      setSettingsLoadingAgentId(null);
     }
   };
 
   const handleSettingsDialogClose = () => {
     setSettingsDialogOpen(false);
     setSettingsFormData(null);
-    onRefresh();
   };
 
   if (!agents || agents.length === 0) {
@@ -169,7 +173,7 @@ const AgentList: React.FC<AgentListProps> = ({
     const isActive = !!agent.is_active;
     const truncatedPrompt = agent.possible_queries?.join(" ") ?? "";
     const isAgentModalOpen =
-      settingsLoadingAgentId === agent.id && settingsDialogOpen;
+      settingsDialogOpen && settingsFormData?.id === agent.id;
 
     return (
       <div
@@ -291,7 +295,7 @@ const AgentList: React.FC<AgentListProps> = ({
         <div>
           <h2 className="text-3xl font-bold">
             Agent Studio{" "}
-            <span className="text-2xl text-zinc-400 font-normal">({activeAgents.length} Active, {inactiveAgents.length} Inactive)</span>
+            <span className="text-2xl text-zinc-400 font-normal">({activeCount} Active, {inactiveCount} Inactive)</span>
           </h2>
           <p className="text-zinc-400 font-normal">View and manage workflows</p>
         </div>
@@ -339,6 +343,7 @@ const AgentList: React.FC<AgentListProps> = ({
         data={settingsFormData}
         redirectOnCreate={false}
         onCreated={() => handleSettingsDialogClose()}
+        onSaved={() => onRefresh()}
       />
     </div>
   );

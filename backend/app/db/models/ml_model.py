@@ -1,8 +1,10 @@
-from typing import Optional
-from sqlalchemy import String, Text, Index, Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 import enum
+from typing import Optional
+
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import Index, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -16,16 +18,13 @@ class ModelType(str, enum.Enum):
 
 
 class MLModel(Base):
-    __tablename__ = 'ml_models'
-    __table_args__ = (
-        Index('idx_ml_models_name', 'name', unique=True),
-    )
+    __tablename__ = "ml_models"
+    __table_args__ = (Index("idx_ml_models_name", "name", unique=True),)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     model_type: Mapped[ModelType] = mapped_column(
-        SQLEnum(ModelType, name='model_type_enum', create_constraint=True),
-        nullable=False
+        SQLEnum(ModelType, name="model_type_enum", create_constraint=True), nullable=False
     )
     pkl_file: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     pkl_file_id: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -34,15 +33,5 @@ class MLModel(Base):
     inference_params: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
-    pipeline_configs = relationship(
-        "MLModelPipelineConfig",
-        back_populates="model",
-        cascade="all, delete-orphan"
-    )
-    pipeline_runs = relationship(
-        "MLModelPipelineRun",
-        back_populates="model",
-        cascade="all, delete-orphan"
-    )
-
-
+    pipeline_configs = relationship("MLModelPipelineConfig", back_populates="model", cascade="all, delete-orphan")
+    pipeline_runs = relationship("MLModelPipelineRun", back_populates="model", cascade="all, delete-orphan")

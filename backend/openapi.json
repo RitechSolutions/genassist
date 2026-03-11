@@ -2562,6 +2562,461 @@
         }
       }
     },
+    "/api/translations/languages/all": {
+      "get": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "List All Languages",
+        "operationId": "list_all_languages_api_translations_languages_all_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LanguageRead"
+                  },
+                  "type": "array",
+                  "title": "Response List All Languages Api Translations Languages All Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/translations/languages": {
+      "get": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "List Languages",
+        "operationId": "list_languages_api_translations_languages_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LanguageRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Languages Api Translations Languages Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "Create Language",
+        "operationId": "create_language_api_translations_languages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LanguageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LanguageRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/translations/languages/{language_id}": {
+      "patch": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "Update Language",
+        "operationId": "update_language_api_translations_languages__language_id__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "language_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Language Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LanguageUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LanguageRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "Delete Language",
+        "operationId": "delete_language_api_translations_languages__language_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "language_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Language Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/translations": {
+      "get": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "List Translations",
+        "operationId": "list_translations_api_translations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TranslationRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Translations Api Translations Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "Create Translation",
+        "operationId": "create_translation_api_translations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/translations/{key}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "Get Translation",
+        "operationId": "get_translation_api_translations__key__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "Update Translation",
+        "operationId": "update_translation_api_translations__key__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "Translations"
+        ],
+        "summary": "Delete Translation",
+        "operationId": "delete_translation_api_translations__key__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audit-logs/search": {
       "get": {
         "tags": [
@@ -3755,6 +4210,35 @@
         }
       }
     },
+    "/api/conversations/in-progress/agent-info": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Get Agent Info",
+        "description": "Return agent metadata needed before a conversation starts (e.g. supported languages).",
+        "operationId": "get_agent_info_api_conversations_in_progress_agent_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/conversations/{conversation_id}": {
       "get": {
         "tags": [
@@ -3947,6 +4431,167 @@
             }
           },
           {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "customer_satisfaction_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Min"
+            }
+          },
+          {
+            "name": "customer_satisfaction_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Max"
+            }
+          },
+          {
+            "name": "quality_of_service_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Min"
+            }
+          },
+          {
+            "name": "quality_of_service_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Max"
+            }
+          },
+          {
+            "name": "resolution_rate_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Min"
+            }
+          },
+          {
+            "name": "resolution_rate_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Max"
+            }
+          },
+          {
+            "name": "efficiency_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Min"
+            }
+          },
+          {
+            "name": "efficiency_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Max"
+            }
+          },
+          {
             "name": "hostility_positive_max",
             "in": "query",
             "required": false,
@@ -4030,6 +4675,22 @@
                 }
               ],
               "title": "Customer Id"
+            }
+          },
+          {
+            "name": "exclude_empty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Empty"
             }
           },
           {
@@ -4610,6 +5271,167 @@
             }
           },
           {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "customer_satisfaction_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Min"
+            }
+          },
+          {
+            "name": "customer_satisfaction_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Max"
+            }
+          },
+          {
+            "name": "quality_of_service_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Min"
+            }
+          },
+          {
+            "name": "quality_of_service_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Max"
+            }
+          },
+          {
+            "name": "resolution_rate_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Min"
+            }
+          },
+          {
+            "name": "resolution_rate_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Max"
+            }
+          },
+          {
+            "name": "efficiency_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Min"
+            }
+          },
+          {
+            "name": "efficiency_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Max"
+            }
+          },
+          {
             "name": "hostility_positive_max",
             "in": "query",
             "required": false,
@@ -4696,6 +5518,22 @@
             }
           },
           {
+            "name": "exclude_empty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Empty"
+            }
+          },
+          {
             "name": "from_create_datetime_messages",
             "in": "query",
             "required": false,
@@ -4760,8 +5598,8 @@
           "v1",
           "Conversations"
         ],
-        "summary": "Get",
-        "operationId": "get_api_conversations_filter_count_get",
+        "summary": "Get Conversation Count",
+        "operationId": "get_conversation_count_api_conversations_filter_count_get",
         "security": [
           {
             "APIKeyHeader": []
@@ -4936,6 +5774,167 @@
             }
           },
           {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "customer_satisfaction_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Min"
+            }
+          },
+          {
+            "name": "customer_satisfaction_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Satisfaction Max"
+            }
+          },
+          {
+            "name": "quality_of_service_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Min"
+            }
+          },
+          {
+            "name": "quality_of_service_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality Of Service Max"
+            }
+          },
+          {
+            "name": "resolution_rate_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Min"
+            }
+          },
+          {
+            "name": "resolution_rate_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resolution Rate Max"
+            }
+          },
+          {
+            "name": "efficiency_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Min"
+            }
+          },
+          {
+            "name": "efficiency_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Efficiency Max"
+            }
+          },
+          {
             "name": "hostility_positive_max",
             "in": "query",
             "required": false,
@@ -5019,6 +6018,22 @@
                 }
               ],
               "title": "Customer Id"
+            }
+          },
+          {
+            "name": "exclude_empty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Empty"
             }
           },
           {
@@ -5637,6 +6652,62 @@
             }
           }
         }
+      }
+    },
+    "/api/llm-analyst/available-enrichments": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmAnalyst"
+        ],
+        "summary": "Get Available Enrichments",
+        "operationId": "get_available_enrichments_api_llm_analyst_available_enrichments_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/llm-analyst/available-node-types": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmAnalyst"
+        ],
+        "summary": "Get Available Node Types",
+        "operationId": "get_available_node_types_api_llm_analyst_available_node_types_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/llm-analyst": {
@@ -9310,6 +10381,16 @@
               ],
               "title": "To Date"
             }
+          },
+          {
+            "name": "compare",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Compare"
+            }
           }
         ],
         "responses": {
@@ -9317,9 +10398,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentStatsSummaryResponse"
-                }
+                "schema": {}
               }
             }
           },
@@ -9815,6 +10894,16 @@
                 }
               ],
               "title": "Agent Id"
+            }
+          },
+          {
+            "name": "compare",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Compare"
             }
           }
         ],
@@ -15023,6 +16112,18 @@
             "title": "Welcome Title",
             "description": "Welcome title displayed when starting a conversation with an agent."
           },
+          "input_disclaimer_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer Html",
+            "description": "HTML disclaimer shown below the chat input. Supports text, bold, font-size, and links."
+          },
           "possible_queries": {
             "items": {
               "type": "string"
@@ -15354,6 +16455,18 @@
             ],
             "title": "Welcome Title",
             "description": "Welcome title displayed when starting a conversation with an agent."
+          },
+          "input_disclaimer_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer Html",
+            "description": "HTML disclaimer shown below the chat input. Supports text, bold, font-size, and links."
           },
           "possible_queries": {
             "items": {
@@ -16004,117 +17117,6 @@
         "title": "AgentStatsResponse",
         "description": "Your Agents section response."
       },
-      "AgentStatsSummaryResponse": {
-        "properties": {
-          "agent_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Id"
-          },
-          "from_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "From Date"
-          },
-          "to_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "To Date"
-          },
-          "total_executions": {
-            "type": "integer",
-            "title": "Total Executions"
-          },
-          "total_success": {
-            "type": "integer",
-            "title": "Total Success"
-          },
-          "total_errors": {
-            "type": "integer",
-            "title": "Total Errors"
-          },
-          "avg_response_ms": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Avg Response Ms"
-          },
-          "avg_success_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Avg Success Rate"
-          },
-          "total_rag_used": {
-            "type": "integer",
-            "title": "Total Rag Used"
-          },
-          "total_unique_conversations": {
-            "type": "integer",
-            "title": "Total Unique Conversations"
-          },
-          "total_finalized_conversations": {
-            "type": "integer",
-            "title": "Total Finalized Conversations",
-            "default": 0
-          },
-          "total_in_progress_conversations": {
-            "type": "integer",
-            "title": "Total In Progress Conversations",
-            "default": 0
-          },
-          "total_thumbs_up": {
-            "type": "integer",
-            "title": "Total Thumbs Up",
-            "default": 0
-          },
-          "total_thumbs_down": {
-            "type": "integer",
-            "title": "Total Thumbs Down",
-            "default": 0
-          }
-        },
-        "type": "object",
-        "required": [
-          "total_executions",
-          "total_success",
-          "total_errors",
-          "total_rag_used",
-          "total_unique_conversations"
-        ],
-        "title": "AgentStatsSummaryResponse"
-      },
       "AgentUpdate": {
         "properties": {
           "name": {
@@ -16183,6 +17185,17 @@
               }
             ],
             "title": "Welcome Title"
+          },
+          "input_disclaimer_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Disclaimer Html"
           },
           "possible_queries": {
             "anyOf": [
@@ -20168,6 +21181,81 @@
         "title": "KBRead",
         "description": "Response model"
       },
+      "LanguageCreate": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "LanguageCreate"
+      },
+      "LanguageRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "is_active"
+        ],
+        "title": "LanguageRead"
+      },
+      "LanguageUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "LanguageUpdate"
+      },
       "LlmAnalyst": {
         "properties": {
           "name": {
@@ -20200,6 +21288,20 @@
               }
             ],
             "title": "Is Active"
+          },
+          "context_enrichments": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Enrichments"
           },
           "id": {
             "type": "string",
@@ -20271,6 +21373,20 @@
               }
             ],
             "title": "Is Active"
+          },
+          "context_enrichments": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Enrichments"
           }
         },
         "type": "object",
@@ -20328,6 +21444,20 @@
               }
             ],
             "title": "Is Active"
+          },
+          "context_enrichments": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Enrichments"
           }
         },
         "type": "object",
@@ -21758,6 +22888,21 @@
             "type": "integer",
             "title": "Failure Count"
           },
+          "unique_conversations": {
+            "type": "integer",
+            "title": "Unique Conversations",
+            "default": 0
+          },
+          "thumbs_up_count": {
+            "type": "integer",
+            "title": "Thumbs Up Count",
+            "default": 0
+          },
+          "thumbs_down_count": {
+            "type": "integer",
+            "title": "Thumbs Down Count",
+            "default": 0
+          },
           "avg_execution_ms": {
             "anyOf": [
               {
@@ -21853,6 +22998,21 @@
           "failure_count": {
             "type": "integer",
             "title": "Failure Count"
+          },
+          "unique_conversations": {
+            "type": "integer",
+            "title": "Unique Conversations",
+            "default": 0
+          },
+          "thumbs_up_count": {
+            "type": "integer",
+            "title": "Thumbs Up Count",
+            "default": 0
+          },
+          "thumbs_down_count": {
+            "type": "integer",
+            "title": "Thumbs Down Count",
+            "default": 0
           },
           "success_rate": {
             "anyOf": [
@@ -23072,7 +24232,11 @@
           "updated_at",
           "thumbs_up_count",
           "thumbs_down_count",
-          "id"
+          "id",
+          "customer_satisfaction",
+          "quality_of_service",
+          "resolution_rate",
+          "efficiency"
         ],
         "title": "SortField"
       },
@@ -23509,6 +24673,107 @@
           "text"
         ],
         "title": "TranscriptSegmentInput"
+      },
+      "TranslationCreate": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "translations": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Translations",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "title": "TranslationCreate"
+      },
+      "TranslationRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "translations": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Translations",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key"
+        ],
+        "title": "TranslationRead"
+      },
+      "TranslationUpdate": {
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "translations": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translations"
+          }
+        },
+        "type": "object",
+        "title": "TranslationUpdate"
       },
       "UserCreate": {
         "properties": {

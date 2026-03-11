@@ -6,25 +6,24 @@ avoiding repeated file I/O and deserialization overhead.
 """
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import logging
-import pickle
 import os
-from typing import Dict, Optional, Any
+import pickle
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from typing import Any, Dict, Optional
 from uuid import UUID
-from app.core.project_path import DATA_VOLUME
+
 from injector import inject
+
+from app.core.project_path import DATA_VOLUME
 
 logger = logging.getLogger(__name__)
 
 # Shared thread pool for blocking I/O operations (pickle loading)
 # Using ThreadPoolExecutor with pre-validation to prevent problematic models
 # Models are validated in a subprocess before being loaded to detect segfaults
-_MODEL_LOAD_EXECUTOR = ThreadPoolExecutor(
-    max_workers=8,
-    thread_name_prefix="ml_model_loader"
-)
+_MODEL_LOAD_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ml_model_loader")
 
 # Directory for storing ML model .pkl files
 ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
@@ -40,7 +39,7 @@ def _load_pickle_sync(pkl_file: str) -> Any:
 
     # Method 1: Try pickle with default encoding (works best for XGBoost in thread pool)
     try:
-        with open(pkl_file, 'rb') as f:
+        with open(pkl_file, "rb") as f:
             model = pickle.load(f)
         logger.info(f"Loaded model using pickle (default) from {pkl_file}")
         return model
@@ -49,8 +48,8 @@ def _load_pickle_sync(pkl_file: str) -> Any:
 
     # Method 2: Try pickle with latin1 encoding
     try:
-        with open(pkl_file, 'rb') as f:
-            model = pickle.load(f, encoding='latin1')
+        with open(pkl_file, "rb") as f:
+            model = pickle.load(f, encoding="latin1")
         logger.info(f"Loaded model using pickle (latin1) from {pkl_file}")
         return model
     except Exception as e:
@@ -59,6 +58,7 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     # Method 3: Try joblib (may have threading issues with XGBoost)
     try:
         import joblib  # type: ignore
+
         model = joblib.load(pkl_file)
         logger.info(f"Loaded model using joblib from {pkl_file}")
         return model
@@ -78,7 +78,9 @@ def _load_pickle_sync(pkl_file: str) -> Any:
 class CachedMLModel:
     """Container for a cached ML model with metadata"""
 
-    def __init__(self, model: Any, model_id: UUID, updated_at: datetime, pkl_file: str, pkl_file_id: Optional[str] = None):
+    def __init__(
+        self, model: Any, model_id: UUID, updated_at: datetime, pkl_file: str, pkl_file_id: Optional[str] = None
+    ):
         self.model = model
         self.model_id = model_id
         self.updated_at = updated_at
@@ -103,16 +105,16 @@ class MLModelManager:
     4. Handles multiple loading methods (joblib, pickle)
     """
 
-    _instance: Optional['MLModelManager'] = None
+    _instance: Optional["MLModelManager"] = None
     _lock = asyncio.Lock()
 
-    def __new__(cls) -> 'MLModelManager':
+    def __new__(cls) -> "MLModelManager":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
     @classmethod
-    def get_instance(cls) -> 'MLModelManager':
+    def get_instance(cls) -> "MLModelManager":
         """Get the singleton instance"""
         if cls._instance is None:
             cls._instance = cls()
@@ -120,17 +122,13 @@ class MLModelManager:
 
     def __init__(self):
         """Initialize the manager"""
-        if not hasattr(self, '_cached_models'):
+        if not hasattr(self, "_cached_models"):
             self._cached_models: Dict[str, CachedMLModel] = {}
             self._loading_locks: Dict[str, asyncio.Lock] = {}
             logger.info("MLModelManager initialized")
 
     async def get_model(
-        self,
-        model_id: UUID,
-        pkl_file: str,
-        pkl_file_id: str,
-        updated_at: datetime
+        self, model_id: UUID, pkl_file: Optional[str], pkl_file_id: Optional[str], updated_at: datetime
     ) -> Any:
         """
         Get a cached model or load it if not cached/stale.
@@ -171,8 +169,10 @@ class MLModelManager:
             # if pkl_file_id is provided, download the file from the file manager service
             if not pkl_file and pkl_file_id:
                 # download the file to the temporary directory
-                pkl_file_path = await download_pkl_file(pkl_file_id, os.path.join(ML_MODELS_UPLOAD_DIR, f"{model_id_str}.pkl"))
-                
+                pkl_file_path = await download_pkl_file(
+                    pkl_file_id, os.path.join(ML_MODELS_UPLOAD_DIR, f"{model_id_str}.pkl")
+                )
+
                 # update the pkl_file with the new path
                 pkl_file = str(pkl_file_path)
 
@@ -182,11 +182,7 @@ class MLModelManager:
 
             # Cache the model
             self._cached_models[model_id_str] = CachedMLModel(
-                model=model,
-                model_id=model_id,
-                updated_at=updated_at,
-                pkl_file=pkl_file,
-                pkl_file_id=pkl_file_id
+                model=model, model_id=model_id, updated_at=updated_at, pkl_file=pkl_file, pkl_file_id=pkl_file_id
             )
 
             logger.info(f"Cached ML model {model_id_str}")
@@ -213,14 +209,13 @@ class MLModelManager:
             None,  # Use default executor for this quick check
             validate_pickle_file_safe,
             pkl_file,
-            5  # 5 second timeout for validation
+            5,  # 5 second timeout for validation
         )
 
         if not is_valid:
             logger.error(f"Model validation failed: {pkl_file} - {error}")
             raise ValueError(
-                f"Model validation failed: {error}. "
-                f"Please re-save the model with current library versions."
+                f"Model validation failed: {error}. Please re-save the model with current library versions."
             )
 
         logger.debug(f"Model validation passed: {pkl_file}")
@@ -261,19 +256,14 @@ class MLModelManager:
             # Set a timeout of 60 seconds for model loading
             # Large models should load within this time; if not, something is wrong
             model = await asyncio.wait_for(
-                loop.run_in_executor(
-                    _MODEL_LOAD_EXECUTOR,
-                    _load_pickle_sync,
-                    pkl_file
-                ),
-                timeout=60.0  # 60 second timeout
+                loop.run_in_executor(_MODEL_LOAD_EXECUTOR, _load_pickle_sync, pkl_file),
+                timeout=60.0,  # 60 second timeout
             )
             return model
         except asyncio.TimeoutError:
             logger.error(f"Model loading timed out after 60s: {pkl_file}")
             raise TimeoutError(
-                f"Model loading timed out after 60 seconds. "
-                f"The model file may be corrupted or incompatible: {pkl_file}"
+                f"Model loading timed out after 60 seconds. The model file may be corrupted or incompatible: {pkl_file}"
             )
 
     def invalidate_model(self, model_id: UUID) -> None:
@@ -301,8 +291,10 @@ class MLModelManager:
             "executor_type": "ThreadPoolExecutor (with subprocess pre-validation)",
             "max_workers": _MODEL_LOAD_EXECUTOR._max_workers,
             "thread_name_prefix": _MODEL_LOAD_EXECUTOR._thread_name_prefix,
-            "active_threads": len(_MODEL_LOAD_EXECUTOR._threads) if hasattr(_MODEL_LOAD_EXECUTOR, '_threads') else 0,
-            "pending_tasks": _MODEL_LOAD_EXECUTOR._work_queue.qsize() if hasattr(_MODEL_LOAD_EXECUTOR, '_work_queue') else 0,
+            "active_threads": len(_MODEL_LOAD_EXECUTOR._threads) if hasattr(_MODEL_LOAD_EXECUTOR, "_threads") else 0,
+            "pending_tasks": _MODEL_LOAD_EXECUTOR._work_queue.qsize()
+            if hasattr(_MODEL_LOAD_EXECUTOR, "_work_queue")
+            else 0,
         }
 
         return {
@@ -314,11 +306,11 @@ class MLModelManager:
                     "pkl_file": cached.pkl_file,
                     "updated_at": cached.updated_at.isoformat(),
                     "load_time": cached.load_time.isoformat(),
-                    "model_type": type(cached.model).__name__
+                    "model_type": type(cached.model).__name__,
                 }
                 for cached in self._cached_models.values()
             ],
-            "thread_pool": executor_stats
+            "thread_pool": executor_stats,
         }
 
 
@@ -327,12 +319,14 @@ def get_ml_model_manager() -> MLModelManager:
     """Get the global ML Model Manager instance"""
     return MLModelManager.get_instance()
 
+
 async def download_pkl_file(pkl_file_id: UUID, destination_path: str) -> str:
     """
     Download the PKL file from the file manager service.
     """
     from app.dependencies.injector import injector
     from app.services.file_manager import FileManagerService
+
     file_manager_service = injector.get(FileManagerService)
     file = await file_manager_service.get_file_by_id(pkl_file_id)
     if not file:
