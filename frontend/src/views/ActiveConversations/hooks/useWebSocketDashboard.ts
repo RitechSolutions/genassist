@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getWsUrl, isWsEnabled } from "@/config/api";
+import { getWsUrl, getWsVersion, isWsEnabled } from "@/config/api";
 import {
   DashboardWebSocketMessage,
   UseWebSocketDashboardOptions,
@@ -12,11 +12,15 @@ import { ActiveConversation } from "@/interfaces/liveConversation.interface";
 import { conversationService } from "@/services/liveConversations";
 import { getTenantId } from "@/services/auth";
 
+const DEFAULT_TOPICS = ["message", "statistics", "finalize", "hostile"] as const;
+
 export function useWebSocketDashboard({
   token,
   lang = "en",
-  topics = ["message", "statistics", "finalize", "hostile"]
+  topics = [...DEFAULT_TOPICS]
 }: UseWebSocketDashboardOptions) {
+  // Ensure "message" and "hostile" are always included (hostile = dashboard updates, message = transcript)
+  const effectiveTopics = Array.from(new Set([...topics, "message", "hostile"]));
   const [conversations, setConversations] = useState<ActiveConversation[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [isConnected, setIsConnected] = useState(false);
@@ -30,15 +34,27 @@ export function useWebSocketDashboard({
     if (!isWsEnabled) return;
     try {
       const wsBaseUrl = await getWsUrl();
-      const topicsQuery = topics.map(t => `topics=${t}`).join("&");
+      const wsVersion = getWsVersion();
+
+      const topicsQuery = effectiveTopics.map(t => `topics=${t}`).join("&");
       const tenant = getTenantId();
       const tenantParam = tenant ? `&x-tenant-id=${tenant}` : "";
-      const wsUrl = `${wsBaseUrl}/ws/dashboard/list?access_token=${token}&lang=${lang}&${topicsQuery}${tenantParam}`;
+      const langParam = lang ? `&lang=${lang}` : "";
+
+      let wsUrl = "";
+      if (wsVersion === 1) {
+        // old websocket service (WS is co-hosted with the HTTP API under /api)
+        wsUrl = `${wsBaseUrl}/conversations/ws/dashboard/list?access_token=${token}${langParam}&${topicsQuery}${tenantParam}`;
+      } else {
+        wsUrl = `${wsBaseUrl}/ws/dashboard/list?access_token=${token}${langParam}&${topicsQuery}${tenantParam}`;
+      }
 
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
+      console.log("[WebSocket Dashboard] Connecting", { wsUrl, wsVersion });
 
       socket.onopen = () => {
+        console.log("[WebSocket Dashboard] Connected");
         setIsConnected(true);
         setError(null);
         reconnectAttempts.current = 0;
@@ -47,6 +63,7 @@ export function useWebSocketDashboard({
       socket.onmessage = (event) => {
         try {
           const data: DashboardWebSocketMessage = JSON.parse(event.data);
+          console.log("[WebSocket Dashboard] Message", { type: data.topic ?? data.type, payload: data.payload });
 
           const applyCachedTopic = (conv: ActiveConversation): ActiveConversation => {
             const provided = (conv.topic || "").trim();
@@ -220,10 +237,12 @@ export function useWebSocketDashboard({
       };
 
       socket.onerror = (e) => {
+        console.warn("[WebSocket Dashboard] Error", { event: e });
         setError(new Error("WebSocket error"));
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
+        console.log("[WebSocket Dashboard] Closed", { code: event.code, reason: event.reason, wasClean: event.wasClean });
         setIsConnected(false);
         if (reconnectAttempts.current < 5) {
           reconnectAttempts.current++;
@@ -242,7 +261,7 @@ export function useWebSocketDashboard({
     connect();
     return () => socketRef.current?.close();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, lang, topics.join(",")]);
+  }, [token, lang, effectiveTopics.join(",")]);
 
   const refetch = () => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) connect();
