@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { fetchTranscript, fetchTranscripts } from "@/services/transcripts";
 import {
   BackendTranscript,
   Transcript,
-  TranscriptEntry,
 } from "@/interfaces/transcript.interface";
 import {
   processApiResponse,
@@ -23,10 +22,17 @@ interface UseTranscriptDataOptions {
   conversation_status?: string[];
   order_by?: string;
   sort_direction?: string;
+  agent_id?: string;
+  scoreFilters?: Record<string, number | undefined>;
+  from_date?: string;
+  to_date?: string;
+  exclude_empty?: boolean;
 }
 
 export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
-  const { id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst = true, conversation_status, order_by, sort_direction } = options;
+  const { id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst = true, conversation_status, order_by, sort_direction, agent_id, scoreFilters, from_date, to_date, exclude_empty } = options;
+  // Stabilize score filters for dependency tracking
+  const scoreFiltersKey = scoreFilters ? JSON.stringify(scoreFilters) : "";
   // Stabilize array reference for useCallback dependency
   const statusKey = conversation_status?.join(",") ?? "";
 
@@ -66,7 +72,11 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
     } else {
       try {
         setLoading(true);
-        const { items: backendData, total: backendTotal } = await fetchTranscripts(limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, conversation_status, order_by, sort_direction);
+        const { items: backendData, total: backendTotal } = await fetchTranscripts({
+          limit, skip, sentiment, hostility_neutral_max, hostility_positive_max,
+          include_feedback, conversation_status, order_by, sort_direction,
+          agent_id, scoreFilters, from_date, to_date, exclude_empty,
+        });
 
         if (!backendData || !Array.isArray(backendData)) {
           throw new Error("Invalid backend data format");
@@ -120,7 +130,7 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst, statusKey, order_by, sort_direction]);
+  }, [id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst, statusKey, order_by, sort_direction, agent_id, scoreFiltersKey, from_date, to_date, exclude_empty]);
 
   const permissions = usePermissions();
 

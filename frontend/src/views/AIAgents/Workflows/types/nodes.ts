@@ -402,7 +402,7 @@ export interface NodeTypeDefinition<T extends NodeData> {
     | "integrations"
     | "formatting"
     | "tools"
-    | "training";
+    | "training" | "utils"
   icon: string;
   defaultData: T;
   component: ComponentType<NodeProps<NodeData>>; // React component for the node

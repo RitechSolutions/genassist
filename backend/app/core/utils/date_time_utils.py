@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
 
@@ -42,3 +42,16 @@ def shift_datetime(unit: str, amount: int, operation: str = 'add', base_time: da
 
     kwargs = {unit: amount}
     return base_time + relativedelta(**kwargs)
+
+
+def previous_period(from_date: date, to_date: date) -> tuple[date, date]:
+    """Return the equivalent previous period for comparison.
+
+    Given a date range [from_date, to_date], returns [prev_from, prev_to]
+    where prev_to is the day before from_date and prev_from is the same
+    number of days back.
+    """
+    duration = (to_date - from_date).days
+    prev_to = from_date - timedelta(days=1)
+    prev_from = prev_to - timedelta(days=duration)
+    return prev_from, prev_to

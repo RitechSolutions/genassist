@@ -1,7 +1,9 @@
 import json
 import logging
-from typing import List
+from typing import List, Optional
+from uuid import UUID
 
+from injector import inject
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.exceptions.exception_classes import AppException
@@ -14,6 +16,7 @@ from app.schemas.conversation_analysis import AnalysisResult
 from app.schemas.conversation_transcript import TranscriptSegment
 from app.schemas.llm import LlmAnalyst
 from app.core.utils.bi_utils import clean_gpt_json_response
+from app.services.agent_response_log import AgentResponseLogService
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,7 @@ class GptKpiAnalyzer:
         transcript: str,
         llm_analyst: LlmAnalyst,
         max_attempts=3,
+        conversation_id: Optional[UUID] = None,
     ) -> AnalysisResult:
         """Analyze transcript using ChatGPT (LangChain) with retry on failure."""
 
@@ -33,6 +37,7 @@ class GptKpiAnalyzer:
 
         llm_provider = injector.get(LLMProvider)
         llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
+        agent_logs_service = injector.get(AgentResponseLogService)
 
         if (
             transcript is None
@@ -48,17 +53,23 @@ class GptKpiAnalyzer:
         last_response = ""
         user_prompt = ""
 
+        system_msg = SystemMessage(content=self._build_system_prompt(llm_analyst.prompt))
+
+        enrichment_context = await agent_logs_service.build_enrichment_context(
+            conversation_id, llm_analyst.context_enrichments or []
+        )
+
         for attempt in range(1, max_attempts + 1):
             try:
                 # Modify prompt on retry attempts
                 if attempt == 1:
-                    user_prompt = self._create_user_prompt(transcript)
+                    user_prompt = self._create_user_prompt(transcript, enrichment_context=enrichment_context)
                 else:
                     user_prompt = self._create_user_prompt(
-                        transcript, error_hint=last_error_msg, attempt=attempt
+                        transcript, enrichment_context=enrichment_context,
+                        error_hint=last_error_msg, attempt=attempt
                     )
 
-                system_msg = SystemMessage(content=llm_analyst.prompt)
                 user_msg = HumanMessage(content=user_prompt)
 
                 response = await llm.ainvoke([system_msg, user_msg])
@@ -110,75 +121,85 @@ class GptKpiAnalyzer:
             for seg in segments
         )
 
+    def _build_system_prompt(self, base_prompt: str) -> str:
+        """Combine the tenant-configured base prompt with the fixed analysis format instructions."""
+        return f"""{base_prompt}
+
+You are a customer experience expert specializing in call center analysis.
+
+Always respond in exactly this format:
+
+**A) Title:** <one from: {ConversationTopic.as_csv()}>
+
+**B) Summary:**
+- Operator performance assessment
+- Customer satisfaction
+- Key improvement points
+
+**C) KPI Metrics, Tone, and Sentiment Analysis (JSON Format):**
+Provide the following KPI metrics, overall tone, and sentiment percentages as a JSON object:
+
+```json
+{{
+    "Response Time": (integer 0-10),
+    "Customer Satisfaction": (integer 0-10),
+    "Quality of Service": (integer 0-10),
+    "Efficiency": (integer 0-10),
+    "Resolution Rate": (integer 0-10),
+    "Operator Knowledge": (integer 0-10),
+    "Tone": "(choose one from: Hostile, Frustrated, Friendly, Polite, Neutral, Professional)",
+    "Sentiment": {{
+        "positive": (float between 0-100),
+        "neutral": (float between 0-100),
+        "negative": (float between 0-100)
+    }}
+}}
+```
+
+The JSON metrics should be integers between 0 and 10, Tone must be one of the listed values, and sentiment percentages must sum up to 100%."""
+
     def _create_user_prompt(
-        self, transcript_text: str, error_hint: str = None, attempt: int = 1
+        self, transcript_text: str, enrichment_context: str = "",
+        error_hint: str = None, attempt: int = 1
     ) -> str:
-        """Create the analysis prompt for ChatGPT, optionally appending retry hints."""
+        """Create the user message for ChatGPT, optionally prepending enrichment context and retry hints."""
+        context_block = f"Additional Context:\n{enrichment_context}\n\n" if enrichment_context else ""
         retry_instruction = ""
         if error_hint and attempt > 1:
             retry_instruction = f"""
-            **Note:** This is attempt #{attempt}. The previous attempt failed with the following error:
-            "{error_hint}"
+**Note:** This is attempt #{attempt}. The previous attempt failed with the following error:
+"{error_hint}"
 
-            Please make sure your response strictly follows the requested format and especially corrects the issue that might have caused that error.
-            """
+Please make sure your response strictly follows the requested format and especially corrects the issue that might have caused that error.
+"""
 
-        return f"""
-            You are a customer experience expert. Please analyze this call center conversation transcript and provide 
-            your response in the following format:
+        return f"""{context_block}Analyze this transcript:
 
-            **A) Title:**
-            - Select the most appropriate title from the following list: {ConversationTopic.as_csv()}
+{transcript_text}
 
-            **B) Summary:**
-            - Assess the operator's performance and whether the customer was satisfied
-            - Identify key points of improvement
-
-            **C) KPI Metrics, Tone, and Sentiment Analysis (JSON Format):**
-            Provide the following KPI metrics, overall tone, and sentiment percentages as a JSON object:
-
-            ```json
-            {{
-                "Response Time": (integer 0-10),
-                "Customer Satisfaction": (integer 0-10),
-                "Quality of Service": (integer 0-10),
-                "Efficiency": (integer 0-10),
-                "Resolution Rate": (integer 0-10),
-                "Operator Knowledge": (integer 0-10),
-                "Tone": "(choose one from: Hostile, Frustrated, Friendly, Polite, Neutral, Professional)",
-                "Sentiment": {{
-                    "positive": (float between 0-100),
-                    "neutral": (float between 0-100),
-                    "negative": (float between 0-100)
-                }}
-            }}
-            ```
-
-            Transcript:
-            {transcript_text}
-
-            Remember to maintain the exact format specified above. The JSON metrics should be integers between 0 and 10, 
-            Tone must be one of the listed values, and sentiment percentages must sum up to 100%.
-
-            {retry_instruction}
-        """
+{retry_instruction}"""
 
     async def partial_hostility_analysis(
         self,
         transcript_segments: str,
         llm_analyst: LlmAnalyst,
+        conversation_id: Optional[UUID] = None,
     ) -> dict:
 
         from app.dependencies.injector import injector
 
         llm_provider = injector.get(LLMProvider)
         llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
+        agent_logs_service = injector.get(AgentResponseLogService)
 
-        # Create a short prompt for hostility detection
-        # We'll ask for a JSON response with "sentiment" and "hostile_score"
         system_msg = SystemMessage(content=llm_analyst.prompt)
 
-        user_prompt = f"""
+        enrichment_context = await agent_logs_service.build_enrichment_context(
+            conversation_id, llm_analyst.context_enrichments or []
+        )
+        context_block = f"Additional Context:\n{enrichment_context}\n\n" if enrichment_context else ""
+
+        user_prompt = f"""{context_block}
         You are an impartial conversation analyst.
 
         Task:

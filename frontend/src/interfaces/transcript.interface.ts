@@ -76,6 +76,7 @@ export interface TranscriptMetrics {
   customerSatisfaction: number;
   serviceQuality: number;
   resolutionRate: number;
+  efficiency: number;
   speakingRatio: {
     agent: number;
     customer: number;

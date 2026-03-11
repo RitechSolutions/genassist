@@ -114,17 +114,6 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     return response
 
 
-@router.get("/metrics", dependencies=[
-    Depends(auth),
-    Depends(permissions(P.Recording.READ_METRICS))
-    ])
-async def get_metrics(service: AudioService = Injected(AudioService)):
-    try:
-        return await service.fetch_and_calculate_metrics()
-    except Exception as e:
-        logger.error(f"Error fetching metrics: {e}")
-        return {"error": "Error fetching metrics"}
-
 # @router.post("/transcribe_no_save")
 # async def transcribe_no_save(file: UploadFile, service: RecordingService = Depends()):
 #     # TODO Fabio/Emiliano endpoint remove in the future or add security

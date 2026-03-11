@@ -23,3 +23,4 @@ aiosqlite==0.20.0
 xgboost==1.7.4
 holidays==0.62
 pandas>=1.5.0
+fpdf2>=2.8.2

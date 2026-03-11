@@ -3,8 +3,7 @@ import json
 import shutil
 import uuid
 from pathlib import Path
-from fastapi import UploadFile, Depends
-from fastapi_injector import Injected
+from fastapi import UploadFile
 from injector import inject
 
 from app.core.config.settings import settings
@@ -96,8 +95,29 @@ class AudioService:
         # Ask GPT the question
         return self.gpt_question_answerer_service.answer_question(transcript_json, question)
 
-    async def fetch_and_calculate_metrics(self):
-        return await self.recording_repo.get_metrics()
+    async def fetch_and_calculate_metrics(
+        self,
+        from_date: datetime.datetime | None = None,
+        to_date: datetime.datetime | None = None,
+        agent_id: uuid.UUID | None = None,
+    ):
+        return await self.recording_repo.get_metrics(from_date=from_date, to_date=to_date, agent_id=agent_id)
+
+    async def fetch_metrics_with_comparison(
+        self,
+        from_date: datetime.datetime | None = None,
+        to_date: datetime.datetime | None = None,
+        agent_id: uuid.UUID | None = None,
+    ):
+        return await self.recording_repo.get_metrics_with_comparison(from_date=from_date, to_date=to_date, agent_id=agent_id)
+
+    async def fetch_metrics_per_day(
+        self,
+        from_date: datetime.datetime | None = None,
+        to_date: datetime.datetime | None = None,
+        agent_id: uuid.UUID | None = None,
+    ):
+        return await self.recording_repo.get_metrics_per_day(from_date=from_date, to_date=to_date, agent_id=agent_id)
 
     async def _separate_speakers_gpt(self, transcription_object, llm_analyst: LlmAnalystModel)-> list[dict]:
         transcript_data = extract_transcript_from_whisper_model(transcription_object)
@@ -162,7 +182,7 @@ class AudioService:
 
         llm_analyst_kpi_analyzer = await self.llm_analyst_service.get_by_id(model.llm_analyst_kpi_analyzer_id)
 
-        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(separated_speakers_str, llm_analyst=llm_analyst_kpi_analyzer)
+        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(separated_speakers_str, llm_analyst=llm_analyst_kpi_analyzer, conversation_id=saved_conversation.id)
 
         saved_conversation_analysis = await self.conversation_analysis_service.create_conversation_analysis(
                 gpt_analysis, model.llm_analyst_kpi_analyzer_id,
@@ -243,7 +263,7 @@ class AudioService:
 
         llm_analyst = await self.llm_analyst_service.get_by_id(model.llm_analyst_id)
 
-        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(transcript_string, llm_analyst=llm_analyst)
+        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(transcript_string, llm_analyst=llm_analyst, conversation_id=saved_conversation.id)
 
         conservation_analysis = await self.conversation_analysis_service.create_conversation_analysis(gpt_analysis,
                                                                    model.llm_analyst_id, saved_conversation.id)
@@ -324,7 +344,7 @@ class AudioService:
 
         llm_analyst_kpi_analyzer = await self.llm_analyst_service.get_by_id(model.llm_analyst_kpi_analyzer_id)
 
-        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(separated_speakers_str, llm_analyst=llm_analyst_kpi_analyzer)
+        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(separated_speakers_str, llm_analyst=llm_analyst_kpi_analyzer, conversation_id=saved_conversation.id)
 
         saved_conversation_analysis = await self.conversation_analysis_service.create_conversation_analysis(
                 gpt_analysis, model.llm_analyst_kpi_analyzer_id,

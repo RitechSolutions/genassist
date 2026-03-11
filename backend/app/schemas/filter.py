@@ -26,6 +26,15 @@ class ConversationFilter(BaseFilterModel):
     conversation_topics: Optional[list[ConversationTopic]] = Field (Query(None,),
                                                                     description='Conversation topics decided by llm')
     sentiment: Optional[Sentiment] = Field(None, description="Sentiment of the conversation")
+    agent_id: Optional[UUID] = Field(None, description="Filter by agent ID")
+    customer_satisfaction_min: Optional[int] = Field(None, ge=0, le=10, description="Min customer satisfaction score")
+    customer_satisfaction_max: Optional[int] = Field(None, ge=0, le=10, description="Max customer satisfaction score")
+    quality_of_service_min: Optional[int] = Field(None, ge=0, le=10, description="Min quality of service score")
+    quality_of_service_max: Optional[int] = Field(None, ge=0, le=10, description="Max quality of service score")
+    resolution_rate_min: Optional[int] = Field(None, ge=0, le=10, description="Min resolution rate score")
+    resolution_rate_max: Optional[int] = Field(None, ge=0, le=10, description="Max resolution rate score")
+    efficiency_min: Optional[int] = Field(None, ge=0, le=10, description="Min efficiency score")
+    efficiency_max: Optional[int] = Field(None, ge=0, le=10, description="Max efficiency score")
     hostility_positive_max: Optional[int] = Field(
             None, ge=0, le=30, description="Sentiment intervals to decide based on hostility score if a live "
                                           "conversation should be considered neutral, positive or negative"
@@ -40,6 +49,7 @@ class ConversationFilter(BaseFilterModel):
     minimum_hostility_score: Optional[int] = None
     include_messages: Optional[bool] = Field(True)
     customer_id: Optional[UUID] = Field(None, description="Customer ID")
+    exclude_empty: Optional[bool] = Field(None, description="Exclude conversations with zero word count")
     from_create_datetime_messages: Optional[datetime] = Field(None, description="Start datetime message was created")
     to_create_datetime_messages: Optional[datetime] = Field(None, description="End datetime message was created")
 
@@ -51,4 +61,9 @@ class ApiKeysFilter(BaseFilterModel):
     
 class RecordingFilter(BaseFilterModel):
     operator_id: Optional[UUID] = None
+
+
+class AgentResponseLogFilter(BaseModel):
+    conversation_id: UUID
+    node_type: Optional[str] = Field(None, description="Filter by node type found in state.nodeExecutionStatus[*].type")
 
