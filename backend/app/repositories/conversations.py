@@ -24,14 +24,15 @@ from app.db.models.conversation import ConversationAnalysisModel
 from app.db.models.operator import OperatorModel
 from app.db.models import AgentModel
 
-# Score fields that live on ConversationAnalysisModel and require special
-# join / nulls-last handling when used for sorting or filtering.
-_ANALYSIS_SORT_FIELDS = {
+# KPI score fields on ConversationAnalysisModel (0-10 scale).
+# Used for sorting, filtering, and join detection.
+ANALYSIS_SCORE_FIELDS = frozenset({
     "customer_satisfaction",
     "quality_of_service",
     "resolution_rate",
     "efficiency",
-}
+})
+
 
 
 @inject
@@ -268,30 +269,20 @@ class ConversationRepository:
             return True
         if (
             conversation_filter.order_by
-            and conversation_filter.order_by.value in _ANALYSIS_SORT_FIELDS
+            and conversation_filter.order_by.value in ANALYSIS_SCORE_FIELDS
         ):
             return True
         # Score range filters
-        score_attrs = [
-            "customer_satisfaction_min", "customer_satisfaction_max",
-            "quality_of_service_min", "quality_of_service_max",
-            "resolution_rate_min", "resolution_rate_max",
-            "efficiency_min", "efficiency_max",
-        ]
-        for attr in score_attrs:
-            if getattr(conversation_filter, attr, None) is not None:
-                return True
+        for field in ANALYSIS_SCORE_FIELDS:
+            for attr in (f"{field}_min", f"{field}_max"):
+                if getattr(conversation_filter, attr, None) is not None:
+                    return True
         return False
 
     def _apply_score_range_filters(self, query, conversation_filter: ConversationFilter):
         """Apply WHERE clauses for AI insight score range filters."""
-        score_fields = {
-            "customer_satisfaction": ConversationAnalysisModel.customer_satisfaction,
-            "quality_of_service": ConversationAnalysisModel.quality_of_service,
-            "resolution_rate": ConversationAnalysisModel.resolution_rate,
-            "efficiency": ConversationAnalysisModel.efficiency,
-        }
-        for name, col in score_fields.items():
+        for name in ANALYSIS_SCORE_FIELDS:
+            col = getattr(ConversationAnalysisModel, name)
             min_val = getattr(conversation_filter, f"{name}_min", None)
             max_val = getattr(conversation_filter, f"{name}_max", None)
             if min_val is not None:
@@ -346,7 +337,7 @@ class ConversationRepository:
         # ——— dynamic ordering ———
         if (
             conversation_filter.order_by
-            and conversation_filter.order_by.value in _ANALYSIS_SORT_FIELDS
+            and conversation_filter.order_by.value in ANALYSIS_SCORE_FIELDS
         ):
             col = getattr(ConversationAnalysisModel, conversation_filter.order_by.value)
             if conversation_filter.sort_direction == SortDirection.DESC:
