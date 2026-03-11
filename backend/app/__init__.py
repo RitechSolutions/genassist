@@ -256,6 +256,7 @@ def create_celery():
             "app.tasks.share_folder_tasks",
             "app.tasks.ml_model_pipeline_tasks",
             "app.tasks.kb_batch_tasks",
+            "app.tasks.analytics_aggregation_tasks"
         ],
     )
 
@@ -389,6 +390,12 @@ def create_celery():
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
         }
 
-    celery_app.conf.beat_schedule = beat_schedule
+    # Aggregate agent analytics twice daily (2 AM + 2 PM UTC)
+    if settings.CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK:
+        beat_schedule["aggregate-agent-analytics"] = {
+            "task": "app.tasks.analytics_aggregation_tasks.aggregate_agent_analytics",
+            "schedule": crontab(minute="0", hour="2,14"),
+            "options": {"expires": 7200},  # Task expires after 2 hours
+        }
 
     return celery_app

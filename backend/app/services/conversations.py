@@ -1,17 +1,19 @@
-import os
-from uuid import UUID
 import json
-from datetime import datetime, timezone
 import logging
+import os
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
+from uuid import UUID
+from app.core.config.settings import settings
 from fastapi import Depends
 from fastapi_injector import Injected
 from injector import inject
+
 from app.auth.utils import (
     get_current_operator_id,
     get_current_user_id,
     is_current_user_supervisor_or_admin,
-)
+    )
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.bi_utils import (
@@ -28,7 +30,7 @@ from app.core.utils.enums.transcript_message_type import TranscriptMessageType
 from app.core.utils.transcript_utils import (
     schema_to_transcript_message,
     transcript_messages_to_json,
-)
+    )
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.message_model import TranscriptMessageModel
 from app.db.seed.seed_data_config import seed_test_data
@@ -39,13 +41,13 @@ from app.schemas.conversation import (
     ConversationCreate,
     ConversationWithOperatorAgentRead,
     InProgressPollResponse,
-)
+    )
 from app.schemas.conversation_analysis import ConversationAnalysisRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
     InProgConvTranscrUpdate,
     TranscriptSegmentInput,
-)
+    )
 from app.schemas.filter import ConversationFilter
 from app.schemas.transcript_message import TranscriptMessageRead
 from app.services.conversation_analysis import ConversationAnalysisService
@@ -243,8 +245,10 @@ class ConversationService:
                 conversation_id,
             )
         )
+        hostility_limit = settings.HOSTILITY_SCORE_MESSAGE_COUNT
+        tone_messages = all_messages[-hostility_limit:]
         transcript_json = transcript_messages_to_json(
-            all_messages, exclude_fields={"feedback", "type", "sequence_number"}
+            tone_messages, exclude_fields={"feedback", "type", "sequence_number"}
         )
 
         # Update conversation
@@ -323,16 +327,18 @@ class ConversationService:
             raise ValueError(f"No messages found for conversation {conversation_id}")
 
         # Run GPT analysis
-
-        llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
+        if llm_analyst_id:
+            llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
+        else:
+            llm_analyst = await self.llm_analyst_service.get_by_id(seed_test_data.llm_analyst_kpi_analyzer_id)
 
         gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
-            message_type_segments, llm_analyst=llm_analyst
+            message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
         )
 
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(
-                gpt_analysis, llm_analyst_id, saved_conversation.id
+                gpt_analysis, llm_analyst.id, saved_conversation.id
             )
         )
 
@@ -347,6 +353,8 @@ class ConversationService:
         )
         if store_in_zendesk:
             await self.store_zendesk_analysis(saved_conversation, conversation_analysis)
+
+        await invalidate_conversation_cache(conversation_id)
 
         return ConversationAnalysisRead.model_validate(conversation_analysis)
 
@@ -372,7 +380,7 @@ class ConversationService:
 
         llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
         gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
-            message_type_segments, llm_analyst=llm_analyst
+            message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
         )
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(
@@ -459,7 +467,7 @@ class ConversationService:
         if llm_analyst and llm_analyst.is_active:
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(
-                    transcript, llm_analyst=llm_analyst
+                    transcript, llm_analyst=llm_analyst, conversation_id=conversation.id
                 )
             )
         else:

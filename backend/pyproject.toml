@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    "genassist_env",
+    "__pycache__",
+    ".git",
+    "alembic/versions",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "models", "agents_config", "cli"]

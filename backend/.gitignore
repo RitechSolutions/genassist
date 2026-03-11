@@ -53,3 +53,9 @@ infra/.terraform/
 env.*
 legra_data/
 /*.db
+
+# ruff_cache
+.ruff_cache/
+
+# idea
+.idea/

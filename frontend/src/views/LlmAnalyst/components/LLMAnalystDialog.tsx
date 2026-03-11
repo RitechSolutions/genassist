@@ -11,14 +11,18 @@ import { Label } from "@/components/label";
 import { Textarea } from "@/components/textarea";
 import { Switch } from "@/components/switch";
 import { Button } from "@/components/button";
+import { Checkbox } from "@/components/checkbox";
+import { ScrollArea } from "@/components/scroll-area";
 import { Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
   createLLMAnalyst,
   updateLLMAnalyst,
   getAllLLMProviders,
+  getAvailableEnrichments,
+  getAvailableNodeTypes,
 } from "@/services/llmAnalyst";
-import { LLMAnalyst, LLMProvider } from "@/interfaces/llmAnalyst.interface";
+import { AvailableEnrichment, AvailableNodeType, LLMAnalyst, LLMProvider } from "@/interfaces/llmAnalyst.interface";
 import {
   Select,
   SelectTrigger,
@@ -53,11 +57,17 @@ export function LLMAnalystDialog({
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(true);
   const [isCreateProviderOpen, setIsCreateProviderOpen] = useState(false);
+  const [availableEnrichments, setAvailableEnrichments] = useState<AvailableEnrichment[]>([]);
+  const [selectedEnrichments, setSelectedEnrichments] = useState<string[]>([]);
+  const [availableNodeTypes, setAvailableNodeTypes] = useState<AvailableNodeType[]>([]);
+  const [nodeTypeSearch, setNodeTypeSearch] = useState("");
 
   useEffect(() => {
     if (isOpen) {
       resetForm();
       fetchProviders();
+      fetchEnrichments();
+      fetchNodeTypes();
       if (analystToEdit && mode === "edit") {
         populateFormWithAnalyst(analystToEdit);
       }
@@ -76,12 +86,31 @@ export function LLMAnalystDialog({
     }
   };
 
+  const fetchEnrichments = async () => {
+    try {
+      const result = await getAvailableEnrichments();
+      setAvailableEnrichments(result);
+    } catch {
+      // non-critical, silently ignore
+    }
+  };
+
+  const fetchNodeTypes = async () => {
+    try {
+      const result = await getAvailableNodeTypes();
+      setAvailableNodeTypes(result);
+    } catch {
+      // non-critical, silently ignore
+    }
+  };
+
   const populateFormWithAnalyst = (analyst: LLMAnalyst) => {
     setAnalystId(analyst.id);
     setName(analyst.name);
     setLlmProviderId(analyst.llm_provider_id);
     setPrompt(analyst.prompt);
     setIsActive(analyst.is_active === 1);
+    setSelectedEnrichments(analyst.context_enrichments ?? []);
   };
 
   const resetForm = () => {
@@ -90,6 +119,14 @@ export function LLMAnalystDialog({
     setLlmProviderId("");
     setPrompt("");
     setIsActive(true);
+    setSelectedEnrichments([]);
+    setNodeTypeSearch("");
+  };
+
+  const toggleEnrichment = (key: string) => {
+    setSelectedEnrichments((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -121,6 +158,7 @@ export function LLMAnalystDialog({
         llm_provider_id: llmProviderId,
         prompt,
         is_active: isActive ? 1 : 0,
+        context_enrichments: selectedEnrichments,
       };
 
       if (mode === "create") {
@@ -214,12 +252,88 @@ export function LLMAnalystDialog({
                 <Label htmlFor="prompt">Prompt</Label>
                 <Textarea
                   id="prompt"
-                  value={prompt.trim().replace(/\s+/g, " ")}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value.replace(/\s+/g, ' '))}
                   placeholder="System prompt"
                   rows={6}
                 />
               </div>
+
+              {availableEnrichments.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Context Enrichments</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Select additional conversation data to include when analyzing transcripts.
+                  </p>
+                  <div className="border rounded-lg p-2 space-y-1 overflow-y-auto max-h-40">
+                    {availableEnrichments.map((enrichment) => (
+                      <div
+                        key={enrichment.key}
+                        className="flex items-start gap-3 p-2 rounded-md hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          id={`enrichment-${enrichment.key}`}
+                          checked={selectedEnrichments.includes(enrichment.key)}
+                          onCheckedChange={() => toggleEnrichment(enrichment.key)}
+                          className="mt-0.5"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <label
+                            htmlFor={`enrichment-${enrichment.key}`}
+                            className="text-sm font-medium cursor-pointer"
+                          >
+                            {enrichment.name}
+                          </label>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {enrichment.description}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {availableNodeTypes.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Node Enrichments</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Appends "{`<Node> node used: Yes/No`}" to the prompt for each selected node. Reference this in your prompt instructions.
+                  </p>
+                  <Input
+                    placeholder="Search nodes..."
+                    value={nodeTypeSearch}
+                    onChange={(e) => setNodeTypeSearch(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <ScrollArea className="border rounded-lg p-2 h-48">
+                    <div className="space-y-1">
+                      {availableNodeTypes
+                        .filter((n) =>
+                          n.label.toLowerCase().includes(nodeTypeSearch.toLowerCase())
+                        )
+                        .map((n) => (
+                          <div
+                            key={n.node_type}
+                            className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50"
+                          >
+                            <Checkbox
+                              id={`node-${n.node_type}`}
+                              checked={selectedEnrichments.includes(`node:${n.node_type}`)}
+                              onCheckedChange={() => toggleEnrichment(`node:${n.node_type}`)}
+                            />
+                            <label
+                              htmlFor={`node-${n.node_type}`}
+                              className="text-sm cursor-pointer"
+                            >
+                              {n.label}
+                            </label>
+                          </div>
+                        ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
 
               <div className="flex items-center gap-2">
                 <Label htmlFor="is_active">Active</Label>

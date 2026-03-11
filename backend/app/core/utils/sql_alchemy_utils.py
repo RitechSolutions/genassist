@@ -26,14 +26,13 @@ def resolve_sort_column(
     return column
 
 def add_dynamic_ordering(model: Base, filter: BaseFilterModel, query):
-    column = resolve_sort_column(
-            model, filter.order_by)
-    order_clause = desc(
-            column) if filter.sort_direction == SortDirection.DESC else asc(column)
-    query = query.order_by(order_clause)
+    column = resolve_sort_column(model, filter.order_by)
+    if filter.sort_direction == SortDirection.DESC:
+        query = query.order_by(desc(column))
+    else:
+        query = query.order_by(asc(column))
     return query
 
 def add_pagination(filter: BaseFilterModel, query):
-    query = query.offset(filter.skip).limit(
-            filter.limit)
+    query = query.offset(filter.skip).limit(filter.limit)
     return query
