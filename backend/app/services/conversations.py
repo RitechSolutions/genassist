@@ -327,16 +327,18 @@ class ConversationService:
             raise ValueError(f"No messages found for conversation {conversation_id}")
 
         # Run GPT analysis
-
-        llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
+        if llm_analyst_id:
+            llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
+        else:
+            llm_analyst = await self.llm_analyst_service.get_by_id(seed_test_data.llm_analyst_kpi_analyzer_id)
 
         gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
-            message_type_segments, llm_analyst=llm_analyst
+            message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
         )
 
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(
-                gpt_analysis, llm_analyst_id, saved_conversation.id
+                gpt_analysis, llm_analyst.id, saved_conversation.id
             )
         )
 
@@ -378,7 +380,7 @@ class ConversationService:
 
         llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
         gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
-            message_type_segments, llm_analyst=llm_analyst
+            message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
         )
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(
@@ -465,7 +467,7 @@ class ConversationService:
         if llm_analyst and llm_analyst.is_active:
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(
-                    transcript, llm_analyst=llm_analyst
+                    transcript, llm_analyst=llm_analyst, conversation_id=conversation.id
                 )
             )
         else:

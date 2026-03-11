@@ -1,5 +1,7 @@
 import json
 import logging
+from typing import Optional
+from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -35,7 +37,8 @@ class SpeakerSeparator:
         """
 
     async def separate(
-        self, transcribed_text: str, llm_analyst: LlmAnalyst, max_retries: int = 3
+        self, transcribed_text: str, llm_analyst: LlmAnalyst, max_retries: int = 3,
+        conversation_id: Optional[UUID] = None,
     ) -> list[dict]:
         """
         Calls an LLM to split a transcribed conversation into structured speaker-labeled sentences.
@@ -43,9 +46,18 @@ class SpeakerSeparator:
         Retries on JSON parsing errors.
         """
         from app.dependencies.injector import injector
+        from app.services.agent_response_log import AgentResponseLogService
 
         llm_provider = injector.get(LLMProvider)
         llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
+
+        agent_logs_service = injector.get(AgentResponseLogService)
+        enrichment_context = await agent_logs_service.build_enrichment_context(
+            conversation_id, llm_analyst.context_enrichments or []
+        )
+        system_content = llm_analyst.prompt
+        if enrichment_context:
+            system_content = f"{system_content}\n\nAdditional Context:\n{enrichment_context}"
 
         last_error_msg = ""
 
@@ -57,7 +69,7 @@ class SpeakerSeparator:
             try:
                 response = await llm.ainvoke(
                     [
-                        SystemMessage(content=llm_analyst.prompt),
+                        SystemMessage(content=system_content),
                         HumanMessage(content=user_prompt),
                     ],
                 )

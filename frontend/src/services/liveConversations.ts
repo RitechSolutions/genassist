@@ -8,7 +8,6 @@ import {
   BackendTranscript,
   TranscriptEntry,
 } from "@/interfaces/transcript.interface";
-import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmModels";
 
 const parseEntriesFromBackend = (rec: BackendTranscript): TranscriptEntry[] => {
   if (Array.isArray(rec.messages)) {
@@ -187,7 +186,6 @@ export const conversationService = {
 
   finalizeConversation: async (id: string): Promise<void> => {
     await apiRequest("patch", `/conversations/in-progress/finalize/${id}`, {
-      llm_analyst_id: DEFAULT_LLM_ANALYST_ID,
     });
   },    
 

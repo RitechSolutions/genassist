@@ -62,3 +62,8 @@ class ApiKeysFilter(BaseFilterModel):
 class RecordingFilter(BaseFilterModel):
     operator_id: Optional[UUID] = None
 
+
+class AgentResponseLogFilter(BaseModel):
+    conversation_id: UUID
+    node_type: Optional[str] = Field(None, description="Filter by node type found in state.nodeExecutionStatus[*].type")
+

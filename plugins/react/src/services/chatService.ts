@@ -1,6 +1,7 @@
 import axios from "axios";
 import {
   ChatMessage,
+  AgentInfoResponse,
   StartConversationResponse,
   Attachment,
   AgentThinkingConfig,
@@ -39,6 +40,7 @@ export class ChatService {
   private welcomeObjectUrl: string | null = null; // to revoke on reset
   private tenant: string | undefined;
   private agentId: string | undefined;
+  private availableLanguages: string[] | null = null;
   private language: string | undefined;
   private useWs: boolean;
   private serverUnavailableMessage: string | undefined;
@@ -263,6 +265,50 @@ export class ChatService {
   }
 
   /**
+   * Supported languages for the current agent (if provided by the server).
+   */
+  getAvailableLanguages(): string[] | null {
+    return this.availableLanguages ? [...this.availableLanguages] : null;
+  }
+
+  /**
+   * Fetch agent metadata (e.g. supported languages) without starting a conversation.
+   */
+  async fetchAgentInfo(): Promise<AgentInfoResponse | null> {
+    try {
+      const response = await axios.get<AgentInfoResponse>(
+        `${this.baseUrl}/api/conversations/in-progress/agent-info`,
+        { headers: this.getHeaders() }
+      );
+      const data = response.data || {};
+      const agentId =
+        typeof data.agent_id === "string" ? data.agent_id : undefined;
+      const rawLanguages = Array.isArray(data.agent_available_languages)
+        ? data.agent_available_languages
+        : undefined;
+      const availableLanguages = rawLanguages
+        ? rawLanguages
+            .filter((lang) => typeof lang === "string" && lang.trim().length > 0)
+            .map((lang) => lang.toLowerCase())
+        : undefined;
+
+      if (agentId) {
+        this.agentId = agentId;
+      }
+      if (availableLanguages) {
+        this.availableLanguages = availableLanguages;
+      }
+
+      return {
+        agent_id: agentId,
+        agent_available_languages: availableLanguages,
+      };
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  /**
    * Load a saved conversation ID from localStorage
    */
   private loadSavedConversation(): void {
@@ -282,6 +328,7 @@ export class ChatService {
           thinkingConfig,
           agentId,
           guestToken,
+          availableLanguages,
         } = JSON.parse(savedConversation);
         this.conversationId = conversationId;
         this.conversationCreateTime = createTime;
@@ -302,6 +349,9 @@ export class ChatService {
               : 1000,
         };
         this.agentId = agentId;
+        if (Array.isArray(availableLanguages)) {
+          this.availableLanguages = availableLanguages;
+        }
         if (!this.welcomeData.imageUrl && this.agentId) {
           this.fetchWelcomeImage(this.agentId);
         }
@@ -337,6 +387,7 @@ export class ChatService {
           thinkingConfig: this.thinkingConfig,
           agentId: this.agentId,
           guestToken: this.guestToken,
+          availableLanguages: this.availableLanguages,
         };
         localStorage.setItem(this.getStorageKey(), JSON.stringify(conversationData));
       }
@@ -485,6 +536,14 @@ export class ChatService {
       const anyData: any = response.data as any;
       const agentId: string | undefined = anyData.agent_id;
       this.agentId = agentId;
+      const rawLanguages = Array.isArray(anyData.agent_available_languages)
+        ? anyData.agent_available_languages
+        : undefined;
+      if (rawLanguages) {
+        this.availableLanguages = rawLanguages
+          .filter((lang: any) => typeof lang === "string" && lang.trim().length > 0)
+          .map((lang: string) => lang.toLowerCase());
+      }
       const rawMeta = anyData.agent_chat_input_metadata;
       if (
         rawMeta != null &&
@@ -503,12 +562,14 @@ export class ChatService {
         anyData.agent_thinking_phrases;
       const thinkingDelaySec: number | undefined =
         anyData.agent_thinking_phrase_delay;
+      const inputDisclaimerHtml: string | undefined = anyData.agent_input_disclaimer_html;
 
       this.welcomeData = {
         title: welcomeTitle || null,
         message: null,
         imageUrl: welcomeImageUrl || null,
         possibleQueries: this.possibleQueries,
+        inputDisclaimerHtml: inputDisclaimerHtml ?? null,
       };
 
       if (Array.isArray(thinkingPhrases) && thinkingPhrases.length > 0) {
