@@ -44,6 +44,7 @@ from app.api.v1.routes import (
     customers,
     file_manager,
     internal,
+    translations,
     analytics
 )
 
@@ -66,6 +67,9 @@ router.include_router(
 router.include_router(app_settings.router, prefix="/app-settings", tags=["AppSettings"])
 router.include_router(
     feature_flags.router, prefix="/feature-flags", tags=["FeatureFlags"]
+)
+router.include_router(
+    translations.router, prefix="/translations", tags=["Translations"]
 )
 router.include_router(audit_logs.router, prefix="/audit-logs", tags=["Audit Logs"])
 router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])

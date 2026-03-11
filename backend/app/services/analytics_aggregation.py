@@ -1,11 +1,12 @@
 import json
 import logging
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from injector import inject
 
+from app.core.utils.date_time_utils import utc_now
 from app.repositories.analytics_aggregation import AnalyticsAggregationRepository
 
 logger = logging.getLogger(__name__)
@@ -26,15 +27,15 @@ class AnalyticsAggregationService:
         4. Groups metrics by (agent_id, date) and (agent_id, node_type, date).
         5. Upserts both summary tables.
         """
-        now = datetime.now(timezone.utc)
+        now = utc_now()
         last_ts = await self.repo.get_last_aggregation_timestamp()
-        # Always reprocess from start of today UTC so today's row is a full
-        # recount (not just the incremental slice since the last run).
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         if last_ts is not None:
-            since = min(last_ts, today_start)
+            # Incremental: only process logs since the last aggregation
+            since = last_ts
         else:
-            since = now - timedelta(days=30)
+            # First run: process all historical logs
+            earliest = await self.repo.get_earliest_log_timestamp()
+            since = earliest if earliest is not None else now
 
         logger.info(f"Aggregating analytics: since={since.isoformat()} until={now.isoformat()}")
 
@@ -67,6 +68,8 @@ class AnalyticsAggregationService:
                 "success_count": 0,
                 "failure_count": 0,
                 "execution_ms_values": [],
+                "conversation_ids": set(),
+                "thumbs_data": {},
             }
         )
 
@@ -160,6 +163,14 @@ class AnalyticsAggregationService:
                     nb = node_buckets[node_key]
                     nb["execution_count"] += 1
 
+                    if conv_id:
+                        nb["conversation_ids"].add(conv_id_str)
+                        if conv_id_str not in nb["thumbs_data"] and log.conversation is not None:
+                            nb["thumbs_data"][conv_id_str] = (
+                                log.conversation.thumbs_up_count or 0,
+                                log.conversation.thumbs_down_count or 0,
+                            )
+
                     if nstatus in ("success", "completed"):
                         nb["success_count"] += 1
                     else:
@@ -224,6 +235,7 @@ class AnalyticsAggregationService:
         node_stats = []
         for (agent_id, node_type, stat_date), nb in node_buckets.items():
             ms_vals = nb["execution_ms_values"]
+            node_thumbs = list(nb["thumbs_data"].values())
             node_stats.append(
                 {
                     "agent_id": agent_id,
@@ -236,6 +248,9 @@ class AnalyticsAggregationService:
                     "min_execution_ms": min(ms_vals) if ms_vals else None,
                     "max_execution_ms": max(ms_vals) if ms_vals else None,
                     "total_execution_ms": sum(ms_vals) if ms_vals else None,
+                    "unique_conversations": len(nb["conversation_ids"]),
+                    "thumbs_up_count": sum(t[0] for t in node_thumbs),
+                    "thumbs_down_count": sum(t[1] for t in node_thumbs),
                 }
             )
 

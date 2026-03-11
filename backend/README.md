@@ -36,6 +36,13 @@ cp .env.example .env
 
 > **Note:** If using HuggingFace models for the first time, accept the license at https://hf.co/pyannote/segmentation
 
+    Used only for development
+    ```bash
+    pip install -r requirements-dev.txt
+    ```
+
+    create .env file from example and put config values
+
 ### 4. Start Infrastructure Services
 
 ```bash

@@ -2,6 +2,7 @@ import { apiRequest } from "@/config/api";
 import type {
   AgentDailyStatsListResponse,
   AgentStatsSummaryResponse,
+  AgentStatsSummaryWithComparison,
   NodeDailyStatsListResponse,
   NodeTypeBreakdownResponse,
   AnalyticsFilterParams,
@@ -42,6 +43,23 @@ export const fetchAgentStatsSummary = async (
     return await apiRequest<AgentStatsSummaryResponse>("get", `/analytics/agents/summary${qs}`);
   } catch (error) {
     console.error("Error fetching agent stats summary:", error);
+    return null;
+  }
+};
+
+export const fetchAgentStatsSummaryWithComparison = async (
+  params?: Pick<AnalyticsFilterParams, "agent_id" | "from_date" | "to_date">
+): Promise<AgentStatsSummaryWithComparison | null> => {
+  try {
+    const qs = buildQueryString({
+      agent_id: params?.agent_id,
+      from_date: params?.from_date,
+      to_date: params?.to_date,
+      compare: "true",
+    });
+    return await apiRequest<AgentStatsSummaryWithComparison>("get", `/analytics/agents/summary${qs}`);
+  } catch (error) {
+    console.error("Error fetching agent stats summary with comparison:", error);
     return null;
   }
 };

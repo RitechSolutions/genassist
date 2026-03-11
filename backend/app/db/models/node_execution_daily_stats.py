@@ -81,3 +81,24 @@ class NodeExecutionDailyStatsModel(Base):
         Float,
         nullable=True,
     )
+
+    unique_conversations: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    thumbs_up_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    thumbs_down_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )

@@ -1,5 +1,7 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
+
+from app.core.utils.date_time_utils import utc_now
 from uuid import UUID
 
 from injector import inject
@@ -23,6 +25,12 @@ class AnalyticsAggregationRepository:
     async def get_last_aggregation_timestamp(self) -> datetime | None:
         """Return the latest last_aggregated_at across all agent daily stats rows."""
         stmt = select(func.max(AgentExecutionDailyStatsModel.last_aggregated_at))
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_earliest_log_timestamp(self) -> datetime | None:
+        """Return the earliest logged_at across all agent response logs."""
+        stmt = select(func.min(AgentResponseLogModel.logged_at))
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -53,7 +61,7 @@ class AnalyticsAggregationRepository:
         if not stats_list:
             return
 
-        now = datetime.now(timezone.utc)
+        now = utc_now()
         rows = []
         for s in stats_list:
             rows.append(
@@ -120,7 +128,7 @@ class AnalyticsAggregationRepository:
         if not stats_list:
             return
 
-        now = datetime.now(timezone.utc)
+        now = utc_now()
         rows = []
         for s in stats_list:
             rows.append(
@@ -132,6 +140,9 @@ class AnalyticsAggregationRepository:
                     "execution_count": s["execution_count"],
                     "success_count": s["success_count"],
                     "failure_count": s["failure_count"],
+                    "unique_conversations": s.get("unique_conversations", 0),
+                    "thumbs_up_count": s.get("thumbs_up_count", 0),
+                    "thumbs_down_count": s.get("thumbs_down_count", 0),
                     "avg_execution_ms": s.get("avg_execution_ms"),
                     "min_execution_ms": s.get("min_execution_ms"),
                     "max_execution_ms": s.get("max_execution_ms"),
@@ -149,6 +160,9 @@ class AnalyticsAggregationRepository:
                 "execution_count": stmt.excluded.execution_count,
                 "success_count": stmt.excluded.success_count,
                 "failure_count": stmt.excluded.failure_count,
+                "unique_conversations": stmt.excluded.unique_conversations,
+                "thumbs_up_count": stmt.excluded.thumbs_up_count,
+                "thumbs_down_count": stmt.excluded.thumbs_down_count,
                 "avg_execution_ms": stmt.excluded.avg_execution_ms,
                 "min_execution_ms": stmt.excluded.min_execution_ms,
                 "max_execution_ms": stmt.excluded.max_execution_ms,

@@ -44,20 +44,46 @@ class AnalyticsReadService:
         summary = await self.repo.get_agent_stats_summary(
             agent_id=agent_id, from_date=from_date, to_date=to_date
         )
+        return self._dict_to_summary(summary, agent_id, from_date, to_date)
+
+    def _dict_to_summary(
+        self,
+        raw: dict,
+        agent_id: UUID | None,
+        from_date: date | None,
+        to_date: date | None,
+    ) -> AgentStatsSummaryResponse:
         return AgentStatsSummaryResponse(
             agent_id=agent_id,
             from_date=from_date,
             to_date=to_date,
-            total_executions=summary["total_executions"],
-            total_success=summary["total_success"],
-            total_errors=summary["total_errors"],
-            avg_response_ms=summary.get("avg_response_ms"),
-            avg_success_rate=summary.get("avg_success_rate"),
-            total_rag_used=summary["total_rag_used"],
-            total_unique_conversations=summary["total_unique_conversations"],
-            total_thumbs_up=summary.get("total_thumbs_up", 0),
-            total_thumbs_down=summary.get("total_thumbs_down", 0),
+            total_executions=raw["total_executions"],
+            total_success=raw["total_success"],
+            total_errors=raw["total_errors"],
+            avg_response_ms=raw.get("avg_response_ms"),
+            avg_success_rate=raw.get("avg_success_rate"),
+            total_rag_used=raw["total_rag_used"],
+            total_unique_conversations=raw["total_unique_conversations"],
+            total_finalized_conversations=raw.get("total_finalized_conversations", 0),
+            total_in_progress_conversations=raw.get("total_in_progress_conversations", 0),
+            total_thumbs_up=raw.get("total_thumbs_up", 0),
+            total_thumbs_down=raw.get("total_thumbs_down", 0),
         )
+
+    async def get_agent_stats_summary_with_comparison(
+        self,
+        agent_id: UUID | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> dict:
+        data = await self.repo.get_agent_stats_summary_with_comparison(
+            agent_id=agent_id, from_date=from_date, to_date=to_date
+        )
+        return {
+            "current": self._dict_to_summary(data["current"], agent_id, from_date, to_date),
+            "previous": self._dict_to_summary(data["previous"], agent_id, from_date, to_date)
+            if data["previous"] is not None else None,
+        }
 
     async def get_node_daily_stats(
         self,
@@ -92,6 +118,9 @@ class AnalyticsReadService:
                     execution_count=exec_count,
                     success_count=success_count,
                     failure_count=r["failure_count"] or 0,
+                    unique_conversations=r.get("unique_conversations", 0),
+                    thumbs_up_count=r.get("thumbs_up_count", 0),
+                    thumbs_down_count=r.get("thumbs_down_count", 0),
                     success_rate=success_rate,
                     avg_execution_ms=r.get("avg_execution_ms"),
                     total_execution_ms=r.get("total_execution_ms"),
