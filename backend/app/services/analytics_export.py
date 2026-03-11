@@ -60,7 +60,7 @@ def _node_label(node_type: str) -> str:
 
 def _format_period(from_date: Optional[date], to_date: Optional[date]) -> str:
     if from_date and to_date:
-        return f"{from_date} – {to_date}"
+        return f"{from_date} - {to_date}"
     if from_date or to_date:
         return str(from_date or to_date)
     return "All time"
@@ -476,6 +476,15 @@ def _export_nodes_excel(
 
 # ── PDF ────────────────────────────────────────────────────────────────────────
 
+# Map Unicode characters unsupported by the default Helvetica font to ASCII equivalents.
+_PDF_CHAR_MAP = str.maketrans({"\u2013": "-", "\u2014": "-", "\u2026": "...", "\u00b7": "."})
+
+
+def _pdf_safe(text: str) -> str:
+    """Replace Unicode characters that the default PDF font cannot render."""
+    return text.translate(_PDF_CHAR_MAP)
+
+
 def _pdf_title_block(pdf, title: str, subtitle: str, filters: list[str]) -> None:  # type: ignore[no-untyped-def]
     """Render a blue header band with white title text, then subtitle + filters."""
     page_w = pdf.w - pdf.l_margin - pdf.r_margin
@@ -483,15 +492,15 @@ def _pdf_title_block(pdf, title: str, subtitle: str, filters: list[str]) -> None
     pdf.set_fill_color(37, 99, 235)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 15)
-    pdf.cell(page_w, 12, title, border=0, ln=0, fill=True)
+    pdf.cell(page_w, 12, _pdf_safe(title), border=0, ln=0, fill=True)
     pdf.ln(12)
     # Subtitle
     pdf.set_fill_color(255, 255, 255)
     pdf.set_text_color(100, 116, 139)
     pdf.set_font("Helvetica", "", 8)
-    pdf.cell(0, 5, subtitle, ln=True)
+    pdf.cell(0, 5, _pdf_safe(subtitle), ln=True)
     if filters:
-        pdf.cell(0, 5, "  ·  ".join(filters), ln=True)
+        pdf.cell(0, 5, _pdf_safe("  .  ".join(filters)), ln=True)
     pdf.ln(3)
     pdf.set_text_color(24, 24, 27)
 
@@ -500,7 +509,7 @@ def _pdf_section_header(pdf, label: str) -> None:  # type: ignore[no-untyped-def
     """Render a blue section label above a table."""
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_text_color(37, 99, 235)
-    pdf.cell(0, 7, label, ln=True)
+    pdf.cell(0, 7, _pdf_safe(label), ln=True)
     pdf.set_text_color(24, 24, 27)
 
 
@@ -510,7 +519,7 @@ def _pdf_table(pdf, headers: list[str], rows: list[list[str]], col_widths: list[
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 8)
     for i, h in enumerate(headers):
-        pdf.cell(col_widths[i], 7, h, border=1, fill=True)
+        pdf.cell(col_widths[i], 7, _pdf_safe(h), border=1, fill=True)
     pdf.ln()
 
     # Data rows — alt = blue-50
@@ -523,7 +532,7 @@ def _pdf_table(pdf, headers: list[str], rows: list[list[str]], col_widths: list[
         else:
             fill = False
         for i, val in enumerate(row):
-            pdf.cell(col_widths[i], 6, str(val), border=1, fill=fill)
+            pdf.cell(col_widths[i], 6, _pdf_safe(str(val)), border=1, fill=fill)
         pdf.ln()
     pdf.ln(4)
 

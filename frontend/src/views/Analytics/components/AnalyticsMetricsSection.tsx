@@ -37,7 +37,8 @@ interface AnalyticsMetricsSectionProps {
 }
 
 /** Return a Tailwind text color class based on score percentage. */
-function getScoreColor(value: number): string {
+function getScoreColor(value: number, hasData: boolean): string {
+  if (!hasData) return "text-zinc-900";
   if (value >= 70) return "text-emerald-600";
   if (value >= 40) return "text-amber-600";
   return "text-rose-600";
@@ -92,6 +93,7 @@ export const AnalyticsMetricsSection = ({
   };
 
   const d = metrics || defaultMetrics;
+  const analyzedCount = d["total_analyzed_audios"];
 
   const positivePct = parsePercent(d["Positive Sentiment"]);
   const negativePct = parsePercent(d["Negative Sentiment"]);
@@ -140,13 +142,13 @@ export const AnalyticsMetricsSection = ({
     },
     {
       title: "Sentiment",
-      value: `${positivePct.toFixed(0)}% positive`,
+      value: analyzedCount > 0 ? `${positivePct.toFixed(0)}% positive` : "No feedback yet",
       numericValue: positivePct,
       icon: MessageSquare,
       description:
         "Overall sentiment distribution detected across analyzed conversations.",
       color: "#22c55e",
-      sub: `${negativePct.toFixed(0)}% negative · ${neutralPct.toFixed(0)}% neutral`,
+      sub: analyzedCount > 0 ? `${negativePct.toFixed(0)}% negative · ${neutralPct.toFixed(0)}% neutral` : undefined,
       deltaKey: "Positive Sentiment",
     },
   ];
@@ -175,8 +177,6 @@ export const AnalyticsMetricsSection = ({
       </div>
     );
   }
-
-  const analyzedCount = d["total_analyzed_audios"];
 
   return (
     <div
@@ -211,7 +211,7 @@ export const AnalyticsMetricsSection = ({
                 <div className="flex flex-col gap-1 py-2 sm:py-0">
                   <div className="flex items-baseline gap-2">
                     <span
-                      className={`text-xl sm:text-2xl font-bold leading-tight ${getScoreColor(metric.numericValue)}`}
+                      className={`text-xl sm:text-2xl font-bold leading-tight ${getScoreColor(metric.numericValue, analyzedCount > 0)}`}
                     >
                       {metric.value}
                     </span>
