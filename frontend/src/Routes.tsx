@@ -33,6 +33,7 @@ import MLModels from "@/views/MLModels/Index";
 import MLModelDetail from "@/views/MLModels/components/MLModelDetail";
 import { FeatureFlags } from "./views/Settings/pages/FeatureFlags";
 import { Translations } from "./views/Settings/pages/Translations";
+import { Languages } from "./views/Settings/pages/Languages";
 import { useFeatureFlag } from "./context/FeatureFlagContext";
 import { GlobalChat } from "./components/GlobalChat";
 import ServerDownPage from "@/components/ServerDownPage";
@@ -177,6 +178,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:app_setting"]}>
                   <Translations />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "settings/languages",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                  <Languages />
                 </ProtectedRoute>
               ),
             },

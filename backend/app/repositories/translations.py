@@ -1,4 +1,4 @@
-from typing import Optional, List, Sequence
+from typing import Optional, List
 from uuid import UUID
 
 from injector import inject
@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.db.models.translation import LanguageModel, TranslationKeyModel, TranslationValueModel
-from app.schemas.translation import TranslationCreate, TranslationUpdate
+from app.schemas.translation import LanguageUpdate, TranslationCreate, TranslationUpdate
 
 
 @inject
@@ -41,6 +41,25 @@ class LanguagesRepository:
         await self.db.commit()
         await self.db.refresh(obj)
         return obj
+
+    async def get_by_id(self, language_id: UUID) -> Optional[LanguageModel]:
+        result = await self.db.execute(
+            select(LanguageModel).where(LanguageModel.id == language_id)
+        )
+        return result.scalars().first()
+
+    async def update(self, model: LanguageModel, dto: LanguageUpdate) -> LanguageModel:
+        if dto.name is not None:
+            model.name = dto.name
+        if dto.is_active is not None:
+            model.is_active = dto.is_active
+        await self.db.commit()
+        await self.db.refresh(model)
+        return model
+
+    async def delete(self, model: LanguageModel) -> None:
+        model.is_deleted = 1
+        await self.db.commit()
 
     async def get_code_to_id_map(self) -> dict[str, UUID]:
         langs = await self.get_active()

@@ -1,4 +1,5 @@
 from typing import List
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 from fastapi_injector import Injected
@@ -8,6 +9,7 @@ from app.core.permissions.constants import Permissions as P
 from app.schemas.translation import (
     LanguageCreate,
     LanguageRead,
+    LanguageUpdate,
     TranslationCreate,
     TranslationRead,
     TranslationUpdate,
@@ -19,6 +21,17 @@ router = APIRouter()
 
 
 # --- Language endpoints ---
+
+
+@router.get(
+    "/languages/all",
+    response_model=List[LanguageRead],
+    dependencies=[Depends(auth), Depends(permissions(P.AppSettings.READ))],
+)
+async def list_all_languages(
+    svc: LanguagesService = Injected(LanguagesService),
+):
+    return await svc.get_all_admin()
 
 
 @router.get(
@@ -43,6 +56,31 @@ async def create_language(
     svc: LanguagesService = Injected(LanguagesService),
 ):
     return await svc.create(dto)
+
+
+@router.patch(
+    "/languages/{language_id}",
+    response_model=LanguageRead,
+    dependencies=[Depends(auth), Depends(permissions(P.AppSettings.UPDATE))],
+)
+async def update_language(
+    language_id: UUID,
+    dto: LanguageUpdate,
+    svc: LanguagesService = Injected(LanguagesService),
+):
+    return await svc.update(language_id, dto)
+
+
+@router.delete(
+    "/languages/{language_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(auth), Depends(permissions(P.AppSettings.DELETE))],
+)
+async def delete_language(
+    language_id: UUID,
+    svc: LanguagesService = Injected(LanguagesService),
+):
+    await svc.delete(language_id)
 
 
 # --- Translation endpoints ---

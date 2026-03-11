@@ -116,6 +116,17 @@ const SettingsPage = () => {
                           </Button>
                         </Link>
                       </div>
+                      <div className="flex flex-col">
+                        <h3 className="font-medium animate-fade-up animate-delay-100">Languages</h3>
+                        <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
+                          Manage supported languages for translations
+                        </p>
+                        <Link to="/settings/languages">
+                          <Button variant="outline" className="mt-2 animate-fade-up animate-delay-300">
+                            Manage Languages
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 </Card>

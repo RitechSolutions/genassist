@@ -12,6 +12,11 @@ class LanguageCreate(BaseModel):
     name: str
 
 
+class LanguageUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 class LanguageRead(BaseModel):
     id: UUID
     code: str

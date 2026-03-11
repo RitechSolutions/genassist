@@ -12,12 +12,48 @@ export type TranslationUpdatePayload = {
   translations?: Record<string, string>;
 };
 
+export type LanguageCreatePayload = { code: string; name: string };
+export type LanguageUpdatePayload = { name?: string; is_active?: boolean };
+
 export const getLanguages = async (): Promise<Language[]> => {
   const data = await apiRequest<Language[]>("GET", "translations/languages");
   if (!data || !Array.isArray(data)) {
     return [];
   }
   return data;
+};
+
+export const getAllLanguages = async (): Promise<Language[]> => {
+  const data = await apiRequest<Language[]>("GET", "translations/languages/all");
+  if (!data || !Array.isArray(data)) {
+    return [];
+  }
+  return data;
+};
+
+export const createLanguage = async (
+  payload: LanguageCreatePayload
+): Promise<Language> => {
+  const response = await apiRequest<Language>("POST", "translations/languages", payload);
+  if (!response) {
+    throw new Error("Failed to create language");
+  }
+  return response;
+};
+
+export const updateLanguage = async (
+  id: string,
+  payload: LanguageUpdatePayload
+): Promise<Language> => {
+  const response = await apiRequest<Language>("PATCH", `translations/languages/${id}`, payload);
+  if (!response) {
+    throw new Error("Failed to update language");
+  }
+  return response;
+};
+
+export const deleteLanguage = async (id: string): Promise<void> => {
+  await apiRequest("DELETE", `translations/languages/${id}`);
 };
 
 export const getTranslations = async (): Promise<Translation[]> => {

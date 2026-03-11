@@ -1,4 +1,5 @@
 from typing import List, Optional
+from uuid import UUID
 
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
@@ -12,6 +13,7 @@ from app.repositories.translations import LanguagesRepository, TranslationsRepos
 from app.schemas.translation import (
     LanguageCreate,
     LanguageRead,
+    LanguageUpdate,
     TranslationCreate,
     TranslationRead,
     TranslationUpdate,
@@ -81,6 +83,25 @@ class LanguagesService:
     async def get_all(self) -> List[LanguageRead]:
         rows = await self.repository.get_active()
         return [LanguageRead.model_validate(r, from_attributes=True) for r in rows]
+
+    async def get_all_admin(self) -> List[LanguageRead]:
+        rows = await self.repository.get_all()
+        return [LanguageRead.model_validate(r, from_attributes=True) for r in rows]
+
+    async def update(self, language_id: UUID, dto: LanguageUpdate) -> LanguageRead:
+        model = await self.repository.get_by_id(language_id)
+        if not model:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        updated = await self.repository.update(model, dto)
+        await invalidate_cache("languages:get_all", None)
+        return LanguageRead.model_validate(updated, from_attributes=True)
+
+    async def delete(self, language_id: UUID) -> None:
+        model = await self.repository.get_by_id(language_id)
+        if not model:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        await self.repository.delete(model)
+        await invalidate_cache("languages:get_all", None)
 
     async def create(self, dto: LanguageCreate) -> LanguageRead:
         existing = await self.repository.get_by_code(dto.code)
