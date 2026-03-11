@@ -47,7 +47,6 @@ async def get_agent_daily_stats(
 
 @router.get(
     "/agents/summary",
-    response_model=AgentStatsSummaryResponse,
     dependencies=[
         Depends(auth),
         Depends(permissions(P.Dashboard.READ)),
@@ -58,8 +57,13 @@ async def get_agent_stats_summary(
     agent_id: UUID | None = Query(default=None),
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
+    compare: bool = Query(default=False),
     service: AnalyticsReadService = Injected(AnalyticsReadService),
-) -> AgentStatsSummaryResponse:
+):
+    if compare:
+        return await service.get_agent_stats_summary_with_comparison(
+            agent_id=agent_id, from_date=from_date, to_date=to_date
+        )
     return await service.get_agent_stats_summary(
         agent_id=agent_id, from_date=from_date, to_date=to_date
     )
@@ -204,9 +208,14 @@ async def get_metrics(
     from_date: datetime | None = None,
     to_date: datetime | None = None,
     agent_id: UUID | None = None,
+    compare: bool = Query(default=False),
     service: AudioService = Injected(AudioService),
 ):
     try:
+        if compare:
+            return await service.fetch_metrics_with_comparison(
+                from_date=from_date, to_date=to_date, agent_id=agent_id
+            )
         return await service.fetch_and_calculate_metrics(
             from_date=from_date, to_date=to_date, agent_id=agent_id
         )

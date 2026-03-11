@@ -10,6 +10,7 @@ type ChartRow = {
   satisfaction: number;
   serviceQuality: number;
   resolutionRate: number;
+  efficiency: number;
 };
 
 interface PerformanceChartProps {
@@ -21,7 +22,15 @@ const LABELS: Record<string, string> = {
   satisfaction: "Customer Satisfaction",
   serviceQuality: "Quality of Service",
   resolutionRate: "Resolution Rate",
+  efficiency: "Efficiency",
 };
+
+const SERIES = [
+  { key: "satisfaction", color: "#10b981" },
+  { key: "serviceQuality", color: "#8b5cf6" },
+  { key: "resolutionRate", color: "#f59e0b" },
+  { key: "efficiency", color: "#06b6d4" },
+] as const;
 
 function formatDateLabel(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");
@@ -34,6 +43,7 @@ function toChartRows(items: DailyMetricsItem[]): ChartRow[] {
     satisfaction: item.satisfaction,
     serviceQuality: item.quality_of_service,
     resolutionRate: item.resolution_rate,
+    efficiency: item.efficiency,
   }));
 }
 
@@ -78,18 +88,12 @@ export const PerformanceChart = ({ dateRange, agentId }: PerformanceChartProps) 
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data}>
               <defs>
-                <linearGradient id="colorSatisfaction" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#16a34a" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorServiceQuality" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#9333ea" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#9333ea" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorResolutionRate" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#dc2626" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#dc2626" stopOpacity={0} />
-                </linearGradient>
+                {SERIES.map(({ key, color }) => (
+                  <linearGradient key={key} id={`color-${key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={color} stopOpacity={0.15} />
+                    <stop offset="95%" stopColor={color} stopOpacity={0} />
+                  </linearGradient>
+                ))}
               </defs>
 
               <XAxis
@@ -122,9 +126,17 @@ export const PerformanceChart = ({ dateRange, agentId }: PerformanceChartProps) 
                 wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }}
               />
 
-              <Area type="monotone" dataKey="satisfaction" stroke="#16a34a" strokeWidth={2} fill="url(#colorSatisfaction)" name="satisfaction" />
-              <Area type="monotone" dataKey="serviceQuality" stroke="#9333ea" strokeWidth={2} fill="url(#colorServiceQuality)" name="serviceQuality" />
-              <Area type="monotone" dataKey="resolutionRate" stroke="#dc2626" strokeWidth={2} fill="url(#colorResolutionRate)" name="resolutionRate" />
+              {SERIES.map(({ key, color }) => (
+                <Area
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={color}
+                  strokeWidth={2}
+                  fill={`url(#color-${key})`}
+                  name={key}
+                />
+              ))}
             </AreaChart>
           </ResponsiveContainer>
         )}

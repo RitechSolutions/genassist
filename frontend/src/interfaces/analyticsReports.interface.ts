@@ -67,6 +67,9 @@ export interface NodeTypeBreakdownItem {
   execution_count: number;
   success_count: number;
   failure_count: number;
+  unique_conversations: number;
+  thumbs_up_count: number;
+  thumbs_down_count: number;
   success_rate: number | null;
   avg_execution_ms: number | null;
   total_execution_ms: number | null;
@@ -77,6 +80,11 @@ export interface NodeTypeBreakdownResponse {
   from_date: string | null;
   to_date: string | null;
   items: NodeTypeBreakdownItem[];
+}
+
+export interface AgentStatsSummaryWithComparison {
+  current: AgentStatsSummaryResponse;
+  previous: AgentStatsSummaryResponse | null;
 }
 
 export interface AnalyticsFilterParams {
