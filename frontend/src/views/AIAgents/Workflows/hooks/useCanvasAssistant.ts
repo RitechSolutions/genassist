@@ -16,6 +16,8 @@ interface UseCanvasAssistantArgs {
   setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
   updateNodeData: (nodeId: string, data: Record<string, unknown>) => void;
+  /** When this changes the conversation resets so context from a previous workflow doesn't leak. */
+  workflowScopeId?: string;
 }
 
 export function useCanvasAssistant({
@@ -24,6 +26,7 @@ export function useCanvasAssistant({
   setNodes,
   setEdges,
   updateNodeData,
+  workflowScopeId,
 }: UseCanvasAssistantArgs) {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
@@ -133,6 +136,20 @@ export function useCanvasAssistant({
       isMountedRef.current = false;
     };
   }, []);
+
+  // Reset conversation when the workflow scope changes (e.g. switching agents/workflows)
+  const prevScopeRef = useRef(workflowScopeId);
+  useEffect(() => {
+    if (prevScopeRef.current !== undefined && workflowScopeId !== prevScopeRef.current) {
+      setMessages([]);
+      executedActionsRef.current.clear();
+      const chat = chatRef.current;
+      if (chat) {
+        chat.resetChatConversation();
+      }
+    }
+    prevScopeRef.current = workflowScopeId;
+  }, [workflowScopeId]);
 
   const startConversationIfNeeded = useCallback(async () => {
     const chat = chatRef.current;

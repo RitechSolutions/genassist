@@ -1,10 +1,70 @@
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles, Database, MessageSquare, Mail, Ticket, Globe, Bot, CheckCircle2 } from "lucide-react";
+import type { WorkflowDraft } from "@/views/Onboarding/utils/extractWorkflowDraft";
+
+interface SetupTip {
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+}
+
+/** Derive setup tips from the workflow nodes that need manual configuration. */
+const getSetupTips = (draft: WorkflowDraft | null): SetupTip[] => {
+  if (!draft) return [];
+  const tips: SetupTip[] = [];
+  const nodeNames = new Set(draft.workflow.map((n) => n.node_name));
+
+  if (nodeNames.has("knowledgeBaseNode")) {
+    tips.push({
+      icon: <Database className="h-4 w-4" />,
+      label: "Connect Knowledge Base",
+      description: "Upload your documents or connect a data source",
+    });
+  }
+  if (nodeNames.has("slackMessageNode")) {
+    tips.push({
+      icon: <MessageSquare className="h-4 w-4" />,
+      label: "Connect Slack",
+      description: "Authorize your Slack workspace",
+    });
+  }
+  if (nodeNames.has("gmailNode")) {
+    tips.push({
+      icon: <Mail className="h-4 w-4" />,
+      label: "Connect Gmail",
+      description: "Authorize your Google account",
+    });
+  }
+  if (nodeNames.has("jiraNode")) {
+    tips.push({
+      icon: <Ticket className="h-4 w-4" />,
+      label: "Connect Jira",
+      description: "Add your Jira project URL and API token",
+    });
+  }
+  if (nodeNames.has("apiCallNode")) {
+    tips.push({
+      icon: <Globe className="h-4 w-4" />,
+      label: "Configure API",
+      description: "Set the endpoint URL and authentication",
+    });
+  }
+  if (nodeNames.has("agentNode")) {
+    tips.push({
+      icon: <Bot className="h-4 w-4" />,
+      label: "Review Agent Prompt",
+      description: "Customize the tone and instructions",
+    });
+  }
+
+  return tips;
+};
 
 interface OnboardingNameAgentProps {
   value: string;
   disabled?: boolean;
   onChange: (val: string) => void;
   onContinue: () => void;
+  workflowDraft?: WorkflowDraft | null;
 }
 
 export const OnboardingNameAgent = ({
@@ -12,8 +72,10 @@ export const OnboardingNameAgent = ({
   disabled = false,
   onChange,
   onContinue,
+  workflowDraft = null,
 }: OnboardingNameAgentProps) => {
   const isButtonDisabled = disabled || !value.trim();
+  const tips = getSetupTips(workflowDraft);
 
   return (
     <div className="w-full max-w-md text-center space-y-6 animate-fade-up">
@@ -27,6 +89,7 @@ export const OnboardingNameAgent = ({
       {/* Text */}
       <div className="space-y-2">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f0fdf4] px-3 py-1 text-xs font-semibold text-[#16a34a]">
+          <CheckCircle2 className="h-3 w-3" />
           Workflow ready
         </span>
         <h2 className="text-2xl font-bold text-[#0f172a] tracking-tight">
@@ -68,6 +131,31 @@ export const OnboardingNameAgent = ({
           <ArrowRight size={16} strokeWidth={2.5} />
         </button>
       </form>
+
+      {/* Setup tips */}
+      {tips.length > 0 && (
+        <div className="pt-2 space-y-3">
+          <p className="text-xs font-medium text-[#94a3b8] uppercase tracking-wider">
+            After setup, you'll need to configure
+          </p>
+          <div className="space-y-2">
+            {tips.map((tip) => (
+              <div
+                key={tip.label}
+                className="flex items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white px-4 py-2.5 text-left"
+              >
+                <div className="h-8 w-8 shrink-0 rounded-lg bg-[#f1f5f9] flex items-center justify-center text-[#64748b]">
+                  {tip.icon}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[#334155]">{tip.label}</p>
+                  <p className="text-xs text-[#94a3b8]">{tip.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

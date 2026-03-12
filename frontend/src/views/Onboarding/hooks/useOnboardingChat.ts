@@ -2,10 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatService, type AgentWelcomeData, type ChatMessage } from "genassist-chat-react";
 import { type RegistrationStatus } from "@/context/RoutesContext";  
 
+export interface OnboardingMessage {
+  role: "user" | "agent";
+  text: string;
+}
+
 export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: RegistrationStatus }) => {
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<string>("");
   const [agentReply, setAgentReply] = useState<string | null>(null);
+  const [messages, setMessages] = useState<OnboardingMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -66,6 +72,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
       }
       if (message.speaker === "agent") {
         setAgentReply(message.text);
+        setMessages((prev) => [...prev, { role: "agent", text: message.text }]);
       }
     });
 
@@ -149,6 +156,8 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
       hasUserStartedChatRef.current = true;
       setWelcomeMessage(null);
       setWelcomeFaqs([]);
+      setMessages((prev) => [...prev, { role: "user", text: trimmed }]);
+      setPrompt("");
       setIsSending(true);
       hasUserAskedRef.current = true;
       setIsThinking(true);
@@ -157,7 +166,6 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
       try {
         await startConversationIfNeeded();
         await chat.sendMessage(trimmed);
-        setPrompt("");
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unable to send message.";
         setError(message);
@@ -208,6 +216,8 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
     prompt,
     setPrompt,
     agentReply,
+    messages,
+    isThinking,
     subtitleText,
     titleText,
     welcomeFaqs,

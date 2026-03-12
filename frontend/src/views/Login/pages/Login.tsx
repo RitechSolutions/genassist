@@ -126,7 +126,7 @@ const LoginPage = () => {
         const pendingName = localStorage.getItem(AGENT_NAME_STORAGE_KEY);
         const cameFromOnboarding = location.state?.from?.pathname === "/onboarding";
 
-        if (cameFromOnboarding && pendingDraft && pendingName) {
+        if (pendingDraft && pendingName) {
           try {
             let hasEdges = false;
             try {
@@ -262,6 +262,7 @@ const LoginPage = () => {
               <span className="text-zinc-500">Don't have an account? </span>
               <Link
                 to="/register"
+                state={location.state}
                 className="text-black hover:underline font-medium"
               >
                 Sign up

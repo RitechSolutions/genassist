@@ -234,6 +234,7 @@ const GraphFlowContent: React.FC = () => {
     setNodes,
     setEdges,
     updateNodeData,
+    workflowScopeId: agentId,
   });
 
   // Restore functions to nodes after loading

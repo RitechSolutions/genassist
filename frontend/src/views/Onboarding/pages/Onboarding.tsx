@@ -23,6 +23,8 @@ export default function Onboarding() {
     prompt,
     setPrompt,
     agentReply,
+    messages,
+    isThinking,
     subtitleText,
     titleText,
     welcomeFaqs,
@@ -143,6 +145,8 @@ export default function Onboarding() {
               quickActions={quickActions}
               onQuickAction={sendQuickAction}
               disableQuickActions={isInputDisabled}
+              messages={messages}
+              isThinking={isThinking}
             />
 
             <OnboardingInput
@@ -158,6 +162,7 @@ export default function Onboarding() {
             disabled={isSending}
             onChange={handleAgentNameChange}
             onContinue={handleContinue}
+            workflowDraft={extractedDraft?.parsed ?? null}
           />
         )}
 
