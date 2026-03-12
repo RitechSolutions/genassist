@@ -793,7 +793,7 @@ export class ChatService {
   }
 
   connectWebSocket(): void {
-    if (!this.useWs || !this.websocketUrl) {
+    if (!this.useWs && !this.websocketUrl) {
       console.warn("WebSocket is disabled or URL is not set");
       return;
     }
@@ -824,6 +824,8 @@ export class ChatService {
     } else {
       wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
     }
+
+    console.log(">> wsUrl <<", wsUrl);
 
     // Add tenant as query parameter if provided
     if (this.tenant) {

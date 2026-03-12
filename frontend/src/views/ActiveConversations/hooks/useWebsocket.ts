@@ -23,8 +23,6 @@ export function useWebSocketTranscript({
   const [takeoverInfo, setTakeoverInfo] = useState<TakeoverPayload>({});
   const socketRef = useRef<WebSocket | null>(null);
   const lastConversationIdRef = useRef<string | null>(null);
-  const transcriptInitialRef = useRef(transcriptInitial);
-  transcriptInitialRef.current = transcriptInitial;
 
   useEffect(() => {
     if (!isWsEnabled || !conversationId || !token) return;
@@ -56,13 +54,11 @@ export function useWebSocketTranscript({
 
         socket = new WebSocket(wsUrl);
         socketRef.current = socket;
-        console.log("[WebSocket Transcript] Connecting", { wsUrl, conversationId, wsVersion });
 
         socket.onopen = () => {
-          console.log("[WebSocket Transcript] Connected", { conversationId });
           if (!cancelled) {
             setIsConnected(true);
-            setMessages(transcriptInitialRef.current);
+            setMessages(transcriptInitial);
           }
         };
 
@@ -71,7 +67,6 @@ export function useWebSocketTranscript({
 
           try {
             const data = JSON.parse(event.data);
-            console.log("[WebSocket Transcript] Message", { conversationId, type: data.type ?? data.topic, payload: data.payload });
 
             if ((data.topic === "message" || data.type === "message") && data.payload) {
               const newEntries = Array.isArray(data.payload)
@@ -118,7 +113,7 @@ export function useWebSocketTranscript({
         };
 
         socket.onclose = (event) => {
-          console.log("[WebSocket Transcript] Closed", { conversationId, code: event.code, reason: event.reason, wasClean: event.wasClean });
+          // console.log("[WebSocket Transcript] Closed", { conversationId, code: event.code, reason: event.reason, wasClean: event.wasClean });
           if (!cancelled) {
             setIsConnected(false);
             lastConversationIdRef.current = null;
@@ -137,7 +132,7 @@ export function useWebSocketTranscript({
       }
       lastConversationIdRef.current = null;
     };
-  }, [conversationId, token, lang]);
+  }, [conversationId, token, transcriptInitial, lang]);
 
   const sendMessage = (entry: TranscriptEntry) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {

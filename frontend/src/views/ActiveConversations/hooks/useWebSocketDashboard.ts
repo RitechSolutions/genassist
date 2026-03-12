@@ -12,15 +12,14 @@ import { ActiveConversation } from "@/interfaces/liveConversation.interface";
 import { conversationService } from "@/services/liveConversations";
 import { getTenantId } from "@/services/auth";
 
-const DEFAULT_TOPICS = ["message", "statistics", "finalize", "hostile"] as const;
+// Ensure "message" and "hostile" are always included (hostile = dashboard updates, message = transcript)
+const DEFAULT_TOPICS = ["message", "statistics", "finalize", "hostile"];
 
 export function useWebSocketDashboard({
   token,
   lang = "en",
-  topics = [...DEFAULT_TOPICS]
+  topics = DEFAULT_TOPICS,
 }: UseWebSocketDashboardOptions) {
-  // Ensure "message" and "hostile" are always included (hostile = dashboard updates, message = transcript)
-  const effectiveTopics = Array.from(new Set([...topics, "message", "hostile"]));
   const [conversations, setConversations] = useState<ActiveConversation[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [isConnected, setIsConnected] = useState(false);
@@ -36,7 +35,7 @@ export function useWebSocketDashboard({
       const wsBaseUrl = await getWsUrl();
       const wsVersion = getWsVersion();
 
-      const topicsQuery = effectiveTopics.map(t => `topics=${t}`).join("&");
+      const topicsQuery = topics.map(t => `topics=${t}`).join("&");
       const tenant = getTenantId();
       const tenantParam = tenant ? `&x-tenant-id=${tenant}` : "";
       const langParam = lang ? `&lang=${lang}` : "";
@@ -51,10 +50,8 @@ export function useWebSocketDashboard({
 
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
-      console.log("[WebSocket Dashboard] Connecting", { wsUrl, wsVersion });
 
       socket.onopen = () => {
-        console.log("[WebSocket Dashboard] Connected");
         setIsConnected(true);
         setError(null);
         reconnectAttempts.current = 0;
@@ -63,7 +60,6 @@ export function useWebSocketDashboard({
       socket.onmessage = (event) => {
         try {
           const data: DashboardWebSocketMessage = JSON.parse(event.data);
-          console.log("[WebSocket Dashboard] Message", { type: data.topic ?? data.type, payload: data.payload });
 
           const applyCachedTopic = (conv: ActiveConversation): ActiveConversation => {
             const provided = (conv.topic || "").trim();
@@ -242,7 +238,6 @@ export function useWebSocketDashboard({
       };
 
       socket.onclose = (event) => {
-        console.log("[WebSocket Dashboard] Closed", { code: event.code, reason: event.reason, wasClean: event.wasClean });
         setIsConnected(false);
         if (reconnectAttempts.current < 5) {
           reconnectAttempts.current++;
@@ -261,7 +256,7 @@ export function useWebSocketDashboard({
     connect();
     return () => socketRef.current?.close();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, lang, effectiveTopics.join(",")]);
+  }, [token, lang, topics]);
 
   const refetch = () => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) connect();
