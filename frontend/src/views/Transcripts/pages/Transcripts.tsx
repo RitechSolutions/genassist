@@ -193,7 +193,7 @@ const Transcripts = () => {
     agent_id: selectedAgentId !== "all" ? selectedAgentId : undefined,
     scoreFilters,
     from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
-    to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+    to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd 23:59:59") : undefined,
     exclude_empty: hideEmpty || undefined,
   });
 
