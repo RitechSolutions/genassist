@@ -825,8 +825,6 @@ export class ChatService {
       wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
     }
 
-    console.log(">> wsUrl <<", wsUrl);
-
     // Add tenant as query parameter if provided
     if (this.tenant) {
       wsUrl += `&x-tenant-id=${encodeURIComponent(this.tenant)}`;

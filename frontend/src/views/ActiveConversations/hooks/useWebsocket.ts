@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TranscriptEntry } from "@/interfaces/transcript.interface";
 import { getWsUrl, getWsVersion, isWsEnabled } from "@/config/api";
 import { UseWebSocketTranscriptOptions, StatisticsPayload, TakeoverPayload } from "@/interfaces/websocket.interface";
@@ -17,12 +17,15 @@ export function useWebSocketTranscript({
   transcriptInitial = [],
   lang = "en",
 }: UseWebSocketTranscriptOptions) {
+  const effectiveTopics = Array.from(new Set(['message', 'statistics', 'finalize', 'takeover']));
   const [messages, setMessages] = useState<TranscriptEntry[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [statistics, setStatistics] = useState<StatisticsPayload>({});
   const [takeoverInfo, setTakeoverInfo] = useState<TakeoverPayload>({});
   const socketRef = useRef<WebSocket | null>(null);
   const lastConversationIdRef = useRef<string | null>(null);
+  const transcriptInitialRef = useRef(transcriptInitial);
+
 
   useEffect(() => {
     if (!isWsEnabled || !conversationId || !token) return;
@@ -34,8 +37,7 @@ export function useWebSocketTranscript({
     let cancelled = false;
     let socket: WebSocket | null = null;
 
-    const topics = ["message", "statistics", "finalize", "takeover"];
-    const queryString = topics.map((t) => `topics=${t}`).join("&");
+    const queryString = effectiveTopics.map((t) => `topics=${t}`).join("&");
     const tenant = getTenantId();
     const tenantParam = tenant ? `&x-tenant-id=${tenant}` : "";
     const langParam = lang ? `&lang=${lang}` : "";
@@ -45,8 +47,9 @@ export function useWebSocketTranscript({
         if (cancelled || !isWsEnabled) return;
         const wsVersion = getWsVersion();
         let wsUrl = "";
+
+        // old websocket service (WS is co-hosted with the HTTP API under /api)
         if (wsVersion === 1) {
-          // old websocket service (WS is co-hosted with the HTTP API under /api)
           wsUrl = `${wsBaseUrl}/conversations/ws/${conversationId}?access_token=${token}&${queryString}${tenantParam}`;
         } else {
           wsUrl = `${wsBaseUrl}/ws/conversations/${conversationId}?access_token=${token}${langParam}&${queryString}${tenantParam}`;
@@ -58,7 +61,7 @@ export function useWebSocketTranscript({
         socket.onopen = () => {
           if (!cancelled) {
             setIsConnected(true);
-            setMessages(transcriptInitial);
+            setMessages(transcriptInitialRef.current);
           }
         };
 
@@ -113,7 +116,6 @@ export function useWebSocketTranscript({
         };
 
         socket.onclose = (event) => {
-          // console.log("[WebSocket Transcript] Closed", { conversationId, code: event.code, reason: event.reason, wasClean: event.wasClean });
           if (!cancelled) {
             setIsConnected(false);
             lastConversationIdRef.current = null;
@@ -132,7 +134,7 @@ export function useWebSocketTranscript({
       }
       lastConversationIdRef.current = null;
     };
-  }, [conversationId, token, transcriptInitial, lang]);
+  }, [conversationId, token, transcriptInitialRef.current, lang]);
 
   const sendMessage = (entry: TranscriptEntry) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {

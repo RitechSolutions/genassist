@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     REDIS_USER: Optional[str] = None
     REDIS_DB: int = 0
     REDIS_SSL: bool = False
+    REDIS_OVERRIDE_URL: Optional[str] = None
 
     # Backend
     BACKEND_URL: str = "http://localhost:8000"
@@ -36,13 +37,19 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def REDIS_URL(self) -> str:
-        host = self.REDIS_HOST
+        if self.REDIS_OVERRIDE_URL:
+            return self.REDIS_OVERRIDE_URL
+        host = self.REDIS_HOST or "localhost"
+
         if self.REDIS_PASSWORD:
-            auth = f"{quote(self.REDIS_USER or '', safe='')}:{quote(self.REDIS_PASSWORD, safe='')}@"
+            auth = f"{quote(self.REDIS_USER or '', safe='')}:{quote(self.REDIS_PASSWORD or '', safe='')}@"
         else:
             auth = ""
-        scheme = "rediss" if self.REDIS_SSL else "redis"
-        return unquote(f"{scheme}://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}")
+        # use rediss for ssl if ssl is enabled
+        redis_scheme = "rediss" if self.REDIS_SSL else "redis"
+        return unquote(
+            f"{redis_scheme}://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        )
 
     class Config:
         env_file = ".env"

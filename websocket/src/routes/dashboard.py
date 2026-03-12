@@ -16,9 +16,8 @@ DASHBOARD_ROOM = "DASHBOARD"
 async def ws_dashboard(
     websocket: WebSocket,
     auth_user: AuthenticatedUser = require_authenticated_user(
-        required_permissions=["*", "read:dashboard"]
+        required_permissions=["*", "read:in_progress_conversation"]
     ),
-    lang: str = Query(default="en"),
     topics: list[str] = Query(default=["message"]),
 ):
     manager = websocket.app.state.manager

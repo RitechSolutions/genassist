@@ -5,7 +5,7 @@ import { isWsEnabled, isPollEnabled } from "@/config/api";
 
 export const GlobalChat = () => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
-  const [websocketUrl, setWebsocketUrl] = useState<string | null>(null);
+  const [websocketUrl, setWebsocketUrl] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const genassistApiKey = import.meta.env.VITE_GENASSIST_CHAT_APIKEY;
 

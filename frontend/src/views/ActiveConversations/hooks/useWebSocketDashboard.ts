@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getWsUrl, getWsVersion, isWsEnabled } from "@/config/api";
 import {
   DashboardWebSocketMessage,
@@ -13,13 +13,14 @@ import { conversationService } from "@/services/liveConversations";
 import { getTenantId } from "@/services/auth";
 
 // Ensure "message" and "hostile" are always included (hostile = dashboard updates, message = transcript)
-const DEFAULT_TOPICS = ["message", "statistics", "finalize", "hostile"];
+const DEFAULT_TOPICS = ["message", "statistics", "finalize", "hostile"] as const;
 
 export function useWebSocketDashboard({
   token,
   lang = "en",
-  topics = DEFAULT_TOPICS,
+  topics = [...DEFAULT_TOPICS] as string[],
 }: UseWebSocketDashboardOptions) {
+  const effectiveTopics = Array.from(new Set([...topics, 'message', 'hostile']));
   const [conversations, setConversations] = useState<ActiveConversation[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [isConnected, setIsConnected] = useState(false);
@@ -35,17 +36,16 @@ export function useWebSocketDashboard({
       const wsBaseUrl = await getWsUrl();
       const wsVersion = getWsVersion();
 
-      const topicsQuery = topics.map(t => `topics=${t}`).join("&");
+      const topicsQuery = effectiveTopics.map(t => `topics=${t}`).join("&");
       const tenant = getTenantId();
       const tenantParam = tenant ? `&x-tenant-id=${tenant}` : "";
-      const langParam = lang ? `&lang=${lang}` : "";
 
       let wsUrl = "";
       if (wsVersion === 1) {
         // old websocket service (WS is co-hosted with the HTTP API under /api)
-        wsUrl = `${wsBaseUrl}/conversations/ws/dashboard/list?access_token=${token}${langParam}&${topicsQuery}${tenantParam}`;
+        wsUrl = `${wsBaseUrl}/conversations/ws/dashboard/list?access_token=${token}&${topicsQuery}${tenantParam}`;
       } else {
-        wsUrl = `${wsBaseUrl}/ws/dashboard/list?access_token=${token}${langParam}&${topicsQuery}${tenantParam}`;
+        wsUrl = `${wsBaseUrl}/ws/dashboard/list?access_token=${token}&${topicsQuery}${tenantParam}`;
       }
 
       const socket = new WebSocket(wsUrl);
@@ -60,6 +60,12 @@ export function useWebSocketDashboard({
       socket.onmessage = (event) => {
         try {
           const data: DashboardWebSocketMessage = JSON.parse(event.data);
+
+          // handle ping message from server
+          if (data.type === 'ping') {
+            socket.send(JSON.stringify({ type: 'pong' }));
+            return;
+          }
 
           const applyCachedTopic = (conv: ActiveConversation): ActiveConversation => {
             const provided = (conv.topic || "").trim();
@@ -235,6 +241,7 @@ export function useWebSocketDashboard({
       socket.onerror = (e) => {
         console.warn("[WebSocket Dashboard] Error", { event: e });
         setError(new Error("WebSocket error"));
+        setIsConnected(false);
       };
 
       socket.onclose = (event) => {
@@ -252,11 +259,10 @@ export function useWebSocketDashboard({
   };
 
   useEffect(() => {
-    if (!isWsEnabled) return;
     connect();
     return () => socketRef.current?.close();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, lang, topics]);
+  }, [token, lang, effectiveTopics.join(',')]);
 
   const refetch = () => {
     if (socketRef.current?.readyState !== WebSocket.OPEN) connect();

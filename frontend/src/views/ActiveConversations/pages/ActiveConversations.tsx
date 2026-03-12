@@ -73,7 +73,7 @@ const enrichConversationItem = (item: ActiveConversation): Transcript => {
 
   const isCall = item.type === "call";
   const initialDurationInSeconds = typeof item.duration === "number" ? item.duration : 0;
-  
+
   return {
     id: item.id,
     audio: "",
@@ -183,7 +183,7 @@ export const ActiveConversations = () => {
   // Merge WebSocket updates with existing conversations
   useEffect(() => {
     if (wsConversations !== undefined) {
-      
+
       // Merge without removing existing items; finalization will explicitly remove
       setAllConversations(prev => {
         if (!Array.isArray(wsConversations) || wsConversations.length === 0) return prev;
@@ -277,7 +277,7 @@ export const ActiveConversations = () => {
 
   const handleItemClick = async (item: ActiveConversation) => {
     setIsLoadingTranscript(true);
-    
+
     try {
       // Fetch the full  conversation data by ID
       const backend = await apiRequest<BackendTranscript>("get", `/conversations/${item.id}?include_feedback=true`);
@@ -289,14 +289,14 @@ export const ActiveConversations = () => {
       }
       setSelectedTranscript(transformed);
       setIsDialogOpen(true);
-      
+
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to load conversation details",
         variant: "destructive",
       });
-      
+
       // Fallback to enriched conversation item if fetch fails
       const enrichedTranscript = enrichConversationItem(item);
       setSelectedTranscript(enrichedTranscript);

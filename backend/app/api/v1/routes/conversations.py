@@ -484,26 +484,23 @@ async def finalize(
     Finalize the conversation so that no more partial updates are allowed.
     Optionally trigger the final analysis or let another endpoint handle it.
     """
-    tenant_id = get_tenant_context()
-    _ = asyncio.create_task(
-        socket_connection_manager.broadcast(
-            msg_type="finalize",
-            room_id=conversation_id,
-            current_user_id=get_current_user_id(),
-            required_topic="finalize",
-            tenant_id=tenant_id,
-        )
-    )
 
-    _ = asyncio.create_task(
-        socket_connection_manager.broadcast(
-            msg_type="finalize",
-            room_id=SocketRoomType.DASHBOARD,
-            current_user_id=get_current_user_id(),
-            required_topic="finalize",
-            tenant_id=tenant_id,
+    def notify_socket(roomId: str):
+        tenant_id = get_tenant_context()
+
+        _ = asyncio.create_task(
+            socket_connection_manager.broadcast(
+                msg_type="finalize",
+                room_id=roomId,
+                current_user_id=get_current_user_id(),
+                required_topic="finalize",
+                tenant_id=tenant_id,
+            )
         )
-    )
+
+    # Notify dashboard and conversation room
+    notify_socket(conversation_id)
+    notify_socket(SocketRoomType.DASHBOARD)
 
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
         conversation_id=conversation_id,

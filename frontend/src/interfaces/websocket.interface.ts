@@ -30,7 +30,7 @@ export interface UseWebSocketDashboardOptions {
 
 export interface DashboardWebSocketMessage {
     topic: "message" | "statistics" | "finalize" | "hostile" | "conversation_list" | "conversation_update" | "update" | "takeover";
-    type?: "message" | "statistics" | "finalize" | "hostile" | "conversation_list" | "conversation_update" | "update" | "takeover";
+    type?: "message" | "statistics" | "finalize" | "hostile" | "conversation_list" | "conversation_update" | "update" | "takeover" | "ping";
     payload: ConversationListPayload | ConversationUpdatePayload | StatisticsPayload | ConversationDataPayload | TakeoverPayload | FinalizePayload | Record<string, unknown>;
 }
 
