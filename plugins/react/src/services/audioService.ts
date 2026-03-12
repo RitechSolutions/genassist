@@ -16,12 +16,15 @@ export class AudioService {
   private audioChunks: Blob[] = [];
   private resolvePromise: ((value: Blob) => void) | null = null;
   private rejectPromise: ((reason?: any) => void) | null = null;
+  private wsVersion: number = 1;
 
   constructor(config: AudioServiceConfig) {
     this.baseUrl = config.baseUrl;
     if (!config.websocketUrl) {
-      this.websocketUrl = `${this.baseUrl.replace("http", "ws")}/api/voice/audio/tts`;
+      this.wsVersion = 1;
+      this.websocketUrl = `${this.baseUrl.replace("http", "ws")}`;
     } else {
+      this.wsVersion = 2;
       this.websocketUrl = config.websocketUrl.endsWith("/") ? config.websocketUrl?.slice(0, -1) : config.websocketUrl;
     }
     this.apiKey = config.apiKey;
@@ -41,13 +44,13 @@ export class AudioService {
       this.rejectPromise = reject;
       this.audioChunks = [];
 
-      // Build WebSocket URL with proper authentication
-      const wsBase = this.websocketUrl;
       // Use guest_token if available, otherwise fall back to api_key
       const authParam = this.guestToken
         ? `access_token=${encodeURIComponent(this.guestToken)}`
         : `api_key=${encodeURIComponent(this.apiKey)}`;
-      const wsUrl = `${this.websocketUrl}/ws/audio/tts?${authParam}`;
+
+      const wsRoute = this.wsVersion === 1 ? `voice/audio/tts` : `ws/voice/audio/tts`;
+      const wsUrl = `${this.websocketUrl}/${wsRoute}?${authParam}`;
       this.ws = createWebSocket(wsUrl);
 
       this.ws.onopen = () => {

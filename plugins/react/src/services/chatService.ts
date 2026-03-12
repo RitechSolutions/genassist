@@ -48,6 +48,7 @@ export class ChatService {
   private serverUnavailableContactUrl: string | undefined;
   private serverUnavailableContactLabel: string | undefined;
   private usePoll: boolean = false;
+  private wsVersion: number = 1;
 
   constructor(
     baseUrl: string,
@@ -64,6 +65,7 @@ export class ChatService {
     if (websocketUrl) {
       // use new websocket url
       this.websocketUrl = websocketUrl.endsWith("/") ? websocketUrl.slice(0, -1) : websocketUrl;
+      this.wsVersion = 2;
     }
 
     this.apiKey = apiKey;
@@ -815,8 +817,8 @@ export class ChatService {
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
 
-
-    let wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    const wsRoute = this.wsVersion === 1 ? `conversations/ws` : `ws/conversations`;
+    let wsUrl = `${this.websocketUrl}/${wsRoute}/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
 
     // Add tenant as query parameter if provided
     if (this.tenant) {
