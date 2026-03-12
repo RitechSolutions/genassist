@@ -817,8 +817,13 @@ export class ChatService {
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
 
-    const wsRoute = this.wsVersion === 1 ? `conversations/ws` : `ws/conversations`;
-    let wsUrl = `${this.websocketUrl}/${wsRoute}/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    let wsUrl = "";
+    if (this.wsVersion === 1) {
+      const wsBase = this.baseUrl.replace("http", "ws");
+      wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    } else {
+      wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    }
 
     // Add tenant as query parameter if provided
     if (this.tenant) {
