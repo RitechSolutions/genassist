@@ -149,11 +149,12 @@ const LoginPage = () => {
             toast.success("Agent created successfully!");
 
             if (wizardResponse?.agent_id) {
-              window.location.href = `/ai-agents/workflow/${wizardResponse.agent_id}`;
+              window.location.href = `/ai-agents/workflow/${wizardResponse.agent_id}?setup=true`;
             } else if (wizardResponse?.url) {
-              window.location.href = wizardResponse.url;
+              const sep = wizardResponse.url.includes("?") ? "&" : "?";
+              window.location.href = `${wizardResponse.url}${sep}setup=true`;
             } else if (wizardResponse?.id) {
-              window.location.href = `/ai-agents/workflow/${wizardResponse.id}`;
+              window.location.href = `/ai-agents/workflow/${wizardResponse.id}?setup=true`;
             } else {
               window.location.href = "/dashboard";
             }

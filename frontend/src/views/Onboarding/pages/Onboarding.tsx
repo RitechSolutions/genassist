@@ -136,7 +136,7 @@ export default function Onboarding() {
 
       <main className="flex-1 flex flex-col items-center justify-center px-4 gap-8">
         {effectiveScreen === "chat" ? (
-          <>
+          <div className="w-full flex flex-col items-center gap-8">
             <OnboardingHero
               showCongrats={showCongrats && !agentReply}
               showQuickActions={showQuickActions && quickActions.length > 0}
@@ -155,7 +155,7 @@ export default function Onboarding() {
               onChange={setPrompt}
               onSubmit={handleSubmit}
             />
-          </>
+          </div>
         ) : (
           <OnboardingNameAgent
             value={agentName}
