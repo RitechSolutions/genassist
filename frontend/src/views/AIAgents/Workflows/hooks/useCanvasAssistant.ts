@@ -8,6 +8,9 @@ import {
   createNodeFromAction,
   type AssistantMessage,
   type ParsedAction,
+  type AddNodeAction,
+  type UpdateNodeAction,
+  type RemoveNodeAction,
 } from "../utils/assistantActionParser";
 
 interface UseCanvasAssistantArgs {
@@ -57,29 +60,67 @@ export function useCanvasAssistant({
     [updateNodeData],
   );
 
+  // Build a dedup key for any action
+  const actionKey = (action: ParsedAction): string => {
+    switch (action.type) {
+      case "add_node":
+        return `add-${action.nodeType}-${action.label}-${action.connectTo}`;
+      case "update_node":
+        return `update-${action.nodeId}-${JSON.stringify(action.updates)}`;
+      case "remove_node":
+        return `remove-${action.nodeId}`;
+    }
+  };
+
   // Execute parsed actions on the canvas
   const executeActions = useCallback(
     (actions: ParsedAction[]) => {
       for (const action of actions) {
-        const actionKey = `${action.nodeType}-${action.label}-${action.connectTo}`;
-        if (executedActionsRef.current.has(actionKey)) continue;
-        executedActionsRef.current.add(actionKey);
+        const key = actionKey(action);
+        if (executedActionsRef.current.has(key)) continue;
+        executedActionsRef.current.add(key);
 
-        const { node, edge } = createNodeFromAction(
-          action,
-          nodesRef.current,
-        );
-        if (node) {
-          const restored = restoreNode(node);
+        if (action.type === "add_node") {
+          const { node, edge } = createNodeFromAction(
+            action as AddNodeAction,
+            nodesRef.current,
+          );
+          if (node) {
+            const restored = restoreNode(node);
+            setNodes((nds) => {
+              const updated = [...nds, restored];
+              nodesRef.current = updated;
+              return updated;
+            });
+          }
+          if (edge) {
+            setEdges((eds) => {
+              const updated = [...eds, edge];
+              edgesRef.current = updated;
+              return updated;
+            });
+          }
+        } else if (action.type === "update_node") {
+          const { nodeId, updates } = action as UpdateNodeAction;
           setNodes((nds) => {
-            const updated = [...nds, restored];
+            const updated = nds.map((n) =>
+              n.id === nodeId ? { ...n, data: { ...n.data, ...updates } } : n,
+            );
             nodesRef.current = updated;
             return updated;
           });
-        }
-        if (edge) {
+        } else if (action.type === "remove_node") {
+          const { nodeId } = action as RemoveNodeAction;
+          setNodes((nds) => {
+            const updated = nds.filter((n) => n.id !== nodeId);
+            nodesRef.current = updated;
+            return updated;
+          });
+          // Also remove edges connected to the removed node
           setEdges((eds) => {
-            const updated = [...eds, edge];
+            const updated = eds.filter(
+              (e) => e.source !== nodeId && e.target !== nodeId,
+            );
             edgesRef.current = updated;
             return updated;
           });

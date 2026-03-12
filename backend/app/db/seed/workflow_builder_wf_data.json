@@ -1,6 +1,6 @@
 {
   "name": "Workflow Builder Agent",
-  "description": "Conversational AI agent that understands user needs and creates GenAssist workflows",
+  "description": "Conversational AI agent that understands user needs and creates or edits GenAssist workflows",
   "nodes": [
     {
       "id": "wb-chat-input-001",
@@ -27,16 +27,95 @@
       "width": 400,
       "height": 174,
       "dragging": false,
-      "position": { "x": 50, "y": 300 },
+      "position": { "x": 50, "y": 400 },
       "selected": false,
-      "positionAbsolute": { "x": 50, "y": 300 }
+      "positionAbsolute": { "x": 50, "y": 400 }
     },
     {
-      "id": "wb-agent-001",
+      "id": "wb-router-001",
       "data": {
-        "name": "Workflow Builder",
+        "name": "Mode Detector",
+        "label": "Conditional Router",
+        "first_value": "{{source.message}}",
+        "compare_condition": "contains",
+        "second_value": "[CANVAS_CONTEXT]",
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "output_true",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          },
+          {
+            "id": "output_false",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ]
+      },
+      "type": "routerNode",
+      "width": 400,
+      "height": 250,
+      "dragging": false,
+      "position": { "x": 550, "y": 400 },
+      "selected": false,
+      "positionAbsolute": { "x": 550, "y": 400 }
+    },
+    {
+      "id": "wb-agent-canvas",
+      "data": {
+        "name": "Canvas Editor",
         "type": "ToolSelector",
-        "label": "Workflow Builder Agent",
+        "label": "Canvas Editor Agent",
+        "memory": true,
+        "maxIterations": 10,
+        "memoryTrimmingMode": "message_count",
+        "maxMessages": 10,
+        "handlers": [
+          {
+            "id": "input",
+            "type": "target",
+            "position": "left",
+            "compatibility": "any"
+          },
+          {
+            "id": "input_tools",
+            "type": "target",
+            "position": "bottom",
+            "compatibility": "tools"
+          },
+          {
+            "id": "output",
+            "type": "source",
+            "position": "right",
+            "compatibility": "any"
+          }
+        ],
+        "providerId": "LLM_PROVIDER_ID",
+        "userPrompt": "{{source.message}}",
+        "systemPrompt": "You are a workflow editing assistant for GenAssist — a visual workflow builder platform. You help users modify their existing workflows on the canvas through natural language.\n\nYou operate in a fast, action-oriented style. Users describe what they want changed, and you make it happen.\n\n## How It Works\n\nEvery message you receive includes a `[CANVAS_CONTEXT]` block showing the current workflow state — all nodes (with their IDs, types, and labels) and edges (connections between nodes). Use these exact IDs when modifying the workflow.\n\n**Always use the Node Specs tool first** to look up exact node types and config fields before adding or updating nodes. Never guess node types or config field names.\n\n## Available Actions\n\n**Add a node:**\n<ADD_NODE>\n{\"node_type\": \"slackMessageNode\", \"label\": \"Send Alert\", \"config\": {}, \"connect_to\": \"existing_node_id\"}\n</ADD_NODE>\n\n**Update an existing node's config:**\n<UPDATE_NODE>\n{\"node_id\": \"existing_node_id\", \"updates\": {\"systemPrompt\": \"New prompt here.\", \"name\": \"New Name\"}}\n</UPDATE_NODE>\n\n**Remove a node:**\n<REMOVE_NODE>\n{\"node_id\": \"existing_node_id\"}\n</REMOVE_NODE>\n\nYou can include multiple action tags in a single response.\n\n## Rules\n\n- Keep responses to 1-2 sentences + action tags — be concise\n- Use the node IDs from `[CANVAS_CONTEXT]` for `connect_to` and `node_id` fields\n- If the request is ambiguous, ask ONE short clarifying question\n- For agent nodes, always write real, tailored `systemPrompt` values — never use placeholders\n- Use `{{source.message}}` for userPrompt, `{{session.message}}` for tool/KB queries\n- Do NOT output `<WORKFLOW_JSON>` — only use action tags\n- When adding nodes, pick the right `connect_to` node based on the workflow's logical flow\n\n## Personality\n\n- Be fast and helpful — canvas editing should feel instant\n- Confirm what you did briefly: \"Done! Added a Slack notification after the agent node.\"\n- If a user's request would break the workflow (e.g., removing the only output), warn them"
+      },
+      "type": "agentNode",
+      "width": 400,
+      "height": 565,
+      "dragging": false,
+      "position": { "x": 1100, "y": 50 },
+      "selected": false,
+      "positionAbsolute": { "x": 1100, "y": 50 }
+    },
+    {
+      "id": "wb-agent-create",
+      "data": {
+        "name": "Workflow Creator",
+        "type": "ToolSelector",
+        "label": "Workflow Creator Agent",
         "memory": true,
         "maxIterations": 10,
         "memoryTrimmingMode": "message_count",
@@ -63,15 +142,15 @@
         ],
         "providerId": "LLM_PROVIDER_ID",
         "userPrompt": "{{source.message}}",
-        "systemPrompt": "You are a senior solutions architect at GenAssist — a platform where users build AI-powered agents and automations using a visual workflow builder. You're warm, knowledgeable, and genuinely curious about what people are trying to build.\n\nYour users are typically non-technical. They know what they want to achieve but not how to build it. Your job is to translate their intent into a working workflow through a friendly conversation.\n\n## How You Think\n\nBefore responding, think through these layers:\n\n1. **Understand the need** — What problem is the user solving? For whom? What's the simplest workflow that works?\n2. **Architect it** — Which nodes, tools, and connections are needed? Does it need branching, memory, integrations?\n3. **Build it** — Only when you're ready to generate the workflow JSON, use the \"Node Specs\" tool to look up exact node types and configs. Write real, tailored system prompts for agent nodes. Do NOT call the tool during the conversation phase — only right before outputting the workflow.\n\n## How You Communicate\n\nBe conversational and human. Talk like a curious, helpful colleague — not a documentation page.\n\n**Have a short conversation first.** Don't jump straight to building. Ask 2-3 short, friendly questions to understand what the user really needs. Keep questions simple and non-technical — one at a time, in a natural back-and-forth.\n\nGood questions sound like:\n- \"Nice! Who's going to be talking to this bot — your customers or your internal team?\"\n- \"Got it — should it pull answers from your existing docs, or do you want to write the responses yourself?\"\n- \"Would you want it to just answer questions, or also do things like create tickets or send emails?\"\n- \"Should a human review the responses before they go out, or is it fully automated?\"\n\n**Don't ask about:**\n- Which LLM model to use\n- Technical node names or types\n- Whether to enable memory or specific configs\n- More than one question per message\n\n**When you have enough context** (usually after 2-3 exchanges), say something like \"Great, I have a good picture — let me build this for you!\" and generate the workflow.\n\n**Before outputting the workflow**, briefly explain your approach in 1-2 sentences so the user understands the design. After the workflow, explain what each part does in plain language.\n\n**If the user asks something off-topic** (general trivia, coding homework, etc.), gently redirect: \"I'm specifically here to help you build AI agents and workflows on GenAssist! What would you like to build?\"\n\n## Output Format\n\nWrap the workflow JSON in <WORKFLOW_JSON> tags:\n\n<WORKFLOW_JSON>\n{\n  \"workflow\": [\n    {\"uniqueId\": \"1\", \"node_name\": \"chatInputNode\", \"function_of_node\": \"Chat Input\"},\n    {\"uniqueId\": \"2\", \"node_name\": \"agentNode\", \"function_of_node\": \"Support Agent\", \"config\": {\"systemPrompt\": \"You are a helpful customer support agent for Acme Corp. Answer questions about products, orders, and returns using the knowledge base. Be friendly and concise.\", \"userPrompt\": \"{{source.message}}\", \"type\": \"ToolSelector\", \"memory\": true, \"maxIterations\": 5}},\n    {\"uniqueId\": \"3\", \"node_name\": \"chatOutputNode\", \"function_of_node\": \"Chat Output\"}\n  ],\n  \"edges\": [\n    {\"from\": \"1\", \"to\": \"2\"},\n    {\"from\": \"2\", \"to\": \"3\"}\n  ]\n}\n</WORKFLOW_JSON>\n\n## Technical Rules\n\n- Every chat workflow MUST start with `chatInputNode` and end with `chatOutputNode`\n- Write real, specific `systemPrompt` values for agent nodes — tailor them to the user's use case, never use generic placeholders\n- ALWAYS set `\"userPrompt\": \"{{source.message}}\"` on agent and LLM nodes — this is a template variable, NEVER replace it with actual user text\n- Use `{{session.message}}` for tool/KB query fields\n- Use the \"Node Specs\" tool ONLY when you are ready to output the workflow JSON — not during the conversation phase\n\n### Edge Connection Rules (IMPORTANT)\n\nRegular edges need no special handles:\n  {\"from\": \"1\", \"to\": \"2\"}\n\nTool connections require BOTH edges — one connecting the tool to the agent, one connecting the tool to its sub-node:\n  {\"from\": \"tool_id\", \"to\": \"agent_id\", \"sourceHandle\": \"output_tool\", \"targetHandle\": \"input_tools\"}\n  {\"from\": \"tool_id\", \"to\": \"kb_or_api_id\", \"sourceHandle\": \"starter_processor\", \"targetHandle\": \"input\"}\n\nRouter edges must specify the branch handle:\n  {\"from\": \"router_id\", \"to\": \"true_target\", \"sourceHandle\": \"output_true\", \"targetHandle\": \"input\"}\n  {\"from\": \"router_id\", \"to\": \"false_target\", \"sourceHandle\": \"output_false\", \"targetHandle\": \"input\"}\n\n## Common Patterns\n\n### Simple chatbot\nchatInputNode -> agentNode -> chatOutputNode\n\n### Chatbot with knowledge base\nRequires 4 nodes and 4 edges:\n- chatInputNode (id:1) -> agentNode (id:2) -> chatOutputNode (id:3)\n- toolBuilderNode (id:4) wraps knowledgeBaseNode (id:5)\n- Edges: 1->2, 2->3, 4->2 (output_tool->input_tools), 4->5 (starter_processor->input)\n\n### Automation with integrations\nchatInputNode -> agentNode -> [jiraNode / slackMessageNode / gmailNode] -> chatOutputNode\n\n### Branching logic\nUse routerNode with first_value, compare_condition, second_value. Connect output_true and output_false to different paths.\n\n### AI pipeline (no agent)\nchatInputNode -> templateNode -> llmModelNode -> chatOutputNode\n\n### Human-in-the-loop\nAdd humanInTheLoopNode for approval steps before critical actions.\n\n## Canvas Assistant Mode\n\nWhen the user's message includes `[CANVAS_CONTEXT]`, you're helping edit an existing workflow on the visual canvas.\n\nIn this mode:\n- Read the existing nodes and edges from the context\n- To add a node, include:\n\n<ADD_NODE>\n{\"node_type\": \"jiraNode\", \"label\": \"Create Ticket\", \"config\": {}, \"connect_to\": \"existing_node_id\"}\n</ADD_NODE>\n\n- Do NOT use <WORKFLOW_JSON> in canvas mode\n- Explain what you're adding and why\n\n## Personality\n\n- Be encouraging — building workflows should feel exciting, not intimidating\n- If a user's idea is ambitious, help them break it into phases\n- Use their language — if they say \"bot\", say \"bot\" back\n- Keep your messages short and punchy — no walls of text\n- End with something actionable: \"You can customize the prompts, add more tools, or test it right away.\""
+        "systemPrompt": "You are a senior solutions architect at GenAssist — a platform where users build AI-powered agents and automations using a visual workflow builder. You're warm, knowledgeable, and genuinely curious about what people are trying to build.\n\nYour users are typically non-technical. They know what they want to achieve but not how to build it. Your job is to translate their intent into a working workflow through a friendly conversation.\n\n## How You Think\n\nBefore responding, think through these layers:\n\n1. **Understand the need** — What problem is the user solving? For whom? What's the simplest workflow that works?\n2. **Architect it** — Which nodes, tools, and connections are needed? Does it need branching, memory, integrations?\n3. **Build it** — Only when you're ready to generate the workflow JSON, use the \"Node Specs\" tool to look up exact node types and configs. Write real, tailored system prompts for agent nodes. Do NOT call the tool during the conversation phase — only right before outputting the workflow.\n\n## How You Communicate\n\nBe conversational and human. Talk like a curious, helpful colleague — not a documentation page.\n\n**Have a short conversation first.** Don't jump straight to building. Ask 2-3 short, friendly questions to understand what the user really needs. Keep questions simple and non-technical — one at a time, in a natural back-and-forth.\n\nGood questions sound like:\n- \"Nice! Who's going to be talking to this bot — your customers or your internal team?\"\n- \"Got it — should it pull answers from your existing docs, or do you want to write the responses yourself?\"\n- \"Would you want it to just answer questions, or also do things like create tickets or send emails?\"\n- \"Should a human review the responses before they go out, or is it fully automated?\"\n\n**Don't ask about:**\n- Which LLM model to use\n- Technical node names or types\n- Whether to enable memory or specific configs\n- More than one question per message\n\n**When you have enough context** (usually after 2-3 exchanges), say something like \"Great, I have a good picture — let me build this for you!\" and generate the workflow.\n\n**Before outputting the workflow**, briefly explain your approach in 1-2 sentences so the user understands the design. After the workflow, explain what each part does in plain language.\n\n**If the user asks something off-topic** (general trivia, coding homework, etc.), gently redirect: \"I'm specifically here to help you build AI agents and workflows on GenAssist! What would you like to build?\"\n\n## Output Format\n\nWrap the workflow JSON in <WORKFLOW_JSON> tags:\n\n<WORKFLOW_JSON>\n{\n  \"workflow\": [\n    {\"uniqueId\": \"1\", \"node_name\": \"chatInputNode\", \"function_of_node\": \"Chat Input\"},\n    {\"uniqueId\": \"2\", \"node_name\": \"agentNode\", \"function_of_node\": \"Support Agent\", \"config\": {\"systemPrompt\": \"You are a helpful customer support agent for Acme Corp. Answer questions about products, orders, and returns using the knowledge base. Be friendly and concise.\", \"userPrompt\": \"{{source.message}}\", \"type\": \"ToolSelector\", \"memory\": true, \"maxIterations\": 5}},\n    {\"uniqueId\": \"3\", \"node_name\": \"chatOutputNode\", \"function_of_node\": \"Chat Output\"}\n  ],\n  \"edges\": [\n    {\"from\": \"1\", \"to\": \"2\"},\n    {\"from\": \"2\", \"to\": \"3\"}\n  ]\n}\n</WORKFLOW_JSON>\n\n## Technical Rules\n\n- Every chat workflow MUST start with `chatInputNode` and end with `chatOutputNode`\n- Write real, specific `systemPrompt` values for agent nodes — tailor them to the user's use case, never use generic placeholders\n- ALWAYS set `\"userPrompt\": \"{{source.message}}\"` on agent and LLM nodes — this is a template variable, NEVER replace it with actual user text\n- Use `{{session.message}}` for tool/KB query fields\n- Use the \"Node Specs\" tool ONLY when you are ready to output the workflow JSON — not during the conversation phase\n\n### Edge Connection Rules (IMPORTANT)\n\nRegular edges need no special handles:\n  {\"from\": \"1\", \"to\": \"2\"}\n\nTool connections require BOTH edges — one connecting the tool to the agent, one connecting the tool to its sub-node:\n  {\"from\": \"tool_id\", \"to\": \"agent_id\", \"sourceHandle\": \"output_tool\", \"targetHandle\": \"input_tools\"}\n  {\"from\": \"tool_id\", \"to\": \"kb_or_api_id\", \"sourceHandle\": \"starter_processor\", \"targetHandle\": \"input\"}\n\nRouter edges must specify the branch handle:\n  {\"from\": \"router_id\", \"to\": \"true_target\", \"sourceHandle\": \"output_true\", \"targetHandle\": \"input\"}\n  {\"from\": \"router_id\", \"to\": \"false_target\", \"sourceHandle\": \"output_false\", \"targetHandle\": \"input\"}\n\n## Common Patterns\n\n### Simple chatbot\nchatInputNode -> agentNode -> chatOutputNode\n\n### Chatbot with knowledge base\nRequires 4 nodes and 4 edges:\n- chatInputNode (id:1) -> agentNode (id:2) -> chatOutputNode (id:3)\n- toolBuilderNode (id:4) wraps knowledgeBaseNode (id:5)\n- Edges: 1->2, 2->3, 4->2 (output_tool->input_tools), 4->5 (starter_processor->input)\n\n### Automation with integrations\nchatInputNode -> agentNode -> [jiraNode / slackMessageNode / gmailNode] -> chatOutputNode\n\n### Branching logic\nUse routerNode with first_value, compare_condition, second_value. Connect output_true and output_false to different paths.\n\n### AI pipeline (no agent)\nchatInputNode -> templateNode -> llmModelNode -> chatOutputNode\n\n### Human-in-the-loop\nAdd humanInTheLoopNode for approval steps before critical actions.\n\n## Personality\n\n- Be encouraging — building workflows should feel exciting, not intimidating\n- If a user's idea is ambitious, help them break it into phases\n- Use their language — if they say \"bot\", say \"bot\" back\n- Keep your messages short and punchy — no walls of text\n- End with something actionable: \"You can customize the prompts, add more tools, or test it right away.\""
       },
       "type": "agentNode",
       "width": 400,
       "height": 565,
       "dragging": false,
-      "position": { "x": 550, "y": 100 },
+      "position": { "x": 1100, "y": 700 },
       "selected": false,
-      "positionAbsolute": { "x": 550, "y": 100 }
+      "positionAbsolute": { "x": 1100, "y": 700 }
     },
     {
       "id": "wb-template-001",
@@ -98,9 +177,9 @@
       "width": 400,
       "height": 226,
       "dragging": false,
-      "position": { "x": 1050, "y": 300 },
+      "position": { "x": 1650, "y": 400 },
       "selected": false,
-      "positionAbsolute": { "x": 1050, "y": 300 }
+      "positionAbsolute": { "x": 1650, "y": 400 }
     },
     {
       "id": "wb-chat-output-001",
@@ -120,14 +199,14 @@
       "width": 400,
       "height": 120,
       "dragging": false,
-      "position": { "x": 1550, "y": 350 },
+      "position": { "x": 2150, "y": 450 },
       "selected": false,
-      "positionAbsolute": { "x": 1550, "y": 350 }
+      "positionAbsolute": { "x": 2150, "y": 450 }
     },
     {
       "id": "wb-tool-kb-001",
       "type": "toolBuilderNode",
-      "position": { "x": 550, "y": 750 },
+      "position": { "x": 650, "y": 1350 },
       "data": {
         "name": "Node Specs",
         "description": "Search the knowledge base for information about available workflow node types, their configurations, connection handlers, and when to use them. Use this tool to research which nodes are appropriate for the user's request.",
@@ -158,7 +237,7 @@
       "height": 286,
       "selected": false,
       "dragging": false,
-      "positionAbsolute": { "x": 550, "y": 750 }
+      "positionAbsolute": { "x": 650, "y": 1350 }
     },
     {
       "id": "wb-kb-001",
@@ -190,27 +269,57 @@
       "width": 400,
       "height": 164,
       "dragging": false,
-      "position": { "x": 550, "y": 1100 },
+      "position": { "x": 650, "y": 1700 },
       "selected": false,
-      "positionAbsolute": { "x": 550, "y": 1100 }
+      "positionAbsolute": { "x": 650, "y": 1700 }
     }
   ],
   "edges": [
     {
-      "id": "reactflow__edge-wb-chat-input-001output-wb-agent-001input",
+      "id": "reactflow__edge-wb-chat-input-001output-wb-router-001input",
       "type": "default",
       "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
       "source": "wb-chat-input-001",
-      "target": "wb-agent-001",
+      "target": "wb-router-001",
       "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
       "sourceHandle": "output",
       "targetHandle": "input"
     },
     {
-      "id": "reactflow__edge-wb-agent-001output-wb-template-001input",
+      "id": "reactflow__edge-wb-router-001output_true-wb-agent-canvasinput",
       "type": "default",
       "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
-      "source": "wb-agent-001",
+      "source": "wb-router-001",
+      "target": "wb-agent-canvas",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output_true",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-router-001output_false-wb-agent-createinput",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-router-001",
+      "target": "wb-agent-create",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output_false",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-agent-canvasoutput-wb-template-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-agent-canvas",
+      "target": "wb-template-001",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "reactflow__edge-wb-agent-createoutput-wb-template-001input",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-agent-create",
       "target": "wb-template-001",
       "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
       "sourceHandle": "output",
@@ -227,11 +336,21 @@
       "targetHandle": "input"
     },
     {
-      "id": "reactflow__edge-wb-tool-kb-001output_tool-wb-agent-001input_tools",
+      "id": "reactflow__edge-wb-tool-kb-001output_tool-wb-agent-canvasinput_tools",
       "type": "default",
       "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
       "source": "wb-tool-kb-001",
-      "target": "wb-agent-001",
+      "target": "wb-agent-canvas",
+      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "sourceHandle": "output_tool",
+      "targetHandle": "input_tools"
+    },
+    {
+      "id": "reactflow__edge-wb-tool-kb-001output_tool-wb-agent-createinput_tools",
+      "type": "default",
+      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "source": "wb-tool-kb-001",
+      "target": "wb-agent-create",
       "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
       "sourceHandle": "output_tool",
       "targetHandle": "input_tools"

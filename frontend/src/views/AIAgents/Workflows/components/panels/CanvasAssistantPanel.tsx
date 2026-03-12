@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
-import { Sparkles, X, CheckCircle2 } from "lucide-react";
+import { Sparkles, X, Pencil, Trash2, Plus } from "lucide-react";
 import type { AssistantMessage } from "../../utils/assistantActionParser";
+import { getActionLabel } from "../../utils/assistantActionParser";
 
 interface CanvasAssistantPanelProps {
   messages: AssistantMessage[];
@@ -62,15 +63,26 @@ const CanvasAssistantPanel: React.FC<CanvasAssistantPanelProps> = ({
                   </div>
                   {msg.actions && msg.actions.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {msg.actions.map((action, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-1"
-                        >
-                          <CheckCircle2 className="h-3 w-3" />
-                          Added {action.label || action.nodeType}
-                        </span>
-                      ))}
+                      {msg.actions.map((action, i) => {
+                        const isAdd = action.type === "add_node";
+                        const isUpdate = action.type === "update_node";
+                        const isRemove = action.type === "remove_node";
+                        const Icon = isAdd ? Plus : isUpdate ? Pencil : Trash2;
+                        const colorClass = isAdd
+                          ? "bg-green-50 text-green-700 border-green-200"
+                          : isUpdate
+                          ? "bg-blue-50 text-blue-700 border-blue-200"
+                          : "bg-red-50 text-red-700 border-red-200";
+                        return (
+                          <span
+                            key={i}
+                            className={`inline-flex items-center gap-1 text-xs border rounded-full px-2.5 py-1 ${colorClass}`}
+                          >
+                            <Icon className="h-3 w-3" />
+                            {getActionLabel(action)}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
