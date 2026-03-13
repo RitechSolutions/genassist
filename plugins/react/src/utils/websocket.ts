@@ -11,17 +11,17 @@ export function createWebSocket(
   if (typeof globalThis !== 'undefined' && globalThis.WebSocket) {
     return new globalThis.WebSocket(url, protocols);
   }
-  
+
   // Fallback for environments where globalThis might not be available
   if (typeof window !== 'undefined' && window.WebSocket) {
     return new window.WebSocket(url, protocols);
   }
-  
+
   // Last resort - should not happen in browser environments
   if (typeof WebSocket !== 'undefined') {
     return new WebSocket(url, protocols);
   }
-  
+
   throw new Error(
     'WebSocket is not available in this environment. ' +
     'This library requires a browser environment with native WebSocket support.'
@@ -57,10 +57,10 @@ export function createWebSocketDiagnostic(
 ): string {
   const redactedUrl = redactUrl(url);
   const parts: string[] = [];
-  
+
   parts.push(`WebSocket connection issue`);
   parts.push(`URL: ${redactedUrl}`);
-  
+
   if (event instanceof CloseEvent) {
     parts.push(`Close code: ${event.code}`);
     if (event.reason) {
@@ -68,13 +68,13 @@ export function createWebSocketDiagnostic(
     }
     parts.push(`Was clean: ${event.wasClean}`);
   }
-  
+
   if ('readyState' in event && typeof (event as any).readyState === 'number') {
     const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
     const state = states[(event as any).readyState] || 'UNKNOWN';
     parts.push(`Ready state: ${state} (${(event as any).readyState})`);
   }
-  
+
   return parts.join(' | ');
 }
 

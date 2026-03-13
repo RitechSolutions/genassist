@@ -1,6 +1,7 @@
 import time
 import uuid
 from typing import Dict
+
 from loguru import logger
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -11,10 +12,6 @@ from starlette_context import context as sctx
 from starlette_context.middleware import RawContextMiddleware
 from starlette_context.plugins import RequestIdPlugin
 
-from app.middlewares.tenant_middleware import TenantMiddleware
-from app.middlewares.tenant_scope_middleware import TenantScopeMiddleware
-from app.middlewares.rate_limit_middleware import _request_context
-from app.middlewares.session_cleanup_middleware import SessionCleanupMiddleware
 from app import settings
 from app.core.config.logging import (
     duration_ctx,
@@ -25,6 +22,9 @@ from app.core.config.logging import (
     status_ctx,
     uid_ctx,
 )
+from app.middlewares.rate_limit_middleware import _request_context
+from app.middlewares.tenant_middleware import TenantMiddleware
+from app.middlewares.tenant_scope_middleware import TenantScopeMiddleware
 
 
 def get_allowed_origins() -> list[str]:
@@ -34,9 +34,11 @@ def get_allowed_origins() -> list[str]:
     """
     default_origins = [
         "http://localhost:8080",
+        "http://localhost:8002",
         "http://localhost:3000",
         "http://localhost:8022",  # plugin-js example widget
         "http://127.0.0.1:8080",
+        "http://127.0.0.1:8002",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8022",
     ]
@@ -47,11 +49,7 @@ def get_allowed_origins() -> list[str]:
     # Add additional origins from environment variable if provided
     if settings.CORS_ALLOWED_ORIGINS:
         # Parse comma-separated origins and strip whitespace
-        additional_origins = [
-            origin.strip()
-            for origin in settings.CORS_ALLOWED_ORIGINS.split(",")
-            if origin.strip()
-        ]
+        additional_origins = [origin.strip() for origin in settings.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
         # Add unique origins only
         for origin in additional_origins:
             if origin not in allowed_origins:
@@ -147,9 +145,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         # ------------------------------------------------------------------ #
         # 3️⃣  Log “request started”
         # ------------------------------------------------------------------ #
-        logger.bind(request_id=rid, ip=ip, method=meth, path=pth, uid=uid).info(
-            "➡️  Request start"
-        )
+        logger.bind(request_id=rid, ip=ip, method=meth, path=pth, uid=uid).info("➡️  Request start")
 
         try:
             # Do the work
@@ -207,12 +203,7 @@ class VersionHeaderMiddleware(BaseHTTPMiddleware):
 
         # If behind a proxy that terminates TLS, ensure redirects use https
         # this might not be the right place for this logic, but it's convenient
-        if (
-            response.status_code == 307
-            and request.headers.get("x-forwarded-proto") == "https"
-        ):
-            response.headers["Location"] = response.headers["Location"].replace(
-                "http://", "https://"
-            )
+        if response.status_code == 307 and request.headers.get("x-forwarded-proto") == "https":
+            response.headers["Location"] = response.headers["Location"].replace("http://", "https://")
 
         return response

@@ -10,26 +10,27 @@ ThreadScopedRAG: Per-Chat Retrieval-Augmented Generation (RAG) using AgentRAGSer
 
 Set the OPENAI_API_KEY environment variable before use.
 """
+
 import asyncio
 import logging
-from typing import Any, List, Dict, Optional
 import uuid
+from typing import Any, Dict, List, Optional
 
 from injector import inject
 
-from app.core.config.settings import settings
-from app.modules.data.service import AgentRAGService
-from app.modules.data.config import AgentRAGConfig
-from app.modules.data.providers import SearchResult
-from app.modules.data.providers.vector import VectorConfig
-from app.modules.data.providers.vector.chunking import ChunkConfig
-from app.modules.data.providers.vector.embedding import EmbeddingConfig
-from app.modules.data.providers.vector.db import VectorDBConfig
 from app.constants.embedding_models import (
     DEFAULT_BEDROCK_MODEL,
     DEFAULT_BEDROCK_REGION,
     DEFAULT_MODEL,
 )
+from app.core.config.settings import settings
+from app.modules.data.config import AgentRAGConfig
+from app.modules.data.providers import SearchResult
+from app.modules.data.providers.vector import VectorConfig
+from app.modules.data.providers.vector.chunking import ChunkConfig
+from app.modules.data.providers.vector.db import VectorDBConfig
+from app.modules.data.providers.vector.embedding import EmbeddingConfig
+from app.modules.data.service import AgentRAGService
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +267,7 @@ class ThreadScopedRAG:
                 "message_id": message_id,
                 "chat_id": chat_id,
                 "is_chunked": chunk_long_messages,
-                "filename": filename
+                "filename": filename,
             }
             result = await service.add_document(message_id, message, metadata, legra_finalize=False)
             if not any(result.values()):
@@ -279,7 +280,7 @@ class ThreadScopedRAG:
         chat_id: str,
         file_content: str,
         file_name: str,
-        file_id: Optional[str] = None
+        file_id: Optional[str] = None,
     ):
         """
         Convenience method to add file content with appropriate chunking.
@@ -301,7 +302,7 @@ class ThreadScopedRAG:
             message=file_context,
             message_id=f"file_{file_id}",
             chunk_long_messages=True,
-            filename=file_name
+            filename=file_name,
         )
 
     async def retrieve(
@@ -344,16 +345,15 @@ class ThreadScopedRAG:
                 metadata = result.metadata.copy() if result.metadata else {}
 
                 # Ensure backward compatibility with original format
-                retrieved_docs.append({
-                    'content': result.content,
-                    'metadata': metadata
-                })
+                retrieved_docs.append(
+                    {
+                        "content": result.content,
+                        "metadata": metadata,
+                    }
+                )
 
             return retrieved_docs
 
         except Exception as e:
             logger.error(f"Error retrieving from chat {chat_id}: {e}")
             return []
-
-
-

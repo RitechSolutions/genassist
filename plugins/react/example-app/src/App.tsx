@@ -39,6 +39,7 @@ function App() {
     agentName: "Agent",
     logoUrl: "",
     baseUrl: import.meta.env.VITE_GENASSIST_CHAT_APIURL || "",
+    websocketUrl: import.meta.env.VITE_GENASSIST_CHAT_WEBSOCKET_URL || "",
     apiKey: import.meta.env.VITE_GENASSIST_CHAT_APIKEY || "",
     reCaptchaKey: import.meta.env.VITE_GENASSIST_CHAT_RECAPTCHA_KEY || "",
     tenant: import.meta.env.VITE_GENASSIST_CHAT_TENANT || "",
@@ -1065,6 +1066,7 @@ function App() {
       {/* Chat Widget - Floating Mode */}
       <GenAgentChat
         baseUrl={chatSettings.baseUrl}
+        websocketUrl={chatSettings.websocketUrl}
         apiKey={chatSettings.apiKey}
         tenant={chatSettings.tenant || undefined}
         metadata={metadata}

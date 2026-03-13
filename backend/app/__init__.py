@@ -139,22 +139,25 @@ async def _cleanup_redis_services(app: FastAPI, redis_string, redis_binary):
         logger.error(f"Error closing Redis binary client: {e}")
 
 
+
+# Legacy mode: Initialize WebSocket services for backend-hosted WebSockets.
+# When using standalone WS service, the backend still publishes to Redis; the subscriber
+# delivers to local connections in legacy mode.
+
+
 async def _initialize_websocket_services():
     """
-    Initialize WebSocket-related services.
+    Initialize WebSocket-related services for legacy mode.
 
     This includes:
     - SocketConnectionManager (WebSocket rooms and Redis Pub/Sub)
     """
     from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 
-    logger.info("Initializing WebSocket services...")
+    logger.info("Initializing WebSocket services (legacy mode)...")
 
     try:
-        # Get instance from DI (Redis dependency already injected)
         socket_manager = injector.get(SocketConnectionManager)
-
-        # Initialize Redis Pub/Sub subscriber for cross-server broadcasting
         await socket_manager.initialize_redis_subscriber()
         logger.info("SocketConnectionManager initialized with Redis Pub/Sub")
     except Exception as e:
@@ -193,7 +196,6 @@ async def _lifespan(app: FastAPI):
 
     Manages initialization and cleanup of:
     - Redis services (connection manager, cache)
-    - WebSocket services (connection manager, pub/sub)
     - Database services (multi-tenant sessions)
     - Application services (permissions, tenants)
     """

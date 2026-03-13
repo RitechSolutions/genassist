@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
-import { createContext, useCallback, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
 import { Register } from "@/views/Register";
 import { ChangePassword, Login } from "@/views/Login";
@@ -47,10 +47,21 @@ import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
 import { getRegistrationStatus } from "@/services/registration";
 import { RoutesContext } from "@/context/RoutesContext";
+import { WebSocketDashboardProvider } from "@/context/WebSocketDashboardContext";
+
+const getAccessToken = () =>
+  typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "";
+
+const WebSocketDashboardLayout = ({ children }: { children: ReactNode }) => (
+  <WebSocketDashboardProvider token={getAccessToken()}>
+    {children}
+  </WebSocketDashboardProvider>
+);
 
 const ProtectedLayout = () => {
   const { status, isOffline } = useServerStatus();
   const isDown = isOffline || status.down;
+
   return (
     <ProtectedRoute>
       {isDown ? (
@@ -113,7 +124,11 @@ export const RoutesProvider = () => {
             { path: "", element: <Navigate to="/dashboard" replace /> },
             {
               path: "dashboard",
-              element: <Index />,
+              element: (
+                <WebSocketDashboardLayout>
+                  <Index />
+                </WebSocketDashboardLayout>
+              ),
             },
             {
               path: "transcripts",
@@ -121,7 +136,9 @@ export const RoutesProvider = () => {
                 <ProtectedRoute
                   requiredPermissions={["read:conversation"]}
                 >
-                  <Transcripts />
+                  <WebSocketDashboardLayout>
+                    <Transcripts />
+                  </WebSocketDashboardLayout>
                 </ProtectedRoute>
               ),
             },

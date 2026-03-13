@@ -41,6 +41,8 @@ import { type CSSProperties, useState, useEffect, useMemo, type ReactNode } from
 import { Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
+import { enrichConversationItem } from "@/views/ActiveConversations/pages/ActiveConversations";
+import { useWebSocketDashboardContext } from "@/context/WebSocketDashboardContext";
 import { useTranscriptData } from "../hooks/useTranscriptData";
 import { formatDuration, getEffectiveSentiment, HOSTILITY_POSITIVE_MAX, HOSTILITY_NEUTRAL_MAX } from "../helpers/formatting";
 import { Badge } from "@/components/badge";
@@ -181,6 +183,11 @@ const Transcripts = () => {
     [qualityFilters]
   );
 
+  const {
+    conversations: wsConversations,
+    resyncHint,
+  } = useWebSocketDashboardContext();
+
   const { data, total, loading, error, refetch } = useTranscriptData({
     limit: ITEMS_PER_PAGE,
     skip: (currentPage - 1) * ITEMS_PER_PAGE,
@@ -198,8 +205,21 @@ const Transcripts = () => {
   });
 
   const isMobile = useIsMobile();
-  const transcripts = Array.isArray(data) ? data : [];
-  const totalCount = typeof total === "number" ? total : transcripts.length;
+  const apiTranscripts = Array.isArray(data) ? data : [];
+  const apiTotal = typeof total === "number" ? total : apiTranscripts.length;
+
+  // When statusFilter is "live", use WebSocket dashboard data for real-time updates
+  const transcripts = useMemo(() => {
+    if (statusFilter !== "live" || !Array.isArray(wsConversations) || wsConversations.length === 0) {
+      return apiTranscripts;
+    }
+    return wsConversations.map(enrichConversationItem);
+  }, [statusFilter, wsConversations, apiTranscripts]);
+
+  const totalCount =
+    statusFilter === "live" && Array.isArray(wsConversations) && wsConversations.length > 0
+      ? wsConversations.length
+      : apiTotal;
 
   const updateUrlParams = (params: Record<string, string | number | string[] | null>) => {
     const newSearchParams = new URLSearchParams(location.search);
@@ -262,6 +282,11 @@ const Transcripts = () => {
       setStatusFilter("all");
     }
   }, [location.search]);
+
+  // Refetch when dashboard WebSocket suggests resync (e.g. finalize with missing ID)
+  useEffect(() => {
+    if (resyncHint > 0) refetch();
+  }, [resyncHint, refetch]);
 
   // Fetch latest conversation data when opening the dialog
   useEffect(() => {
@@ -392,7 +417,10 @@ const Transcripts = () => {
     ITEMS_PER_PAGE,
     currentPage
   );
-  const paginatedTranscripts = filteredTranscripts;
+  const paginatedTranscripts = filteredTranscripts.slice(
+    pagination.startIndex,
+    pagination.endIndex
+  );
   const pageItemCount = paginatedTranscripts.length;
 
   const handleTakeOver = async (transcriptId: string): Promise<boolean> => {
