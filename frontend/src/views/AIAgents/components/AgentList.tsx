@@ -140,7 +140,6 @@ const AgentList: React.FC<AgentListProps> = ({
   const handleSettingsDialogClose = () => {
     setSettingsDialogOpen(false);
     setSettingsFormData(null);
-    onRefresh();
   };
 
   if (!agents || agents.length === 0) {
@@ -174,7 +173,7 @@ const AgentList: React.FC<AgentListProps> = ({
     const isActive = !!agent.is_active;
     const truncatedPrompt = agent.possible_queries?.join(" ") ?? "";
     const isAgentModalOpen =
-      settingsLoadingAgentId === agent.id && settingsDialogOpen;
+      settingsDialogOpen && settingsFormData?.id === agent.id;
 
     return (
       <div
@@ -344,6 +343,7 @@ const AgentList: React.FC<AgentListProps> = ({
         data={settingsFormData}
         redirectOnCreate={false}
         onCreated={() => handleSettingsDialogClose()}
+        onSaved={() => onRefresh()}
       />
     </div>
   );
