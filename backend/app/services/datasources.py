@@ -40,6 +40,11 @@ class DataSourceService:
             datasource.connection_data
         )
 
+        if datasource.connection_status:
+            datasource.connection_status = datasource.connection_status.model_dump(mode="json")
+        else:
+            datasource.connection_status = {"status": "Untested", "last_tested_at": None, "message": None}
+
         db_datasource = await self.repository.create(datasource)
         return db_datasource
 
@@ -59,7 +64,7 @@ class DataSourceService:
         return db_datasources
 
     async def update(self, datasource_id: UUID, datasource_update: DataSourceUpdate):
-        update_data = datasource_update.model_dump(exclude_unset=True)
+        update_data = datasource_update.model_dump(exclude_unset=True, mode="json")
 
         if "connection_data" in update_data:
             update_data["connection_data"] = await self.extract_private_key(
@@ -83,13 +88,45 @@ class DataSourceService:
                 ):
                     del update_conn_data[field_name]
                 elif (
-                    not field_name in existing_conn_data
+                    field_name not in existing_conn_data
                     or update_conn_data[field_name] != existing_conn_data[field_name]
                 ):
                     # encrypt field in connection_data if is different or doesn't exist in DB
                     update_conn_data[field_name] = encrypt_key(
                         update_conn_data[field_name]
                     )
+
+        if "connection_data" in update_data:
+            # Check if any connection field actually changed (after encryption processing)
+            connection_data_changed = any(
+                update_data["connection_data"].get(k) != existing_conn_data.get(k)
+                for k in update_data["connection_data"]
+            )
+
+            if connection_data_changed:
+                incoming_cs = update_data.get("connection_status")
+                stored_cs = db_datasource.connection_status or {}
+                stored_last_tested = stored_cs.get("last_tested_at")
+
+                incoming_last_tested = None
+                if isinstance(incoming_cs, dict):
+                    incoming_last_tested = incoming_cs.get("last_tested_at")
+                elif hasattr(incoming_cs, "last_tested_at"):
+                    incoming_last_tested = getattr(incoming_cs, "last_tested_at", None)
+
+                # Fresh test = timestamps differ (new test was run in this session)
+                fresh_test = bool(incoming_cs) and incoming_last_tested != stored_last_tested
+
+                if fresh_test:
+                    update_data["connection_status"] = incoming_cs
+                else:
+                    update_data["connection_status"] = {"status": "Untested", "last_tested_at": None, "message": None}
+            else:
+                # connection_data unchanged — preserve provided connection_status (e.g., test result)
+                if not update_data.get("connection_status"):
+                    update_data.pop("connection_status", None)
+        else:
+            update_data.pop("connection_status", None)
 
         db_datasource = await self.repository.update(datasource_id, update_data)
         return db_datasource
@@ -243,9 +280,9 @@ class DataSourceService:
                 ).decode("utf-8")
                 connection_data["private_key"] = private_key
 
-                # Delete file from memory
-                os.remove(file_path)
-                logger.info(f"Private key extracted and file deleted: {file_path}")
+                if delete_file:
+                    os.remove(file_path)
+                    logger.info(f"Private key extracted and file deleted: {file_path}")
             else:
                 logger.warning(
                     f"Private key file path provided but file not found: {file_path}"
