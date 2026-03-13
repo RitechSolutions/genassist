@@ -398,4 +398,6 @@ def create_celery():
             "options": {"expires": 7200},  # Task expires after 2 hours
         }
 
+    celery_app.conf.beat_schedule = beat_schedule
+
     return celery_app
