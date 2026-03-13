@@ -41,7 +41,4 @@ class DataMapperNode(BaseNode):
         except Exception as e:
             error_msg = f"Error processing data mapper: {str(e)}"
             logger.error(error_msg)
-            return {
-                "error": error_msg,
-                "input": python_script
-            }
+            return {"error": error_msg, "input": python_script}
