@@ -75,6 +75,20 @@ class SMBShareFSService:
     # --------------------------------------------------------------------------
     # Context management (register/unregister SMB session)
     # --------------------------------------------------------------------------
+    @staticmethod
+    async def test_connection(cd: dict) -> dict:
+        async with SMBShareFSService(
+            smb_host=cd.get("smb_host"),
+            smb_share=cd.get("smb_share"),
+            smb_user=cd.get("smb_user"),
+            smb_pass=cd.get("smb_password"),
+            smb_port=cd.get("smb_port"),
+            use_local_fs=cd.get("use_local_fs", False),
+            local_root=cd.get("local_root"),
+        ):
+            pass
+        return {"success": True, "message": "Successfully connected to network share."}
+
     async def __aenter__(self):
         if not self.use_local_fs:
             # smbclient keeps an internal connection cache.
