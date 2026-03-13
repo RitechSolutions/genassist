@@ -1,7 +1,6 @@
 from typing import List
 
 from sqlalchemy import Column, String, ForeignKey
-from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
@@ -29,6 +28,15 @@ class WorkflowModel(Base):
     # Relationships
     user = relationship("UserModel", back_populates="workflows")
     agent = relationship(
-        "AgentModel", back_populates="workflow", uselist=False)
+        "AgentModel", back_populates="workflow", uselist=False
+    )
+
+    # Test suites that target this workflow
+    test_suites = relationship(
+        "TestSuiteModel",
+        back_populates="workflow",
+        cascade="all",
+        lazy="selectin",
+    )
 
 

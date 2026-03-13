@@ -44,7 +44,8 @@ from app.api.v1.routes import (
     customers,
     file_manager,
     translations,
-    analytics
+    analytics,
+    test_suites,
 )
 
 # Disable redirect slashes for all routes
@@ -112,6 +113,12 @@ router.include_router(
     file_manager.router, prefix="/file-manager", tags=["FileManager"]
 )
 router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+
+router.include_router(
+    test_suites.router,
+    prefix="/genagent/eval",
+    tags=["Workflow Test Suites"],
+)
 
 
 router.include_router(ml_models.router, prefix="/ml-models", tags=["ML Models"])
