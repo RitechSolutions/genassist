@@ -7,8 +7,19 @@ FROM node:18-alpine AS builder
 # Set the working directory inside the container
 WORKDIR /app
 
-# Install git, python3, and build tools required for native modules
-RUN apk add --no-cache git python3 make g++
+# Install git, python3, build tools, and wget for native modules
+RUN apk add --no-cache git python3 make g++ wget
+
+# Install latest zlib from source
+RUN ZLIB_VERSION=1.3.2 && \
+    cd /tmp && \
+    wget -q "https://zlib.net/zlib-${ZLIB_VERSION}.tar.gz" -O zlib.tar.gz && \
+    tar xzf zlib.tar.gz && \
+    cd "zlib-${ZLIB_VERSION}" && \
+    ./configure --prefix=/usr && \
+    make -j$(nproc 2>/dev/null || echo 1) && \
+    make install && \
+    cd /tmp && rm -rf "zlib-${ZLIB_VERSION}" zlib.tar.gz
 
 # Copy package.json and package-lock.json to the container
 COPY package.json package-lock.json ./
