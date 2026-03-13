@@ -12,7 +12,7 @@ Set the OPENAI_API_KEY environment variable before use.
 """
 import asyncio
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import uuid
 
 from injector import inject
@@ -34,21 +34,26 @@ DEFAULT_CHUNK_OVERLAP = 100
 EMBEDDING_MODEL = "text-embedding-ada-002"
 
 
-def _create_default_config(chat_id: str) -> AgentRAGConfig:
+def _create_default_config(
+    chat_id: str,
+    config_overrides: Optional[Dict[str, Any]] = None,
+) -> AgentRAGConfig:
     """
     Create a default AgentRAGConfig for a chat with OpenAI embeddings and ChromaDB.
 
     Args:
         chat_id: Chat identifier (used as knowledge_base_id)
+        config_overrides: Optional overrides for chunk_size, chunk_overlap, etc.
 
     Returns:
         AgentRAGConfig with vector provider enabled
     """
+    ov = config_overrides or {}
     # Configure chunking (matching original MAX_CHUNK_SIZE and CHUNK_OVERLAP)
     chunk_config = ChunkConfig(
         type="recursive",
-        chunk_size=DEFAULT_CHUNK_SIZE,
-        chunk_overlap=DEFAULT_CHUNK_OVERLAP,
+        chunk_size=int(ov.get("chunk_size", DEFAULT_CHUNK_SIZE)),
+        chunk_overlap=int(ov.get("chunk_overlap", DEFAULT_CHUNK_OVERLAP)),
         separators=["\n\n", "\n", " ", ""],
         keep_separator=True,
         strip_whitespace=True
@@ -99,7 +104,11 @@ class ThreadScopedRAG:
         self._lock = asyncio.Lock()
         logger.info("ThreadScopedRAG initialized (tenant-scoped)")
 
-    async def _get_service(self, chat_id: str) -> Optional[AgentRAGService]:
+    async def _get_service(
+        self,
+        chat_id: str,
+        config_overrides: Optional[Dict[str, Any]] = None,
+    ) -> Optional[AgentRAGService]:
         """
         Get or create an AgentRAGService for a chat.
 
@@ -133,8 +142,8 @@ class ThreadScopedRAG:
                 return self._services[chat_id]
 
             try:
-                # Create service with default config
-                config = _create_default_config(chat_id)
+                # Create service with default config (apply overrides when provided)
+                config = _create_default_config(chat_id, config_overrides)
                 service = AgentRAGService(config)
 
                 # Initialize service
@@ -152,7 +161,14 @@ class ThreadScopedRAG:
                 logger.error(f"Error creating AgentRAGService for chat {chat_id}: {e}")
                 return None
 
-    async def add_message(self, chat_id: str, message: str, message_id: str):
+    async def add_message(
+        self,
+        chat_id: str,
+        message: str,
+        message_id: str,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+        config_overrides: Optional[Dict[str, Any]] = None,
+    ):
         """
         Add a message to the chat's vector store.
 
@@ -160,8 +176,11 @@ class ThreadScopedRAG:
             chat_id: Chat identifier
             message: Message content
             message_id: Unique message identifier
+            extra_metadata: Optional additional metadata to store alongside the document
+            config_overrides: Optional embedding/vectordb/chunking overrides (applied
+                only on first service creation for this chat_id)
         """
-        service = await self._get_service(chat_id)
+        service = await self._get_service(chat_id, config_overrides)
         if not service:
             logger.error(f"Could not get service for chat {chat_id}")
             return
@@ -170,7 +189,8 @@ class ThreadScopedRAG:
             metadata = {
                 "message_id": message_id,
                 "chat_id": chat_id,
-                "is_chunked": False
+                "is_chunked": False,
+                **(extra_metadata or {}),
             }
             result = await service.add_document(message_id, message, metadata, legra_finalize=False)
             if not any(result.values()):
@@ -184,7 +204,8 @@ class ThreadScopedRAG:
         message: str,
         message_id: str,
         chunk_long_messages: bool = True,
-        filename: Optional[str] = None
+        filename: Optional[str] = None,
+        config_overrides: Optional[Dict[str, Any]] = None,
     ):
         """
         Add a message to the chat's vector store.
@@ -196,8 +217,9 @@ class ThreadScopedRAG:
             message_id: Unique message identifier
             chunk_long_messages: Whether to chunk long messages (handled by AgentRAGService)
             filename: Optional filename for file content
+            config_overrides: Rag related configurations to override defaults
         """
-        service = await self._get_service(chat_id)
+        service = await self._get_service(chat_id, config_overrides)
         if not service:
             logger.error(f"Could not get service for chat {chat_id}")
             return
@@ -220,7 +242,8 @@ class ThreadScopedRAG:
         chat_id: str,
         file_content: str,
         file_name: str,
-        file_id: Optional[str] = None
+        file_id: Optional[str] = None,
+        config_overrides: Optional[Dict[str, Any]] = None,
     ):
         """
         Convenience method to add file content with appropriate chunking.
@@ -230,6 +253,7 @@ class ThreadScopedRAG:
             file_content: File content text
             file_name: Name of the file
             file_id: Optional file identifier (generated if not provided)
+            config_overrides: Optional rag config overrides
         """
         if file_id is None:
             file_id = str(uuid.uuid4())
@@ -242,10 +266,17 @@ class ThreadScopedRAG:
             message=file_context,
             message_id=f"file_{file_id}",
             chunk_long_messages=True,
-            filename=file_name
+            filename=file_name,
+            config_overrides=config_overrides,
         )
 
-    async def retrieve(self, chat_id: str, query: str, top_k: int = 5) -> List[Dict]:
+    async def retrieve(
+        self,
+        chat_id: str,
+        query: str,
+        top_k: int = 5,
+        config_overrides: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict]:
         """
         Retrieve relevant context with metadata about chunking.
         Returns list of dicts with 'content' and 'metadata' keys (backward compatible format).
@@ -254,11 +285,13 @@ class ThreadScopedRAG:
             chat_id: Chat identifier
             query: Search query
             top_k: Number of results to return
+            config_overrides: Optional embedding/vectordb/chunking overrides (applied
+                only on first service creation for this chat_id)
 
         Returns:
             List of dicts with 'content' and 'metadata' keys
         """
-        service = await self._get_service(chat_id)
+        service = await self._get_service(chat_id, config_overrides)
         if not service:
             logger.error(f"Could not get service for chat {chat_id}")
             return []
