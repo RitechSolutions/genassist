@@ -18472,6 +18472,46 @@
         ],
         "title": "Body_upload_welcome_image_api_genagent_agents_configs__agent_id__welcome_image_post"
       },
+      "ConnectionStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "Untested",
+              "Connected",
+              "Error"
+            ],
+            "title": "Status",
+            "default": "Untested"
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "title": "ConnectionStatus",
+        "description": "Reusable connection test status for integrations"
+      },
       "ConversationAnalysisRead": {
         "properties": {
           "conversation_id": {
@@ -19519,6 +19559,16 @@
             ],
             "title": "Connection Data"
           },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "is_active": {
             "anyOf": [
               {
@@ -19552,6 +19602,16 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Connection Data"
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "type": "integer",
@@ -19606,6 +19666,16 @@
               }
             ],
             "title": "Connection Data"
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [
@@ -19669,6 +19739,16 @@
               }
             ],
             "title": "Connection Data"
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [
