@@ -679,8 +679,6 @@ async def get_agent_response_log_by_message(
 
 # Legacy mode: WebSocket endpoints for backward compatibility when not using standalone WS service.
 # Set VITE_WEBSOCKET_VERSION=1 to use these endpoints.
-
-
 @router.websocket("/ws/{conversation_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -719,28 +717,6 @@ async def websocket_endpoint(
         await websocket.close(code=1011)
 
 
-def _to_active_conversation_dict(item) -> dict:
-    """Map dashboard ActiveConversationItem to frontend ActiveConversation format."""
-    sentiment = "neutral"
-    if item.feedback and item.feedback.lower() == "good":
-        sentiment = "positive"
-    elif item.feedback and item.feedback.lower() == "bad":
-        sentiment = "negative"
-    status = "in-progress" if item.status == "in_progress" else "takeover"
-    return {
-        "id": str(item.id),
-        "type": "chat",
-        "status": status,
-        "transcript": item.last_message or "",
-        "sentiment": sentiment,
-        "timestamp": item.created_at.isoformat() if item.created_at else "",
-        "in_progress_hostility_score": item.in_progress_hostility_score or 0,
-        "duration": item.duration or 0,
-        "topic": item.topic,
-        "negative_reason": item.negative_reason,
-    }
-
-
 @router.websocket("/ws/dashboard/list")
 async def websocket_dashboard_endpoint(
     websocket: WebSocket,
@@ -772,9 +748,9 @@ async def websocket_dashboard_endpoint(
     try:
         from_date = datetime.now(timezone.utc) - timedelta(days=30)
         response = await dashboard_service.get_active_conversations(
-            page=1, page_size=50, from_date=from_date, to_date=datetime.now(timezone.utc)
+            page=1, page_size=5, from_date=from_date, to_date=datetime.now(timezone.utc)
         )
-        conversations = [_to_active_conversation_dict(c) for c in response.conversations]
+        conversations = [dashboard_service.to_active_conversation_dict(c) for c in response.conversations]
         initial_msg = json.dumps(
             {"type": "conversation_list", "payload": {"conversations": conversations, "total": response.total}},
             default=str,
