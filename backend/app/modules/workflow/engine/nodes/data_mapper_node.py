@@ -2,11 +2,12 @@
 Data mapper node implementation using the BaseNode class.
 """
 
-from typing import Dict, Any
 import logging
+from typing import Any, Dict
+
+from app.modules.workflow.utils import execute_python_code
 
 from ..base_node import BaseNode
-from app.modules.workflow.utils import execute_python_code
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,9 @@ class DataMapperNode(BaseNode):
         """
         # Get configuration values (already resolved by BaseNode)
         python_script = config.get("pythonScript", "")
-
+        input_data = self.input_data if self.input_data else {}
+        input_data["python_script"] = python_script
+        self.set_node_input(input_data)
         if not python_script:
             logger.warning("No Python script configured for data mapper")
             # Return empty result if no script
