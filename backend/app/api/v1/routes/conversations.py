@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -65,6 +67,7 @@ from app.services.analytics_realtime import (
 )
 from app.services.auth import AuthService
 from app.services.conversations import ConversationService
+from app.services.dashboard import DashboardService
 from app.services.file_manager import FileManagerService
 from app.services.transcript_message_service import TranscriptMessageService
 from app.services.translations import TranslationsService
@@ -175,6 +178,9 @@ async def start(
 
     # Increment conversation counters in background
     _ = asyncio.create_task(update_conversation_started(agent.id))
+
+    # Notify dashboard that a new conversation was started (e.g. from chatbot)
+    tenant_id = get_tenant_context()
 
     # Use model_dump with json mode to ensure all values are JSON-serializable (UUIDs converted to strings)
     agent_data = agent_read.model_dump(mode="json")
@@ -373,9 +379,9 @@ async def update_no_agent(
                 "thumbs_up_count": updated_conversation.thumbs_up_count,
                 "thumbs_down_count": updated_conversation.thumbs_down_count,
             },
-            room_id=SocketRoomType.DASHBOARD,
+            room_id="DASHBOARD",
             current_user_id=get_current_user_id(),
-            required_topic="hostile",
+            required_topic="update",
             tenant_id=tenant_id,
         )
     )
@@ -455,6 +461,7 @@ async def update(
         current_user_id=get_current_user_id(),
     )
 
+    # invalidate the cache for the conversation
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
 
     upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
@@ -500,7 +507,7 @@ async def finalize(
 
     # Notify dashboard and conversation room
     notify_socket(conversation_id)
-    notify_socket(SocketRoomType.DASHBOARD)
+    notify_socket("DASHBOARD")
 
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
         conversation_id=conversation_id,
@@ -545,7 +552,7 @@ async def takeover_supervisor(
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="takeover",
-            room_id=SocketRoomType.DASHBOARD,
+            room_id="DASHBOARD",
             current_user_id=get_current_user_id(),
             required_topic="takeover",
             tenant_id=tenant_id,
@@ -712,16 +719,40 @@ async def websocket_endpoint(
         await websocket.close(code=1011)
 
 
+def _to_active_conversation_dict(item) -> dict:
+    """Map dashboard ActiveConversationItem to frontend ActiveConversation format."""
+    sentiment = "neutral"
+    if item.feedback and item.feedback.lower() == "good":
+        sentiment = "positive"
+    elif item.feedback and item.feedback.lower() == "bad":
+        sentiment = "negative"
+    status = "in-progress" if item.status == "in_progress" else "takeover"
+    return {
+        "id": str(item.id),
+        "type": "chat",
+        "status": status,
+        "transcript": item.last_message or "",
+        "sentiment": sentiment,
+        "timestamp": item.created_at.isoformat() if item.created_at else "",
+        "in_progress_hostility_score": item.in_progress_hostility_score or 0,
+        "duration": item.duration or 0,
+        "topic": item.topic,
+        "negative_reason": item.negative_reason,
+    }
+
+
 @router.websocket("/ws/dashboard/list")
 async def websocket_dashboard_endpoint(
     websocket: WebSocket,
     principal: SocketPrincipal = socket_auth([P.Dashboard.READ]),
     lang: Optional[str] = Query(default="en"),
-    topics: list[str] = Query(default=["message"]),
+    topics: list[str] = Query(default=["message", "update", "finalize", "hostile", "statistics"]),
     socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
+    dashboard_service: DashboardService = Injected(DashboardService),
 ):
     """
     Websocket endpoint for dashboard to receive messages from the server.
+    Sends initial conversation_list on connect so the client gets current state immediately.
     """
     tenant_id = principal.tenant_id
     await socket_connection_manager.connect(
@@ -733,18 +764,38 @@ async def websocket_dashboard_endpoint(
         topics=topics,
     )
 
+    # Send initial conversation list on connect so the client receives data immediately.
+    # Use raw websocket (same as SocketConnectionManager) for reliable delivery.
+    send_ws = websocket
+    if hasattr(websocket, "_websocket"):
+        send_ws = websocket._websocket
+    try:
+        from_date = datetime.now(timezone.utc) - timedelta(days=30)
+        response = await dashboard_service.get_active_conversations(
+            page=1, page_size=50, from_date=from_date, to_date=datetime.now(timezone.utc)
+        )
+        conversations = [_to_active_conversation_dict(c) for c in response.conversations]
+        initial_msg = json.dumps(
+            {"type": "conversation_list", "payload": {"conversations": conversations, "total": response.total}},
+            default=str,
+        )
+        await send_ws.send_text(initial_msg)
+        logger.info("Sent initial conversation_list to dashboard client (%d conversations)", len(conversations))
+    except Exception as exc:
+        logger.warning("Failed to send initial conversation_list: %s", exc)
+
     try:
         while True:
             data = await websocket.receive_text()
             logger.debug("Received data: %s", data)
     except WebSocketDisconnect:
         logger.debug(f"WebSocket disconnected for dashboard (tenant: {tenant_id})")
-        await socket_connection_manager.disconnect(websocket, SocketRoomType.DASHBOARD, tenant_id)
+        await socket_connection_manager.disconnect(websocket, "DASHBOARD", tenant_id)
     except Exception as e:
         logger.exception("Unexpected WebSocket error: %s", e)
         # Attempt to disconnect even if we don't know the exact room/tenant
         try:
-            await socket_connection_manager.disconnect(websocket, SocketRoomType.DASHBOARD, tenant_id)
+            await socket_connection_manager.disconnect(websocket, "DASHBOARD", tenant_id)
         except Exception:
             # Fallback: disconnect without room info (searches all rooms)
             await socket_connection_manager.disconnect(websocket, None, None)

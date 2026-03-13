@@ -47,20 +47,25 @@ import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
 import { getRegistrationStatus } from "@/services/registration";
 import { RoutesContext } from "@/context/RoutesContext";
+import { WebSocketDashboardProvider } from "@/context/WebSocketDashboardContext";
 
 const ProtectedLayout = () => {
   const { status, isOffline } = useServerStatus();
   const isDown = isOffline || status.down;
+  const token = typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "";
+
   return (
     <ProtectedRoute>
-      {isDown ? (
-        <ServerDownPage />
-      ) : (
-        <>
-          <Outlet />
-          <GlobalChat />
-        </>
-      )}
+      <WebSocketDashboardProvider token={token}>
+        {isDown ? (
+          <ServerDownPage />
+        ) : (
+          <>
+            <Outlet />
+            <GlobalChat />
+          </>
+        )}
+      </WebSocketDashboardProvider>
     </ProtectedRoute>
   );
 };

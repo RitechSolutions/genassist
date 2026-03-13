@@ -12,7 +12,6 @@ from app.db.base import generate_sequential_uuid
 from app.db.models.conversation import ConversationModel
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.modules.websockets.socket_room_enum import SocketRoomType
 from app.schemas.conversation import ConversationRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
@@ -93,8 +92,9 @@ async def process_conversation_update_with_agent(
         message.id = generate_sequential_uuid()
 
     # Broadcast user message immediately with pre-generated ID
-    # user_message = model.messages[0]
-    # await send_message_to_socket(user_message, conversation_id, current_user_id, tenant_id)
+    user_message = model.messages[0]
+    # 1:1 chat: broadcast user message immediately with pre-generated ID
+    await send_message_to_socket(user_message, conversation_id, current_user_id, tenant_id)
 
     if conversation.status == ConversationStatus.IN_PROGRESS.value:
         agent = await agent_config_service.get_by_user_id(current_user_id)
@@ -145,9 +145,10 @@ async def process_conversation_update_with_agent(
 
         model.messages.append(transcript_object)
 
-        # Broadcast agent message immediately with pre-generated ID
+        # 1:1 chat: broadcast agent message immediately with pre-generated ID
         await send_message_to_socket(transcript_object, conversation_id, current_user_id, tenant_id)
 
+    # update the conversation with the new messages
     updated_conversation = await service.update_in_progress_conversation(conversation_id, model)
 
     # After messages are persisted, log the full agent response tied to the stored message id.
@@ -166,7 +167,7 @@ async def process_conversation_update_with_agent(
         except Exception as e:
             logger.warning(f"Failed to persist AgentResponseLog after update: {e}")
 
-    # Notify dashboard a conversation is updated
+    # 1:1 chat: notify dashboard a conversation is updated
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="update",
@@ -179,17 +180,18 @@ async def process_conversation_update_with_agent(
                 "topic": updated_conversation.topic,
                 "thumbs_up_count": updated_conversation.thumbs_up_count,
                 "thumbs_down_count": updated_conversation.thumbs_down_count,
+                "create_time": updated_conversation.created_at.isoformat() if updated_conversation.created_at else None,
             },
-            room_id=SocketRoomType.DASHBOARD,
+            room_id="DASHBOARD",
             current_user_id=current_user_id,
-            required_topic="hostile",
+            required_topic="update",
             tenant_id=tenant_id,
         )
     )
 
     upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
 
-    # broadcast statistics
+    # 1:1 chat: broadcast statistics
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="statistics",
@@ -201,6 +203,7 @@ async def process_conversation_update_with_agent(
         )
     )
 
+    # return the updated conversation
     return updated_conversation
 
 

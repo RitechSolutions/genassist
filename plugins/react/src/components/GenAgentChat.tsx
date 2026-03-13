@@ -155,6 +155,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     startConversation,
     connectionState,
     conversationId,
+    guestToken,
     possibleQueries,
     isFinalized,
     isAgentTyping,
@@ -236,6 +237,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   useEffect(() => {
     audioService.current = new AudioService({ baseUrl, websocketUrl, apiKey });
   }, [baseUrl, websocketUrl, apiKey]);
+
+  useEffect(() => {
+    audioService.current?.setGuestToken(guestToken ?? null);
+  }, [guestToken]);
 
   useLayoutEffect(() => {
     if (!messages.length) return;

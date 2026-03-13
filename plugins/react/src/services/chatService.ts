@@ -445,12 +445,6 @@ export class ChatService {
    * Reset the current conversation by clearing the ID and websocket
    */
   resetChatConversation(): void {
-    // Close the current websocket connection if it exists
-    if (this.webSocket) {
-      this.webSocket.close();
-      this.webSocket = null;
-    }
-
     // Clear the conversation ID
     this.conversationId = null;
     this.conversationCreateTime = null;
@@ -615,9 +609,6 @@ export class ChatService {
       }
 
       this.saveConversation();
-      if (this.useWs) {
-        this.connectWebSocket();
-      }
       return response.data.conversation_id;
     } catch (error: any) {
       if (this.isTokenExpiredError(error)) {
@@ -792,6 +783,50 @@ export class ChatService {
     }
   }
 
+  /**
+   * Process raw WebSocket message data. Called from useChatWebSocket hook.
+   * Handles message, takeover, and finalize events. Ping/pong is handled by the hook.
+   */
+  processWebSocketMessage(data: Record<string, unknown>): void {
+    if (data.type === "ping") return; // Handled by useChatWebSocket (keep-alive)
+
+    if (data.type === "message" && this.messageHandler) {
+      const payload = data.payload;
+      if (Array.isArray(payload)) {
+        const messages = payload as ChatMessage[];
+        const adjustedMessages = messages
+          .map((msg) => {
+            const adjusted = this.adjustMessageTimestamps(msg);
+            if (!adjusted.message_id && (msg as any).id) {
+              adjusted.message_id = (msg as any).id;
+            }
+            return adjusted;
+          })
+          .filter((msg) => msg.speaker !== "customer");
+        adjustedMessages.forEach((m) => this.messageHandler!(m));
+      } else if (payload && typeof payload === "object") {
+        const adjustedMessage = this.adjustMessageTimestamps(
+          payload as ChatMessage
+        );
+        if (!adjustedMessage.message_id && (payload as any).id) {
+          adjustedMessage.message_id = (payload as any).id;
+        }
+        if (adjustedMessage.speaker !== "customer") {
+          this.messageHandler(adjustedMessage);
+        }
+      }
+    } else if (data.type === "takeover") {
+      this.handleTakeover();
+    } else if (data.type === "finalize") {
+      this.handleConversationFinalized();
+    }
+  }
+
+  getGuestToken(): string | null {
+    return this.guestToken;
+  }
+
+  /** @deprecated WebSocket is now managed by useChatWebSocket hook. No-op. */
   connectWebSocket(): void {
     if (!this.useWs && !this.websocketUrl) {
       console.warn("WebSocket is disabled or URL is not set");

@@ -3,7 +3,6 @@ import json
 import logging
 
 import redis.asyncio as aioredis
-
 from connections.manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
