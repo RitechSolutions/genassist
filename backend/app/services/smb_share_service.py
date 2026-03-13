@@ -93,17 +93,14 @@ class SMBShareFSService:
         if not self.use_local_fs:
             # smbclient keeps an internal connection cache.
             # Register credentials for this host so subsequent calls use them.
-            await asyncio.to_thread(
-                register_session,
-                self.smb_host,
-                username=self.smb_user,
-                password=self.smb_pass,
-                port=self.smb_port,
-            )
+            kwargs = {"username": self.smb_user, "password": self.smb_pass}
+            if self.smb_port is not None:
+                kwargs["port"] = self.smb_port
+            await asyncio.to_thread(register_session, self.smb_host, **kwargs)
             self._session_registered = True
         else:
-            # Ensure local root exists (create if missing for parity with previous code)
-            self.local_root.mkdir(parents=True, exist_ok=True)
+            if not self.local_root.exists():
+                raise FileNotFoundError(f"Local root path does not exist: {self.local_root}")
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

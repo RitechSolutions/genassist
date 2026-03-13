@@ -1,17 +1,16 @@
-import os
 import base64
-from uuid import UUID
+import logging
+import os
 import uuid
+from typing import Any, Dict, Optional
+from uuid import UUID
+
 from injector import inject
 
+from app.core.utils.encryption_utils import decrypt_key, encrypt_key
 from app.db.models import DataSourceModel
 from app.repositories.datasources import DataSourcesRepository
-
 from app.schemas.datasource import DataSourceCreate, DataSourceUpdate
-
-import logging
-from typing import Any, Dict, Optional
-from app.core.utils.encryption_utils import decrypt_key, encrypt_key
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +180,6 @@ class DataSourceService:
                         f"Error decrypting datasource field '{field_name}' for datasource ID '{datasource_id}': {e}"
                     )
         return connection_data
-
 
     async def test_connection(
         self,
