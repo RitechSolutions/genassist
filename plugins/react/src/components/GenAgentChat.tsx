@@ -1711,9 +1711,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     style={attachButtonStyle}
                     title="Attach"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isAgentTyping}
                   >
-                    <Paperclip size={22} color={isAgentTyping ? "#b0b0b0" : "#757575"} />
+                    <Paperclip size={22} color="#757575" />
                   </button>
                   <input
                     type="file"
@@ -1740,7 +1739,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   }
                 }}
                 placeholder={inputPlaceholder}
-                disabled={!conversationId || isFinalized || isAgentTyping || hasPendingForm}
+                disabled={!conversationId || isFinalized || hasPendingForm}
                 rows={1}
               />
               <div style={rightActionContainerStyle}>
@@ -1751,7 +1750,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     baseUrl={baseUrl}
                     apiKey={apiKey}
                     theme={theme}
-                    disabled={isAgentTyping}
                   />
                 ) : (
                   <button

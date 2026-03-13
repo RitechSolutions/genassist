@@ -192,6 +192,9 @@ class ProjectSettings(BaseSettings):
     # MSSQL Driver
     MSSQL_DRIVER: str = "ODBC+Driver+18+for+SQL+Server"
 
+    # Conversation history max messages for chat input node
+    CONVERSATION_HISTORY_NODE_MAX_MESSAGES: int = 100
+
     @property
     def _zendesk_base(self) -> str:
         return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
