@@ -300,6 +300,7 @@ class ZendeskConnector:
         """
 
         all_articles = []
+        filtered_articles = []
         url: Optional[str] = f"{self.help_center_url}/articles.json"
 
         if category_id:
@@ -320,6 +321,7 @@ class ZendeskConnector:
                 result = await self._make_request("GET", url, params=params, timeout=30.0)
                 articles = result.get("articles", [])
                 all_articles.extend(articles)
+                filtered_articles = [article for article in all_articles if article.get("draft") is False]
 
                 # Check for next page
                 url = result.get("next_page")
@@ -328,11 +330,12 @@ class ZendeskConnector:
                     params = {}
 
                 logger.info(
-                    f"Fetched {len(all_articles)} articles from Zendesk (total: {len(all_articles)})"
+                    f"Fetched {len(filtered_articles)} articles from Zendesk (total: {len(all_articles)})"
                 )
             except (httpx.HTTPStatusError, httpx.RequestError) as e:
                 logger.error(f"Error fetching articles: {e}")
                 break
 
         logger.info(f"Total articles fetched: {len(all_articles)}")
-        return all_articles
+        logger.info(f"Total valid articles to be used on KB: {len(filtered_articles)}")
+        return filtered_articles
