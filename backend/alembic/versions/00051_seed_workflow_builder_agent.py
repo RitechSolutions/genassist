@@ -23,6 +23,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 AGENT_NAME = "Workflow Builder"
 KB_NAME = "Workflow Node Specifications"
+KB_EXAMPLES_NAME = "Workflow Examples"
 API_KEY_RAW = "workflow_builder_123"
 
 
@@ -59,12 +60,34 @@ def upgrade() -> None:
         {"name": KB_NAME},
     ).scalar()
 
+    # ── 1b. Create Workflow Examples Knowledge Base ──
+    examples_path = seed_dir / "knowledge" / "workflow_examples.md"
+    examples_content = examples_path.read_text(encoding="utf-8") if examples_path.exists() else ""
+
+    conn.execute(sa.text("""
+        INSERT INTO knowledge_bases (id, name, description, type, source, content, file_type, files, rag_config, extra_metadata, is_deleted, created_at, updated_at)
+        VALUES (
+            gen_random_uuid(), :name, :description, 'text', 'internal', :content,
+            'text', CAST('[]' AS jsonb), CAST('{}' AS jsonb), CAST('{}' AS jsonb), 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+    """), {
+        "name": KB_EXAMPLES_NAME,
+        "description": "Curated correct workflow examples for common use cases including chatbots, KB integrations, routing, guardrails, and multi-tool agents.",
+        "content": examples_content,
+    })
+
+    kb_examples_id = conn.execute(
+        sa.text("SELECT id FROM knowledge_bases WHERE name = :name"),
+        {"name": KB_EXAMPLES_NAME},
+    ).scalar()
+
     # ── 2. Create Workflow ──
     wf_json_path = seed_dir / "workflow_builder_wf_data.json"
     wf_raw = wf_json_path.read_text(encoding="utf-8")
 
     # Replace placeholders
     wf_raw = wf_raw.replace("KB_ID_LIST", f'"{kb_id}"')
+    wf_raw = wf_raw.replace("WORKFLOW_EXAMPLES_KB_ID", f'"{kb_examples_id}"')
     wf_raw = wf_raw.replace('"LLM_PROVIDER_ID"', "null")
 
     wf_data = json.loads(wf_raw)
@@ -252,14 +275,24 @@ def downgrade() -> None:
 
     operator_id, workflow_id, user_id = row
 
-    # Delete in reverse order
+    # Fetch statistics_id before deleting operator
+    stats_id = conn.execute(
+        sa.text("SELECT statistics_id FROM operators WHERE id = :operator_id"),
+        {"operator_id": operator_id},
+    ).scalar()
+
+    # Delete in reverse order (children before parents)
     conn.execute(sa.text("DELETE FROM api_key_roles WHERE api_key_id IN (SELECT id FROM api_keys WHERE name = 'workflow-builder default key')"))
     conn.execute(sa.text("DELETE FROM api_keys WHERE name = 'workflow-builder default key'"))
     conn.execute(sa.text("DELETE FROM user_roles WHERE user_id = :user_id"), {"user_id": user_id})
     conn.execute(sa.text("DELETE FROM agent_security_settings WHERE agent_id = :agent_id"), {"agent_id": agent_id})
+    conn.execute(sa.text("DELETE FROM conversation_analysis WHERE conversation_id IN (SELECT id FROM conversations WHERE operator_id = :operator_id)"), {"operator_id": operator_id})
+    conn.execute(sa.text("DELETE FROM conversations WHERE operator_id = :operator_id"), {"operator_id": operator_id})
     conn.execute(sa.text("DELETE FROM agents WHERE id = :agent_id"), {"agent_id": agent_id})
     conn.execute(sa.text("DELETE FROM operators WHERE id = :operator_id"), {"operator_id": operator_id})
-    conn.execute(sa.text("DELETE FROM operator_statistics WHERE id = (SELECT statistics_id FROM operators WHERE id = :operator_id)"), {"operator_id": operator_id})
+    if stats_id:
+        conn.execute(sa.text("DELETE FROM operator_statistics WHERE id = :stats_id"), {"stats_id": stats_id})
     conn.execute(sa.text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id})
     conn.execute(sa.text("DELETE FROM workflows WHERE id = :workflow_id"), {"workflow_id": workflow_id})
     conn.execute(sa.text("DELETE FROM knowledge_bases WHERE name = :name"), {"name": KB_NAME})
+    conn.execute(sa.text("DELETE FROM knowledge_bases WHERE name = :name"), {"name": KB_EXAMPLES_NAME})

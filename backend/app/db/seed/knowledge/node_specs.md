@@ -1,787 +1,789 @@
 # GenAssist Workflow Node Specifications
 
-This document describes every node type available in GenAssist workflows.
-Use this reference to understand what each node does, when to use it,
-how to configure it, and how it connects to other nodes.
+This document is the authoritative reference for every node type available in GenAssist workflows. Use it to understand what each node does, how to configure it, and how it connects to other nodes.
 
-## Connection Rules
+---
 
-Every node has **handlers** (ports) that define how it connects:
-- **target** (input) handlers: receive data from upstream nodes
-- **source** (output) handlers: send data to downstream nodes
+## Connection System
 
-Handlers have a **compatibility** type:
-- `any`: can connect to `any` or `text` ports
-- `text`: can connect to `any` or `text` ports
-- `tools`: can ONLY connect to other `tools` ports
-  - Used for: toolBuilderNode.output_tool -> agentNode.input_tools
+Nodes connect via **handlers** (ports). Each handler has:
+- **type**: `source` (output) or `target` (input)
+- **position**: left, right, top, bottom
+- **compatibility**: `any`, `text`, `tools`
+
+**Compatibility rules:**
+- `any` ↔ `any`: allowed
+- `any` ↔ `text`: allowed
+- `text` ↔ `text`: allowed
+- `tools` ↔ `tools`: allowed (ONLY tools-to-tools)
+- `any` / `text` → `tools`: NOT allowed
+
+**CRITICAL — Single Input Rule:**
+Most nodes accept only ONE incoming edge to their `input` handler. You CANNOT connect two nodes to the same node's input (except `aggregatorNode`, which is specifically designed to receive multiple inputs). If a workflow has branches (e.g., after a routerNode), each branch MUST have its own separate `chatOutputNode`. Do NOT merge branches into a single chatOutputNode.
+
+**Edge format:**
+```json
+{"from": "nodeId1", "to": "nodeId2"}
+```
+Defaults: `sourceHandle = "output"`, `targetHandle = "input"`. Override for special connections:
+- Tool: `sourceHandle: "output_tool"`, `targetHandle: "input_tools"`
+- Tool sub-flow: `sourceHandle: "starter_processor"`, `targetHandle: "input"`
+- Router true: `sourceHandle: "output_true"`
+- Router false: `sourceHandle: "output_false"`
+
+---
 
 ## Common Workflow Patterns
 
 ### Simple Chatbot
-chatInputNode -> agentNode -> chatOutputNode
+```
+chatInputNode(1) → agentNode(2) → chatOutputNode(3)
+Edges: 1→2, 2→3
+```
 
 ### Chatbot with Knowledge Base
-chatInputNode -> agentNode -> chatOutputNode
-toolBuilderNode -> knowledgeBaseNode (tool for agent)
-toolBuilderNode.output_tool -> agentNode.input_tools
+```
+chatInputNode(1) → agentNode(2) → chatOutputNode(3)
+toolBuilderNode(4) → knowledgeBaseNode(5)
+Edges:
+  1→2 (regular)
+  2→3 (regular)
+  4→2 (sourceHandle: "output_tool", targetHandle: "input_tools")
+  4→5 (sourceHandle: "starter_processor", targetHandle: "input")
+```
 
 ### Chatbot with Multiple Tools
-chatInputNode -> agentNode -> templateNode -> chatOutputNode
-toolBuilderNode 'KB' -> knowledgeBaseNode (tool)
-toolBuilderNode 'API' -> apiToolNode (tool)
-Both toolBuilderNodes connect output_tool -> agentNode.input_tools
+```
+chatInputNode(1) → agentNode(2) → chatOutputNode(3)
+toolBuilderNode(4) → knowledgeBaseNode(5)
+toolBuilderNode(6) → apiToolNode(7)
+Edges:
+  1→2, 2→3
+  4→2 (output_tool → input_tools)
+  4→5 (starter_processor → input)
+  6→2 (output_tool → input_tools)
+  6→7 (starter_processor → input)
+```
 
 ### Branching Workflow
-chatInputNode -> agentNode -> routerNode
-routerNode.output_true -> [urgent path] -> chatOutputNode
-routerNode.output_false -> [normal path] -> chatOutputNode
+Each branch MUST have its own chatOutputNode — nodes only accept one input edge (except aggregatorNode).
+```
+chatInputNode(1) → routerNode(2)
+  output_true → agentNode(3) → chatOutputNode(5)
+  output_false → agentNode(4) → chatOutputNode(6)
+Edges:
+  1→2
+  2→3 (sourceHandle: "output_true")
+  2→4 (sourceHandle: "output_false")
+  3→5
+  4→6
+```
+
+### Topic-Based Routing (guardrail / topic filter)
+**IMPORTANT:** routerNode can ONLY do simple string comparisons (equals, contains, etc.). It CANNOT do semantic analysis or topic classification. To route based on topic/intent, you MUST use an LLM or agent first to classify the message, then route on the classification output.
+
+Pattern: chatInput → classifierLLM → router (checks classification) → branches
+```
+chatInputNode(1) → llmModelNode(2) → routerNode(3)
+  output_true → agentNode(4) → chatOutputNode(6)
+  output_false → templateNode(5) → chatOutputNode(7)
+
+llmModelNode(2) config:
+  systemPrompt: "Classify if the user's message is about [TOPIC]. Respond with exactly 'on_topic' or 'off_topic'."
+  userPrompt: "{{source.message}}"
+
+routerNode(3) config:
+  first_value: "{{source.message}}"
+  compare_condition: "contains"
+  second_value: "on_topic"
+
+Edges:
+  1→2, 2→3
+  3→4 (sourceHandle: "output_true")
+  3→5 (sourceHandle: "output_false")
+  4→6, 5→7
+```
 
 ### AI Pipeline (no agent)
-chatInputNode -> templateNode -> llmModelNode -> templateNode -> chatOutputNode
+```
+chatInputNode(1) → templateNode(2) → llmModelNode(3) → chatOutputNode(4)
+Edges: 1→2, 2→3, 3→4
+```
 
 ### ML Training Pipeline
-trainDataSourceNode -> preprocessingNode -> trainModelNode
+```
+trainDataSourceNode(1) → preprocessingNode(2) → trainModelNode(3)
+Edges: 1→2, 2→3
+```
 
 ---
 
 ## Node Reference
 
-### I/O Nodes
+---
 
-#### chatInputNode - Chat Input
+### chatInputNode — Chat Input
 **Category:** I/O
-**Description:** Entry point for chat-based workflows. Receives the user's message and passes it downstream.
-**When to use:** Every chat-based workflow MUST start with this node. It captures the user's input.
+**Purpose:** Entry point for chat workflows. Receives the user's message. Every chat workflow MUST start with this node.
+**Use cases:** Customer support chatbot entry, Q&A assistant input, chat-triggered automation.
 
-**Example use cases:**
-- Starting point for a customer support chatbot
-- Receiving user queries in a Q&A assistant
-- Capturing commands for an automation workflow triggered by chat
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| output | source | right | any |
 
-**Handlers (ports):**
-- `output` (source, right, compatibility: any)
-
-**Configuration:** No configuration fields (auto-configured).
+**Config:** None (auto-configured).
 
 ---
 
-#### chatOutputNode - Chat Output
+### chatOutputNode — Chat Output
 **Category:** I/O
-**Description:** Exit point for chat-based workflows. Sends the final response back to the user.
-**When to use:** Every chat-based workflow MUST end with this node. It delivers the result to the user.
+**Purpose:** Exit point for chat workflows. Sends the final response to the user. Every chat workflow MUST end with this node.
+**Use cases:** Returning agent answers, displaying processed results, sending confirmation messages.
 
-**Example use cases:**
-- Returning the agent's final answer to the user
-- Displaying formatted results after data processing
-- Sending confirmation messages after an action is completed
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-
-**Configuration:** No configuration fields (auto-configured).
+**Config:** None (auto-configured).
 
 ---
 
-### AI Nodes
-
-#### agentNode - Agent
+### agentNode — Agent
 **Category:** AI
-**Description:** An LLM-powered agent that can reason, use tools, and hold multi-turn conversations. Supports ReAct, ToolSelector, SimpleToolExecutor, and ChainOfThought patterns.
-**When to use:** When you need AI reasoning, tool calling, or conversational ability. This is the core 'brain' of most workflows.
+**Purpose:** LLM-powered agent with tool calling, reasoning loops, and conversation memory. The core "brain" of most workflows. Supports multiple agent patterns.
+**Use cases:** Customer support chatbot with tools, data analysis assistant, email classifier, conversational AI with integrations.
 
-**Example use cases:**
-- Customer support chatbot with tool access
-- Data analysis assistant that queries databases via tools
-- Email classifier that routes to different actions
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| input_tools | target | bottom | tools |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `input_tools` (target, bottom, compatibility: tools)
-- `output` (source, right, compatibility: any)
+**Required config:**
+| Field | Type | Default | Description |
+|---|---|---|---|
+| providerId | select | — | LLM provider to use |
+| systemPrompt | text | "You are a helpful assistant..." | Instructions for the agent |
+| userPrompt | text | "{{source.message}}" | User input template. MUST be "{{source.message}}" — never replace with literal text |
+| type | select | "ToolSelector" | Agent pattern: ReAct, ToolSelector, SimpleToolExecutor, ChainOfThought |
+| maxIterations | number | 3 | Max reasoning cycles before stopping |
+| memory | boolean | false | Enable conversation memory |
 
-**Required configuration:**
-- `providerId` (select): LLM Provider -- select the AI model to use
-- `systemPrompt` (text): System Prompt (default: "You are a helpful assistant that helps the user with their requests.")
-- `userPrompt` (text): User Prompt (default: "{{session.message}}")
-- `type` (select): Agent Type (default: "ToolSelection") -- Options: ReAct, ToolSelector, SimpleToolExecutor, ChainOfThought
-- `maxIterations` (number): Max Iterations (default: 3) -- max reasoning cycles
-- `memory` (boolean): Enable Memory
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `memoryTrimmingMode` (select): Memory Trimming Mode (default: message_count) -- How to limit conversation history. Options: message_count, token_budget, message_compacting, rag_retrieval
-- `maxMessages` (number): Max Messages (default: 10) [shown when memoryTrimmingMode=message_count]
-- `compactingThreshold` (number): Compacting Threshold (default: 20) [shown when memoryTrimmingMode=message_compacting]
-- `compactingKeepRecent` (number): Recent Messages to Keep (default: 10) [shown when memoryTrimmingMode=message_compacting]
-- `compactingModel` (select): Compacting Model [shown when memoryTrimmingMode=message_compacting]
-- `compactingImportantEntities` (tags): Important Entities to Preserve [shown when memoryTrimmingMode=message_compacting]
-- `tokenBudget` (number): Total Token Budget (default: 10000) [shown when memoryTrimmingMode=token_budget]
-- `conversationHistoryTokens` (number): Conversation History Allocation (default: 5000) [shown when memoryTrimmingMode=token_budget]
-- RAG retrieval settings (ragPassthroughThreshold, ragGroupSize, ragGroupOverlap, ragQueryContextMessages, ragTopK, ragRecentMessages, ragMaxHistoryHours) [shown when memoryTrimmingMode=rag_retrieval]
+**Optional config:**
+| Field | Type | Default | Condition |
+|---|---|---|---|
+| name | text | — | Always |
+| memoryTrimmingMode | select | "message_count" | When memory=true. Options: message_count, token_budget, message_compacting, rag_retrieval |
+| maxMessages | number | 10 | When memoryTrimmingMode=message_count |
+| tokenBudget | number | 10000 | When memoryTrimmingMode=token_budget |
+| conversationHistoryTokens | number | 5000 | When memoryTrimmingMode=token_budget |
+| compactingThreshold | number | 20 | When memoryTrimmingMode=message_compacting |
+| compactingKeepRecent | number | 10 | When memoryTrimmingMode=message_compacting |
+| compactingModel | select | — | When memoryTrimmingMode=message_compacting |
+| compactingImportantEntities | tags | — | When memoryTrimmingMode=message_compacting |
+| ragTopK | number | — | When memoryTrimmingMode=rag_retrieval |
+| ragRecentMessages | number | — | When memoryTrimmingMode=rag_retrieval |
+| ragMaxHistoryHours | number | — | When memoryTrimmingMode=rag_retrieval |
+| ragQueryContextMessages | number | — | When memoryTrimmingMode=rag_retrieval |
+| ragGroupSize | number | — | When memoryTrimmingMode=rag_retrieval |
+| ragGroupOverlap | number | — | When memoryTrimmingMode=rag_retrieval |
+| ragPassthroughThreshold | number | — | When memoryTrimmingMode=rag_retrieval |
 
 ---
 
-#### llmModelNode - LLM Model
+### llmModelNode — LLM Model
 **Category:** AI
-**Description:** A standalone LLM call node. Sends a system prompt + user prompt to a language model and returns the response. Similar to agentNode but without tool calling or ReAct loops.
-**When to use:** When you need a simple LLM completion without agent behavior (no tools, no reasoning loops). Good for text generation, summarization, classification.
+**Purpose:** Simple LLM call — sends system prompt + user prompt to a model. No tool calling or reasoning loops. Use for text generation, summarization, classification.
+**Use cases:** Summarizing documents, classifying text, generating responses from templated prompts.
 
-**Example use cases:**
-- Summarizing a document or email
-- Classifying text into categories
-- Generating a response from a template-filled prompt
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
+**Required config:**
+| Field | Type | Default | Description |
+|---|---|---|---|
+| providerId | select | — | LLM provider |
+| systemPrompt | text | — | System instructions |
+| userPrompt | text | "{{source.message}}" | User input template |
+| type | select | — | Model type |
+| memory | boolean | false | Enable memory |
 
-**Required configuration:**
-- `providerId` (select): LLM Provider
-- `systemPrompt` (text): System Prompt
-- `userPrompt` (text): User Prompt
-- `type` (select): Type
-- `memory` (boolean): Enable Memory
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `memoryTrimmingMode` (select): Memory Trimming Mode (default: message_count)
-- Memory sub-settings same as agentNode (conditional on memoryTrimmingMode)
+**Optional config:** Same memory sub-settings as agentNode (conditional on memoryTrimmingMode).
 
 ---
 
-### Processing Nodes
-
-#### templateNode - Template
+### templateNode — Template
 **Category:** Processing
-**Description:** Formats text using a template with variable substitution. Variables use {{source.field}} or {{session.field}} syntax.
-**When to use:** When you need to format or combine data from previous nodes into a specific text format before passing it downstream.
+**Purpose:** Formats text using variable substitution. Variables: `{{source.field}}` for upstream node output, `{{session.field}}` for session state.
+**Use cases:** Formatting agent output, building structured prompts, composing email bodies from extracted data.
 
-**Example use cases:**
-- Formatting agent output before sending to chatOutputNode
-- Building a structured prompt from multiple data sources
-- Composing an email body from extracted data fields
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `template` (text): Template -- the text template with {{variable}} placeholders
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| template | text | Yes | Text with `{{variable}}` placeholders |
+| name | text | No | Node name |
 
 ---
 
-#### toolBuilderNode - Tool Builder
+### toolBuilderNode — Tool Builder
 **Category:** Processing
-**Description:** Wraps a sub-flow (chain of nodes) as a tool that an agentNode can call. Connects to agentNode via the tools port (output_tool -> input_tools). The sub-flow starts from starter_processor and returns results back to the agent.
-**When to use:** When you want to give an agentNode access to a tool that executes a sequence of nodes (e.g., KB lookup, API call, Python code).
+**Purpose:** Wraps a sub-flow (chain of nodes) as a callable tool for an agentNode. The agent decides when to invoke the tool based on its description. Connect `output_tool` → `agentNode.input_tools` and `starter_processor` → first sub-flow node.
+**Use cases:** Wrapping a KB as a search tool, creating a database query tool, building custom API tools for agents.
 
-**Example use cases:**
-- Wrapping a knowledgeBaseNode as a tool for an agent
-- Creating a 'search database' tool using sqlNode
-- Building a custom API-calling tool for an agent
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| output_tool | source | top | tools |
+| starter_processor | source | bottom | any |
+| end_processor | target | bottom | any |
 
-**Handlers (ports):**
-- `output_tool` (source, top, compatibility: tools) -- connect to agentNode.input_tools
-- `starter_processor` (source, bottom, compatibility: any) -- connect to the first node of the tool's sub-flow
-- `end_processor` (target, bottom, compatibility: any) -- receives the sub-flow's final output
-
-**Required configuration:**
-- `description` (text): Description -- describes what this tool does (the agent sees this to decide when to use it)
-- `forwardTemplate` (boolean): Return data directly as agent output (default: "{}")
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| description | text | Yes | What this tool does — the agent reads this to decide when to call it |
+| forwardTemplate | text | Yes | Template for returning data (default: "{}") |
+| name | text | No | Node name |
 
 ---
 
-#### pythonCodeNode - Python Code
+### pythonCodeNode — Python Code
 **Category:** Processing
-**Description:** Executes custom Python code. Input values are available via params.get('field_name'). Returns the result of the code execution.
-**When to use:** When you need custom data processing, transformation, or logic that isn't covered by other node types.
+**Purpose:** Executes custom Python code. Access input via `params.get('field_name')`. Returns the execution result.
+**Use cases:** Custom data processing, calculations, string manipulation, API response parsing.
 
-**Example use cases:**
-- Parsing and transforming API response data
-- Running calculations or data analysis
-- Custom string processing or formatting
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `code` (text): Python Code -- the Python code to execute
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| code | text | Yes | Python code to execute |
+| name | text | No | Node name |
+| unwrap | boolean | No | Return result directly without wrapping |
 
 ---
 
-#### dataMapperNode - Data Mapper
+### dataMapperNode — Data Mapper
 **Category:** Processing
-**Description:** Transforms data from one structure to another using a Python script. Similar to pythonCodeNode but semantically focused on data transformation.
-**When to use:** When you need to reshape, map, or transform data between nodes.
+**Purpose:** Transforms data structures using a Python script. Focused on reshaping/mapping data between nodes.
+**Use cases:** Mapping API fields to a different schema, extracting fields from complex JSON, converting formats between integrations.
 
-**Example use cases:**
-- Mapping API response fields to a different schema
-- Extracting specific fields from a complex JSON response
-- Converting data formats between integrations
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `pythonScript` (text): Python Script
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| pythonScript | text | Yes | Python script for transformation |
+| name | text | No | Node name |
 
 ---
 
-#### setStateNode - Set State
+### setStateNode — Set State
 **Category:** Processing
-**Description:** Sets or updates values in the workflow's session state. Allows storing computed values for use by downstream nodes.
-**When to use:** When you need to persist a value in the session state so other nodes can access it later via {{session.key}}.
+**Purpose:** Sets or updates values in the workflow's session state. Downstream nodes access stored values via `{{session.key}}`.
+**Use cases:** Storing user preferences, setting flags for routers, accumulating data across iterations.
 
-**Example use cases:**
-- Storing a user's selected preference for later use
-- Setting a flag that downstream routers check
-- Accumulating data across multiple iterations
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Configuration:** Configured via the workflow studio UI (key-value state assignments).
+**Config:** Key-value state assignments configured via the workflow studio UI.
 
 ---
 
-### Control Flow Nodes
-
-#### routerNode - Router
+### routerNode — Router
 **Category:** Control Flow
-**Description:** Conditional branching node. Compares two values and routes to output_true or output_false. Supports conditions: equals, not_equals, contains, greater_than, less_than, etc.
-**When to use:** When the workflow needs to branch based on a condition.
+**Purpose:** Conditional branching. Does a SIMPLE STRING COMPARISON between two values and routes to `output_true` or `output_false`. It CANNOT do semantic analysis, topic detection, or intent classification — for that, use an llmModelNode or agentNode before the router to classify the input first, then route on the classification result.
+**Use cases:** Routing based on classification output from an LLM, branching by email domain, checking flags set by upstream nodes.
 
-**Example use cases:**
-- Routing high-priority tickets to Jira, low-priority to Slack
-- Branching based on email sender domain
-- Conditional processing based on classification results
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output_true | source | right | any |
+| output_false | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output_true` (source, right, compatibility: any) -- taken when condition is true
-- `output_false` (source, right, compatibility: any) -- taken when condition is false
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| first_value | text | Yes | Left side of comparison. Supports `{{source.field}}` |
+| compare_condition | select | Yes | Condition operator (see below) |
+| second_value | text | Yes | Right side of comparison |
+| name | text | No | Node name |
 
-**Required configuration:**
-- `first_value` (text): First Value -- left side of comparison (can use {{source.field}})
-- `compare_condition` (select): Compare Condition -- equals, not_equals, contains, greater_than, less_than, etc.
-- `second_value` (text): Second Value -- right side of comparison
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Available compare_condition values:**
+- `equals` — exact match
+- `not_equals` — not equal
+- `contains` — first_value contains second_value
+- `not_contain` — first_value does not contain second_value
+- `starts_with` — first_value starts with second_value
+- `not_starts_with` — first_value does not start with second_value
+- `ends_with` — first_value ends with second_value
+- `not_ends_with` — first_value does not end with second_value
+- `greater_than` — numeric greater than
+- `less_than` — numeric less than
+- `regex` — second_value is a regex pattern to test against first_value
 
 ---
 
-#### aggregatorNode - Aggregator
+### aggregatorNode — Aggregator
 **Category:** Control Flow
-**Description:** Collects outputs from multiple upstream nodes and combines them using a strategy (list, merge, first, last).
-**When to use:** When multiple parallel branches need to be combined back into a single flow.
+**Purpose:** Collects outputs from multiple upstream nodes and combines them. This is the ONLY node that accepts multiple incoming edges. Use to reconverge after branching or parallel paths.
+**Use cases:** Merging parallel API results, collecting tool outputs, reconverging after router branches.
 
-**Example use cases:**
-- Merging results from parallel API calls
-- Collecting outputs from multiple tool executions
-- Reconverging after a router's true/false branches
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `aggregationStrategy` (select): Aggregation Strategy -- list, merge, first, last
-- `timeoutSeconds` (number): Timeout (seconds)
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `forwardTemplate` (text): Forward Template
-- `requireAllInputs` (boolean): Require All Inputs
+**Config:**
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| aggregationStrategy | select | Yes | — | How to combine: list, merge, first, last |
+| timeoutSeconds | number | Yes | — | Max wait time in seconds |
+| name | text | No | — | Node name |
+| forwardTemplate | text | No | — | Template for output formatting |
+| requireAllInputs | boolean | No | true | Wait for all upstream nodes |
 
 ---
 
-#### humanInTheLoopNode - Human in the Loop
+### humanInTheLoopNode — Human in the Loop
 **Category:** Control Flow
-**Description:** Pauses workflow execution and presents a form to the user for input. Resumes after the user submits.
-**When to use:** When a human needs to review, approve, or provide additional input before the workflow continues.
+**Purpose:** Pauses workflow execution and presents a form to the user for review/approval/input. Resumes after submission.
+**Use cases:** Manager approval before creating tickets, user confirmation before sending email, human review of AI content.
 
-**Example use cases:**
-- Manager approval before creating a Jira ticket
-- User confirmation before sending an email
-- Human review of AI-generated content before publishing
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Configuration:** Form fields configured via the workflow studio UI.
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| message | text | No | Message to display to the user |
+| form_fields | array | No | Form field definitions (name, type, label, required, placeholder, description, options) |
+| ask_once | boolean | No | Only ask the user once (skip on subsequent runs) |
 
 ---
 
-#### workflowExecutorNode - Workflow Executor
+### workflowExecutorNode — Workflow Executor
 **Category:** Control Flow
-**Description:** Executes another workflow as a sub-workflow. Enables workflow composition and reuse.
-**When to use:** When you want to call another existing workflow as a building block within a larger workflow.
+**Purpose:** Executes another workflow as a sub-workflow. Enables composition and reuse of workflows.
+**Use cases:** Calling reusable sub-workflows, orchestrating multi-stage pipelines, modular workflow design.
 
-**Example use cases:**
-- Calling a reusable 'email processing' workflow from multiple parent workflows
-- Orchestrating complex multi-stage pipelines
-- Modular workflow design with shared sub-workflows
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Configuration:** Select the target workflow to execute.
+**Config:** Select the target workflow to execute via the workflow studio UI.
 
 ---
 
-### Knowledge Nodes
-
-#### knowledgeBaseNode - Knowledge Base
+### knowledgeBaseNode — Knowledge Base
 **Category:** Knowledge
-**Description:** Queries one or more Knowledge Bases using RAG (Retrieval Augmented Generation). Searches indexed documents and returns relevant chunks.
-**When to use:** When the workflow needs to retrieve information from uploaded documents, FAQs, or indexed content.
+**Purpose:** Queries knowledge bases using RAG (Retrieval Augmented Generation). Searches indexed documents and returns relevant chunks. Usually wrapped by a toolBuilderNode to give agents KB access.
+**Use cases:** Product documentation lookup, company policy search, FAQ retrieval, context injection before response generation.
 
-**Example use cases:**
-- Looking up product documentation to answer customer questions
-- Searching through company policies for HR queries
-- Retrieving relevant context from a knowledge base before generating a response
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `query` (text): Query -- the search query (can use {{session.message}})
-- `limit` (number): Limit -- max results to return
-- `force` (boolean): Force Limit
-- `selectedBases` (tags): Knowledge Bases -- which KB(s) to search
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| query | text | Yes | Search query. Use `{{session.message}}` when wrapped as a tool |
+| limit | number | Yes | Max results to return |
+| force | boolean | Yes | Force the result limit |
+| selectedBases | tags | Yes | Which knowledge base(s) to search |
+| name | text | No | Node name |
 
 ---
 
-#### threadRAGNode - Thread RAG
+### threadRAGNode — Thread RAG
 **Category:** Knowledge
-**Description:** Performs RAG over the current conversation thread. Can index messages and retrieve relevant past messages.
-**When to use:** When you need to search through conversation history to find relevant context.
+**Purpose:** Performs RAG over the current conversation thread. Indexes and retrieves relevant past messages from conversation history.
+**Use cases:** Finding relevant past messages in long conversations, retrieving earlier context in multi-turn dialogue.
 
-**Example use cases:**
-- Finding relevant past messages in a long support conversation
-- Retrieving context from earlier in a multi-turn dialogue
-- Building conversation-aware responses using historical context
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `action` (select): Action
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `query` (text): Query
-- `top_k` (number): Top K
-- `message` (text): Message
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| action | select | Yes | RAG action to perform |
+| name | text | No | Node name |
+| query | text | No | Search query |
+| top_k | number | No | Number of results |
+| message | text | No | Message to index |
 
 ---
 
-### Integration Nodes
-
-#### apiToolNode - API Tool
+### apiToolNode — API Tool
 **Category:** Integration
-**Description:** Makes HTTP API calls (GET, POST, PUT, DELETE) to external endpoints.
-**When to use:** When the workflow needs to call a REST API endpoint.
+**Purpose:** Makes HTTP API calls to external endpoints. Supports all standard HTTP methods.
+**Use cases:** Fetching CRM data, sending webhooks, calling third-party services, data enrichment.
 
-**Example use cases:**
-- Fetching customer data from a CRM API
-- Sending a webhook notification
-- Calling a third-party service for data enrichment
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `endpoint` (text): Endpoint URL (default: "http://localhost/api/endpoint")
-- `method` (select): HTTP Method (default: "GET")
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `requestBody` (text): Request Body (JSON)
+**Config:**
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| endpoint | text | Yes | — | Full URL of the API endpoint |
+| method | select | Yes | "GET" | HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS |
+| name | text | No | — | Node name |
+| requestBody | text | No | — | JSON request body |
+| headers | object | No | — | HTTP headers |
+| parameters | object | No | — | Query parameters |
 
 ---
 
-#### openApiNode - Open API
+### openApiNode — Open API
 **Category:** Integration
-**Description:** Executes API calls based on an OpenAPI specification file. Uses an LLM to interpret the query and select the correct endpoint.
-**When to use:** When you have an OpenAPI/Swagger spec and want AI-assisted API calling.
+**Purpose:** Executes API calls based on an OpenAPI/Swagger specification. Uses an LLM to interpret natural language queries and select the correct endpoint.
+**Use cases:** Querying complex APIs with plain English, auto-generating API calls, exploring documented endpoints.
 
-**Example use cases:**
-- Querying a complex API by describing what you need in plain English
-- Auto-generating API calls from user requests
-- Exploring documented API endpoints without manual configuration
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `providerId` (select): LLM Provider
-- `originalFileName` (text): Specification File
-- `query` (text): Query
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| providerId | select | Yes | LLM provider for query interpretation |
+| originalFileName | text | Yes | OpenAPI specification file |
+| query | text | Yes | Natural language query |
+| name | text | No | Node name |
 
 ---
 
-#### slackMessageNode - Slack Message
+### slackMessageNode — Slack Message
 **Category:** Integration
-**Description:** Sends a message to a Slack channel. Requires Slack integration configuration.
-**When to use:** When the workflow needs to send notifications or messages to Slack.
+**Purpose:** Sends messages to a Slack channel. Requires Slack integration to be configured.
+**Use cases:** Team notifications, workflow alerts, posting AI summaries to channels.
 
-**Example use cases:**
-- Notifying a team channel about a new support ticket
-- Sending workflow completion alerts
-- Posting AI-generated summaries to Slack
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `app_settings_id` (select): Configuration Vars -- Slack integration settings
-- `channel` (text): Channel ID
-- `message` (text): Message
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| app_settings_id | select | Yes | Slack integration configuration |
+| channel | text | Yes | Slack channel ID |
+| message | text | Yes | Message text to send |
+| name | text | No | Node name |
 
 ---
 
-#### gmailNode - Gmail
+### gmailNode — Gmail
 **Category:** Integration
-**Description:** Sends emails via Gmail. Requires Gmail data source configuration.
-**When to use:** When the workflow needs to send emails.
+**Purpose:** Interacts with Gmail — send emails, read messages, reply, search, mark as read, or delete. Requires Gmail data source configuration.
+**Use cases:** Automated response emails, email processing pipelines, inbox monitoring, email-triggered workflows.
 
-**Example use cases:**
-- Sending automated response emails to customers
-- Forwarding processed information via email
-- Sending notification emails after workflow completion
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-
-**Required configuration:**
-- `dataSourceId` (select): Connector -- Gmail data source
-- `operation` (select): Operation
-- `to` (text): To
-- `subject` (text): Subject
-- `body` (text): Body
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `cc` (text): CC
-- `bcc` (text): BCC
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| dataSourceId | select | Yes | Gmail data source connector |
+| operation | select | Yes | Operation: send_email, get_messages, mark_as_read, delete_message, reply_to_email, search_emails |
+| to | text | Yes* | Recipient email (*for send_email) |
+| subject | text | Yes* | Email subject (*for send_email) |
+| body | text | Yes* | Email body (*for send_email) |
+| name | text | No | Node name |
+| cc | text | No | CC recipients |
+| bcc | text | No | BCC recipients |
 
 ---
 
-#### readMailsNode - Read Mails
+### readMailsNode — Read Mails
 **Category:** Integration
-**Description:** Reads emails from Gmail with search filters. Requires Gmail data source configuration.
-**When to use:** When the workflow needs to fetch and process incoming emails.
+**Purpose:** Reads emails from Gmail with search filters. Requires Gmail data source configuration.
+**Use cases:** Processing unread customer emails, fetching labeled emails for classification, inbox monitoring.
 
-**Example use cases:**
-- Reading unread customer emails for automated processing
-- Fetching emails with specific labels for classification
-- Monitoring an inbox for emails matching criteria
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `dataSourceId` (select): Gmail Data Source
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `searchCriteria.from` (text): From Email
-- `searchCriteria.to` (text): To Email
-- `searchCriteria.subject` (text): Subject Contains
-- `searchCriteria.label` (select): Gmail Label
-- `searchCriteria.newer_than` (select): Newer Than
-- `searchCriteria.older_than` (select): Older Than
-- `searchCriteria.max_results` (number): Max Results
-- `searchCriteria.has_attachment` (boolean): Has Attachment
-- `searchCriteria.is_unread` (boolean): Unread Only
-- `searchCriteria.custom_query` (text): Custom Gmail Query
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| dataSourceId | select | Yes | Gmail data source |
+| name | text | No | Node name |
+| searchCriteria.from | text | No | Filter by sender |
+| searchCriteria.to | text | No | Filter by recipient |
+| searchCriteria.subject | text | No | Subject contains |
+| searchCriteria.label | select | No | Gmail label filter |
+| searchCriteria.newer_than | select | No | Messages newer than |
+| searchCriteria.older_than | select | No | Messages older than |
+| searchCriteria.max_results | number | No | Max messages to return |
+| searchCriteria.has_attachment | boolean | No | Filter by attachment |
+| searchCriteria.is_unread | boolean | No | Unread only |
+| searchCriteria.custom_query | text | No | Custom Gmail search query |
 
 ---
 
-#### whatsappToolNode - WhatsApp
+### whatsappToolNode — WhatsApp
 **Category:** Integration
-**Description:** Sends a WhatsApp message to a specified recipient. Requires WhatsApp integration configuration.
-**When to use:** When the workflow needs to send WhatsApp messages.
+**Purpose:** Sends WhatsApp messages. Requires WhatsApp integration configuration.
+**Use cases:** Order confirmations, customer notifications, automated outreach.
 
-**Example use cases:**
-- Sending order confirmation via WhatsApp
-- Notifying customers about ticket updates
-- Automated WhatsApp outreach
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-
-**Required configuration:**
-- `app_settings_id` (select): Configuration Vars -- WhatsApp integration settings
-- `recipient_number` (text): Recipient Number
-- `message` (text): Message
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| app_settings_id | select | Yes | WhatsApp integration settings |
+| recipient_number | text | Yes | Recipient phone number |
+| message | text | Yes | Message text |
+| name | text | No | Node name |
 
 ---
 
-#### zendeskTicketNode - Zendesk Ticket
+### zendeskTicketNode — Zendesk Ticket
 **Category:** Integration
-**Description:** Creates a support ticket in Zendesk. Requires Zendesk integration configuration.
-**When to use:** When the workflow needs to create support tickets in Zendesk.
+**Purpose:** Creates support tickets in Zendesk. Requires Zendesk integration configuration.
+**Use cases:** Auto-creating tickets from chat, escalating AI-detected issues, tickets with AI-extracted metadata.
 
-**Example use cases:**
-- Automatically creating tickets from customer chat messages
-- Escalating issues detected by AI to Zendesk
-- Creating tickets with AI-extracted metadata and tags
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | text |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: text)
-
-**Required configuration:**
-- `app_settings_id` (select): Configuration Vars -- Zendesk integration settings
-- `subject` (text): Subject
-- `description` (text): Description
-- `requester_name` (text): Requester Name
-- `requester_email` (text): Requester Email
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `tags` (tags): Tags
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| app_settings_id | select | Yes | Zendesk integration settings |
+| subject | text | Yes | Ticket subject |
+| description | text | Yes | Ticket description |
+| requester_name | text | Yes | Requester's name |
+| requester_email | text | Yes | Requester's email |
+| name | text | No | Node name |
+| tags | tags | No | Ticket tags |
 
 ---
 
-#### calendarEventNode - Calendar Event
+### calendarEventNode — Calendar Event
 **Category:** Integration
-**Description:** Creates or reads calendar events via Google Calendar integration.
-**When to use:** When the workflow needs to interact with Google Calendar.
+**Purpose:** Creates or reads Google Calendar events. Requires Calendar data source configuration.
+**Use cases:** Scheduling meetings from AI conversations, creating follow-up reminders, checking availability.
 
-**Example use cases:**
-- Scheduling meetings based on AI conversation
-- Creating follow-up calendar reminders
-- Checking calendar availability
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `dataSourceId` (select): Connector -- Calendar data source
-- `summary` (text): Summary
-- `operation` (select): Operation
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `start` (text): Start Time
-- `end` (text): End Time
-- `subjectContains` (text): Subject Contains
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| dataSourceId | select | Yes | Calendar data source connector |
+| operation | select | Yes | Create or Read |
+| summary | text | Yes | Event summary/title |
+| name | text | No | Node name |
+| start | text | No | Start time |
+| end | text | No | End time |
+| subjectContains | text | No | Search filter for reading events |
 
 ---
 
-#### jiraNode - Jira
+### jiraNode — Jira
 **Category:** Integration
-**Description:** Creates tasks/issues in Jira. Requires Jira configuration and a space key.
-**When to use:** When the workflow needs to create Jira issues or tasks.
+**Purpose:** Creates tasks/issues in Jira. Requires Jira integration configuration.
+**Use cases:** Bug reports from customer feedback, task tickets from AI analysis, urgent issue escalation.
 
-**Example use cases:**
-- Creating bug reports from customer feedback
-- Generating task tickets from AI analysis
-- Escalating urgent issues to Jira boards
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `app_settings_id` (select): Configuration Vars -- Jira integration settings
-- `spaceKey` (text): Space Key
-- `taskName` (text): Task Name
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `taskDescription` (text): Task Description
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| app_settings_id | select | Yes | Jira integration settings |
+| spaceKey | text | Yes | Jira project/space key |
+| taskName | text | Yes | Task/issue name |
+| name | text | No | Node name |
+| taskDescription | text | No | Task description |
 
 ---
 
-#### sqlNode - SQL
+### sqlNode — SQL
 **Category:** Integration
-**Description:** Executes SQL queries against a configured database. Supports manual SQL or AI-generated SQL from natural language.
-**When to use:** When the workflow needs to query or manipulate data in a SQL database.
+**Purpose:** Executes SQL queries against a database. Supports writing SQL manually or generating SQL from natural language using an LLM.
+**Use cases:** Querying customer data, running analytics, natural language to SQL.
 
-**Example use cases:**
-- Querying customer data from a database
-- Running analytics queries and returning results
-- Natural language to SQL for database exploration
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `dataSourceId` (select): Data Source
-- `mode` (select): Mode -- Options: sqlQuery (Write SQL Manually), humanQuery (Generate SQL from Text)
-- `sqlQuery` (text): SQL Query [shown when mode=sqlQuery]
-- `providerId` (select): LLM Provider [shown when mode=humanQuery]
-- `humanQuery` (text): Query in Plain English [shown when mode=humanQuery]
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `systemPrompt` (text): System Prompt [shown when mode=humanQuery]
+**Config:**
+| Field | Type | Required | Condition | Description |
+|---|---|---|---|---|
+| dataSourceId | select | Yes | Always | Database data source |
+| mode | select | Yes | Always | "sqlQuery" (manual) or "humanQuery" (AI-generated) |
+| sqlQuery | text | Yes | mode=sqlQuery | SQL query to execute |
+| providerId | select | Yes | mode=humanQuery | LLM provider for SQL generation |
+| humanQuery | text | Yes | mode=humanQuery | Plain English query |
+| name | text | No | Always | Node name |
+| systemPrompt | text | No | mode=humanQuery | Custom instructions for SQL generation |
 
 ---
 
-#### mcpNode - MCP
+### mcpNode — MCP
 **Category:** Integration
-**Description:** Connects to an MCP (Model Context Protocol) server for external tools and resources.
-**When to use:** When you want to integrate with MCP-compatible tools and services.
+**Purpose:** Connects to an MCP (Model Context Protocol) server for external tools and resources.
+**Use cases:** Integrating with MCP-compatible tool servers, using external MCP resources.
 
-**Example use cases:**
-- Connecting to external tool servers via MCP
-- Using MCP-provided resources in the workflow
-- Integrating with custom MCP servers
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Configuration:** MCP server connection configured via the workflow studio UI.
+**Config:** MCP server connection configured via the workflow studio UI.
 
 ---
 
-### ML Nodes
-
-#### mlModelInferenceNode - ML Model Inference
+### mlModelInferenceNode — ML Model Inference
 **Category:** ML
-**Description:** Runs inference on a trained ML model. Select a previously trained model and pass input data for predictions.
-**When to use:** When you need predictions from a custom-trained ML model.
+**Purpose:** Runs inference on a previously trained ML model. Select a trained model and pass input data for predictions.
+**Use cases:** Customer churn prediction, sentiment analysis, product recommendations.
 
-**Example use cases:**
-- Predicting customer churn from user data
-- Running sentiment analysis on text
-- Making product recommendations
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `modelId` (select): ML Model
-- `modelName` (text): Model Name
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| modelId | select | Yes | Trained ML model to use |
+| modelName | text | Yes | Display name |
+| name | text | No | Node name |
 
 ---
 
-#### trainDataSourceNode - Train Data Source
+### trainDataSourceNode — Train Data Source
 **Category:** ML
-**Description:** Loads training data from a configured data source for ML model training pipelines.
-**When to use:** When setting up an ML training pipeline and you need to load the training dataset.
+**Purpose:** Loads training data from a data source for ML training pipelines.
+**Use cases:** Loading CSV datasets, querying databases for training data.
 
-**Example use cases:**
-- Loading a CSV dataset for model training
-- Querying a database for training data
-- Fetching data from a data source for preprocessing
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `sourceType` (select): Source Type
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `dataSourceType` (select): Data Source Type
-- `dataSourceId` (text): Data Source
-- `query` (text): Query
-- `csvFile` (text): CSV File
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| sourceType | select | Yes | Type of data source |
+| name | text | No | Node name |
+| dataSourceType | select | No | Specific data source type |
+| dataSourceId | text | No | Data source ID |
+| query | text | No | Query for data extraction |
+| csvFile | text | No | CSV file path |
 
 ---
 
-#### preprocessingNode - Preprocessing
+### preprocessingNode — Preprocessing
 **Category:** ML
-**Description:** Preprocesses data for ML model training. Applies transformations using custom Python code.
-**When to use:** When training data needs cleaning or feature engineering before model training.
+**Purpose:** Preprocesses data for ML model training. Applies transformations using custom Python code.
+**Use cases:** Data cleaning, feature engineering, handling missing values and outliers.
 
-**Example use cases:**
-- Cleaning and normalizing training data
-- Feature engineering before model training
-- Handling missing values and outliers
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `fileUrl` (text): File URL
-
-**Optional configuration:**
-- `name` (text): Node Name
-- `pythonCode` (text): Python Code
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| fileUrl | text | Yes | URL of the training data file |
+| name | text | No | Node name |
+| pythonCode | text | No | Custom preprocessing Python code |
 
 ---
 
-#### trainModelNode - Train Model
+### trainModelNode — Train Model
 **Category:** ML
-**Description:** Trains an ML model on preprocessed data. Configure model type, target column, feature columns, and validation split.
-**When to use:** When you need to train a custom ML model within the platform.
+**Purpose:** Trains an ML model on preprocessed data. Configure model type, features, target, and validation split.
+**Use cases:** Classification models, regression models, custom NLP models.
 
-**Example use cases:**
-- Training a classification model on labeled data
-- Building a regression model for price prediction
-- Creating a custom NLP model for text classification
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
 
-**Handlers (ports):**
-- `input` (target, left, compatibility: any)
-- `output` (source, right, compatibility: any)
-
-**Required configuration:**
-- `fileUrl` (text): File URL
-- `modelType` (select): Model Type
-- `targetColumn` (text): Target Column
-- `featureColumns` (tags): Feature Columns
-- `validationSplit` (number): Validation Split
-
-**Optional configuration:**
-- `name` (text): Node Name
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| fileUrl | text | Yes | Training data file URL |
+| modelType | select | Yes | Model: xgboost, random_forest, linear_regression, logistic_regression, neural_network |
+| targetColumn | text | Yes | Target variable column name |
+| featureColumns | tags | Yes | Feature column names |
+| validationSplit | number | Yes | Train/test split ratio |
+| name | text | No | Node name |
 
 ---
 
 ## Workflow JSON Output Format
 
-When creating a workflow, produce a JSON object with this structure:
+When creating a workflow, output JSON with this structure:
 
 ```json
 {
@@ -796,7 +798,7 @@ When creating a workflow, produce a JSON object with this structure:
       "node_name": "agentNode",
       "function_of_node": "Support Agent",
       "config": {
-        "systemPrompt": "You are a helpful assistant...",
+        "systemPrompt": "You are a customer support agent for Acme Corp...",
         "userPrompt": "{{source.message}}",
         "type": "ToolSelector",
         "memory": true,
@@ -810,19 +812,18 @@ When creating a workflow, produce a JSON object with this structure:
     }
   ],
   "edges": [
-    { "from": "1", "to": "2" },
-    { "from": "2", "to": "3" },
-    { "from": "4", "to": "2", "sourceHandle": "output_tool", "targetHandle": "input_tools" }
+    {"from": "1", "to": "2"},
+    {"from": "2", "to": "3"}
   ]
 }
 ```
 
 **Rules:**
-- `uniqueId`: simple string identifier (e.g., "1", "2", "3")
-- `node_name`: must be one of the node type keys listed above
-- `function_of_node`: human-readable name/purpose
-- `config` (optional): override default configuration values
-- `edges.from`/`edges.to`: reference uniqueId values
-- `edges.sourceHandle` defaults to "output", `edges.targetHandle` defaults to "input"
-- For tool connections: sourceHandle="output_tool", targetHandle="input_tools"
-- For router branches: sourceHandle="output_true" or "output_false"
+- `uniqueId`: simple string ("1", "2", "3", ...)
+- `node_name`: must match a node type key from this document
+- `function_of_node`: human-readable label describing the node's role
+- `config`: only include fields you want to override from defaults
+- Edge `sourceHandle` defaults to "output", `targetHandle` defaults to "input"
+- Tool edges: `sourceHandle: "output_tool"`, `targetHandle: "input_tools"`
+- Router edges: `sourceHandle: "output_true"` or `"output_false"`
+- Tool sub-flow edges: `sourceHandle: "starter_processor"`, `targetHandle: "input"`
