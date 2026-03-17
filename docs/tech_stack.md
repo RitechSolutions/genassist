@@ -20,17 +20,18 @@ GenAssist is a powerful AI-driven assistance platform built with a modern, scala
 - **Form Management**: [React Hook Form](https://react-hook-form.com/) & [Zod](https://zod.dev/)
 
 ### Backend
-- **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (Python)
+- **Frameworks**: [FastAPI](https://fastapi.tiangolo.com/) (Python) for both the core HTTP API and the dedicated WebSocket service
 - **Task Queue**: [Celery](https://docs.celeryq.dev/)
 - **Dependency Injection**: [FastAPI-Injector](https://github.com/alantriz/fastapi-injector)
 - **Asynchronous Processing**: [Uvicorn](https://www.uvicorn.org/) (ASGI server)
 - **ORM/Database Toolkit**: [SQLAlchemy](https://www.sqlalchemy.org/) & [Alembic](https://alembic.sqlalchemy.org/)
+- **Real‑time Transport**: Standalone WebSocket relay service (FastAPI) with Redis pub/sub for conversations, dashboards, and voice streaming
 
 ### AI & ML Operations
 - **Orchestration**: [LangChain](https://www.langchain.com/), [LangGraph](https://langchain-ai.github.io/langgraph/)
 - **LLM Integrations**: OpenAI, Anthropic, Ollama
 - **Audio Processing**: [OpenAI Whisper](https://github.com/openai/whisper) (hosted as a separate service)
-- **Embedding/Vector Search**: [ChromaDB](https://www.trychroma.com/)
+- **Embedding/Vector Search**: [ChromaDB](https://www.trychroma.com/), [Qdrant](https://qdrant.tech/) (vector database)
 - **Graph Database**: [Neo4j](https://neo4j.com/) (for RAG Graph)
 
 ### Infrastructure & DevOps
@@ -64,6 +65,7 @@ To view and edit the Mermaid diagrams in this project, you can use the following
 
 - `frontend/`: React components, services, and hooks.
 - `backend/`: FastAPI application, models, tasks, and core logic.
+- `websocket/`: Dedicated FastAPI-based WebSocket relay service using Redis for real-time messaging.
 - `docs/`: Technical documentation and guides.
 - `plugins/`: Custom extensions and integrations.
 - `ui_tests/`: End-to-end testing suite.

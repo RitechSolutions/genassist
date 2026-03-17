@@ -5,15 +5,16 @@ export interface UseWebSocketTranscriptOptions {
     conversationId: string;
     token: string;
     transcriptInitial?: TranscriptEntry[];
+    lang?: string;
   }
-  
+
 export interface StatisticsPayload {
     in_progress_hostility_score?: number;
     topic?: string;
     sentiment?: string;
     [key: string]: number | string | undefined;
   }
-  
+
 export interface TakeoverPayload {
     supervisor_id?: string;
     user_id?: string;
@@ -29,7 +30,7 @@ export interface UseWebSocketDashboardOptions {
 
 export interface DashboardWebSocketMessage {
     topic: "message" | "statistics" | "finalize" | "hostile" | "conversation_list" | "conversation_update" | "update" | "takeover";
-    type?: "message" | "statistics" | "finalize" | "hostile" | "conversation_list" | "conversation_update" | "update" | "takeover";
+    type?: "message" | "statistics" | "finalize" | "hostile" | "conversation_list" | "conversation_update" | "update" | "takeover" | "ping";
     payload: ConversationListPayload | ConversationUpdatePayload | StatisticsPayload | ConversationDataPayload | TakeoverPayload | FinalizePayload | Record<string, unknown>;
 }
 

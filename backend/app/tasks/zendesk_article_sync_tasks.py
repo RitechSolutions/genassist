@@ -120,6 +120,7 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
         email = conn_data.get("email")
         api_token = conn_data.get("api_token")
         locale = conn_data.get("locale")  # Optional
+        category_id = conn_data.get("category_id")  # Optional
         section_id = conn_data.get("section_id")  # Optional
 
         if not subdomain or not email or not api_token:
@@ -134,7 +135,7 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
                 subdomain=subdomain, email=email, api_token=api_token
             )
             articles = await zendesk_connector.fetch_articles(
-                locale=locale, section_id=section_id
+                locale=locale, category_id=category_id, section_id=section_id
             )
 
             if not articles:

@@ -5,4 +5,5 @@ interface ImportMetaEnv {
   readonly VITE_GENASSIST_CHAT_APIKEY?: string;
   readonly VITE_GENASSIST_CHAT_RECAPTCHA_KEY?: string;
   readonly VITE_GENASSIST_CHAT_TENANT?: string;
+  readonly VITE_GENASSIST_CHAT_WEBSOCKET_URL  ?: string;
 }

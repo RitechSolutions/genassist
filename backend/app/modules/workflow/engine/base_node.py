@@ -411,9 +411,8 @@ class BaseNode(ABC):
         """
         all_target_edges = self.get_state().target_edges
         target_edges = all_target_edges.get(self.node_id, [])
-        input_edges = [
-            edge for edge in target_edges if edge.get("targetHandle", "") == "input"
-        ]
+        input_edges = [edge for edge in target_edges if edge.get(
+            "targetHandle", "") == "input"]
         if not input_edges:
             logger.debug("No target edges found for node %s", self.node_id)
             return None
@@ -425,22 +424,14 @@ class BaseNode(ABC):
             # Get the output from the source node
             source_output = self.get_state().get_node_output(source_node_id)
 
-            logger.debug(
-                "Node %s retrieved output from source node %s: %s",
-                self.node_id,
-                source_node_id,
-                source_output,
-            )
+            logger.debug("Node %s retrieved output from source node %s: %s",
+                         self.node_id, source_node_id, source_output)
         else:
             source_output = {}
             for edge in input_edges:
                 source_node_id = edge["source"]
                 source_output = {
-                    **source_output,
-                    **{
-                        source_node_id: self.get_state().get_node_output(source_node_id)
-                    },
-                }
+                    **source_output, **{source_node_id: self.get_state().get_node_output(source_node_id)}}
 
         return source_output
 

@@ -18,6 +18,7 @@ export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_update
 
 export class ChatService {
   private baseUrl: string;
+  private websocketUrl: string | undefined;
   private apiKey: string;
   private metadata: Record<string, any> | undefined;
   private conversationId: string | null = null;
@@ -47,9 +48,11 @@ export class ChatService {
   private serverUnavailableContactUrl: string | undefined;
   private serverUnavailableContactLabel: string | undefined;
   private usePoll: boolean = false;
+  private wsVersion: number = 1;
 
   constructor(
     baseUrl: string,
+    websocketUrl: string | undefined,
     apiKey: string,
     metadata?: Record<string, any>,
     tenant?: string,
@@ -58,6 +61,13 @@ export class ChatService {
     usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+
+    if (websocketUrl) {
+      // use new websocket url
+      this.websocketUrl = websocketUrl.endsWith("/") ? websocketUrl.slice(0, -1) : websocketUrl;
+      this.wsVersion = 2;
+    }
+
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
@@ -435,12 +445,6 @@ export class ChatService {
    * Reset the current conversation by clearing the ID and websocket
    */
   resetChatConversation(): void {
-    // Close the current websocket connection if it exists
-    if (this.webSocket) {
-      this.webSocket.close();
-      this.webSocket = null;
-    }
-
     // Clear the conversation ID
     this.conversationId = null;
     this.conversationCreateTime = null;
@@ -605,9 +609,6 @@ export class ChatService {
       }
 
       this.saveConversation();
-      if (this.useWs) {
-        this.connectWebSocket();
-      }
       return response.data.conversation_id;
     } catch (error: any) {
       if (this.isTokenExpiredError(error)) {
@@ -782,8 +783,53 @@ export class ChatService {
     }
   }
 
+  /**
+   * Process raw WebSocket message data. Called from useChatWebSocket hook.
+   * Handles message, takeover, and finalize events. Ping/pong is handled by the hook.
+   */
+  processWebSocketMessage(data: Record<string, unknown>): void {
+    if (data.type === "ping") return; // Handled by useChatWebSocket (keep-alive)
+
+    if (data.type === "message" && this.messageHandler) {
+      const payload = data.payload;
+      if (Array.isArray(payload)) {
+        const messages = payload as ChatMessage[];
+        const adjustedMessages = messages
+          .map((msg) => {
+            const adjusted = this.adjustMessageTimestamps(msg);
+            if (!adjusted.message_id && (msg as any).id) {
+              adjusted.message_id = (msg as any).id;
+            }
+            return adjusted;
+          })
+          .filter((msg) => msg.speaker !== "customer");
+        adjustedMessages.forEach((m) => this.messageHandler!(m));
+      } else if (payload && typeof payload === "object") {
+        const adjustedMessage = this.adjustMessageTimestamps(
+          payload as ChatMessage
+        );
+        if (!adjustedMessage.message_id && (payload as any).id) {
+          adjustedMessage.message_id = (payload as any).id;
+        }
+        if (adjustedMessage.speaker !== "customer") {
+          this.messageHandler(adjustedMessage);
+        }
+      }
+    } else if (data.type === "takeover") {
+      this.handleTakeover();
+    } else if (data.type === "finalize") {
+      this.handleConversationFinalized();
+    }
+  }
+
+  getGuestToken(): string | null {
+    return this.guestToken;
+  }
+
+  /** @deprecated WebSocket is now managed by useChatWebSocket hook. No-op. */
   connectWebSocket(): void {
-    if (!this.useWs) {
+    if (!this.useWs && !this.websocketUrl) {
+      console.warn("WebSocket is disabled or URL is not set");
       return;
     }
 
@@ -798,7 +844,6 @@ export class ChatService {
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
 
     // Build WebSocket URL with proper authentication
-    const wsBase = this.baseUrl.replace("http", "ws");
     const topics = ["message", "takeover", "finalize"];
     const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
 
@@ -807,7 +852,13 @@ export class ChatService {
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
 
-    let wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    let wsUrl = "";
+    if (this.wsVersion === 1) {
+      const wsBase = this.baseUrl.replace("http", "ws");
+      wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    } else {
+      wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    }
 
     // Add tenant as query parameter if provided
     if (this.tenant) {
@@ -825,6 +876,14 @@ export class ChatService {
     this.webSocket.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data as string);
+
+        // Respond to server-side heartbeat pings
+        if (data.type === "ping") {
+          if (this.webSocket) {
+            this.webSocket.send(JSON.stringify({ type: "pong" }));
+            return;
+          }
+        }
 
         if (data.type === "message" && this.messageHandler) {
           if (Array.isArray(data.payload)) {

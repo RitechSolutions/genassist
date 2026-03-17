@@ -2,11 +2,12 @@
 Data mapper node implementation using the BaseNode class.
 """
 
-from typing import Dict, Any
 import logging
+from typing import Any, Dict
+
+from app.modules.workflow.utils import execute_python_code
 
 from ..base_node import BaseNode
-from app.modules.workflow.utils import execute_python_code
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,7 @@ class DataMapperNode(BaseNode):
 
         try:
             # Execute the Python script with resolved params from code_params
-            response = await execute_python_code(
-                python_script, params=self.code_params or {}
-            )
+            response = await execute_python_code(python_script, params=self.code_params or {})
 
             return response
 

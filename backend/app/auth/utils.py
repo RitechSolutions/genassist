@@ -14,10 +14,10 @@ from typing import Optional
 
 API_KEY_HEADER_NAME = "X-API-Key"
 
-api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)  
+api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)
 
 oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/token",
-                                     auto_error=False) 
+                                     auto_error=False)
 
 socket_user_id: ContextVar[Optional[UUID]] = ContextVar("socket_user_id", default=None)
 
