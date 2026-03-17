@@ -1,25 +1,25 @@
 import json
 import logging
 import os
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from celery import Celery
+from celery.schedules import crontab
 from fastapi import FastAPI
 from fastapi_injector import InjectorMiddleware, RequestScopeOptions, attach_injector
-from app.core.config.logging import init_logging
+
 from app.api.v1.routes._routes import register_routers
+from app.cache.redis_cache import init_fastapi_cache_with_redis
+from app.core.config.logging import init_logging
 from app.core.config.settings import settings
 from app.core.exceptions.exception_handler import init_error_handlers
+from app.db.multi_tenant_session import multi_tenant_manager
 from app.dependencies.injector import injector
-from app.cache.redis_cache import init_fastapi_cache_with_redis
 from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
 from app.file_system.file_system import ensure_directories
 from app.middlewares._middleware import build_middlewares
 from app.middlewares.rate_limit_middleware import init_rate_limiter
-from app.db.multi_tenant_session import multi_tenant_manager
-
-from celery.schedules import crontab
-from celery import Celery
-
 
 init_logging()
 logger = logging.getLogger(__name__)
@@ -85,7 +85,8 @@ async def _initialize_redis_services(app: FastAPI):
         Tuple of (redis_string, redis_binary) clients
     """
     from redis.asyncio import Redis
-    from app.dependencies.dependency_injection import RedisString, RedisBinary
+
+    from app.dependencies.dependency_injection import RedisBinary, RedisString
 
     logger.info("Initializing Redis services...")
 
@@ -138,22 +139,25 @@ async def _cleanup_redis_services(app: FastAPI, redis_string, redis_binary):
         logger.error(f"Error closing Redis binary client: {e}")
 
 
+
+# Legacy mode: Initialize WebSocket services for backend-hosted WebSockets.
+# When using standalone WS service, the backend still publishes to Redis; the subscriber
+# delivers to local connections in legacy mode.
+
+
 async def _initialize_websocket_services():
     """
-    Initialize WebSocket-related services.
+    Initialize WebSocket-related services for legacy mode.
 
     This includes:
     - SocketConnectionManager (WebSocket rooms and Redis Pub/Sub)
     """
     from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 
-    logger.info("Initializing WebSocket services...")
+    logger.info("Initializing WebSocket services (legacy mode)...")
 
     try:
-        # Get instance from DI (Redis dependency already injected)
         socket_manager = injector.get(SocketConnectionManager)
-
-        # Initialize Redis Pub/Sub subscriber for cross-server broadcasting
         await socket_manager.initialize_redis_subscriber()
         logger.info("SocketConnectionManager initialized with Redis Pub/Sub")
     except Exception as e:
@@ -192,7 +196,6 @@ async def _lifespan(app: FastAPI):
 
     Manages initialization and cleanup of:
     - Redis services (connection manager, cache)
-    - WebSocket services (connection manager, pub/sub)
     - Database services (multi-tenant sessions)
     - Application services (permissions, tenants)
     """
@@ -256,6 +259,7 @@ def create_celery():
             "app.tasks.share_folder_tasks",
             "app.tasks.ml_model_pipeline_tasks",
             "app.tasks.kb_batch_tasks",
+            "app.tasks.analytics_aggregation_tasks",
         ],
     )
 
@@ -288,6 +292,8 @@ def create_celery():
         worker_pool=settings.CELERY_WORKER_POOL,
         worker_log_format="[%(asctime)s: %(levelname)s/%(processName)s] %(message)s",
         worker_task_log_format="[%(asctime)s: %(levelname)s/%(processName)s][%(task_name)s(%(task_id)s)] %(message)s",
+        # Prevent Celery from hijacking root logger and writing to stderr (Datadog-friendly)
+        worker_hijack_root_logger=False,
     )
 
     # Configure periodic tasks (conditionally enabled via settings)
@@ -305,7 +311,15 @@ def create_celery():
         beat_schedule["cleanup-stale-conversations"] = {
             "task": "app.tasks.conversations_tasks.cleanup_stale_conversations",
             # Run at 2 minutes past every 10 minutes
-             "schedule": crontab(minute="2-59/10"),
+            "schedule": crontab(minute="2-59/10"),
+            "options": {"expires": 3600},  # Task expires after 1 hour
+        }
+
+    if settings.CELERY_BACKFILL_MISSING_CONVERSATION_ANALYSIS:
+        beat_schedule["backfill-problematic-conversation-analyses"] = {
+            "task": "app.tasks.conversations_tasks.backfill_missing_conversation_analyses",
+            # Run at 3 minutes past every 10 minutes
+            "schedule": crontab(minute="3-59/10"),
             "options": {"expires": 3600},  # Task expires after 1 hour
         }
 
@@ -379,6 +393,14 @@ def create_celery():
         beat_schedule["summarize-files-from-azure"] = {
             "task": "app.tasks.kb_batch_tasks.batch_process_files_kb",
             "schedule": 300.0,  # Every 5 minutes (300 seconds)
+        }
+
+    # Aggregate agent analytics twice daily (2 AM + 2 PM UTC)
+    if settings.CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK:
+        beat_schedule["aggregate-agent-analytics"] = {
+            "task": "app.tasks.analytics_aggregation_tasks.aggregate_agent_analytics",
+            "schedule": crontab(minute="0", hour="2,14"),
+            "options": {"expires": 7200},  # Task expires after 2 hours
         }
 
     celery_app.conf.beat_schedule = beat_schedule

@@ -19,8 +19,8 @@ import { GenAgentChat } from 'genassist-chat-react';
 function App() {
   return (
     <div style={{ height: '600px', width: '400px' }}>
-      <GenAgentChat 
-        baseUrl="https://your-api-base-url.com" 
+      <GenAgentChat
+        baseUrl="https://your-api-base-url.com"
         apiKey="your-api-key"
         tenant="your-tenant-id"
       />
@@ -56,8 +56,8 @@ function App() {
 
   return (
     <div style={{ height: '600px', width: '400px' }}>
-      <GenAgentChat 
-        baseUrl="https://your-api-base-url.com" 
+      <GenAgentChat
+        baseUrl="https://your-api-base-url.com"
         apiKey="your-api-key"
         tenant="your-tenant-id"
         userData={userData}
@@ -66,7 +66,6 @@ function App() {
         reCaptchaKey={your-recaptcha-site-key}
         headerTitle="Customer Support"
         placeholder="Ask a question..."
-        inputDisclaimer="Agent can make mistakes"
         onError={() => {}}
         onTakeover={handleTakeover}
         noColorAnimation={false}
@@ -97,7 +96,6 @@ export default App;
 | serverUnavailableMessage | string | No | 'The agent is currently offline, please check back later. Thank you!' | Custom message for when agent is offline (Agent is off or server is down) |
 | serverUnavailableContactUrl | string | No | - | Url to redirect user for contact support |
 | serverUnavailableContactLabel | string | No | Contact support | Label for contact support |
-| inputDisclaimer | string | No | Agent can make mistakes. Check important info. | Disclaimer for agent information |
 | useWS | boolean | false | true | 'Enable or disable websocket...' |
 | useAudio | boolean | false | false | 'Enable or disable audio on chat input...' |
 | useFile | boolean | false | false | 'Enable or disable file attachments on chat input...' |
@@ -124,7 +122,7 @@ The component interacts with the following endpoints:
 
 1. Start Conversation: `POST /api/conversations/in-progress/start`
 2. Update Conversation: `POST /api/conversations/in-progress/update/{conversation_id}`
-3. WebSocket: `/api/conversations/ws/{conversation_id}?access_token={token}&lang=en&topics=message&topics=takeover`
+3. WebSocket:  `WS /conversations/{conversation_id}?access_token={token}&lang=en&topics=message&topics=takeover`
 
 ## Run
 ./

@@ -9,7 +9,7 @@ import {
   type FeatureFlags,
 } from "genassist-chat-react";
 import { getAgentIntegrationKey } from "@/services/api";
-import { getApiUrl, isWsEnabled, isPollEnabled } from "@/config/api";
+import { getApiUrl, getWsUrl, isWsEnabled, isPollEnabled } from "@/config/api";
 import { Button } from "@/components/button";
 import { ArrowLeft } from "lucide-react";
 import IntegrationCodePanel from "@/views/AIAgents/components/Customer/IntegrationCodePanel";
@@ -20,6 +20,7 @@ export default function ChatAsCustomer() {
   const navigate = useNavigate();
 
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
+  const [websocketUrl, setWebsocketUrl] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<ChatTheme>({
@@ -95,6 +96,9 @@ export default function ChatAsCustomer() {
         const baseUrl = new URL("..", apiUrl).toString();
         setBaseUrl(baseUrl);
 
+        const websocketUrl = await getWsUrl();
+        setWebsocketUrl(websocketUrl);
+
         const key = await getAgentIntegrationKey(agentId);
         setApiKey(key);
       } catch (err: any) {
@@ -113,7 +117,7 @@ export default function ChatAsCustomer() {
     );
   }
 
-  if (!baseUrl || !apiKey) {
+  if (!baseUrl || !apiKey || !websocketUrl) {
     return (
       <div className="h-full flex items-center justify-center">
         <p>Loading chat…</p>
@@ -170,6 +174,7 @@ export default function ChatAsCustomer() {
         <div className="min-h-0 flex h-full items-center justify-center">
           <GenAgentChat
             baseUrl={baseUrl}
+            websocketUrl={websocketUrl}
             apiKey={apiKey}
             tenant={tenant ?? undefined}
             metadata={metadata}

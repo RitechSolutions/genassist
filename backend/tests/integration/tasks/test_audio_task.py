@@ -117,4 +117,3 @@ async def test_s3_sync_new_audio_files(authorized_client, new_datasource_data):
             )
         except Exception as cleanup_error:
             logger.warning(f"Could not cleanup S3 file: {cleanup_error}")
-

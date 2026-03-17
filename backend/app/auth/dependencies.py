@@ -1,21 +1,21 @@
 import logging
+from typing import Awaitable, Callable, Optional
 from urllib.parse import parse_qs
 from uuid import UUID
-from fastapi import WebSocket, status
-from starlette_context import context
-from typing import Callable, Awaitable
-from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
-from typing import Optional
-from fastapi import Depends, Query, Request, WebSocketException
+
+from fastapi import Depends, Header, Query, Request, WebSocket, WebSocketException, status
 from fastapi_injector import Injected
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+from starlette_context import context
+
+from app.auth.utils import api_key_header, has_permission, oauth2
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.auth.utils import has_permission, oauth2, api_key_header
+from app.core.tenant_scope import set_tenant_context
 from app.schemas.socket_principal import SocketPrincipal
 from app.schemas.user import UserReadAuth
 from app.services.auth import AuthService
-from app.core.config.settings import settings
-from app.core.tenant_scope import set_tenant_context
 
 logger = logging.getLogger(__name__)
 
@@ -74,23 +74,17 @@ def permissions(*permissions: str) -> Callable[[Request], Awaitable[None]]:
         if hasattr(request.state, "guest_token") and request.state.guest_token:
             guest_permissions = request.state.guest_token.get("permissions", [])
             if not has_permission(guest_permissions, *permissions):
-                raise AppException(
-                    ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403
-                )
+                raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
             return
 
         if hasattr(request.state, "api_key") and request.state.api_key:
             if not has_permission(request.state.api_key.permissions, *permissions):
-                raise AppException(
-                    ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403
-                )
+                raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
 
         elif hasattr(request.state, "user") and request.state.user:
             user = request.state.user
             if not has_permission(user.permissions, *permissions):
-                raise AppException(
-                    ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403
-                )
+                raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
         else:
             raise AppException(status_code=403, error_key=ErrorKey.NOT_AUTHORIZED)
 
@@ -116,7 +110,7 @@ def socket_auth(required_permissions: list[str]):
             # Extract tenant information from WebSocket (priority: query param > header > subdomain)
             resolved_tenant_id = None
             tenant_slug = None
-            
+
             # lowercase the tenant header name to make the check case-insensitive
             tenant_header_name = settings.TENANT_HEADER_NAME.lower()
 
@@ -128,24 +122,20 @@ def socket_auth(required_permissions: list[str]):
                     query_params = parse_qs(websocket.url.query)
                     # parse_qs returns lists, so get first item if exists
                     tenant_query_param = (
-                        query_params.get(tenant_header_name, [None])[0] or
-                        query_params.get("tenant_id", [None])[0] or
-                        query_params.get("tenant", [None])[0]
+                        query_params.get(tenant_header_name, [None])[0]
+                        or query_params.get("tenant_id", [None])[0]
+                        or query_params.get("tenant", [None])[0]
                     )
                     if tenant_query_param:
                         tenant_slug = tenant_query_param
                         resolved_tenant_id = tenant_slug
-                        logger.debug(
-                            f"WebSocket tenant resolved from query parameter: {tenant_slug}"
-                        )
+                        logger.debug(f"WebSocket tenant resolved from query parameter: {tenant_slug}")
 
                 # Method 2: Extract from header (only if not found in query)
                 if not resolved_tenant_id and tenant_header_name in websocket.headers:
                     tenant_slug = websocket.headers[tenant_header_name]
                     resolved_tenant_id = tenant_slug
-                    logger.debug(
-                        f"WebSocket tenant resolved from header: {tenant_slug}"
-                    )
+                    logger.debug(f"WebSocket tenant resolved from header: {tenant_slug}")
 
                 # Method 3: Extract from subdomain (if enabled, only if not found above)
                 if not resolved_tenant_id and settings.TENANT_SUBDOMAIN_ENABLED:
@@ -155,9 +145,7 @@ def socket_auth(required_permissions: list[str]):
                         if subdomain and subdomain != "www":
                             tenant_slug = subdomain
                             resolved_tenant_id = tenant_slug
-                            logger.debug(
-                                f"WebSocket tenant resolved from subdomain: {tenant_slug}"
-                            )
+                            logger.debug(f"WebSocket tenant resolved from subdomain: {tenant_slug}")
 
             resolved_tenant_id = resolved_tenant_id or "master"
             # Set tenant context for dependency injection during WebSocket session
@@ -175,9 +163,7 @@ def socket_auth(required_permissions: list[str]):
                     key_obj.permissions,
                 )
             else:
-                raise WebSocketException(
-                    code=status.WS_1008_POLICY_VIOLATION, reason="Missing credentials"
-                )
+                raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Missing credentials")
 
             if not set(required_permissions).issubset(set(perms)):
                 raise WebSocketException(code=4403, reason="Invalid permissions")
@@ -190,6 +176,7 @@ def socket_auth(required_permissions: list[str]):
             raise WebSocketException(code=4401, reason="Invalid token")
 
     return Depends(_auth_dependency)
+
 
 async def _handle_guest_token(
     request: Request,
@@ -215,11 +202,7 @@ async def _handle_guest_token(
 
         # Extract and convert user_id
         guest_user_id = guest_token_data.get("user_id")
-        user_id_uuid = (
-            UUID(guest_user_id)
-            if guest_user_id and isinstance(guest_user_id, str)
-            else guest_user_id
-        )
+        user_id_uuid = UUID(guest_user_id) if guest_user_id and isinstance(guest_user_id, str) else guest_user_id
 
         # Set context for guest token
         request.state.guest_token = guest_token_data
@@ -232,10 +215,7 @@ async def _handle_guest_token(
         return True
     except AppException as e:
         # Re-raise guest token validation errors
-        if (
-            "guest token" in str(e.error_detail).lower()
-            or "conversation" in str(e.error_detail).lower()
-        ):
+        if "guest token" in str(e.error_detail).lower() or "conversation" in str(e.error_detail).lower():
             raise
         # Not a guest token, return False to continue with regular auth
         return False
@@ -261,9 +241,7 @@ async def _handle_authenticated_agent(
     # Try guest token first
     try:
         token_str = await oauth2(request)
-        if token_str and await _handle_guest_token(
-            request, token_str, conversation_id, auth_service, agent
-        ):
+        if token_str and await _handle_guest_token(request, token_str, conversation_id, auth_service, agent):
             return
     except (AppException, Exception):
         # If oauth2 fails or guest token handling fails, continue to regular JWT
@@ -309,14 +287,24 @@ async def auth_for_conversation_update(
     # check if agent.security_settings.token_based_auth is true
     # Check if security_settings exists and token_based_auth is enabled
     token_based_auth = (
-        agent.security_settings.token_based_auth 
-        if agent.security_settings and agent.security_settings.token_based_auth 
+        agent.security_settings.token_based_auth
+        if agent.security_settings and agent.security_settings.token_based_auth
         else False
     )
     if token_based_auth:
-        await _handle_authenticated_agent(
-            request, conversation_id, agent, api_key, user, auth_service
-        )
+        await _handle_authenticated_agent(request, conversation_id, agent, api_key, user, auth_service)
     else:
         # Standard auth accepts both API key and JWT
         await auth(request, api_key, user)
+
+
+def verify_internal_secret(x_internal_secret: str = Header(...)):
+    """Validate the shared secret header for internal service-to-service calls."""
+    if not settings.WS_INTERNAL_SECRET:
+        raise AppException(
+            status_code=503, error_key=ErrorKey.INTERNAL_SERVER_ERROR, error_detail="WS_INTERNAL_SECRET not configured"
+        )
+    if x_internal_secret != settings.WS_INTERNAL_SECRET:
+        raise AppException(
+            status_code=403, error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, error_detail="Invalid internal secret"
+        )

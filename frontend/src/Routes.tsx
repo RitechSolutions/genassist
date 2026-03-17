@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
-import { createContext, useCallback, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
 import { Register } from "@/views/Register";
 import { ChangePassword, Login } from "@/views/Login";
@@ -8,6 +8,8 @@ import Index from "@/views/Index";
 import Transcripts from "./views/Transcripts";
 import Operators from "./views/Operators";
 import Analytics from "@/views/Analytics";
+import AgentPerformancePage from "@/views/Analytics/pages/AgentPerformancePage";
+import NodeAnalyticsPage from "@/views/Analytics/pages/NodeAnalyticsPage";
 import Notifications from "@/views/Notifications";
 import Settings from "./views/Settings";
 import NotFound from "@/views/NotFound";
@@ -30,6 +32,8 @@ import KnowledgeBase from "@/views/KnowledgeBase/Index";
 import MLModels from "@/views/MLModels/Index";
 import MLModelDetail from "@/views/MLModels/components/MLModelDetail";
 import { FeatureFlags } from "./views/Settings/pages/FeatureFlags";
+import { Translations } from "./views/Settings/pages/Translations";
+import { Languages } from "./views/Settings/pages/Languages";
 import { useFeatureFlag } from "./context/FeatureFlagContext";
 import { GlobalChat } from "./components/GlobalChat";
 import ServerDownPage from "@/components/ServerDownPage";
@@ -43,10 +47,21 @@ import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
 import { getRegistrationStatus } from "@/services/registration";
 import { RoutesContext } from "@/context/RoutesContext";
+import { WebSocketDashboardProvider } from "@/context/WebSocketDashboardContext";
+
+const getAccessToken = () =>
+  typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : "";
+
+const WebSocketDashboardLayout = ({ children }: { children: ReactNode }) => (
+  <WebSocketDashboardProvider token={getAccessToken()}>
+    {children}
+  </WebSocketDashboardProvider>
+);
 
 const ProtectedLayout = () => {
   const { status, isOffline } = useServerStatus();
   const isDown = isOffline || status.down;
+
   return (
     <ProtectedRoute>
       {isDown ? (
@@ -109,7 +124,11 @@ export const RoutesProvider = () => {
             { path: "", element: <Navigate to="/dashboard" replace /> },
             {
               path: "dashboard",
-              element: <Index />,
+              element: (
+                <WebSocketDashboardLayout>
+                  <Index />
+                </WebSocketDashboardLayout>
+              ),
             },
             {
               path: "transcripts",
@@ -117,7 +136,9 @@ export const RoutesProvider = () => {
                 <ProtectedRoute
                   requiredPermissions={["read:conversation"]}
                 >
-                  <Transcripts />
+                  <WebSocketDashboardLayout>
+                    <Transcripts />
+                  </WebSocketDashboardLayout>
                 </ProtectedRoute>
               ),
             },
@@ -138,6 +159,22 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "analytics/agent-performance",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:dashboard"]}>
+                  <AgentPerformancePage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "analytics/node-analytics",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:dashboard"]}>
+                  <NodeAnalyticsPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "notifications",
               element: <Notifications />,
             },
@@ -150,6 +187,22 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:feature_flag"]}>
                   <FeatureFlags />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "settings/translations",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                  <Translations />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "settings/languages",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                  <Languages />
                 </ProtectedRoute>
               ),
             },

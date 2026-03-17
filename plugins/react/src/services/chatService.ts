@@ -1,6 +1,7 @@
 import axios from "axios";
 import {
   ChatMessage,
+  AgentInfoResponse,
   StartConversationResponse,
   Attachment,
   AgentThinkingConfig,
@@ -17,6 +18,7 @@ export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_update
 
 export class ChatService {
   private baseUrl: string;
+  private websocketUrl: string | undefined;
   private apiKey: string;
   private metadata: Record<string, any> | undefined;
   private conversationId: string | null = null;
@@ -39,15 +41,18 @@ export class ChatService {
   private welcomeObjectUrl: string | null = null; // to revoke on reset
   private tenant: string | undefined;
   private agentId: string | undefined;
+  private availableLanguages: string[] | null = null;
   private language: string | undefined;
   private useWs: boolean;
   private serverUnavailableMessage: string | undefined;
   private serverUnavailableContactUrl: string | undefined;
   private serverUnavailableContactLabel: string | undefined;
   private usePoll: boolean = false;
+  private wsVersion: number = 1;
 
   constructor(
     baseUrl: string,
+    websocketUrl: string | undefined,
     apiKey: string,
     metadata?: Record<string, any>,
     tenant?: string,
@@ -56,6 +61,13 @@ export class ChatService {
     usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+
+    if (websocketUrl) {
+      // use new websocket url
+      this.websocketUrl = websocketUrl.endsWith("/") ? websocketUrl.slice(0, -1) : websocketUrl;
+      this.wsVersion = 2;
+    }
+
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
@@ -263,6 +275,50 @@ export class ChatService {
   }
 
   /**
+   * Supported languages for the current agent (if provided by the server).
+   */
+  getAvailableLanguages(): string[] | null {
+    return this.availableLanguages ? [...this.availableLanguages] : null;
+  }
+
+  /**
+   * Fetch agent metadata (e.g. supported languages) without starting a conversation.
+   */
+  async fetchAgentInfo(): Promise<AgentInfoResponse | null> {
+    try {
+      const response = await axios.get<AgentInfoResponse>(
+        `${this.baseUrl}/api/conversations/in-progress/agent-info`,
+        { headers: this.getHeaders() }
+      );
+      const data = response.data || {};
+      const agentId =
+        typeof data.agent_id === "string" ? data.agent_id : undefined;
+      const rawLanguages = Array.isArray(data.agent_available_languages)
+        ? data.agent_available_languages
+        : undefined;
+      const availableLanguages = rawLanguages
+        ? rawLanguages
+            .filter((lang) => typeof lang === "string" && lang.trim().length > 0)
+            .map((lang) => lang.toLowerCase())
+        : undefined;
+
+      if (agentId) {
+        this.agentId = agentId;
+      }
+      if (availableLanguages) {
+        this.availableLanguages = availableLanguages;
+      }
+
+      return {
+        agent_id: agentId,
+        agent_available_languages: availableLanguages,
+      };
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  /**
    * Load a saved conversation ID from localStorage
    */
   private loadSavedConversation(): void {
@@ -282,6 +338,7 @@ export class ChatService {
           thinkingConfig,
           agentId,
           guestToken,
+          availableLanguages,
         } = JSON.parse(savedConversation);
         this.conversationId = conversationId;
         this.conversationCreateTime = createTime;
@@ -302,6 +359,9 @@ export class ChatService {
               : 1000,
         };
         this.agentId = agentId;
+        if (Array.isArray(availableLanguages)) {
+          this.availableLanguages = availableLanguages;
+        }
         if (!this.welcomeData.imageUrl && this.agentId) {
           this.fetchWelcomeImage(this.agentId);
         }
@@ -337,6 +397,7 @@ export class ChatService {
           thinkingConfig: this.thinkingConfig,
           agentId: this.agentId,
           guestToken: this.guestToken,
+          availableLanguages: this.availableLanguages,
         };
         localStorage.setItem(this.getStorageKey(), JSON.stringify(conversationData));
       }
@@ -384,12 +445,6 @@ export class ChatService {
    * Reset the current conversation by clearing the ID and websocket
    */
   resetChatConversation(): void {
-    // Close the current websocket connection if it exists
-    if (this.webSocket) {
-      this.webSocket.close();
-      this.webSocket = null;
-    }
-
     // Clear the conversation ID
     this.conversationId = null;
     this.conversationCreateTime = null;
@@ -485,6 +540,14 @@ export class ChatService {
       const anyData: any = response.data as any;
       const agentId: string | undefined = anyData.agent_id;
       this.agentId = agentId;
+      const rawLanguages = Array.isArray(anyData.agent_available_languages)
+        ? anyData.agent_available_languages
+        : undefined;
+      if (rawLanguages) {
+        this.availableLanguages = rawLanguages
+          .filter((lang: any) => typeof lang === "string" && lang.trim().length > 0)
+          .map((lang: string) => lang.toLowerCase());
+      }
       const rawMeta = anyData.agent_chat_input_metadata;
       if (
         rawMeta != null &&
@@ -503,12 +566,14 @@ export class ChatService {
         anyData.agent_thinking_phrases;
       const thinkingDelaySec: number | undefined =
         anyData.agent_thinking_phrase_delay;
+      const inputDisclaimerHtml: string | undefined = anyData.agent_input_disclaimer_html;
 
       this.welcomeData = {
         title: welcomeTitle || null,
         message: null,
         imageUrl: welcomeImageUrl || null,
         possibleQueries: this.possibleQueries,
+        inputDisclaimerHtml: inputDisclaimerHtml ?? null,
       };
 
       if (Array.isArray(thinkingPhrases) && thinkingPhrases.length > 0) {
@@ -544,9 +609,6 @@ export class ChatService {
       }
 
       this.saveConversation();
-      if (this.useWs) {
-        this.connectWebSocket();
-      }
       return response.data.conversation_id;
     } catch (error: any) {
       if (this.isTokenExpiredError(error)) {
@@ -721,8 +783,53 @@ export class ChatService {
     }
   }
 
+  /**
+   * Process raw WebSocket message data. Called from useChatWebSocket hook.
+   * Handles message, takeover, and finalize events. Ping/pong is handled by the hook.
+   */
+  processWebSocketMessage(data: Record<string, unknown>): void {
+    if (data.type === "ping") return; // Handled by useChatWebSocket (keep-alive)
+
+    if (data.type === "message" && this.messageHandler) {
+      const payload = data.payload;
+      if (Array.isArray(payload)) {
+        const messages = payload as ChatMessage[];
+        const adjustedMessages = messages
+          .map((msg) => {
+            const adjusted = this.adjustMessageTimestamps(msg);
+            if (!adjusted.message_id && (msg as any).id) {
+              adjusted.message_id = (msg as any).id;
+            }
+            return adjusted;
+          })
+          .filter((msg) => msg.speaker !== "customer");
+        adjustedMessages.forEach((m) => this.messageHandler!(m));
+      } else if (payload && typeof payload === "object") {
+        const adjustedMessage = this.adjustMessageTimestamps(
+          payload as ChatMessage
+        );
+        if (!adjustedMessage.message_id && (payload as any).id) {
+          adjustedMessage.message_id = (payload as any).id;
+        }
+        if (adjustedMessage.speaker !== "customer") {
+          this.messageHandler(adjustedMessage);
+        }
+      }
+    } else if (data.type === "takeover") {
+      this.handleTakeover();
+    } else if (data.type === "finalize") {
+      this.handleConversationFinalized();
+    }
+  }
+
+  getGuestToken(): string | null {
+    return this.guestToken;
+  }
+
+  /** @deprecated WebSocket is now managed by useChatWebSocket hook. No-op. */
   connectWebSocket(): void {
-    if (!this.useWs) {
+    if (!this.useWs && !this.websocketUrl) {
+      console.warn("WebSocket is disabled or URL is not set");
       return;
     }
 
@@ -737,7 +844,6 @@ export class ChatService {
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
 
     // Build WebSocket URL with proper authentication
-    const wsBase = this.baseUrl.replace("http", "ws");
     const topics = ["message", "takeover", "finalize"];
     const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
 
@@ -746,7 +852,13 @@ export class ChatService {
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
 
-    let wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    let wsUrl = "";
+    if (this.wsVersion === 1) {
+      const wsBase = this.baseUrl.replace("http", "ws");
+      wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    } else {
+      wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
+    }
 
     // Add tenant as query parameter if provided
     if (this.tenant) {
@@ -764,6 +876,14 @@ export class ChatService {
     this.webSocket.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data as string);
+
+        // Respond to server-side heartbeat pings
+        if (data.type === "ping") {
+          if (this.webSocket) {
+            this.webSocket.send(JSON.stringify({ type: "pong" }));
+            return;
+          }
+        }
 
         if (data.type === "message" && this.messageHandler) {
           if (Array.isArray(data.payload)) {

@@ -25,6 +25,7 @@ import { GoogleReCaptcha, GoogleReCaptchaProvider } from 'react-google-recaptcha
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
+  websocketUrl,
   apiKey,
   tenant,
   metadata,
@@ -53,7 +54,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   serverUnavailableMessage,
   serverUnavailableContactUrl,
   serverUnavailableContactLabel,
-  inputDisclaimer = 'Agent can make mistakes. Check important info.',
   formDisplay = 'footer',
   onConfigLoaded,
 }): React.ReactElement => {
@@ -155,17 +155,21 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     startConversation,
     connectionState,
     conversationId,
+    guestToken,
     possibleQueries,
     isFinalized,
     isAgentTyping,
     addFeedback,
+    availableLanguages: agentAvailableLanguages,
     welcomeTitle,
     welcomeImageUrl,
     welcomeMessage,
+    inputDisclaimerHtml,
     thinkingPhrases,
     thinkingDelayMs,
   } = useChat({
     baseUrl,
+    websocketUrl,
     apiKey,
     tenant,
     metadata: metadataWithLanguage,
@@ -180,6 +184,17 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     serverUnavailableContactLabel,
     onConfigLoaded,
   });
+
+  useEffect(() => {
+    if (language) return;
+    if (!Array.isArray(agentAvailableLanguages) || agentAvailableLanguages.length === 0) {
+      return;
+    }
+    const normalized = agentAvailableLanguages.map((lang) => lang.toLowerCase());
+    if (!normalized.includes(selectedLanguage.toLowerCase())) {
+      setSelectedLanguage(normalized[0]);
+    }
+  }, [agentAvailableLanguages, language, selectedLanguage]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioService = useRef<AudioService | null>(null);
   const hasAnchoredHistory = useRef(false);
@@ -220,8 +235,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const hasUserMessages = messages.some(message => message.speaker === 'customer');
 
   useEffect(() => {
-    audioService.current = new AudioService({ baseUrl, apiKey });
-  }, [baseUrl, apiKey]);
+    audioService.current = new AudioService({ baseUrl, websocketUrl, apiKey });
+  }, [baseUrl, websocketUrl, apiKey]);
+
+  useEffect(() => {
+    audioService.current?.setGuestToken(guestToken ?? null);
+  }, [guestToken]);
 
   useLayoutEffect(() => {
     if (!messages.length) return;
@@ -724,14 +743,25 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, []);
 
   // Available languages (can be extended)
-  const availableLanguages = [
+  const allLanguages = [
     { code: 'en', name: 'English' },
     { code: 'es', name: 'Español' },
     { code: 'fr', name: 'Français' },
     { code: 'de', name: 'Deutsch' },
     { code: 'it', name: 'Italiano' },
     { code: 'pt', name: 'Português' },
+    { code: 'zh', name: '中文' },
   ];
+  const availableLanguages = useMemo(() => {
+    if (Array.isArray(agentAvailableLanguages)) {
+      const allowed = new Set(
+        agentAvailableLanguages.map((lang) => lang.toLowerCase()),
+      );
+      return allLanguages.filter((lang) => allowed.has(lang.code));
+    }
+    return allLanguages;
+  }, [agentAvailableLanguages]);
+  const hasLanguageOptions = availableLanguages.length > 0;
 
   const primaryColor = theme?.primaryColor || '#2962FF';
   const backgroundColor = theme?.backgroundColor || '#ffffff';
@@ -1164,6 +1194,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     fontFamily,
   };
 
+  const showAgentDisclaimer = Boolean(inputDisclaimerHtml);
+  const agentDisclaimerContent = showAgentDisclaimer && (
+    <span dangerouslySetInnerHTML={{ __html: inputDisclaimerHtml! }} />
+  );
+
   const getResponsiveDimensions = () => {
     const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
     // If fullscreen on mobile, use full viewport
@@ -1339,80 +1374,82 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               {t('menu.fullscreen')}
             </div>
           )}
-          <div
-            style={{ ...menuItemStyle, position: 'relative', borderBottom: 'none' }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowLanguageDropdown(!showLanguageDropdown);
-            }}
-          >
-            <Globe size={16} />
-            <span style={{ flex: 1 }}>{t('menu.language')}</span>
-            {showLanguageDropdown && (
-              <div
-                style={{
-                  position: 'absolute',
-                  right: 0,
-                  top: '100%',
-                  marginTop: '4px',
-                  backgroundColor: backgroundColor,
-                  borderRadius: '8px',
-                  boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
-                  minWidth: '180px',
-                  maxWidth: '200px',
-                  overflow: 'hidden',
-                  zIndex: 1001,
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {availableLanguages.map((lang, index) => (
-                  <div
-                    key={lang.code}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '10px 15px',
-                      color: textColor,
-                      backgroundColor: resolvedLanguage === lang.code
-                        ? (theme?.secondaryColor || '#f5f5f5')
-                        : 'transparent',
-                      borderBottom: index < availableLanguages.length - 1 ? '1px solid #f0f0f0' : 'none',
-                      cursor: 'pointer',
-                      fontSize,
-                      fontFamily,
-                      transition: 'background-color 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (resolvedLanguage !== lang.code) {
-                        e.currentTarget.style.backgroundColor = theme?.secondaryColor || '#f5f5f5';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (resolvedLanguage !== lang.code) {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                      }
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleLanguageChange(lang.code);
-                      setShowLanguageDropdown(false);
-                      setShowMenu(false);
-                    }}
-                  >
-                    {lang.name}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {hasLanguageOptions && (
+            <div
+              style={{ ...menuItemStyle, position: 'relative', borderBottom: 'none' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowLanguageDropdown(!showLanguageDropdown);
+              }}
+            >
+              <Globe size={16} />
+              <span style={{ flex: 1 }}>{t('menu.language')}</span>
+              {showLanguageDropdown && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: '100%',
+                    marginTop: '4px',
+                    backgroundColor: backgroundColor,
+                    borderRadius: '8px',
+                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
+                    minWidth: '180px',
+                    maxWidth: '200px',
+                    overflow: 'hidden',
+                    zIndex: 1001,
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {availableLanguages.map((lang, index) => (
+                    <div
+                      key={lang.code}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 15px',
+                        color: textColor,
+                        backgroundColor: resolvedLanguage === lang.code
+                          ? (theme?.secondaryColor || '#f5f5f5')
+                          : 'transparent',
+                        borderBottom: index < availableLanguages.length - 1 ? '1px solid #f0f0f0' : 'none',
+                        cursor: 'pointer',
+                        fontSize,
+                        fontFamily,
+                        transition: 'background-color 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (resolvedLanguage !== lang.code) {
+                          e.currentTarget.style.backgroundColor = theme?.secondaryColor || '#f5f5f5';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (resolvedLanguage !== lang.code) {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleLanguageChange(lang.code);
+                        setShowLanguageDropdown(false);
+                        setShowMenu(false);
+                      }}
+                    >
+                      {lang.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       <div style={contentCardStyle}>
         <div style={chatContainerStyle} ref={chatContainerRef}>
           {/* Language Selector - Show only when no conversation started */}
-          {(!conversationId || isFinalized) && messages.length === 0 && !hasUserMessages && (
+          {hasLanguageOptions && (!conversationId || isFinalized) && messages.length === 0 && !hasUserMessages && (
             <LanguageSelector
               availableLanguages={availableLanguages}
               selectedLanguage={resolvedLanguage}
@@ -1662,9 +1699,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               fontFamily={fontFamily}
               variant="footer"
             />
-            {inputDisclaimer && (
+            {agentDisclaimerContent && (
               <div className="ga-input-disclaimer" style={disclaimerStyle}>
-                {inputDisclaimer}
+                {agentDisclaimerContent}
               </div>
             )}
           </div>
@@ -1679,9 +1716,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     style={attachButtonStyle}
                     title="Attach"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isAgentTyping}
                   >
-                    <Paperclip size={22} color={isAgentTyping ? "#b0b0b0" : "#757575"} />
+                    <Paperclip size={22} color="#757575" />
                   </button>
                   <input
                     type="file"
@@ -1708,7 +1744,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   }
                 }}
                 placeholder={inputPlaceholder}
-                disabled={!conversationId || isFinalized || isAgentTyping || hasPendingForm}
+                disabled={!conversationId || isFinalized || hasPendingForm}
                 rows={1}
               />
               <div style={rightActionContainerStyle}>
@@ -1719,7 +1755,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     baseUrl={baseUrl}
                     apiKey={apiKey}
                     theme={theme}
-                    disabled={isAgentTyping}
                   />
                 ) : (
                   <button
@@ -1733,9 +1768,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               </div>
             </div>
 
-            {inputDisclaimer && (
+            {agentDisclaimerContent && (
               <div className="ga-input-disclaimer" style={disclaimerStyle}>
-                {inputDisclaimer}
+                {agentDisclaimerContent}
               </div>
             )}
             </div>

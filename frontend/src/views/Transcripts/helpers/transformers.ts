@@ -162,6 +162,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
         customerSatisfaction: analysis.customer_satisfaction || 0,
         serviceQuality: analysis.quality_of_service || 0,
         resolutionRate: analysis.resolution_rate || 0,
+        efficiency: analysis.efficiency || 0,
         speakingRatio: {
           agent: backendData.agent_ratio || 50,
           customer: backendData.customer_ratio || 50,
@@ -201,6 +202,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
         customerSatisfaction: 0,
         serviceQuality: 0,
         resolutionRate: 0,
+        efficiency: 0,
         speakingRatio: {
           agent: 50,
           customer: 50,

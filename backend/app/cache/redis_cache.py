@@ -168,9 +168,36 @@ async def invalidate_agent_cache(agent_id: UUID, user_id: UUID):
     await invalidate_cache("agents:get_by_id_full", agent_id)
     await invalidate_cache("agents:get_by_user_id", user_id)
 
+async def clear_conversation_memory_cache(conversation_id: UUID) -> None:
+    """
+    Delete the Redis keys written by RedisConversationMemory for a conversation.
+
+    Keys follow the pattern set in memory.py:
+      {tenant_prefix}:conversation:{conversation_id}:{info|messages|metadata|stateful}
+    """
+    from app.core.tenant_scope import get_tenant_context
+    from app.dependencies.dependency_injection import RedisString
+    from app.dependencies.injector import injector
+
+    tenant_id = get_tenant_context()
+    tenant_prefix = f"tenant:{tenant_id}:" if tenant_id else ""
+    conv_str = str(conversation_id)
+
+    pattern = f"{tenant_prefix}:conversation:{conv_str}:*"
+
+    try:
+        redis = injector.get(RedisString)
+        keys = [key async for key in redis.scan_iter(pattern)]
+        deleted = await redis.delete(*keys) if keys else 0
+        logger.debug(f"Cleared {deleted} conversation memory keys for {conversation_id}")
+    except Exception as e:
+        logger.error(f"Failed to clear conversation memory cache for {conversation_id}: {e}")
+
+
 async def invalidate_conversation_cache(conversation_id: UUID):
     await invalidate_cache("conversations:get_conversation_by_id_with_operator_agent", conversation_id)
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
+    await clear_conversation_memory_cache(conversation_id)
 
 async def invalidate_llm_provider_cache(provider_id: UUID | None):
     if provider_id:

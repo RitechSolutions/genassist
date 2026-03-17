@@ -1,7 +1,7 @@
 from typing import Optional, Tuple
 from urllib.parse import quote, unquote
 
-from pydantic import computed_field, ConfigDict, Field
+from pydantic import ConfigDict, Field, computed_field
 from pydantic_settings import BaseSettings
 
 from app.core.project_path import DATA_VOLUME
@@ -23,9 +23,7 @@ class ProjectSettings(BaseSettings):
 
     # Redis connection pool settings
     REDIS_MAX_CONNECTIONS: int = 10  # Max connections in pool
-    REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE: int = (
-        5  # Used to cache agents, etc, in services
-    )
+    REDIS_MAX_CONNECTIONS_FOR_ENDPOINT_CACHE: int = 5  # Used to cache agents, etc, in services
     REDIS_SOCKET_TIMEOUT: int = 10  # Socket timeout in seconds
     REDIS_SOCKET_CONNECT_TIMEOUT: int = 15  # Socket connect timeout in seconds
     REDIS_HEALTH_CHECK_INTERVAL: int = 30  # Health check interval in seconds
@@ -38,13 +36,12 @@ class ProjectSettings(BaseSettings):
     # Each publish takes ~5ms, so connections are rapidly reused
 
     # Celery Redis connection pool settings
-    CELERY_REDIS_MAX_CONNECTIONS: int = (
-        50  # Max connections for Celery broker & backend
-    )
+    CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
 
     # Celery Beat task toggles (enable/disable periodic jobs)
     CELERY_ENABLE_RUN_EXAMPLE_TASK: bool = True
     CELERY_ENABLE_CLEANUP_STALE_CONVERSATIONS_TASK: bool = True
+    CELERY_BACKFILL_MISSING_CONVERSATION_ANALYSIS: bool = True
     CELERY_ENABLE_IMPORT_S3_FILES_TASK: bool = True
     CELERY_ENABLE_TRANSCRIBE_S3_FILES_TASK: bool = True
     CELERY_ENABLE_ZENDESK_ANALYSIS_TASK: bool = True
@@ -54,6 +51,7 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_SYNC_ACTIVE_FINE_TUNING_JOBS_TASK: bool = True
     CELERY_ENABLE_CHECK_SCHEDULED_PIPELINE_RUNS_TASK: bool = True
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
+    CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
 
     # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
     # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
@@ -61,6 +59,10 @@ class ProjectSettings(BaseSettings):
 
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
+
+    # Number of latest messages used for in-progress hostility scoring.
+    # If the conversation has fewer messages than this, all messages are used.
+    HOSTILITY_SCORE_MESSAGE_COUNT: int = 20
 
     FERNET_KEY: Optional[str]
 
@@ -161,12 +163,11 @@ class ProjectSettings(BaseSettings):
     BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS: int = 8
 
     # === CORS Configuration ===
-    CORS_ALLOWED_ORIGINS: Optional[str] = (
-        None  # Comma-separated list of additional allowed origins
-    )
+    CORS_ALLOWED_ORIGINS: Optional[str] = None  # Comma-separated list of additional allowed origins
 
     # === WebSocket Configuration ===
     USE_WS: bool = True  # Enable/disable WebSocket backend (connect, broadcast, rooms)
+    WS_INTERNAL_SECRET: Optional[str] = None  # Shared secret for internal WS service auth
 
     # === Rate Limiting Configuration ===
     RATE_LIMIT_ENABLED: bool = False
@@ -191,6 +192,9 @@ class ProjectSettings(BaseSettings):
     # MSSQL Driver
     MSSQL_DRIVER: str = "ODBC+Driver+18+for+SQL+Server"
 
+    # Conversation history max messages for chat input node
+    CONVERSATION_HISTORY_NODE_MAX_MESSAGES: int = 100
+
     @property
     def _zendesk_base(self) -> str:
         return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
@@ -212,27 +216,21 @@ class ProjectSettings(BaseSettings):
             auth = ""
         # use rediss for ssl if ssl is enabled
         redis_scheme = "rediss" if self.REDIS_SSL else "redis"
-        return unquote(
-            f"{redis_scheme}://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}"
-        )
+        return unquote(f"{redis_scheme}://{auth}{host}:{self.REDIS_PORT}/{self.REDIS_DB}")
 
     @computed_field
     @property
     def DATABASE_URL(self) -> str:
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return unquote(
-            f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}"
-        )
+        return unquote(f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}")
 
     @computed_field
     @property
     def DATABASE_URL_SYNC(self) -> str:
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return unquote(
-            f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}"
-        )
+        return unquote(f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{self.DB_NAME}")
 
     @computed_field
     @property
@@ -253,18 +251,14 @@ class ProjectSettings(BaseSettings):
         tenant_db = self.get_tenant_database_name(tenant)
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return unquote(
-            f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{tenant_db}"
-        )
+        return unquote(f"postgresql+asyncpg://{user}:{password}@{self.DB_HOST}/{tenant_db}")
 
     def get_tenant_database_url_sync(self, tenant: str = "master") -> str:
         """Generate SYNC database URL for a specific tenant (psycopg2)"""
         tenant_db = self.get_tenant_database_name(tenant)
         user = quote(self.DB_USER or "", safe="")
         password = quote(self.DB_PASS or "", safe="")
-        return unquote(
-            f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{tenant_db}"
-        )
+        return unquote(f"postgresql+psycopg2://{user}:{password}@{self.DB_HOST}/{tenant_db}")
 
     model_config = ConfigDict(
         env_file=".env",

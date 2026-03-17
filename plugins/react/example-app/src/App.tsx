@@ -39,6 +39,7 @@ function App() {
     agentName: "Agent",
     logoUrl: "",
     baseUrl: import.meta.env.VITE_GENASSIST_CHAT_APIURL || "",
+    websocketUrl: import.meta.env.VITE_GENASSIST_CHAT_WEBSOCKET_URL || "",
     apiKey: import.meta.env.VITE_GENASSIST_CHAT_APIKEY || "",
     reCaptchaKey: import.meta.env.VITE_GENASSIST_CHAT_RECAPTCHA_KEY || "",
     tenant: import.meta.env.VITE_GENASSIST_CHAT_TENANT || "",
@@ -1065,6 +1066,7 @@ function App() {
       {/* Chat Widget - Floating Mode */}
       <GenAgentChat
         baseUrl={chatSettings.baseUrl}
+        websocketUrl={chatSettings.websocketUrl}
         apiKey={chatSettings.apiKey}
         tenant={chatSettings.tenant || undefined}
         metadata={metadata}
@@ -1079,8 +1081,6 @@ function App() {
         serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
         serverUnavailableContactUrl="https://www.ritech.co/"
         serverUnavailableContactLabel="Contact Support"
-        inputDisclaimer={<span>Agent can make mistakes. <a href="https://genassist.ai">Check important info.</a></span>}
-        // inputDisclaimer={<span><a href="https://genassist.ai">Genassist</a> provides AI-generated content for informational purposes only. While our bots strive for accuracy, AI responses may occasionally be incorrect, incomplete, or biased. Users should independently verify any critical information before taking action</span>}
         onError={handleError}
         mode="floating"
         floatingConfig={{

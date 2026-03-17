@@ -27,6 +27,11 @@ pip install -r requirements-app.txt
 pip install -r requirements-rag.txt
 ```
 
+```bash
+# Only for development purposes
+pip install -r requirements-dev.txt
+```
+
 ### 3. Configure Environment
 
 ```bash

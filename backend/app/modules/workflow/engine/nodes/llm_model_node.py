@@ -3,17 +3,18 @@ LLM model node implementation using the BaseNode class.
 """
 
 import base64
-from typing import Any, Dict
 import logging
+from typing import Any, Dict
+
 from langchain_core.messages import HumanMessage, SystemMessage
+
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.token_utils import calculate_history_tokens
+from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
 from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.llm.provider import LLMProvider
-from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
 from app.services.llm_providers import LlmProviderService
-
 
 logger = logging.getLogger(__name__)
 
@@ -42,19 +43,18 @@ class LLMModelNode(BaseNode):
         if trimming_mode == "token_budget":
             # Token-based trimming with budget enforcement
             from app.dependencies.injector import injector
+
             llm_service = injector.get(LlmProviderService)
             provider_info = await llm_service.get_by_id(provider_id)
             provider = provider_info.llm_model_provider
             model = provider_info.llm_model
 
-            actual_history_tokens, model, provider = calculate_history_tokens(config, model, provider,
-                                                                                    system_prompt, user_prompt)
+            actual_history_tokens, model, provider = calculate_history_tokens(
+                config, model, provider, system_prompt, user_prompt
+            )
 
             return await memory.get_chat_history_within_tokens(
-                token_budget=actual_history_tokens,
-                provider=provider,
-                model=model,
-                as_string=True
+                token_budget=actual_history_tokens, provider=provider, model=model, as_string=True
             )
         elif trimming_mode == "message_compacting":
             # Message compacting mode - compact old messages at threshold intervals
@@ -75,13 +75,13 @@ class LLMModelNode(BaseNode):
                 # max_messages is only used as a fallback when no compaction exists yet
                 return await memory.get_chat_history_with_compaction(
                     max_messages=keep_recent,  # Fallback limit only
-                    as_string=True
+                    as_string=True,
                 )
             else:
                 # Never compacted and below threshold - return ALL messages
                 return await memory.get_chat_history(
                     as_string=True,
-                    max_messages=999  # Large number to get all messages
+                    max_messages=999,  # Large number to get all messages
                 )
         elif trimming_mode == "rag_retrieval":
             # Note: same structure and code as in AI agent node, this can be extracted to remove code duplication by a benevolent engineer
@@ -90,8 +90,8 @@ class LLMModelNode(BaseNode):
             # - Above threshold: lazily index message groups into vector DB,
             #   retrieve semantically relevant groups + keep recent messages verbatim
             from app.dependencies.injector import injector
-            from app.modules.workflow.agents.rag import ThreadScopedRAG
             from app.modules.workflow.agents.conversation_rag_indexer import ConversationRAGIndexer
+            from app.modules.workflow.agents.rag import ThreadScopedRAG
 
             thread_rag = injector.get(ThreadScopedRAG)
             try:
@@ -124,14 +124,9 @@ class LLMModelNode(BaseNode):
         else:
             # Message count mode - simple last N messages
             max_messages = config.get("maxMessages", 10)
-            return await memory.get_chat_history(
-                as_string=True,
-                max_messages=max_messages
-            )
+            return await memory.get_chat_history(as_string=True, max_messages=max_messages)
 
-    async def _perform_compaction(
-        self, memory, config: Dict[str, Any], provider_id: str
-    ) -> None:
+    async def _perform_compaction(self, memory, config: Dict[str, Any], provider_id: str) -> None:
         """
         Perform message compaction using configured settings.
 
@@ -154,11 +149,13 @@ class LLMModelNode(BaseNode):
             # Get or create LLM for compaction
             compacting_model_id = config.get("compactingModel") or provider_id
             from app.dependencies.injector import injector
+
             llm_provider = injector.get(LLMProvider)
             llm_model = await llm_provider.get_model(compacting_model_id)
 
             # Create compactor and perform compaction
             from app.modules.workflow.agents.memory_compactor import MemoryCompactor
+
             compactor = MemoryCompactor(llm_model)
 
             existing_summary = await memory.get_compacted_summary()
@@ -190,8 +187,7 @@ class LLMModelNode(BaseNode):
         _type = config.get("type", "base")
         memory_enabled = config.get("memory", False)
 
-        logger.debug(
-            f"Input data: system_prompt={system_prompt}, prompt={prompt}")
+        logger.debug(f"Input data: system_prompt={system_prompt}, prompt={prompt}")
 
         try:
             if not provider_id:
@@ -199,6 +195,7 @@ class LLMModelNode(BaseNode):
 
             # Set up the environment for the model
             from app.dependencies.injector import injector
+
             llm_provider = injector.get(LLMProvider)
             llm = await llm_provider.get_model(provider_id)
 
@@ -224,7 +221,7 @@ class LLMModelNode(BaseNode):
                 system_prompt = system_prompt + "\n\n" + chat_history
 
             # default message content
-            message_content = [{ "type": "text", "text": prompt }]
+            message_content = [{"type": "text", "text": prompt}]
 
             # build message content with attachments
             attachments = self.get_state().get_value("attachments", [])
@@ -232,7 +229,7 @@ class LLMModelNode(BaseNode):
             if attachments:
                 attachments_message_content = self._build_attachments_message_content(attachments)
                 message_content.extend(attachments_message_content)
-            
+
             # Process the input through the model
             response = await llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=message_content)])
             result = response.content
@@ -247,6 +244,7 @@ class LLMModelNode(BaseNode):
     def _convert_attachment_to_base64(self, attachment_local_path: str) -> str:
         """Convert attachment local path to base64"""
         import os
+
         attachment_os_path = os.path.join(attachment_local_path)
         with open(attachment_os_path, "rb") as read_file:
             attachment_base64 = base64.standard_b64encode(read_file.read()).decode("utf-8")
@@ -255,10 +253,10 @@ class LLMModelNode(BaseNode):
     def _build_attachments_message_content(self, attachments: list) -> list:
         """
         Build message content with attachments.
-        
+
         Args:
             attachments: List of attachment dictionaries
-            
+
         Returns:
             List of message content items (text, images, files)
         """
@@ -279,30 +277,24 @@ class LLMModelNode(BaseNode):
                         # get file base64
                         base64_content = self._convert_attachment_to_base64(attachment_file_local_path)
                         attachment_url = f"data:{attachment_mime_type};base64,{base64_content}"
-                    
-                    message_content.append({
-                        "type": "image_url",
-                        "image_url": {"url": attachment_url}
-                    })
+
+                    message_content.append({"type": "image_url", "image_url": {"url": attachment_url}})
                 else:
                     # Priority: OpenAI file_id > URL > base64
                     if attachment_file_id:
                         # Use OpenAI file_id (preferred for PDFs and supported file types)
-                        message_content.append({
-                            "type": "file",
-                            "file": {
-                                "file_id": attachment_file_id
-                            }
-                        })
+                        message_content.append({"type": "file", "file": {"file_id": attachment_file_id}})
                         logger.info(f"Using OpenAI file_id: {attachment_file_id} for file attachment")
                     elif attachment_url:
                         # Fallback to URL if file_id not available
-                        message_content.append({
-                            "type": "file",
-                            "url": attachment_url,
-                        })
-                        logger.warning(f"Using URL fallback for file attachment (file_id not available)")
+                        message_content.append(
+                            {
+                                "type": "file",
+                                "url": attachment_url,
+                            }
+                        )
+                        logger.warning("Using URL fallback for file attachment (file_id not available)")
                     else:
-                        logger.warning(f"No file_id or URL available for attachment, skipping")
-        
+                        logger.warning("No file_id or URL available for attachment, skipping")
+
         return message_content
