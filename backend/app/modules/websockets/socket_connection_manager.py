@@ -1,15 +1,16 @@
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
-from contextvars import copy_context, Context
+from contextvars import Context, copy_context
 from dataclasses import dataclass, field
 from typing import Dict, Hashable, List, Sequence, Set
 from uuid import UUID
+
 from fastapi.websockets import WebSocket
 
 from app.core.config.settings import settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class Connection:
     topics: Set[str] = field(default_factory=set)
     # Captured context from connection time (includes starlette_context, tenant context, etc.)
     context: Context | None = field(default=None, repr=False)
+
 
 class SocketConnectionManager:
     """
@@ -75,14 +77,14 @@ class SocketConnectionManager:
         # FastAPI/InjectorMiddleware wraps WebSocket with context-checking proxies
         # We need the raw WebSocket for background task sends (outside request context)
         raw_websocket = websocket
-        if hasattr(websocket, '_websocket'):
+        if hasattr(websocket, "_websocket"):
             # FastAPI wraps Starlette's WebSocket, get the underlying one
             raw_websocket = websocket._websocket
-            logger.debug(f"[CONNECT] Extracted raw Starlette WebSocket")
-        elif hasattr(websocket, '__wrapped__'):
+            logger.debug("[CONNECT] Extracted raw Starlette WebSocket")
+        elif hasattr(websocket, "__wrapped__"):
             # Check for other wrapper patterns
             raw_websocket = websocket.__wrapped__
-            logger.debug(f"[CONNECT] Extracted unwrapped WebSocket")
+            logger.debug("[CONNECT] Extracted unwrapped WebSocket")
 
         logger.info(f"[CONNECT] WebSocket type: {type(websocket)}, Raw type: {type(raw_websocket)}")
 
@@ -99,13 +101,12 @@ class SocketConnectionManager:
                 f"[CONNECT] Added to room {tenant_aware_room_id} "
                 f"(raw_room_id={room_id}, user_id={user_id}, tenant_id={tenant_id}, topics={topics})"
             )
-            logger.info(f"[CONNECT] Total rooms: {len(self._rooms)}, Connections in this room: {len(self._rooms[tenant_aware_room_id])}")
+            logger.info(
+                f"[CONNECT] Total rooms: {len(self._rooms)}, Connections in this room: {len(self._rooms[tenant_aware_room_id])}"
+            )
 
     async def disconnect(
-        self,
-        websocket: WebSocket,
-        room_id: Hashable | None = None,
-        tenant_id: str | None = None
+        self, websocket: WebSocket, room_id: Hashable | None = None, tenant_id: str | None = None
     ) -> None:
         """
         Disconnect a WebSocket connection.
@@ -210,10 +211,7 @@ class SocketConnectionManager:
                     "room_id": str(room_id),
                     "tenant_id": tenant_id,
                 }
-                await self._redis_client.publish(
-                    redis_channel,
-                    json.dumps(message_data, default=str)
-                )
+                await self._redis_client.publish(redis_channel, json.dumps(message_data, default=str))
                 logger.info(
                     f"[BROADCAST] Published to Redis channel: {redis_channel} | "
                     f"Room: {tenant_aware_room_id} | Type: {msg_type} | Topic: {required_topic}"
@@ -221,9 +219,7 @@ class SocketConnectionManager:
                 # Message will be delivered via Redis subscriber
                 return
             except Exception as exc:
-                logger.warning(
-                    f"Failed to publish to Redis, falling back to local broadcast: {exc}"
-                )
+                logger.warning(f"Failed to publish to Redis, falling back to local broadcast: {exc}")
 
         # Fallback to local-only broadcasting (single server mode or Redis failure)
         await self._broadcast_local(
@@ -265,6 +261,7 @@ class SocketConnectionManager:
                 # Run the send within the captured context from connection time
                 # This makes starlette_context and tenant context available to the WebSocket
                 if conn.context:
+
                     def _send_sync():
                         """Sync wrapper to run async send in context"""
                         return asyncio.create_task(conn.websocket.send_text(message))
@@ -279,9 +276,7 @@ class SocketConnectionManager:
                     logger.debug(f"[BROADCAST_LOCAL] ✅ Sent without context to user {conn.user_id}")
 
             except Exception as exc:
-                logger.warning(
-                    f"[BROADCAST_LOCAL] ❌ Failed to send to user {conn.user_id}: {exc}"
-                )
+                logger.warning(f"[BROADCAST_LOCAL] ❌ Failed to send to user {conn.user_id}: {exc}")
                 # Disconnect from the specific room if we know it, otherwise search all rooms
                 if "context" not in str(exc).lower():
                     await self.disconnect(conn.websocket, room_id, conn.tenant_id)
@@ -337,10 +332,7 @@ class SocketConnectionManager:
 
             while not self._shutdown_event.is_set():
                 try:
-                    message = await pubsub.get_message(
-                        ignore_subscribe_messages=True,
-                        timeout=1.0
-                    )
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
 
                     if message and message["type"] == "pmessage":
                         await self._handle_redis_message(message)

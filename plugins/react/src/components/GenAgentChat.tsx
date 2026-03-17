@@ -25,6 +25,7 @@ import { GoogleReCaptcha, GoogleReCaptchaProvider } from 'react-google-recaptcha
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
+  websocketUrl,
   apiKey,
   tenant,
   metadata,
@@ -154,6 +155,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     startConversation,
     connectionState,
     conversationId,
+    guestToken,
     possibleQueries,
     isFinalized,
     isAgentTyping,
@@ -167,6 +169,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     thinkingDelayMs,
   } = useChat({
     baseUrl,
+    websocketUrl,
     apiKey,
     tenant,
     metadata: metadataWithLanguage,
@@ -232,8 +235,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const hasUserMessages = messages.some(message => message.speaker === 'customer');
 
   useEffect(() => {
-    audioService.current = new AudioService({ baseUrl, apiKey });
-  }, [baseUrl, apiKey]);
+    audioService.current = new AudioService({ baseUrl, websocketUrl, apiKey });
+  }, [baseUrl, websocketUrl, apiKey]);
+
+  useEffect(() => {
+    audioService.current?.setGuestToken(guestToken ?? null);
+  }, [guestToken]);
 
   useLayoutEffect(() => {
     if (!messages.length) return;

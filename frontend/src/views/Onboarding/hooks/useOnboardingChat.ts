@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatService, type AgentWelcomeData, type ChatMessage } from "genassist-chat-react";
-import { type RegistrationStatus } from "@/context/RoutesContext";  
+import { type RegistrationStatus } from "@/context/RoutesContext";
 
 export interface OnboardingMessage {
   role: "user" | "agent";

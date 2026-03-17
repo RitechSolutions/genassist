@@ -7,7 +7,7 @@
  *
  * The config shape matches the flat field names produced by agent_rag_form_schemas.py
  * (e.g. "embedding_type", "vector_db_type", "chunk_strategy") — the same values
- * that _create_default_config() in rag.py reads from config_overrides.
+ * that _create_config() in rag.py reads from config_overrides.
  */
 import React, { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";

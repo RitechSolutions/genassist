@@ -167,6 +167,7 @@ class ProjectSettings(BaseSettings):
 
     # === WebSocket Configuration ===
     USE_WS: bool = True  # Enable/disable WebSocket backend (connect, broadcast, rooms)
+    WS_INTERNAL_SECRET: Optional[str] = None  # Shared secret for internal WS service auth
 
     # === Rate Limiting Configuration ===
     RATE_LIMIT_ENABLED: bool = False
