@@ -127,6 +127,20 @@ services:
     <<: *restart-policy
 
   # ===========================================================================
+  # WEBSOCKET SERVICE
+  # ===========================================================================
+  websocket:
+    profiles: ["backend", "full"]
+    env_file:
+      - ../websocket/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    <<: *restart-policy
+
+  # ===========================================================================
   # BACKEND APPLICATION
   # ===========================================================================
   app:

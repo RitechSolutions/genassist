@@ -119,6 +119,23 @@ services:
       - genassist-network-dev
 
   # ===========================================================================
+  # WEBSOCKET SERVICE
+  # ===========================================================================
+  websocket:
+    build:
+      context: ../websocket
+      dockerfile: Dockerfile
+    image: genassist-websocket:dev
+    pull_policy: never
+    container_name: genassist-ws-dev
+    ports:
+      - "${WS_PORT_EXTERNAL:-8002}:8002"
+    environment:
+      LOG_LEVEL: debug
+    networks:
+      - genassist-network-dev
+
+  # ===========================================================================
   # CELERY WORKERS
   # ===========================================================================
   celery_worker:

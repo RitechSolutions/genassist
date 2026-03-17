@@ -26,6 +26,14 @@ parameters:
     type: boolean
     default: false
     displayName: 'Skip starting dependency services (use for frontend-only deploys)'
+  - name: webSocketEnvFile
+    type: string
+    default: ''
+    displayName: 'Optional secondary secure file (e.g., env.websocket.dev)'
+  - name: webSocketEnvDest
+    type: string
+    default: ''
+    displayName: 'Destination for WebSocket .env file (e.g., websocket/.env)'
 
 steps:
   - task: DownloadSecureFile@1
@@ -33,6 +41,20 @@ steps:
     displayName: 'Download .env file'
     inputs:
       secureFile: ${{ parameters.envFile }}
+
+  - ${{ if ne(parameters.webSocketEnvFile, '') }}:
+    - task: DownloadSecureFile@1
+      name: websocketenvfile
+      displayName: 'Download WebSocket .env file'
+      inputs:
+        secureFile: ${{ parameters.webSocketEnvFile }}
+
+  - ${{ if ne(parameters.webSocketEnvFile, '') }}:
+    - script: |
+        set -euo pipefail
+        echo "=== Copying secondary env file ==="
+        cp "$(websocketenvfile.secureFilePath)" ${{ parameters.webSocketEnvDest }}
+      displayName: 'Copy WebSocket .env file'
 
   - script: |
       set -euo pipefail
@@ -55,9 +77,10 @@ steps:
 
       # Ensure both env files exist so compose can parse the full file
       # (needed when deploying frontend-only without backend/.env present)
-      mkdir -p backend frontend
+      mkdir -p backend frontend websocket
       [ -f backend/.env ] || touch backend/.env
       [ -f frontend/.env ] || touch frontend/.env
+      [ -f websocket/.env ] || touch websocket/.env
 
       echo "=== Cleaning up orphaned containers ==="
       CLEANUP_TARGETS="${{ parameters.services }} ${{ parameters.cleanupExtra }}"

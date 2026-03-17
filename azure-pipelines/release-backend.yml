@@ -1,5 +1,5 @@
 # Release Pipeline: Backend Services
-# Deploys: app, celery_worker, celery_beat, whisper, flower
+# Deploys: app, celery_worker, celery_beat, whisper, flower, websocket
 
 name: Backend_$(Date:yyyyMMdd)$(Rev:.r)
 
@@ -36,6 +36,10 @@ parameters:
     type: boolean
     default: true
     displayName: 'Include Flower service'
+  - name: includeWebsocket
+    type: boolean
+    default: true
+    displayName: 'Include WebSocket service'
 
 variables:
   ${{ if eq(parameters.includeInfra, true) }}:
@@ -54,6 +58,10 @@ variables:
     flowerPart: 'flower'
   ${{ else }}:
     flowerPart: ''
+  ${{ if eq(parameters.includeWebsocket, true) }}:
+    websocketPart: 'websocket'
+  ${{ else }}:
+    websocketPart: ''
 
 stages:
   # ═══════════════════════════════════════════════════════════════════════════
@@ -77,10 +85,12 @@ stages:
 
                 - template: templates/deploy.yml
                   parameters:
-                    services: '$(infraPart) app $(celeryPart) $(whisperPart) $(flowerPart)'
+                    services: '$(infraPart) app $(celeryPart) $(whisperPart) $(flowerPart) $(websocketPart)'
                     composeOverride: 'docker-compose.build.yml'
                     envFile: 'env.backend.dev'
                     envDest: 'backend/.env'
+                    webSocketEnvFile: 'env.websocket.dev'
+                    webSocketEnvDest: 'websocket/.env'
                     extraEnv: >-
                       API_VERSION=$(Build.BuildNumber)
                       LOG_LEVEL=INFO
@@ -122,11 +132,20 @@ stages:
                       localImageName: 'genassist-whisper'
                       registryImageName: 'genassist-whisper'
 
+                - ${{ if eq(parameters.includeWebsocket, true) }}:
+                  - template: templates/build-push-test.yml
+                    parameters:
+                      composeService: 'websocket'
+                      localImageName: 'genassist-websocket'
+                      registryImageName: 'genassist-websocket'
+
                 - template: templates/deploy.yml
                   parameters:
-                    services: '$(infraPart) app $(celeryPart) $(whisperPart) $(flowerPart)'
+                    services: '$(infraPart) app $(celeryPart) $(whisperPart) $(flowerPart) $(websocketPart)'
                     envFile: 'env.backend.test'
                     envDest: 'backend/.env'
+                    webSocketEnvFile: 'env.websocket.test'
+                    webSocketEnvDest: 'websocket/.env'
                     extraEnv: >-
                       API_VERSION=$(Build.SourceBranchName)-$(Build.BuildNumber)
                       LOG_LEVEL=INFO
@@ -160,3 +179,8 @@ stages:
                   - template: templates/promote-to-prod.yml
                     parameters:
                       registryImageName: 'genassist-whisper'
+
+                - ${{ if eq(parameters.includeWebsocket, true) }}:
+                  - template: templates/promote-to-prod.yml
+                    parameters:
+                      registryImageName: 'genassist-websocket'
