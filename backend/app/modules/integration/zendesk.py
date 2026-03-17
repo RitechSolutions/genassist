@@ -22,7 +22,15 @@ class ZendeskConnector:
         email: Optional[str] = None,
         api_token: Optional[str] = None,
     ):
-        self.subdomain = subdomain or settings.ZENDESK_SUBDOMAIN
+        raw = (subdomain or settings.ZENDESK_SUBDOMAIN or "").strip()
+        # Normalize subdomain: ensure it has .zendesk.com (matches connection_tester)
+        if not raw:
+            self.subdomain = ""
+        elif raw.endswith(".zendesk.com"):
+            self.subdomain = raw
+        else:
+            self.subdomain = f"{raw}.zendesk.com"
+
         self.email = email or settings.ZENDESK_EMAIL
         self.api_token = api_token or settings.ZENDESK_API_TOKEN
         self.base_url = f"https://{self.subdomain}/api/v2"
@@ -39,8 +47,15 @@ class ZendeskConnector:
         params: Optional[Dict[str, Any]] = None,
         timeout: float = 10.0,
     ) -> Dict[str, Any]:
-        """Internal method to make HTTP requests to Zendesk API."""
-        async with httpx.AsyncClient(auth=self._auth, timeout=timeout) as client:
+        """Internal method to make HTTP requests to Zendesk API.
+        Uses trust_env=True so HTTP_PROXY/HTTPS_PROXY from env are respected (e.g. in Celery worker).
+        """
+        async with httpx.AsyncClient(
+            auth=self._auth,
+            timeout=timeout,
+            trust_env=True,  # Use HTTP_PROXY/HTTPS_PROXY from environment
+            follow_redirects=True,
+        ) as client:
             try:
                 response = await client.request(method, url, json=json, params=params)
                 response.raise_for_status()
@@ -53,8 +68,15 @@ class ZendeskConnector:
                     status_code=e.response.status_code, detail="Zendesk API error"
                 ) from e
             except httpx.RequestError as e:
-                logger.error(f"Network error during Zendesk API call: {e}")
-                raise HTTPException(status_code=500, detail="Zendesk API network error") from e
+                logger.error(
+                    "Zendesk network error (check worker outbound access, proxy, DNS): %s",
+                    e,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Zendesk API network error: {type(e).__name__}: {e}",
+                ) from e
 
     async def create_ticket(
         self,
@@ -276,16 +298,18 @@ class ZendeskConnector:
         Returns:
             List of article dictionaries
         """
+
         all_articles = []
         url: Optional[str] = f"{self.help_center_url}/articles.json"
 
         if category_id:
-            url = f"{self.help_center_url}/categories/{category_id}/articles.json"
-            logger.info("Fetching articles from category ID", extra={"category_id": category_id})
+            url = f"{self.help_center_url}/categories/{str(category_id)}/articles.json"
+            logger.info("Category Id: " + str(category_id))
+            logger.debug("Fetching articles from category ID", {"category_id": category_id})
 
         if section_id:
-            url = f"{self.help_center_url}/sections/{section_id}/articles.json"
-            logger.info("Fetching articles from section ID", extra={"section_id": section_id})
+            url = f"{self.help_center_url}/sections/{str(section_id)}/articles.json"
+            logger.debug("Fetching articles from section ID", {"section_id": section_id})
 
         params = {}
         if locale:
@@ -304,7 +328,7 @@ class ZendeskConnector:
                     params = {}
 
                 logger.info(
-                    f"Fetched {len(articles)} articles from Zendesk (total: {len(all_articles)})"
+                    f"Fetched {len(all_articles)} articles from Zendesk (total: {len(all_articles)})"
                 )
             except (httpx.HTTPStatusError, httpx.RequestError) as e:
                 logger.error(f"Error fetching articles: {e}")
