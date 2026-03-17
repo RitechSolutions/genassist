@@ -379,7 +379,7 @@ async def update_no_agent(
                 "thumbs_up_count": updated_conversation.thumbs_up_count,
                 "thumbs_down_count": updated_conversation.thumbs_down_count,
             },
-            room_id="DASHBOARD",
+            room_id=SocketRoomType.DASHBOARD,
             current_user_id=get_current_user_id(),
             required_topic="update",
             tenant_id=tenant_id,
@@ -507,7 +507,7 @@ async def finalize(
 
     # Notify dashboard and conversation room
     notify_socket(conversation_id)
-    notify_socket("DASHBOARD")
+    notify_socket(SocketRoomType.DASHBOARD)
 
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
         conversation_id=conversation_id,
@@ -552,7 +552,7 @@ async def takeover_supervisor(
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="takeover",
-            room_id="DASHBOARD",
+            room_id=SocketRoomType.DASHBOARD,
             current_user_id=get_current_user_id(),
             required_topic="takeover",
             tenant_id=tenant_id,
