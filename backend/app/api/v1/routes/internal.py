@@ -46,7 +46,7 @@ async def verify_ws_token(
     set_tenant_context(body.tenant_id)
 
     user_id: UUID
-    perms: list[str]
+    user_permissions: list[str]
     token_exp: Optional[int] = None
 
     if body.access_token:
@@ -64,26 +64,27 @@ async def verify_ws_token(
 
         user = await auth_service.decode_jwt(body.access_token)
         user_id = user.id
-        perms = user.permissions
+        user_permissions = user.permissions
     elif body.api_key:
         key_obj = await auth_service.authenticate_api_key(body.api_key)
         user_id = key_obj.user.id
-        perms = key_obj.permissions
+        user_permissions = key_obj.permissions
     else:
         raise AppException(status_code=400, error_key=ErrorKey.MISSING_PARAMETER, error_detail="Either access_token or api_key is required")
 
-    # Check required permissions
-    if body.required_permissions:
-        # permissions without wildcard
-        _perm_without_wildcard = [p for p in perms if p != "*"]
 
-        # check if the required permissions are subset of the user permissions
-        if not ("*" in perms) and not set(_perm_without_wildcard).issubset(set(perms)):
-            raise AppException(status_code=403, error_key=ErrorKey.INSUFFICIENT_PERMISSIONS, error_detail="Insufficient permissions")
+    required_permissions = body.required_permissions or []
+
+    # user permissions without wildcard
+    _perm_without_wildcard = [p for p in required_permissions if p != "*"]
+
+    # check if the user permissions are subset of the required permissions
+    if not ("*" in user_permissions) and not set(_perm_without_wildcard).issubset(set(user_permissions)):
+        raise AppException(status_code=403, error_key=ErrorKey.INSUFFICIENT_PERMISSIONS, error_detail="Insufficient permissions")
 
     return VerifyTokenResponse(
         user_id=str(user_id),
-        permissions=perms,
+        permissions=user_permissions,
         tenant_id=body.tenant_id,
         token_exp=token_exp,
     )
