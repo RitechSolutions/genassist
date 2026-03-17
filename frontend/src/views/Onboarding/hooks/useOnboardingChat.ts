@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatService, type AgentWelcomeData, type ChatMessage } from "genassist-chat-react";
-import { type RegistrationStatus } from "@/context/RoutesContext";  
+import { type RegistrationStatus } from "@/context/RoutesContext";
 
 export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: RegistrationStatus }) => {
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
 
     const chat = new ChatService(onboardingBaseUrl, onboardingApiKey, undefined, tenant);
     chatRef.current = chat;
-    chat.resetConversation();
+    chat.resetChatConversation();
     setIsChatReady(true);
 
     const handleWelcomeData = (data: AgentWelcomeData) => {
