@@ -184,12 +184,33 @@ class BaseVectorDB(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def delete_vectors(self, ids: List[str]) -> bool:
+    async def     1. API Endpoints / Tasks
+       ↓
+    2. AgentRAGServiceManager.delete_document(kb_obj, doc_id)
+       ↓
+    3. AgentRAGService.delete_document(doc_id)
+       ↓
+    4. VectorProvider.delete_document(doc_id)  ← Calls get_all_ids() first
+       ↓
+    5. vector_db.delete_vectors(all_ids)       ← DIRECT CALL HEREdelete_vectors(self, ids: List[str]) -> bool:
         """
         Delete vectors by IDs
 
         Args:
             ids: List of document IDs to delete
+
+        Returns:
+            Success status
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def delete_vectors_by_metadata(self, filter_dict: Dict[str, Any]) -> bool:
+        """
+        Delete vectors by metadata filters (more efficient for bulk operations)
+
+        Args:
+            filter_dict: Dictionary of metadata field-value pairs to filter by
 
         Returns:
             Success status
