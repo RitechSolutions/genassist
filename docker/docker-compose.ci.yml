@@ -120,6 +120,25 @@ services:
       - genassist-network-ci
 
   # ===========================================================================
+  # WEBSOCKET SERVICE
+  # ===========================================================================
+  websocket:
+    build:
+      context: ../websocket
+      dockerfile: Dockerfile
+    image: genassist-websocket:ci
+    pull_policy: never
+    container_name: genassist-ws-ci
+    ports:
+      - "9004:8002"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    networks:
+      - genassist-network-ci
+
+  # ===========================================================================
   # CELERY WORKERS
   # ===========================================================================
   celery_worker:
