@@ -292,10 +292,12 @@ class ConversationService:
             raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER)
 
     async def finalize_in_progress_conversation(
-        self, conversation_id: UUID, llm_analyst_id: UUID = seed_test_data.llm_analyst_kpi_analyzer_id
+        self, conversation_id: UUID, llm_analyst_id: Optional[UUID] = None
     ) -> ConversationAnalysisRead:
         """
-        Finalize conversation and run GPT analysis
+        Finalize conversation and run GPT analysis.
+        llm_analyst_id should be resolved by the caller (route) using: explicit override >
+        agent's configured llm_analyst_id > default seed analyst.
         """
         conversation = await self.conversation_repo.fetch_conversation_by_id(
             conversation_id
@@ -306,8 +308,11 @@ class ConversationService:
         if conversation.status == ConversationStatus.FINALIZED.value:
             raise AppException(ErrorKey.CONVERSATION_FINALIZED)
 
-        # Mark as finalized
+        resolved_analyst_id = llm_analyst_id or seed_test_data.llm_analyst_kpi_analyzer_id
+
+        # Mark as finalized and record which analyst was used
         conversation.status = ConversationStatus.FINALIZED.value
+        conversation.finalization_llm_analyst_id = resolved_analyst_id
         saved_conversation = await self.conversation_repo.update_conversation(
             conversation
         )
@@ -327,10 +332,7 @@ class ConversationService:
             raise ValueError(f"No messages found for conversation {conversation_id}")
 
         # Run GPT analysis
-        if llm_analyst_id:
-            llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
-        else:
-            llm_analyst = await self.llm_analyst_service.get_by_id(seed_test_data.llm_analyst_kpi_analyzer_id)
+        llm_analyst = await self.llm_analyst_service.get_by_id(resolved_analyst_id)
 
         gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
             message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
