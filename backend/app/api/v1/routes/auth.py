@@ -29,7 +29,7 @@ async def auth_token(
     auth_service: AuthService = Injected(AuthService),
 ):
     from app.core.tenant_scope import get_tenant_context
-    
+
     user = await auth_service.authenticate_user(form_data.username, form_data.password)
     tenant_id = get_tenant_context()
     token_data = {"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}
@@ -53,7 +53,7 @@ async def refresh_token(
     auth_service: AuthService = Injected(AuthService),
 ):
     from app.core.tenant_scope import get_tenant_context
-    
+
     user = await auth_service.decode_jwt(refresh_token)  # Decode user
     tenant_id = get_tenant_context()
     token_data = {"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}

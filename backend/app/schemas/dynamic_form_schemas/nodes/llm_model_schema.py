@@ -1,5 +1,6 @@
 from typing import List
-from ..base import FieldSchema, ConditionalField
+
+from ..base import ConditionalField, FieldSchema
 
 LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
     FieldSchema(

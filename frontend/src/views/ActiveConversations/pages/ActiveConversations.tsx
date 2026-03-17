@@ -35,7 +35,7 @@ const transformDashboardConversation = (item: ActiveConversationItem): ActiveCon
   negative_reason: item.negative_reason || undefined,
 });
 
-const enrichConversationItem = (item: ActiveConversation): Transcript => {
+export const enrichConversationItem = (item: ActiveConversation): Transcript => {
   let transcriptArray: TranscriptEntry[] = [];
   const cachedTranscript = conversationService.getCachedTranscript(item.id);
   if (cachedTranscript && cachedTranscript.length > 0) {
@@ -73,7 +73,7 @@ const enrichConversationItem = (item: ActiveConversation): Transcript => {
 
   const isCall = item.type === "call";
   const initialDurationInSeconds = typeof item.duration === "number" ? item.duration : 0;
-  
+
   return {
     id: item.id,
     audio: "",
@@ -127,15 +127,12 @@ export const ActiveConversations = () => {
   const [apiError, setApiError] = useState<Error | null>(null);
   const DASHBOARD_LIMIT = 3;
 
-  // Get access token for WebSocket authentication
-  const accessToken = localStorage.getItem("access_token");
-
   // Get current filter parameters from URL
   const sentimentFilter = searchParams.get("sentiment") || undefined;
   const categoryFilter = searchParams.get("category") || undefined;
   const includeFeedbackFilter = (searchParams.get("include_feedback") || "false").toLowerCase() === "true";
 
-  // Use WebSocket hook for real-time updates
+  // Use WebSocket hook for real-time updates (uses shared context from layout)
   const {
     conversations: wsConversations,
     total: wsTotal,
@@ -143,11 +140,7 @@ export const ActiveConversations = () => {
     error: wsError,
     refetch: wsRefetch,
     resyncHint,
-  } = useWebSocketDashboard({
-    token: accessToken || "",
-    lang: "en",
-    topics: ["message", "statistics", "finalize", "hostile"]
-  });
+  } = useWebSocketDashboard();
 
   // Load conversations from dashboard API
   useEffect(() => {
@@ -178,12 +171,12 @@ export const ActiveConversations = () => {
     };
 
     loadConversations();
-  }, [sentimentFilter, categoryFilter]); // Reload when filters change
+  }, [sentimentFilter, categoryFilter, isConnected]); // Reload when filters change
 
   // Merge WebSocket updates with existing conversations
   useEffect(() => {
     if (wsConversations !== undefined) {
-      
+
       // Merge without removing existing items; finalization will explicitly remove
       setAllConversations(prev => {
         if (!Array.isArray(wsConversations) || wsConversations.length === 0) return prev;
@@ -277,7 +270,7 @@ export const ActiveConversations = () => {
 
   const handleItemClick = async (item: ActiveConversation) => {
     setIsLoadingTranscript(true);
-    
+
     try {
       // Fetch the full  conversation data by ID
       const backend = await apiRequest<BackendTranscript>("get", `/conversations/${item.id}?include_feedback=true`);
@@ -289,14 +282,14 @@ export const ActiveConversations = () => {
       }
       setSelectedTranscript(transformed);
       setIsDialogOpen(true);
-      
+
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to load conversation details",
         variant: "destructive",
       });
-      
+
       // Fallback to enriched conversation item if fetch fails
       const enrichedTranscript = enrichConversationItem(item);
       setSelectedTranscript(enrichedTranscript);

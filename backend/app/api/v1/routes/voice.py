@@ -6,8 +6,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 import httpx
 from app.auth.dependencies import auth, permissions, socket_auth
-from app.services.auth import AuthService
-from app.auth.utils import has_permission, socket_user_id
 from app.core.permissions.constants import Permissions as P
 import openai
 
@@ -71,6 +69,7 @@ async def get_openai_session_key(lang_code: str = Query(default=""), input_audio
         response.raise_for_status()  # Raise an exception for HTTP errors
         data = response.json()
         return data["client_secret"]["value"]
+
 
 @router.websocket("/audio/tts")
 async def ws_tts(

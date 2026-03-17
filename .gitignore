@@ -1,3 +1,9 @@
 .env
 .DS_Store
 frontend/.claude/skills/ui-skills/SKILL.md
+
+# Python
+**/__pycache__/
+
+# venv
+genassist_env/

@@ -85,7 +85,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       const loadDataSources = async () => {
         try {
           const dataSources = await getAllDataSources();
-          console.log("Data sources:", dataSources);
+
           // Filter for timedb, snowflake, and other time-series or SQL databases
           const trainingDataSources = dataSources.filter((ds) =>
             ["snowflake", "database"].includes(ds.source_type.toLowerCase())
