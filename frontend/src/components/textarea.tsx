@@ -9,7 +9,7 @@ import {
   createVariableKeyDownHandler,
   createVariableKeyUpHandler,
   createVariableMouseUpHandler,
-} from "./variable-input"
+} from "../helpers/variable-input"
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface TextareaProps
