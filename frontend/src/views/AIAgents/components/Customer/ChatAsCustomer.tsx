@@ -98,7 +98,6 @@ export default function ChatAsCustomer() {
 
         const websocketUrl = await getWsUrl();
         setWebsocketUrl(websocketUrl);
-        console.log("websocketUrl", websocketUrl);
 
         const key = await getAgentIntegrationKey(agentId);
         setApiKey(key);
