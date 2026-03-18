@@ -301,15 +301,14 @@ services:
     container_name: genassist-ws-dev
     ports:
       - "8002:8002"
+    env_file:
+      - ./websocket/.env
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - BACKEND_URL=http://app:8000
-      - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET}
-      - WS_PORT=8002
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - LOG_LEVEL=debug
     depends_on:
       redis:
         condition: service_healthy
