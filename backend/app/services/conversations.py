@@ -19,7 +19,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.utils.bi_utils import (
     calculate_duration_from_transcript,
     calculate_incremental_word_counts,
-)
+    )
 from app.cache.redis_cache import make_key_builder, invalidate_conversation_cache
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
@@ -66,14 +66,14 @@ conversation_id_key_builder_full = make_key_builder("conversation_id")
 @inject
 class ConversationService:
     def __init__(
-        self,
-        operator_statistics_service: OperatorStatisticsService,
-        conversation_repo: ConversationRepository,
-        transcript_message_repo: TranscriptMessageRepository,
-        gpt_kpi_analyzer_service: GptKpiAnalyzer = Depends(),
-        conversation_analysis_service: ConversationAnalysisService = Depends(),
-        llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService),
-    ):
+            self,
+            operator_statistics_service: OperatorStatisticsService,
+            conversation_repo: ConversationRepository,
+            transcript_message_repo: TranscriptMessageRepository,
+            gpt_kpi_analyzer_service: GptKpiAnalyzer = Depends(),
+            conversation_analysis_service: ConversationAnalysisService = Depends(),
+            llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService),
+            ):
         self.conversation_repo = conversation_repo
         self.gpt_kpi_analyzer_service = gpt_kpi_analyzer_service
         self.conversation_analysis_service = conversation_analysis_service
@@ -81,116 +81,124 @@ class ConversationService:
         self.llm_analyst_service = llm_analyst_service
         self.transcript_message_repo = transcript_message_repo
 
+
     async def save_conversation(self, conversation: ConversationCreate):
         return await self.conversation_repo.save_conversation(conversation)
+
 
     async def update_conversation(self, conversation: ConversationModel):
         return await self.conversation_repo.update_conversation(conversation)
 
+
     async def get_conversation_by_id(
-        self,
-        conversation_id: UUID,
-        raise_not_found: bool = True,
-        include_messages: bool = False,
-    ):
+            self,
+            conversation_id: UUID,
+            raise_not_found: bool = True,
+            include_messages: bool = False,
+            ):
         conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id,
-            include_messages=include_messages,
-        )
+                conversation_id,
+                include_messages=include_messages,
+                )
         if not conversation and raise_not_found:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
         return conversation
 
+
     @cache(
-        expire=2,
-        namespace="conversations:in_progress_poll",
-        key_builder=make_key_builder("conversation_id"),
-        coder=PickleCoder,
-    )
+            expire=2,
+            namespace="conversations:in_progress_poll",
+            key_builder=make_key_builder("conversation_id"),
+            coder=PickleCoder,
+            )
     async def get_in_progress_poll_data(
-        self, conversation_id: UUID
-    ) -> InProgressPollResponse:
+            self, conversation_id: UUID
+            ) -> InProgressPollResponse:
         """
         Lightweight poll data for heartbeat when WebSocket is disabled.
         Cached 2s to avoid DB hammering; invalidate on conversation update/finalize.
         """
         conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id,
-            include_messages=True,
-        )
+                conversation_id,
+                include_messages=True,
+                )
         if not conversation:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
         messages_raw = [
             TranscriptMessageRead.model_validate(m)
             for m in (conversation.messages or [])
-        ]
+            ]
 
         # filter out messages with speaker 'customer'
         messages = [m for m in messages_raw if m.speaker != 'customer']
 
         return InProgressPollResponse(
-            status=conversation.status or "in_progress",
-            messages=messages,
-        )
+                status=conversation.status or "in_progress",
+                messages=messages,
+                )
+
 
     async def get_conversation_by_id_full(
-        self, conversation_id: UUID, conversation_filter: ConversationFilter
-    ):
+            self, conversation_id: UUID, conversation_filter: ConversationFilter
+            ):
         conversation = await self.conversation_repo.fetch_conversation_by_id_full(
-            conversation_id, conversation_filter
-        )
+                conversation_id, conversation_filter
+                )
         if not conversation:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
         return conversation
 
+
     async def get_conversations_by_customer_id(
-        self, customer_id: UUID, raise_not_found: bool = True
-    ):
+            self, customer_id: UUID, raise_not_found: bool = True
+            ):
         conversations = await self.conversation_repo.fetch_conversations_by_customer_id(
-            customer_id
-        )
+                customer_id
+                )
         if not conversations and raise_not_found:
             raise AppException(ErrorKey.CONVERSATIONS_NOT_FOUND, status_code=404)
         return conversations
 
+
     async def start_in_progress_conversation(
-        self, model: ConversationTranscriptCreate
-    ) -> ConversationModel:
+            self, model: ConversationTranscriptCreate
+            ) -> ConversationModel:
         """
         Creates a new conversation with 'status=in_progress' and saves messages to separate table
         """
 
         # Create conversation without transcription field
         new_conv_data = ConversationCreate(
-            id=model.conversation_id,
-            operator_id=model.operator_id,
-            data_source_id=model.data_source_id,
-            recording_id=None,
-            transcription=None,  # No longer storing JSON here
-            conversation_date=datetime.now(timezone.utc),
-            customer_id=model.customer_id,
-            thread_id=model.thread_id,
-            word_count=0,
-            customer_ratio=0,
-            agent_ratio=0,
-            duration=0,
-            status=ConversationStatus.IN_PROGRESS.value,
-            conversation_type=ConversationType.PROGRESSIVE.value,
-        )
+                id=model.conversation_id,
+                operator_id=model.operator_id,
+                data_source_id=model.data_source_id,
+                recording_id=None,
+                transcription=None,  # No longer storing JSON here
+                conversation_date=datetime.now(timezone.utc),
+                customer_id=model.customer_id,
+                thread_id=model.thread_id,
+                word_count=0,
+                customer_ratio=0,
+                agent_ratio=0,
+                duration=0,
+                status=ConversationStatus.IN_PROGRESS.value,
+                conversation_type=ConversationType.PROGRESSIVE.value,
+                )
 
         conversation = await self.conversation_repo.save_conversation(new_conv_data)
 
         return conversation
 
+
     async def update_in_progress_conversation(
-        self, conversation_id: UUID, in_progress_conv_update: InProgConvTranscrUpdate
-    ) -> ConversationModel:
+            self, conversation_id: UUID, in_progress_conv_update: InProgConvTranscrUpdate
+            ) -> ConversationModel:
         """
         Appends new transcript segments to an existing conversation
         """
         conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id
-        )
+                conversation_id
+                )
         if not conversation:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
 
@@ -199,36 +207,36 @@ class ConversationService:
 
         # Get only the count for sequence numbering
         next_sequence = await self.transcript_message_repo.get_message_count(
-            conversation_id
-        )
+                conversation_id
+                )
 
         # Save new messages
         new_messages = await self.save_new_messages(
-            conversation_id, in_progress_conv_update.messages, next_sequence
-        )
+                conversation_id, in_progress_conv_update.messages, next_sequence
+                )
 
         # Convert new messages to schema format (filter MESSAGE type only)
         new_segment_inputs = [
             TranscriptSegmentInput(
-                create_time=msg.create_time,
-                start_time=msg.start_time,
-                end_time=msg.end_time,
-                speaker=msg.speaker,
-                text=msg.text,
-                type=msg.type,
-            )
+                    create_time=msg.create_time,
+                    start_time=msg.start_time,
+                    end_time=msg.end_time,
+                    speaker=msg.speaker,
+                    text=msg.text,
+                    type=msg.type,
+                    )
             for msg in new_messages
             if msg.type == TranscriptMessageType.MESSAGE.value
-        ]
+            ]
 
         # Calculate updated word counts and ratios
         agent_ratio, customer_ratio, total_word_count = (
             calculate_incremental_word_counts(
-                new_segment_inputs,
-                conversation.word_count,
-                conversation.agent_ratio,
-                conversation.customer_ratio,
-            )
+                    new_segment_inputs,
+                    conversation.word_count,
+                    conversation.agent_ratio,
+                    conversation.customer_ratio,
+                    )
         )
 
         conversation.agent_ratio = agent_ratio
@@ -242,14 +250,14 @@ class ConversationService:
         # Get all messages for transcript JSON (if needed for tone analysis)
         all_messages = (
             await self.transcript_message_repo.get_messages_by_conversation_id(
-                conversation_id,
-            )
+                    conversation_id,
+                    )
         )
         hostility_limit = settings.HOSTILITY_SCORE_MESSAGE_COUNT
         tone_messages = all_messages[-hostility_limit:]
         transcript_json = transcript_messages_to_json(
-            tone_messages, exclude_fields={"feedback", "type", "sequence_number"}
-        )
+                tone_messages, exclude_fields={"feedback", "type", "sequence_number"}
+                )
 
         # Update conversation
         conversation.updated_by = get_current_user_id()
@@ -257,33 +265,35 @@ class ConversationService:
 
         # Perform partial tone check
         conversation = await self._analyze_in_progress_tone_and_mark(
-            conversation,
-            transcript_json,
-            llm_analyst_id=in_progress_conv_update.llm_analyst_id,
-        )
+                conversation,
+                transcript_json,
+                llm_analyst_id=in_progress_conv_update.llm_analyst_id,
+                )
 
         full_conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation.id, include_messages=True
-        )
+                conversation.id, include_messages=True
+                )
         null_unloaded_attributes(full_conversation)
         return full_conversation
 
+
     async def save_new_messages(
-        self,
-        conversation_id: UUID,
-        input_messages: list[TranscriptSegmentInput],
-        next_sequence: int,
-    ) -> list[TranscriptMessageModel]:
+            self,
+            conversation_id: UUID,
+            input_messages: list[TranscriptSegmentInput],
+            next_sequence: int,
+            ) -> list[TranscriptMessageModel]:
         """Save new messages and return them"""
         # Create new message models
         new_messages = [
             schema_to_transcript_message(segment, conversation_id, next_sequence + idx)
             for idx, segment in enumerate(input_messages)
-        ]
+            ]
 
         # Save new messages
         await self.transcript_message_repo.save_messages(new_messages)
         return new_messages
+
 
     def _validate_in_progress(self, conversation):
         if conversation.status == ConversationStatus.FINALIZED.value:
@@ -291,17 +301,18 @@ class ConversationService:
         if conversation.status == ConversationStatus.TAKE_OVER.value:
             raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER)
 
+
     async def finalize_in_progress_conversation(
-        self, conversation_id: UUID, llm_analyst_id: Optional[UUID] = None
-    ) -> ConversationAnalysisRead:
+            self, conversation_id: UUID, llm_analyst_id: Optional[UUID] = None
+            ) -> ConversationAnalysisRead:
         """
         Finalize conversation and run GPT analysis.
         llm_analyst_id should be resolved by the caller (route) using: explicit override >
         agent's configured llm_analyst_id > default seed analyst.
         """
         conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id
-        )
+                conversation_id
+                )
         if not conversation:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND)
 
@@ -314,26 +325,26 @@ class ConversationService:
         conversation.status = ConversationStatus.FINALIZED.value
         conversation.finalization_llm_analyst_id = resolved_analyst_id
         saved_conversation = await self.conversation_repo.update_conversation(
-            conversation
-        )
+                conversation
+                )
 
         # Get messages for analysis
         gpt_analysis = await self._analyze_transcript(conversation_id, resolved_analyst_id)
 
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(
-                gpt_analysis, resolved_analyst_id, saved_conversation.id
-            )
+                    gpt_analysis, resolved_analyst_id, saved_conversation.id
+                    )
         )
 
         # Update operator statistics
         await self.operator_statistics_service.update_from_analysis(
-            conversation_analysis, conversation.operator_id, saved_conversation.duration
-        )
+                conversation_analysis, conversation.operator_id, saved_conversation.duration
+                )
 
         # Store in Zendesk if enabled
         store_in_zendesk = (
-            os.getenv("STORE_CONVERSATIONS_IN_ZENDESK", "false").lower() == "true"
+                os.getenv("STORE_CONVERSATIONS_IN_ZENDESK", "false").lower() == "true"
         )
         if store_in_zendesk:
             await self.store_zendesk_analysis(saved_conversation, conversation_analysis)
@@ -343,7 +354,8 @@ class ConversationService:
         return ConversationAnalysisRead.model_validate(conversation_analysis)
 
 
-    async def _analyze_transcript(self, conversation_id: UUID, resolved_analyst_id: UUID | None | str) -> AnalysisResult:
+    async def _analyze_transcript(self, conversation_id: UUID,
+                                  resolved_analyst_id: UUID | None | str) -> AnalysisResult:
         messages = await self.transcript_message_repo.get_messages_by_type(
                 conversation_id, TranscriptMessageType.MESSAGE.value
                 )
@@ -367,8 +379,8 @@ class ConversationService:
 
 
     async def re_analyze_conversation(
-        self, conversation_id: UUID, llm_analyst_id: UUID = seed_test_data.llm_analyst_kpi_analyzer_id
-    ) -> None:
+            self, conversation_id: UUID, llm_analyst_id: UUID = seed_test_data.llm_analyst_kpi_analyzer_id
+            ) -> None:
         """
         Run analysis for an already-finalized conversation that has no analysis entry.
         Skips the status update — conversation must already be FINALIZED.
@@ -380,18 +392,19 @@ class ConversationService:
         gpt_analysis = await self._analyze_transcript(conversation_id, llm_analyst_id)
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(
-                gpt_analysis, llm_analyst_id, conversation_id
-            )
+                    gpt_analysis, llm_analyst_id, conversation_id
+                    )
         )
         await self.operator_statistics_service.update_from_analysis(
-            conversation_analysis, conversation.operator_id, conversation.duration
-        )
+                conversation_analysis, conversation.operator_id, conversation.duration
+                )
+
 
     async def store_zendesk_analysis(
-        self,
-        saved_conversation: ConversationModel,
-        conversation_analysis: ConversationAnalysisModel,
-    ):
+            self,
+            saved_conversation: ConversationModel,
+            conversation_analysis: ConversationAnalysisModel,
+            ):
         # Create or update a Zendesk ticket here
         zendesk = ZendeskClient()
 
@@ -402,9 +415,11 @@ class ConversationService:
         customer_satisfaction = conversation_analysis.customer_satisfaction or 0
         service_quality = conversation_analysis.quality_of_service or 0
 
+
         # Helper to convert 0–10 scale to percentage
         def to_percent(value: int) -> int:
             return int((value / 10) * 100)
+
 
         if saved_conversation.zendesk_ticket_id:
             comment_body = (
@@ -418,8 +433,8 @@ class ConversationService:
                 "and ask about any remaining concerns."
             )
             await zendesk.update_ticket(
-                ticket_id=saved_conversation.zendesk_ticket_id, comment=comment_body
-            )
+                    ticket_id=saved_conversation.zendesk_ticket_id, comment=comment_body
+                    )
         else:
             subject = f"GenAssist Conversation {saved_conversation.id} – Needs review"
             description = (
@@ -433,38 +448,39 @@ class ConversationService:
             requester_email = "customer@example.com"
 
             new_ticket_id = await zendesk.create_ticket(
-                subject=subject,
-                description=description,
-                requester_email=requester_email,
-                conversation_id=str(saved_conversation.id),
-                tags=["genassist", "analyzed"],
-            )
+                    subject=subject,
+                    description=description,
+                    requester_email=requester_email,
+                    conversation_id=str(saved_conversation.id),
+                    tags=["genassist", "analyzed"],
+                    )
 
             if new_ticket_id:
                 # Save that new ticket ID into `ConversationModel.zendesk_ticket_id`
                 saved_conversation.zendesk_ticket_id = new_ticket_id
                 await self.conversation_repo.update_conversation(saved_conversation)
 
+
     async def _analyze_in_progress_tone_and_mark(
-        self,
-        conversation: ConversationModel,
-        transcript: str,
-        llm_analyst_id: Optional[UUID] = None,
-    ) -> ConversationModel:
+            self,
+            conversation: ConversationModel,
+            transcript: str,
+            llm_analyst_id: Optional[UUID] = None,
+            ) -> ConversationModel:
 
         #  Run GPT analysis
         if not llm_analyst_id:
             llm_analyst_id = seed_test_data.llm_analyst_in_progress_hostility_id
 
         llm_analyst = await self.llm_analyst_service.get_by_id(
-            llm_analyst_id, throw_not_found=False
-        )
+                llm_analyst_id, throw_not_found=False
+                )
 
         if llm_analyst and llm_analyst.is_active:
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(
-                    transcript, llm_analyst=llm_analyst, conversation_id=conversation.id
-                )
+                        transcript, llm_analyst=llm_analyst, conversation_id=conversation.id
+                        )
             )
         else:
             # TODO remove after fixing seed
@@ -473,46 +489,48 @@ class ConversationService:
                 "hostile_score": 0,
                 "topic": "Other",
                 "negative_reason": "OTHER",
-            }
+                }
 
         conversation.in_progress_hostility_score = analysis_result["hostile_score"]
         conversation.topic = analysis_result["topic"]
         conversation.negative_reason = analysis_result["negative_reason"]
 
         upd_conversation = await self.conversation_repo.update_conversation(
-            conversation
-        )
+                conversation
+                )
         return upd_conversation
+
 
     async def supervisor_takeover_conversation(self, conversation_id: UUID):
         conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id
-        )
+                conversation_id
+                )
         self._validate_in_progress(conversation)
         segments = [
             TranscriptSegmentInput(
-                create_time=datetime.now(),
-                start_time=0,
-                end_time=0,
-                speaker="",
-                text="",
-                type="takeover",
-            )
-        ]
+                    create_time=datetime.now(),
+                    start_time=0,
+                    end_time=0,
+                    speaker="",
+                    text="",
+                    type="takeover",
+                    )
+            ]
         transcript_update = InProgConvTranscrUpdate(messages=segments)
 
         # Get only the count for sequence numbering
         next_sequence = await self.transcript_message_repo.get_message_count(
-            conversation_id
-        )
+                conversation_id
+                )
         await self.save_new_messages(
-            conversation_id, transcript_update.messages, next_sequence
-        )
+                conversation_id, transcript_update.messages, next_sequence
+                )
         conversation.supervisor_id = get_current_user_id()
         conversation.status = ConversationStatus.TAKE_OVER.value
         conversation = await self.conversation_repo.update_conversation(conversation)
         null_unloaded_attributes(conversation)
         return conversation
+
 
     async def get_conversations(self, conversation_filter: ConversationFilter):
 
@@ -525,33 +543,37 @@ class ConversationService:
             conversation_filter.operator_id = get_current_operator_id()
 
         models = await self.conversation_repo.fetch_conversations_with_relations(
-            conversation_filter, include_messages=conversation_filter.include_messages
-        )
+                conversation_filter, include_messages=conversation_filter.include_messages
+                )
         null_unloaded_attributes(models)
         return models
+
 
     async def count_conversations(self, conversation_filter: ConversationFilter) -> int:
         models = await self.conversation_repo.count_conversations(conversation_filter)
         return models
 
+
     async def get_stale_conversations(self, cutoff_time: datetime) -> Sequence[ConversationModel]:
         models = await self.conversation_repo.get_stale_conversations(cutoff_time)
         return models
 
+
     async def delete_conversation(self, conversation_id: UUID):
         conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id
-        )
+                conversation_id
+                )
         if not conversation:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND)
         await self.conversation_repo.delete_conversation(conversation)
         return conversation
 
+
     async def cleanup_stale_conversations(self, cutoff_time: datetime):
         stale_conversations = await self.get_stale_conversations(cutoff_time)
         print(
-            f"Got {len(stale_conversations)} stale conversations for cutoff time {cutoff_time}"
-        )
+                f"Got {len(stale_conversations)} stale conversations for cutoff time {cutoff_time}"
+                )
 
         deleted_count = 0
         finalized_count = 0
@@ -565,23 +587,23 @@ class ConversationService:
                 await self.update_conversation(conversation)
                 deleted_count += 1
                 logger.info(
-                    f"Deleted stale conversation {conversation.id} (last updated: {conversation.updated_at})"
-                )
+                        f"Deleted stale conversation {conversation.id} (last updated: {conversation.updated_at})"
+                        )
             else:
                 try:
                     # Use the default KPI analyzer for finalization
                     await self.finalize_in_progress_conversation(
                             conversation_id=conversation.id,
-                        llm_analyst_id=seed_test_data.llm_analyst_kpi_analyzer_id,
-                    )
+                            llm_analyst_id=seed_test_data.llm_analyst_kpi_analyzer_id,
+                            )
                     finalized_count += 1
                     logger.info(
-                        f"Finalized conversation {conversation.id} (last updated: {conversation.updated_at})"
-                    )
+                            f"Finalized conversation {conversation.id} (last updated: {conversation.updated_at})"
+                            )
                 except Exception as e:
                     logger.error(
-                        f"Failed to finalize conversation {conversation.id}: {str(e)}"
-                    )
+                            f"Failed to finalize conversation {conversation.id}: {str(e)}"
+                            )
                     failed_count += 1
 
             await invalidate_conversation_cache(conversation.id)
@@ -590,7 +612,8 @@ class ConversationService:
             "deleted_count": deleted_count,
             "finalized_count": finalized_count,
             "failed_count": failed_count,
-        }
+            }
+
 
     async def get_topics_count(self) -> Dict[str, int]:
         raw: List[Tuple[str, int]] = await self.conversation_repo.get_topics_count()
@@ -605,12 +628,13 @@ class ConversationService:
 
         return {"total": total_count, "details": topic_counts}
 
+
     async def add_conversation_feedback(
-        self, conversation_id: UUID, feedback: Feedback, feedback_message: str
-    ) -> ConversationModel:
+            self, conversation_id: UUID, feedback: Feedback, feedback_message: str
+            ) -> ConversationModel:
         conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id
-        )
+                conversation_id
+                )
         if not conversation:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
 
@@ -622,7 +646,7 @@ class ConversationService:
             "feedback_timestamp": datetime.now(timezone.utc).isoformat(),
             "feedback_user_id": current_user_id,
             "feedback_message": feedback_message,
-        }
+            }
 
         # Get existing feedback array or create new one
         existing_feedback = (
@@ -648,22 +672,23 @@ class ConversationService:
 
         conversation.feedback = json.dumps(existing_feedback)
         updated_conversation = await self.conversation_repo.update_conversation(
-            conversation
-        )
+                conversation
+                )
         return updated_conversation
 
+
     @cache(
-        expire=300,
-        namespace="conversations:get_conversation_by_id_with_operator_agent",
-        key_builder=conversation_id_key_builder_full,
-        coder=PickleCoder
-    )
+            expire=300,
+            namespace="conversations:get_conversation_by_id_with_operator_agent",
+            key_builder=conversation_id_key_builder_full,
+            coder=PickleCoder
+            )
     async def get_conversation_by_id_with_operator_agent(
-        self, conversation_id: UUID
-    ) -> Optional[ConversationWithOperatorAgentRead]:
+            self, conversation_id: UUID
+            ) -> Optional[ConversationWithOperatorAgentRead]:
         model = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
-            conversation_id
-        )
+                conversation_id
+                )
         if model is None:
             return None
         return ConversationWithOperatorAgentRead.model_validate(model)
