@@ -5,6 +5,7 @@ import uuid
 from typing import Any, Dict, Optional
 from uuid import UUID
 
+import httpx
 from injector import inject
 
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
@@ -223,8 +224,8 @@ class DataSourceService:
                 )
                 return await SnowflakeManager.test_connection(cd)
             elif source_type_lower == "zendesk":
-                from app.services.connection_tester import test_zendesk
-                return await test_zendesk(cd)
+                from app.modules.integration.zendesk import ZendeskConnector
+                return await ZendeskConnector.test_connection(cd)
             elif source_type_lower == "smb_share_folder":
                 from app.services.smb_share_service import SMBShareFSService
                 return await SMBShareFSService.test_connection(cd)
@@ -232,8 +233,10 @@ class DataSourceService:
                 from app.services.AzureStorageService import AzureStorageService
                 return AzureStorageService.test_connection(cd)
             elif source_type_lower == "url":
-                from app.services.connection_tester import test_url
-                return await test_url(cd)
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(cd["url"], timeout=10.0, follow_redirects=True)
+                    response.raise_for_status()
+                return {"success": True, "message": "URL is accessible."}
             else:
                 return {
                     "success": False,
