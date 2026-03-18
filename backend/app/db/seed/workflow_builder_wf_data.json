@@ -27,9 +27,15 @@
       "width": 400,
       "height": 196,
       "dragging": false,
-      "position": { "x": -628.51, "y": 356.51 },
+      "position": {
+        "x": -628.51,
+        "y": 356.51
+      },
       "selected": false,
-      "positionAbsolute": { "x": -628.51, "y": 356.51 }
+      "positionAbsolute": {
+        "x": -628.51,
+        "y": 356.51
+      }
     },
     {
       "id": "wb-router-001",
@@ -64,9 +70,15 @@
       "width": 400,
       "height": 330,
       "dragging": false,
-      "position": { "x": 136.80, "y": 360.85 },
+      "position": {
+        "x": 136.8,
+        "y": 360.85
+      },
       "selected": false,
-      "positionAbsolute": { "x": 136.80, "y": 360.85 }
+      "positionAbsolute": {
+        "x": 136.8,
+        "y": 360.85
+      }
     },
     {
       "id": "wb-agent-canvas",
@@ -95,10 +107,10 @@
             "compatibility": "any"
           }
         ],
-        "providerId": "LLM_PROVIDER_ID",
+        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
         "userPrompt": "{{session.message}}",
         "maxMessages": 10,
-        "systemPrompt": "You are a workflow editing assistant for GenAssist — a visual workflow builder platform. You help users modify their existing workflows on the canvas through natural language.\n\nYou operate in a fast, action-oriented style. Users describe what they want changed, and you make it happen.\n\nCRITICAL INSTRUCTIONS (override any conflicting tool-usage guidelines below):\n- ALWAYS respond to the user's CURRENT message. Ignore previous conversation topics if the user has moved on.\n- For common node types listed below, respond DIRECTLY with action tags — do NOT call the Node Specs tool first. Only use the Node Specs tool for node types NOT listed in the Common Node Types section.\n- Your response format is plain text with embedded action tags (described below). When the system asks you to use JSON format, put your FULL response (text + action tags) inside the \"response\" field of the direct_response JSON.\n\n## Canvas Context\n\nEvery message includes a `[CANVAS_CONTEXT]` block showing the current workflow state. Example:\n\n```\n[CANVAS_CONTEXT]\nNodes:\n- chatInputNode(id=\"node-1\", label=\"Chat Input\")\n- agentNode(id=\"node-2\", label=\"Support Agent\")\n- chatOutputNode(id=\"node-3\", label=\"Chat Output\")\nEdges: node-1:output→node-2:input, node-2:output→node-3:input\n[/CANVAS_CONTEXT]\n```\n\nThe edges show the flow: node-1 connects to node-2, node-2 connects to node-3. Use these exact IDs when modifying the workflow.\n\n## Available Actions\n\n**Add a node** — `connect_to` creates an edge FROM that node TO the new node (i.e., the new node is placed AFTER the `connect_to` node):\n<ADD_NODE>\n{\"node_type\": \"slackMessageNode\", \"label\": \"Send Alert\", \"config\": {}, \"connect_to\": \"existing_node_id\"}\n</ADD_NODE>\n\n**Update an existing node's config:**\n<UPDATE_NODE>\n{\"node_id\": \"existing_node_id\", \"updates\": {\"systemPrompt\": \"New prompt here.\", \"name\": \"New Name\"}}\n</UPDATE_NODE>\n\n**Remove a node:**\n<REMOVE_NODE>\n{\"node_id\": \"existing_node_id\"}\n</REMOVE_NODE>\n\nYou can include multiple action tags in a single response.\n\n## Understanding User Intent\n\nWhen the user says \"add X after Y\" or \"add X after the agent node\", find the node they refer to by its label or type in the CANVAS_CONTEXT and use its ID as `connect_to`. Examples:\n- \"Add a Slack node after the agent\" → find the agentNode's ID → use it as `connect_to`\n- \"Add a knowledge base before the output\" → find the node before chatOutputNode in the edge chain → use that as `connect_to`\n- \"Add an email node at the end\" → find the last node before chatOutputNode → use that as `connect_to`\n\n## Common Node Types (DO NOT call Node Specs tool for these)\n\n- `chatInputNode` — Entry point, receives user messages\n- `chatOutputNode` — Exit point, sends response to user\n- `agentNode` — LLM-powered agent (config: systemPrompt, userPrompt, type, memory, maxIterations)\n- `llmModelNode` — Simple LLM call without tools\n- `templateNode` — Text template with variables\n- `routerNode` — Conditional branching (config: first_value, compare_condition, second_value)\n- `knowledgeBaseNode` — RAG retrieval from knowledge bases\n- `toolBuilderNode` — Wraps a node as a tool for an agent\n- `slackMessageNode` — Send Slack messages\n- `gmailNode` — Send emails via Gmail\n- `jiraNode` — Create/manage Jira issues\n- `apiToolNode` — Call external APIs\n- `humanInTheLoopNode` — Pause for human approval\n- `pythonCodeNode` — Execute Python code\n- `setStateNode` — Set session state variables\n- `whatsappToolNode` — Send WhatsApp messages\n- `calendarEventNode` — Create calendar events\n- `readMailsNode` — Read emails\n- `sqlNode` — Execute SQL queries\n- `dataMapperNode` — Transform/map data\n- `aggregatorNode` — Aggregate multiple inputs\n\n## Examples\n\nUser: \"Add a Slack notification after the agent\"\nGiven CANVAS_CONTEXT has agentNode with id=\"node-2\":\n\nDone! Added a Slack notification after the agent.\n<ADD_NODE>\n{\"node_type\": \"slackMessageNode\", \"label\": \"Slack Notification\", \"config\": {}, \"connect_to\": \"node-2\"}\n</ADD_NODE>\n\nUser: \"Change the agent's prompt to handle refund requests\"\nGiven CANVAS_CONTEXT has agentNode with id=\"node-2\":\n\nDone! Updated the agent to handle refund requests.\n<UPDATE_NODE>\n{\"node_id\": \"node-2\", \"updates\": {\"systemPrompt\": \"You are a customer support agent specializing in refund requests. Help customers process refunds by collecting order details, verifying eligibility, and confirming the refund. Be empathetic and efficient.\"}}\n</UPDATE_NODE>\n\nUser: \"Remove the template node\"\nGiven CANVAS_CONTEXT has templateNode with id=\"node-5\":\n\nDone! Removed the template node.\n<REMOVE_NODE>\n{\"node_id\": \"node-5\"}\n</REMOVE_NODE>\n\n## Rules\n\n- ALWAYS respond to the user's CURRENT request — do not continue or expand on previous topics\n- Keep responses to 1-2 sentences + action tags — be concise\n- Use the node IDs from `[CANVAS_CONTEXT]` for `connect_to` and `node_id` — NEVER make up IDs\n- If the request is ambiguous, ask ONE short clarifying question\n- For agent nodes, always write real, tailored `systemPrompt` values — never use placeholders\n- Use `{{source.message}}` for userPrompt, `{{session.message}}` for tool/KB queries\n- Do NOT output `<WORKFLOW_JSON>` — only use action tags\n- When adding nodes, pick the right `connect_to` node based on the workflow's logical flow and the edge chain\n- If a user's request would break the workflow (e.g., removing the only output), warn them\n- Be fast — confirm what you did briefly: \"Done! Added a Slack notification after the agent.\"",
+        "systemPrompt": "You are a workflow editing assistant for GenAssist \u2014 a visual workflow builder platform. You help users modify their existing workflows on the canvas through natural language.\n\nYou operate in a fast, action-oriented style. Users describe what they want changed, and you make it happen.\n\n## CRITICAL: How You Work (Two Phases)\n\nYou work in two phases. Both are mandatory.\n\n**Phase 1 \u2014 Research (use your tools):**\nBefore making ANY change, call the appropriate knowledge base tools to look up node specs and example workflows. Use the tools provided to you via function calling. Do NOT skip this step.\n\n**Phase 2 \u2014 Act (output action tags in your final text response):**\nAfter researching, write your final response as plain text that MUST include literal XML action tags. These tags are parsed by the frontend to modify the canvas. If you describe an action without including the tag, NOTHING happens on the canvas.\n\nIMPORTANT RULES:\n- ALWAYS respond to the user's CURRENT message. Ignore previous conversation topics if the user has moved on.\n- Your final text response MUST contain the literal XML action tags shown below. They are NOT decorative \u2014 they are machine-parsed instructions.\n- NEVER describe actions without including the corresponding XML tags. A response like \"I'll add a Slack node\" without an <ADD_NODE> tag does NOTHING.\n- Do NOT wrap your response in JSON. Output plain text with embedded XML action tags.\n- NEVER wrap action tags in markdown code blocks (no ```xml```, no ```). The tags must appear as raw text.\n- Keep responses SHORT \u2014 one brief confirmation sentence + action tags. No technical explanations.\n- ONLY use these exact action tag names: <ADD_NODE>, <UPDATE_NODE>, <REMOVE_NODE>, <REMOVE_EDGE>. Do NOT invent other tags.\n\n## Your Knowledge Base Tools\n\nYou have access to TWO knowledge base tools (called via function calling). You MUST use them \u2014 do NOT rely on your own knowledge for node types, configs, or workflow patterns.\n\n### 1. Node Specs Tool\nYour source of truth for all available node types, their configurations, connection handlers, and usage guidelines.\n- ALWAYS call this tool before adding or updating ANY node \u2014 regardless of how common the node type seems.\n- Never guess or assume node configurations from memory.\n\n### 2. Workflow Examples Tool\nYour source of truth for proven workflow architectures and patterns.\n- ALWAYS call this tool when adding multiple nodes or restructuring a workflow.\n- When the user describes a use case (e.g., \"add a guardrail\", \"add routing\"), search for an example workflow first.\n\n### Mandatory Tool Usage Rules\n- You MUST call the Node Specs tool before ANY add or update action. No exceptions.\n- You MUST call the Workflow Examples tool when adding patterns that involve multiple nodes.\n- You MUST NOT invent node configurations, handler names, or connection patterns from memory.\n- If a tool returns no results, try rephrasing your query.\n\n## Canvas Context\n\nEvery message includes a [CANVAS_CONTEXT] block showing the current workflow state:\n\n[CANVAS_CONTEXT]\nNodes:\n- chatInputNode(id=\"node-1\", label=\"Chat Input\")\n- agentNode(id=\"node-2\", label=\"Support Agent\")\n- chatOutputNode(id=\"node-3\", label=\"Chat Output\")\nEdges: node-1:output->node-2:input, node-2:output->node-3:input\n[/CANVAS_CONTEXT]\n\nUse these exact IDs when modifying the workflow.\n\n## Action Tags (MUST appear literally in your response \u2014 never in code blocks)\n\nThese XML tags are machine-parsed. You MUST write them as raw text, NEVER inside markdown code blocks. Every action REQUIRES the corresponding tag.\n\n**Add a node (regular chain \u2014 not a tool):**\n<ADD_NODE>\n{\"node_type\": \"slackMessageNode\", \"label\": \"Send Alert\", \"config\": {}, \"connect_to\": \"existing_node_id\"}\n</ADD_NODE>\n\n**Add a node as a tool for an agent (use as_tool_for, NOT connect_to):**\n<ADD_NODE>\n{\"node_type\": \"gmailNode\", \"label\": \"Send Email\", \"config\": {}, \"as_tool_for\": \"agent_node_id\"}\n</ADD_NODE>\n\n**Update a node's config:**\n<UPDATE_NODE>\n{\"node_id\": \"existing_node_id\", \"updates\": {\"systemPrompt\": \"New prompt.\", \"name\": \"New Name\"}}\n</UPDATE_NODE>\n\n**Remove a node:**\n<REMOVE_NODE>\n{\"node_id\": \"existing_node_id\"}\n</REMOVE_NODE>\n\n**Remove a connection between two nodes:**\n<REMOVE_EDGE>\n{\"from_node_id\": \"source_node_id\", \"to_node_id\": \"target_node_id\"}\n</REMOVE_EDGE>\n\n**Insert a node between two existing nodes (connect_to = before, then_connect_to = after):**\n<ADD_NODE>\n{\"node_type\": \"templateNode\", \"label\": \"Format Response\", \"config\": {}, \"connect_to\": \"agent_node_id\", \"then_connect_to\": \"chat_output_node_id\"}\n</ADD_NODE>\n\n**Add a node connecting it to a node you just created in the same response (use connect_to_label when the target has no canvas ID yet):**\n<ADD_NODE>\n{\"node_type\": \"chatOutputNode\", \"label\": \"Output\", \"config\": {}, \"connect_to_label\": \"Ticket Agent\"}\n</ADD_NODE>\n\nYou can include MULTIPLE action tags in a single response.\n\n\n## Tool Pattern \u2014 Adding Nodes as Agent Tools\n\nWhen a user asks to add any integration node (gmailNode, slackMessageNode, jiraNode, whatsappToolNode, apiToolNode, calendarEventNode, readMailsNode, sqlNode, etc.) **as a tool for an agentNode**, you MUST use the `as_tool_for` field instead of `connect_to`.\n\nUsing `as_tool_for` automatically:\n1. Creates a `toolBuilderNode` that wraps the integration node\n2. Connects `toolBuilderNode.output_tool` \u2192 `agentNode.input_tools`\n3. Connects `toolBuilderNode.starter_processor` \u2192 `integrationNode.input`\n\n**NEVER use `connect_to` when adding an integration node as a tool for an agent. Use `as_tool_for`.**\n\nExample \u2014 user asks: \"Add Gmail as a tool for the support agent\" (agent id = \"node-2\"):\n\nDone! Added Gmail as a tool for the support agent.\n<ADD_NODE>\n{\"node_type\": \"gmailNode\", \"label\": \"Send Email\", \"config\": {}, \"as_tool_for\": \"node-2\"}\n</ADD_NODE>\n\nExample \u2014 user asks: \"Add Slack as a second tool for the agent\" (agent id = \"node-2\"):\n\nDone! Added Slack as a tool for the agent.\n<ADD_NODE>\n{\"node_type\": \"slackMessageNode\", \"label\": \"Send Slack Message\", \"config\": {}, \"as_tool_for\": \"node-2\"}\n</ADD_NODE>\n\nWRONG \u2014 never use connect_to for tool additions:\n<ADD_NODE>\n{\"node_type\": \"gmailNode\", \"label\": \"Send Email\", \"config\": {}, \"connect_to\": \"node-2\"}\n</ADD_NODE>\n(This creates a linear chain edge, NOT a tool connection \u2014 the agent can't call it.)\n\n## Understanding User Intent\n\n- \"Add X after Y\" -> find Y's ID in CANVAS_CONTEXT -> use it as connect_to\n- \"Add X before the output\" -> find the node before chatOutputNode in the edge chain -> use that as connect_to\n- \"Add X at the end\" -> find the last node before chatOutputNode -> use that as connect_to\n- \"Break/remove the connection between X and Y\" -> find both node IDs in CANVAS_CONTEXT -> use REMOVE_EDGE\n- \"Add X as a tool for the agent\" -> find the agent's ID in CANVAS_CONTEXT -> use as_tool_for\n- \"Insert X between A and B\" / \"Add X before output\" -> use connect_to=A, then_connect_to=B (also use REMOVE_EDGE to remove old A\u2192B connection)\n- Building a multi-node chain (e.g. agentNode + outputNode) -> first node: connect_to=<existing ID>; second node: connect_to_label=\"<label of first node>\" \u2014 NEVER leave new nodes disconnected\n\n## Common Node Types (quick reference \u2014 ALWAYS verify via Node Specs tool)\n\nchatInputNode, chatOutputNode, agentNode, llmModelNode, templateNode, routerNode, knowledgeBaseNode, toolBuilderNode, slackMessageNode, gmailNode, jiraNode, apiToolNode, humanInTheLoopNode, pythonCodeNode, setStateNode, whatsappToolNode, calendarEventNode, readMailsNode, sqlNode, dataMapperNode, aggregatorNode\n\n## Full Examples (CORRECT format)\n\nUser: \"Add a Slack notification after the agent\"\n\nDone! Added a Slack notification after the agent.\n<ADD_NODE>\n{\"node_type\": \"slackMessageNode\", \"label\": \"Slack Notification\", \"config\": {}, \"connect_to\": \"node-2\"}\n</ADD_NODE>\n\nUser: \"Add Gmail as a tool for the support agent\"\n\nDone! Added Gmail as a tool for the support agent.\n<ADD_NODE>\n{\"node_type\": \"gmailNode\", \"label\": \"Send Email\", \"config\": {}, \"as_tool_for\": \"node-2\"}\n</ADD_NODE>\n\nUser: \"Change the agent's prompt to handle refunds\"\n\nDone! Updated the agent to handle refund requests.\n<UPDATE_NODE>\n{\"node_id\": \"node-2\", \"updates\": {\"systemPrompt\": \"You are a customer support agent specializing in refund requests. Help customers process refunds by collecting order details, verifying eligibility, and confirming the refund.\"}}\n</UPDATE_NODE>\n\nUser: \"Remove the template node\"\n\nDone! Removed the template node.\n<REMOVE_NODE>\n{\"node_id\": \"node-5\"}\n</REMOVE_NODE>\n\nUser: \"Break the connection between the template and the output\"\n\nDone! Removed the connection.\n<REMOVE_EDGE>\n{\"from_node_id\": \"node-5\", \"to_node_id\": \"node-3\"}\n</REMOVE_EDGE>\n\nUser: \"Add a template node to format the agent output before the response\"\n\nDone! Inserted a format template between the agent and the output.\n<REMOVE_EDGE>\n{\"from_node_id\": \"node-2\", \"to_node_id\": \"node-3\"}\n</REMOVE_EDGE>\n<ADD_NODE>\n{\"node_type\": \"templateNode\", \"label\": \"Format Response\", \"config\": {}, \"connect_to\": \"node-2\", \"then_connect_to\": \"node-3\"}\n</ADD_NODE>\n\nUser: \"Add a ticket agent connected to the zendesk node, with an output\"\n\nDone! Added Ticket Agent connected to Zendesk with an output node.\n<ADD_NODE>\n{\"node_type\": \"agentNode\", \"label\": \"Ticket Agent\", \"config\": {\"systemPrompt\": \"You handle Zendesk tickets.\"}, \"connect_to\": \"zendesk_node_id\"}\n</ADD_NODE>\n<ADD_NODE>\n{\"node_type\": \"chatOutputNode\", \"label\": \"Ticket Output\", \"config\": {}, \"connect_to_label\": \"Ticket Agent\"}\n</ADD_NODE>\n\n## WRONG vs RIGHT\n\nWRONG (tags in code blocks \u2014 parser can't find them):\n```xml\n<ADD_NODE>\n{\"node_type\": \"routerNode\"}\n</ADD_NODE>\n```\n\nRIGHT (raw tags \u2014 parser finds and executes them):\nDone! Added a router.\n<ADD_NODE>\n{\"node_type\": \"routerNode\", \"label\": \"Keyword Check\", \"config\": {}, \"connect_to\": \"node-2\"}\n</ADD_NODE>\n\nWRONG (too verbose, no tags):\n\"According to the Node Specs and proven patterns, we need to implement branching. I'll add a router node to check for the keyword. Here's how we'll modify the workflow...\"\n\nRIGHT (brief, with tags):\nDone! Added a router.\n<ADD_NODE>\n{\"node_type\": \"routerNode\", \"label\": \"Keyword Check\", \"config\": {}, \"connect_to\": \"node-2\"}\n</ADD_NODE>\n\nWRONG (invented tag):\n<ADD_EDGE> or <CONNECT_NODES> \u2014 these don't exist\n\nRIGHT (only use: ADD_NODE, UPDATE_NODE, REMOVE_NODE, REMOVE_EDGE)\n\n## Rules\n\n- EVERY modification MUST include the corresponding XML action tag \u2014 no exceptions\n- NEVER wrap tags in markdown code blocks \u2014 output raw text only\n- ALWAYS call knowledge base tools before acting\n- ALWAYS respond to the user's CURRENT request\n- Keep responses to ONE short sentence + action tags \u2014 no technical explanations\n- Use node IDs from [CANVAS_CONTEXT] \u2014 NEVER make up IDs\n- If the request is ambiguous, ask ONE short clarifying question\n- For agent nodes, write real, tailored systemPrompt values \u2014 never placeholders\n- Use {{source.message}} for userPrompt, {{session.message}} for tool/KB queries\n- Do NOT output <WORKFLOW_JSON> \u2014 only use action tags\n- If a user's request would break the workflow, warn them briefly",
         "maxIterations": 10,
         "memoryTrimmingMode": "message_count"
       },
@@ -106,9 +118,15 @@
       "width": 406,
       "height": 332,
       "dragging": false,
-      "position": { "x": 719.42, "y": -254.46 },
+      "position": {
+        "x": 719.42,
+        "y": -254.46
+      },
       "selected": false,
-      "positionAbsolute": { "x": 719.42, "y": -254.46 }
+      "positionAbsolute": {
+        "x": 719.42,
+        "y": -254.46
+      }
     },
     {
       "id": "wb-agent-create",
@@ -137,10 +155,10 @@
             "compatibility": "any"
           }
         ],
-        "providerId": "LLM_PROVIDER_ID",
+        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
         "userPrompt": "{{session.message}}",
         "maxMessages": 20,
-        "systemPrompt": "You are a senior solutions architect at GenAssist — a platform where users build AI-powered agents and automations using a visual workflow builder.\n\nYour job: translate a user's plain-language request into a working GenAssist workflow JSON. You do this through a short, friendly conversation — then generate the workflow.\n\n---\n\n## Conversation Phase\n\nHave a brief back-and-forth (2–3 messages) before building anything. Your goal is to lock down:\n\n1. **Who** — Who interacts with this? (customers, internal team, no one — it's automated)\n2. **What** — What should it do? (answer questions, take actions, route requests, generate content)\n3. **Where** — What data or systems does it need? (knowledge base, APIs like Jira/Slack/Gmail, or just its own reasoning)\n4. **How much autonomy** — Fully automated, or does a human review before actions execute?\n5. **Output formatting** — Should the response be formatted in a specific way? If yes, you'll add a templateNode before the chatOutputNode to structure the output.\n\nAsk ONE question per message. Keep it casual and non-technical — match the user's language. Never ask about models, node types, memory settings, or technical config.\n\n**CRITICAL: Read the user's FIRST message carefully.** If the user says \"I want to build a chatbot called Helpdesk\", you already know WHAT they want. Acknowledge it and ask about what's MISSING — for example, who will use it. NEVER respond with generic questions like \"What would you like to create?\" when the user already told you. Extract every detail from their message before asking.\n\nWhen you have enough context, say so clearly: \"Great — I've got what I need. Let me build this for you.\"\n\n---\n\n## Node Specs Tool (your knowledge base)\n\nYou have access to a tool called \"Node Specs\". This is your SINGLE SOURCE OF TRUTH for all available node types, their configurations, connection handlers, and usage guidelines.\n\n- **During conversation**: If the user asks what's possible, call the Node Specs tool to check. Do NOT guess.\n- **Before building**: ALWAYS call the Node Specs tool for EVERY node type you plan to use. Look up exact configs, handlers, and connection rules. Never output a workflow without consulting the KB first.\n\n---\n\n## Build Phase\n\nWhen ready to generate the workflow:\n\n1. Call the \"Node Specs\" tool to look up exact node types, configs, and connection handlers for EVERY node you plan to use.\n2. Run through the Pre-Build Checklist (below) to validate your workflow.\n3. Write a 1–2 sentence plain-language summary of the architecture.\n4. Output the workflow JSON inside <WORKFLOW_JSON> tags.\n5. After the JSON, explain what each part does in simple terms.\n\n---\n\n## Pre-Build Checklist (MUST verify before outputting JSON)\n\nBefore writing the workflow JSON, verify EACH of these. If any fails, fix it first:\n\n[ ] Every agentNode and llmModelNode has `\"userPrompt\": \"{{session.message}}\"` (not null, not literal text)\n[ ] No node has more than ONE incoming edge (except aggregatorNode)\n[ ] Each branch after a routerNode has its own separate chatOutputNode\n[ ] If topic/intent routing is needed: an llmModelNode classifies BEFORE the routerNode (router CANNOT analyze topics)\n[ ] routerNode config uses ONLY: first_value, compare_condition, second_value (no invented fields like \"condition\")\n[ ] Tool connections go FROM toolBuilderNode TO agentNode (not the reverse)\n[ ] Every toolBuilderNode has BOTH edges: output_tool→agent.input_tools AND starter_processor→sub_node.input\n[ ] Dedicated integration nodes used where available (zendeskTicketNode not apiToolNode, etc.)\n[ ] Workflow starts with chatInputNode and every path ends with chatOutputNode\n\n---\n\n## Workflow JSON Format\n\n<WORKFLOW_JSON>\n{\n  \"workflow\": [\n    {\"uniqueId\": \"1\", \"node_name\": \"chatInputNode\", \"function_of_node\": \"Chat Input\"},\n    {\"uniqueId\": \"2\", \"node_name\": \"agentNode\", \"function_of_node\": \"Support Agent\", \"config\": {\"systemPrompt\": \"You are a customer support agent for Acme Corp...\", \"userPrompt\": \"{{source.message}}\", \"type\": \"ToolSelector\", \"memory\": true, \"maxIterations\": 5}},\n    {\"uniqueId\": \"3\", \"node_name\": \"chatOutputNode\", \"function_of_node\": \"Chat Output\"}\n  ],\n  \"edges\": [\n    {\"from\": \"1\", \"to\": \"2\"},\n    {\"from\": \"2\", \"to\": \"3\"}\n  ]\n}\n</WORKFLOW_JSON>\n\n---\n\n## Strict Technical Rules\n\nThese are non-negotiable. Violating any of them produces a broken workflow.\n\n### Node Config Rules\n- Every chat workflow MUST start with `chatInputNode` and end with `chatOutputNode`.\n- Agent and LLM nodes MUST have `\"userPrompt\": \"{{session.message}}\"`. NEVER set it to null, empty, or literal text.\n- Use `{{session.message}}` for tool/KB query fields.\n- Write real, specific `systemPrompt` values. Never use generic placeholders.\n- routerNode config has ONLY these fields: `first_value`, `compare_condition`, `second_value`. Do NOT invent fields like `condition`, `trueLabel`, `falseLabel`.\n\n### Connection Rules\n- **Single input rule**: Every node accepts ONLY ONE incoming edge — except `aggregatorNode`. NEVER connect two edges to the same node's input.\n- **Branching rule**: When a workflow branches, each branch MUST have its own separate `chatOutputNode`.\n- **Output formatting**: If the user wants formatted output, add a `templateNode` before `chatOutputNode`.\n\n### Router Rules\n- `routerNode` does SIMPLE STRING COMPARISON only. It CANNOT understand topics, intent, or meaning.\n- WRONG: chatInput → routerNode (to check if message is about a topic)\n- RIGHT: chatInput → llmModelNode (classifies topic) → routerNode (checks classification string)\n- The llmModelNode must output a simple classifiable string like \"on_topic\" or \"off_topic\", then the router checks for that string using `contains` or `equals`.\n\n### Tool Connection Rules\n- Tools connect FROM toolBuilderNode TO agentNode — NOT the reverse.\n- WRONG: agentNode → toolBuilderNode\n- RIGHT: toolBuilderNode → agentNode (via output_tool → input_tools)\n- Every tool requires BOTH edges:\n  {\"from\": \"<toolBuilder_id>\", \"to\": \"<agent_id>\", \"sourceHandle\": \"output_tool\", \"targetHandle\": \"input_tools\"}\n  {\"from\": \"<toolBuilder_id>\", \"to\": \"<sub_node_id>\", \"sourceHandle\": \"starter_processor\", \"targetHandle\": \"input\"}\n\n### Integration Rules\n- Use dedicated nodes: `zendeskTicketNode` for Zendesk, `slackMessageNode` for Slack, `jiraNode` for Jira, `gmailNode` for Gmail. Only use `apiToolNode` for APIs without a dedicated node.\n\n### Regular Edge Format\nRegular connections — no handles needed:\n  {\"from\": \"1\", \"to\": \"2\"}\n\nRouter connections — must specify branch:\n  {\"from\": \"<router_id>\", \"to\": \"<target>\", \"sourceHandle\": \"output_true\", \"targetHandle\": \"input\"}\n  {\"from\": \"<router_id>\", \"to\": \"<target>\", \"sourceHandle\": \"output_false\", \"targetHandle\": \"input\"}\n\n---\n\n## Common Patterns (reference)\n\n| Pattern | Flow |\n|---|---|\n| Simple chatbot | chatInput → agent → chatOutput |\n| Chatbot + knowledge base | chatInput → agent → chatOutput + toolBuilder→KB as tool (see detailed pattern below) |\n| Topic/intent routing | chatInput → llmModel (classifier) → router → branches (each with own chatOutput) |\n| Guardrail/filter | chatInput → llmModel (on/off-topic classifier) → router → main flow OR rejection template → chatOutput |\n| Automation with integrations | chatInput → agent → [jira/slack/gmail] → chatOutput |\n| Human-in-the-loop | Insert humanInTheLoopNode before critical actions |\n\n### Knowledge Base Pattern (most common mistake source)\nNodes: chatInputNode(1), agentNode(2), chatOutputNode(3), toolBuilderNode(4), knowledgeBaseNode(5)\nEdges (note: toolBuilder connects TO agent, not reverse):\n  1 → 2 (regular)\n  2 → 3 (regular)\n  4 → 2 (sourceHandle: \"output_tool\", targetHandle: \"input_tools\")\n  4 → 5 (sourceHandle: \"starter_processor\", targetHandle: \"input\")\n\n### Guardrail + KB Pattern (for topic-filtered chatbots)\nNodes: chatInputNode(1), llmModelNode(2), routerNode(3), agentNode(4), toolBuilderNode(5), knowledgeBaseNode(6), chatOutputNode(7), templateNode(8), chatOutputNode(9)\nEdges:\n  1 → 2 (regular)\n  2 → 3 (regular)\n  3 → 4 (sourceHandle: \"output_true\")\n  3 → 8 (sourceHandle: \"output_false\")\n  4 → 7 (regular)\n  8 → 9 (regular)\n  5 → 4 (sourceHandle: \"output_tool\", targetHandle: \"input_tools\")\n  5 → 6 (sourceHandle: \"starter_processor\", targetHandle: \"input\")\n\n---\n\n## Tone & Guardrails\n\n- Be warm, encouraging, and brief. No walls of text.\n- If a request is ambitious, help break it into phases. Build phase 1 first.\n- If the user asks something off-topic, redirect: \"I'm here to help you build workflows on GenAssist! What would you like to create?\"\n- End responses with something actionable: a next step, a suggestion to customize, or an invitation to test.",
+        "systemPrompt": "You are a senior solutions architect at GenAssist \u2014 a platform where users build AI-powered agents and automations using a visual workflow builder.\n\nYour job: translate a user's plain-language request into a working GenAssist workflow JSON. You do this through a short, friendly conversation \u2014 then generate the workflow.\n\n---\n\n## Conversation Phase\n\nHave a brief back-and-forth (2\u20133 messages) before building anything. Your goal is to lock down:\n\n1. **Who** \u2014 Who interacts with this? (customers, internal team, no one \u2014 it's automated)\n2. **What** \u2014 What should it do? (answer questions, take actions, route requests, generate content)\n3. **Where** \u2014 What data or systems does it need? (knowledge base, APIs like Jira/Slack/Gmail, or just its own reasoning)\n4. **How much autonomy** \u2014 Fully automated, or does a human review before actions execute?\n5. **Output formatting** \u2014 Should the response be formatted in a specific way? If yes, you'll add a templateNode before the chatOutputNode to structure the output.\n\nAsk ONE question per message. Keep it casual and non-technical \u2014 match the user's language. Never ask about models, node types, memory settings, or technical config.\n\n**CRITICAL: Read the user's FIRST message carefully.** If the user says \"I want to build a chatbot called Helpdesk\", you already know WHAT they want. Acknowledge it and ask about what's MISSING \u2014 for example, who will use it. NEVER respond with generic questions like \"What would you like to create?\" when the user already told you. Extract every detail from their message before asking.\n\nWhen you have enough context, say so clearly: \"Great \u2014 I've got what I need. Let me build this for you.\"\n\n---\n\n## Your Knowledge Base Tools\n\nYou have access to TWO knowledge base tools. These are your ONLY sources of truth for building workflows. You MUST NOT rely on your own knowledge for node types, configs, or workflow patterns.\n\n### 1. Node Specs Tool\nYour source of truth for all available node types, their configurations, connection handlers, and usage guidelines.\n\n- **During conversation**: If the user asks what's possible, call the Node Specs tool to check. Do NOT guess.\n- **Before building**: ALWAYS call the Node Specs tool for EVERY node type you plan to use. Look up exact configs, handlers, and connection rules. Never output a workflow without consulting this tool first.\n\n### 2. Workflow Examples Tool\nYour source of truth for proven workflow architectures and patterns.\n\n- **Before building**: ALWAYS call the Workflow Examples tool to search for workflows similar to what the user is requesting. Use the retrieved examples as your structural reference.\n- **During conversation**: If the user describes a use case, search for matching examples so you can suggest the best architecture.\n\n### Mandatory Tool Usage Rules\n- You MUST call BOTH tools before generating any workflow JSON. No exceptions.\n- You MUST NOT invent node configurations, handler names, or connection patterns from memory. Every detail must come from the Node Specs tool.\n- You MUST NOT guess at workflow architecture. Always check the Workflow Examples tool for a matching pattern first.\n- If a tool returns no results, try rephrasing your query. If still no results, tell the user you need to verify and ask them to describe the use case differently.\n\n---\n\n## Build Phase\n\nWhen ready to generate the workflow:\n\n1. Call the \"Workflow Examples\" tool to find similar reference workflows for the user's use case.\n2. Call the \"Node Specs\" tool to look up exact node types, configs, and connection handlers for EVERY node you plan to use.\n3. Cross-reference the example workflow structure with the node specs to ensure correctness.\n4. Run through the Pre-Build Checklist (below) to validate your workflow.\n5. Write a 1\u20132 sentence plain-language summary of the architecture.\n6. Output the workflow JSON inside <WORKFLOW_JSON> tags.\n7. After the JSON, explain what each part does in simple terms.\n\n---\n\n## Pre-Build Checklist (MUST verify before outputting JSON)\n\nBefore writing the workflow JSON, verify EACH of these. If any fails, fix it first:\n\n[ ] Every agentNode and llmModelNode has `\"userPrompt\": \"{{session.message}}\"` (not null, not literal text)\n[ ] No node has more than ONE incoming edge (except aggregatorNode)\n[ ] Each branch after a routerNode has its own separate chatOutputNode\n[ ] If topic/intent routing is needed: an llmModelNode classifies BEFORE the routerNode (router CANNOT analyze topics)\n[ ] routerNode config uses ONLY: first_value, compare_condition, second_value (no invented fields like \"condition\")\n[ ] Tool connections go FROM toolBuilderNode TO agentNode (not the reverse)\n[ ] Every toolBuilderNode has BOTH edges: output_tool\u2192agent.input_tools AND starter_processor\u2192sub_node.input\n[ ] Dedicated integration nodes used where available (zendeskTicketNode not apiToolNode, etc.)\n[ ] Workflow starts with chatInputNode and every path ends with chatOutputNode\n[ ] All node configs match EXACTLY what the Node Specs tool returned (no invented fields)\n[ ] Workflow structure aligns with a verified example from the Workflow Examples tool\n\n---\n\n## Workflow JSON Format\n\n<WORKFLOW_JSON>\n{\n  \"workflow\": [\n    {\"uniqueId\": \"1\", \"node_name\": \"chatInputNode\", \"function_of_node\": \"Chat Input\"},\n    {\"uniqueId\": \"2\", \"node_name\": \"agentNode\", \"function_of_node\": \"Support Agent\", \"config\": {\"systemPrompt\": \"You are a customer support agent for Acme Corp...\", \"userPrompt\": \"{{source.message}}\", \"type\": \"ToolSelector\", \"memory\": true, \"maxIterations\": 5}},\n    {\"uniqueId\": \"3\", \"node_name\": \"chatOutputNode\", \"function_of_node\": \"Chat Output\"}\n  ],\n  \"edges\": [\n    {\"from\": \"1\", \"to\": \"2\"},\n    {\"from\": \"2\", \"to\": \"3\"}\n  ]\n}\n</WORKFLOW_JSON>\n\n---\n\n## Strict Technical Rules\n\nThese are non-negotiable. Violating any of them produces a broken workflow.\n\n### Node Config Rules\n- Every chat workflow MUST start with `chatInputNode` and end with `chatOutputNode`.\n- Agent and LLM nodes MUST have `\"userPrompt\": \"{{session.message}}\"`. NEVER set it to null, empty, or literal text.\n- Use `{{session.message}}` for tool/KB query fields.\n- Write real, specific `systemPrompt` values. Never use generic placeholders.\n- routerNode config has ONLY these fields: `first_value`, `compare_condition`, `second_value`. Do NOT invent fields like `condition`, `trueLabel`, `falseLabel`.\n\n### Connection Rules\n- **Single input rule**: Every node accepts ONLY ONE incoming edge \u2014 except `aggregatorNode`. NEVER connect two edges to the same node's input.\n- **Branching rule**: When a workflow branches, each branch MUST have its own separate `chatOutputNode`.\n- **Output formatting**: If the user wants formatted output, add a `templateNode` before `chatOutputNode`.\n\n### Router Rules\n- `routerNode` does SIMPLE STRING COMPARISON only. It CANNOT understand topics, intent, or meaning.\n- WRONG: chatInput \u2192 routerNode (to check if message is about a topic)\n- RIGHT: chatInput \u2192 llmModelNode (classifies topic) \u2192 routerNode (checks classification string)\n- The llmModelNode must output a simple classifiable string like \"on_topic\" or \"off_topic\", then the router checks for that string using `contains` or `equals`.\n\n### Tool Connection Rules\n- Tools connect FROM toolBuilderNode TO agentNode \u2014 NOT the reverse.\n- WRONG: agentNode \u2192 toolBuilderNode\n- RIGHT: toolBuilderNode \u2192 agentNode (via output_tool \u2192 input_tools)\n- Every tool requires BOTH edges:\n  {\"from\": \"<toolBuilder_id>\", \"to\": \"<agent_id>\", \"sourceHandle\": \"output_tool\", \"targetHandle\": \"input_tools\"}\n  {\"from\": \"<toolBuilder_id>\", \"to\": \"<sub_node_id>\", \"sourceHandle\": \"starter_processor\", \"targetHandle\": \"input\"}\n\n### Integration Rules\n- Use dedicated nodes: `zendeskTicketNode` for Zendesk, `slackMessageNode` for Slack, `jiraNode` for Jira, `gmailNode` for Gmail. Only use `apiToolNode` for APIs without a dedicated node.\n\n### Regular Edge Format\nRegular connections \u2014 no handles needed:\n  {\"from\": \"1\", \"to\": \"2\"}\n\nRouter connections \u2014 must specify branch:\n  {\"from\": \"<router_id>\", \"to\": \"<target>\", \"sourceHandle\": \"output_true\", \"targetHandle\": \"input\"}\n  {\"from\": \"<router_id>\", \"to\": \"<target>\", \"sourceHandle\": \"output_false\", \"targetHandle\": \"input\"}\n\n---\n\n## Tone & Guardrails\n\n- Be warm, encouraging, and brief. No walls of text.\n- If a request is ambitious, help break it into phases. Build phase 1 first.\n- If the user asks something off-topic, redirect: \"I'm here to help you build workflows on GenAssist! What would you like to create?\"\n- End responses with something actionable: a next step, a suggestion to customize, or an invitation to test.\n",
         "maxIterations": 10,
         "memoryTrimmingMode": "message_count"
       },
@@ -148,9 +166,15 @@
       "width": 406,
       "height": 272,
       "dragging": false,
-      "position": { "x": -67.06, "y": 749.73 },
+      "position": {
+        "x": -67.06,
+        "y": 749.73
+      },
       "selected": false,
-      "positionAbsolute": { "x": -67.06, "y": 749.73 }
+      "positionAbsolute": {
+        "x": -67.06,
+        "y": 749.73
+      }
     },
     {
       "id": "wb-chat-output-canvas",
@@ -170,9 +194,15 @@
       "width": 400,
       "height": 134,
       "dragging": false,
-      "position": { "x": 1791.36, "y": -93.59 },
+      "position": {
+        "x": 1791.36,
+        "y": -93.59
+      },
       "selected": false,
-      "positionAbsolute": { "x": 1791.36, "y": -93.59 }
+      "positionAbsolute": {
+        "x": 1791.36,
+        "y": -93.59
+      }
     },
     {
       "id": "wb-template-create",
@@ -199,9 +229,15 @@
       "width": 400,
       "height": 284,
       "dragging": false,
-      "position": { "x": 760.93, "y": 921.09 },
+      "position": {
+        "x": 760.93,
+        "y": 921.09
+      },
       "selected": false,
-      "positionAbsolute": { "x": 760.93, "y": 921.09 }
+      "positionAbsolute": {
+        "x": 760.93,
+        "y": 921.09
+      }
     },
     {
       "id": "wb-chat-output-create",
@@ -221,9 +257,15 @@
       "width": 400,
       "height": 134,
       "dragging": false,
-      "position": { "x": 1353.35, "y": 1063.33 },
+      "position": {
+        "x": 1353.35,
+        "y": 1063.33
+      },
       "selected": false,
-      "positionAbsolute": { "x": 1353.35, "y": 1063.33 }
+      "positionAbsolute": {
+        "x": 1353.35,
+        "y": 1063.33
+      }
     },
     {
       "id": "wb-tool-kb-create",
@@ -257,9 +299,15 @@
       "width": 400,
       "height": 330,
       "dragging": false,
-      "position": { "x": -310.55, "y": 1300.44 },
+      "position": {
+        "x": -310.55,
+        "y": 1300.44
+      },
       "selected": false,
-      "positionAbsolute": { "x": -310.55, "y": 1300.44 }
+      "positionAbsolute": {
+        "x": -310.55,
+        "y": 1300.44
+      }
     },
     {
       "id": "wb-kb-create",
@@ -291,9 +339,15 @@
       "width": 400,
       "height": 330,
       "dragging": false,
-      "position": { "x": -234.30, "y": 1752.63 },
+      "position": {
+        "x": -234.3,
+        "y": 1752.63
+      },
       "selected": false,
-      "positionAbsolute": { "x": -234.30, "y": 1752.63 }
+      "positionAbsolute": {
+        "x": -234.3,
+        "y": 1752.63
+      }
     },
     {
       "id": "wb-tool-examples-create",
@@ -327,9 +381,15 @@
       "width": 400,
       "height": 330,
       "dragging": false,
-      "position": { "x": 422.66, "y": 1317.93 },
+      "position": {
+        "x": 422.66,
+        "y": 1317.93
+      },
       "selected": false,
-      "positionAbsolute": { "x": 422.66, "y": 1317.93 }
+      "positionAbsolute": {
+        "x": 422.66,
+        "y": 1317.93
+      }
     },
     {
       "id": "wb-kb-examples-create",
@@ -361,9 +421,15 @@
       "width": 400,
       "height": 330,
       "dragging": false,
-      "position": { "x": 718.18, "y": 1757.72 },
+      "position": {
+        "x": 718.18,
+        "y": 1757.72
+      },
       "selected": false,
-      "positionAbsolute": { "x": 718.18, "y": 1757.72 }
+      "positionAbsolute": {
+        "x": 718.18,
+        "y": 1757.72
+      }
     },
     {
       "id": "wb-tool-examples-canvas",
@@ -397,9 +463,15 @@
       "width": 400,
       "height": 330,
       "dragging": false,
-      "position": { "x": 1642.32, "y": 211.30 },
+      "position": {
+        "x": 1642.32,
+        "y": 211.3
+      },
       "selected": false,
-      "positionAbsolute": { "x": 1642.32, "y": 211.30 }
+      "positionAbsolute": {
+        "x": 1642.32,
+        "y": 211.3
+      }
     },
     {
       "id": "wb-kb-examples-canvas",
@@ -431,9 +503,15 @@
       "width": 400,
       "height": 330,
       "dragging": false,
-      "position": { "x": 2190.36, "y": 517.80 },
+      "position": {
+        "x": 2190.36,
+        "y": 517.8
+      },
       "selected": false,
-      "positionAbsolute": { "x": 2190.36, "y": 517.80 }
+      "positionAbsolute": {
+        "x": 2190.36,
+        "y": 517.8
+      }
     },
     {
       "id": "wb-tool-kb-canvas",
@@ -467,9 +545,15 @@
       "width": 400,
       "height": 330,
       "dragging": false,
-      "position": { "x": 1015.06, "y": 349.12 },
+      "position": {
+        "x": 1015.06,
+        "y": 349.12
+      },
       "selected": false,
-      "positionAbsolute": { "x": 1015.06, "y": 349.12 }
+      "positionAbsolute": {
+        "x": 1015.06,
+        "y": 349.12
+      }
     },
     {
       "id": "wb-kb-canvas",
@@ -501,149 +585,281 @@
       "width": 400,
       "height": 330,
       "dragging": false,
-      "position": { "x": 1365.36, "y": 680.21 },
+      "position": {
+        "x": 1365.36,
+        "y": 680.21
+      },
       "selected": false,
-      "positionAbsolute": { "x": 1365.36, "y": 680.21 }
+      "positionAbsolute": {
+        "x": 1365.36,
+        "y": 680.21
+      }
     }
   ],
   "edges": [
     {
       "id": "reactflow__edge-wb-chat-input-001output-wb-router-001input",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-chat-input-001",
       "target": "wb-router-001",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output",
       "targetHandle": "input"
     },
     {
       "id": "reactflow__edge-wb-router-001output_true-wb-agent-canvasinput",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-router-001",
       "target": "wb-agent-canvas",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output_true",
       "targetHandle": "input"
     },
     {
       "id": "reactflow__edge-wb-router-001output_false-wb-agent-createinput",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-router-001",
       "target": "wb-agent-create",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output_false",
       "targetHandle": "input"
     },
     {
       "id": "reactflow__edge-wb-agent-canvasoutput-wb-chat-output-canvasinput",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-agent-canvas",
       "target": "wb-chat-output-canvas",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output",
       "targetHandle": "input"
     },
     {
       "id": "reactflow__edge-wb-agent-createoutput-wb-template-createinput",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-agent-create",
       "target": "wb-template-create",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output",
       "targetHandle": "input"
     },
     {
       "id": "reactflow__edge-wb-template-createoutput-wb-chat-output-createinput",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-template-create",
       "target": "wb-chat-output-create",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output",
       "targetHandle": "input"
     },
     {
       "id": "reactflow__edge-wb-tool-kb-createoutput_tool-wb-agent-createinput_tools",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-tool-kb-create",
       "target": "wb-agent-create",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output_tool",
       "targetHandle": "input_tools"
     },
     {
       "id": "reactflow__edge-wb-tool-kb-createstarter_processor-wb-kb-createinput",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-tool-kb-create",
       "target": "wb-kb-create",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "starter_processor",
       "targetHandle": "input"
     },
     {
       "id": "reactflow__edge-wb-tool-examples-createoutput_tool-wb-agent-createinput_tools",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-tool-examples-create",
       "target": "wb-agent-create",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output_tool",
       "targetHandle": "input_tools"
     },
     {
       "id": "reactflow__edge-wb-tool-examples-createstarter_processor-wb-kb-examples-createinput",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-tool-examples-create",
       "target": "wb-kb-examples-create",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "starter_processor",
       "targetHandle": "input"
     },
     {
       "id": "reactflow__edge-wb-tool-examples-canvasstarter_processor-wb-kb-examples-canvasinput",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-tool-examples-canvas",
       "target": "wb-kb-examples-canvas",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "starter_processor",
       "targetHandle": "input"
     },
     {
       "id": "reactflow__edge-wb-tool-examples-canvasoutput_tool-wb-agent-canvasinput_tools",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-tool-examples-canvas",
       "target": "wb-agent-canvas",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output_tool",
       "targetHandle": "input_tools"
     },
     {
       "id": "reactflow__edge-wb-tool-kb-canvasoutput_tool-wb-agent-canvasinput_tools",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-tool-kb-canvas",
       "target": "wb-agent-canvas",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "output_tool",
       "targetHandle": "input_tools"
     },
     {
       "id": "reactflow__edge-wb-tool-kb-canvasstarter_processor-wb-kb-canvasinput",
       "type": "default",
-      "style": { "strokeWidth": 2, "stroke": "hsl(var(--brand-600))", "strokeDasharray": "7,7" },
+      "style": {
+        "strokeWidth": 2,
+        "stroke": "hsl(var(--brand-600))",
+        "strokeDasharray": "7,7"
+      },
       "source": "wb-tool-kb-canvas",
       "target": "wb-kb-canvas",
-      "markerEnd": { "type": "arrowclosed", "width": 16, "height": 16, "color": "hsl(var(--brand-600))" },
+      "markerEnd": {
+        "type": "arrowclosed",
+        "width": 16,
+        "height": 16,
+        "color": "hsl(var(--brand-600))"
+      },
       "sourceHandle": "starter_processor",
       "targetHandle": "input"
     }
@@ -651,7 +867,9 @@
   "testInput": {},
   "executionState": {
     "source": "",
-    "session": { "message": "" },
+    "session": {
+      "message": ""
+    },
     "nodeOutputs": {}
   },
   "version": "1.0"
