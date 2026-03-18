@@ -10,8 +10,12 @@ export interface AddNodeAction {
   label?: string;
   config?: Record<string, unknown>;
   connectTo?: string;
+  /** Resolve connect_to by matching a node's label instead of its ID (used when chaining newly added nodes) */
+  connectToLabel?: string;
   /** When set, also creates an edge from the new node's output to this node's input */
   thenConnectTo?: string;
+  /** Resolve then_connect_to by matching a node's label instead of its ID */
+  thenConnectToLabel?: string;
   /** When set, wraps the new node in a toolBuilderNode and connects both to this agent node id */
   asToolFor?: string;
 }
@@ -94,7 +98,9 @@ export function parseAgentActions(text: string): ParseResult {
           label: parsed.label,
           config: parsed.config,
           connectTo: parsed.connect_to,
+          connectToLabel: parsed.connect_to_label,
           thenConnectTo: parsed.then_connect_to,
+          thenConnectToLabel: parsed.then_connect_to_label,
           asToolFor: parsed.as_tool_for,
         });
       }
@@ -256,8 +262,25 @@ export function createNodeFromAction(
   const nodeDef = nodeRegistry.getNodeType(action.nodeType);
   if (!nodeDef) return { nodes: [], edges: [] };
 
+  // Resolve label-based references against existing nodes
+  const resolveId = (id?: string, label?: string): string | undefined => {
+    if (id) return id;
+    if (label) {
+      const match = existingNodes.find(
+        (n) =>
+          (n.data?.name as string)?.toLowerCase() === label.toLowerCase() ||
+          (n.data?.label as string)?.toLowerCase() === label.toLowerCase(),
+      );
+      return match?.id;
+    }
+    return undefined;
+  };
+
+  const resolvedConnectTo = resolveId(action.connectTo, action.connectToLabel);
+  const resolvedThenConnectTo = resolveId(action.thenConnectTo, action.thenConnectToLabel);
+
   const id = uuidv4();
-  const anchorId = action.asToolFor ?? action.connectTo;
+  const anchorId = action.asToolFor ?? resolvedConnectTo;
   const position = calculateNodePosition(anchorId, existingNodes);
 
   const overrideData: Record<string, unknown> = {};
@@ -290,16 +313,16 @@ export function createNodeFromAction(
 
   // ── Standard connect_to pattern ──
   const edges: Edge[] = [];
-  if (action.connectTo) {
-    const sourceNode = existingNodes.find((n) => n.id === action.connectTo);
+  if (resolvedConnectTo) {
+    const sourceNode = existingNodes.find((n) => n.id === resolvedConnectTo);
     if (sourceNode) {
-      edges.push(makeEdge(action.connectTo, id, "output", "input"));
+      edges.push(makeEdge(resolvedConnectTo, id, "output", "input"));
     }
   }
 
   // ── Optional chained output edge ──
-  if (action.thenConnectTo) {
-    edges.push(makeEdge(id, action.thenConnectTo, "output", "input"));
+  if (resolvedThenConnectTo) {
+    edges.push(makeEdge(id, resolvedThenConnectTo, "output", "input"));
   }
 
   return { nodes: [node], edges };

@@ -37,6 +37,7 @@ export function useCanvasAssistant({
   const chatRef = useRef<ChatService | null>(null);
   const isMountedRef = useRef(true);
   const isStartingRef = useRef(false);
+  const suppressWelcomeRef = useRef(false);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const executedActionsRef = useRef<Set<string>>(new Set());
@@ -78,6 +79,9 @@ export function useCanvasAssistant({
   // Execute parsed actions on the canvas
   const executeActions = useCallback(
     (actions: ParsedAction[]) => {
+      // Track nodes added in this batch so label resolution works across sequential ADD_NODEs
+      let batchNodes: Node[] = [...nodesRef.current];
+
       for (const action of actions) {
         const key = actionKey(action);
         if (executedActionsRef.current.has(key)) continue;
@@ -86,10 +90,11 @@ export function useCanvasAssistant({
         if (action.type === "add_node") {
           const { nodes: newNodes, edges: newEdges } = createNodeFromAction(
             action as AddNodeAction,
-            nodesRef.current,
+            batchNodes,
           );
           if (newNodes.length > 0) {
             const restored = newNodes.map(restoreNode);
+            batchNodes = [...batchNodes, ...restored];
             setNodes((nds) => {
               const updated = [...nds, ...restored];
               nodesRef.current = updated;
@@ -161,6 +166,10 @@ export function useCanvasAssistant({
       }
 
       if (message.speaker === "agent") {
+        if (suppressWelcomeRef.current) {
+          suppressWelcomeRef.current = false;
+          return;
+        }
         const { cleanText, actions } = parseAgentActions(message.text);
 
         // Update or add the latest agent message
@@ -226,6 +235,7 @@ export function useCanvasAssistant({
     if (existing) return;
 
     isStartingRef.current = true;
+    suppressWelcomeRef.current = true;
     try {
       await chat.startConversation(undefined);
     } finally {

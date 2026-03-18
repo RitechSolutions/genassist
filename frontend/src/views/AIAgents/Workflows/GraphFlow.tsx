@@ -23,8 +23,6 @@ import WorkflowTestDialog from "./components/WorkflowTestDialog";
 import NodePanel from "./components/panels/NodePanel";
 import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
-import ChatInputBar from "./components/panels/ChatInputBar";
-import CanvasAssistantPanel from "./components/panels/CanvasAssistantPanel";
 import { useCanvasAssistant } from "./hooks/useCanvasAssistant";
 import { useSchemaValidation } from "./hooks/useSchemaValidation";
 import { useUndoRedo } from "./hooks/useUndoRedo";
@@ -46,7 +44,7 @@ import {
   handleNodeDoubleClick,
 } from "./utils/helpers";
 import { Button } from "@/components/button";
-import { History, ChevronLeft, X, Plus } from "lucide-react";
+import { History, ChevronLeft, X, Plus, Sparkles } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
@@ -361,7 +359,7 @@ const GraphFlowContent: React.FC = () => {
   );
 
   // Canvas AI assistant
-  const [showAssistantPanel, setShowAssistantPanel] = useState(true);
+  const [conversationalTabActive, setConversationalTabActive] = useState(false);
   const assistant = useCanvasAssistant({
     nodes,
     edges,
@@ -790,6 +788,12 @@ const GraphFlowContent: React.FC = () => {
               isOpen={showNodePanel}
               onClose={toggleNodePanel}
               onAddNode={addNewNode}
+              messages={assistant.messages}
+              isThinking={assistant.isThinking}
+              activeConversationalTab={conversationalTabActive}
+              onSendMessage={(message) => {
+                assistant.sendMessage(message);
+              }}
             />
 
             <WorkflowsSavedPanel
@@ -818,23 +822,16 @@ const GraphFlowContent: React.FC = () => {
             />
 
             {showChatInput && (
-              <>
-                {showAssistantPanel && (
-                  <CanvasAssistantPanel
-                    messages={assistant.messages}
-                    isThinking={assistant.isThinking}
-                    onClose={() => setShowAssistantPanel(false)}
-                  />
-                )}
-                <ChatInputBar
-                  onSendMessage={(message) => {
-                    setShowAssistantPanel(true);
-                    assistant.sendMessage(message);
-                  }}
-                  disabled={assistant.isThinking}
-                  placeholder="Ask AI to add nodes to your workflow..."
-                />
-              </>
+              <button
+                onClick={() => {
+                  setShowNodePanel(true);
+                  setConversationalTabActive(true);
+                }}
+                className="fixed bottom-6 right-6 z-30 h-12 w-12 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 shadow-lg flex items-center justify-center transition-opacity"
+                title="AI Assistant"
+              >
+                <Sparkles className="h-5 w-5 text-white" />
+              </button>
             )}
 
             {showSetupWizard ? (
