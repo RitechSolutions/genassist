@@ -516,7 +516,7 @@ async def finalize(
         conversation = await service.get_conversation_by_id(conversation_id, raise_not_found=False)
         if conversation:
             agent = await agent_config_service.get_by_operator_id(conversation.operator_id)
-            if agent and getattr(agent, "llm_analyst_id", None):
+            if agent and agent.llm_analyst_id:
                 analyst_id = agent.llm_analyst_id
 
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(

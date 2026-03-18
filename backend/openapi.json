@@ -16251,6 +16251,18 @@
             ],
             "title": "Workflow Id"
           },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
+          },
           "id": {
             "anyOf": [
               {
@@ -16586,6 +16598,18 @@
             "type": "string",
             "format": "uuid",
             "title": "Workflow Id"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
           },
           "id": {
             "type": "string",
@@ -17314,6 +17338,18 @@
               }
             ],
             "title": "Workflow Id"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
           },
           "security_settings": {
             "anyOf": [
@@ -18783,6 +18819,18 @@
               }
             ],
             "title": "Conversation Type"
+          },
+          "finalization_llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalization Llm Analyst Id"
           },
           "id": {
             "type": "string",
