@@ -98,6 +98,7 @@ export default function ChatAsCustomer() {
 
         const websocketUrl = await getWsUrl();
         setWebsocketUrl(websocketUrl);
+        console.log("websocketUrl", websocketUrl);
 
         const key = await getAgentIntegrationKey(agentId);
         setApiKey(key);
@@ -117,7 +118,7 @@ export default function ChatAsCustomer() {
     );
   }
 
-  if (!baseUrl || !apiKey || !websocketUrl) {
+  if (!baseUrl || !apiKey) {
     return (
       <div className="h-full flex items-center justify-center">
         <p>Loading chat…</p>

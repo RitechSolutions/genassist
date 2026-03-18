@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createWebSocket, createWebSocketDiagnostic } from "../utils/websocket";
+import { createWebSocket, createWebSocketConversationUrl, createWebSocketDiagnostic } from "../utils/websocket";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected";
 
@@ -23,29 +23,6 @@ export interface UseChatWebSocketOptions {
 
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
 const DEFAULT_RECONNECT_BASE_DELAY_MS = 1000;
-
-function buildChatWebSocketUrl(
-  baseUrl: string,
-  websocketUrl: string | undefined,
-  conversationId: string,
-  authParam: string,
-  tenant: string | undefined,
-  language: string
-): string {
-  const topics = ["message", "takeover", "finalize"];
-  const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
-  const langParam = language ? `&lang=${language}` : "&lang=en";
-  const tenantParam = tenant ? `&x-tenant-id=${encodeURIComponent(tenant)}` : "";
-
-  // new websocket service
-  if (websocketUrl) {
-    return `${websocketUrl}/ws/conversations/${conversationId}?${authParam}${langParam}&${topicsQuery}${tenantParam}`;
-  }
-
-  // legacy websocket service
-  const wsBase = baseUrl.replace("http", "ws");
-  return `${wsBase}/api/conversations/ws/${conversationId}?${authParam}${langParam}&${topicsQuery}${tenantParam}`;
-}
 
 /**
  * Unified WebSocket hook for chat conversations.
@@ -117,14 +94,14 @@ export function useChatWebSocket({
       ? `access_token=${encodeURIComponent(guestToken)}`
       : `api_key=${encodeURIComponent(apiKey)}`;
 
-    const wsUrl = buildChatWebSocketUrl(
+    const wsUrl = createWebSocketConversationUrl(
       baseUrl,
       websocketUrl,
       conversationId,
       authParam,
       tenant,
       language
-    );
+    )?.replace(/\/\//g, "/");
 
     updateConnectionState("connecting");
     const socket = createWebSocket(wsUrl);
