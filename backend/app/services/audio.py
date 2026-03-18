@@ -188,7 +188,7 @@ class AudioService:
 
         saved_conversation_analysis = await self.conversation_analysis_service.create_conversation_analysis(
                 gpt_analysis, model.llm_analyst_kpi_analyzer_id,
-                                                                         saved_conversation.id)
+                saved_conversation.id)
 
         await self.operator_statistics_service.update_from_analysis(
                 saved_conversation_analysis,

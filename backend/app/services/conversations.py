@@ -42,7 +42,7 @@ from app.schemas.conversation import (
     ConversationWithOperatorAgentRead,
     InProgressPollResponse,
     )
-from app.schemas.conversation_analysis import ConversationAnalysisRead
+from app.schemas.conversation_analysis import AnalysisResult, ConversationAnalysisRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
     InProgConvTranscrUpdate,
@@ -318,29 +318,11 @@ class ConversationService:
         )
 
         # Get messages for analysis
-        messages = await self.transcript_message_repo.get_messages_by_type(
-            conversation_id, TranscriptMessageType.MESSAGE.value
-        )
-
-        # Convert to format needed for analysis
-
-        message_type_segments = transcript_messages_to_json(
-            messages, exclude_fields={"feedback", "type", "sequence_number"}
-        )
-
-        if message_type_segments == "[]":
-            raise ValueError(f"No messages found for conversation {conversation_id}")
-
-        # Run GPT analysis
-        llm_analyst = await self.llm_analyst_service.get_by_id(resolved_analyst_id)
-
-        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
-            message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
-        )
+        gpt_analysis = await self._analyze_transcript(conversation_id, resolved_analyst_id)
 
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(
-                gpt_analysis, llm_analyst.id, saved_conversation.id
+                gpt_analysis, resolved_analyst_id, saved_conversation.id
             )
         )
 
@@ -360,6 +342,30 @@ class ConversationService:
 
         return ConversationAnalysisRead.model_validate(conversation_analysis)
 
+
+    async def _analyze_transcript(self, conversation_id: UUID, resolved_analyst_id: UUID | None | str) -> AnalysisResult:
+        messages = await self.transcript_message_repo.get_messages_by_type(
+                conversation_id, TranscriptMessageType.MESSAGE.value
+                )
+
+        # Convert to format needed for analysis
+
+        message_type_segments = transcript_messages_to_json(
+                messages, exclude_fields={"feedback", "type", "sequence_number"}
+                )
+
+        if message_type_segments == "[]":
+            raise AppException(ErrorKey.EMPTY_MESSAGES_FOR_CONVERSATION)
+
+        # Run GPT analysis
+        llm_analyst = await self.llm_analyst_service.get_by_id(resolved_analyst_id)
+
+        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
+                message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
+                )
+        return gpt_analysis
+
+
     async def re_analyze_conversation(
         self, conversation_id: UUID, llm_analyst_id: UUID = seed_test_data.llm_analyst_kpi_analyzer_id
     ) -> None:
@@ -371,19 +377,7 @@ class ConversationService:
         if not conversation:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND)
 
-        messages = await self.transcript_message_repo.get_messages_by_type(
-            conversation_id, TranscriptMessageType.MESSAGE.value
-        )
-        message_type_segments = transcript_messages_to_json(
-            messages, exclude_fields={"feedback", "type", "sequence_number"}
-        )
-        if message_type_segments == "[]":
-            raise ValueError(f"No messages found for conversation {conversation_id}")
-
-        llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id)
-        gpt_analysis = await self.gpt_kpi_analyzer_service.analyze_transcript(
-            message_type_segments, llm_analyst=llm_analyst, conversation_id=conversation_id
-        )
+        gpt_analysis = await self._analyze_transcript(conversation_id, llm_analyst_id)
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(
                 gpt_analysis, llm_analyst_id, conversation_id

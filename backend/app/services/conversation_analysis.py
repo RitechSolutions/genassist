@@ -32,7 +32,7 @@ class ConversationAnalysisService:
     ):
         # Ensure we never exceed VARCHAR(255) limits in the DB
         topic = _truncate(getattr(gpt_analysis, "title", None))
-        summary = _truncate(getattr(gpt_analysis, "summary", None))
+        summary = getattr(gpt_analysis, "summary", None)
         tone = _truncate(gpt_analysis.kpi_metrics.get("Tone", ""))
 
         conversation_analysis_create = ConversationAnalysisCreate(
