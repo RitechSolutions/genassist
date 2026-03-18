@@ -1,6 +1,7 @@
-from typing import Dict, Any, Optional, List, Tuple
-from datetime import timedelta
 import logging
+from datetime import timedelta
+from typing import Any, Dict, List, Optional, Tuple
+
 import httpx
 from fastapi import HTTPException
 
@@ -65,7 +66,8 @@ class ZendeskConnector:
                     f"Zendesk API error [{e.response.status_code}]: {e.response.text}"
                 )
                 raise HTTPException(
-                    status_code=e.response.status_code, detail="Zendesk API error"
+                    status_code=e.response.status_code,
+                    detail=e.response.text,
                 ) from e
             except httpx.RequestError as e:
                 logger.error(
@@ -282,6 +284,20 @@ class ZendeskConnector:
                 continue
 
         return tickets_to_rate
+
+    @staticmethod
+    async def test_connection(cd: dict) -> dict:
+        """Test Zendesk connectivity using the /users/me endpoint."""
+        subdomain = cd.get("subdomain", "")
+        if not subdomain.endswith(".zendesk.com"):
+            subdomain = f"{subdomain}.zendesk.com"
+        connector = ZendeskConnector(
+            subdomain=subdomain,
+            email=cd.get("email"),
+            api_token=cd.get("api_token"),
+        )
+        await connector._make_request("GET", f"{connector.base_url}/users/me.json")
+        return {"success": True, "message": "Successfully connected to Zendesk."}
 
     async def fetch_articles(
         self,
