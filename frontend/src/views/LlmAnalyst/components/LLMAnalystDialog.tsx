@@ -14,7 +14,7 @@ import { Button } from "@/components/button";
 import { Checkbox } from "@/components/checkbox";
 import { ScrollArea } from "@/components/scroll-area";
 import { Badge } from "@/components/badge";
-import { Loader2, X, Plus, Trash2 } from "lucide-react";
+import { Loader2, X, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
   createLLMAnalyst,
@@ -65,6 +65,7 @@ export function LLMAnalystDialog({
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [newFieldKey, setNewFieldKey] = useState("");
   const [tagInputs, setTagInputs] = useState<Record<string, string>>({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -270,7 +271,16 @@ export function LLMAnalystDialog({
                 />
               </div>
 
-              {availableEnrichments.length > 0 && (
+              <button
+                type="button"
+                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground w-full"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                Advanced
+              </button>
+
+              {showAdvanced && availableEnrichments.length > 0 && (
                 <div className="space-y-2">
                   <Label>Context Enrichments</Label>
                   <p className="text-xs text-muted-foreground">
@@ -305,7 +315,7 @@ export function LLMAnalystDialog({
                 </div>
               )}
 
-              {availableNodeTypes.length > 0 && (
+              {showAdvanced && availableNodeTypes.length > 0 && (
                 <div className="space-y-2">
                   <Label>Node Enrichments</Label>
                   <p className="text-xs text-muted-foreground">
@@ -346,7 +356,7 @@ export function LLMAnalystDialog({
                 </div>
               )}
 
-              <div className="space-y-2">
+              {showAdvanced && <div className="space-y-2">
                 <Label>Analyst Settings</Label>
                 <p className="text-xs text-muted-foreground">
                   Key-value settings passed to the analyst (e.g. topics list for conversation analysis).
@@ -479,7 +489,7 @@ export function LLMAnalystDialog({
                     </Button>
                   </div>
                 </div>
-              </div>
+              </div>}
 
               <div className="flex items-center gap-2">
                 <Label htmlFor="is_active">Active</Label>
