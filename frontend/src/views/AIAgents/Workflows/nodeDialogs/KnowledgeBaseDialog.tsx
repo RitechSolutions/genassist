@@ -44,7 +44,7 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
       const loadKnowledgeBases = async () => {
         try {
           const bases = await getAllKnowledgeItems();
-          setAvailableBases(bases);
+          setAvailableBases(bases as unknown as KnowledgeItem[]);
         } catch (err) {
           toast({
             title: "Error",

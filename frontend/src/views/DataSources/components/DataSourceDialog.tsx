@@ -70,6 +70,9 @@ export function DataSourceDialog({
   >();
   const [isTesting, setIsTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<ConnectionStatus | null>(null);
+  const [testedConnectionData, setTestedConnectionData] = useState<Record<string, string | number | boolean> | null>(
+    null
+  );
 
   const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["dataSourceSchemas"],
@@ -131,6 +134,7 @@ export function DataSourceDialog({
     setIsActive(true);
     setShowAdvanced(false);
     setTestStatus(null);
+    setTestedConnectionData(null);
   };
 
   const populateFormWithDataSource = (dataSource: DataSource) => {
@@ -140,6 +144,7 @@ export function DataSourceDialog({
     setConnectionData(dataSource.connection_data);
     setIsActive(dataSource.is_active === 1);
     setTestStatus(dataSource.connection_status ?? null);
+    setTestedConnectionData(dataSource.connection_status ? structuredClone(dataSource.connection_data) : null);
   };
 
   const getSchemaDefaults = (
@@ -177,12 +182,14 @@ export function DataSourceDialog({
         last_tested_at: new Date().toISOString(),
         message: result.message,
       });
+      setTestedConnectionData(structuredClone(connectionData));
     } catch {
       setTestStatus({
         status: "Error",
         last_tested_at: new Date().toISOString(),
         message: "Test failed.",
       });
+      setTestedConnectionData(structuredClone(connectionData));
     } finally {
       setIsTesting(false);
     }
@@ -269,7 +276,7 @@ export function DataSourceDialog({
         name,
         source_type: sourceType,
         connection_data: connectionData,
-        connection_status: testStatus ?? undefined,
+        connection_status: hasChangedSinceTest ? undefined : (testStatus ?? undefined),
         is_active: isActive ? 1 : 0,
       };
 
@@ -302,30 +309,24 @@ export function DataSourceDialog({
   const isOAuthType = ["gmail", "o365"].includes(sourceType);
   const schema = dataSourceSchemas[sourceType];
   const hasAdvancedFields = schema?.fields.some((f) => !f.required) ?? false;
+  const hasChangedSinceTest =
+    testStatus !== null &&
+    testedConnectionData !== null &&
+    JSON.stringify(connectionData) !== JSON.stringify(testedConnectionData);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
-        <form
-          onSubmit={handleSubmit}
-          className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col"
-        >
+        <form onSubmit={handleSubmit} className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col">
           <DialogHeader className="p-6 pb-4">
-            <DialogTitle>
-              {mode === "create" ? "Create Data Source" : "Edit Data Source"}
-            </DialogTitle>
+            <DialogTitle>{mode === 'create' ? 'Create Data Source' : 'Edit Data Source'}</DialogTitle>
           </DialogHeader>
 
           <div className="px-6 pb-6 space-y-4">
             {/* Name & Source Type */}
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Name"
-              />
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
             </div>
 
             <div className="space-y-2">
@@ -341,13 +342,11 @@ export function DataSourceDialog({
                     setSourceType(value.toLowerCase() as string);
                     setConnectionData(getSchemaDefaults(value));
                     setTestStatus(null);
+                    setTestedConnectionData(null);
                     setShowAdvanced(false);
                   }}
                 >
-                  <SelectTrigger
-                    className="w-full"
-                    disabled={disableSourceType}
-                  >
+                  <SelectTrigger className="w-full" disabled={disableSourceType}>
                     <SelectValue placeholder="Select Source Type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -363,14 +362,14 @@ export function DataSourceDialog({
 
             {sourceType && (
               <>
-                {sourceType === "gmail" && (
+                {sourceType === 'gmail' && (
                   <GmailConnection
                     dataSource={
                       currentDataSource ||
                       (dataSourceId
                         ? ({
                             id: dataSourceId,
-                            oauth_status: "disconnected",
+                            oauth_status: 'disconnected',
                             name,
                             source_type: sourceType,
                             connection_data: connectionData,
@@ -383,14 +382,14 @@ export function DataSourceDialog({
                   />
                 )}
 
-                {sourceType === "o365" && (
+                {sourceType === 'o365' && (
                   <Office365Connection
                     dataSource={
                       currentDataSource ||
                       (dataSourceId
                         ? ({
                             id: dataSourceId,
-                            oauth_status: "disconnected",
+                            oauth_status: 'disconnected',
                             name,
                             source_type: sourceType,
                             connection_data: connectionData,
@@ -417,21 +416,13 @@ export function DataSourceDialog({
                 <div className="flex items-center gap-2 border-t pt-4">
                   <div className="flex items-center gap-2">
                     <Label htmlFor="is_active">Active</Label>
-                    <Switch
-                      id="is_active"
-                      checked={isActive}
-                      onCheckedChange={setIsActive}
-                    />
+                    <Switch id="is_active" checked={isActive} onCheckedChange={setIsActive} />
                   </div>
                   <div className="flex-1" />
                   {!isOAuthType && hasAdvancedFields && (
                     <div className="flex items-center gap-2">
                       <Label htmlFor="show_advanced">Advanced</Label>
-                      <Switch
-                        id="show_advanced"
-                        checked={showAdvanced}
-                        onCheckedChange={setShowAdvanced}
-                      />
+                      <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
                     </div>
                   )}
                 </div>
@@ -452,6 +443,7 @@ export function DataSourceDialog({
                   <ConnectionTestPanel
                     isTesting={isTesting}
                     testStatus={testStatus}
+                    hasChangedSinceTest={hasChangedSinceTest}
                     onTest={handleTestConnection}
                   />
                 )}
@@ -461,19 +453,12 @@ export function DataSourceDialog({
 
           <DialogFooter className="px-6 py-4 border-t">
             <div className="flex justify-end gap-3 w-full">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
-              >
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                {mode === "create" ? "Create" : "Update"}
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {mode === 'create' ? 'Create' : 'Update'}
               </Button>
             </div>
           </DialogFooter>
