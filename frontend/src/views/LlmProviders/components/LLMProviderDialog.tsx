@@ -16,8 +16,9 @@ import { toast } from "react-hot-toast";
 import {
   createLLMProvider,
   getLLMProvidersFormSchemas,
+  testLLMProviderConnection,
   updateLLMProvider,
-} from "@/services/llmProviders";
+} from '@/services/llmProviders';
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import {
   Select,
@@ -28,6 +29,8 @@ import {
 } from "@/components/select";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
+import { ConnectionTestPanel } from '@/components/ConnectionTestPanel';
+import type { ConnectionStatus } from '@/interfaces/connectionStatus.interface';
 
 interface LLMProviderDialogProps {
   isOpen: boolean;
@@ -47,26 +50,27 @@ export function LLMProviderDialog({
   mode = "create",
 }: LLMProviderDialogProps) {
   const [providerId, setProviderId] = useState<string>(providerToEdit?.id);
-  const [name, setName] = useState(providerToEdit?.name ?? "");
-  const [llmType, setLlmType] = useState<string>(
-    providerToEdit?.llm_model_provider ?? ""
-  );
-  const [llmModel, setLlmModel] = useState<string>(
-    providerToEdit?.llm_model ?? ""
-  );
+  const [name, setName] = useState(providerToEdit?.name ?? '');
+  const [llmType, setLlmType] = useState<string>(providerToEdit?.llm_model_provider ?? '');
+  const [llmModel, setLlmModel] = useState<string>(providerToEdit?.llm_model ?? '');
 
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [connectionData, setConnectionData] = useState<
-    Record<string, string | number | string[]>
-  >(providerToEdit?.connection_data ?? {});
+  const [connectionData, setConnectionData] = useState<Record<string, string | number | string[]>>(
+    providerToEdit?.connection_data ?? {}
+  );
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<ConnectionStatus | null>(null);
+  const [testedConnectionData, setTestedConnectionData] = useState<Record<string, string | number | string[]> | null>(
+    null
+  );
   const queryClient = useQueryClient();
 
   const { data, isLoading: isLoadingConfig } = useQuery({
-    queryKey: ["supportedModels"],
+    queryKey: ['supportedModels'],
     queryFn: () => getLLMProvidersFormSchemas(),
     refetchOnWindowFocus: false,
   });
@@ -115,18 +119,17 @@ export function LLMProviderDialog({
 
   const resetForm = () => {
     setProviderId(undefined);
-    setName("");
-    setLlmType("");
+    setName('');
+    setLlmType('');
     setConnectionData({});
     setIsActive(true);
     setShowAdvanced(false);
+    setTestStatus(null);
+    setTestedConnectionData(null);
   };
 
-  const handleConnectionDataChange = (
-    field: FieldSchema,
-    value: string | number | string[]
-  ) => {
-    if (field.name === "model") {
+  const handleConnectionDataChange = (field: FieldSchema, value: string | number | string[]) => {
+    if (field.name === 'model') {
       setLlmModel(value as string);
     }
     setConnectionData((prev) => ({
@@ -135,30 +138,51 @@ export function LLMProviderDialog({
     }));
   };
 
+    const handleTestConnection = async () => {
+      setIsTesting(true);
+      setTestStatus(null);
+      try {
+        const result = await testLLMProviderConnection(llmType, connectionData, providerId);
+        setTestStatus({
+          status: result.success ? 'Connected' : 'Error',
+          last_tested_at: new Date().toISOString(),
+          message: result.message,
+        });
+        setTestedConnectionData(structuredClone(connectionData));
+      } catch {
+        setTestStatus({
+          status: 'Error',
+          last_tested_at: new Date().toISOString(),
+          message: 'Test failed.',
+        });
+        setTestedConnectionData(structuredClone(connectionData));
+      } finally {
+        setIsTesting(false);
+      }
+    };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const requiredFields = [
-      { label: "Name", isEmpty: !name },
-      { label: "Type", isEmpty: !llmType },
+      { label: 'Name', isEmpty: !name },
+      { label: 'Type', isEmpty: !llmType },
     ];
 
-    const missingBasicFields = requiredFields
-      .filter((field) => field.isEmpty)
-      .map((field) => field.label);
+    const missingBasicFields = requiredFields.filter((field) => field.isEmpty).map((field) => field.label);
 
     if (missingBasicFields.length > 0) {
       if (missingBasicFields.length === 1) {
         toast.error(`${missingBasicFields[0]} is required.`);
       } else {
-        toast.error(`Please provide: ${missingBasicFields.join(", ")}.`);
+        toast.error(`Please provide: ${missingBasicFields.join(', ')}.`);
       }
       return;
     }
 
     const providerConfig = supportedModels[llmType];
     if (!providerConfig) {
-      toast.error("Invalid provider type.");
+      toast.error('Invalid provider type.');
       return;
     }
 
@@ -171,7 +195,7 @@ export function LLMProviderDialog({
       if (missingFields.length === 1) {
         toast.error(`${missingFields[0]} is required.`);
       } else {
-        toast.error(`Please provide: ${missingFields.join(", ")}.`);
+        toast.error(`Please provide: ${missingFields.join(', ')}.`);
       }
       return;
     }
@@ -186,16 +210,16 @@ export function LLMProviderDialog({
         is_active: isActive ? 1 : 0,
       };
 
-      if (mode === "create") {
+      if (mode === 'create') {
         const created = await createLLMProvider(data);
-        toast.success("LLM provider created successfully.");
-        queryClient.invalidateQueries({ queryKey: ["llmProviders"] });
+        toast.success('LLM provider created successfully.');
+        queryClient.invalidateQueries({ queryKey: ['llmProviders'] });
         onProviderSaved(created);
       } else {
-        if (!providerId) throw new Error("Missing provider ID");
+        if (!providerId) throw new Error('Missing provider ID');
         const updated = await updateLLMProvider(providerId, data);
-        toast.success("LLM provider updated successfully.");
-        queryClient.invalidateQueries({ queryKey: ["llmProviders"] });
+        toast.success('LLM provider updated successfully.');
+        queryClient.invalidateQueries({ queryKey: ['llmProviders'] });
         if (onProviderUpdated) {
           onProviderUpdated(updated);
         }
@@ -204,24 +228,19 @@ export function LLMProviderDialog({
       onOpenChange(false);
       resetForm();
     } catch (error) {
-      toast.error(
-        `Failed to ${mode === "create" ? "create" : "update"} LLM provider.`
-      );
+      toast.error(`Failed to ${mode === 'create' ? 'create' : 'update'} LLM provider.`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const renderField = (field: FieldSchema) => {
-    const value = connectionData[field.name] ?? field.default ?? "";
+    const value = connectionData[field.name] ?? field.default ?? '';
 
     switch (field.type) {
-      case "select":
+      case 'select':
         return (
-          <Select
-            value={value as string}
-            onValueChange={(val) => handleConnectionDataChange(field, val)}
-          >
+          <Select value={value as string} onValueChange={(val) => handleConnectionDataChange(field, val)}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder={`Select ${field.label}`} />
             </SelectTrigger>
@@ -234,21 +253,19 @@ export function LLMProviderDialog({
             </SelectContent>
           </Select>
         );
-      case "number":
+      case 'number':
         return (
           <Input
             type="number"
             value={value as number}
-            onChange={(e) =>
-              handleConnectionDataChange(field, parseFloat(e.target.value))
-            }
+            onChange={(e) => handleConnectionDataChange(field, parseFloat(e.target.value))}
             min={field.min}
             max={field.max}
             step={field.step}
             placeholder={field.label}
           />
         );
-      case "password":
+      case 'password':
         return (
           <Input
             type="password"
@@ -257,14 +274,14 @@ export function LLMProviderDialog({
             placeholder={field.label}
           />
         );
-      case "tags":
+      case 'tags':
         return (
           <Textarea
-            value={Array.isArray(value) ? value.join(", ") : ""}
+            value={Array.isArray(value) ? value.join(', ') : ''}
             onChange={(e) =>
               handleConnectionDataChange(
                 field,
-                e.target.value.split(",").map((tag) => tag.trim())
+                e.target.value.split(',').map((tag) => tag.trim())
               )
             }
             placeholder={field.label}
@@ -282,31 +299,23 @@ export function LLMProviderDialog({
         );
     }
   };
-  const requiredFields =
-    supportedModels[llmType]?.fields.filter((field) => field.required) ?? [];
-  const optionalFields =
-    supportedModels[llmType]?.fields.filter((field) => !field.required) ?? [];
+  const requiredFields = supportedModels[llmType]?.fields.filter((field) => field.required) ?? [];
+  const optionalFields = supportedModels[llmType]?.fields.filter((field) => !field.required) ?? [];
+  const hasChangedSinceTest =
+    testStatus !== null &&
+    testedConnectionData !== null &&
+    JSON.stringify(connectionData) !== JSON.stringify(testedConnectionData);
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
-        <form
-          onSubmit={handleSubmit}
-          className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col"
-        >
+        <form onSubmit={handleSubmit} className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col">
           <DialogHeader className="p-6 pb-4">
-            <DialogTitle>
-              {mode === "create" ? "Create LLM Provider" : "Edit LLM Provider"}
-            </DialogTitle>
+            <DialogTitle>{mode === 'create' ? 'Create LLM Provider' : 'Edit LLM Provider'}</DialogTitle>
           </DialogHeader>
           <div className="px-6 pb-6 space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Provider name"
-              />
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Provider name" />
             </div>
 
             <div className="space-y-2">
@@ -321,19 +330,19 @@ export function LLMProviderDialog({
                   onValueChange={(value) => {
                     setLlmType(value);
                     setConnectionData({});
+                    setTestStatus(null);
+                    setTestedConnectionData(null);
                   }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select LLM Type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(supportedModels).map(
-                      ([type, providerConfig]) => (
-                        <SelectItem key={type} value={type}>
-                          {providerConfig.name}
-                        </SelectItem>
-                      )
-                    )}
+                    {Object.entries(supportedModels).map(([type, providerConfig]) => (
+                      <SelectItem key={type} value={type}>
+                        {providerConfig.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               )}
@@ -346,37 +355,23 @@ export function LLMProviderDialog({
                     <div key={field.name} className="space-y-2">
                       <Label htmlFor={field.name}>
                         {field.label}
-                        {field.required && (
-                          <span className="text-red-500 ml-1">*</span>
-                        )}
+                        {field.required && <span className="text-red-500 ml-1">*</span>}
                       </Label>
                       {renderField(field)}
-                      {field.description && (
-                        <p className="text-sm text-muted-foreground">
-                          {field.description}
-                        </p>
-                      )}
+                      {field.description && <p className="text-sm text-muted-foreground">{field.description}</p>}
                     </div>
                   ))}
                 </div>
                 <div className="flex items-center gap-2 border-t pt-4">
                   <div className="flex items-center gap-2">
                     <Label htmlFor="is_active">Active</Label>
-                    <Switch
-                      id="is_active"
-                      checked={isActive}
-                      onCheckedChange={setIsActive}
-                    />
+                    <Switch id="is_active" checked={isActive} onCheckedChange={setIsActive} />
                   </div>
                   <div className="flex-1" />
                   {optionalFields.length > 0 && (
                     <div className="flex items-center gap-2">
                       <Label htmlFor="show_advanced">Advanced</Label>
-                      <Switch
-                        id="show_advanced"
-                        checked={showAdvanced}
-                        onCheckedChange={setShowAdvanced}
-                      />
+                      <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
                     </div>
                   )}
                 </div>
@@ -387,38 +382,32 @@ export function LLMProviderDialog({
                       <div key={field.name} className="space-y-2">
                         <Label htmlFor={field.name}>
                           {field.label}
-                          {field.required && (
-                            <span className="text-red-500 ml-1">*</span>
-                          )}
+                          {field.required && <span className="text-red-500 ml-1">*</span>}
                         </Label>
                         {renderField(field)}
-                        {field.description && (
-                          <p className="text-sm text-muted-foreground">
-                            {field.description}
-                          </p>
-                        )}
+                        {field.description && <p className="text-sm text-muted-foreground">{field.description}</p>}
                       </div>
                     ))}
                 </div>
+
+                <ConnectionTestPanel
+                  isTesting={isTesting}
+                  testStatus={testStatus}
+                  hasChangedSinceTest={hasChangedSinceTest}
+                  onTest={handleTestConnection}
+                />
               </>
             )}
           </div>
 
           <DialogFooter className="px-6 py-4 border-t">
             <div className="flex justify-end gap-3 w-full">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
-              >
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : null}
-                {mode === "create" ? "Create" : "Update"}
+                {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {mode === 'create' ? 'Create' : 'Update'}
               </Button>
             </div>
           </DialogFooter>
