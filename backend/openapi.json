@@ -21553,6 +21553,18 @@
             ],
             "title": "Context Enrichments"
           },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -21637,6 +21649,18 @@
               }
             ],
             "title": "Context Enrichments"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           }
         },
         "type": "object",
@@ -21708,6 +21732,18 @@
               }
             ],
             "title": "Context Enrichments"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           }
         },
         "type": "object",

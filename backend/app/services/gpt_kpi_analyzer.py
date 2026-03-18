@@ -53,7 +53,8 @@ class GptKpiAnalyzer:
         last_response = ""
         user_prompt = ""
 
-        system_msg = SystemMessage(content=self._build_system_prompt(llm_analyst.prompt))
+        system_prompt = self._build_system_prompt(llm_analyst.prompt, llm_analyst)
+        system_msg = SystemMessage(content=system_prompt)
 
         enrichment_context = await agent_logs_service.build_enrichment_context(
             conversation_id, llm_analyst.context_enrichments or []
@@ -121,15 +122,23 @@ class GptKpiAnalyzer:
             for seg in segments
         )
 
-    def _build_system_prompt(self, base_prompt: str) -> str:
+    def _get_topics_csv(self, llm_analyst: LlmAnalyst) -> str:
+        """Return topics CSV from llm_analyst settings, falling back to the default enum."""
+        topics = (llm_analyst.settings or {}).get("topics")
+        if topics and isinstance(topics, list):
+            return ", ".join(str(t) for t in topics)
+        return ConversationTopic.as_csv()
+
+    def _build_system_prompt(self, base_prompt: str, llm_analyst: LlmAnalyst) -> str:
         """Combine the tenant-configured base prompt with the fixed analysis format instructions."""
+        topics_csv = self._get_topics_csv(llm_analyst)
         return f"""{base_prompt}
 
 You are a customer experience expert specializing in call center analysis.
 
 Always respond in exactly this format:
 
-**A) Title:** <one from: {ConversationTopic.as_csv()}>
+**A) Title:** <one from: {topics_csv}>
 
 **B) Summary:**
 - Operator performance assessment
@@ -213,7 +222,7 @@ Please make sure your response strictly follows the requested format and especia
         YOU MUST ALWAYS RETURN ONE JSON OBJECT WITH EXACTLY THREE KEYS:
 
          1. "hostile_score" between 0 and 100.
-         2. "topic" string from this specific list: {ConversationTopic.as_csv()} based on the conversation 
+         2. "topic" string from this specific list: {self._get_topics_csv(llm_analyst)} based on the conversation
          transcript. Return "Other" if none of the other topics match the conversation or if there isn't enough 
          context to decide.
          3. "negative_reason" string from this specific list: {NegativeConversationReason.as_csv()} based on the 
