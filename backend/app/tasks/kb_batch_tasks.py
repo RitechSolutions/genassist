@@ -75,6 +75,7 @@ async def batch_process_files_kb_async(
             if kb_item.type == "zendesk":
                 # Queue Zendesk sync task (same as scheduled import_zendesk_articles_to_kb)
                 t = import_zendesk_articles_to_kb.delay(kb_id=str(kb_item.id), sync_now=True)
+                logger.info(f"Queued Zendesk sync task for KB {kb_item.id}: {t.id}")
                 celery_tasks_queued.append({"kb_id": str(kb_item.id), "type": "zendesk", "task_id": t.id})
             else:
                 # Queue regular KB batch processing task
