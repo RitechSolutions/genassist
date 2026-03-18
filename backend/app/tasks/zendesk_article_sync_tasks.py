@@ -148,6 +148,7 @@ async def import_zendesk_articles_to_kb_async(
             zendesk_connector = ZendeskConnector(
                 subdomain=subdomain, email=email, api_token=api_token
             )
+
             fetched_articles = await zendesk_connector.fetch_articles(
                 locale=locale,
                 category_id=category_id,
@@ -160,10 +161,13 @@ async def import_zendesk_articles_to_kb_async(
 
             # Parse article body based on allow_html_content flag
             def _parse_article_body(article: dict) -> str:
-                if allow_html_content and article.get("body"):
-                    return re.sub(r'<[^>]*>', '', article.get("body", ""))
+                body = ""
+                if not allow_html_content and article.get("body"):
+                    body = re.sub(r'<[^>]*>', '', article.get("body", ""))
                 else:
-                    return article.get("body", "")
+                    body = article.get("body", "")
+
+                return body
 
             articles = []
             if not allow_unpublished_articles:
