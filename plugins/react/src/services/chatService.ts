@@ -12,6 +12,7 @@ import {
 } from "../types";
 import {
   createWebSocket,
+  createWebSocketConversationUrl,
   createWebSocketDiagnostic,
 } from "../utils/websocket";
 export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_updated";
@@ -48,7 +49,6 @@ export class ChatService {
   private serverUnavailableContactUrl: string | undefined;
   private serverUnavailableContactLabel: string | undefined;
   private usePoll: boolean = false;
-  private wsVersion: number = 1;
 
   constructor(
     baseUrl: string,
@@ -61,13 +61,7 @@ export class ChatService {
     usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-
-    if (websocketUrl) {
-      // use new websocket url
-      this.websocketUrl = websocketUrl.endsWith("/") ? websocketUrl.slice(0, -1) : websocketUrl;
-      this.wsVersion = 2;
-    }
-
+    this.websocketUrl = websocketUrl;
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
@@ -833,8 +827,8 @@ export class ChatService {
       return;
     }
 
-    if (this.webSocket) {
-      this.webSocket.close();
+    if (this.webSocket && this.webSocket instanceof WebSocket) {
+      this.webSocket?.close();
     }
 
     if (!this.conversationId) {
@@ -843,27 +837,21 @@ export class ChatService {
 
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
 
-    // Build WebSocket URL with proper authentication
-    const topics = ["message", "takeover", "finalize"];
-    const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
 
     // Use guest_token if available, otherwise fall back to api_key
     const authParam = this.guestToken
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
 
-    let wsUrl = "";
-    if (this.wsVersion === 1) {
-      const wsBase = this.baseUrl.replace("http", "ws");
-      wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
-    } else {
-      wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
-    }
-
-    // Add tenant as query parameter if provided
-    if (this.tenant) {
-      wsUrl += `&x-tenant-id=${encodeURIComponent(this.tenant)}`;
-    }
+    // Build WebSocket URL with proper authentication
+    const wsUrl = createWebSocketConversationUrl(
+      this.baseUrl,
+      this.websocketUrl,
+      this.conversationId,
+      authParam,
+      this.tenant,
+      this.language || "en",
+    );
 
     // Use native browser WebSocket factory
     this.webSocket = createWebSocket(wsUrl);

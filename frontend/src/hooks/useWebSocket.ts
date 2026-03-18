@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getWsUrl, getWsVersion, isWsEnabled } from "@/config/api";
+import { getApiUrl, getWsUrl, getWsVersion, isWsEnabled } from "@/config/api";
 import { getTenantId } from "@/services/auth";
 
 export type WebSocketRoomType = "dashboard" | "conversation";
@@ -81,14 +81,18 @@ export function useWebSocket({
         if (!isWsEnabled || !token) return;
         if (roomType === "conversation" && !conversationId) return;
 
+        let baseApiUrl = await getApiUrl();
+        // replace http with ws
+        baseApiUrl = baseApiUrl.replace("http", "ws");
+
         const wsUrl = buildWebSocketUrl(
           roomType,
           conversationId,
           token,
           topics,
           lang,
-          wsBaseUrl
-        );
+          wsBaseUrl || baseApiUrl
+        )?.replace(/\/\//g, "/");
 
         const socket = new WebSocket(wsUrl);
         socketRef.current = socket;
@@ -143,15 +147,7 @@ export function useWebSocket({
       .catch((e) => {
         setError(e instanceof Error ? e : new Error(String(e)));
       });
-  }, [
-    roomType,
-    conversationId,
-    token,
-    topics.join(","),
-    lang,
-    enableReconnect,
-    maxReconnectAttempts,
-  ]);
+  }, [token, roomType, conversationId, topics, lang, enableReconnect, maxReconnectAttempts]);
 
   useEffect(() => {
     connect();

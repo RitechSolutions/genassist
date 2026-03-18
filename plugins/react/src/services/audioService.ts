@@ -22,10 +22,10 @@ export class AudioService {
     this.baseUrl = config.baseUrl;
     if (!config.websocketUrl) {
       this.wsVersion = 1;
-      this.websocketUrl = `${this.baseUrl.replace("http", "ws")}`;
+      this.websocketUrl = `${this.baseUrl.replace("http", "ws")}`?.replace(/\/\//g, "/");
     } else {
       this.wsVersion = 2;
-      this.websocketUrl = config.websocketUrl.endsWith("/") ? config.websocketUrl?.slice(0, -1) : config.websocketUrl;
+      this.websocketUrl = config.websocketUrl?.replace(/\/\//g, "/");
     }
     this.apiKey = config.apiKey;
     this.guestToken = config.guestToken || null;
