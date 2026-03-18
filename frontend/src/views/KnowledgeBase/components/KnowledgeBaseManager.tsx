@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { toast } from "react-hot-toast";
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { toast } from 'react-hot-toast';
 import {
   getAllKnowledgeItems,
   createKnowledgeItem,
@@ -7,27 +7,21 @@ import {
   deleteKnowledgeItem,
   uploadFiles as apiUploadFiles,
   executeKnowledgeBaseSyncronizationManually,
-} from "@/services/api";
-import { getApiUrlString } from "@/config/api";
-import { getAllDataSources } from "@/services/dataSources";
+} from '@/services/api';
+import { getApiUrlString } from '@/config/api';
+import { getAllDataSources } from '@/services/dataSources';
 
-import { getAllLLMAnalysts } from "@/services/llmAnalyst";
+import { getAllLLMAnalysts } from '@/services/llmAnalyst';
 
-import { v4 as uuidv4 } from "uuid";
-import { Button } from "@/components/button";
-import { Input } from "@/components/input";
-import { Textarea } from "@/components/textarea";
-import { Switch } from "@/components/switch";
-import { Label } from "@/components/label";
+import { v4 as uuidv4 } from 'uuid';
+import { Button } from '@/components/button';
+import { Input } from '@/components/input';
+import { Textarea } from '@/components/textarea';
+import { Switch } from '@/components/switch';
+import { Label } from '@/components/label';
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
-import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/select';
+import { CreateNewSelectItem } from '@/components/CreateNewSelectItem';
 import {
   FilePlus,
   Upload,
@@ -42,108 +36,65 @@ import {
   Trash2,
   Download,
   RefreshCw,
-} from "lucide-react";
-import { SearchInput } from "@/components/SearchInput";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { RagConfigValues } from "../types/ragSchema";
-import {
-  LegacyRagConfig,
-  DEFAULT_LEGACY_RAG_CONFIG,
-} from "../utils/ragDefaults";
-import DynamicRagConfigSection from "./DynamicRagConfigSection";
-import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialog";
-
-interface UploadResult {
-  file_url?: string;
-  file_type?: string;
-  file_path: string;
-  filename: string;
-  original_filename: string;
-  file_id?: string;
-}
-
-interface FileItem {
-  file_id?: string;
-  file_path: string;
-  original_file_name: string;
-  url?: string;
-  file_type?: string;
-}
-
-interface KnowledgeItem {
-  id: string;
-  name: string;
-  description: string;
-  content: string;
-  type: string;
-  sync_source_id: string;
-  llm_provider_id?: string | null;
-  sync_schedule?: string;
-  sync_active?: boolean;
-  files?: (string | FileItem)[];
-  rag_config?: LegacyRagConfig;
-  urls?: string[];
-  use_http_request?: boolean;
-  extra_metadata?: Record<string, unknown>;
-  processing_filter?: string | null;
-  llm_analyst_id?: string | null;
-  processing_mode?: string | null;
-
-  transcription_engine?: string | null;
-  save_in_conversation?: boolean;
-  save_output?: boolean;
-  save_output_path?: string;
-
-  [key: string]: unknown;
-}
-
-type UrlHeaderRow = {
-  id: string;
-  key: string;
-  value: string;
-  keyType: "known" | "custom";
-};
+  Info,
+} from 'lucide-react';
+import { SearchInput } from '@/components/SearchInput';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { RagConfigValues } from '../types/ragSchema';
+import { LegacyRagConfig, DEFAULT_LEGACY_RAG_CONFIG } from '../utils/ragDefaults';
+import DynamicRagConfigSection from './DynamicRagConfigSection';
+import { DataSourceDialog } from '@/views/DataSources/components/DataSourceDialog';
+import { isEqual } from 'lodash';
+import { KnowledgeItem, UrlHeaderRow, UploadResult, FileItem } from '../types/knowledgeBase';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/RadixTooltip';
 
 const DEFAULT_FORM_DATA: KnowledgeItem = {
   id: uuidv4(),
-  name: "",
-  description: "",
-  content: "",
-  type: "text",
+  name: '',
+  description: '',
+  content: '',
+  type: 'text',
   sync_source_id: null,
   llm_provider_id: null,
   files: [],
   urls: [],
   use_http_request: false,
   rag_config: DEFAULT_LEGACY_RAG_CONFIG,
-  processing_filter: "",
+  processing_filter: '',
   llm_analyst_id: null,
   processing_mode: null,
 
-  transcription_engine: "openai_whisper",
+  transcription_engine: 'openai_whisper',
   save_in_conversation: false,
   save_output: false,
-  save_output_path: "",
+  save_output_path: '',
 };
 
 const KNOWN_HTTP_HEADERS = [
-  "Authorization",
-  "User-Agent",
-  "Accept",
-  "Accept-Language",
-  "Content-Type",
-  "Cache-Control",
-  "If-None-Match",
-  "If-Modified-Since",
+  'Authorization',
+  'User-Agent',
+  'Accept',
+  'Accept-Language',
+  'Content-Type',
+  'Cache-Control',
+  'If-None-Match',
+  'If-Modified-Since',
 ];
 
+const toPlainHeaders = (o: unknown): Record<string, string> =>
+  o && typeof o === 'object' && !Array.isArray(o)
+    ? Object.fromEntries(
+        Object.entries(o).filter(([k, v]) => typeof k === 'string' && typeof v === 'string')
+      )
+    : {};
+
 const targetTypes = {
-  s3: "S3",
-  sharepoint: "o365",
-  smb_share_folder: "smb_share_folder",
-  azure_blob: "azure_blob",
-  google_bucket: "gmail",
-  zendesk: "zendesk",
+  s3: 'S3',
+  sharepoint: 'o365',
+  smb_share_folder: 'smb_share_folder',
+  azure_blob: 'azure_blob',
+  google_bucket: 'gmail',
+  zendesk: 'zendesk',
 };
 
 const KnowledgeBaseManager: React.FC = () => {
@@ -153,15 +104,14 @@ const KnowledgeBaseManager: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [showForm, setShowForm] = useState<boolean>(false);
 
-  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>('all');
   const [availableSources, setAvailableSources] = useState([]);
   // const [cronError, setCronError] = useState<string | null>(null);
 
-  const [knowledgeBaseToDelete, setKnowledgeBaseToDelete] =
-    useState<Partial<KnowledgeItem> | null>(null);
+  const [knowledgeBaseToDelete, setKnowledgeBaseToDelete] = useState<Partial<KnowledgeItem> | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -172,14 +122,33 @@ const KnowledgeBaseManager: React.FC = () => {
   const [formData, setFormData] = useState<KnowledgeItem>(DEFAULT_FORM_DATA);
   const [dynamicRagConfig, setDynamicRagConfig] = useState<RagConfigValues>({});
   const [isDataSourceDialogOpen, setIsDataSourceDialogOpen] = useState(false);
-  const [urls, setUrls] = useState<string[]>([""]);
+  const [urls, setUrls] = useState<string[]>(['']);
   const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
 
   const [isSyncing, setIsSyncing] = useState(false);
-
+  const [isSyncSaveDialogOpen, setIsSyncSaveDialogOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const syncAfterSaveRef = useRef(false);
 
   /* File types that are supported by the file extractor */
-  const acceptedFileTypes = [".pdf", ".docx", ".doc", ".txt", ".csv", ".xls", ".xlsx", ".pptx", ".ppt", ".html", ".htm", ".yaml", ".yml", ".json", ".jsonl", ".md"];
+  const acceptedFileTypes = [
+    '.pdf',
+    '.docx',
+    '.doc',
+    '.txt',
+    '.csv',
+    '.xls',
+    '.xlsx',
+    '.pptx',
+    '.ppt',
+    '.html',
+    '.htm',
+    '.yaml',
+    '.yml',
+    '.json',
+    '.jsonl',
+    '.md',
+  ];
 
   useEffect(() => {
     fetchItems();
@@ -192,42 +161,138 @@ const KnowledgeBaseManager: React.FC = () => {
       setItems(data as KnowledgeItem[]);
       setError(null);
     } catch (err) {
-      setError("Failed to load knowledge base items");
+      setError('Failed to load knowledge base items');
     } finally {
       setLoading(false);
     }
   };
 
+  const getComparableState = useCallback(() => {
+    const currentUrls =
+      formData.type === 'url' || formData.type === 'sharepoint'
+        ? urls.filter((u) => u.trim() !== '')
+        : [];
+    const currentHeaders = urlHeaders.reduce<Record<string, string>>((acc, h) => {
+      if (h.key.trim()) acc[h.key] = h.value;
+      return acc;
+    }, {});
 
-  const handleSyncNow = async () => {
-    if (!editingItem?.id) {
-      toast.error("Please save the knowledge base before syncing.");
-      return;
-    }
+    const norm = (v: unknown) => (v === 'none' || v == null ? null : v);
 
+    return {
+      name: formData.name,
+      description: formData.description,
+      content: formData.content,
+      type: formData.type,
+      sync_source_id: formData.sync_source_id ?? null,
+      sync_schedule: formData.sync_schedule ?? null,
+      sync_active: Boolean(formData.sync_active),
+      urls: currentUrls,
+      http_headers: toPlainHeaders(currentHeaders),
+      use_http_request: Boolean(formData.use_http_request),
+      processing_filter: formData.processing_filter ?? null,
+      llm_analyst_id: norm(formData.llm_analyst_id),
+      processing_mode: norm(formData.processing_mode),
+      transcription_engine: formData.transcription_engine ?? null,
+      save_in_conversation: Boolean(formData.save_in_conversation),
+      save_output: Boolean(formData.save_output),
+      save_output_path: formData.save_output_path ?? null,
+      allow_unpublished_articles:
+        formData.type === 'zendesk'
+          ? Boolean(formData.extra_metadata?.allow_unpublished_articles)
+          : undefined,
+      allow_html_content:
+        formData.type === 'zendesk' ? Boolean(formData.extra_metadata?.allow_html_content) : undefined,
+      rag_config: formData.rag_config ?? {},
+      filePaths:
+        formData.type === 'file'
+          ? (formData.files || []).map((f) =>
+              typeof f === 'string' ? f : (f as FileItem).file_path
+            )
+          : [],
+      hasNewFiles: selectedFiles.length > 0,
+    };
+  }, [formData, urls, urlHeaders, selectedFiles]);
+
+  const getComparableOriginal = useCallback(
+    (orig: KnowledgeItem) => {
+      const em = orig.extra_metadata || {};
+      const norm = (v: unknown) => (v === 'none' || v == null ? null : v);
+
+      return {
+        name: orig.name,
+        description: orig.description,
+        content: orig.content,
+        type: orig.type,
+        sync_source_id: orig.sync_source_id ?? null,
+        sync_schedule: orig.sync_schedule ?? null,
+        sync_active: Boolean(orig.sync_active),
+        urls: orig.urls || [],
+        http_headers: toPlainHeaders(em.http_headers || em.custom_headers),
+        use_http_request: Boolean(em.use_http_request),
+        processing_filter: (em.processing_filter as string) ?? null,
+        llm_analyst_id: norm(em.llm_analyst_id),
+        processing_mode: norm(em.processing_mode),
+        transcription_engine: (em.transcription_engine as string) ?? null,
+        save_in_conversation: Boolean(em.save_in_conversation),
+        save_output: Boolean(em.save_output),
+        save_output_path: (em.save_output_path as string) ?? null,
+        allow_unpublished_articles:
+          orig.type === 'zendesk' ? Boolean(em.allow_unpublished_articles) : undefined,
+        allow_html_content: orig.type === 'zendesk' ? Boolean(em.allow_html_content) : undefined,
+        rag_config: orig.rag_config ?? {},
+        filePaths: (orig.files || []).map((f) =>
+          typeof f === 'string' ? f : (f as FileItem).file_path
+        ),
+        hasNewFiles: false,
+      };
+    },
+    []
+  );
+
+  const hasSettingsChanged = useCallback((): boolean => {
+    if (!editingItem) return false;
+    const current = getComparableState();
+    const original = getComparableOriginal(editingItem);
+    return !isEqual(current, original);
+  }, [editingItem, getComparableState, getComparableOriginal]);
+
+  const performSync = async () => {
+    if (!editingItem?.id) return;
     try {
       setIsSyncing(true);
-
-      toast.success("Synchronization started" );
-
+      toast.success('Synchronization started');
       await executeKnowledgeBaseSyncronizationManually(editingItem.id);
-
-      toast.success("Synchronization completed successfully.");
-
-      // Auto refresh after short delay (optional but recommended)
-      setTimeout(() => {
-        fetchItems();
-      }, 1000);
-
-    } catch (error) {
-      toast.error("Failed to trigger synchronization.");
+      toast.success('Synchronization completed successfully.');
+      setTimeout(() => fetchItems(), 1000);
+    } catch {
+      toast.error('Failed to trigger synchronization.');
     } finally {
       setIsSyncing(false);
     }
   };
 
+  const handleSyncNow = async () => {
+    if (!editingItem?.id) {
+      toast.error('Please save the knowledge base before syncing.');
+      return;
+    }
 
-    // useEffect(() => {
+    if (hasSettingsChanged()) {
+      setIsSyncSaveDialogOpen(true);
+      return;
+    }
+
+    await performSync();
+  };
+
+  const handleSaveAndSync = async () => {
+    syncAfterSaveRef.current = true;
+    setIsSyncSaveDialogOpen(false);
+    formRef.current?.requestSubmit();
+  };
+
+  // useEffect(() => {
   //   const fetchLLMProviders = async () => {
   //     try {
   //       const result = await getAllLLMProviders();
@@ -257,10 +322,7 @@ const KnowledgeBaseManager: React.FC = () => {
       const allSources = await getAllDataSources();
       const targetType = targetTypes[formData.type as keyof typeof targetTypes];
 
-      const filtered = allSources.filter(
-        (source) =>
-          source.source_type.toLowerCase() === targetType.toLowerCase()
-      );
+      const filtered = allSources.filter((source) => source.source_type.toLowerCase() === targetType.toLowerCase());
       setAvailableSources(filtered);
     }
   }, [formData.type]);
@@ -269,9 +331,7 @@ const KnowledgeBaseManager: React.FC = () => {
     fetchSources();
   }, [fetchSources]);
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
@@ -288,7 +348,7 @@ const KnowledgeBaseManager: React.FC = () => {
   };
 
   const addUrl = () => {
-    setUrls((prev) => [...prev, ""]);
+    setUrls((prev) => [...prev, '']);
   };
 
   const removeUrl = (index: number) => {
@@ -319,8 +379,7 @@ const KnowledgeBaseManager: React.FC = () => {
 
     setFormData((prev) => ({
       ...prev,
-      content:
-        files.length > 0 ? `Files: ${files.map((f) => f.name).join(", ")}` : "",
+      content: files.length > 0 ? `Files: ${files.map((f) => f.name).join(', ')}` : '',
     }));
   };
 
@@ -333,11 +392,7 @@ const KnowledgeBaseManager: React.FC = () => {
       const result = await apiUploadFiles(selectedFiles);
       return result as unknown as UploadResult[];
     } catch (error) {
-      setError(
-        `Failed to upload files: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      setError(`Failed to upload files: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     } finally {
       setIsUploading(false);
@@ -348,54 +403,52 @@ const KnowledgeBaseManager: React.FC = () => {
     e.preventDefault();
 
     const requiredFields = [
-      { label: "name", isEmpty: !formData.name },
-      { label: "description", isEmpty: !formData.description },
+      { label: 'name', isEmpty: !formData.name },
+      { label: 'description', isEmpty: !formData.description },
     ];
 
-    if (formData.type === "text") {
-      requiredFields.push({ label: "content", isEmpty: !formData.content });
+    if (formData.type === 'text') {
+      requiredFields.push({ label: 'content', isEmpty: !formData.content });
     }
 
-    if (formData.type === "file") {
+    if (formData.type === 'file') {
       requiredFields.push({
-        label: "files",
-        isEmpty:
-          selectedFiles.length === 0 &&
-          (!formData.files || formData.files.length === 0),
+        label: 'files',
+        isEmpty: selectedFiles.length === 0 && (!formData.files || formData.files.length === 0),
       });
     }
 
-    if (formData.type === "s3") {
+    if (formData.type === 's3') {
       requiredFields.push({
-        label: "source",
+        label: 'source',
         isEmpty: !formData.sync_source_id,
       });
     }
 
-    if (formData.type === "zendesk") {
+    if (formData.type === 'zendesk') {
       requiredFields.push({
-        label: "source",
+        label: 'source',
         isEmpty: !formData.sync_source_id,
       });
 
       if (formData.sync_active) {
         requiredFields.push({
-          label: "sync schedule",
+          label: 'sync schedule',
           isEmpty: !formData.sync_schedule,
         });
       }
     }
 
-    if (["s3", "azure_blob"].includes(formData.type) && formData.sync_active) {
+    if (['s3', 'azure_blob'].includes(formData.type) && formData.sync_active) {
       requiredFields.push({
-        label: "sync schedule",
+        label: 'sync schedule',
         isEmpty: !formData.sync_schedule,
       });
     }
 
-    if (formData.type === "url") {
-      const hasValidUrl = urls.some((url) => url.trim() !== "");
-      requiredFields.push({ label: "urls", isEmpty: !hasValidUrl });
+    if (formData.type === 'url') {
+      const hasValidUrl = urls.some((url) => url.trim() !== '');
+      requiredFields.push({ label: 'urls', isEmpty: !hasValidUrl });
 
       if (urlHeaders.length > 0) {
         urlHeaders.forEach((header) => {
@@ -403,37 +456,37 @@ const KnowledgeBaseManager: React.FC = () => {
           const hasValue = header.value.trim().length > 0;
           if (!hasKey || !hasValue) {
             requiredFields.push({
-              label: "custom header",
+              label: 'custom header',
               isEmpty: true,
             });
           }
         });
       }
     }
-    if (formData.type === "sharepoint") {
-      const hasValidUrl = urls.some((url) => url.trim() !== "");
+    if (formData.type === 'sharepoint') {
+      const hasValidUrl = urls.some((url) => url.trim() !== '');
       requiredFields.push(
-        { label: "source", isEmpty: !formData.sync_source_id },
-        { label: "url", isEmpty: !hasValidUrl }
+        { label: 'source', isEmpty: !formData.sync_source_id },
+        { label: 'url', isEmpty: !hasValidUrl }
       );
 
       if (formData.sync_active) {
         requiredFields.push({
-          label: "sync schedule",
+          label: 'sync schedule',
           isEmpty: !formData.sync_schedule,
         });
       }
     }
 
-    if (formData.type === "smb_share_folder") {
+    if (formData.type === 'smb_share_folder') {
       requiredFields.push({
-        label: "source",
+        label: 'source',
         isEmpty: !formData.sync_source_id,
       });
 
       if (formData.sync_active) {
         requiredFields.push({
-          label: "sync schedule",
+          label: 'sync schedule',
           isEmpty: !formData.sync_schedule,
         });
       }
@@ -443,12 +496,12 @@ const KnowledgeBaseManager: React.FC = () => {
       .filter((field) => field.isEmpty)
       .map((field) => field.label)
       .map((label) => {
-        if (label === "url") {
-          return "URL";
-        } else if (label === "urls") {
-          return "URLs";
-        } else if (label === "files") {
-          return "Files";
+        if (label === 'url') {
+          return 'URL';
+        } else if (label === 'urls') {
+          return 'URLs';
+        } else if (label === 'files') {
+          return 'Files';
         } else {
           return label.charAt(0).toUpperCase() + label.slice(1);
         }
@@ -456,15 +509,15 @@ const KnowledgeBaseManager: React.FC = () => {
 
     if (missingFields.length > 0) {
       if (missingFields.length === 1) {
-        if (missingFields[0] === "URLs") {
-          toast.error("At least one URL is required.");
-        } else if (missingFields[0] === "Files") {
-          toast.error("At least one file is required.");
+        if (missingFields[0] === 'URLs') {
+          toast.error('At least one URL is required.');
+        } else if (missingFields[0] === 'Files') {
+          toast.error('At least one file is required.');
         } else {
           toast.error(`${missingFields[0]} is required.`);
         }
       } else {
-        toast.error(`Please provide: ${missingFields.join(", ")}.`);
+        toast.error(`Please provide: ${missingFields.join(', ')}.`);
       }
       return;
     }
@@ -475,59 +528,44 @@ const KnowledgeBaseManager: React.FC = () => {
       setSuccess(null);
 
       if (
-        [
-          "s3",
-          "sharepoint",
-          "smb_share_folder",
-          "azure_blob",
-          "zendesk",
-        ].includes(formData.type) &&
+        ['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk'].includes(formData.type) &&
         formData.sync_active &&
         !isValidCron(formData.sync_schedule)
       ) {
-        throw new Error("Invalid cron expression. Expected format: * * * * *");
+        throw new Error('Invalid cron expression. Expected format: * * * * *');
       }
 
       const dataToSubmit = { ...formData };
 
-      const normalizedUrlHeaders = urlHeaders.reduce<Record<string, string>>(
-        (acc, header) => {
-          const key = header.key.trim();
-          if (!key) return acc;
-          acc[key] = header.value;
-          return acc;
-        },
-        {}
-      );
+      const normalizedUrlHeaders = urlHeaders.reduce<Record<string, string>>((acc, header) => {
+        const key = header.key.trim();
+        if (!key) return acc;
+        acc[key] = header.value;
+        return acc;
+      }, {});
       const hasUrlHeaders = Object.keys(normalizedUrlHeaders).length > 0;
+
+      if (formData.type === 'zendesk') {
+        dataToSubmit.extra_metadata = {
+          ...(dataToSubmit.extra_metadata || {}),
+          allow_unpublished_articles: dataToSubmit.extra_metadata?.allow_unpublished_articles || false,
+          allow_html_content: dataToSubmit.extra_metadata?.allow_html_content || false,
+        };
+      }
 
       // Move custom frontend-only fields into extra_metadata
       dataToSubmit.extra_metadata = {
         ...(dataToSubmit.extra_metadata || {}),
         use_http_request: dataToSubmit.use_http_request || false,
-        http_headers:
-          dataToSubmit.type === "url" && hasUrlHeaders
-            ? normalizedUrlHeaders
-            : null,
+        http_headers: dataToSubmit.type === 'url' && hasUrlHeaders ? normalizedUrlHeaders : null,
         processing_filter: dataToSubmit.processing_filter || null,
         llm_analyst_id: dataToSubmit.llm_analyst_id || null,
         processing_mode: dataToSubmit.processing_mode || null,
-
-        transcription_engine:
-          dataToSubmit.processing_mode === "transcribe"
-            ? dataToSubmit.transcription_engine
-            : null,
-
-        save_in_conversation:
-          dataToSubmit.processing_mode === "transcribe"
-            ? dataToSubmit.save_in_conversation
-            : false,
-
+        transcription_engine: dataToSubmit.processing_mode === 'transcribe' ? dataToSubmit.transcription_engine : null,
+        save_in_conversation: dataToSubmit.processing_mode === 'transcribe' ? dataToSubmit.save_in_conversation : false,
         save_output: dataToSubmit.save_output || false,
         save_output_path:
-          dataToSubmit.save_output && dataToSubmit.save_output_path
-            ? dataToSubmit.save_output_path
-            : null,
+          dataToSubmit.save_output && dataToSubmit.save_output_path ? dataToSubmit.save_output_path : null,
       };
 
       // Remove them from the top-level payload
@@ -543,17 +581,17 @@ const KnowledgeBaseManager: React.FC = () => {
       //////////////////////////
 
       // For URL and SharePoint types, set the urls array with non-empty URLs
-      if (formData.type === "url" || formData.type === "sharepoint") {
-        dataToSubmit.urls = urls.filter((url) => url.trim() !== "");
+      if (formData.type === 'url' || formData.type === 'sharepoint') {
+        dataToSubmit.urls = urls.filter((url) => url.trim() !== '');
       } else {
         // Remove urls from other types
         dataToSubmit.urls = [];
       }
 
       // Look for files to upload
-      if (formData.type === "file") {
+      if (formData.type === 'file') {
         // set file_type
-        dataToSubmit.file_type = "files";
+        dataToSubmit.file_type = 'files';
 
         // Initialize files array if not exists
         if (!dataToSubmit.files) {
@@ -565,7 +603,7 @@ const KnowledgeBaseManager: React.FC = () => {
           const uploadResults = await uploadFiles();
 
           if (!uploadResults || uploadResults.length === 0) {
-            throw new Error("File upload failed");
+            throw new Error('File upload failed');
           }
 
           // Build the new files array from upload results (replaces existing in edit mode)
@@ -576,19 +614,19 @@ const KnowledgeBaseManager: React.FC = () => {
               original_file_name: result.original_filename,
               file_type: result.file_type,
             };
-            if (result.file_type === "url" || result.file_url) {
-              fileItem.url = result.file_type === "url" ? result.file_url : result.file_path;
+            if (result.file_type === 'url' || result.file_url) {
+              fileItem.url = result.file_type === 'url' ? result.file_url : result.file_path;
             }
             return fileItem;
           });
 
           dataToSubmit.files = newFileItems;
-          dataToSubmit.content = `Files: ${newFileItems.map((f) => f.original_file_name).join(", ")}`;
+          dataToSubmit.content = `Files: ${newFileItems.map((f) => f.original_file_name).join(', ')}`;
         } else if (editingItem && formData.files && formData.files.length > 0) {
           // When updating without new files, preserve existing files as FileItem objects or strings
           dataToSubmit.files = formData.files.map((fileItem) => {
             // If it's already a FileItem object, keep it as-is
-            if (typeof fileItem === "object" && fileItem !== null) {
+            if (typeof fileItem === 'object' && fileItem !== null) {
               return fileItem;
             }
             // If it's a string (legacy format), keep it as string for backward compatibility
@@ -606,9 +644,15 @@ const KnowledgeBaseManager: React.FC = () => {
       if (editingItem) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await updateKnowledgeItem(editingItem.id, dataToSubmit as any);
-        setSuccess(
-          `Knowledge base item "${dataToSubmit.name}" updated successfully`
-        );
+        setSuccess(`Knowledge base item "${dataToSubmit.name}" updated successfully`);
+
+        if (syncAfterSaveRef.current) {
+          syncAfterSaveRef.current = false;
+          setEditingItem((prev) => (prev ? { ...prev, ...dataToSubmit } : null) as KnowledgeItem);
+          fetchItems();
+          await performSync();
+          return;
+        }
       } else {
         //if (!dataToSubmit.id) {
         dataToSubmit.id = uuidv4();
@@ -616,15 +660,13 @@ const KnowledgeBaseManager: React.FC = () => {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await createKnowledgeItem(dataToSubmit as any);
-        setSuccess(
-          `Knowledge base item "${dataToSubmit.name}" created successfully`
-        );
+        setSuccess(`Knowledge base item "${dataToSubmit.name}" created successfully`);
       }
 
       setFormData(DEFAULT_FORM_DATA);
       setDynamicRagConfig({});
       setSelectedFiles([]);
-      setUrls([""]);
+      setUrls(['']);
       setUrlHeaders([]);
       setEditingItem(null);
       setShowForm(false);
@@ -632,15 +674,11 @@ const KnowledgeBaseManager: React.FC = () => {
     } catch (err) {
       let errorMessage = err.message || String(err);
 
-      if (errorMessage.includes("400")) {
-        errorMessage = "A knowledge base with this name already exists.";
+      if (errorMessage.includes('400')) {
+        errorMessage = 'A knowledge base with this name already exists.';
       }
 
-      toast.error(
-        `Failed to ${
-          editingItem ? "update" : "create"
-        } knowledge base: ${errorMessage}`
-      );
+      toast.error(`Failed to ${editingItem ? 'update' : 'create'} knowledge base: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -650,7 +688,7 @@ const KnowledgeBaseManager: React.FC = () => {
     setFormData(DEFAULT_FORM_DATA);
     setDynamicRagConfig({});
     setSelectedFiles([]);
-    setUrls([""]);
+    setUrls(['']);
     setUrlHeaders([]);
     setEditingItem(null);
     setError(null);
@@ -669,33 +707,31 @@ const KnowledgeBaseManager: React.FC = () => {
       type: item.type || DEFAULT_FORM_DATA.type,
       sync_source_id: item.sync_source_id,
       use_http_request: (item.extra_metadata?.use_http_request as boolean | undefined) ?? false,
-      llm_provider_id:
-        item.llm_provider_id || DEFAULT_FORM_DATA.llm_provider_id,
+      llm_provider_id: item.llm_provider_id || DEFAULT_FORM_DATA.llm_provider_id,
       sync_schedule: item.sync_schedule || DEFAULT_FORM_DATA.sync_schedule,
       sync_active: (item.sync_active as boolean | undefined) ?? DEFAULT_FORM_DATA.sync_active,
       files: item.files || DEFAULT_FORM_DATA.files,
       rag_config: item.rag_config || DEFAULT_LEGACY_RAG_CONFIG,
 
-      processing_filter: (item.extra_metadata?.processing_filter as string | undefined) ?? "",
+      processing_filter: (item.extra_metadata?.processing_filter as string | undefined) ?? null,
       llm_analyst_id: (item.extra_metadata?.llm_analyst_id as string | null | undefined) ?? null,
       processing_mode: (item.extra_metadata?.processing_mode as string | null | undefined) ?? null,
 
-      transcription_engine:
-        (item.extra_metadata?.transcription_engine as string | undefined) ?? "openai_whisper",
+      transcription_engine: (item.extra_metadata?.transcription_engine as string | undefined) ?? null,
       save_in_conversation: (item.extra_metadata?.save_in_conversation as boolean | undefined) ?? false,
       save_output: (item.extra_metadata?.save_output as boolean | undefined) ?? false,
-      save_output_path: (item.extra_metadata?.save_output_path as string | undefined) ?? "",
+      save_output_path: (item.extra_metadata?.save_output_path as string | undefined) ?? null,
+      extra_metadata: item.extra_metadata || {},
     });
 
-    const existingUrlHeaders =
-      item.extra_metadata?.http_headers || item.extra_metadata?.custom_headers;
-    if (existingUrlHeaders && typeof existingUrlHeaders === "object") {
+    const existingUrlHeaders = item.extra_metadata?.http_headers || item.extra_metadata?.custom_headers;
+    if (existingUrlHeaders && typeof existingUrlHeaders === 'object') {
       const rows = Object.entries(existingUrlHeaders as Record<string, string>)
         .map(([key, value]) => ({
           id: uuidv4(),
           key,
-          value: value ?? "",
-          keyType: (KNOWN_HTTP_HEADERS.includes(key) ? "known" : "custom") as "known" | "custom",
+          value: value ?? '',
+          keyType: (KNOWN_HTTP_HEADERS.includes(key) ? 'known' : 'custom') as 'known' | 'custom',
         }))
         .filter((row) => row.key);
       setUrlHeaders(rows);
@@ -703,19 +739,13 @@ const KnowledgeBaseManager: React.FC = () => {
       setUrlHeaders([]);
     }
 
-    setDynamicRagConfig(
-      (item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues
-    );
+    setDynamicRagConfig((item.rag_config || DEFAULT_LEGACY_RAG_CONFIG) as RagConfigValues);
 
     // Populate urls state from stored data
-    if (
-      (item.type === "url" || item.type === "sharepoint") &&
-      item.urls &&
-      item.urls.length > 0
-    ) {
+    if ((item.type === 'url' || item.type === 'sharepoint') && item.urls && item.urls.length > 0) {
       setUrls(item.urls);
     } else {
-      setUrls([""]);
+      setUrls(['']);
     }
 
     setSelectedFiles([]);
@@ -737,7 +767,7 @@ const KnowledgeBaseManager: React.FC = () => {
       // setSuccess(`Knowledge base item "${name}" deleted successfully`);
       setItems((prev) => prev.filter((s) => s.id !== knowledgeBaseToDelete.id));
     } catch (err) {
-      toast.error("Failed to delete knowledge base.");
+      toast.error('Failed to delete knowledge base.');
       // setError(
       //   `Failed to delete knowledge base item: ${
       //     err instanceof Error ? err.message : String(err)
@@ -755,10 +785,7 @@ const KnowledgeBaseManager: React.FC = () => {
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.description.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return (
-      matchesQuery &&
-      (item.type.toLowerCase() === typeFilter || typeFilter === "all")
-    );
+    return matchesQuery && (item.type.toLowerCase() === typeFilter || typeFilter === 'all');
   });
 
   const isValidCron = (cron: string): boolean => {
@@ -772,39 +799,42 @@ const KnowledgeBaseManager: React.FC = () => {
 
     // format: "File xx.pdf " if length is more than maxLength, mask the file name
     if (fileName.length > maxLength) {
-      return fileName.substring(0, maxLength / 2 - 10) + "......" + fileName.substring(fileName.length - (maxLength / 2 - 10));
+      return (
+        fileName.substring(0, maxLength / 2 - 10) +
+        '......' +
+        fileName.substring(fileName.length - (maxLength / 2 - 10))
+      );
     } else {
       return fileName;
     }
   };
 
   const getFileDisplayName = (fileItem: string | FileItem): string => {
-    if (typeof fileItem === "string") {
-      if (fileItem.startsWith("http://") || fileItem.startsWith("https://")) {
+    if (typeof fileItem === 'string') {
+      if (fileItem.startsWith('http://') || fileItem.startsWith('https://')) {
         try {
-          const name = new URL(fileItem).pathname.split("/").pop();
+          const name = new URL(fileItem).pathname.split('/').pop();
           return name || fileItem;
         } catch {
           return fileItem;
         }
       }
-      return fileItem.split("/").pop() || fileItem;
+      return fileItem.split('/').pop() || fileItem;
     }
     return fileItem.original_file_name || fileItem.file_path;
   };
 
   const getFileUrl = (fileItem: string | FileItem): string => {
     const addTenantId = (url: string): string => {
-      const tenantId = localStorage.getItem("tenant_id");
-      if (tenantId && url.includes("file-manager")) {
+      const tenantId = localStorage.getItem('tenant_id');
+      if (tenantId && url.includes('file-manager')) {
         return `${url}?X-Tenant-Id=${tenantId}`;
       }
 
       return url;
     };
 
-
-    if (typeof fileItem === "string") {
+    if (typeof fileItem === 'string') {
       return addTenantId(fileItem);
     }
 
@@ -822,7 +852,7 @@ const KnowledgeBaseManager: React.FC = () => {
     setFormData(DEFAULT_FORM_DATA);
     setDynamicRagConfig({});
     setSelectedFiles([]);
-    setUrls([""]);
+    setUrls(['']);
     setUrlHeaders([]);
     setEditingItem(null);
     setError(null);
@@ -835,16 +865,11 @@ const KnowledgeBaseManager: React.FC = () => {
       {showForm ? (
         <>
           <div className="flex items-center">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleCancel}
-              className="mr-2"
-            >
+            <Button variant="ghost" size="icon" onClick={handleCancel} className="mr-2">
               <ChevronLeft className="h-5 w-5" />
             </Button>
             <h2 className="text-2xl font-bold tracking-tight">
-              {editingItem ? "Edit Knowledge Base" : "New Knowledge Base"}
+              {editingItem ? 'Edit Knowledge Base' : 'New Knowledge Base'}
             </h2>
           </div>
 
@@ -862,19 +887,15 @@ const KnowledgeBaseManager: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit}>
+          <form ref={formRef} onSubmit={handleSubmit}>
             <div className="space-y-6">
               <div className="rounded-lg border bg-white">
                 {/* Basic Information */}
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                      <h3 className="text-lg font-semibold">
-                        Basic Information
-                      </h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Basic information about the knowledge base.
-                      </p>
+                      <h3 className="text-lg font-semibold">Basic Information</h3>
+                      <p className="text-sm text-gray-500 mt-1">Basic information about the knowledge base.</p>
                     </div>
 
                     <div className="md:col-span-2 space-y-6">
@@ -908,7 +929,7 @@ const KnowledgeBaseManager: React.FC = () => {
                           value={formData.type}
                           onValueChange={(value) =>
                             handleInputChange({
-                              target: { name: "type", value },
+                              target: { name: 'type', value },
                             } as React.ChangeEvent<HTMLInputElement>)
                           }
                         >
@@ -920,27 +941,18 @@ const KnowledgeBaseManager: React.FC = () => {
                             <SelectItem value="file">Files</SelectItem>
                             <SelectItem value="url">URLs</SelectItem>
                             <SelectItem value="s3">S3</SelectItem>
-                            <SelectItem value="sharepoint">
-                              Sharepoint
-                            </SelectItem>
-                            <SelectItem
-                              key="smb_share_folder"
-                              value="smb_share_folder"
-                            >
+                            <SelectItem value="sharepoint">Sharepoint</SelectItem>
+                            <SelectItem key="smb_share_folder" value="smb_share_folder">
                               Network Share/Folder
                             </SelectItem>
-                            <SelectItem value="azure_blob">
-                              Azure Blob Storage
-                            </SelectItem>
-                            <SelectItem value="google_bucket">
-                              Google Bucket Storage
-                            </SelectItem>
+                            <SelectItem value="azure_blob">Azure Blob Storage</SelectItem>
+                            <SelectItem value="google_bucket">Google Bucket Storage</SelectItem>
                             <SelectItem value="zendesk">Zendesk</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
 
-                      {formData.type === "text" ? (
+                      {formData.type === 'text' ? (
                         <div>
                           <div className="mb-1">Content</div>
                           <Textarea
@@ -953,16 +965,11 @@ const KnowledgeBaseManager: React.FC = () => {
                             className="min-h-32"
                           />
                         </div>
-                      ) : formData.type === "url" ? (
+                      ) : formData.type === 'url' ? (
                         <div className="space-y-4">
                           <div className="flex items-center justify-between">
                             <div className="mb-1">URLs</div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={addUrl}
-                            >
+                            <Button type="button" variant="outline" size="sm" onClick={addUrl}>
                               <Plus className="w-4 h-4 mr-1" />
                               Add URL
                             </Button>
@@ -973,20 +980,13 @@ const KnowledgeBaseManager: React.FC = () => {
                                 <Input
                                   id={`url-${index}`}
                                   value={url}
-                                  onChange={(e) =>
-                                    handleUrlChange(index, e.target.value)
-                                  }
+                                  onChange={(e) => handleUrlChange(index, e.target.value)}
                                   placeholder="Enter URL (e.g., https://example.com)"
                                   type="url"
                                 />
                               </div>
                               {urls.length > 1 && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => removeUrl(index)}
-                                >
+                                <Button type="button" variant="ghost" size="sm" onClick={() => removeUrl(index)}>
                                   <X className="w-4 h-4" />
                                 </Button>
                               )}
@@ -995,12 +995,9 @@ const KnowledgeBaseManager: React.FC = () => {
                           <div className="mt-4 rounded-lg border bg-white p-4">
                             <div className="flex items-center justify-between">
                               <div className="flex-1 pr-4">
-                                <div className="text-sm font-medium text-gray-900">
-                                  Use HTTP request
-                                </div>
+                                <div className="text-sm font-medium text-gray-900">Use HTTP request</div>
                                 <p className="text-sm text-gray-500 mt-1">
-                                  Fetch content via a direct HTTP request
-                                  instead of browser scraping.
+                                  Fetch content via a direct HTTP request instead of browser scraping.
                                 </p>
                               </div>
                               <Switch
@@ -1028,9 +1025,9 @@ const KnowledgeBaseManager: React.FC = () => {
                                       ...prev,
                                       {
                                         id: uuidv4(),
-                                        key: "",
-                                        value: "",
-                                        keyType: "known",
+                                        key: '',
+                                        value: '',
+                                        keyType: 'known',
                                       },
                                     ])
                                   }
@@ -1046,10 +1043,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                   ))}
                                 </datalist>
                                 {urlHeaders.map((header, idx) => (
-                                  <div
-                                    key={`url-header-${idx}`}
-                                    className="flex items-center gap-2 w-full"
-                                  >
+                                  <div key={`url-header-${idx}`} className="flex items-center gap-2 w-full">
                                     <Input
                                       placeholder="Header name"
                                       value={header.key}
@@ -1060,12 +1054,9 @@ const KnowledgeBaseManager: React.FC = () => {
                                               ? {
                                                   ...row,
                                                   key: e.target.value,
-                                                  keyType:
-                                                    KNOWN_HTTP_HEADERS.includes(
-                                                      e.target.value
-                                                    )
-                                                      ? "known"
-                                                      : "custom",
+                                                  keyType: KNOWN_HTTP_HEADERS.includes(e.target.value)
+                                                    ? 'known'
+                                                    : 'custom',
                                                 }
                                               : row
                                           )
@@ -1097,11 +1088,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                       variant="ghost"
                                       className="h-6 w-6 flex-shrink-0"
                                       onClick={() =>
-                                        setUrlHeaders((prev) =>
-                                          prev.filter(
-                                            (row) => row.id !== header.id
-                                          )
-                                        )
+                                        setUrlHeaders((prev) => prev.filter((row) => row.id !== header.id))
                                       }
                                     >
                                       <X className="h-3.5 w-3.5" />
@@ -1112,7 +1099,7 @@ const KnowledgeBaseManager: React.FC = () => {
                             </div>
                           </div>
                         </div>
-                      ) : formData.type === "file" ? (
+                      ) : formData.type === 'file' ? (
                         <div>
                           <div className="mb-1">Upload Files</div>
                           <div className="flex flex-col gap-2">
@@ -1125,10 +1112,9 @@ const KnowledgeBaseManager: React.FC = () => {
                                 <span className="text-sm font-medium text-muted-foreground">
                                   {selectedFiles.length > 0
                                     ? `${selectedFiles.length} file(s) selected`
-                                    : formData.files &&
-                                      formData.files.length > 0
-                                    ? "Replace files"
-                                    : "Select files to upload"}
+                                    : formData.files && formData.files.length > 0
+                                      ? 'Replace files'
+                                      : 'Select files to upload'}
                                 </span>
                                 <input
                                   id="file-upload"
@@ -1136,7 +1122,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                   multiple
                                   onChange={handleFileChange}
                                   disabled={isUploading}
-                                  accept={acceptedFileTypes.join(",")}
+                                  accept={acceptedFileTypes.join(',')}
                                   className="hidden"
                                 />
                               </label>
@@ -1152,19 +1138,14 @@ const KnowledgeBaseManager: React.FC = () => {
                                     <div className="flex items-center gap-2">
                                       <FilePlus className="h-4 w-4" />
                                       <span className="text-sm">
-                                        {file.name} (
-                                        {(file.size / 1024).toFixed(1)} KB)
+                                        {file.name} ({(file.size / 1024).toFixed(1)} KB)
                                       </span>
                                     </div>
                                     <Button
                                       type="button"
                                       variant="ghost"
                                       size="icon"
-                                      onClick={() =>
-                                        setSelectedFiles((prev) =>
-                                          prev.filter((_, i) => i !== index)
-                                        )
-                                      }
+                                      onClick={() => setSelectedFiles((prev) => prev.filter((_, i) => i !== index))}
                                       className="h-8 w-8"
                                     >
                                       <X className="h-4 w-4" />
@@ -1174,75 +1155,66 @@ const KnowledgeBaseManager: React.FC = () => {
                               </div>
                             )}
 
-                            {formData.files &&
-                              formData.files.length > 0 &&
-                              selectedFiles.length === 0 && (
-                                <div className="space-y-2">
-                                  {formData.files.map((fileItem, index) => {
-                                    const fileLinkUrl = getFileUrl(fileItem);
-                                    const canLink =
-                                      fileLinkUrl &&
-                                      (fileLinkUrl.startsWith("http://") ||
-                                        fileLinkUrl.startsWith("https://") ||
-                                        fileLinkUrl.startsWith("/"));
-                                    return (
-                                      <div
-                                        key={index}
-                                        className="flex items-center justify-between p-2 bg-muted rounded-md"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <Database className="h-4 w-4" />
-                                          <span className="text-sm">
-                                            {maskFileName(getFileDisplayName(fileItem))}
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                          {canLink ? (
-                                            <a
-                                              href={fileLinkUrl}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md hover:bg-accent hover:text-accent-foreground"
-                                              title="Open file"
-                                            >
-                                              <Download className="h-4 w-4" />
-                                            </a>
-                                          ) : (
-                                            <span className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground">
-                                              <Download className="h-4 w-4" />
-                                            </span>
-                                          )}
-                                          {editingItem && (
-                                            <Button
-                                              type="button"
-                                              variant="ghost"
-                                              size="icon"
-                                              className="h-8 w-8"
-                                              title="Remove file"
-                                              onClick={() =>
-                                                setFormData((prev) => ({
-                                                  ...prev,
-                                                  files:
-                                                    prev.files?.filter(
-                                                      (_, i) => i !== index
-                                                    ) ?? [],
-                                                }))
-                                              }
-                                            >
-                                              <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                          )}
-                                        </div>
+                            {formData.files && formData.files.length > 0 && selectedFiles.length === 0 && (
+                              <div className="space-y-2">
+                                {formData.files.map((fileItem, index) => {
+                                  const fileLinkUrl = getFileUrl(fileItem);
+                                  const canLink =
+                                    fileLinkUrl &&
+                                    (fileLinkUrl.startsWith('http://') ||
+                                      fileLinkUrl.startsWith('https://') ||
+                                      fileLinkUrl.startsWith('/'));
+                                  return (
+                                    <div
+                                      key={index}
+                                      className="flex items-center justify-between p-2 bg-muted rounded-md"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Database className="h-4 w-4" />
+                                        <span className="text-sm">{maskFileName(getFileDisplayName(fileItem))}</span>
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                                      <div className="flex items-center gap-1">
+                                        {canLink ? (
+                                          <a
+                                            href={fileLinkUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md hover:bg-accent hover:text-accent-foreground"
+                                            title="Open file"
+                                          >
+                                            <Download className="h-4 w-4" />
+                                          </a>
+                                        ) : (
+                                          <span className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground">
+                                            <Download className="h-4 w-4" />
+                                          </span>
+                                        )}
+                                        {editingItem && (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8"
+                                            title="Remove file"
+                                            onClick={() =>
+                                              setFormData((prev) => ({
+                                                ...prev,
+                                                files: prev.files?.filter((_, i) => i !== index) ?? [],
+                                              }))
+                                            }
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
 
                             {isUploading && (
-                              <div className="p-2 text-sm text-muted-foreground">
-                                Uploading files... Please wait.
-                              </div>
+                              <div className="p-2 text-sm text-muted-foreground">Uploading files... Please wait.</div>
                             )}
                           </div>
                         </div>
@@ -1251,9 +1223,9 @@ const KnowledgeBaseManager: React.FC = () => {
                         <div>
                           <div className="mb-1">Data Source</div>
                           <Select
-                            value={formData.sync_source_id || ""}
+                            value={formData.sync_source_id || ''}
                             onValueChange={(value) => {
-                              if (value === "__create__") {
+                              if (value === '__create__') {
                                 setIsDataSourceDialogOpen(true);
                                 return;
                               }
@@ -1276,83 +1248,57 @@ const KnowledgeBaseManager: React.FC = () => {
                             </SelectContent>
                           </Select>
                           {/* SharePoint-specific input */}
-                          {formData.type === "sharepoint" && (
+                          {formData.type === 'sharepoint' && (
                             <>
                               <div className="mt-4">
                                 <div className="mb-1">SharePoint Site Link</div>
                                 <Input
                                   id="sharepoint-url"
                                   type="url"
-                                  value={urls[0] || ""}
-                                  onChange={(e) =>
-                                    handleUrlChange(0, e.target.value)
-                                  }
+                                  value={urls[0] || ''}
+                                  onChange={(e) => handleUrlChange(0, e.target.value)}
                                   placeholder="https://yourcompany.sharepoint.com/sites/..."
                                 />
                               </div>
                             </>
                           )}
                           {/* Shared schedule & sync toggle for s3, sharepoint or Network Share */}
-                          {[
-                            "s3",
-                            "sharepoint",
-                            "smb_share_folder",
-                            "azure_blob",
-                            "zendesk",
-                          ].includes(formData.type) && (
+                          {['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk'].includes(
+                            formData.type
+                          ) && (
                             <>
                               <div className="col-span-2 space-y-4">
                                 <div className="mt-6">
                                   <div className="bg-gray-50 rounded-lg">
                                     <div className="flex items-center justify-between p-4">
                                       <div>
-<div>
-  <div className="mb-1">Sync Schedule/Enable</div>
+                                        <div>
+                                          <div className="mb-1">Sync Schedule/Enable</div>
 
-  <div className="flex gap-2">
-    <Input
-      id="sync_schedule"
-      name="sync_schedule"
-      disabled={!formData.sync_active}
-      value={formData.sync_schedule ?? ""}
-      onChange={(e) => {
-        const value = e.target.value;
-        setFormData((prev) => ({
-          ...prev,
-          sync_schedule: value,
-        }));
-      }}
-      placeholder="e.g. every 15':  */15 * * * *"
-      className="flex-1"
-    />
-
-    {editingItem && (
-      <Button
-        type="button"
-        variant="outline"
-        onClick={handleSyncNow}
-        disabled={isSyncing}
-        className="min-w-[130px]"
-      >
-        <div className="flex items-center gap-2">
-          <RefreshCw
-            className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`}
-          />
-          {isSyncing ? "Syncing..." : "Sync Now"}
-        </div>
-      </Button>
-    )}
-  </div>
-</div>
-
+                                          <div className="flex gap-2">
+                                            <Input
+                                              id="sync_schedule"
+                                              name="sync_schedule"
+                                              disabled={!formData.sync_active}
+                                              value={formData.sync_schedule ?? ''}
+                                              onChange={(e) => {
+                                                const value = e.target.value;
+                                                setFormData((prev) => ({
+                                                  ...prev,
+                                                  sync_schedule: value,
+                                                }));
+                                              }}
+                                              placeholder="e.g. every 15':  */15 * * * *"
+                                              className="flex-1"
+                                            />
+                                          </div>
+                                        </div>
                                       </div>
 
                                       <div className="flex items-center justify-between mt-2">
                                         <Switch
                                           id="sync_active"
-                                          checked={
-                                            formData.sync_active || false
-                                          }
+                                          checked={formData.sync_active || false}
                                           onCheckedChange={(checked) =>
                                             setFormData((prev) => ({
                                               ...prev,
@@ -1372,9 +1318,7 @@ const KnowledgeBaseManager: React.FC = () => {
                                         </label>
                                         <Input
                                           name="processing_filter"
-                                          value={
-                                            formData.processing_filter || ""
-                                          }
+                                          value={formData.processing_filter || ''}
                                           onChange={handleInputChange}
                                           placeholder="e.g. *.pdf or contains:report"
                                           className="mt-1"
@@ -1387,14 +1331,11 @@ const KnowledgeBaseManager: React.FC = () => {
                                           Processing Mode
                                         </label>
                                         <Select
-                                          value={
-                                            formData.processing_mode || "none"
-                                          }
+                                          value={formData.processing_mode || 'none'}
                                           onValueChange={(value) =>
                                             setFormData((prev) => ({
                                               ...prev,
-                                              processing_mode:
-                                                value === "none" ? null : value,
+                                              processing_mode: value === 'none' ? null : value,
                                             }))
                                           }
                                         >
@@ -1402,31 +1343,22 @@ const KnowledgeBaseManager: React.FC = () => {
                                             <SelectValue placeholder="None" />
                                           </SelectTrigger>
                                           <SelectContent>
-                                            <SelectItem value="none">
-                                              None
-                                            </SelectItem>
-                                            <SelectItem value="extract">
-                                              Extract Only
-                                            </SelectItem>
-                                            <SelectItem value="transcribe">
-                                              Transcribe
-                                            </SelectItem>
+                                            <SelectItem value="none">None</SelectItem>
+                                            <SelectItem value="extract">Extract Only</SelectItem>
+                                            <SelectItem value="transcribe">Transcribe</SelectItem>
                                           </SelectContent>
                                         </Select>
                                       </div>
 
                                       {/* TRANSCRIPTION Engine */}
-                                      {formData.processing_mode ===
-                                        "transcribe" && (
+                                      {formData.processing_mode === 'transcribe' && (
                                         <div>
                                           <label className="block text-sm font-medium text-gray-700">
                                             Transcription Engine
                                           </label>
 
                                           <Select
-                                            value={
-                                              formData.transcription_engine
-                                            }
+                                            value={formData.transcription_engine}
                                             onValueChange={(value) =>
                                               setFormData((prev) => ({
                                                 ...prev,
@@ -1438,12 +1370,8 @@ const KnowledgeBaseManager: React.FC = () => {
                                               <SelectValue placeholder="Select engine" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                              <SelectItem value="openai_whisper">
-                                                OpenAI Whisper
-                                              </SelectItem>
-                                              <SelectItem value="google_chirp3">
-                                                Google Chirp 3
-                                              </SelectItem>
+                                              <SelectItem value="openai_whisper">OpenAI Whisper</SelectItem>
+                                              <SelectItem value="google_chirp3">Google Chirp 3</SelectItem>
                                             </SelectContent>
                                           </Select>
                                         </div>
@@ -1455,14 +1383,11 @@ const KnowledgeBaseManager: React.FC = () => {
                                           LLM Analyst (optional)
                                         </label>
                                         <Select
-                                          value={
-                                            formData.llm_analyst_id || "none"
-                                          }
+                                          value={formData.llm_analyst_id || 'none'}
                                           onValueChange={(value) =>
                                             setFormData((prev) => ({
                                               ...prev,
-                                              llm_analyst_id:
-                                                value === "none" ? null : value,
+                                              llm_analyst_id: value === 'none' ? null : value,
                                             }))
                                           }
                                         >
@@ -1470,14 +1395,9 @@ const KnowledgeBaseManager: React.FC = () => {
                                             <SelectValue placeholder="Select an analyst" />
                                           </SelectTrigger>
                                           <SelectContent>
-                                            <SelectItem value="none">
-                                              None
-                                            </SelectItem>
+                                            <SelectItem value="none">None</SelectItem>
                                             {llmAnalysts.map((a) => (
-                                              <SelectItem
-                                                key={a.id}
-                                                value={String(a.id)}
-                                              >
+                                              <SelectItem key={a.id} value={String(a.id)}>
                                                 {a.name}
                                               </SelectItem>
                                             ))}
@@ -1486,17 +1406,14 @@ const KnowledgeBaseManager: React.FC = () => {
                                       </div>
 
                                       {/* Save in Conversation */}
-                                      {formData.processing_mode ===
-                                        "transcribe" && (
+                                      {formData.processing_mode === 'transcribe' && (
                                         <div className="flex items-center justify-between">
                                           <label className="text-sm font-medium text-gray-700">
                                             Save In Conversation
                                           </label>
 
                                           <Switch
-                                            checked={
-                                              formData.save_in_conversation
-                                            }
+                                            checked={formData.save_in_conversation}
                                             onCheckedChange={(checked) =>
                                               setFormData((prev) => ({
                                                 ...prev,
@@ -1508,9 +1425,9 @@ const KnowledgeBaseManager: React.FC = () => {
                                       )}
 
                                       {/* Save Output in source location*/}
-                                      <div className="flex items-center gap-4">
-                                        <div className="flex items-center gap-2">
-                                          <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                                      <div className="flex flex-col gap-2">
+                                        <div className="flex items-center gap-2 justify-between">
+                                          <label className="text-sm font-medium text-gray-700">
                                             Save Output in source location
                                           </label>
 
@@ -1532,17 +1449,103 @@ const KnowledgeBaseManager: React.FC = () => {
                                             onChange={(e) =>
                                               setFormData((prev) => ({
                                                 ...prev,
-                                                save_output_path:
-                                                  e.target.value,
+                                                save_output_path: e.target.value,
                                               }))
                                             }
                                             className="flex-1"
                                           />
                                         )}
                                       </div>
+
+                                      {/* Zendesk Additional Configuration */}
+                                      {formData.type === 'zendesk' && (
+                                        <div className="flex flex-col gap-4 pt-2">
+                                          <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
+                                            Article Source Configuration
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Info className="h-4 w-4 text-gray-500 cursor-help" />
+                                              </TooltipTrigger>
+                                              <TooltipContent>
+                                                <p>Allow Unpublished Articles to be index in the knowledge base</p>
+                                                <p>Allow HTML Content to be index in the knowledge base</p>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </label>
+
+                                          <div className="grid grid-cols-2 gap-8 py-2 px-6">
+                                            {/* Allow Unpublished Articles */}
+                                            <div className="flex items-center gap-2">
+                                              <Switch
+                                                checked={
+                                                  (formData.extra_metadata?.allow_unpublished_articles as boolean) ||
+                                                  false
+                                                }
+                                                onCheckedChange={(checked) =>
+                                                  setFormData(
+                                                    (prev) =>
+                                                      ({
+                                                        ...prev,
+                                                        extra_metadata: {
+                                                          ...prev.extra_metadata,
+                                                          allow_unpublished_articles: checked,
+                                                        },
+                                                      }) as KnowledgeItem
+                                                  )
+                                                }
+                                              />
+                                              <label className="text-sm font-medium text-gray-700">
+                                                Allow Unpublished Articles
+                                              </label>
+
+                                            </div>
+
+                                            {/* Allow HTML Content */}
+                                            <div className="flex items-center gap-2">
+                                              <Switch
+                                                checked={
+                                                  (formData.extra_metadata?.allow_html_content as boolean) || false
+                                                }
+                                                onCheckedChange={(checked) =>
+                                                  setFormData(
+                                                    (prev) =>
+                                                      ({
+                                                        ...prev,
+                                                        extra_metadata: {
+                                                          ...prev.extra_metadata,
+                                                          allow_html_content: checked,
+                                                        },
+                                                      }) as KnowledgeItem
+                                                  )
+                                                }
+                                              />
+                                              <label className="text-sm font-medium text-gray-700">
+                                                Allow HTML Content
+                                              </label>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
+
+                                {editingItem && (
+                                  <div className="flex flex-row justify-end">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={handleSyncNow}
+                                      disabled={isSyncing}
+                                      className="min-w-[130px] rounded-full"
+                                    >
+                                      <div className="flex items-center gap-2 ml-auto">
+                                        <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                        {isSyncing ? 'Syncing...' : 'Sync Now'}
+                                      </div>
+                                    </Button>
+                                  </div>
+                                )}
                               </div>
                             </>
                           )}
@@ -1572,10 +1575,10 @@ const KnowledgeBaseManager: React.FC = () => {
                 </Button>
                 <Button type="submit" disabled={loading || isUploading}>
                   {loading || isUploading
-                    ? "Saving..."
+                    ? 'Saving...'
                     : editingItem
-                    ? "Update Knowledge Base"
-                    : "Create Knowledge Base"}
+                      ? 'Update Knowledge Base'
+                      : 'Create Knowledge Base'}
                 </Button>
               </div>
             </div>
@@ -1587,17 +1590,11 @@ const KnowledgeBaseManager: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-3xl font-bold">Knowledge Base</h2>
-                <p className="text-zinc-400 font-normal">
-                  View and manage the knowledge base
-                </p>
+                <p className="text-zinc-400 font-normal">View and manage the knowledge base</p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative">
-                  <Select
-                    value={typeFilter}
-                    onValueChange={(value) => setTypeFilter(value)}
-                    defaultValue="all"
-                  >
+                  <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value)} defaultValue="all">
                     <SelectTrigger className="min-w-32 bg-white">
                       <SelectValue placeholder="Filter by type" />
                     </SelectTrigger>
@@ -1608,18 +1605,11 @@ const KnowledgeBaseManager: React.FC = () => {
                       <SelectItem value="url">URLs</SelectItem>
                       <SelectItem value="s3">S3</SelectItem>
                       <SelectItem value="sharepoint">Sharepoint</SelectItem>
-                      <SelectItem
-                        key="smb_share_folder"
-                        value="smb_share_folder"
-                      >
+                      <SelectItem key="smb_share_folder" value="smb_share_folder">
                         Network Share/Folder
                       </SelectItem>
-                      <SelectItem value="azure_blob">
-                        Azure Blob Storage
-                      </SelectItem>
-                      <SelectItem value="google_bucket">
-                        Google Bucket Storage
-                      </SelectItem>
+                      <SelectItem value="azure_blob">Azure Blob Storage</SelectItem>
+                      <SelectItem value="google_bucket">Google Bucket Storage</SelectItem>
                       <SelectItem value="zendesk">Zendesk</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1654,20 +1644,15 @@ const KnowledgeBaseManager: React.FC = () => {
             <div className="rounded-lg border bg-white overflow-hidden">
               {loading ? (
                 <div className="flex justify-center items-center py-12">
-                  <div className="text-sm text-gray-500">
-                    Loading knowledge base items...
-                  </div>
+                  <div className="text-sm text-gray-500">Loading knowledge base items...</div>
                 </div>
               ) : filteredItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
                   <Database className="h-12 w-12 text-gray-400" />
-                  <h3 className="font-medium text-lg">
-                    No knowledge base items found
-                  </h3>
+                  <h3 className="font-medium text-lg">No knowledge base items found</h3>
                   <p className="text-sm text-gray-500 max-w-sm">
-                    {searchQuery ? "Try adjusting your search query or" : ""}{" "}
-                    add your first knowledge item to start building your
-                    knowledge base.
+                    {searchQuery ? 'Try adjusting your search query or' : ''} add your first knowledge item to start
+                    building your knowledge base.
                   </p>
                 </div>
               ) : (
@@ -1677,17 +1662,13 @@ const KnowledgeBaseManager: React.FC = () => {
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div className="flex-1 flex flex-col space-y-1">
                           <div className="flex items-center gap-2">
-                            <h4 className="text-lg font-semibold">
-                              {item.name}
-                            </h4>
+                            <h4 className="text-lg font-semibold">{item.name}</h4>
                             <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black">
                               {item.type.toUpperCase()}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-500">
-                            {item.description}
-                          </p>
-                          {item.type === "file" && (
+                          <p className="text-sm text-gray-500">{item.description}</p>
+                          {item.type === 'file' && (
                             <div className="flex items-center text-sm text-gray-500 mt-1">
                               <FileText className="h-4 w-4 mr-1" />
                               <span>
@@ -1695,57 +1676,46 @@ const KnowledgeBaseManager: React.FC = () => {
                                   ? item.files.length === 1
                                     ? getFileDisplayName(item.files[0])
                                     : `${item.files.length} files`
-                                  : item.content
-                                      .replace("File: ", "")
-                                      .replace("Files: ", "")}
+                                  : item.content.replace('File: ', '').replace('Files: ', '')}
                               </span>
                             </div>
                           )}
-                          {item.type === "text" && (
+                          {item.type === 'text' && (
                             <p className="text-sm text-gray-500 mt-1 line-clamp-1">
                               {item.content.substring(0, 100)}
-                              {item.content.length > 100 ? "..." : ""}
+                              {item.content.length > 100 ? '...' : ''}
                             </p>
                           )}
-                          {item.type === "url" &&
-                            item.urls &&
-                            item.urls.length > 0 && (
-                              <div className="text-sm text-gray-500 mt-1">
-                                {item.urls.length === 1 ? (
-                                  <div className="flex items-center">
-                                    <span>URL: </span>
-                                    <a
-                                      href={item.urls[0]}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-blue-600 hover:text-blue-800 underline ml-1 truncate"
-                                    >
-                                      {item.urls[0]}
-                                    </a>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center">
-                                    <span>{item.urls.length} URLs</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                          {item.type === 'url' && item.urls && item.urls.length > 0 && (
+                            <div className="text-sm text-gray-500 mt-1">
+                              {item.urls.length === 1 ? (
+                                <div className="flex items-center">
+                                  <span>URL: </span>
+                                  <a
+                                    href={item.urls[0]}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 underline ml-1 truncate"
+                                  >
+                                    {item.urls[0]}
+                                  </a>
+                                </div>
+                              ) : (
+                                <div className="flex items-center">
+                                  <span>{item.urls.length} URLs</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div className="flex gap-2 justify-center md:justify-end w-full md:w-auto">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEdit(item)}
-                            className="h-8 w-8"
-                          >
+                          <Button variant="ghost" size="icon" onClick={() => handleEdit(item)} className="h-8 w-8">
                             <Pencil className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() =>
-                              handleDeleteClick(item.id, item.name)
-                            }
+                            onClick={() => handleDeleteClick(item.id, item.name)}
                             className="h-8 w-8 text-red-500"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1766,8 +1736,19 @@ const KnowledgeBaseManager: React.FC = () => {
         onOpenChange={setIsDeleteDialogOpen}
         onConfirm={handleDelete}
         isInProgress={isDeleting}
-        itemName={knowledgeBaseToDelete?.name || ""}
+        itemName={knowledgeBaseToDelete?.name || ''}
         description={`This action cannot be undone. This will permanently delete knowledge base item "${knowledgeBaseToDelete?.name}".`}
+      />
+
+      <ConfirmDialog
+        isOpen={isSyncSaveDialogOpen}
+        onOpenChange={setIsSyncSaveDialogOpen}
+        onConfirm={handleSaveAndSync}
+        isInProgress={false}
+        title="Save Before Syncing?"
+        description="You have unsaved changes. Would you like to save your settings before starting the synchronization?"
+        primaryButtonText="Save & Sync"
+        secondaryButtonText="Cancel"
       />
 
       <DataSourceDialog
@@ -1780,11 +1761,9 @@ const KnowledgeBaseManager: React.FC = () => {
             (async () => {
               const allSources = await getAllDataSources();
               let targetType = formData.type;
-              if (formData.type === "sharepoint") targetType = "o365";
-              if (formData.type === "zendesk") targetType = "zendesk";
-              const filtered = allSources.filter(
-                (source) => source.source_type.toLowerCase() === targetType
-              );
+              if (formData.type === 'sharepoint') targetType = 'o365';
+              if (formData.type === 'zendesk') targetType = 'zendesk';
+              const filtered = allSources.filter((source) => source.source_type.toLowerCase() === targetType);
               setAvailableSources(filtered);
             })();
           }

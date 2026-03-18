@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import re
+
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -19,36 +21,46 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task
-def import_zendesk_articles_to_kb():
+def import_zendesk_articles_to_kb(kb_id: Optional[str] = None, sync_now: bool = False):
     """
     Import articles from Zendesk Help Center into the knowledge base.
+    When kb_id is provided, sync only that KB. Otherwise sync all KBs due for sync.
+    sync_now: when True, bypass schedule and force immediate sync.
     """
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    
+
     if loop.is_closed():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    
-    return loop.run_until_complete(import_zendesk_articles_to_kb_async_with_scope())
+
+    return loop.run_until_complete(
+        import_zendesk_articles_to_kb_async_with_scope(kb_id=kb_id, sync_now=sync_now)
+    )
 
 
-async def import_zendesk_articles_to_kb_async_with_scope():
+async def import_zendesk_articles_to_kb_async_with_scope(
+    kb_id: Optional[str] = None, sync_now: bool = False
+):
     """Wrapper to run Zendesk article import for all tenants"""
     from app.tasks.base import run_task_with_tenant_support
     result = await run_task_with_tenant_support(
         import_zendesk_articles_to_kb_async,
-        "Zendesk article import"
+        "Zendesk article import",
+        kb_id=UUID(kb_id) if kb_id else None,
+        sync_now=sync_now,
     )
     if result.get("status") == "success":
         logger.info(f"Results: {result.get('results')}")
     return result
 
 
-async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
+async def import_zendesk_articles_to_kb_async(
+    kb_id: Optional[UUID] = None, sync_now: bool = False
+):
     """Async implementation of Zendesk article import"""
     logger.info("Starting Zendesk article import...")
 
@@ -70,7 +82,7 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
     for kb in kbList:
         logger.info(f"Processing knowledge base {kb.name}")
 
-        if kb.sync_active == 0 or not kb.sync_source_id:
+        if not sync_now and (kb.sync_active == 0 or not kb.sync_source_id):
             logger.info(
                 f"Knowledge base {kb.id} is not active or does not have a sync source"
             )
@@ -87,26 +99,28 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
             )
             continue
 
+        # When sync_now or kb_id provided, bypass cron schedule check
+        force_sync = sync_now or (kb_id is not None)
         cron_string = kb.sync_schedule
-        if not cron_string:
+        if not cron_string and not force_sync:
             logger.info(f"Knowledge base {kb.id} has no sync schedule")
             continue
+        if not force_sync:
+            cron_iter = croniter(cron_string)
+            next_run_time = datetime.now()
+            if kb.last_synced:
+                logger.info("Getting next run time from last synced")
+                next_run_time = cron_iter.get_next(start_time=kb.last_synced)
+                next_run_time = datetime.fromtimestamp(next_run_time)
+                logger.info(
+                    f"Knowledge base {kb.id} last synced at {kb.last_synced}, next run time: {next_run_time}"
+                )
 
-        cron_iter = croniter(cron_string)
-        next_run_time = datetime.now()
-        if kb.last_synced:
-            logger.info("Getting next run time from last synced")
-            next_run_time = cron_iter.get_next(start_time=kb.last_synced)
-            next_run_time = datetime.fromtimestamp(next_run_time)
-            logger.info(
-                f"Knowledge base {kb.id} last synced at {kb.last_synced}, next run time: {next_run_time}"
-            )
-
-        if datetime.now() < next_run_time:
-            logger.info(
-                f"Knowledge base {kb.id} is not due for sync, next sync at {next_run_time}"
-            )
-            continue
+            if datetime.now() < next_run_time:
+                logger.info(
+                    f"Knowledge base {kb.id} is not due for sync, next sync at {next_run_time}"
+                )
+                continue
 
         if not ds.connection_data:
             logger.info(
@@ -120,6 +134,7 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
         email = conn_data.get("email")
         api_token = conn_data.get("api_token")
         locale = conn_data.get("locale")  # Optional
+        category_id = conn_data.get("category_id")  # Optional
         section_id = conn_data.get("section_id")  # Optional
 
         if not subdomain or not email or not api_token:
@@ -133,9 +148,32 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
             zendesk_connector = ZendeskConnector(
                 subdomain=subdomain, email=email, api_token=api_token
             )
-            articles = await zendesk_connector.fetch_articles(
-                locale=locale, section_id=section_id
+
+            fetched_articles = await zendesk_connector.fetch_articles(
+                locale=locale,
+                category_id=category_id,
+                section_id=section_id,
             )
+
+            # Check if allow_unpublished_articles is false KB extra_metadata from UI panel
+            allow_unpublished_articles = kb.extra_metadata.get("allow_unpublished_articles") or False
+            allow_html_content = kb.extra_metadata.get("allow_html_content") or False
+
+            # Parse article body based on allow_html_content flag
+            def _parse_article_body(article: dict) -> str:
+                body = ""
+                if not allow_html_content and article.get("body"):
+                    body = re.sub(r'<[^>]*>', '', article.get("body", ""))
+                else:
+                    body = article.get("body", "")
+
+                return body
+
+            articles = []
+            if not allow_unpublished_articles:
+                articles.extend([article for article in fetched_articles if article.get("draft") is False])
+            else:
+                articles.extend(fetched_articles)
 
             if not articles:
                 logger.info(
@@ -242,11 +280,9 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
                 try:
                     article_id = f"KB:{str(kb.id)}#article_{article['id']}"
                     article_title = article.get("title", "Untitled Article")
-                    article_body = article.get("body", "")
                     article_url = article.get("html_url", "")
+                    article_body = _parse_article_body(article)
 
-                    # Extract plain text from HTML body if needed
-                    # For now, we'll use the body as-is (Zendesk API returns HTML)
                     content = f"{article_title}\n\n{article_body}"
 
                     metadata = {
@@ -292,8 +328,9 @@ async def import_zendesk_articles_to_kb_async(kb_id: Optional[UUID] = None):
                 try:
                     article_id = f"KB:{str(kb.id)}#article_{article['id']}"
                     article_title = article.get("title", "Untitled Article")
-                    article_body = article.get("body", "")
                     article_url = article.get("html_url", "")
+                    article_body = _parse_article_body(article)
+
 
                     content = f"{article_title}\n\n{article_body}"
 

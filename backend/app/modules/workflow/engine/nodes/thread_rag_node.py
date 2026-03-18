@@ -157,6 +157,7 @@ class ThreadRAGNode(BaseNode):
             file_content=file_content,
             file_name=file_name,
             file_id=file_id,
+            config_overrides=rag_config_overrides,
         )
 
         return {
