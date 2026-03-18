@@ -10,6 +10,10 @@ export interface AddNodeAction {
   label?: string;
   config?: Record<string, unknown>;
   connectTo?: string;
+  /** When set, also creates an edge from the new node's output to this node's input */
+  thenConnectTo?: string;
+  /** When set, wraps the new node in a toolBuilderNode and connects both to this agent node id */
+  asToolFor?: string;
 }
 
 export interface UpdateNodeAction {
@@ -23,7 +27,13 @@ export interface RemoveNodeAction {
   nodeId: string;
 }
 
-export type ParsedAction = AddNodeAction | UpdateNodeAction | RemoveNodeAction;
+export interface RemoveEdgeAction {
+  type: "remove_edge";
+  fromNodeId: string;
+  toNodeId: string;
+}
+
+export type ParsedAction = AddNodeAction | UpdateNodeAction | RemoveNodeAction | RemoveEdgeAction;
 
 export interface ParseResult {
   cleanText: string;
@@ -65,6 +75,7 @@ export function serializeCanvasContext(nodes: Node[], edges: Edge[]): string {
 const ADD_NODE_REGEX = /<ADD_NODE>([\s\S]*?)<\/ADD_NODE>/g;
 const UPDATE_NODE_REGEX = /<UPDATE_NODE>([\s\S]*?)<\/UPDATE_NODE>/g;
 const REMOVE_NODE_REGEX = /<REMOVE_NODE>([\s\S]*?)<\/REMOVE_NODE>/g;
+const REMOVE_EDGE_REGEX = /<REMOVE_EDGE>([\s\S]*?)<\/REMOVE_EDGE>/g;
 
 export function parseAgentActions(text: string): ParseResult {
   const actions: ParsedAction[] = [];
@@ -83,6 +94,8 @@ export function parseAgentActions(text: string): ParseResult {
           label: parsed.label,
           config: parsed.config,
           connectTo: parsed.connect_to,
+          thenConnectTo: parsed.then_connect_to,
+          asToolFor: parsed.as_tool_for,
         });
       }
     } catch {
@@ -126,6 +139,24 @@ export function parseAgentActions(text: string): ParseResult {
     cleanText = cleanText.replace(match[0], "");
   }
 
+  // Parse REMOVE_EDGE
+  REMOVE_EDGE_REGEX.lastIndex = 0;
+  while ((match = REMOVE_EDGE_REGEX.exec(text)) !== null) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      if (parsed.from_node_id && parsed.to_node_id) {
+        actions.push({
+          type: "remove_edge",
+          fromNodeId: parsed.from_node_id,
+          toNodeId: parsed.to_node_id,
+        });
+      }
+    } catch {
+      // skip
+    }
+    cleanText = cleanText.replace(match[0], "");
+  }
+
   return { cleanText: cleanText.trim(), actions };
 }
 
@@ -139,6 +170,8 @@ export function getActionLabel(action: ParsedAction): string {
       return `Updated node`;
     case "remove_node":
       return `Removed node`;
+    case "remove_edge":
+      return `Removed connection`;
   }
 }
 
@@ -185,48 +218,89 @@ export function calculateNodePosition(
 
 // ── Node + Edge Creator ──
 
+const EDGE_STYLE = {
+  strokeWidth: 2,
+  stroke: "hsl(var(--brand-600))",
+  strokeDasharray: "7,7",
+} as const;
+
+const EDGE_MARKER = {
+  type: MarkerType.ArrowClosed,
+  width: 16,
+  height: 16,
+  color: "hsl(var(--brand-600))",
+} as const;
+
+function makeEdge(
+  source: string,
+  target: string,
+  sourceHandle: string,
+  targetHandle: string,
+): Edge {
+  return {
+    id: `reactflow__edge-${source}${sourceHandle}-${target}${targetHandle}`,
+    source,
+    target,
+    sourceHandle,
+    targetHandle,
+    type: "default",
+    markerEnd: EDGE_MARKER,
+    style: EDGE_STYLE,
+  };
+}
+
 export function createNodeFromAction(
   action: AddNodeAction,
   existingNodes: Node[],
-): { node: Node | null; edge: Edge | null } {
+): { nodes: Node[]; edges: Edge[] } {
   const nodeDef = nodeRegistry.getNodeType(action.nodeType);
-  if (!nodeDef) return { node: null, edge: null };
+  if (!nodeDef) return { nodes: [], edges: [] };
 
   const id = uuidv4();
-  const position = calculateNodePosition(action.connectTo, existingNodes);
+  const anchorId = action.asToolFor ?? action.connectTo;
+  const position = calculateNodePosition(anchorId, existingNodes);
 
   const overrideData: Record<string, unknown> = {};
   if (action.label) overrideData.name = action.label;
   if (action.config) Object.assign(overrideData, action.config);
 
   const node = nodeRegistry.createNode(action.nodeType, id, position, overrideData);
-  if (!node) return { node: null, edge: null };
+  if (!node) return { nodes: [], edges: [] };
 
-  let edge: Edge | null = null;
+  // ── Tool pattern: wrap in toolBuilderNode ──
+  if (action.asToolFor) {
+    const tbId = uuidv4();
+    const tbPosition = {
+      x: position.x - 175,
+      y: position.y - 200,
+    };
+    const tbNode = nodeRegistry.createNode("toolBuilderNode", tbId, tbPosition, {
+      name: action.label ? `${action.label} Tool` : `${action.nodeType} Tool`,
+    });
+    if (!tbNode) return { nodes: [node], edges: [] };
+
+    return {
+      nodes: [tbNode, node],
+      edges: [
+        makeEdge(tbId, action.asToolFor, "output_tool", "input_tools"),
+        makeEdge(tbId, id, "starter_processor", "input"),
+      ],
+    };
+  }
+
+  // ── Standard connect_to pattern ──
+  const edges: Edge[] = [];
   if (action.connectTo) {
     const sourceNode = existingNodes.find((n) => n.id === action.connectTo);
     if (sourceNode) {
-      edge = {
-        id: `reactflow__edge-${action.connectTo}-${id}`,
-        source: action.connectTo,
-        target: id,
-        sourceHandle: "output",
-        targetHandle: "input",
-        type: "default",
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          width: 16,
-          height: 16,
-          color: "hsl(var(--brand-600))",
-        },
-        style: {
-          strokeWidth: 2,
-          stroke: "hsl(var(--brand-600))",
-          strokeDasharray: "7,7",
-        },
-      };
+      edges.push(makeEdge(action.connectTo, id, "output", "input"));
     }
   }
 
-  return { node, edge };
+  // ── Optional chained output edge ──
+  if (action.thenConnectTo) {
+    edges.push(makeEdge(id, action.thenConnectTo, "output", "input"));
+  }
+
+  return { nodes: [node], edges };
 }

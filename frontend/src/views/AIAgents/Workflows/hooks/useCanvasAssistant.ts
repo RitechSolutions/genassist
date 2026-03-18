@@ -11,6 +11,7 @@ import {
   type AddNodeAction,
   type UpdateNodeAction,
   type RemoveNodeAction,
+  type RemoveEdgeAction,
 } from "../utils/assistantActionParser";
 
 interface UseCanvasAssistantArgs {
@@ -64,11 +65,13 @@ export function useCanvasAssistant({
   const actionKey = (action: ParsedAction): string => {
     switch (action.type) {
       case "add_node":
-        return `add-${action.nodeType}-${action.label}-${action.connectTo}`;
+        return `add-${action.nodeType}-${action.label}-${action.connectTo}-${action.thenConnectTo}-${action.asToolFor}`;
       case "update_node":
         return `update-${action.nodeId}-${JSON.stringify(action.updates)}`;
       case "remove_node":
         return `remove-${action.nodeId}`;
+      case "remove_edge":
+        return `remove-edge-${action.fromNodeId}-${action.toNodeId}`;
     }
   };
 
@@ -81,21 +84,21 @@ export function useCanvasAssistant({
         executedActionsRef.current.add(key);
 
         if (action.type === "add_node") {
-          const { node, edge } = createNodeFromAction(
+          const { nodes: newNodes, edges: newEdges } = createNodeFromAction(
             action as AddNodeAction,
             nodesRef.current,
           );
-          if (node) {
-            const restored = restoreNode(node);
+          if (newNodes.length > 0) {
+            const restored = newNodes.map(restoreNode);
             setNodes((nds) => {
-              const updated = [...nds, restored];
+              const updated = [...nds, ...restored];
               nodesRef.current = updated;
               return updated;
             });
           }
-          if (edge) {
+          if (newEdges.length > 0) {
             setEdges((eds) => {
-              const updated = [...eds, edge];
+              const updated = [...eds, ...newEdges];
               edgesRef.current = updated;
               return updated;
             });
@@ -124,6 +127,15 @@ export function useCanvasAssistant({
             edgesRef.current = updated;
             return updated;
           });
+        } else if (action.type === "remove_edge") {
+          const { fromNodeId, toNodeId } = action as RemoveEdgeAction;
+          setEdges((eds) => {
+            const updated = eds.filter(
+              (e) => !(e.source === fromNodeId && e.target === toNodeId),
+            );
+            edgesRef.current = updated;
+            return updated;
+          });
         }
       }
     },
@@ -137,10 +149,18 @@ export function useCanvasAssistant({
     const chat = new ChatService(baseUrl, apiKey, undefined, tenant, undefined, false, false);
     chatRef.current = chat;
 
+    // Always start fresh on mount — clear any persisted conversation from a previous session
+    chat.resetChatConversation();
+
     chat.setMessageHandler((message: ChatMessage) => {
       if (!isMountedRef.current) return;
-      if (message.speaker === "agent") {
+
+      // Always clear thinking for any non-customer message (agent, special, etc.)
+      if (message.speaker !== "customer") {
         setIsThinking(false);
+      }
+
+      if (message.speaker === "agent") {
         const { cleanText, actions } = parseAgentActions(message.text);
 
         // Update or add the latest agent message
@@ -162,6 +182,12 @@ export function useCanvasAssistant({
         if (actions.length > 0) {
           executeActions(actions);
         }
+      } else if (message.speaker === "special") {
+        // Show error/finalized/takeover messages to the user
+        setMessages((prev) => [
+          ...prev,
+          { id: uuidv4(), speaker: "agent", text: message.text },
+        ]);
       }
     });
 
