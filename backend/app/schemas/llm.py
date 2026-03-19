@@ -43,6 +43,7 @@ class LlmAnalystBase(BaseModel):
     prompt: Optional[str]
     is_active: Optional[int]
     context_enrichments: Optional[List[str]] = None
+    settings: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(
         from_attributes = True
@@ -71,3 +72,4 @@ class LlmAnalystUpdate(BaseModel):
     prompt: Optional[str] = None
     is_active: Optional[int] = None
     context_enrichments: Optional[List[str]] = None
+    settings: Optional[Dict[str, Any]] = None

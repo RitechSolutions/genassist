@@ -16251,6 +16251,18 @@
             ],
             "title": "Workflow Id"
           },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
+          },
           "id": {
             "anyOf": [
               {
@@ -16586,6 +16598,18 @@
             "type": "string",
             "format": "uuid",
             "title": "Workflow Id"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
           },
           "id": {
             "type": "string",
@@ -17314,6 +17338,18 @@
               }
             ],
             "title": "Workflow Id"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
           },
           "security_settings": {
             "anyOf": [
@@ -18783,6 +18819,18 @@
               }
             ],
             "title": "Conversation Type"
+          },
+          "finalize_llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalize Llm Analyst Id"
           },
           "id": {
             "type": "string",
@@ -21505,6 +21553,18 @@
             ],
             "title": "Context Enrichments"
           },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -21589,6 +21649,18 @@
               }
             ],
             "title": "Context Enrichments"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           }
         },
         "type": "object",
@@ -21660,6 +21732,18 @@
               }
             ],
             "title": "Context Enrichments"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           }
         },
         "type": "object",

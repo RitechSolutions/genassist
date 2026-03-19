@@ -486,6 +486,7 @@ async def finalize(
     finalize: InProgressConversationTranscriptFinalize,
     service: ConversationService = Injected(ConversationService),
     socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
+    agent_config_service: AgentConfigService = Injected(AgentConfigService),
 ):
     """
     Finalize the conversation so that no more partial updates are allowed.
@@ -509,9 +510,18 @@ async def finalize(
     notify_socket(conversation_id)
     notify_socket(SocketRoomType.DASHBOARD)
 
+    # Resolve analyst: explicit override > agent's configured analyst > default seed
+    analyst_id = finalize.llm_analyst_id
+    if not analyst_id:
+        conversation = await service.get_conversation_by_id(conversation_id, raise_not_found=False)
+        if conversation:
+            agent = await agent_config_service.get_by_operator_id(conversation.operator_id)
+            if agent and agent.llm_analyst_id:
+                analyst_id = agent.llm_analyst_id
+
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
         conversation_id=conversation_id,
-        llm_analyst_id=finalize.llm_analyst_id,
+        llm_analyst_id=analyst_id,
     )
 
     # Increment finalized conversation counters in background
@@ -612,7 +622,7 @@ async def add_message_feedback(
     transcript_message_service: TranscriptMessageService = Injected(TranscriptMessageService),
     conversation_service: ConversationService = Injected(ConversationService),
 ):
-    _, conversation_id = await transcript_message_service.add_transcript_message_feedback(
+    _, conversation_id, previous_feedback = await transcript_message_service.add_transcript_message_feedback(
         message_id, transcript_feedback
     )
 
@@ -620,7 +630,7 @@ async def add_message_feedback(
     conversation = await conversation_service.get_conversation_by_id(conversation_id, raise_not_found=True)
 
     # Update conversation thumbs up/down counts based on feedback type
-    increment_feedback(conversation, transcript_feedback)
+    increment_feedback(conversation, transcript_feedback, previous_feedback)
 
     # Persist the updated conversation
     await conversation_service.update_conversation(conversation)
