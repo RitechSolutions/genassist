@@ -6,6 +6,8 @@ import {
   MessageSquare,
   User,
   Pencil,
+  Coins,
+  Megaphone,
 } from "lucide-react";
 import {
   Dialog,
@@ -18,6 +20,8 @@ import {
   getAudioUrl,
   submitConversationFeedback,
   submitMessageFeedback,
+  fetchAgentResponseLogsByConversation,
+  type AgentResponseLogSummary,
 } from "@/services/transcripts";
 import { Transcript, ConversationFeedbackEntry } from "@/interfaces/transcript.interface";
 import { Input } from "@/components/input";
@@ -33,6 +37,8 @@ import { TranscriptAudioPlayer } from "./TranscriptAudioPlayer";
 import { MessageFeedbackPopover } from "./MessageFeedbackPopover";
 import { ConversationEntryWrapper } from "@/views/ActiveConversations/common/ConversationEntryWrapper";
 import { AgentResponseLogDialog } from "@/components/AgentResponseLogDialog";
+import { Switch } from "@/components/switch";
+import { DollarSign } from "lucide-react";
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
@@ -68,6 +74,8 @@ export function TranscriptDialog({
   const [openPopoverMessageId, setOpenPopoverMessageId] = useState<string | null>(null);
   const [debugLogOpen, setDebugLogOpen] = useState(false);
   const [debugMessageId, setDebugMessageId] = useState<string | null>(null);
+  const [showCosts, setShowCosts] = useState(false);
+  const [costsByMessageId, setCostsByMessageId] = useState<Record<string, AgentResponseLogSummary>>({});
 
   useEffect(() => {
     setLocalTranscript(transcript);
@@ -139,6 +147,18 @@ useEffect(() => {
       setUserFeedback(localTranscript.feedback[localTranscript.feedback.length - 1]);
     }
   }, [isOpen, feedbackCount, localTranscript?.feedback]);
+
+  // Fetch agent response logs (token/cost) when dialog opens
+  useEffect(() => {
+    if (!isOpen || !localTranscript?.id) return;
+    fetchAgentResponseLogsByConversation(localTranscript.id).then((logs) => {
+      const map: Record<string, AgentResponseLogSummary> = {};
+      logs.forEach((log) => {
+        map[log.transcript_message_id] = log;
+      });
+      setCostsByMessageId(map);
+    });
+  }, [isOpen, localTranscript?.id]);
 
   const handleSendMessage = async () => {
     if (chatInput.trim() === "" || !localTranscript) return;
@@ -401,8 +421,6 @@ useEffect(() => {
               </TabsList>
             </Tabs>
 
-            {leftPanelTab === "stats" ? (
-              <>
             <MetricCards
               duration={Number(localTranscript.duration)}
               wordCount={localTranscript.metrics.wordCount}
@@ -410,8 +428,24 @@ useEffect(() => {
               speakingRatio={localTranscript.metrics.speakingRatio}
             />
 
-            <div className="p-3 rounded-lg">
-              <h4 className="text-sm font-medium mb-2">Conversation Tone</h4>
+            {leftPanelTab === "stats" ? (
+              <>
+            <div className="flex items-center gap-2 px-2 justify-between">
+              <div className="flex flex-row items-center gap-2">
+                <Coins className="w-4 h-4 text-yellow-500" />
+                <span className="text-sm font-medium">Show costs</span>
+              </div>
+              <Switch
+                checked={showCosts}
+                onCheckedChange={setShowCosts}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 px-2 justify-between">
+              <div className="flex flex-row items-center gap-2">
+                <Megaphone className="w-4 h-4 text-yellow-500" />
+                <span className="text-sm font-medium"> Conversation Tone</span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {localTranscript.metrics.tone.map((tone, index) => (
                   <span
@@ -651,35 +685,55 @@ useEffect(() => {
                               </>
                             )}
                             <div
-                              className={`p-2 rounded-lg leading-tight break-words inline-block ${
-                              isAgent
-                                ? "bg-blue-500 text-white rounded-tl-lg rounded-tr-none"
-                                : "bg-gray-200 text-gray-900 rounded-tr-lg rounded-tl-none"
-                            }`}
+                              className={`p-2 flex flex-col gap-1`}
                               style={{maxWidth: '400px'}}
                           >
-                            <ConversationEntryWrapper entry={entryObj} />
-                            <span
-                              className={`block text-[10px] text-right mt-1 ${
-                                isAgent ? "text-white/70" : "text-gray-500"
-                              }`}
-                            >
-                              {isCall
-                                ? formatCallTimestamp(entryObj.start_time)
-                                : formatMessageTime(entryObj.create_time)}
-                            </span>
-                            {isAgent && messageId && (
-                              <button
-                                type="button"
-                                className="mt-1 text-[10px] underline text-white/80 hover:text-white"
-                                onClick={() => {
-                                  setDebugMessageId(messageId);
-                                  setDebugLogOpen(true);
-                                }}
-                              >
-                                Debug response
-                              </button>
-                            )}
+                            <div className={`p-2 rounded-lg leading-tight break-words inline-block z-10 ${
+                              isAgent
+                                ? "bg-blue-600 text-white rounded-tl-lg rounded-tr-none"
+                                : "bg-gray-200 text-gray-900 rounded-tr-lg rounded-tl-none"
+                            }`}>
+                              <ConversationEntryWrapper entry={entryObj} />
+
+                              <div className="flex items-center justify-end">
+                                <span
+                                  className={`block text-[10px] text-right mt-1 ${
+                                    isAgent ? "text-white/80" : "text-gray-600"
+                                  }`}
+                                >
+                                  {isCall
+                                    ? formatCallTimestamp(entryObj.start_time)
+                                    : formatMessageTime(entryObj.create_time)}
+                                </span>
+                              </div>
+                            </div>
+
+                              {isAgent && messageId && (
+                                <div className="flex flex-row gap-1 px-3 py-2 pt-3 rounded-b-lg justify-between w-full bg-gray-300/50 text-black/80 -mt-3 z-9">
+                                  <button
+                                    type="button"
+                                    className="text-[10px] underline self-end"
+                                    onClick={() => {
+                                      setDebugMessageId(messageId);
+                                      setDebugLogOpen(true);
+                                    }}
+                                  >
+                                    Debug response
+                                  </button>
+                                {showCosts && costsByMessageId[messageId] && (
+                                  <div
+                                    className={`mt-1 text-[10px] ${
+                                      isAgent ? "text-black/80" : "text-gray-600"
+                                    }`}
+                                  >
+                                    Tokens Input/Output:
+                                    <span className="font-bold">{costsByMessageId[messageId].input_tokens ?? "—"}</span>/
+                                    <span className="font-bold">{costsByMessageId[messageId].output_tokens ?? "—"}</span>,
+                                    <Coins className="w-2 h-2 inline-block" /> Cost: <span className="font-bold">${(costsByMessageId[messageId].cost_usd ?? 0).toFixed(6)}</span>
+                                  </div>
+                                )}
+                              </div>
+                              )}
                             </div>
                           </div>
                         </div>
