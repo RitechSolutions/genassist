@@ -1,4 +1,4 @@
-"""add_llm_analyst_to_agent_and_conversation
+"""add_settings_and_llm_analyst_to_agent_and_conversation
 
 Revision ID: c1d2e3f4a5b6
 Revises: a7b8c9d0e1f2
@@ -16,6 +16,7 @@ revision: str = "c1d2e3f4a5b6"
 down_revision: Union[str, None] = "a7b8c9d0e1f2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+from sqlalchemy.dialects.postgresql import JSONB
 
 
 def upgrade() -> None:
@@ -27,8 +28,13 @@ def upgrade() -> None:
         "conversations",
         sa.Column("finalization_llm_analyst_id", UUID(as_uuid=True), nullable=True),
     )
+    op.add_column(
+        "llm_analyst",
+        sa.Column("settings", JSONB, nullable=True),
+    )
 
 
 def downgrade() -> None:
     op.drop_column("conversations", "finalization_llm_analyst_id")
     op.drop_column("agents", "llm_analyst_id")
+    op.drop_column("llm_analyst", "settings")
