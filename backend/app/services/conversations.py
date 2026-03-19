@@ -323,7 +323,7 @@ class ConversationService:
 
         # Mark as finalized and record which analyst was used
         conversation.status = ConversationStatus.FINALIZED.value
-        conversation.finalization_llm_analyst_id = resolved_analyst_id
+        conversation.finalize_llm_analyst_id = resolved_analyst_id
         saved_conversation = await self.conversation_repo.update_conversation(
                 conversation
                 )

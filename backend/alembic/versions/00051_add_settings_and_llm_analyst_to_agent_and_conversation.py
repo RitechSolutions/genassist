@@ -26,7 +26,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "conversations",
-        sa.Column("finalization_llm_analyst_id", UUID(as_uuid=True), nullable=True),
+        sa.Column("finalize_llm_analyst_id", UUID(as_uuid=True), nullable=True),
     )
     op.add_column(
         "llm_analyst",
@@ -35,6 +35,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("conversations", "finalization_llm_analyst_id")
+    op.drop_column("conversations", "finalize_llm_analyst_id")
     op.drop_column("agents", "llm_analyst_id")
     op.drop_column("llm_analyst", "settings")
