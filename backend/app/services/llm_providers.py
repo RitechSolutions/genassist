@@ -164,32 +164,15 @@ class LlmProviderService:
         cd.pop("masked_api_key", None)
 
         try:
-            import os
-
-            from langchain.chat_models import init_chat_model
             from langchain_core.messages import HumanMessage
 
-            provider = (llm_model_provider or "").lower()
+            from app.modules.workflow.llm.provider import build_chat_model
 
-            if provider == "vllm":
-                provider = "openai"
-                cd["api_key"] = "EMPTY"
-            elif provider == "openrouter":
-                provider = "openai"
-                if "base_url" not in cd:
-                    cd["base_url"] = "https://openrouter.ai/api/v1"
-
-            if provider == "openai" and (llm_model_provider or "").lower() == "openai":
-                os.environ["OPENAI_API_KEY"] = cd["api_key"]
-                if cd.get("organization"):
-                    os.environ["OPENAI_ORG_ID"] = cd["organization"]
-
-            model_kwargs = {
-                "model_provider": provider,
-                **cd,
-            }
-
-            llm = init_chat_model(**model_kwargs)
+            llm = await build_chat_model(
+                provider_name=llm_model_provider,
+                connection_data=cd,
+                model_name=cd.get("model"),
+            )
             await llm.ainvoke([HumanMessage(content="ping")])
             return {"success": True, "message": "Connection successful."}
 
