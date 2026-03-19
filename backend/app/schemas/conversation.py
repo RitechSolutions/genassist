@@ -57,6 +57,7 @@ class ConversationBase(BaseModel):
     duration: Optional[int] = None
     status: Optional[str] = None
     conversation_type: Optional[str] = None
+    finalize_llm_analyst_id: Optional[UUID] = None
 
     model_config = ConfigDict(
         from_attributes = True
