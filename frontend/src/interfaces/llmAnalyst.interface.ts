@@ -16,6 +16,7 @@ export interface LLMProvider {
     llm_provider_id: string;
     llm_provider?: LLMProvider;
     context_enrichments?: string[];
+    settings?: Record<string, any>;
   }
 
   export interface AvailableEnrichment {

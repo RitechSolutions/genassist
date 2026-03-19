@@ -129,6 +129,7 @@ const AGENT_UPDATE_ALLOWED_KEYS = [
   "thinking_phrases",
   "thinking_phrase_delay",
   "workflow_id",
+  "llm_analyst_id",
   "security_settings",
 ] as const;
 

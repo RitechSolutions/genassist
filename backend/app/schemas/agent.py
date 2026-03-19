@@ -38,6 +38,7 @@ class AgentBase(BaseModel):
     model_config = ConfigDict(
         extra='forbid', from_attributes=True)  # shared rules
     workflow_id: Optional[UUID] = None
+    llm_analyst_id: Optional[UUID] = None
 
 
 class AgentCreate(AgentBase):
@@ -56,6 +57,7 @@ class AgentUpdate(BaseModel):
     thinking_phrases: Optional[list[str]] = None
     thinking_phrase_delay: Optional[int] = None
     workflow_id: Optional[UUID] = None
+    llm_analyst_id: Optional[UUID] = None
     security_settings: Optional[AgentSecuritySettingsUpdate] = None
 
     model_config = ConfigDict(extra='ignore', from_attributes=True)
