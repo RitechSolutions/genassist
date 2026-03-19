@@ -42,14 +42,31 @@ def batch_process_files_kb(kb_id: Optional[str] = None):
 
 
 async def batch_process_files_kb_async_with_scope(
-    kb_id: Optional[str] = None
+    kb_id: Optional[str] = None,
+    tenant_id: Optional[str] = None
 ):
-    """Wrapper to run KB batch processing for all tenants"""
+    """
+    Wrapper to run KB batch processing.
+
+    Args:
+        kb_id: Specific KB ID to process.
+        tenant_id: Tenant context for manual sync. If provided with kb_id,
+            processing runs only for that tenant.
+    """
     from app.tasks.base import run_task_with_tenant_support
+    from app.core.tenant_scope import set_tenant_context, clear_tenant_context
+
+    if kb_id and tenant_id:
+        try:
+            set_tenant_context(tenant_id)
+            return await batch_process_files_kb_async(kb_id=kb_id)
+        finally:
+            clear_tenant_context()
+
     return await run_task_with_tenant_support(
         batch_process_files_kb_async,
         "KB batch processing",
-        kb_id=kb_id,
+        kb_id=kb_id
     )
 
 

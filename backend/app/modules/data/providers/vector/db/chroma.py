@@ -156,6 +156,35 @@ class ChromaVectorDB(BaseVectorDB):
             logger.error(f"Failed to delete vectors from ChromaDB: {e}")
             return False
 
+    async def delete_vectors_by_metadata(self, filter_dict: Dict[str, Any]) -> bool:
+        """
+        Delete vectors by metadata filters (ChromaDB implementation)
+        
+        Args:
+            filter_dict: Dictionary of metadata field-value pairs to filter by
+            
+        Returns:
+            Success status
+        """
+        try:
+            if not self.collection:
+                logger.error("Collection not initialized")
+                return False
+
+            if not filter_dict:
+                logger.warning("No metadata filters provided for deletion")
+                return True
+
+            # ChromaDB supports metadata filtering directly
+            await self.collection.delete(where=filter_dict)
+
+            logger.info(f"Deleted vectors from ChromaDB using metadata filters: {filter_dict}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete vectors by metadata from ChromaDB: {e}")
+            return False
+
     async def search(
         self,
         query_vector: List[float],
