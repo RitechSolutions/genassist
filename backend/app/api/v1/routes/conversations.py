@@ -612,7 +612,7 @@ async def add_message_feedback(
     transcript_message_service: TranscriptMessageService = Injected(TranscriptMessageService),
     conversation_service: ConversationService = Injected(ConversationService),
 ):
-    _, conversation_id = await transcript_message_service.add_transcript_message_feedback(
+    _, conversation_id, previous_feedback = await transcript_message_service.add_transcript_message_feedback(
         message_id, transcript_feedback
     )
 
@@ -620,7 +620,7 @@ async def add_message_feedback(
     conversation = await conversation_service.get_conversation_by_id(conversation_id, raise_not_found=True)
 
     # Update conversation thumbs up/down counts based on feedback type
-    increment_feedback(conversation, transcript_feedback)
+    increment_feedback(conversation, transcript_feedback, previous_feedback)
 
     # Persist the updated conversation
     await conversation_service.update_conversation(conversation)
