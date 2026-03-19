@@ -18,6 +18,7 @@ class LlmAnalystModel(Base):
     prompt: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     context_enrichments: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    settings: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     llm_provider = relationship('LlmProvidersModel', back_populates="llm_analysts", foreign_keys=[llm_provider_id],
                                 uselist=False)

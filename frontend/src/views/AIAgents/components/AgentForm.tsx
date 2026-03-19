@@ -9,6 +9,8 @@ import {
   getWelcomeImage,
   deleteWelcomeImage,
 } from "@/services/api";
+import { getAllLLMAnalysts } from "@/services/llmAnalyst";
+import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
@@ -21,6 +23,7 @@ import {
   MessageSquare,
   X,
   Languages,
+  Bot,
 } from "lucide-react";
 import {
   Sheet,
@@ -49,6 +52,7 @@ interface AgentFormData {
   is_active?: boolean;
   workflow_id?: string;
   has_welcome_image?: boolean;
+  llm_analyst_id?: string | null;
 }
 
 interface AgentFormProps {
@@ -184,6 +188,14 @@ const AgentForm: React.FC<AgentFormProps> = ({
     thinking_phrases:
       cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
   });
+
+  const [llmAnalysts, setLlmAnalysts] = useState<LLMAnalyst[]>([]);
+
+  useEffect(() => {
+    getAllLLMAnalysts()
+      .then(setLlmAnalysts)
+      .catch(() => {});
+  }, []);
 
   const [loading, setLoading] = useState<boolean>(false);
   const [success, setSuccess] = useState<boolean>(false);
@@ -479,6 +491,35 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   placeholder="Enter agent description"
                 />
               </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-muted-foreground" />
+                  <Label htmlFor="llm_analyst_id">Conversation Analyst</Label>
+                </div>
+                <select
+                  id="llm_analyst_id"
+                  name="llm_analyst_id"
+                  value={formData.llm_analyst_id ?? ""}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      llm_analyst_id: e.target.value || null,
+                    }))
+                  }
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">Default analyst</option>
+                  {llmAnalysts.map((analyst) => (
+                    <option key={analyst.id} value={analyst.id}>
+                      {analyst.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  The LLM analyst used to analyze conversations from this agent. Defaults to the system analyst if not set.
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label>Welcome Image</Label>
                 <div className="space-y-3">
