@@ -660,6 +660,38 @@ async def add_conversation_feedback(
 
 
 @router.get(
+    "/{conversation_id}/agent-response-logs",
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Conversation.READ)),
+    ],
+)
+async def get_agent_response_logs_by_conversation(
+    conversation_id: UUID,
+    agent_response_log_service: AgentResponseLogService = Injected(AgentResponseLogService),
+):
+    """
+    Return token usage and cost for each agent message in the conversation.
+    Used by the Transcript dialog to display per-message costs when the switch is enabled.
+    """
+    from app.schemas.filter import AgentResponseLogFilter
+
+    logs = await agent_response_log_service.get_logs_by_filter(
+        AgentResponseLogFilter(conversation_id=conversation_id, node_type=None)
+    )
+    return [
+        {
+            "transcript_message_id": str(log.transcript_message_id),
+            "input_tokens": log.input_tokens,
+            "output_tokens": log.output_tokens,
+            "total_tokens": log.total_tokens,
+            "cost_usd": float(log.cost_usd) if log.cost_usd is not None else None,
+        }
+        for log in logs
+    ]
+
+
+@router.get(
     "/message/agent-response-log/{message_id}",
     dependencies=[
         Depends(auth),
@@ -684,6 +716,10 @@ async def get_agent_response_log_by_message(
         "transcript_message_id": str(log_entry.transcript_message_id),
         "raw_response": log_entry.raw_response,
         "logged_at": log_entry.logged_at.isoformat() if log_entry.logged_at else None,
+        "input_tokens": log_entry.input_tokens,
+        "output_tokens": log_entry.output_tokens,
+        "total_tokens": log_entry.total_tokens,
+        "cost_usd": float(log_entry.cost_usd) if log_entry.cost_usd is not None else None,
     }
 
 

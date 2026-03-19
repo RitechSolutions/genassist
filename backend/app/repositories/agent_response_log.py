@@ -24,6 +24,10 @@ class AgentResponseLogRepository:
         conversation_id: UUID,
         transcript_message_id: UUID,
         raw_response: Dict[str, Any],
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        total_tokens: int | None = None,
+        cost_usd: float | None = None,
     ) -> AgentResponseLogModel:
         """
         Create a log entry for a given transcript message with the full agent response.
@@ -32,6 +36,10 @@ class AgentResponseLogRepository:
             conversation_id=conversation_id,
             transcript_message_id=transcript_message_id,
             raw_response=json.dumps(raw_response),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cost_usd=cost_usd,
         )
         self.db.add(entry)
         await self.db.commit()
