@@ -77,8 +77,8 @@ class TranscriptMessageRepository:
             self,
             message_id: UUID,
             transcript_feedback: TranscriptSegmentFeedback,
-            ) -> MessageFeedbackModel:
-        """Add feedback to a message. Message must be provided to avoid redundant queries."""
+            ) -> tuple[MessageFeedbackModel, Optional[str]]:
+        """Add feedback to a message. Returns the feedback model and the previous feedback value (or None if new)."""
         from datetime import timezone, datetime
 
         # Check if user already has feedback
@@ -88,13 +88,14 @@ class TranscriptMessageRepository:
                 )
 
         if existing_feedback:
-            # Update existing feedback
+            # Capture old value before updating
+            previous_feedback = existing_feedback.feedback
             existing_feedback.feedback = transcript_feedback.feedback.value
             existing_feedback.feedback_timestamp = datetime.now(timezone.utc)
             existing_feedback.feedback_message = transcript_feedback.feedback_message
             await self.db.commit()
             await self.db.refresh(existing_feedback)
-            return existing_feedback
+            return existing_feedback, previous_feedback
         else:
             # Create new feedback
             new_feedback = MessageFeedbackModel(
@@ -107,7 +108,7 @@ class TranscriptMessageRepository:
             self.db.add(new_feedback)
             await self.db.commit()
             await self.db.refresh(new_feedback)
-            return new_feedback
+            return new_feedback, None
 
 
     async def get_user_feedback_for_message(
