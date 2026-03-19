@@ -319,9 +319,9 @@ async def seed_data(session: AsyncSession, injector: Injector):
     gpt_speaker_separator_llm_analyst = LlmAnalystModel(
         id=UUID(seed_test_data.llm_analyst_speaker_separator_id),
         name='gpt_speaker_separator_service prompt',
-            llm_provider_id=llm_provider.id,
-            prompt=seed_test_data.speaker_separation_llm_analyst_prompt,
-            is_active=1
+        llm_provider_id=llm_provider.id,
+        prompt=seed_test_data.speaker_separation_llm_analyst_prompt,
+        is_active=1
     )
     # Seed LLM analyst kpi analyzer
     gpt_kpi_analyzer_llm_analyst = LlmAnalystModel(
