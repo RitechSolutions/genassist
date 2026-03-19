@@ -133,23 +133,16 @@ export const getApiUrl = async (): Promise<string> => {
 
 export const getApiUrlString = ensureTrailingSlash(API_URL);
 
-export const getWsUrl = async (): Promise<string> => {
+export const getWsUrl = async (): Promise<string | undefined> => {
   if (!isWsEnabled) {
     return Promise.reject(new Error("WebSocket is disabled (VITE_WS=false)"));
   }
 
-  const websocketVersion = getWsVersion();
-  if (websocketVersion === 1) {
-    const apiUrl = await getApiUrl();
-    const base = apiUrl.replace(/\/$/, "");
-    return base.replace(/^http/, "ws");
-  }
-
-  if (websocketVersion === 2) {
+  if (WEBSOCKET_URL && parseInt(WEBSOCKET_VERSION ?? "1") === 2) {
     return WEBSOCKET_URL;
   }
 
-  return Promise.reject(new Error("Invalid WebSocket version"));
+  return undefined;
 };
 
 export const getWsVersion = (): number => {
