@@ -1,5 +1,8 @@
 import { apiRequest } from "@/config/api";
-import { DataSource } from "@/interfaces/dataSource.interface";
+import {
+  ConnectionDataValue,
+  DataSource,
+} from "@/interfaces/dataSource.interface";
 import { DynamicFormSchema } from "@/interfaces/dynamicFormSchemas.interface";
 import { getAllAppSettings } from "./appSettings";
 
@@ -78,7 +81,7 @@ export const getDataSourceFormSchemas =
 
 export const testConnection = async (
   source_type: string,
-  connection_data: Record<string, string | number | boolean>,
+  connection_data: Record<string, ConnectionDataValue>,
   datasource_id?: string,
 ): Promise<{ success: boolean; message: string }> => {
   const params = datasource_id ? `?datasource_id=${datasource_id}` : "";
