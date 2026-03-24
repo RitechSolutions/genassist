@@ -351,7 +351,8 @@ class ZendeskConnector:
             unique_category_ids = list(dict.fromkeys(category_ids))
             sem = asyncio.Semaphore(10)
 
-            async def fetch_one_category(cid: int) -> List[Dict[str, Any]]:
+            # Fetch articles from one category
+            async def _fetch_one_category(cid: int) -> List[Dict[str, Any]]:
                 start_url = f"{base_url}/categories/{cid}/articles.json"
                 logger.info("Category Id: %s", cid)
                 logger.debug("Fetching articles from category ID", {"category_id": cid})
@@ -359,7 +360,7 @@ class ZendeskConnector:
                     return await self._fetch_articles_paginated(start_url)
 
             batches = await asyncio.gather(
-                *[fetch_one_category(cid) for cid in unique_category_ids]
+                *[_fetch_one_category(cid) for cid in unique_category_ids]
             )
             for batch in batches:
                 for article in batch:

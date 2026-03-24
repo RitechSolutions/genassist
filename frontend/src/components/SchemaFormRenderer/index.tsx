@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Copy, Eraser, X } from "lucide-react";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Badge } from "@/components/badge";
@@ -17,6 +17,8 @@ import {
   ConnectionDataValue,
   DataSourceField,
 } from "@/interfaces/dataSource.interface";
+import toast from "react-hot-toast";
+import { Button } from "../button";
 
 function normalizeTagsValue(
   value: ConnectionDataValue | undefined,
@@ -165,6 +167,38 @@ export function SchemaFormRenderer({
     return connectionData[field.conditional.field] === field.conditional.value;
   };
 
+  const clearButton = (field: DataSourceField) => {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={(e) => {
+          onChange(field.name, "");
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      >
+        <Eraser className="w-4 h-4" />
+      </Button>
+    );
+  };
+
+  const copyButton = (field: DataSourceField, value: ConnectionDataValue) => {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+      >
+        <Copy className="w-4 h-4" onClick={(e) => {
+          navigator.clipboard.writeText(connectionData[field.name] as string);
+          toast.success("Copied to clipboard");
+          e.preventDefault();
+          e.stopPropagation();
+        }} />
+      </Button>
+    );
+  };
+
   const renderField = (field: DataSourceField) => {
     const value = connectionData[field.name] ?? field.default;
 
@@ -200,12 +234,16 @@ export function SchemaFormRenderer({
 
       case "password":
         return (
+          <div className="flex flex-row items-center gap-2">
           <Input
             type="password"
             value={value as string}
             onChange={(e) => onChange(field.name, e.target.value)}
             placeholder={field.label}
           />
+          {clearButton(field)}
+          {/* {copyButton(field, value)} */}
+          </div>
         );
 
       case "boolean":

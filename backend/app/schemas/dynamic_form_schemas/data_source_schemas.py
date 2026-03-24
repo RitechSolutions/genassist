@@ -257,8 +257,8 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 type="text",
                 label="Zendesk Subdomain",
                 required=True,
-                description="Your Zendesk subdomain (e.g., 'yourcompany' for yourcompany.zendesk.com)",
-                placeholder="yourcompany",
+                description="Use Zendesk subdomain (e.g., yourcompany.zendesk.com)",
+                placeholder="yourcompany.zendesk.com",
             ),
             FieldSchema(
                 name="email",
