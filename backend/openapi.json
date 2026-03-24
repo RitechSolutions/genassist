@@ -6280,6 +6280,57 @@
         }
       }
     },
+    "/api/conversations/{conversation_id}/agent-response-logs": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Get Agent Response Logs By Conversation",
+        "description": "Return token usage and cost for each agent message in the conversation.\nUsed by the Transcript dialog to display per-message costs when the switch is enabled.",
+        "operationId": "get_agent_response_logs_by_conversation_api_conversations__conversation_id__agent_response_logs_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/conversations/message/agent-response-log/{message_id}": {
       "get": {
         "tags": [
