@@ -4,7 +4,7 @@ import logging
 import re
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, List, Optional
 from uuid import UUID
 from croniter import croniter
 
@@ -18,6 +18,33 @@ from celery import shared_task
 
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_zendesk_category_ids(conn_data: dict[str, Any]) -> Optional[List[int]]:
+    """Normalize category_id from connection data (legacy single value or list of IDs)."""
+    raw = conn_data.get("category_id")
+    if raw is None or raw == "" or raw == []:
+        return None
+    if isinstance(raw, (int, float)):
+        return [int(raw)]
+    if isinstance(raw, str):
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        if not parts:
+            return None
+        return [int(p) for p in parts]
+    if isinstance(raw, list):
+        out: List[int] = []
+        for item in raw:
+            if item is None or item == "":
+                continue
+            if isinstance(item, (int, float)):
+                out.append(int(item))
+            else:
+                s = str(item).strip()
+                if s:
+                    out.append(int(s))
+        return out or None
+    return None
 
 
 @shared_task
@@ -134,7 +161,7 @@ async def import_zendesk_articles_to_kb_async(
         email = conn_data.get("email")
         api_token = conn_data.get("api_token")
         locale = conn_data.get("locale")  # Optional
-        category_id = conn_data.get("category_id")  # Optional
+        category_ids = _parse_zendesk_category_ids(conn_data)
         section_id = conn_data.get("section_id")  # Optional
 
         if not subdomain or not email or not api_token:
@@ -151,7 +178,7 @@ async def import_zendesk_articles_to_kb_async(
 
             fetched_articles = await zendesk_connector.fetch_articles(
                 locale=locale,
-                category_id=category_id,
+                category_ids=category_ids,
                 section_id=section_id,
             )
 
