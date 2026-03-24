@@ -191,8 +191,9 @@ class DataSourceService:
         cd = dict(connection_data or {})
 
         if datasource_id:
-            stored_raw = await self.repository.get_by_id(datasource_id)
-            raw_conn = dict((stored_raw.connection_data if stored_raw else None) or {})
+            # stored_raw = await self.repository.get_by_id(datasource_id)
+            # raw_conn = dict((stored_raw.connection_data if stored_raw else None) or {})
+            raw_conn = dict(connection_data or {})
             decrypted_conn = await self.decrypt_connection_data_fields(dict(raw_conn))
 
             base = dict(decrypted_conn)

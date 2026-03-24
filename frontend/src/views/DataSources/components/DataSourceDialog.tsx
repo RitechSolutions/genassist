@@ -29,8 +29,9 @@ import { Loader2 } from "lucide-react";
 import { ConnectionTestPanel } from "@/components/ConnectionTestPanel";
 import type { ConnectionStatus } from "@/interfaces/connectionStatus.interface";
 import {
+  ConnectionDataValue,
   DataSource,
-  DataSourceConfig,
+  DataSourceField,
 } from "@/interfaces/dataSource.interface";
 import { useQuery } from "@tanstack/react-query";
 import { GmailConnection } from "./GmailConnection";
@@ -59,7 +60,7 @@ export function DataSourceDialog({
   const [name, setName] = useState("");
   const [sourceType, setSourceType] = useState("");
   const [connectionData, setConnectionData] = useState<
-    Record<string, string | number | boolean>
+    Record<string, ConnectionDataValue>
   >({});
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -70,9 +71,10 @@ export function DataSourceDialog({
   >();
   const [isTesting, setIsTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<ConnectionStatus | null>(null);
-  const [testedConnectionData, setTestedConnectionData] = useState<Record<string, string | number | boolean> | null>(
-    null
-  );
+  const [testedConnectionData, setTestedConnectionData] = useState<Record<
+    string,
+    ConnectionDataValue
+  > | null>(null);
 
   const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["dataSourceSchemas"],
@@ -149,10 +151,10 @@ export function DataSourceDialog({
 
   const getSchemaDefaults = (
     type: string,
-  ): Record<string, string | number | boolean> => {
+  ): Record<string, ConnectionDataValue> => {
     const schema = dataSourceSchemas[type];
     if (!schema) return {};
-    const defaults: Record<string, string | number | boolean> = {};
+    const defaults: Record<string, ConnectionDataValue> = {};
     for (const field of schema.fields) {
       if (field.default !== undefined && field.default !== null) {
         defaults[field.name] = field.default;
@@ -163,7 +165,7 @@ export function DataSourceDialog({
 
   const handleConnectionDataChange = (
     fieldName: string,
-    value: string | number | boolean,
+    value: ConnectionDataValue,
   ) => {
     setConnectionData((prev) => ({ ...prev, [fieldName]: value }));
   };
@@ -245,14 +247,23 @@ export function DataSourceDialog({
         );
       };
 
+      const isConnectionValueEmpty = (
+        field: DataSourceField,
+        v: ConnectionDataValue | undefined,
+      ): boolean => {
+        if (v === undefined || v === null || v === "") return true;
+        if (field.type === "tags" && Array.isArray(v) && v.length === 0) {
+          return true;
+        }
+        return false;
+      };
+
       const schemaMissing = schema.fields
         .filter(
           (field) =>
             field.required &&
             isFieldVisible(field) &&
-            (connectionData[field.name] === undefined ||
-              connectionData[field.name] === null ||
-              connectionData[field.name] === ""),
+            isConnectionValueEmpty(field, connectionData[field.name]),
         )
         .map((field) => field.label);
 
@@ -399,9 +410,9 @@ export function DataSourceDialog({
                 )}
 
                 {/* Required fields */}
-                {!isOAuthType && schema && (
+                {!isOAuthType && schema?.fields && (
                   <SchemaFormRenderer
-                    schema={schema}
+                    schema={{ fields: schema.fields }}
                     connectionData={connectionData}
                     onChange={handleConnectionDataChange}
                     showAdvanced={false}
@@ -426,7 +437,7 @@ export function DataSourceDialog({
                 {/* Advanced fields */}
                 {!isOAuthType && showAdvanced && schema?.fields && (
                   <SchemaFormRenderer
-                    schema={schema as DataSourceConfig}
+                    schema={{ fields: schema.fields }}
                     connectionData={connectionData}
                     onChange={handleConnectionDataChange}
                     showAdvanced={true}
