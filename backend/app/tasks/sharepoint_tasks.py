@@ -72,9 +72,9 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
     if kb_id:
         kb_list = [await kb_service.get_by_id(kb_id)]
     else:
-        kb_list = await kb_service.get_all()
+        kb_list = [kb for kb in await kb_service.get_all(sync_active=True) if kb.sync_source_id]
         if not kb_list:
-            logger.info("No knowledge bases found for this tenant, skipping SharePoint import")
+            logger.info("No active knowledge bases with sync sources found for this tenant, skipping SharePoint import")
             return None
 
     processed_ds = 0

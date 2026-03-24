@@ -1,13 +1,13 @@
 import asyncio
 import logging
 from datetime import datetime
+
 from celery import shared_task
 
 from app.core.utils.date_time_utils import utc_now
+from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
 from app.dependencies.injector import injector
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
-from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
-
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +40,6 @@ async def sync_active_fine_tuning_jobs_async():
     # Get all active jobs from database
     active_jobs = await service.repository.get_active_jobs()
 
-    if not active_jobs:
-        logger.info("No active fine-tuning jobs found for this tenant, skipping")
-        return None
 
     logger.info(f"Found {len(active_jobs)} active fine-tuning jobs to sync")
 

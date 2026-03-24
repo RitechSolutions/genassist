@@ -4,16 +4,17 @@ import logging
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
+
+from celery import shared_task
 from croniter import croniter
-from app.dependencies.injector import injector
+
 from app.core.utils.s3_utils import S3Client
+from app.dependencies.injector import injector
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.data.utils import FileTextExtractor
 from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.datasources import DataSourceService
-from celery import shared_task
-
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +57,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
     if kb_id:
         kbList = [await kb_service.get_by_id(kb_id)]
     else:
-        all_kbs = await kb_service.get_all()
-        kbList = [kb for kb in all_kbs if kb.sync_active and kb.sync_source_id]
-        if not kbList:
-            logger.info("No active knowledge bases with sync sources found for this tenant, skipping S3 import")
-            return None
+        kbList = [kb for kb in await kb_service.get_all(sync_active=True) if kb.sync_source_id]
 
     processed_ds = 0
     files_added_tot = 0
@@ -71,11 +68,6 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
     for kb in kbList:
         logger.info(f"Processing knowledge base {kb.name}")
 
-        if kb.sync_active == 0 or not kb.sync_source_id:
-            logger.info(
-                f"Knowledge base {kb.id} is not active or does not have a sync source"
-            )
-            continue
 
         ds = await injector.get(DataSourceService).get_by_id(kb.sync_source_id, True)
         if not ds:
