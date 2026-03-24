@@ -1,21 +1,20 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
+from io import BytesIO
 from typing import Optional
 
 from celery import shared_task
-from io import BytesIO
-
-from app.dependencies.injector import injector
-from app.services.datasources import DataSourceService
-from app.services.audio import AudioService
-from app.services.app_settings import AppSettingsService
-from app.schemas.recording import RecordingCreate
-from app.db.seed.seed_data_config import SeedTestData
 from fastapi import UploadFile
 
-from app.services.smb_share_service import SMBShareFSService
+from app.db.seed.seed_data_config import SeedTestData
+from app.dependencies.injector import injector
+from app.schemas.recording import RecordingCreate
+from app.services.app_settings import AppSettingsService
+from app.services.audio import AudioService
+from app.services.datasources import DataSourceService
 from app.services.GoogleTranscribeService import GoogleTranscribeService
+from app.services.smb_share_service import SMBShareFSService
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +52,9 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
     )
 
     if not google_cloud_json_setting:
-        logger.info("Google Cloud setting 'google_cloud_json' not found, skipping SMB transcription")
-        return None
+        raise ValueError("Google Cloud setting 'google_cloud_json' not found")
     if not google_cloud_bucket_setting:
-        logger.info("Google Cloud setting 'google_cloud_bucket' not found, skipping SMB transcription")
-        return None
+        raise ValueError("Google Cloud setting 'google_cloud_bucket' not found")
 
     # Extract values from the settings - check for "value" key first, otherwise get first value
     google_cloud_json = None
@@ -73,13 +70,11 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
         google_cloud_bucket = list(google_cloud_bucket_setting.values.values())[0]
 
     if not google_cloud_json:
-        logger.info("Google Cloud setting 'google_cloud_json' value is empty, skipping SMB transcription")
-        return None
+        raise ValueError("Google Cloud setting 'google_cloud_json' value is empty")
     if not google_cloud_bucket:
-        logger.info("Google Cloud setting 'google_cloud_bucket' value is empty, skipping SMB transcription")
-        return None
+        raise ValueError("Google Cloud setting 'google_cloud_bucket' value is empty")
 
-    logger.info(f"google_cloud_json key and google_cloud_bucket is loaded")
+    logger.info("google_cloud_json key and google_cloud_bucket is loaded")
 
     gts = GoogleTranscribeService(
         sst_region="us-central1",
