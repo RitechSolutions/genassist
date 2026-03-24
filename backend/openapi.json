@@ -6839,6 +6839,90 @@
         }
       }
     },
+    "/api/llm-cost-rates": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "List Cost Rates",
+        "operationId": "list_cost_rates_api_llm_cost_rates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LlmCostRateRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Cost Rates Api Llm Cost Rates Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/llm-cost-rates/import": {
+      "post": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "Import Cost Rates Csv",
+        "operationId": "import_cost_rates_csv_api_llm_cost_rates_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_cost_rates_csv_api_llm_cost_rates_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmCostRateImportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/llm-analyst/available-enrichments": {
       "get": {
         "tags": [
@@ -18349,6 +18433,20 @@
         ],
         "title": "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
       },
+      "Body_import_cost_rates_csv_api_llm_cost_rates_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_cost_rates_csv_api_llm_cost_rates_import_post"
+      },
       "Body_process_files_api_genagent_knowledge_process_files_post": {
         "properties": {
           "files": {
@@ -21866,6 +21964,73 @@
         },
         "type": "object",
         "title": "LlmAnalystUpdate"
+      },
+      "LlmCostRateImportResult": {
+        "properties": {
+          "inserted": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Inserted"
+          },
+          "updated": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Updated"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "inserted",
+          "updated"
+        ],
+        "title": "LlmCostRateImportResult"
+      },
+      "LlmCostRateRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "provider_key": {
+            "type": "string",
+            "title": "Provider Key"
+          },
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "input_per_1k": {
+            "type": "number",
+            "title": "Input Per 1K"
+          },
+          "output_per_1k": {
+            "type": "number",
+            "title": "Output Per 1K"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "provider_key",
+          "model_key",
+          "input_per_1k",
+          "output_per_1k",
+          "updated_at"
+        ],
+        "title": "LlmCostRateRead"
       },
       "LlmProviderBase": {
         "properties": {
