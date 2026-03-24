@@ -6721,6 +6721,73 @@
         }
       }
     },
+    "/api/llm-providers/test-connection": {
+      "post": {
+        "tags": [
+          "v1",
+          "LlmProviders"
+        ],
+        "summary": "Test Connection",
+        "operationId": "test_connection_api_llm_providers_test_connection_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmProviderBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/llm-analyst/available-enrichments": {
       "get": {
         "tags": [
@@ -21749,6 +21816,92 @@
         "type": "object",
         "title": "LlmAnalystUpdate"
       },
+      "LlmProviderBase": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "llm_model_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model Provider"
+          },
+          "llm_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model"
+          },
+          "connection_data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Data",
+            "description": "Connection parameters like api key."
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "default": 1
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "LlmProviderBase"
+      },
       "LlmProviderCreate": {
         "properties": {
           "name": {
@@ -21766,8 +21919,17 @@
           "connection_data": {
             "additionalProperties": true,
             "type": "object",
-            "title": "Connection Data",
-            "description": "Connection parameters like api key."
+            "title": "Connection Data"
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [
@@ -21806,22 +21968,60 @@
       "LlmProviderRead": {
         "properties": {
           "name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Name"
           },
           "llm_model_provider": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Llm Model Provider"
           },
           "llm_model": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Llm Model"
           },
           "connection_data": {
-            "additionalProperties": true,
-            "type": "object",
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Connection Data",
             "description": "Connection parameters like api key."
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [
@@ -21855,10 +22055,6 @@
         },
         "type": "object",
         "required": [
-          "name",
-          "llm_model_provider",
-          "llm_model",
-          "connection_data",
           "id"
         ],
         "title": "LlmProviderRead"
@@ -21908,18 +22104,18 @@
                 "type": "null"
               }
             ],
-            "title": "Connection Data"
+            "title": "Connection Data",
+            "description": "Connection parameters like api key."
           },
-          "is_default": {
+          "connection_status": {
             "anyOf": [
               {
-                "type": "integer"
+                "$ref": "#/components/schemas/ConnectionStatus"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Is Default"
+            ]
           },
           "is_active": {
             "anyOf": [
@@ -21930,7 +22126,20 @@
                 "type": "null"
               }
             ],
-            "title": "Is Active"
+            "title": "Is Active",
+            "default": 1
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default",
+            "default": 0
           }
         },
         "type": "object",
