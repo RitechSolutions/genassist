@@ -413,13 +413,14 @@ async def seed_data(session: AsyncSession, injector: Injector):
     db_kb = await seed_knowledge_base_for_sql_database(session, admin.id, injector)
     # s3_kb = await seed_knowledge_base_for_s3(session, admin.id, s3_data_source, injector)
 
-    # Seed workflow builder KB
+    # Seed workflow builder KBs
     workflow_builder_kb = await seed_workflow_builder_kb(session, admin.id, injector)
+    workflow_examples_kb = await seed_workflow_examples_kb(session, admin.id, injector)
 
     # Seed agents
     await seed_demo_agent(session, agent_role, injector, [product_docs], admin.id)
     await seed_gen_agent(session, agent_role, injector, [product_docs, gen_assist_kb, db_kb], admin.id)
-    await seed_workflow_builder_agent(session, agent_role, injector, [workflow_builder_kb], admin.id)
+    await seed_workflow_builder_agent(session, agent_role, injector, workflow_builder_kb, workflow_examples_kb, admin.id)
 
     # Seed common workflows
     # await seed_zendesk_agent(session, agent_role, injector, [product_docs, gen_assist_kb, db_kb], admin.id)
@@ -1366,27 +1367,30 @@ async def seed_connection_data_for_slack(
         logger.error(f"Failed to seed Slack connection data: {e}")
 
 
-async def seed_workflow_builder_kb(
+async def _seed_internal_kb(
     session: AsyncSession,
-    created_by: UUID,
     injector: Injector,
+    *,
+    filename: str,
+    name: str,
+    description: str,
+    fallback_content: str,
 ) -> KBRead:
-    """Seed the Workflow Node Specifications knowledge base."""
+    """Create a single internal (text-based, no-RAG) knowledge base from a seed file."""
     kb_service: KnowledgeBaseService = injector.get(KnowledgeBaseService)
 
-    # Read node_specs.md
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    specs_path = Path(dir_path) / "knowledge" / "node_specs.md"
+    path = Path(dir_path) / "knowledge" / filename
 
-    if specs_path.exists():
-        content = specs_path.read_text(encoding="utf-8")
+    if path.exists():
+        content = path.read_text(encoding="utf-8")
     else:
-        content = "Node specifications not found. Please regenerate node_specs.md."
-        logger.warning(f"node_specs.md not found at {specs_path}")
+        content = fallback_content
+        logger.warning(f"{filename} not found at {path}")
 
     kb_item = KBCreate(
-        name="Workflow Node Specifications",
-        description="Comprehensive documentation of all GenAssist workflow node types, their configurations, handlers, and usage patterns.",
+        name=name,
+        description=description,
         type="text",
         source="internal",
         content=content,
@@ -1397,14 +1401,49 @@ async def seed_workflow_builder_kb(
         rag_config={
             "enabled": False,
             "vector_db": {"enabled": False},
-            "light_rag": {"enabled": False}
-        }
+            "light_rag": {"enabled": False},
+        },
     )
 
     res = await kb_service.create(kb_item)
     await session.commit()
+    return res
 
+
+async def seed_workflow_builder_kb(
+    session: AsyncSession,
+    created_by: UUID,
+    injector: Injector,
+) -> KBRead:
+    """Seed the Workflow Node Specifications knowledge base."""
+    res = await _seed_internal_kb(
+        session, injector,
+        filename="node_specs.md",
+        name="Workflow Node Specifications",
+        description="Comprehensive documentation of all GenAssist workflow node types, their configurations, handlers, and usage patterns.",
+        fallback_content="Node specifications not found. Please regenerate node_specs.md.",
+    )
     logger.debug("Workflow Node Specifications KB seeding complete.")
+    return res
+
+
+async def seed_workflow_examples_kb(
+    session: AsyncSession,
+    created_by: UUID,
+    injector: Injector,
+) -> KBRead:
+    """Seed the Workflow Examples knowledge base."""
+    res = await _seed_internal_kb(
+        session, injector,
+        filename="workflow_examples.md",
+        name="Workflow Examples",
+        description="Curated correct workflow examples for common use cases including chatbots, KB integrations, routing, guardrails, and multi-tool agents.",
+        fallback_content="Workflow examples not found.",
+    )
+    logger.debug("Workflow Examples KB seeding complete.")
+    return res
+
+    logger.debug("Workflow Examples KB seeding complete.")
     return res
 
 
@@ -1412,7 +1451,8 @@ async def seed_workflow_builder_agent(
     session: AsyncSession,
     agent_role: RoleModel,
     injector: Injector,
-    kbList: List[KBRead],
+    specs_kb: KBRead,
+    examples_kb: KBRead,
     owner_user_id: UUID,
 ):
     """Seed the Workflow Builder Agent with its workflow."""
@@ -1423,18 +1463,12 @@ async def seed_workflow_builder_agent(
     file_path = Path(filename)
     json_str = file_path.read_text()
 
-    # Replace KB_ID_LIST placeholder with actual KB IDs
-    json_str = json_str.replace(
-        "KB_ID_LIST",
-        ",".join(["\"" + str(kb.id) + "\"" for kb in kbList]),
-    )
+    # Replace KB placeholders with actual KB IDs
+    json_str = json_str.replace("KB_ID_LIST", f'"{specs_kb.id}"')
+    json_str = json_str.replace("WORKFLOW_EXAMPLES_KB_ID", f'"{examples_kb.id}"')
 
-    # Replace LLM_PROVIDER_ID placeholder - use default provider if available
-    # This will need to be configured by the user if no default exists
-    json_str = json_str.replace(
-        "\"LLM_PROVIDER_ID\"",
-        "null",
-    )
+    # Replace LLM_PROVIDER_ID placeholder — user configures this after seeding
+    json_str = json_str.replace('"LLM_PROVIDER_ID"', "null")
 
     sample_wf = json.loads(json_str)
 

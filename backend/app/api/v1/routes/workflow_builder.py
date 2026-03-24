@@ -104,11 +104,8 @@ async def create_workflow_from_builder(
 
     await workflow_service.update(workflow_id=workflow_id, data=workflow_record)
 
-    # Build redirect URL
-    url = request.url._url.replace(
-        "/api/workflow-builder/config/from-builder",
-        f"/ai-agents/workflow/{agent_id}",
-    )
+    # Build redirect URL using the public base_url (avoids private ._url attribute)
+    url = str(request.base_url).rstrip("/") + f"/ai-agents/workflow/{agent_id}"
 
     return {
         "id": str(workflow_id),
