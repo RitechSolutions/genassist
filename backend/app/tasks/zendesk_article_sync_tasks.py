@@ -2,10 +2,11 @@ import asyncio
 import json
 import logging
 import re
-
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
+
+from celery import shared_task
 from croniter import croniter
 
 from app.dependencies.injector import injector
@@ -14,8 +15,6 @@ from app.modules.integration.zendesk import ZendeskConnector
 from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.datasources import DataSourceService
-from celery import shared_task
-
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +68,6 @@ async def import_zendesk_articles_to_kb_async(
 
     if not kb_id:
         kbList = await kb_service.get_all(kb_type="zendesk")
-        if not kbList:
-            logger.info("No Zendesk knowledge bases found for this tenant, skipping")
-            return None
     else:
         kbList = [await kb_service.get_by_id(kb_id)]
 
