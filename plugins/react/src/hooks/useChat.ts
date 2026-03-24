@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { ChatService } from "../services/chatService";
+import { useChatWebSocket } from "./useChatWebSocket";
 import {
   ChatMessage,
   Attachment,
@@ -9,6 +10,7 @@ import {
 
 export interface UseChatProps {
   baseUrl: string;
+  websocketUrl?: string;
   apiKey: string;
   tenant?: string | undefined;
   metadata?: Record<string, any>;
@@ -48,6 +50,7 @@ function isNetworkOrServerError(error: any): boolean {
 
 export const useChat = ({
   baseUrl,
+  websocketUrl,
   apiKey,
   tenant,
   metadata,
@@ -73,6 +76,7 @@ export const useChat = ({
   const [isAgentTyping, setIsAgentTyping] = useState<boolean>(false);
   const chatServiceRef = useRef<ChatService | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [guestToken, setGuestToken] = useState<string | null>(null);
   const [possibleQueries, setPossibleQueries] = useState<string[]>([]);
   const [welcomeTitle, setWelcomeTitle] = useState<string | null>(null);
   const [welcomeImageUrl, setWelcomeImageUrl] = useState<string | null>(null);
@@ -88,6 +92,25 @@ export const useChat = ({
   >({});
   const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
+
+  // Unified WebSocket connection (reconnect, keep-alive)
+  const onWsMessage = useCallback((data: Record<string, unknown>) => {
+    chatServiceRef.current?.processWebSocketMessage(data);
+  }, []);
+
+  useChatWebSocket({
+    baseUrl,
+    websocketUrl,
+    apiKey,
+    tenant,
+    conversationId,
+    guestToken,
+    useWs: useWs ?? true,
+    language,
+    onMessage: onWsMessage,
+    onConnectionState: setConnectionState,
+    reconnect: true,
+  });
 
   // Scoped messages key for apiKey, conversatioId
   const buildMessagesKey = useCallback(
@@ -123,6 +146,7 @@ export const useChat = ({
   // Reset conversation state to initial (e.g. after token expiration)
   const resetToInitialState = useCallback(() => {
     setConversationId(null);
+    setGuestToken(null);
     setIsFinalized(false);
     setIsTakenOver(false);
     setConnectionState("disconnected");
@@ -154,6 +178,7 @@ export const useChat = ({
   );
   const metadataRef = useRef<string>(metadataString);
   const prevBaseUrlRef = useRef<string>(baseUrl);
+  const prevWebsocketUrlRef = useRef<string | undefined>(websocketUrl);
   const prevApiKeyRef = useRef<string>(apiKey);
   const prevTenantRef = useRef<string | undefined>(tenant);
   const prevUseWsRef = useRef<boolean>(useWs);
@@ -195,6 +220,7 @@ export const useChat = ({
     let cancelled = false;
     const metadataChanged = metadataRef.current !== metadataString;
     const baseUrlChanged = prevBaseUrlRef.current !== baseUrl;
+    const websocketUrlChanged = prevWebsocketUrlRef.current !== websocketUrl;
     const apiKeyChanged = prevApiKeyRef.current !== apiKey;
     const tenantChanged = prevTenantRef.current !== tenant;
     const useWsChanged = prevUseWsRef.current !== useWs;
@@ -203,6 +229,7 @@ export const useChat = ({
     const needsReinit =
       !chatServiceRef.current ||
       baseUrlChanged ||
+      websocketUrlChanged ||
       apiKeyChanged ||
       tenantChanged ||
       useWsChanged;
@@ -210,6 +237,7 @@ export const useChat = ({
     if (needsReinit) {
       // Update refs
       if (baseUrlChanged) prevBaseUrlRef.current = baseUrl;
+      if (websocketUrlChanged) prevWebsocketUrlRef.current = websocketUrl;
       if (apiKeyChanged) prevApiKeyRef.current = apiKey;
       if (tenantChanged) prevTenantRef.current = tenant;
       if (useWsChanged) prevUseWsRef.current = useWs;
@@ -225,6 +253,7 @@ export const useChat = ({
 
       chatServiceRef.current = new ChatService(
         baseUrl,
+        websocketUrl,
         apiKey,
         metadata,
         tenant,
@@ -318,17 +347,15 @@ export const useChat = ({
         }
       })();
 
-      // Check for a saved conversation and connect to it
+      // Check for a saved conversation
       const convId = chatServiceRef.current.getConversationId();
       if (convId) {
         setConversationId(convId);
+        setGuestToken(chatServiceRef.current.getGuestToken());
         if (chatServiceRef.current.isConversationFinalized()) {
           setIsFinalized(true);
-        } else {
-          chatServiceRef.current.connectWebSocket();
-          if (!useWs) {
-            setConnectionState("connected");
-          }
+        } else if (!useWs) {
+          setConnectionState("connected");
         }
       }
       // Pull initial static data
@@ -396,6 +423,7 @@ export const useChat = ({
     };
   }, [
     baseUrl,
+    websocketUrl,
     apiKey,
     tenant,
     metadataString,
@@ -649,11 +677,14 @@ export const useChat = ({
       try {
         // Reset the conversation in the chat service
         chatServiceRef.current.resetChatConversation();
+        setConversationId(null);
+        setGuestToken(null);
 
         // Start a new conversation
         const convId =
           await chatServiceRef.current.startConversation(reCaptchaToken);
         setConversationId(convId);
+        setGuestToken(chatServiceRef.current.getGuestToken());
         setConnectionState("connected");
 
         // Get possible queries from API response
@@ -857,10 +888,13 @@ export const useChat = ({
         setIsTakenOver(false);
         setIsAgentTyping(false);
         chatServiceRef.current.resetChatConversation();
+        setConversationId(null);
+        setGuestToken(null);
 
         const convId =
           await chatServiceRef.current.startConversation(reCaptchaToken);
         setConversationId(convId);
+        setGuestToken(chatServiceRef.current.getGuestToken());
         setConnectionState("connected");
 
         if (chatServiceRef.current.getPossibleQueries) {
@@ -960,6 +994,7 @@ export const useChat = ({
     startConversation,
     connectionState,
     conversationId,
+    guestToken,
     possibleQueries,
     isTakenOver,
     isFinalized,

@@ -25,6 +25,7 @@ import { GoogleReCaptcha, GoogleReCaptchaProvider } from 'react-google-recaptcha
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
+  websocketUrl,
   apiKey,
   tenant,
   metadata,
@@ -154,6 +155,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     startConversation,
     connectionState,
     conversationId,
+    guestToken,
     possibleQueries,
     isFinalized,
     isAgentTyping,
@@ -167,6 +169,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     thinkingDelayMs,
   } = useChat({
     baseUrl,
+    websocketUrl,
     apiKey,
     tenant,
     metadata: metadataWithLanguage,
@@ -232,8 +235,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const hasUserMessages = messages.some(message => message.speaker === 'customer');
 
   useEffect(() => {
-    audioService.current = new AudioService({ baseUrl, apiKey });
-  }, [baseUrl, apiKey]);
+    audioService.current = new AudioService({ baseUrl, websocketUrl, apiKey });
+  }, [baseUrl, websocketUrl, apiKey]);
+
+  useEffect(() => {
+    audioService.current?.setGuestToken(guestToken ?? null);
+  }, [guestToken]);
 
   useLayoutEffect(() => {
     if (!messages.length) return;
@@ -1709,9 +1716,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     style={attachButtonStyle}
                     title="Attach"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isAgentTyping}
                   >
-                    <Paperclip size={22} color={isAgentTyping ? "#b0b0b0" : "#757575"} />
+                    <Paperclip size={22} color="#757575" />
                   </button>
                   <input
                     type="file"
@@ -1738,7 +1744,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                   }
                 }}
                 placeholder={inputPlaceholder}
-                disabled={!conversationId || isFinalized || isAgentTyping || hasPendingForm}
+                disabled={!conversationId || isFinalized || hasPendingForm}
                 rows={1}
               />
               <div style={rightActionContainerStyle}>
@@ -1749,7 +1755,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                     baseUrl={baseUrl}
                     apiKey={apiKey}
                     theme={theme}
-                    disabled={isAgentTyping}
                   />
                 ) : (
                   <button

@@ -165,18 +165,14 @@ class VectorProvider(BaseDataProvider):
                 if not await self.initialize():
                     return False
 
-            # Get all chunk IDs for this document
-            all_ids = await self.vector_db.get_all_ids({"doc_id": doc_id})
+            # Use conditional delete by metadata for efficiency
+            # This avoids the parameter limit issue with large documents
+            filter_dict = {"doc_id": doc_id}
+            success = await self.vector_db.delete_vectors_by_metadata(filter_dict)
 
-            if all_ids:
-                success = await self.vector_db.delete_vectors(all_ids)
-                if success:
-                    logger.info(
-                        f"Deleted document {doc_id} with {len(all_ids)} chunks")
-                return success
-            else:
-                logger.info(f"No chunks found for document {doc_id}")
-                return True
+            if success:
+                logger.info(f"Deleted document {doc_id} from vector store")
+            return success
 
         except Exception as e:
             logger.error(f"Failed to delete document {doc_id}: {e}")

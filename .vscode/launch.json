@@ -20,7 +20,18 @@
             "program": "${workspaceFolder}/backend/run.py",
             "console": "integratedTerminal",
             "envFile": "${workspaceFolder}/backend/.env",
-            "pythonPath": "${workspaceFolder}/backend/genassist_env/bin/python",
+            "pythonPath": "${workspaceFolder}/genassist_env/bin/python",
+            "justMyCode": true
+        },
+        {
+            "name": "GenAssist Websocket Debug",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/websocket",
+            "program": "${workspaceFolder}/websocket/run.py",
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/websocket/.env",
+            "pythonPath": "${workspaceFolder}/genassist_env/bin/python",
             "justMyCode": true
         }
     ]

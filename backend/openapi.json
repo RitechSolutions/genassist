@@ -6721,6 +6721,73 @@
         }
       }
     },
+    "/api/llm-providers/test-connection": {
+      "post": {
+        "tags": [
+          "v1",
+          "LlmProviders"
+        ],
+        "summary": "Test Connection",
+        "operationId": "test_connection_api_llm_providers_test_connection_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmProviderBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/llm-analyst/available-enrichments": {
       "get": {
         "tags": [
@@ -16553,6 +16620,132 @@
           }
         }
       }
+    },
+    "/api/internal/ws/verify-token": {
+      "post": {
+        "tags": [
+          "v1",
+          "Internal"
+        ],
+        "summary": "Verify a WebSocket token (internal use only)",
+        "description": "Internal endpoint called by the websocket to verify a token once\non initial WebSocket connection. Returns user info and permissions.",
+        "operationId": "verify_ws_token_api_internal_ws_verify_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agents/{agent_id}/config": {
+      "get": {
+        "tags": [
+          "v1",
+          "Internal"
+        ],
+        "summary": "Get agent configuration (internal use only)",
+        "description": "Internal endpoint called by the websocket to fetch agent configuration\nfor media-stream/Twilio endpoints.",
+        "operationId": "get_agent_config_api_internal_agents__agent_id__config_get",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/agents/execute": {
+      "post": {
+        "tags": [
+          "v1",
+          "Internal"
+        ],
+        "summary": "Execute agent with text input (internal use only)",
+        "description": "Internal endpoint called by the websocket for Twilio media-stream.\nPasses transcribed text to the agent and returns the response.",
+        "operationId": "execute_agent_api_internal_agents_execute_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -16808,6 +17001,18 @@
             ],
             "title": "Workflow Id"
           },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
+          },
           "id": {
             "anyOf": [
               {
@@ -16978,6 +17183,29 @@
         ],
         "title": "AgentDailyStatsListResponse"
       },
+      "AgentExecuteRequest": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "thread_id",
+          "text"
+        ],
+        "title": "AgentExecuteRequest"
+      },
       "AgentListItem": {
         "properties": {
           "id": {
@@ -17120,6 +17348,18 @@
             "type": "string",
             "format": "uuid",
             "title": "Workflow Id"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
           },
           "id": {
             "type": "string",
@@ -17848,6 +18088,18 @@
               }
             ],
             "title": "Workflow Id"
+          },
+          "llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Analyst Id"
           },
           "security_settings": {
             "anyOf": [
@@ -19317,6 +19569,18 @@
               }
             ],
             "title": "Conversation Type"
+          },
+          "finalize_llm_analyst_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalize Llm Analyst Id"
           },
           "id": {
             "type": "string",
@@ -22039,6 +22303,18 @@
             ],
             "title": "Context Enrichments"
           },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -22123,6 +22399,18 @@
               }
             ],
             "title": "Context Enrichments"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           }
         },
         "type": "object",
@@ -22194,10 +22482,108 @@
               }
             ],
             "title": "Context Enrichments"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
           }
         },
         "type": "object",
         "title": "LlmAnalystUpdate"
+      },
+      "LlmProviderBase": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "llm_model_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model Provider"
+          },
+          "llm_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model"
+          },
+          "connection_data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Data",
+            "description": "Connection parameters like api key."
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "default": 1
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "LlmProviderBase"
       },
       "LlmProviderCreate": {
         "properties": {
@@ -22216,8 +22602,17 @@
           "connection_data": {
             "additionalProperties": true,
             "type": "object",
-            "title": "Connection Data",
-            "description": "Connection parameters like api key."
+            "title": "Connection Data"
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [
@@ -22256,22 +22651,60 @@
       "LlmProviderRead": {
         "properties": {
           "name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Name"
           },
           "llm_model_provider": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Llm Model Provider"
           },
           "llm_model": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Llm Model"
           },
           "connection_data": {
-            "additionalProperties": true,
-            "type": "object",
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Connection Data",
             "description": "Connection parameters like api key."
+          },
+          "connection_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [
@@ -22305,10 +22738,6 @@
         },
         "type": "object",
         "required": [
-          "name",
-          "llm_model_provider",
-          "llm_model",
-          "connection_data",
           "id"
         ],
         "title": "LlmProviderRead"
@@ -22358,18 +22787,18 @@
                 "type": "null"
               }
             ],
-            "title": "Connection Data"
+            "title": "Connection Data",
+            "description": "Connection parameters like api key."
           },
-          "is_default": {
+          "connection_status": {
             "anyOf": [
               {
-                "type": "integer"
+                "$ref": "#/components/schemas/ConnectionStatus"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Is Default"
+            ]
           },
           "is_active": {
             "anyOf": [
@@ -22380,7 +22809,20 @@
                 "type": "null"
               }
             ],
-            "title": "Is Active"
+            "title": "Is Active",
+            "default": 1
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default",
+            "default": 0
           }
         },
         "type": "object",
@@ -26477,6 +26919,84 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VerifyTokenRequest": {
+        "properties": {
+          "access_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Token"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "required_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Required Permissions",
+            "default": []
+          },
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id",
+            "default": "master"
+          }
+        },
+        "type": "object",
+        "title": "VerifyTokenRequest"
+      },
+      "VerifyTokenResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Permissions"
+          },
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id"
+          },
+          "token_exp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Exp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "permissions",
+          "tenant_id"
+        ],
+        "title": "VerifyTokenResponse"
       },
       "WebhookCreate": {
         "properties": {

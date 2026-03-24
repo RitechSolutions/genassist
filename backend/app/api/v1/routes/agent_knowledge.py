@@ -27,6 +27,7 @@ from app.services.agent_knowledge_utils import (
     populate_remote_file_metadata,
     schedule_rag_load,
 )
+from app.core.tenant_scope import get_tenant_context
 from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 from app.core.project_path import DATA_VOLUME
@@ -547,9 +548,13 @@ async def summarize_files_from_azure(
         logger.warning("Attempting to run KB batch processing without specifying a KB ID.")
         return {"status": "error", "message": "kb_id is required"}
 
+    # Capture current tenant context
+    tenant_id = get_tenant_context()
+
     background_tasks.add_task(
         batch_process_files_kb_async_with_scope,
-        kb_id
+        kb_id,
+        tenant_id
     )
 
     return {"status": "started"}

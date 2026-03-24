@@ -99,6 +99,7 @@ const AgentList: React.FC<AgentListProps> = ({
     is_active?: boolean;
     workflow_id?: string;
     has_welcome_image?: boolean;
+    llm_analyst_id?: string | null;
   } | null>(null);
   const [settingsLoadingAgentId, setSettingsLoadingAgentId] = useState<string | null>(null);
 
@@ -121,6 +122,7 @@ const AgentList: React.FC<AgentListProps> = ({
         possible_queries: config.possible_queries ?? [],
         thinking_phrases: config.thinking_phrases ?? [],
         is_active: config.is_active,
+        llm_analyst_id: config.llm_analyst_id ?? null,
         // workflow_id: config.workflow_id,
         // has_welcome_image: (config as { has_welcome_image?: boolean }).has_welcome_image,
       };

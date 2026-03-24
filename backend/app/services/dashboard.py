@@ -44,6 +44,27 @@ class DashboardService:
         from_date = to_date - timedelta(days=days)
         return from_date, to_date
 
+    def to_active_conversation_dict(self, item: ActiveConversationItem) -> dict:
+        """Map dashboard ActiveConversationItem to frontend ActiveConversation format."""
+        sentiment = "neutral"
+        if item.feedback and item.feedback.lower() == "good":
+            sentiment = "positive"
+        elif item.feedback and item.feedback.lower() == "bad":
+            sentiment = "negative"
+        status = "in-progress" if item.status == "in_progress" else "takeover"
+        return {
+            "id": str(item.id),
+            "type": "chat",
+            "status": status,
+            "transcript": item.last_message or "",
+            "sentiment": sentiment,
+            "timestamp": item.created_at.isoformat() if item.created_at else "",
+            "in_progress_hostility_score": item.in_progress_hostility_score or 0,
+            "duration": item.duration or 0,
+            "topic": item.topic,
+            "negative_reason": item.negative_reason,
+        }
+
     async def get_summary_stats(
         self,
         from_date: Optional[datetime] = None,

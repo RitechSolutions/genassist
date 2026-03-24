@@ -3,7 +3,7 @@ from typing import Awaitable, Callable, Optional
 from urllib.parse import parse_qs
 from uuid import UUID
 
-from fastapi import Depends, Query, Request, WebSocket, WebSocketException, status
+from fastapi import Depends, Header, Query, Request, WebSocket, WebSocketException, status
 from fastapi_injector import Injected
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from starlette_context import context
@@ -296,3 +296,15 @@ async def auth_for_conversation_update(
     else:
         # Standard auth accepts both API key and JWT
         await auth(request, api_key, user)
+
+
+def verify_internal_secret(x_internal_secret: str = Header(...)):
+    """Validate the shared secret header for internal service-to-service calls."""
+    if not settings.WS_INTERNAL_SECRET:
+        raise AppException(
+            status_code=503, error_key=ErrorKey.INTERNAL_SERVER_ERROR, error_detail="WS_INTERNAL_SECRET not configured"
+        )
+    if x_internal_secret != settings.WS_INTERNAL_SECRET:
+        raise AppException(
+            status_code=403, error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, error_detail="Invalid internal secret"
+        )

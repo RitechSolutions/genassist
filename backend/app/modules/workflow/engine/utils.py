@@ -2,8 +2,8 @@
 Utils for the engine
 """
 
-import logging
 import json
+import logging
 import re
 from typing import Any, Optional
 
@@ -111,9 +111,7 @@ def extract_code_params(
         for var_name in var_names:
             if var_name in code_params:
                 continue
-            resolved_value, _ = _resolve_variable_value(
-                var_name, state, source_output, direct_input
-            )
+            resolved_value, _ = _resolve_variable_value(var_name, state, source_output, direct_input)
             # Only include params that actually resolved to a value.
             # When the value is None, we omit it so the Python code's
             # own default in params.get("varName", default) takes effect.
@@ -388,9 +386,7 @@ def _is_in_code_field_context(json_string: str, var_start: int) -> bool:
     return False
 
 
-def _encode_replacement_value(
-    replacement_value: Any, var_name: str, json_string: str, var_pattern: str
-) -> str:
+def _encode_replacement_value(replacement_value: Any, var_name: str, json_string: str, var_pattern: str) -> str:
     """
     Encode a replacement value appropriately based on its type and context.
 
@@ -417,15 +413,11 @@ def _encode_replacement_value(
                 # For strings inside JSON string fields, remove outer quotes
                 # The JSON encoding already properly escapes all special characters.
                 json_replacement = json_encoded[1:-1]
-                logger.debug(
-                    f"Replaced {var_name} with escaped string content: {json_replacement}"
-                )
+                logger.debug(f"Replaced {var_name} with escaped string content: {json_replacement}")
             else:
                 # In non-string context (e.g. whole JSON value), use JSON as-is
                 json_replacement = json_encoded
-                logger.debug(
-                    f"Replaced {var_name} with JSON string value for object context: {json_replacement}"
-                )
+                logger.debug(f"Replaced {var_name} with JSON string value for object context: {json_replacement}")
         else:
             # Non-string values (objects, lists, numbers, bools, None)
             if in_string_context:
@@ -434,9 +426,7 @@ def _encode_replacement_value(
                     # escape quotes so JSON can be embedded safely in Python code strings,
                     # then fix problematic escape sequences (like \n) for Python.
                     json_replacement = json_encoded.replace('"', '\\"')
-                    json_replacement = _convert_json_escapes_for_code_context(
-                        json_replacement
-                    )
+                    json_replacement = _convert_json_escapes_for_code_context(json_replacement)
                     logger.debug(
                         f"Replaced {var_name} with escaped JSON object for code string context: {json_replacement}"
                     )
@@ -449,27 +439,19 @@ def _encode_replacement_value(
                     # sequences like \"beard\" -> \\\\\"beard\\\\\".
                     json_text = json.dumps(replacement_value)
                     json_replacement = json.dumps(json_text)[1:-1]
-                    logger.debug(
-                        f"Replaced {var_name} with JSON text for string context: {json_replacement}"
-                    )
+                    logger.debug(f"Replaced {var_name} with JSON text for string context: {json_replacement}")
             else:
                 # In object context, use the JSON as-is
                 json_replacement = json_encoded
-                logger.debug(
-                    f"Replaced {var_name} with JSON object for object context: {json_replacement}"
-                )
+                logger.debug(f"Replaced {var_name} with JSON object for object context: {json_replacement}")
 
         return json_replacement
 
     except (TypeError, ValueError) as e:
         # Fallback to string representation
-        logger.warning(
-            f"Failed to JSON encode replacement value for {var_name}: {e}. Using string representation."
-        )
+        logger.warning(f"Failed to JSON encode replacement value for {var_name}: {e}. Using string representation.")
         string_replacement = json.dumps(str(replacement_value))[1:-1]  # Remove quotes
-        logger.debug(
-            f"Used fallback string encoding for {var_name}: {string_replacement}"
-        )
+        logger.debug(f"Used fallback string encoding for {var_name}: {string_replacement}")
         return string_replacement
 
 
@@ -515,17 +497,13 @@ def replace_config_vars(
         var_name = var_pattern.replace("{{", "").replace("}}", "")
 
         # Resolve the variable value from available sources
-        replacement_value, was_resolved = _resolve_variable_value(
-            var_name, state, source_output, direct_input
-        )
+        replacement_value, was_resolved = _resolve_variable_value(var_name, state, source_output, direct_input)
 
         if was_resolved:
             replacements_made[var_name] = replacement_value
 
             # Encode and replace the variable in the JSON string
-            json_replacement = _encode_replacement_value(
-                replacement_value, var_name, string_config, var_pattern
-            )
+            json_replacement = _encode_replacement_value(replacement_value, var_name, string_config, var_pattern)
             string_config = string_config.replace(var_pattern, json_replacement)
 
     # Parse the result back to a dictionary

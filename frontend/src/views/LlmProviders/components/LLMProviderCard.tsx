@@ -8,6 +8,7 @@ import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { getAllLLMProviders, deleteLLMProvider } from "@/services/llmProviders";
 import { toast } from "react-hot-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { CheckCircle, AlertCircle, HelpCircle } from 'lucide-react';
 
 interface LLMProviderCardProps {
   searchQuery: string;
@@ -96,7 +97,36 @@ export function LLMProviderCard({
     );
   });
 
-  const headers = ["Name", "Type", "Model", "Status", "Actions"];
+  const getConnectionBadge = (provider: LLMProvider) => {
+    const status = provider.connection_status?.status ?? 'Untested';
+
+    if (status === 'Connected') {
+      return (
+        <Badge variant="success">
+          <CheckCircle className="w-3 h-3 mr-1" />
+          Connected
+        </Badge>
+      );
+    }
+
+    if (status === 'Error') {
+      return (
+        <Badge variant="destructive">
+          <AlertCircle className="w-3 h-3 mr-1" />
+          Error
+        </Badge>
+      );
+    }
+
+    return (
+      <Badge variant="outline">
+        <HelpCircle className="w-3 h-3 mr-1" />
+        Untested
+      </Badge>
+    );
+  };
+
+  const headers = ['Name', 'Type', 'Model', 'Status', 'Connection', 'Actions'];
 
   const renderRow = (provider: LLMProvider) => (
     <TableRow key={provider.id}>
@@ -104,10 +134,11 @@ export function LLMProviderCard({
       <TableCell className="truncate">{provider.llm_model_provider}</TableCell>
       <TableCell className="truncate">{provider.llm_model}</TableCell>
       <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-        <Badge variant={provider.is_active ? "default" : "secondary"}>
-          {provider.is_active ? "Active" : "Inactive"}
+        <Badge variant={provider.is_active ? 'default' : 'secondary'}>
+          {provider.is_active ? 'Active' : 'Inactive'}
         </Badge>
       </TableCell>
+      <TableCell className="overflow-hidden whitespace-nowrap text-clip">{getConnectionBadge(provider)}</TableCell>
       <TableCell>
         <ActionButtons
           onEdit={() => onEdit(provider)}
