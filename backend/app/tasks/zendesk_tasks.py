@@ -1,22 +1,19 @@
 import asyncio
+import json
 import logging
 from uuid import UUID
-import json
 
+from celery import shared_task
 
+from app.core.config.settings import settings
 from app.core.utils.date_time_utils import utc_now
-from app.services.conversations import ConversationService
-
-from app.schemas.conversation import ConversationCreate
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
 from app.db.seed.seed_data_config import seed_test_data
-
-from app.modules.integration.zendesk import ZendeskConnector
-from app.core.config.settings import settings
 from app.dependencies.injector import injector
-
-from celery import shared_task
+from app.modules.integration.zendesk import ZendeskConnector
+from app.schemas.conversation import ConversationCreate
+from app.services.conversations import ConversationService
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +49,6 @@ async def analyze_zendesk_tickets_async_with_scope():
 async def analyze_zendesk_tickets_async():
     logger.info("Starting Zendesk ticket analysis task...")
     return await process_zendesk_tickets()
-
-
-def _to_percent(value: int) -> int:
-    return int((value / 10) * 100)
 
 
 ############################
@@ -121,13 +114,16 @@ async def process_zendesk_tickets():
             customer_satisfaction = conversation_analysis.customer_satisfaction or 0
             service_quality = conversation_analysis.quality_of_service or 0
 
+            def to_percent(value: int) -> int:
+                return int((value / 10) * 100)
+
             comment_body = (
                 "Ticket Closed\n"
                 f"🔹 Topic: {topic}\n"
                 f"🔹 Summary: {summary}\n"
                 f"🔹 Resolution Rate: {resolution_rate}%\n"
-                f"🔹 Customer Satisfaction: {_to_percent(customer_satisfaction)}%\n"
-                f"🔹 Service Quality: {_to_percent(service_quality)}%\n\n"
+                f"🔹 Customer Satisfaction: {to_percent(customer_satisfaction)}%\n"
+                f"🔹 Service Quality: {to_percent(service_quality)}%\n\n"
                 "For any follow‐up, please contact the customer by email "
                 "and ask about any remaining concerns."
             )
