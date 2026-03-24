@@ -53,15 +53,6 @@ async def analyze_zendesk_tickets_async():
 
 ############################
 async def process_zendesk_tickets():
-    # Skip tenants that don't have Zendesk configured
-    placeholder = "<enter-value-here>"
-    if (
-        not settings.ZENDESK_SUBDOMAIN or settings.ZENDESK_SUBDOMAIN == placeholder
-        or not settings.ZENDESK_EMAIL or settings.ZENDESK_EMAIL == placeholder
-        or not settings.ZENDESK_API_TOKEN or settings.ZENDESK_API_TOKEN == placeholder
-    ):
-        logger.info("Zendesk not configured for this context, skipping ticket analysis")
-        return None
 
     logger.info("Processing Zendesk tickets...")
     conversation_service = injector.get(ConversationService)
