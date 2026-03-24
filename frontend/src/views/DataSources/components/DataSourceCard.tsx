@@ -63,24 +63,11 @@ export function DataSourceCard({
   const headers = ["Name", "Source Type", "Status", "Connection", "Action"];
 
   const getConnectionBadge = (dataSource: DataSource) => {
-    if (["gmail", "o365"].includes(dataSource.source_type)) {
-      if (dataSource.connection_data.user_email !== undefined) {
-        return (
-          <Badge variant="success">
-            <CheckCircle className="w-3 h-3 mr-1" />
-            Connected
-          </Badge>
-        );
-      }
-      return (
-        <Badge variant="outline">
-          <AlertCircle className="w-3 h-3 mr-1" />
-          Not Connected
-        </Badge>
-      );
-    }
-
-    const status = dataSource.connection_status?.status ?? "Untested";
+    const status = ['gmail', 'o365'].includes(dataSource.source_type)
+      ? dataSource.connection_data.user_email !== undefined
+        ? 'Connected'
+        : 'Error'
+      : (dataSource.connection_status?.status ?? 'Untested');
 
     if (status === "Connected") {
       return (
@@ -113,19 +100,11 @@ export function DataSourceCard({
       <TableCell className="font-medium break-all">{dataSource.name}</TableCell>
       <TableCell className="truncate">{dataSource.source_type}</TableCell>
       <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-        <Badge variant={dataSource.is_active ? "default" : "secondary"}>
-          {dataSource.is_active ? "Active" : "Inactive"}
+        <Badge variant={dataSource.is_active ? 'default' : 'secondary'}>
+          {dataSource.is_active ? 'Active' : 'Inactive'}
         </Badge>
       </TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-        {getConnectionBadge(dataSource)}
-        {["gmail", "o365"].includes(dataSource.source_type) &&
-          dataSource.oauth_email && (
-            <div className="text-xs text-gray-500 mt-1">
-              {dataSource.oauth_email}
-            </div>
-          )}
-      </TableCell>
+      <TableCell className="overflow-hidden whitespace-nowrap text-clip">{getConnectionBadge(dataSource)}</TableCell>
       <TableCell>
         <ActionButtons
           onEdit={() => onEditDataSource?.(dataSource)}

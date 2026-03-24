@@ -1,5 +1,5 @@
 # app/services/knowledge_base_service.py
-from typing import List, Optional
+from typing import List
 from uuid import UUID
 from fastapi import logger
 from injector import inject
@@ -24,8 +24,8 @@ class KnowledgeBaseService:
         self.repository = repository
 
     # ─────────────── READ ───────────────
-    async def get_all(self) -> List[KBRead]:
-        objs = await self.repository.get_all()
+    async def get_all(self, **filters) -> List[KBRead]:
+        objs = await self.repository.get_all(filters=filters or None)
         return [KBRead.model_validate(o, from_attributes=True) for o in objs]
 
     async def get_by_id(self, kb_id: UUID) -> KBRead:
