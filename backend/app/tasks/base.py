@@ -207,9 +207,6 @@ async def run_task_for_all_tenants(task_func: Callable, **kwargs) -> List[dict]:
 
                 if not tenants:
                     logger.info("No active tenants found")
-                    if not settings.MULTI_TENANT_ENABLED:
-                        # In single-tenant mode, we only run for master (already done)
-                        return results
                     return results
 
                 logger.info(f"Running task for {len(tenants)} tenant(s)")
