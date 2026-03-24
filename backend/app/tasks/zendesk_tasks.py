@@ -1,22 +1,19 @@
 import asyncio
+import json
 import logging
 from uuid import UUID
-import json
 
+from celery import shared_task
 
+from app.core.config.settings import settings
 from app.core.utils.date_time_utils import utc_now
-from app.services.conversations import ConversationService
-
-from app.schemas.conversation import ConversationCreate
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
 from app.db.seed.seed_data_config import seed_test_data
-
-from app.modules.integration.zendesk import ZendeskConnector
-from app.core.config.settings import settings
 from app.dependencies.injector import injector
-
-from celery import shared_task
+from app.modules.integration.zendesk import ZendeskConnector
+from app.schemas.conversation import ConversationCreate
+from app.services.conversations import ConversationService
 
 logger = logging.getLogger(__name__)
 

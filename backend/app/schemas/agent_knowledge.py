@@ -76,3 +76,19 @@ class KBCreate(KBBase):
 class KBRead(KBBase):
     """Response model"""
     id: UUID
+
+
+class KBListItem(BaseModel):
+    """Minimal KB data for list view — optimized for performance."""
+    id: UUID
+    name: str
+    type: str
+    description: Optional[str] = None
+    files: Optional[Union[List[str], List[Dict[str, Any]]]] = None
+    urls: Optional[List[str]] = None
+    content: Optional[str] = None
+    sync_active: Optional[bool] = None
+    last_synced: Optional[datetime] = None
+    last_sync_status: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
