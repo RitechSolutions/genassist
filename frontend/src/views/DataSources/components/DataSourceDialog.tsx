@@ -13,8 +13,8 @@ import {
   getDataSourceFormSchemas,
   updateDataSource,
   getDataSource,
-  testConnection,
-} from "@/services/dataSources";
+  testDataSourceConnection,
+} from '@/services/dataSources';
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import {
@@ -172,11 +172,7 @@ export function DataSourceDialog({
     setIsTesting(true);
     setTestStatus(null);
     try {
-      const result = await testConnection(
-        sourceType,
-        connectionData,
-        dataSourceId,
-      );
+      const result = await testDataSourceConnection(sourceType, connectionData, dataSourceId);
       setTestStatus({
         status: result.success ? "Connected" : "Error",
         last_tested_at: new Date().toISOString(),
