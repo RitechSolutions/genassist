@@ -67,9 +67,12 @@ async def import_zendesk_articles_to_kb_async(
     kb_service = injector.get(KnowledgeBaseService)
     rag_manager = injector.get(AgentRAGServiceManager)
 
-    kbList = []
     if not kb_id:
-        kbList = await kb_service.get_all()
+        all_kbs = await kb_service.get_all()
+        kbList = [kb for kb in all_kbs if kb.type == "zendesk"]
+        if not kbList:
+            logger.info("No Zendesk knowledge bases found for this tenant, skipping")
+            return None
     else:
         kbList = [await kb_service.get_by_id(kb_id)]
 

@@ -69,7 +69,13 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
     rag_manager = injector.get(AgentRAGServiceManager)
     app_settings_service = injector.get(AppSettingsService)
 
-    kb_list = [await kb_service.get_by_id(kb_id)] if kb_id else await kb_service.get_all()
+    if kb_id:
+        kb_list = [await kb_service.get_by_id(kb_id)]
+    else:
+        kb_list = await kb_service.get_all()
+        if not kb_list:
+            logger.info("No knowledge bases found for this tenant, skipping SharePoint import")
+            return None
 
     processed_ds = 0
     files_added_tot = 0

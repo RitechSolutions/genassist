@@ -53,9 +53,11 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
     )
 
     if not google_cloud_json_setting:
-        raise ValueError("Google Cloud setting 'google_cloud_json' not found")
+        logger.info("Google Cloud setting 'google_cloud_json' not found, skipping SMB transcription")
+        return None
     if not google_cloud_bucket_setting:
-        raise ValueError("Google Cloud setting 'google_cloud_bucket' not found")
+        logger.info("Google Cloud setting 'google_cloud_bucket' not found, skipping SMB transcription")
+        return None
 
     # Extract values from the settings - check for "value" key first, otherwise get first value
     google_cloud_json = None
@@ -71,9 +73,11 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
         google_cloud_bucket = list(google_cloud_bucket_setting.values.values())[0]
 
     if not google_cloud_json:
-        raise ValueError("Google Cloud setting 'google_cloud_json' value is empty")
+        logger.info("Google Cloud setting 'google_cloud_json' value is empty, skipping SMB transcription")
+        return None
     if not google_cloud_bucket:
-        raise ValueError("Google Cloud setting 'google_cloud_bucket' value is empty")
+        logger.info("Google Cloud setting 'google_cloud_bucket' value is empty, skipping SMB transcription")
+        return None
 
     logger.info(f"google_cloud_json key and google_cloud_bucket is loaded")
 

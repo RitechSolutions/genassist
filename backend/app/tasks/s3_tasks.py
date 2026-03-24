@@ -53,11 +53,14 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
     kb_service = injector.get(KnowledgeBaseService)
     rag_manager = injector.get(AgentRAGServiceManager)
 
-    kbList = []
-    if not kb_id:
-        kbList = await kb_service.get_all()
-    else:
+    if kb_id:
         kbList = [await kb_service.get_by_id(kb_id)]
+    else:
+        all_kbs = await kb_service.get_all()
+        kbList = [kb for kb in all_kbs if kb.sync_active and kb.sync_source_id]
+        if not kbList:
+            logger.info("No active knowledge bases with sync sources found for this tenant, skipping S3 import")
+            return None
 
     processed_ds = 0
     files_added_tot = 0
@@ -152,7 +155,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         logger.info(
             f"Found {len(existing_files)} existing files in RAG for knowledge base {kb.id}"
         )
-        logger.info(f"Existing files: {existing_files}")
+        logger.debug(f"Existing files: {existing_files}")
 
         s3_new_files = [
             file_info
@@ -166,7 +169,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         logger.info(
             f"Found {len(s3_new_files)} new files in S3 to process for knowledge base {kb.id}"
         )
-        logger.info(f"New files: {s3_new_files}")
+        logger.debug(f"New files: {s3_new_files}")
 
         s3_deleted_files = [
             ex_file
@@ -199,7 +202,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         for file_info in s3_new_files:
             try:
                 current_file += 1
-                logger.info(f"Processing file {current_file} of {len(result['files'])}")
+                logger.info(f"Processing file {current_file} of {len(s3_new_files)}")
 
                 # Download file content
                 file_content = s3_client.get_file_content(file_info["key"])
@@ -237,17 +240,6 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                 logger.error(error_msg)
                 kb_errors.append(error_msg)
                 continue
-
-        # Check final status
-        existing_files = await rag_manager.get_document_ids(kb)
-        logger.info(
-            f"Updated to {len(existing_files)} existing files in RAG for knowledge base {kb.id}"
-        )
-
-        search_results = await rag_manager.search([kb], "Test", limit=2)
-        logger.info(
-            f"Found {len(search_results)} search results in RAG for knowledge base {kb.id}"
-        )
 
         # Update last synced time
         logger.info(f"Updating knowledge base {kb.id} last synced time...")

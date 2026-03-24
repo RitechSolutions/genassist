@@ -54,8 +54,22 @@ async def analyze_zendesk_tickets_async():
     return await process_zendesk_tickets()
 
 
+def _to_percent(value: int) -> int:
+    return int((value / 10) * 100)
+
+
 ############################
 async def process_zendesk_tickets():
+    # Skip tenants that don't have Zendesk configured
+    placeholder = "<enter-value-here>"
+    if (
+        not settings.ZENDESK_SUBDOMAIN or settings.ZENDESK_SUBDOMAIN == placeholder
+        or not settings.ZENDESK_EMAIL or settings.ZENDESK_EMAIL == placeholder
+        or not settings.ZENDESK_API_TOKEN or settings.ZENDESK_API_TOKEN == placeholder
+    ):
+        logger.info("Zendesk not configured for this context, skipping ticket analysis")
+        return None
+
     logger.info("Processing Zendesk tickets...")
     conversation_service = injector.get(ConversationService)
     zendesk_connector = ZendeskConnector()
@@ -67,7 +81,6 @@ async def process_zendesk_tickets():
         try:
             ticket_id = ticket["id"]
             comments = ticket.get("transcription")
-            conversation_id = UUID(int=ticket_id)
             ticket_subject = ticket.get("subject") or ""
             ticket_status = ticket.get("status") or ""
 
@@ -108,17 +121,13 @@ async def process_zendesk_tickets():
             customer_satisfaction = conversation_analysis.customer_satisfaction or 0
             service_quality = conversation_analysis.quality_of_service or 0
 
-            # Helper to convert 0–10 scale to percentage
-            def to_percent(value: int) -> int:
-                return int((value / 10) * 100)
-
             comment_body = (
                 "Ticket Closed\n"
                 f"🔹 Topic: {topic}\n"
                 f"🔹 Summary: {summary}\n"
                 f"🔹 Resolution Rate: {resolution_rate}%\n"
-                f"🔹 Customer Satisfaction: {to_percent(customer_satisfaction)}%\n"
-                f"🔹 Service Quality: {to_percent(service_quality)}%\n\n"
+                f"🔹 Customer Satisfaction: {_to_percent(customer_satisfaction)}%\n"
+                f"🔹 Service Quality: {_to_percent(service_quality)}%\n\n"
                 "For any follow‐up, please contact the customer by email "
                 "and ask about any remaining concerns."
             )
@@ -142,12 +151,12 @@ async def process_zendesk_tickets():
             # if ticket status is 'closed' - no update is allowed so related followup ticket must be created
             # otherwise is status is 'solved' it is allowed to update it and change the status to 'closed'
             if ticket_status == "closed":
-                x = await zendesk_connector.create_followup_ticket(
+                await zendesk_connector.create_followup_ticket(
                     ticket_id, payload
                 )  # creates new related ticket (POST)
             else:
                 payload["ticket"]["subject"] = f"ANALYZED: {ticket_subject}"
-                x = await zendesk_connector.update_ticket(
+                await zendesk_connector.update_ticket(
                     ticket_id, payload=payload
                 )  # updates existing ticket with evaluation and closes it (PUT)
 
