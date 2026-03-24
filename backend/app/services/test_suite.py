@@ -289,6 +289,7 @@ class SimpleEvaluatorRegistry:
                 answer=_normalize_text(answer),
                 context=_normalize_text(context_text),
                 provider_id=config.get("llm_provider_id"),
+                system_prompt_suffix=config.get("llm_judge_system_prompt_suffix") or "",
             )
             if llm_score is not None:
                 score = llm_score
@@ -329,19 +330,31 @@ class SimpleEvaluatorRegistry:
         answer: str,
         context: str,
         provider_id: str | None = None,
+        system_prompt_suffix: str = "",
     ) -> tuple[float | None, str | None]:
         llm_provider = injector.get(LLMProvider)
         llm = await llm_provider.get_model(provider_id)
 
-        system_prompt = (
+        base_instructions = (
             "You are a strict provenance judge. Given a CONTEXT and an ANSWER, "
             "decide whether the answer is fully supported by the context, "
-            "partially supported, or not supported.\n\n"
-            "Return ONLY a compact JSON object in this exact format:\n"
+            "partially supported, or not supported."
+        )
+
+        extra_instructions = (
+            f"\n\nAdditional instructions:\n{system_prompt_suffix.strip()}"
+            if system_prompt_suffix.strip()
+            else ""
+        )
+
+        json_format_requirement = (
+            "\n\nReturn ONLY a compact JSON object in this exact format:\n"
             '{"verdict": "supported|partially_supported|unsupported", '
             '"score": 0.0-1.0, "reason": "short explanation"}\n'
             "Do not include any extra text or explanation."
         )
+
+        system_prompt = base_instructions + extra_instructions + json_format_requirement
         response = await llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),

@@ -248,6 +248,24 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label>Additional judge instructions</Label>
+              <p className="text-xs text-muted-foreground">
+                Appended to the base system prompt to fine-tune judge behaviour.
+                E.g. <em>"When no Context is available, treat the answer as supported."</em>
+              </p>
+              <DraggableTextArea
+                value={localData.llm_judge_system_prompt_suffix ?? ""}
+                onChange={(e) =>
+                  setLocalData((prev) => ({
+                    ...prev,
+                    llm_judge_system_prompt_suffix: e.target.value,
+                  }))
+                }
+                placeholder="Optional extra instructions for the judge..."
+                rows={4}
+              />
+            </div>
           </div>
         )}
       </div>

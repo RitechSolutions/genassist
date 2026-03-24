@@ -2,15 +2,16 @@
 Guardrail provenance node implementation using the BaseNode class.
 """
 
-from typing import Any, Dict
 import json
 import logging
+from typing import Any, Dict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ..base_node import BaseNode
-from app.modules.workflow.llm.provider import LLMProvider
 from app.dependencies.injector import injector
+from app.modules.workflow.llm.provider import LLMProvider
+
+from ..base_node import BaseNode
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,7 @@ class GuardrailProvenanceNode(BaseNode):
         min_score = float(config.get("min_score", 0.5))
         fail_on_violation = bool(config.get("fail_on_violation", False))
         provenance_mode = config.get("provenance_mode")
-        use_llm_judge = bool(
-            config.get("use_llm_judge", False) or provenance_mode == "llm"
-        )
+        use_llm_judge = bool(config.get("use_llm_judge", False) or provenance_mode == "llm")
         llm_provider_id = config.get("llm_provider_id")
 
         # After BaseNode.replace_config_vars, config values are already resolved, so we
@@ -65,10 +64,12 @@ class GuardrailProvenanceNode(BaseNode):
         # Optionally call an LLM-as-judge to refine provenance score
         if use_llm_judge:
             try:
+                llm_judge_system_prompt_suffix = config.get("llm_judge_system_prompt_suffix", "") or ""
                 llm_score, judge_details = await self._run_llm_judge(
                     answer=answer,
                     context=context_text,
                     provider_id=llm_provider_id,
+                    system_prompt_suffix=llm_judge_system_prompt_suffix,
                 )
                 # Prefer the LLM score when available
                 if llm_score is not None:
@@ -94,8 +95,7 @@ class GuardrailProvenanceNode(BaseNode):
             guardrail_result["llm_judge"] = judge_details
 
         logger.info(
-            "GuardrailProvenanceNode %s: score=%.3f threshold=%.3f "
-            "verdict=%s",
+            "GuardrailProvenanceNode %s: score=%.3f threshold=%.3f verdict=%s",
             self.node_id,
             score,
             min_score,
@@ -138,6 +138,7 @@ class GuardrailProvenanceNode(BaseNode):
         answer: str,
         context: str,
         provider_id: str | None = None,
+        system_prompt_suffix: str = "",
     ) -> tuple[float | None, Dict[str, Any]]:
         """
         Use an LLM-as-judge to estimate provenance.
@@ -148,25 +149,36 @@ class GuardrailProvenanceNode(BaseNode):
               "score": 0.0-1.0,
               "reason": "short explanation"
             }
+
+        system_prompt_suffix is appended after the base instructions but before
+        the JSON format requirement, allowing callers to tune judge behaviour
+        (e.g. "When no Context is available, treat the answer as supported.")
+        without breaking the structured output contract.
         """
         llm_provider = injector.get(LLMProvider)
         llm = await llm_provider.get_model(provider_id)
 
-        system_prompt = (
+        base_instructions = (
             "You are a strict provenance judge. Given a CONTEXT and an ANSWER, "
             "decide whether the answer is fully supported by the context, "
-            "partially supported, or not supported.\n\n"
-            "Return ONLY a compact JSON object in this exact format:\n"
-            '{\"verdict\": \"supported|partially_supported|unsupported\", '
-            '"score\": 0.0-1.0, '
-            '"reason\": \"short explanation\"}\n'
+            "partially supported, or not supported."
+        )
+
+        extra_instructions = (
+            f"\n\nAdditional instructions:\n{system_prompt_suffix.strip()}" if system_prompt_suffix.strip() else ""
+        )
+
+        json_format_requirement = (
+            "\n\nReturn ONLY a compact JSON object in this exact format:\n"
+            '{"verdict": "supported|partially_supported|unsupported", '
+            '"score": 0.0-1.0, '
+            '"reason": "short explanation"}\n'
             "Do not include any extra text or explanation."
         )
 
-        user_prompt = (
-            f"CONTEXT:\n{context}\n\n"
-            f"ANSWER:\n{answer}\n"
-        )
+        system_prompt = base_instructions + extra_instructions + json_format_requirement
+
+        user_prompt = f"CONTEXT:\n{context}\n\nANSWER:\n{answer}\n"
 
         response = await llm.ainvoke(
             [
@@ -203,11 +215,9 @@ class GuardrailProvenanceNode(BaseNode):
 
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             logger.warning(
-                "GuardrailProvenanceNode %s: failed to parse LLM judge JSON "
-                "response '%s': %s",
+                "GuardrailProvenanceNode %s: failed to parse LLM judge JSON response '%s': %s",
                 self.node_id,
                 raw_content,
                 exc,
             )
             return None, judge_details
-

@@ -371,6 +371,7 @@ export interface GuardrailProvenanceNodeData extends BaseNodeData {
   provenance_mode?: "embeddings" | "llm";
   embedding_type?: "openai" | "huggingface" | "bedrock";
   embedding_model_name?: string;
+  llm_judge_system_prompt_suffix?: string;
 }
 
 // Guardrail NLI Node Data

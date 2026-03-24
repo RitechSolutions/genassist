@@ -86,6 +86,7 @@ const EvaluationsPage: React.FC = () => {
   const [provMinScore, setProvMinScore] = useState("0.5");
   const [provFailOnViolation, setProvFailOnViolation] = useState(false);
   const [provLlmProviderId, setProvLlmProviderId] = useState("");
+  const [provLlmJudgeSystemPromptSuffix, setProvLlmJudgeSystemPromptSuffix] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -178,6 +179,9 @@ const EvaluationsPage: React.FC = () => {
                 use_llm_judge: provMode === "llm",
                 ...(provMode === "llm" && provLlmProviderId.trim()
                   ? { llm_provider_id: provLlmProviderId.trim() }
+                  : {}),
+                ...(provMode === "llm" && provLlmJudgeSystemPromptSuffix.trim()
+                  ? { llm_judge_system_prompt_suffix: provLlmJudgeSystemPromptSuffix.trim() }
                   : {}),
                 ...(provMode === "embeddings"
                   ? {
@@ -485,6 +489,17 @@ const EvaluationsPage: React.FC = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                    <Label className="text-xs">Additional judge instructions</Label>
+                    <p className="text-xs text-gray-500">
+                      Appended to the base system prompt to fine-tune judge behaviour.
+                      E.g. <em>"When no Context is available, treat the answer as supported."</em>
+                    </p>
+                    <Textarea
+                      value={provLlmJudgeSystemPromptSuffix}
+                      onChange={(e) => setProvLlmJudgeSystemPromptSuffix(e.target.value)}
+                      placeholder="Optional extra instructions for the judge..."
+                      rows={4}
+                    />
                   </>
                 )}
               </div>
