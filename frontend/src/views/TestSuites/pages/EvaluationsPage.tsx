@@ -24,13 +24,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, ListChecks } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import {
   createTestEvaluation,
   listTestEvaluations,
 } from "@/services/testEvaluations";
-import { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
 import { TestRun } from "@/interfaces/testSuite.interface";
+import { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
 import { SearchInput } from "@/components/SearchInput";
 import { getAllLLMProviders } from "@/services/llmProviders";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
@@ -39,8 +39,8 @@ const METRICS = [
   "exact_match",
   "contains",
   "json_match",
-  "guardrail_nli",
-  "guardrail_provenance",
+  "nli_eval",
+  "provenance_eval",
 ];
 
 const NLI_MODEL_OPTIONS = [
@@ -102,7 +102,8 @@ const EvaluationsPage: React.FC = () => {
       if (activeProviders[0]?.id) {
         setProvLlmProviderId(activeProviders[0].id);
       }
-      setEvaluations(listTestEvaluations());
+      const evaluationData = await listTestEvaluations();
+      setEvaluations(evaluationData ?? []);
       if (suiteData?.[0]?.id) setSelectedSuiteId(suiteData[0].id);
       if (workflowData?.[0]?.id) setSelectedWorkflowId(workflowData[0].id);
     };
@@ -137,7 +138,7 @@ const EvaluationsPage: React.FC = () => {
     void loadLastRuns();
   }, [evaluations]);
 
-  const handleCreateEvaluation = () => {
+  const handleCreateEvaluation = async () => {
     if (!evaluationName.trim() || selectedSuiteId === "none" || metrics.length === 0) {
       return;
     }
@@ -153,16 +154,16 @@ const EvaluationsPage: React.FC = () => {
       parsedMetadata = undefined;
     }
 
-    const created = createTestEvaluation({
+    const created = await createTestEvaluation({
       name: evaluationName.trim(),
       description: evaluationDescription.trim() || undefined,
       suite_id: selectedSuiteId,
       workflow_id: selectedWorkflowId === "none" ? undefined : selectedWorkflowId,
       techniques: metrics,
       technique_configs: {
-        ...(metrics.includes("guardrail_nli")
+        ...(metrics.includes("nli_eval")
           ? {
-              guardrail_nli: {
+              nli_eval: {
                 min_entail_score: Number(nliMinEntailScore || "0.5"),
                 fail_on_contradiction: nliFailOnContradiction,
                 ...(nliModelName.trim()
@@ -171,9 +172,9 @@ const EvaluationsPage: React.FC = () => {
               },
             }
           : {}),
-        ...(metrics.includes("guardrail_provenance")
+        ...(metrics.includes("provenance_eval")
           ? {
-              guardrail_provenance: {
+              provenance_eval: {
                 min_score: Number(provMinScore || "0.5"),
                 fail_on_violation: provFailOnViolation,
                 use_llm_judge: provMode === "llm",
@@ -196,7 +197,7 @@ const EvaluationsPage: React.FC = () => {
       },
       input_metadata: parsedMetadata,
     });
-    setEvaluations(listTestEvaluations());
+    if (!created) return;
     setIsCreateDialogOpen(false);
     setEvaluationName("");
     setEvaluationDescription("");
@@ -371,7 +372,7 @@ const EvaluationsPage: React.FC = () => {
               ))}
             </div>
 
-            {metrics.includes("guardrail_nli") && (
+            {metrics.includes("nli_eval") && (
               <div className="border rounded-md p-3 space-y-2">
                 <div className="text-xs font-semibold">Guardrail NLI Config</div>
                 <p className="text-xs text-gray-500">
@@ -407,7 +408,7 @@ const EvaluationsPage: React.FC = () => {
               </div>
             )}
 
-            {metrics.includes("guardrail_provenance") && (
+            {metrics.includes("provenance_eval") && (
               <div className="border rounded-md p-3 space-y-2">
                 <div className="text-xs font-semibold">
                   Guardrail Provenance Config

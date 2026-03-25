@@ -39,6 +39,8 @@ class GuardrailProvenanceNode(BaseNode):
         # Read configuration (already resolved by BaseNode)
         min_score = float(config.get("min_score", 0.5))
         fail_on_violation = bool(config.get("fail_on_violation", False))
+        fallback_answer_enabled = bool(config.get("fallback_answer_enabled", False))
+        fallback_answer = config.get("fallback_answer") or ""
         provenance_mode = config.get("provenance_mode")
         use_llm_judge = bool(config.get("use_llm_judge", False) or provenance_mode == "llm")
         llm_provider_id = config.get("llm_provider_id")
@@ -102,13 +104,22 @@ class GuardrailProvenanceNode(BaseNode):
             verdict,
         )
 
+        effective_answer = answer
+        if not passed and fallback_answer_enabled and fallback_answer:
+            effective_answer = fallback_answer
+            guardrail_result["fallback_used"] = True
+            logger.info(
+                "GuardrailProvenanceNode %s: provenance violation — using fallback answer",
+                self.node_id,
+            )
+
         output: Dict[str, Any] = {
-            "answer": answer,
+            "answer": effective_answer,
             "context": context_text,
             "_guardrail_provenance": guardrail_result,
         }
 
-        if not passed and fail_on_violation:
+        if not passed and fail_on_violation and not (fallback_answer_enabled and fallback_answer):
             output["blocked"] = True
             output["verdict"] = "provenance_fail"
 

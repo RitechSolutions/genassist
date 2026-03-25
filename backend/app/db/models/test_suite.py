@@ -8,6 +8,30 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
+class TestEvaluationModel(Base):
+    __tablename__ = "test_evaluations"
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    suite_id: Mapped[UUID] = mapped_column(
+        ForeignKey("test_suites.id"), nullable=False
+    )
+    workflow_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("workflows.id"), nullable=True
+    )
+
+    techniques: Mapped[List[str]] = mapped_column(JSONB, nullable=False, default=list)
+    technique_configs: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    input_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    # Ordered list of run UUIDs (most recent first)
+    run_ids: Mapped[List[str]] = mapped_column(JSONB, nullable=False, default=list)
+
+    suite = relationship("TestSuiteModel")
+    workflow = relationship("WorkflowModel")
+
+
 class TestSuiteModel(Base):
     __tablename__ = "test_suites"
 

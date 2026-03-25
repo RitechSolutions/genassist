@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageLayout } from "@/components/PageLayout";
 import JsonViewer from "@/components/JsonViewer";
@@ -44,9 +44,13 @@ const EvaluationDetailPage: React.FC = () => {
   >({});
   const [isRunDetailsOpen, setIsRunDetailsOpen] = useState(false);
 
-  const evaluation = useMemo(() => {
-    if (!evaluationId) return undefined;
-    return getTestEvaluationById(evaluationId);
+  const [evaluation, setEvaluation] = useState<
+    Awaited<ReturnType<typeof getTestEvaluationById>>
+  >(undefined);
+
+  useEffect(() => {
+    if (!evaluationId) return;
+    getTestEvaluationById(evaluationId).then(setEvaluation);
   }, [evaluationId]);
 
   useEffect(() => {
@@ -129,7 +133,7 @@ const EvaluationDetailPage: React.FC = () => {
         input_metadata: evaluation.input_metadata,
       });
       if (created?.id) {
-        appendRunToEvaluation(evaluationId, created.id);
+        await appendRunToEvaluation(evaluationId, created.id);
         setRuns((prev) => [created, ...prev]);
         setSelectedRunId(created.id);
       }

@@ -69,7 +69,7 @@ const DatasetDetailPage: React.FC = () => {
       try {
         expectedOutput = JSON.parse(caseExpectedOutput);
       } catch {
-        expectedOutput = { text: caseExpectedOutput };
+        expectedOutput = { value: caseExpectedOutput };
       }
     }
 
@@ -114,7 +114,7 @@ const DatasetDetailPage: React.FC = () => {
           editExpectedOutput,
         ) as Record<string, unknown>;
       } catch {
-        expectedOutput = { text: editExpectedOutput };
+        expectedOutput = { value: editExpectedOutput };
       }
     }
 

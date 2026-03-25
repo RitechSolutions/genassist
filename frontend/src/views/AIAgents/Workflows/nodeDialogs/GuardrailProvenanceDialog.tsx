@@ -149,6 +149,39 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             }
           />
         </div>
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <Label>Fallback answer on violation</Label>
+            <p className="text-xs text-muted-foreground">
+              When enabled, substitutes the answer with the fallback text instead of blocking.
+            </p>
+          </div>
+          <Switch
+            checked={localData.fallback_answer_enabled ?? false}
+            onCheckedChange={(checked) =>
+              setLocalData((prev) => ({
+                ...prev,
+                fallback_answer_enabled: checked,
+              }))
+            }
+          />
+        </div>
+        {localData.fallback_answer_enabled && (
+          <div className="space-y-2">
+            <Label>Fallback answer text</Label>
+            <DraggableTextArea
+              value={localData.fallback_answer ?? ""}
+              onChange={(e) =>
+                setLocalData((prev) => ({
+                  ...prev,
+                  fallback_answer: e.target.value,
+                }))
+              }
+              placeholder="e.g. I'm sorry, I cannot provide an answer based on the available information."
+              rows={3}
+            />
+          </div>
+        )}
 
         <div className="space-y-2 pt-2 border-t border-border">
           <Label>Provenance mode</Label>

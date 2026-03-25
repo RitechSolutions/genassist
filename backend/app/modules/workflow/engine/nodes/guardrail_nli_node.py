@@ -28,6 +28,8 @@ class GuardrailNliNode(BaseNode):
         """Run an NLI-style fact-check between answer and evidence using a local model."""
         min_entail_score = float(config.get("min_entail_score", 0.5))
         fail_on_contradiction = bool(config.get("fail_on_contradiction", False))
+        fallback_answer_enabled = bool(config.get("fallback_answer_enabled", False))
+        fallback_answer = config.get("fallback_answer") or ""
 
         # After BaseNode.replace_config_vars, config values are already resolved, so we
         # treat them as the final answer/evidence texts.
@@ -52,6 +54,8 @@ class GuardrailNliNode(BaseNode):
         if verdict == "entails" and entail_score < min_entail_score:
             verdict = "unknown"
 
+        is_contradiction = verdict == "contradicts"
+
         guardrail_result = {
             "type": "nli",
             "entail_score": entail_score,
@@ -70,13 +74,22 @@ class GuardrailNliNode(BaseNode):
             verdict,
         )
 
+        effective_answer = answer
+        if is_contradiction and fallback_answer_enabled and fallback_answer:
+            effective_answer = fallback_answer
+            guardrail_result["fallback_used"] = True
+            logger.info(
+                "GuardrailNliNode %s: contradiction detected — using fallback answer",
+                self.node_id,
+            )
+
         output: Dict[str, Any] = {
-            "answer": answer,
+            "answer": effective_answer,
             "evidence": evidence,
             "_guardrail_nli": guardrail_result,
         }
 
-        if verdict == "contradicts" and fail_on_contradiction:
+        if is_contradiction and fail_on_contradiction and not (fallback_answer_enabled and fallback_answer):
             output["blocked"] = True
             output["verdict"] = "nli_contradiction"
 

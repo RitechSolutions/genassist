@@ -146,7 +146,7 @@ class TestRunCreate(BaseModel):
         default=None,
         description=(
             "Optional per-technique configuration map. "
-            "Example: {'guardrail_nli': {'min_entail_score': 0.6}}"
+            "Example: {'nli_eval': {'min_entail_score': 0.6}}"
         ),
     )
     workflow_id: Optional[UUID] = Field(
@@ -172,5 +172,46 @@ class TestRunInDB(TestRunBase):
 
 
 class TestRun(TestRunInDB):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# TestEvaluation
+# ---------------------------------------------------------------------------
+
+class TestEvaluationBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    suite_id: UUID
+    workflow_id: Optional[UUID] = None
+    techniques: List[str] = Field(default_factory=list)
+    technique_configs: Optional[Dict[str, Any]] = None
+    input_metadata: Optional[Dict[str, Any]] = None
+
+
+class TestEvaluationCreate(TestEvaluationBase):
+    pass
+
+
+class TestEvaluationUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    suite_id: Optional[UUID] = None
+    workflow_id: Optional[UUID] = None
+    techniques: Optional[List[str]] = None
+    technique_configs: Optional[Dict[str, Any]] = None
+    input_metadata: Optional[Dict[str, Any]] = None
+
+
+class TestEvaluationInDB(TestEvaluationBase):
+    id: UUID
+    run_ids: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TestEvaluation(TestEvaluationInDB):
     pass
 

@@ -14,6 +14,7 @@ from app.db.models.test_suite import (
     TestCaseModel,
     TestRunModel,
     TestResultModel,
+    TestEvaluationModel,
 )
 from app.modules.workflow.engine.nodes.local_nli_model import local_nli_model
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
@@ -23,11 +24,16 @@ from app.repositories.test_suite import (
     TestCaseRepository,
     TestRunRepository,
     TestResultRepository,
+    TestEvaluationRepository,
 )
 from app.schemas.test_suite import (
     TestCaseCreate,
     TestCaseInDB,
     TestCaseUpdate,
+    TestEvaluation,
+    TestEvaluationCreate,
+    TestEvaluationUpdate,
+    TestEvaluationInDB,
     TestRun,
     TestRunCreate,
     TestRunInDB,
@@ -48,6 +54,13 @@ def _normalize_text(value: Any) -> str:
         return ""
     if isinstance(value, str):
         return value.strip()
+    # Unwrap single-key string wrapper dicts produced by both the frontend
+    # (expected_output fallback) and the execution engine (actual_output).
+    # Supported keys: "value" (execution wrapper) and "text" (legacy frontend wrapper).
+    if isinstance(value, dict):
+        for key in ("value", "text"):
+            if list(value.keys()) == [key] and isinstance(value[key], str):
+                return value[key].strip()
     return str(value).strip()
 
 
@@ -106,8 +119,8 @@ class SimpleEvaluatorRegistry:
             "exact_match": self._exact_match,
             "contains": self._contains,
             "json_match": self._json_match,
-            "guardrail_nli": self._guardrail_nli,
-            "guardrail_provenance": self._guardrail_provenance,
+            "nli_eval": self._guardrail_nli,
+            "provenance_eval": self._guardrail_provenance,
         }
 
     def available(self) -> List[str]:
@@ -244,7 +257,7 @@ class SimpleEvaluatorRegistry:
             passed = False
 
         return {
-            "key": "guardrail_nli",
+            "key": "nli_eval",
             "score": entail_score,
             "passed": passed,
             "comment": (
@@ -303,7 +316,7 @@ class SimpleEvaluatorRegistry:
             passed = False
 
         return {
-            "key": "guardrail_provenance",
+            "key": "provenance_eval",
             "score": score,
             "passed": passed,
             "comment": (
@@ -387,12 +400,14 @@ class TestSuiteService:
         case_repo: TestCaseRepository,
         run_repo: TestRunRepository,
         result_repo: TestResultRepository,
+        evaluation_repo: TestEvaluationRepository,
         workflow_service: WorkflowService,
     ) -> None:
         self.suite_repo = suite_repo
         self.case_repo = case_repo
         self.run_repo = run_repo
         self.result_repo = result_repo
+        self.evaluation_repo = evaluation_repo
         self.workflow_service = workflow_service
         self.evaluators = SimpleEvaluatorRegistry()
 
@@ -652,4 +667,53 @@ class TestSuiteService:
         result = await self.result_repo.db.execute(stmt)
         rows: List[TestResultModel] = result.scalars().all()
         return [TestResultInDB.model_validate(r, from_attributes=True) for r in rows]
+
+    # ---- Evaluations -------------------------------------------------------
+
+    async def create_evaluation(self, data: TestEvaluationCreate) -> TestEvaluationInDB:
+        payload = data.model_dump()
+        payload["run_ids"] = []
+        orm = TestEvaluationModel(**payload)
+        created = await self.evaluation_repo.create(orm)
+        return TestEvaluationInDB.model_validate(created, from_attributes=True)
+
+    async def list_evaluations(self) -> List[TestEvaluationInDB]:
+        rows = await self.evaluation_repo.get_all()
+        return [TestEvaluationInDB.model_validate(r, from_attributes=True) for r in rows]
+
+    async def get_evaluation(self, evaluation_id: UUID) -> TestEvaluation:
+        row = await self.evaluation_repo.get_by_id(evaluation_id)
+        if not row:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        return TestEvaluation.model_validate(row, from_attributes=True)
+
+    async def update_evaluation(
+        self, evaluation_id: UUID, data: TestEvaluationUpdate
+    ) -> TestEvaluationInDB:
+        row = await self.evaluation_repo.get_by_id(evaluation_id)
+        if not row:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        for field, value in data.model_dump(exclude_none=True).items():
+            setattr(row, field, value)
+        updated = await self.evaluation_repo.update(row)
+        return TestEvaluationInDB.model_validate(updated, from_attributes=True)
+
+    async def append_run_to_evaluation(
+        self, evaluation_id: UUID, run_id: str
+    ) -> TestEvaluationInDB:
+        row = await self.evaluation_repo.get_by_id(evaluation_id)
+        if not row:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        current: List[str] = list(row.run_ids or [])
+        if run_id not in current:
+            current.insert(0, run_id)
+        row.run_ids = current
+        updated = await self.evaluation_repo.update(row)
+        return TestEvaluationInDB.model_validate(updated, from_attributes=True)
+
+    async def delete_evaluation(self, evaluation_id: UUID) -> None:
+        row = await self.evaluation_repo.get_by_id(evaluation_id)
+        if not row:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        await self.evaluation_repo.delete(row)
 

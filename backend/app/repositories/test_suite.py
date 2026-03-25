@@ -6,6 +6,7 @@ from app.db.models.test_suite import (
     TestCaseModel,
     TestRunModel,
     TestResultModel,
+    TestEvaluationModel,
 )
 from app.repositories.db_repository import DbRepository
 
@@ -32,4 +33,10 @@ class TestRunRepository(DbRepository[TestRunModel]):
 class TestResultRepository(DbRepository[TestResultModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(TestResultModel, db)
+
+
+@inject
+class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
+    def __init__(self, db: AsyncSession):
+        super().__init__(TestEvaluationModel, db)
 

@@ -366,6 +366,8 @@ export interface GuardrailProvenanceNodeData extends BaseNodeData {
   context_field?: string;
   min_score?: number;
   fail_on_violation?: boolean;
+  fallback_answer_enabled?: boolean;
+  fallback_answer?: string;
   use_llm_judge?: boolean;
   llm_provider_id?: string;
   provenance_mode?: "embeddings" | "llm";
@@ -380,6 +382,8 @@ export interface GuardrailNliNodeData extends BaseNodeData {
   evidence_field?: string;
   min_entail_score?: number;
   fail_on_contradiction?: boolean;
+  fallback_answer_enabled?: boolean;
+  fallback_answer?: string;
   nli_model_name?: string;
 }
 
