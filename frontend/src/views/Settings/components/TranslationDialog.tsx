@@ -215,6 +215,8 @@ export function TranslationDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+
     setError("");
 
     if (!key.trim()) {
