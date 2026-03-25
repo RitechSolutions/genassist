@@ -83,7 +83,8 @@ def permissions(*permissions: str) -> Callable[[Request], Awaitable[None]]:
 
         elif hasattr(request.state, "user") and request.state.user:
             user = request.state.user
-            if not has_permission(user.permissions, *permissions):
+            user_has_permission = has_permission(user.permissions, *permissions)
+            if not user_has_permission:
                 raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
         else:
             raise AppException(status_code=403, error_key=ErrorKey.NOT_AUTHORIZED)
