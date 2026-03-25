@@ -14,6 +14,7 @@ import {
   UserRoundCog,
   Network,
   Waypoints,
+  ListChecks,
 } from "lucide-react";
 import {
   Sidebar,
@@ -118,6 +119,24 @@ const mainMenuItems: MenuItem[] = [
     icon: UserRoundCog,
     url: "/ai-agents",
     permissionsRequired: ["read:llm_analyst"],
+  },
+  {
+    title: "Tests",
+    icon: ListChecks,
+    url: "#",
+    permissionsRequired: ["test:workflow"],
+    children: [
+      {
+        title: "Datasets",
+        url: "/tests/datasets",
+        permissionsRequired: ["test:workflow"],
+      },
+      {
+        title: "Evaluations",
+        url: "/tests/evaluations",
+        permissionsRequired: ["test:workflow"],
+      },
+    ],
   },
   {
     title: "Integrations",
@@ -253,6 +272,10 @@ export function AppSidebar() {
   );
   const [isGenAgentOpen, setIsGenAgentOpen] = useState(getInitialGenAgentState);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(getInitialAnalyticsState);
+  const [isTestsOpen, setIsTestsOpen] = useState(() => {
+    const saved = localStorage.getItem("isTestsOpen");
+    return saved ? JSON.parse(saved) : false;
+  });
   const { isEnabled } = useFeatureFlag();
 
   const location = useLocation();
@@ -307,6 +330,10 @@ export function AppSidebar() {
 
     if (currentPath.startsWith("/analytics")) {
       setIsAnalyticsOpen(true);
+    }
+
+    if (currentPath.startsWith("/tests")) {
+      setIsTestsOpen(true);
     }
   }, [currentPath]);
 
@@ -374,6 +401,14 @@ export function AppSidebar() {
     setIsAnalyticsOpen((prev) => {
       const next = !prev;
       localStorage.setItem("isAnalyticsOpen", JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleToggleTests = () => {
+    setIsTestsOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem("isTestsOpen", JSON.stringify(next));
       return next;
     });
   };
@@ -495,7 +530,7 @@ export function AppSidebar() {
                 <SidebarMenuItem
                   key={index}
                   className={
-                    ["Integrations", "Admin", "LLM Settings", "Analytics"].includes(
+                    ["Integrations", "Admin", "LLM Settings", "Analytics", "Tests"].includes(
                       item.title
                     )
                       ? "h-fit"
@@ -529,7 +564,8 @@ export function AppSidebar() {
                                 <Link
                                   to={child.url}
                                   className={`${submenuLinkClasses} ${
-                                    child.url === currentPath
+                                    currentPath === child.url ||
+                                    currentPath.startsWith(`${child.url}/`)
                                       ? activeSubmenuClasses
                                       : ""
                                   }`}
@@ -569,6 +605,47 @@ export function AppSidebar() {
                                 key={childIndex}
                                 className={`${menuItemClasses} relative`}
                               >
+                                <Link
+                                  to={child.url}
+                                  className={`${submenuLinkClasses} ${
+                                    currentPath === child.url ||
+                                    currentPath.startsWith(`${child.url}/`)
+                                      ? activeSubmenuClasses
+                                      : ""
+                                  }`}
+                                >
+                                  {child.icon && (
+                                    <child.icon className="w-4 h-4 mr-2" />
+                                  )}
+                                  <span>{child.title}</span>
+                                </Link>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : item.title === "Tests" && item.children ? (
+                    <div>
+                      <div onClick={handleToggleTests}>
+                        <SidebarMenuButton className={parentMenuClasses}>
+                          {item.icon && <item.icon className="w-4 h-4" />}
+                          <span>{item.title}</span>
+                          <div className="ml-auto transition-transform duration-200">
+                            {isTestsOpen ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </div>
+                        </SidebarMenuButton>
+                      </div>
+                      {isTestsOpen && (
+                        <div className="relative ml-6 space-y-1 pt-1">
+                          <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
+                          <div>
+                            {item.children.map((child, i) => (
+                              <div key={i} className={`${menuItemClasses} relative`}>
                                 <Link
                                   to={child.url}
                                   className={`${submenuLinkClasses} ${
