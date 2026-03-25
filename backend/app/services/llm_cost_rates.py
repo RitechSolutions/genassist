@@ -2,6 +2,7 @@ import csv
 import io
 import logging
 from decimal import Decimal, InvalidOperation
+from uuid import UUID
 
 from injector import inject
 
@@ -23,6 +24,13 @@ class LlmCostRateService:
 
     async def list_active(self) -> list[LlmCostRateModel]:
         return await self.repo.list_active()
+
+    async def delete_by_id(self, rate_id: UUID) -> bool:
+        tenant = get_tenant_context()
+        ok = await self.repo.soft_delete_by_id(rate_id)
+        if ok:
+            invalidate_llm_cost_rates_cache(tenant)
+        return ok
 
     async def import_csv(self, text: str) -> LlmCostRateImportResult:
         tenant = get_tenant_context()

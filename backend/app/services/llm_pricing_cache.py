@@ -57,7 +57,7 @@ def _load_db_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]] | Non
                     LlmCostRateModel.model_key,
                     LlmCostRateModel.input_per_1k,
                     LlmCostRateModel.output_per_1k,
-                )
+                ).where(LlmCostRateModel.is_deleted == 0)
             ).all()
             for r in rows:
                 pk = (r.provider_key or "").lower()

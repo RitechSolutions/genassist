@@ -6923,6 +6923,51 @@
         ]
       }
     },
+    "/api/llm-cost-rates/{rate_id}": {
+      "delete": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "Delete Cost Rate",
+        "operationId": "delete_cost_rate_api_llm_cost_rates__rate_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Rate Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/llm-analyst/available-enrichments": {
       "get": {
         "tags": [
@@ -22280,11 +22325,11 @@
             "title": "Model Key"
           },
           "input_per_1k": {
-            "type": "number",
+            "type": "string",
             "title": "Input Per 1K"
           },
           "output_per_1k": {
-            "type": "number",
+            "type": "string",
             "title": "Output Per 1K"
           },
           "updated_at": {

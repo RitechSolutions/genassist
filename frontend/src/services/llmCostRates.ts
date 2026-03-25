@@ -45,3 +45,7 @@ export async function importLlmCostRatesCsv(
 
   return (await response.json()) as LlmCostRateImportResult;
 }
+
+export async function deleteLlmCostRate(id: string): Promise<void> {
+  await apiRequest("DELETE", `llm-cost-rates/${id}`);
+}

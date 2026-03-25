@@ -1,8 +1,10 @@
-from backend.app.core.exceptions.error_messages import ErrorKey
-from fastapi import APIRouter, Depends, File, UploadFile
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.schemas.llm_cost_rate import LlmCostRateImportResult, LlmCostRateRead
@@ -19,14 +21,7 @@ router = APIRouter()
 async def list_cost_rates(service: LlmCostRateService = Injected(LlmCostRateService)):
     rows = await service.list_active()
     return [
-        LlmCostRateRead(
-            id=r.id,
-            provider_key=r.provider_key,
-            model_key=r.model_key,
-            input_per_1k=float(r.input_per_1k),
-            output_per_1k=float(r.output_per_1k),
-            updated_at=r.updated_at,
-        )
+        LlmCostRateRead.model_validate(r, from_attributes=True)
         for r in rows
     ]
 
@@ -54,3 +49,17 @@ async def import_cost_rates_csv(
             error_detail="File must be UTF-8 encoded"
         ) from e
     return await service.import_csv(text)
+
+
+@router.delete(
+    "/{rate_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.UPDATE))],
+)
+async def delete_cost_rate(
+    rate_id: UUID,
+    service: LlmCostRateService = Injected(LlmCostRateService),
+):
+    deleted = await service.delete_by_id(rate_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Cost rate not found")

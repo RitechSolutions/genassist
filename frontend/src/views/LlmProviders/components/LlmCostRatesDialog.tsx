@@ -16,11 +16,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getLlmCostRates, importLlmCostRatesCsv } from "@/services/llmCostRates";
+import {
+  getLlmCostRates,
+  importLlmCostRatesCsv,
+  deleteLlmCostRate,
+} from "@/services/llmCostRates";
 import type { LlmCostRate } from "@/interfaces/llmCostRate.interface";
 import toast from "react-hot-toast";
-import { Copy, Download, FileText, Loader2, RefreshCcw, Upload } from "lucide-react";
+import {
+  Copy,
+  Download,
+  FileText,
+  Loader2,
+  RefreshCcw,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { formatTimeAgo } from "@/helpers/formatters";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /** Example CSV matching the import API (UTF-8, header row required). */
 const CSV_MODEL = `provider,model,input_per_1k,output_per_1k
@@ -43,6 +56,9 @@ export function LlmCostRatesDialog({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [csvFormatOpen, setCsvFormatOpen] = useState(false);
+  const [rowToDelete, setRowToDelete] = useState<LlmCostRate | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,6 +68,7 @@ export function LlmCostRatesDialog({
     } catch {
       toast.error("Could not load LLM cost rates.");
     } finally {
+      await new Promise((resolve) => setTimeout(resolve, 200));
       setLoading(false);
     }
   }, []);
@@ -97,6 +114,27 @@ export function LlmCostRatesDialog({
     toast.success("Example CSV copied to clipboard.");
   };
 
+  const handleDeleteClick = (row: LlmCostRate) => {
+    setRowToDelete(row);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!rowToDelete) return;
+    setDeleting(true);
+    try {
+      await deleteLlmCostRate(rowToDelete.id);
+      toast.success("Cost rate removed.");
+      setDeleteDialogOpen(false);
+      setRowToDelete(null);
+      await load();
+    } catch {
+      toast.error("Could not delete this cost rate.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const downloadCsvModel = () => {
     const blob = new Blob([`${CSV_MODEL.trim()}\n`], {
       type: "text/csv;charset=utf-8",
@@ -115,11 +153,15 @@ export function LlmCostRatesDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) setCsvFormatOpen(false);
+        if (!next) {
+          setCsvFormatOpen(false);
+          setDeleteDialogOpen(false);
+          setRowToDelete(null);
+        }
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col gap-4">
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col gap-4 z-50">
         <DialogHeader>
           <DialogTitle>LLM cost rates</DialogTitle>
           <DialogDescription>
@@ -193,6 +235,7 @@ export function LlmCostRatesDialog({
                   <TableHead className="text-right">Input / 1K</TableHead>
                   <TableHead className="text-right">Output / 1K</TableHead>
                   <TableHead className="whitespace-nowrap">Updated</TableHead>
+                  <TableHead className="w-[72px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -215,6 +258,18 @@ export function LlmCostRatesDialog({
                     >
                       {formatTimeAgo(r.updated_at)}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                        title="Delete row"
+                        onClick={() => handleDeleteClick(r)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -223,6 +278,22 @@ export function LlmCostRatesDialog({
         </div>
       </DialogContent>
     </Dialog>
+
+      <ConfirmDialog
+        isOpen={deleteDialogOpen}
+        onOpenChange={(next) => {
+          setDeleteDialogOpen(next);
+          if (!next) setRowToDelete(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+        isInProgress={deleting}
+        title="Delete cost rate?"
+        description={
+          rowToDelete
+            ? `This removes the pricing row for ${rowToDelete.provider_key}/${rowToDelete.model_key}. You can add it again later with a CSV import. This action cannot be undone from the UI.`
+            : undefined
+        }
+      />
 
       <Dialog open={csvFormatOpen} onOpenChange={setCsvFormatOpen}>
         <DialogContent className="max-w-lg max-h-[min(80vh,560px)] flex flex-col gap-3">

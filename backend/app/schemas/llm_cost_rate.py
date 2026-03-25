@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class LlmCostRateRead(BaseModel):
@@ -13,6 +13,10 @@ class LlmCostRateRead(BaseModel):
     input_per_1k: float
     output_per_1k: float
     updated_at: datetime
+
+    @field_serializer("input_per_1k", "output_per_1k")
+    def serialize_input_output_per_1k(self, value: float) -> str:
+        return f"{value:.4f}"
 
 
 class LlmCostRateImportResult(BaseModel):
