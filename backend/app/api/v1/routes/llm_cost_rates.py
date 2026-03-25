@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from backend.app.core.exceptions.error_messages import ErrorKey
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.schemas.llm_cost_rate import LlmCostRateImportResult, LlmCostRateRead
 from app.services.llm_cost_rates import LlmCostRateService
@@ -39,14 +41,16 @@ async def import_cost_rates_csv(
     service: LlmCostRateService = Injected(LlmCostRateService),
 ):
     if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Upload a .csv file")
+        raise AppException(error_key=ErrorKey.INVALID_FILE_FORMAT, status_code=400, error_detail="File must be a CSV file")
     raw = await file.read()
     if not raw:
-        raise HTTPException(status_code=400, detail="Empty file")
+        raise AppException(error_key=ErrorKey.INVALID_FILE_FORMAT, status_code=400, error_detail="Empty file")
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError as e:
-        raise HTTPException(
-            status_code=400, detail="File must be UTF-8 encoded"
+        raise AppException(
+            error_key=ErrorKey.INVALID_FILE_FORMAT,
+            status_code=400,
+            error_detail="File must be UTF-8 encoded"
         ) from e
     return await service.import_csv(text)
