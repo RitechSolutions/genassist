@@ -56,8 +56,9 @@ const DatasetDetailPage: React.FC = () => {
   const [convTotal, setConvTotal] = useState(0);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [importingConvId, setImportingConvId] = useState<string | null>(null);
-  const [pendingImportConv, setPendingImportConv] = useState<BackendTranscript | null>(null);
+  const [pendingImportConvs, setPendingImportConvs] = useState<BackendTranscript[]>([]);
   const importSucceededRef = React.useRef(false);
+  const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
   const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<TranscriptEntry[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -103,6 +104,7 @@ const DatasetDetailPage: React.FC = () => {
     setConvPage(0);
     setExpandedConvId(null);
     setExpandedMessages([]);
+    setSelectedConvIds(new Set());
     loadConversations(0, workflowId);
   };
 
@@ -110,19 +112,41 @@ const DatasetDetailPage: React.FC = () => {
     setConvPage(next);
     setExpandedConvId(null);
     setExpandedMessages([]);
+    setSelectedConvIds(new Set());
     loadConversations(next, selectedWorkflowId);
   };
 
+  const toggleSelectConv = (id: string) => {
+    setSelectedConvIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const allSelected = conversations.length > 0 && conversations.every((c) => selectedConvIds.has(c.id));
+
+  const toggleSelectAll = () => {
+    setSelectedConvIds(allSelected ? new Set() : new Set(conversations.map((c) => c.id)));
+  };
+
   const handleImportFromConversation = async () => {
-    if (!datasetId || !pendingImportConv) return;
+    if (!datasetId || pendingImportConvs.length === 0) return;
     importSucceededRef.current = true;
-    setImportingConvId(pendingImportConv.id);
-    const created = await importCasesFromConversation(datasetId, pendingImportConv.id);
-    if (created && created.length > 0) {
-      setCases((prev) => [...created, ...prev]);
+    const allCreated: TestCase[] = [];
+    for (const conv of pendingImportConvs) {
+      setImportingConvId(conv.id);
+      const created = await importCasesFromConversation(datasetId, conv.id);
+      if (created && created.length > 0) allCreated.push(...created);
     }
+    if (allCreated.length > 0) setCases((prev) => [...allCreated, ...prev]);
     setImportingConvId(null);
-    setPendingImportConv(null);
+    setSelectedConvIds(new Set());
+    setPendingImportConvs([]);
   };
 
   useEffect(() => {
@@ -394,19 +418,27 @@ const DatasetDetailPage: React.FC = () => {
         />
 
         <ConfirmDialog
-          isOpen={!!pendingImportConv}
+          isOpen={pendingImportConvs.length > 0}
           onOpenChange={(open) => {
             if (!open) {
               const succeeded = importSucceededRef.current;
               importSucceededRef.current = false;
-              setPendingImportConv(null);
+              setPendingImportConvs([]);
               if (!succeeded) setIsImportDialogOpen(true);
             }
           }}
           onConfirm={handleImportFromConversation}
           isInProgress={!!importingConvId}
-          title={`Import from conversation #${pendingImportConv?.id.slice(-4) ?? ""}`}
-          description={`This will import all Q&A pairs from this conversation (${pendingImportConv?.word_count ?? 0} words) into dataset "${suite?.name ?? ""}".`}
+          title={
+            pendingImportConvs.length === 1
+              ? `Import from conversation #${pendingImportConvs[0].id.slice(-4)}`
+              : `Import from ${pendingImportConvs.length} conversations`
+          }
+          description={
+            pendingImportConvs.length === 1
+              ? `This will import all Q&A pairs from conversation #${pendingImportConvs[0].id.slice(-4)} (${pendingImportConvs[0].word_count ?? 0} words) into dataset "${suite?.name ?? ""}".`
+              : `This will import all Q&A pairs from ${pendingImportConvs.length} conversations (${pendingImportConvs.reduce((sum, c) => sum + (c.word_count ?? 0), 0)} total words) into dataset "${suite?.name ?? ""}".`
+          }
           primaryButtonText="Import"
         />
 
@@ -439,11 +471,32 @@ const DatasetDetailPage: React.FC = () => {
                 <div className="text-sm text-gray-400 py-4">No conversations found.</div>
               ) : (
                 <div className="space-y-2 py-2">
+                  <div className="flex items-center gap-2 px-1 pb-1 border-b">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 cursor-pointer"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                    />
+                    <span className="text-xs text-gray-500">
+                      {selectedConvIds.size > 0
+                        ? `${selectedConvIds.size} selected`
+                        : "Select all on this page"}
+                    </span>
+                  </div>
+
                   {conversations.map((conv) => {
                     const isExpanded = expandedConvId === conv.id;
+                    const isSelected = selectedConvIds.has(conv.id);
                     return (
                       <div key={conv.id} className="border rounded overflow-hidden">
                         <div className="p-3 flex items-center justify-between gap-3">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 shrink-0 cursor-pointer"
+                            checked={isSelected}
+                            onChange={() => toggleSelectConv(conv.id)}
+                          />
                           <button
                             className="flex items-center gap-2 min-w-0 text-left flex-1"
                             onClick={() => toggleExpandConversation(conv.id)}
@@ -468,7 +521,7 @@ const DatasetDetailPage: React.FC = () => {
                             disabled={importingConvId === conv.id}
                             onClick={() => {
                               setIsImportDialogOpen(false);
-                              setPendingImportConv(conv);
+                              setPendingImportConvs([conv]);
                             }}
                           >
                             {importingConvId === conv.id ? "Importing…" : "Import"}
@@ -512,9 +565,23 @@ const DatasetDetailPage: React.FC = () => {
             </div>
 
             <DialogFooter className="border-t px-6 py-3 shrink-0 flex items-center justify-between">
-              <span className="text-xs text-gray-500">
-                {convTotal} conversation{convTotal !== 1 ? "s" : ""} total
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-500">
+                  {convTotal} conversation{convTotal !== 1 ? "s" : ""} total
+                </span>
+                {selectedConvIds.size > 0 && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const selected = conversations.filter((c) => selectedConvIds.has(c.id));
+                      setIsImportDialogOpen(false);
+                      setPendingImportConvs(selected);
+                    }}
+                  >
+                    Import Selected ({selectedConvIds.size})
+                  </Button>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
