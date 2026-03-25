@@ -56,6 +56,8 @@ const DatasetDetailPage: React.FC = () => {
   const [convTotal, setConvTotal] = useState(0);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [importingConvId, setImportingConvId] = useState<string | null>(null);
+  const [pendingImportConv, setPendingImportConv] = useState<BackendTranscript | null>(null);
+  const importSucceededRef = React.useRef(false);
   const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<TranscriptEntry[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -111,15 +113,16 @@ const DatasetDetailPage: React.FC = () => {
     loadConversations(next, selectedWorkflowId);
   };
 
-  const handleImportFromConversation = async (conversationId: string) => {
-    if (!datasetId) return;
-    setImportingConvId(conversationId);
-    const created = await importCasesFromConversation(datasetId, conversationId);
+  const handleImportFromConversation = async () => {
+    if (!datasetId || !pendingImportConv) return;
+    importSucceededRef.current = true;
+    setImportingConvId(pendingImportConv.id);
+    const created = await importCasesFromConversation(datasetId, pendingImportConv.id);
     if (created && created.length > 0) {
       setCases((prev) => [...created, ...prev]);
     }
     setImportingConvId(null);
-    setIsImportDialogOpen(false);
+    setPendingImportConv(null);
   };
 
   useEffect(() => {
@@ -390,6 +393,23 @@ const DatasetDetailPage: React.FC = () => {
           description={`This will permanently delete this record from dataset "${suite?.name || ""}".`}
         />
 
+        <ConfirmDialog
+          isOpen={!!pendingImportConv}
+          onOpenChange={(open) => {
+            if (!open) {
+              const succeeded = importSucceededRef.current;
+              importSucceededRef.current = false;
+              setPendingImportConv(null);
+              if (!succeeded) setIsImportDialogOpen(true);
+            }
+          }}
+          onConfirm={handleImportFromConversation}
+          isInProgress={!!importingConvId}
+          title={`Import from conversation #${pendingImportConv?.id.slice(-4) ?? ""}`}
+          description={`This will import all Q&A pairs from this conversation (${pendingImportConv?.word_count ?? 0} words) into dataset "${suite?.name ?? ""}".`}
+          primaryButtonText="Import"
+        />
+
         <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
           <DialogContent className="w-[95vw] max-w-2xl h-[80vh] max-h-[80vh] overflow-hidden p-0 flex flex-col">
             <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
@@ -446,7 +466,10 @@ const DatasetDetailPage: React.FC = () => {
                           <Button
                             size="sm"
                             disabled={importingConvId === conv.id}
-                            onClick={() => handleImportFromConversation(conv.id)}
+                            onClick={() => {
+                              setIsImportDialogOpen(false);
+                              setPendingImportConv(conv);
+                            }}
                           >
                             {importingConvId === conv.id ? "Importing…" : "Import"}
                           </Button>
