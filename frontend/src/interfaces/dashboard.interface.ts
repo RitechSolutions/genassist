@@ -2,6 +2,7 @@ export interface DashboardSummaryStats {
   active_agents: number;
   workflow_runs: number;
   avg_response_time_ms: number;
+  total_cost_usd: number;
 }
 
 export interface ActiveConversationItem {
