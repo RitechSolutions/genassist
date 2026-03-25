@@ -7,6 +7,7 @@ import {
   AgentListItem,
 } from "@/interfaces/ai-agent.interface";
 import { PaginatedResponse } from "@/interfaces/common.interface";
+import { KBListItem } from "@/views/KnowledgeBase/types/knowledgeBase";
 import { getApiKeys, getApiKey } from "@/services/apiKeys";
 import { AxiosError } from "axios";
 import { UploadFileResponse } from "@/interfaces/file-manager.interface";
@@ -215,6 +216,17 @@ export async function queryAgent(
 // Knowledge base endpoints
 export async function getAllKnowledgeItems() {
   return apiRequest("GET", "genagent/knowledge/items");
+}
+
+export async function getKnowledgeItemsList(
+  page: number = 1,
+  pageSize: number = 20
+): Promise<PaginatedResponse<KBListItem>> {
+  const skip = (page - 1) * pageSize;
+  return apiRequest<PaginatedResponse<KBListItem>>(
+    "GET",
+    `genagent/knowledge/list?skip=${skip}&limit=${pageSize}`
+  );
 }
 
 export async function getKnowledgeItem(id: string) {
