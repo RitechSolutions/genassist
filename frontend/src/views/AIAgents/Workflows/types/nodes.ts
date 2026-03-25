@@ -161,6 +161,7 @@ export interface APIToolNodeData extends BaseNodeData {
 export interface BaseLLMNodeData extends BaseNodeData {
   providerId: string;
   memory: boolean;
+  piiMasking?: boolean;
   systemPrompt?: string;
   userPrompt?: string;
   type:

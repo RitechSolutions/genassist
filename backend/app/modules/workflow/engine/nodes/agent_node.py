@@ -8,6 +8,7 @@ import logging
 
 from app.core.utils.token_utils import calculate_history_tokens
 from app.modules.workflow.engine import BaseNode
+from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.agents.react_agent import ReActAgent
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
@@ -19,7 +20,7 @@ from app.services.llm_providers import LlmProviderService
 logger = logging.getLogger(__name__)
 
 
-class AgentNode(BaseNode):
+class AgentNode(PIIAnonymizerMixin, BaseNode):
     """Agent node that can select and execute tools using the BaseNode approach"""
 
     async def _get_chat_history_for_agent(
