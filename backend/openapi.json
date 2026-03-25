@@ -19925,13 +19925,18 @@
           "avg_response_time_ms": {
             "type": "integer",
             "title": "Avg Response Time Ms"
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd"
           }
         },
         "type": "object",
         "required": [
           "active_agents",
           "workflow_runs",
-          "avg_response_time_ms"
+          "avg_response_time_ms",
+          "total_cost_usd"
         ],
         "title": "DashboardSummaryStats",
         "description": "Summary statistics for the dashboard header."
