@@ -2,11 +2,11 @@
 Enhanced workflow state management for execution tracking and performance metrics.
 """
 
-from typing import Dict, Any, Union
 import logging
+import time
 import uuid
 from datetime import datetime
-import time
+from typing import Any, Dict, Union
 
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
@@ -248,9 +248,10 @@ class WorkflowState:
         total_input = sum(u.get("input_tokens", 0) for u in self.llm_usage)
         total_output = sum(u.get("output_tokens", 0) for u in self.llm_usage)
         total_cost_usd = 0.0
-        from app.services.llm_cost_calculator import calculate_cost
+        from app.services.llm_cost_calculator import LlmCostCalculator
+        self.llm_cost_calculator = LlmCostCalculator()
         for u in self.llm_usage:
-            total_cost_usd += calculate_cost(
+            total_cost_usd += self.llm_cost_calculator.calculate_cost(
                 u.get("provider", ""),
                 u.get("model", ""),
                 u.get("input_tokens", 0),
