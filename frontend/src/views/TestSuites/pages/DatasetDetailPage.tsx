@@ -326,9 +326,9 @@ const DatasetDetailPage: React.FC = () => {
               {filteredCases.map((entry) => (
                 <div key={entry.id} className="border rounded p-3 space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                    <div className="flex items-center gap-2 text-gray-600">
                       <ListOrdered className="h-3.5 w-3.5" />
-                      <span>Entry #{entry.id?.slice(0, 8)}</span>
+                      <span className="text-sm font-medium">#{entry.id?.slice(-4)}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Button
@@ -375,7 +375,7 @@ const DatasetDetailPage: React.FC = () => {
           <DialogContent className="w-[95vw] max-w-2xl h-[80vh] max-h-[80vh] overflow-hidden p-0 flex flex-col">
             <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
               <DialogTitle>
-                Edit Record {editingCase?.id?.slice(0, 8) ?? ""}
+                Edit Record #{editingCase?.id?.slice(-4) ?? ""}
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-3 px-6 py-4 flex-1 min-h-0 overflow-y-auto">
@@ -413,7 +413,7 @@ const DatasetDetailPage: React.FC = () => {
           onOpenChange={setIsDeleteDialogOpen}
           onConfirm={handleDeleteCase}
           isInProgress={isDeleting}
-          itemName={caseToDelete?.id?.slice(0, 8) || ""}
+          itemName={`#${caseToDelete?.id?.slice(-4) || ""}`}
           description={`This will permanently delete this record from dataset "${suite?.name || ""}".`}
         />
 
