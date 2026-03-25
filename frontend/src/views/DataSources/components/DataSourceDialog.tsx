@@ -315,7 +315,12 @@ export function DataSourceDialog({
 
   const isOAuthType = ["gmail", "o365"].includes(sourceType);
   const schema = dataSourceSchemas[sourceType];
-  const hasAdvancedFields = schema?.fields.some((f) => !f.required) ?? false;
+  const hasAdvancedFields =
+    schema?.fields.some((f) => {
+      if (f.required) return false;
+      if (!f.conditional) return true;
+      return connectionData[f.conditional.field] === f.conditional.value;
+    }) ?? false;
   const hasChangedSinceTest =
     testStatus !== null &&
     testedConnectionData !== null &&
