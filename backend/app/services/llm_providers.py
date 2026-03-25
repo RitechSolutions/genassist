@@ -22,7 +22,11 @@ llm_provider_all_key_builder = make_key_builder("-")
 
 @inject
 class LlmProviderService:
-    encrypted_fields = ["api_key"]
+    encrypted_fields = [
+        "api_key",
+        "aws_access_key_id",
+        "aws_secret_access_key",
+    ]
 
     def __init__(self, repository: LlmProviderRepository):
         self.repository = repository

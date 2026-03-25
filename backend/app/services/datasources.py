@@ -27,6 +27,9 @@ class DataSourceService:
         "refresh_token",
         "password",
         "api_token",
+        "private_key_passphrase",
+        "smb_password",
+        "connectionstring",
     ]
 
     def __init__(self, repository: DataSourcesRepository):
