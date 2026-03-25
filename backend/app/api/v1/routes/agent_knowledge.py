@@ -21,7 +21,9 @@ from app.modules.data.providers.legra import (
     SemanticChunker,
     SentenceTransformerEmbedder,
 )
-from app.schemas.agent_knowledge import KBBase, KBCreate, KBRead
+from app.schemas.agent_knowledge import KBBase, KBCreate, KBListItem, KBRead
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import BaseFilterModel
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.agent_knowledge_utils import (
     populate_remote_file_metadata,
@@ -63,6 +65,19 @@ async def get_all_knowledge_items(
     """Get all knowledge base items"""
     items = await knowledge_service.get_all()
     return items
+
+
+@router.get(
+    "/list",
+    response_model=PaginatedResponse[KBListItem],
+    dependencies=[Depends(auth)],
+)
+async def get_knowledge_items_list(
+    filter_obj: BaseFilterModel = Depends(),
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
+):
+    """Paginated KB list — optimized for performance (minimal fields only)."""
+    return await knowledge_service.get_list_paginated(filter_obj)
 
 
 @router.get(
