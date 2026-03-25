@@ -19,6 +19,7 @@ from app.api.v1.routes import (
     gmail,
     internal,
     llm_analysts,
+    llm_cost_rates,
     llm_providers,
     mcp,
     mcp_servers,
@@ -75,6 +76,7 @@ router.include_router(voice.router, prefix="/voice", tags=["Voice"])
 # router.include_router(conversation_analysis.router, prefix="/conversation-analysis", tags=["ConversationAnalysisRead"])
 
 router.include_router(llm_providers.router, prefix="/llm-providers", tags=["LlmProviders"])
+router.include_router(llm_cost_rates.router, prefix="/llm-cost-rates", tags=["LlmCostRates"])
 router.include_router(llm_analysts.router, prefix="/llm-analyst", tags=["LlmAnalyst"])
 
 router.include_router(agents.router, prefix="/genagent/agents", tags=["agents"])

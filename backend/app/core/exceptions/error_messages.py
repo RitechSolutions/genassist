@@ -138,6 +138,7 @@ class ErrorKey(Enum):
     TRANSLATION_ALREADY_EXISTS = "TRANSLATION_ALREADY_EXISTS"
     LANGUAGE_ALREADY_EXISTS = "LANGUAGE_ALREADY_EXISTS"
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
+    EMPTY_MESSAGES_FOR_CONVERSATION = "EMPTY_MESSAGES"
 
 
 ERROR_MESSAGES = {
@@ -268,6 +269,7 @@ ERROR_MESSAGES = {
         ErrorKey.TRANSLATION_ALREADY_EXISTS: "A translation with this key already exists.",
         ErrorKey.LANGUAGE_ALREADY_EXISTS: "A language with this code already exists.",
         ErrorKey.INTERNAL_SERVER_ERROR: "An internal server error occurred. Please try again later.",
+        ErrorKey.EMPTY_MESSAGES_FOR_CONVERSATION: "No messages were found for this conversation.",
     },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",

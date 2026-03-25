@@ -1,17 +1,50 @@
 import json
-import os
 import logging
+import os
+from typing import Any, Dict, Optional
+
 from injector import inject
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
+
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
-from app.services.llm_providers import LlmProviderService
 from app.schemas.dynamic_form_schemas import LLM_FORM_SCHEMAS_DICT
+from app.services.llm_providers import LlmProviderService
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
 
-
 logger = logging.getLogger(__name__)
+
+
+async def build_chat_model(
+    provider_name: Optional[str],
+    connection_data: Dict[str, Any],
+    model_name: Optional[str],
+) -> BaseChatModel:
+    cd = dict(connection_data)
+    original_provider = (provider_name or "").lower()
+    provider = original_provider
+
+    if provider == "vllm":
+        provider = "openai"
+        cd["api_key"] = "EMPTY"
+    elif provider == "openrouter":
+        provider = "openai"
+        if "base_url" not in cd:
+            cd["base_url"] = "https://openrouter.ai/api/v1"
+
+    if provider == "openai" and original_provider == "openai":
+        os.environ["OPENAI_API_KEY"] = cd.get("api_key", "")
+        if cd.get("organization"):
+            os.environ["OPENAI_ORG_ID"] = cd["organization"]
+
+    model_kwargs = {
+        "model_provider": provider,
+        "model": model_name,
+        **cd,
+    }
+
+    return init_chat_model(**model_kwargs)
 
 
 @inject
@@ -71,46 +104,16 @@ class LLMProvider:
 
             validated_data.pop("masked_api_key", None)
 
-            # Determine the actual provider to use
-            provider = (llm_provider.llm_model_provider or "").lower()
-
-            # Handle vLLM (uses OpenAI-compatible API)
-            if provider == "vllm":
-                provider = "openai"  # Translate vLLM to OpenAI provider
-                validated_data["api_key"] = "EMPTY"  # vLLM doesn't need auth
-
-            # Handle OpenRouter (uses OpenAI-compatible API)
-            elif provider == "openrouter":
-                provider = "openai"  # OpenRouter uses OpenAI-compatible interface
-                if "base_url" not in validated_data:
-                    validated_data["base_url"] = "https://openrouter.ai/api/v1"
-                # Decrypt the API key
-                if "api_key" in validated_data:
-                    validated_data["api_key"] = decrypt_key(validated_data["api_key"])
-
-            # Handle API key decryption for providers that need it
-            elif "api_key" in validated_data and provider not in ["ollama"]:
+            # Decrypt api_key for providers that need it
+            original_provider = (llm_provider.llm_model_provider or "").lower()
+            if original_provider not in ["vllm", "ollama"] and "api_key" in validated_data:
                 validated_data["api_key"] = decrypt_key(validated_data["api_key"])
 
-            # Set up environment variables if needed
-            if (
-                provider == "openai"
-                and llm_provider.llm_model_provider
-                and llm_provider.llm_model_provider.lower() == "openai"
-            ):
-                os.environ["OPENAI_API_KEY"] = validated_data["api_key"]
-                if validated_data.get("organization"):
-                    os.environ["OPENAI_ORG_ID"] = validated_data["organization"]
-
-            # Single unified flow for all providers
-            model_kwargs = {
-                "model_provider": provider,
-                "model": llm_provider.llm_model,
-                **validated_data,
-            }
-
-            # Initialize the model
-            llm = init_chat_model(**model_kwargs)
+            llm = await build_chat_model(
+                provider_name=llm_provider.llm_model_provider,
+                connection_data=validated_data,
+                model_name=llm_provider.llm_model,
+            )
             logger.info(f"Created LLM with init_chat_model for llm provider with ID: {llm_provider.id}")
         except Exception as e:
             logger.error(f"Failed to initialize LLM instance: {str(e)}")

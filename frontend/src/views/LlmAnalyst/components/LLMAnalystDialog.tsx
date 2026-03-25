@@ -13,7 +13,8 @@ import { Switch } from "@/components/switch";
 import { Button } from "@/components/button";
 import { Checkbox } from "@/components/checkbox";
 import { ScrollArea } from "@/components/scroll-area";
-import { Loader2 } from "lucide-react";
+import { Badge } from "@/components/badge";
+import { Loader2, X, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "react-hot-toast";
 import {
   createLLMAnalyst,
@@ -61,6 +62,10 @@ export function LLMAnalystDialog({
   const [selectedEnrichments, setSelectedEnrichments] = useState<string[]>([]);
   const [availableNodeTypes, setAvailableNodeTypes] = useState<AvailableNodeType[]>([]);
   const [nodeTypeSearch, setNodeTypeSearch] = useState("");
+  const [settings, setSettings] = useState<Record<string, any>>({});
+  const [newFieldKey, setNewFieldKey] = useState("");
+  const [tagInputs, setTagInputs] = useState<Record<string, string>>({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -111,6 +116,9 @@ export function LLMAnalystDialog({
     setPrompt(analyst.prompt);
     setIsActive(analyst.is_active === 1);
     setSelectedEnrichments(analyst.context_enrichments ?? []);
+    setSettings(analyst.settings ?? {});
+    setTagInputs({});
+    setNewFieldKey("");
   };
 
   const resetForm = () => {
@@ -121,6 +129,9 @@ export function LLMAnalystDialog({
     setIsActive(true);
     setSelectedEnrichments([]);
     setNodeTypeSearch("");
+    setSettings({});
+    setTagInputs({});
+    setNewFieldKey("");
   };
 
   const toggleEnrichment = (key: string) => {
@@ -159,6 +170,7 @@ export function LLMAnalystDialog({
         prompt,
         is_active: isActive ? 1 : 0,
         context_enrichments: selectedEnrichments,
+        settings: Object.keys(settings).length > 0 ? settings : null,
       };
 
       if (mode === "create") {
@@ -259,7 +271,16 @@ export function LLMAnalystDialog({
                 />
               </div>
 
-              {availableEnrichments.length > 0 && (
+              <button
+                type="button"
+                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground w-full"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                Advanced
+              </button>
+
+              {showAdvanced && availableEnrichments.length > 0 && (
                 <div className="space-y-2">
                   <Label>Context Enrichments</Label>
                   <p className="text-xs text-muted-foreground">
@@ -294,7 +315,7 @@ export function LLMAnalystDialog({
                 </div>
               )}
 
-              {availableNodeTypes.length > 0 && (
+              {showAdvanced && availableNodeTypes.length > 0 && (
                 <div className="space-y-2">
                   <Label>Node Enrichments</Label>
                   <p className="text-xs text-muted-foreground">
@@ -334,6 +355,141 @@ export function LLMAnalystDialog({
                   </ScrollArea>
                 </div>
               )}
+
+              {showAdvanced && <div className="space-y-2">
+                <Label>Analyst Settings</Label>
+                <p className="text-xs text-muted-foreground">
+                  Key-value settings passed to the analyst (e.g. topics list for conversation analysis).
+                </p>
+                <div className="border rounded-lg p-3 space-y-3">
+                  {Object.entries(settings).map(([key, value]) => (
+                    <div key={key} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{key}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          onClick={() => {
+                            const next = { ...settings };
+                            delete next[key];
+                            setSettings(next);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      {Array.isArray(value) ? (
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap gap-1.5">
+                            {value.map((tag: string) => (
+                              <Badge key={tag} variant="secondary" className="gap-1 pr-1">
+                                {tag}
+                                <button
+                                  type="button"
+                                  className="ml-0.5 hover:text-destructive"
+                                  onClick={() =>
+                                    setSettings((prev) => ({
+                                      ...prev,
+                                      [key]: (prev[key] as string[]).filter((t) => t !== tag),
+                                    }))
+                                  }
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <Input
+                              className="h-7 text-sm"
+                              placeholder="Add item..."
+                              value={tagInputs[key] ?? ""}
+                              onChange={(e) =>
+                                setTagInputs((prev) => ({ ...prev, [key]: e.target.value }))
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  const val = (tagInputs[key] ?? "").trim();
+                                  if (val && !(value as string[]).includes(val)) {
+                                    setSettings((prev) => ({
+                                      ...prev,
+                                      [key]: [...(prev[key] as string[]), val],
+                                    }));
+                                    setTagInputs((prev) => ({ ...prev, [key]: "" }));
+                                  }
+                                }
+                              }}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2"
+                              onClick={() => {
+                                const val = (tagInputs[key] ?? "").trim();
+                                if (val && !(value as string[]).includes(val)) {
+                                  setSettings((prev) => ({
+                                    ...prev,
+                                    [key]: [...(prev[key] as string[]), val],
+                                  }));
+                                  setTagInputs((prev) => ({ ...prev, [key]: "" }));
+                                }
+                              }}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Input
+                          className="h-7 text-sm"
+                          value={String(value)}
+                          onChange={(e) =>
+                            setSettings((prev) => ({ ...prev, [key]: e.target.value }))
+                          }
+                        />
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex gap-2 pt-1 border-t">
+                    <Input
+                      className="h-7 text-sm"
+                      placeholder="New field name..."
+                      value={newFieldKey}
+                      onChange={(e) => setNewFieldKey(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const k = newFieldKey.trim();
+                          if (k && !(k in settings)) {
+                            setSettings((prev) => ({ ...prev, [k]: [] }));
+                            setNewFieldKey("");
+                          }
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 shrink-0"
+                      onClick={() => {
+                        const k = newFieldKey.trim();
+                        if (k && !(k in settings)) {
+                          setSettings((prev) => ({ ...prev, [k]: [] }));
+                          setNewFieldKey("");
+                        }
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add Field
+                    </Button>
+                  </div>
+                </div>
+              </div>}
 
               <div className="flex items-center gap-2">
                 <Label htmlFor="is_active">Active</Label>

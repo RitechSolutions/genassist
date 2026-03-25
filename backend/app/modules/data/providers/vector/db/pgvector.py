@@ -294,6 +294,59 @@ class PgVectorDB(BaseVectorDB):
             logger.error(f"Failed to delete vectors from pgvector: {e}")
             return False
 
+    async def delete_vectors_by_metadata(self, filter_dict: Dict[str, Any]) -> bool:
+        """
+        Delete vectors by metadata filters (efficient for bulk operations)
+        
+        Args:
+            filter_dict: Dictionary of metadata field-value pairs to filter by
+            
+        Returns:
+            Success status
+        """
+        try:
+            if not self.engine:
+                logger.error("Engine not initialized")
+                return False
+
+            if not self.table_name:
+                logger.error("Collection not initialized. Call create_collection() first.")
+                return False
+
+            if not filter_dict:
+                logger.warning("No metadata filters provided for deletion")
+                return True
+
+            async with self.engine.begin() as conn:
+                # Build WHERE clause for metadata filtering
+                where_conditions = []
+                params = {}
+                
+                for key, value in filter_dict.items():
+                    param_key = f"filter_{key}"
+                    where_conditions.append(f"metadata->>'{key}' = :{param_key}")
+                    params[param_key] = str(value)
+
+                if not where_conditions:
+                    logger.warning("No valid filter conditions generated")
+                    return True
+
+                where_clause = " AND ".join(where_conditions)
+                delete_sql = text(f"""
+                    DELETE FROM {self.table_name}
+                    WHERE {where_clause}
+                """)
+
+                result = await conn.execute(delete_sql, params)
+                deleted_count = result.rowcount
+
+            logger.info(f"Deleted {deleted_count} vectors from pgvector table using metadata filters: {filter_dict}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete vectors by metadata from pgvector: {e}")
+            return False
+
     async def search(
         self,
         query_vector: List[float],
