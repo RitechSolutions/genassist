@@ -19,6 +19,8 @@ from app.db.models.test_suite import (
 from app.modules.workflow.engine.nodes.local_nli_model import local_nli_model
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.llm.provider import LLMProvider
+from app.core.utils.transcript_utils import extract_qa_pairs
+from app.repositories.conversations import ConversationRepository
 from app.repositories.test_suite import (
     TestSuiteRepository,
     TestCaseRepository,
@@ -27,6 +29,7 @@ from app.repositories.test_suite import (
     TestEvaluationRepository,
 )
 from app.schemas.test_suite import (
+    ImportCasesFromConversationRequest,
     TestCaseCreate,
     TestCaseInDB,
     TestCaseUpdate,
@@ -402,6 +405,7 @@ class TestSuiteService:
         result_repo: TestResultRepository,
         evaluation_repo: TestEvaluationRepository,
         workflow_service: WorkflowService,
+        conversation_repo: ConversationRepository,
     ) -> None:
         self.suite_repo = suite_repo
         self.case_repo = case_repo
@@ -409,6 +413,7 @@ class TestSuiteService:
         self.result_repo = result_repo
         self.evaluation_repo = evaluation_repo
         self.workflow_service = workflow_service
+        self.conversation_repo = conversation_repo
         self.evaluators = SimpleEvaluatorRegistry()
 
     # ---- Suites -----------------------------------------------------------
@@ -492,6 +497,32 @@ class TestSuiteService:
         if not case:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.case_repo.delete(case)
+
+    async def import_cases_from_conversation(
+        self, suite_id: UUID, conversation_id: UUID
+    ) -> List[TestCaseInDB]:
+        suite = await self.suite_repo.get_by_id(suite_id)
+        if not suite:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+
+        conversation = await self.conversation_repo.fetch_conversation_by_id(
+            conversation_id, include_messages=True
+        )
+        if not conversation:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+
+        created: List[TestCaseInDB] = []
+        for question, answer in extract_qa_pairs(conversation.messages):
+            orm = TestCaseModel(
+                suite_id=suite_id,
+                input_data={"message": question},
+                expected_output={"value": answer},
+                tags=["imported"],
+            )
+            case = await self.case_repo.create(orm)
+            created.append(TestCaseInDB.model_validate(case, from_attributes=True))
+
+        return created
 
     # ---- Runs -------------------------------------------------------------
 

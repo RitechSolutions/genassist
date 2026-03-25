@@ -224,13 +224,17 @@ class ConversationRepository:
                 ConversationModel.customer_id == conversation_filter.customer_id
             )
 
-        # Agent filter: join Operator → Agent (FK is AgentModel.operator_id → operators.id)
-        if conversation_filter.agent_id:
+        # Agent/Workflow filter: join Operator → Agent when either filter is active
+        if conversation_filter.agent_id or conversation_filter.workflow_id:
             query = query.join(
                 OperatorModel, ConversationModel.operator_id == OperatorModel.id
             ).join(
                 AgentModel, AgentModel.operator_id == OperatorModel.id
-            ).where(AgentModel.id == conversation_filter.agent_id)
+            )
+            if conversation_filter.agent_id:
+                query = query.where(AgentModel.id == conversation_filter.agent_id)
+            if conversation_filter.workflow_id:
+                query = query.where(AgentModel.workflow_id == conversation_filter.workflow_id)
 
         if conversation_filter.exclude_empty:
             query = query.where(ConversationModel.word_count > 0)

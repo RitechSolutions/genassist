@@ -41,6 +41,7 @@ export interface FetchTranscriptsParams {
   order_by?: string;
   sort_direction?: string;
   agent_id?: string;
+  workflow_id?: string;
   customer_satisfaction_min?: number;
   customer_satisfaction_max?: number;
   quality_of_service_min?: number;
@@ -63,7 +64,7 @@ export const fetchTranscripts = async (
     const {
       limit, skip, sentiment, hostility_neutral_max, hostility_positive_max,
       include_feedback, conversation_status, order_by, sort_direction,
-      agent_id, scoreFilters, from_date, to_date, exclude_empty,
+      agent_id, workflow_id, scoreFilters, from_date, to_date, exclude_empty,
     } = params;
 
     let url = "conversations/";
@@ -92,6 +93,7 @@ export const fetchTranscripts = async (
     if (order_by) queryParams.append("order_by", order_by);
     if (sort_direction) queryParams.append("sort_direction", sort_direction);
     if (agent_id) queryParams.append("agent_id", agent_id);
+    if (workflow_id) queryParams.append("workflow_id", workflow_id);
     if (from_date) queryParams.append("from_date", from_date);
     if (to_date) queryParams.append("to_date", to_date);
     if (exclude_empty) queryParams.append("exclude_empty", "true");
@@ -124,6 +126,21 @@ export const fetchTranscripts = async (
     };
   } catch (error) {
     return { items: [], total: 0, page: 1, page_size: 20, has_more: false };
+  }
+};
+
+export const fetchConversationById = async (
+  id: string
+): Promise<BackendTranscript | null> => {
+  try {
+    const data = await apiRequest<BackendTranscript>(
+      "GET",
+      `conversations/${id}?include_messages=true`,
+      undefined
+    );
+    return data ?? null;
+  } catch {
+    return null;
   }
 };
 

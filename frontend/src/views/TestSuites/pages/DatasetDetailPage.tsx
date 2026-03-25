@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageLayout } from "@/components/PageLayout";
 import {
   addTestCase,
   deleteTestCase,
   getTestSuite,
+  importCasesFromConversation,
   listTestCases,
   updateTestCase,
 } from "@/services/testSuites";
@@ -12,7 +13,7 @@ import { TestCase, TestSuite } from "@/interfaces/testSuite.interface";
 import { Button } from "@/components/button";
 import { Textarea } from "@/components/textarea";
 import { Label } from "@/components/label";
-import { ChevronLeft, Plus, ListOrdered, Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, Plus, ListOrdered, Pencil, Trash2, MessageSquareQuote, ChevronRight, ChevronDown } from "lucide-react";
 import JsonViewer from "@/components/JsonViewer";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -23,6 +24,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { fetchConversationById, fetchTranscripts } from "@/services/transcripts";
+import type { BackendTranscript, TranscriptEntry } from "@/interfaces/transcript.interface";
+import { getAllWorkflows } from "@/services/workflows";
+import type { Workflow } from "@/interfaces/workflow.interface";
+
+const PAGE_SIZE = 10;
 
 const DatasetDetailPage: React.FC = () => {
   const navigate = useNavigate();
@@ -39,6 +46,81 @@ const DatasetDetailPage: React.FC = () => {
   const [caseToDelete, setCaseToDelete] = useState<TestCase | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Import from conversation dialog state
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>("");
+  const [conversations, setConversations] = useState<BackendTranscript[]>([]);
+  const [convPage, setConvPage] = useState(0);
+  const [convTotal, setConvTotal] = useState(0);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [importingConvId, setImportingConvId] = useState<string | null>(null);
+  const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
+  const [expandedMessages, setExpandedMessages] = useState<TranscriptEntry[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+
+  const toggleExpandConversation = async (convId: string) => {
+    if (expandedConvId === convId) {
+      setExpandedConvId(null);
+      setExpandedMessages([]);
+      return;
+    }
+    setExpandedConvId(convId);
+    setExpandedMessages([]);
+    setIsLoadingMessages(true);
+    const conv = await fetchConversationById(convId);
+    const msgs = (conv?.messages ?? []) as TranscriptEntry[];
+    setExpandedMessages(msgs);
+    setIsLoadingMessages(false);
+  };
+
+  const loadConversations = useCallback(async (page: number, workflowId: string) => {
+    setIsLoadingConversations(true);
+    const result = await fetchTranscripts({
+      skip: page * PAGE_SIZE,
+      limit: PAGE_SIZE,
+      workflow_id: workflowId || undefined,
+      conversation_status: ["finalized"],
+    });
+    setConversations(result.items);
+    setConvTotal(result.total);
+    setIsLoadingConversations(false);
+  }, []);
+
+  const openImportDialog = async () => {
+    setIsImportDialogOpen(true);
+    setConvPage(0);
+    const wfs = await getAllWorkflows();
+    setWorkflows(wfs ?? []);
+    loadConversations(0, selectedWorkflowId);
+  };
+
+  const handleWorkflowFilterChange = (workflowId: string) => {
+    setSelectedWorkflowId(workflowId);
+    setConvPage(0);
+    setExpandedConvId(null);
+    setExpandedMessages([]);
+    loadConversations(0, workflowId);
+  };
+
+  const handleConvPageChange = (next: number) => {
+    setConvPage(next);
+    setExpandedConvId(null);
+    setExpandedMessages([]);
+    loadConversations(next, selectedWorkflowId);
+  };
+
+  const handleImportFromConversation = async (conversationId: string) => {
+    if (!datasetId) return;
+    setImportingConvId(conversationId);
+    const created = await importCasesFromConversation(datasetId, conversationId);
+    if (created && created.length > 0) {
+      setCases((prev) => [...created, ...prev]);
+    }
+    setImportingConvId(null);
+    setIsImportDialogOpen(false);
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -188,10 +270,16 @@ const DatasetDetailPage: React.FC = () => {
               placeholder='{"text":"We are available 24/7"}'
               className="font-mono text-xs"
             />
-            <Button onClick={handleAddCase} disabled={!caseInput.trim()}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Record
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={handleAddCase} disabled={!caseInput.trim()}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Record
+              </Button>
+              <Button variant="outline" onClick={openImportDialog}>
+                <MessageSquareQuote className="h-4 w-4 mr-2" />
+                Import from Conversation
+              </Button>
+            </div>
           </div>
 
           <div className="bg-white rounded-lg border p-4">
@@ -301,6 +389,132 @@ const DatasetDetailPage: React.FC = () => {
           itemName={caseToDelete?.id?.slice(0, 8) || ""}
           description={`This will permanently delete this record from dataset "${suite?.name || ""}".`}
         />
+
+        <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+          <DialogContent className="w-[95vw] max-w-2xl h-[80vh] max-h-[80vh] overflow-hidden p-0 flex flex-col">
+            <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+              <DialogTitle>Import from Conversation</DialogTitle>
+            </DialogHeader>
+
+            <div className="px-6 pb-2 shrink-0">
+              <Label className="text-xs mb-1 block">Filter by Workflow</Label>
+              <select
+                className="w-full border rounded px-2 py-1.5 text-sm"
+                value={selectedWorkflowId}
+                onChange={(e) => handleWorkflowFilterChange(e.target.value)}
+              >
+                <option value="">All workflows</option>
+                {workflows.map((wf) => (
+                  <option key={wf.id} value={wf.id ?? ""}>
+                    {wf.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-6">
+              {isLoadingConversations ? (
+                <div className="text-sm text-gray-400 py-4">Loading conversations…</div>
+              ) : conversations.length === 0 ? (
+                <div className="text-sm text-gray-400 py-4">No conversations found.</div>
+              ) : (
+                <div className="space-y-2 py-2">
+                  {conversations.map((conv) => {
+                    const isExpanded = expandedConvId === conv.id;
+                    return (
+                      <div key={conv.id} className="border rounded overflow-hidden">
+                        <div className="p-3 flex items-center justify-between gap-3">
+                          <button
+                            className="flex items-center gap-2 min-w-0 text-left flex-1"
+                            onClick={() => toggleExpandConversation(conv.id)}
+                          >
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 text-gray-400 shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`}
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground shrink-0">
+                                #{conv.id.slice(-4)}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {conv.conversation_date
+                                  ? new Date(conv.conversation_date).toLocaleDateString()
+                                  : "—"}{" "}
+                                · {conv.word_count ?? 0} words · {conv.status}
+                              </p>
+                            </div>
+                          </button>
+                          <Button
+                            size="sm"
+                            disabled={importingConvId === conv.id}
+                            onClick={() => handleImportFromConversation(conv.id)}
+                          >
+                            {importingConvId === conv.id ? "Importing…" : "Import"}
+                          </Button>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="border-t bg-gray-50 px-3 py-2 max-h-60 overflow-y-auto space-y-1.5">
+                            {isLoadingMessages ? (
+                              <p className="text-xs text-gray-400">Loading messages…</p>
+                            ) : expandedMessages.length === 0 ? (
+                              <p className="text-xs text-gray-400">No messages found.</p>
+                            ) : (
+                              expandedMessages.map((msg, idx) => (
+                                <div
+                                  key={(msg as { id?: string }).id ?? idx}
+                                  className={`flex gap-2 ${msg.speaker?.toLowerCase() === "agent" ? "justify-end" : "justify-start"}`}
+                                >
+                                  <div
+                                    className={`max-w-[80%] rounded px-2.5 py-1.5 text-xs ${
+                                      msg.speaker?.toLowerCase() === "agent"
+                                        ? "bg-blue-100 text-blue-900"
+                                        : "bg-white border text-gray-800"
+                                    }`}
+                                  >
+                                    <span className="font-semibold capitalize block mb-0.5 opacity-60 text-[10px]">
+                                      {msg.speaker}
+                                    </span>
+                                    {msg.text}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="border-t px-6 py-3 shrink-0 flex items-center justify-between">
+              <span className="text-xs text-gray-500">
+                {convTotal} conversation{convTotal !== 1 ? "s" : ""} total
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={convPage === 0}
+                  onClick={() => handleConvPageChange(convPage - 1)}
+                >
+                  Previous
+                </Button>
+                <span className="text-xs text-gray-500">Page {convPage + 1}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={(convPage + 1) * PAGE_SIZE >= convTotal}
+                  onClick={() => handleConvPageChange(convPage + 1)}
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PageLayout>
   );

@@ -51,6 +51,10 @@ class TestCase(TestCaseInDB):
     pass
 
 
+class ImportCasesFromConversationRequest(BaseModel):
+    conversation_id: UUID
+
+
 class TestSuiteBase(BaseModel):
     name: str
     description: Optional[str] = None
