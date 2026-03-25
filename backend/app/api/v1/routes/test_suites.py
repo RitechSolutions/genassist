@@ -7,6 +7,7 @@ from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
 from app.schemas.test_suite import (
+    ImportCasesFromConversationRequest,
     TestCase,
     TestCaseCreate,
     TestCaseUpdate,
@@ -137,6 +138,23 @@ async def delete_test_case(
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     await service.delete_case(case_id)
+
+
+@router.post(
+    "/suites/{suite_id}/cases/import-from-conversation",
+    response_model=List[TestCase],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+)
+async def import_cases_from_conversation(
+    suite_id: UUID,
+    data: ImportCasesFromConversationRequest,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """
+    Import all Q&A pairs from a conversation as test cases into the given suite.
+    """
+    return await service.import_cases_from_conversation(suite_id, data.conversation_id)
 
 
 @router.post(

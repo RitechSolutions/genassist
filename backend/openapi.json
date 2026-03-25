@@ -4793,6 +4793,23 @@
               ],
               "title": "To Create Datetime Messages"
             }
+          },
+          {
+            "name": "workflow_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Id"
+            }
           }
         ],
         "responses": {
@@ -5633,6 +5650,23 @@
               ],
               "title": "To Create Datetime Messages"
             }
+          },
+          {
+            "name": "workflow_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Id"
+            }
           }
         ],
         "responses": {
@@ -6135,6 +6169,23 @@
                 }
               ],
               "title": "To Create Datetime Messages"
+            }
+          },
+          {
+            "name": "workflow_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Id"
             }
           }
         ],
@@ -11749,6 +11800,73 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/suites/{suite_id}/cases/import-from-conversation": {
+      "post": {
+        "tags": [
+          "v1",
+          "Workflow Test Suites"
+        ],
+        "summary": "Import Cases From Conversation",
+        "description": "Import all Q&A pairs from a conversation as test cases into the given suite.",
+        "operationId": "import_cases_from_conversation_api_genagent_eval_suites__suite_id__cases_import_from_conversation_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "suite_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Suite Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportCasesFromConversationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TestCase"
+                  },
+                  "title": "Response Import Cases From Conversation Api Genagent Eval Suites  Suite Id  Cases Import From Conversation Post"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -21582,6 +21700,20 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImportCasesFromConversationRequest": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Conversation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id"
+        ],
+        "title": "ImportCasesFromConversationRequest"
       },
       "InProgConvTranscrUpdate": {
         "properties": {
