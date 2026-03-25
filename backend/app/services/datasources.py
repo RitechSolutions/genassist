@@ -196,14 +196,13 @@ class DataSourceService:
         if datasource_id:
             # stored_raw = await self.repository.get_by_id(datasource_id)
             # raw_conn = dict((stored_raw.connection_data if stored_raw else None) or {})
-            raw_conn = dict(connection_data or {})
-            decrypted_conn = await self.decrypt_connection_data_fields(dict(raw_conn))
+            decrypted_conn = await self.decrypt_connection_data_fields(cd)
 
             base = dict(decrypted_conn)
             for k, v in cd.items():
                 if v is None or v == "":
                     continue
-                if k in self.encrypted_fields and v == raw_conn.get(k):
+                if k in self.encrypted_fields and v == cd.get(k):
                     pass  # unchanged encrypted field — keep stored decrypted value
                 else:
                     base[k] = v  # new plaintext value from user

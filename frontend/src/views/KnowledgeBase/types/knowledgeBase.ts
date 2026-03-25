@@ -44,6 +44,19 @@ export interface UploadResult {
     [key: string]: unknown;
   }
 
+  export interface KBListItem {
+    id: string;
+    name: string;
+    type: string;
+    description: string | null;
+    files?: (string | FileItem)[] | null;
+    urls?: string[] | null;
+    content?: string | null;
+    sync_active?: boolean | null;
+    last_synced?: string | null;
+    last_sync_status?: string | null;
+  }
+
   export type UrlHeaderRow = {
     id: string;
     key: string;
