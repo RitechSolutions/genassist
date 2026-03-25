@@ -18,7 +18,7 @@ class TranscriptMessageService:
         self.transcript_message_repo = transcript_message_repository
 
     async def add_transcript_message_feedback(self, message_id: UUID, transcript_feedback:
-    TranscriptSegmentFeedback)-> tuple[MessageFeedbackModel, UUID]:
+    TranscriptSegmentFeedback)-> tuple[MessageFeedbackModel, UUID, str | None]:
         # Get message first to extract conversation_id
         message = await self.transcript_message_repo.get_message_by_message_id(message_id)
         if not message:
@@ -27,8 +27,8 @@ class TranscriptMessageService:
         conversation_id = message.conversation_id
 
         # Add feedback (pass message to avoid re-querying)
-        feedback = await self.transcript_message_repo.add_message_feedback(
+        feedback, previous_feedback = await self.transcript_message_repo.add_message_feedback(
             message_id, transcript_feedback
         )
 
-        return feedback, conversation_id
+        return feedback, conversation_id, previous_feedback

@@ -9,6 +9,8 @@ import {
   getWelcomeImage,
   deleteWelcomeImage,
 } from "@/services/api";
+import { getAllLLMAnalysts } from "@/services/llmAnalyst";
+import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
@@ -21,6 +23,9 @@ import {
   MessageSquare,
   X,
   Languages,
+  Bot,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   Sheet,
@@ -35,6 +40,7 @@ import { TranslationDialog } from "@/views/Settings/components/TranslationDialog
 import { DisclaimerEditor } from "@/components/DisclaimerEditor";
 import { getTranslationByKey } from "@/services/translations";
 import { getTranslationCount } from "../utils";
+import { Toggle } from "@/components/toggle";
 
 interface AgentFormData {
   id?: string;
@@ -49,6 +55,7 @@ interface AgentFormData {
   is_active?: boolean;
   workflow_id?: string;
   has_welcome_image?: boolean;
+  llm_analyst_id?: string | null;
 }
 
 interface AgentFormProps {
@@ -185,6 +192,14 @@ const AgentForm: React.FC<AgentFormProps> = ({
       cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
   });
 
+  const [llmAnalysts, setLlmAnalysts] = useState<LLMAnalyst[]>([]);
+
+  useEffect(() => {
+    getAllLLMAnalysts()
+      .then(setLlmAnalysts)
+      .catch(() => {});
+  }, []);
+
   const [loading, setLoading] = useState<boolean>(false);
   const [success, setSuccess] = useState<boolean>(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -192,6 +207,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const [imageLoading, setImageLoading] = useState<boolean>(false);
   const [imageDeleting, setImageDeleting] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
 
   // Load existing image when editing (only if agent has one)
   React.useEffect(() => {
@@ -211,6 +227,11 @@ const AgentForm: React.FC<AgentFormProps> = ({
     };
 
     loadExistingImage();
+
+    // load advanced settings
+    if (isEditMode && !!formData.llm_analyst_id) {
+      setShowAdvanced(true);
+    }
 
     return () => {
       if (objectUrl) {
@@ -479,6 +500,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   placeholder="Enter agent description"
                 />
               </div>
+
               <div className="space-y-2">
                 <Label>Welcome Image</Label>
                 <div className="space-y-3">
@@ -881,6 +903,49 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   Supports text, bold, font size, and links.
                 </p>
               </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center">
+                  <Toggle pressed={showAdvanced} onPressedChange={setShowAdvanced}>
+                    {showAdvanced ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </Toggle>
+                  <Label className="text-sm font-medium" htmlFor="show_advanced">Advanced Configurations</Label>
+                </div>
+                {showAdvanced && (
+                  <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+                    <div className="flex items-center gap-2">
+                      <Bot className="h-4 w-4 text-muted-foreground" />
+                      <Label htmlFor="llm_analyst_id">Conversation Analyst</Label>
+                    </div>
+                    <select
+                      id="llm_analyst_id"
+                      name="llm_analyst_id"
+                      value={formData.llm_analyst_id ?? ""}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          llm_analyst_id: e.target.value || null,
+                        }))
+                      }
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      <option value="">Default analyst</option>
+                      {llmAnalysts.map((analyst) => (
+                        <option key={analyst.id} value={analyst.id}>
+                          {analyst.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      The LLM analyst used to analyze conversations from this agent. Defaults to the system analyst if not set.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1023,7 +1088,7 @@ export const AgentFormDialog = ({
   }, [isOpen]);
 
   return (
-    <Sheet open={isOpen}>
+    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent hideOverlay={false} hideDefaultClose={true} className="sm:max-w-lg w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full">
         <SheetHeader className="p-6 pb-4 border-b shrink-0 flex flex-row">
           <SheetTitle className="text-xl font-semibold truncate">
