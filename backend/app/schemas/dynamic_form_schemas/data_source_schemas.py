@@ -257,8 +257,8 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
                 type="text",
                 label="Zendesk Subdomain",
                 required=True,
-                description="Your Zendesk subdomain (e.g., 'yourcompany' for yourcompany.zendesk.com)",
-                placeholder="yourcompany",
+                description="Use Zendesk subdomain (e.g., yourcompany.zendesk.com)",
+                placeholder="yourcompany.zendesk.com",
             ),
             FieldSchema(
                 name="email",
@@ -286,10 +286,11 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
             ),
             FieldSchema(
                 name="category_id",
-                type="number",
-                label="Category ID",
+                type="tags",
+                label="Category IDs",
                 required=False,
-                description="Optional: Only sync articles from a specific category. Leave empty to sync all categories.",
+                description="Optional: Only sync articles from these categories (comma-separated numeric IDs). Leave empty to sync all categories.",
+                placeholder="e.g. 3600001, 3600002",
                 advanced=True,
             ),
             FieldSchema(

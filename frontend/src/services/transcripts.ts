@@ -255,3 +255,26 @@ export const fetchAgentResponseLog = async (
     return null;
   }
 };
+
+export interface AgentResponseLogSummary {
+  transcript_message_id: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  cost_usd: number | null;
+}
+
+export const fetchAgentResponseLogsByConversation = async (
+  conversationId: string
+): Promise<AgentResponseLogSummary[]> => {
+  try {
+    const data = await apiRequest<AgentResponseLogSummary[]>(
+      "GET",
+      `/conversations/${conversationId}/agent-response-logs`,
+      undefined
+    );
+    return data ?? [];
+  } catch (error) {
+    return [];
+  }
+};

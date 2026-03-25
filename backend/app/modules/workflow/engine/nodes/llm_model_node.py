@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.token_utils import calculate_history_tokens
+from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
 from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.llm.provider import LLMProvider
@@ -49,7 +50,7 @@ class LLMModelNode(BaseNode):
             provider = provider_info.llm_model_provider
             model = provider_info.llm_model
 
-            actual_history_tokens, model, provider = calculate_history_tokens(
+            actual_history_tokens = calculate_history_tokens(
                 config, model, provider, system_prompt, user_prompt
             )
 
@@ -212,6 +213,13 @@ class LLMModelNode(BaseNode):
                     chat_history = await memory.get_messages()
                 result = await agent.invoke(prompt, chat_history=chat_history)
 
+                from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
+
+                await merge_llm_usage_from_result(
+                    self.get_state(), result, self.node_id, provider_id
+                )
+                if isinstance(result, dict) and "llm_usage" in result:
+                    result = {k: v for k, v in result.items() if k != "llm_usage"}
                 return result
 
             if memory:
@@ -233,6 +241,21 @@ class LLMModelNode(BaseNode):
             # Process the input through the model
             response = await llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=message_content)])
             result = response.content
+
+            # Extract and record token usage
+            usage = extract_usage_from_aimessage(response)
+            if usage:
+                llm_service = injector.get(LlmProviderService)
+                provider_info = await llm_service.get_by_id(provider_id)
+                provider = (provider_info.llm_model_provider or "").lower()
+                model = provider_info.llm_model or ""
+                self.get_state().add_llm_usage(
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                    provider=provider,
+                    model=model,
+                    node_id=self.node_id,
+                )
 
             return result
 

@@ -1,10 +1,13 @@
 import type { ConnectionStatus } from "./connectionStatus.interface";
 
+/** Values stored in data source connection_data (tags fields use string[]). */
+export type ConnectionDataValue = string | number | boolean | string[];
+
 export interface DataSource {
   id?: string;
   name: string;
   source_type: string;
-  connection_data: Record<string, string | number | boolean>;
+  connection_data: Record<string, ConnectionDataValue>;
   connection_status?: ConnectionStatus | null;
   is_active: number;
   oauth_status?: "connected" | "disconnected" | "pending" | "error";
@@ -28,7 +31,7 @@ export interface DataSourceField {
     | "tags"
     | "files";
   required: boolean;
-  default?: string | number | boolean;
+  default?: string | number | boolean | string[];
   description?: string;
   options?: { value: string; label: string }[];
   placeholder?: string;

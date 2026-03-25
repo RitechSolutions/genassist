@@ -1,11 +1,13 @@
 from injector import inject
 from sqlalchemy import UUID
+
+from app.cache.redis_cache import invalidate_user_cache
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.db.models import RoleModel
+from app.repositories.roles import RolesRepository
 from app.schemas.filter import BaseFilterModel
 from app.schemas.role import RoleCreate, RoleUpdate
-from app.repositories.roles import RolesRepository
-from app.core.exceptions.exception_classes import AppException
-from app.core.exceptions.error_messages import ErrorKey
 
 
 @inject
@@ -36,6 +38,13 @@ class RolesService:
             model.is_active = update_data.is_active
 
         updated_model = await self.repository.update(model)
+
+        # find all users with this role
+        # invalidate user cache for all users with this role
+        users = await self.repository.get_by_role_id(model.id)
+        for user in users:
+            await invalidate_user_cache(user.id)
+
         return updated_model
 
     async def delete(self, role_id: UUID):

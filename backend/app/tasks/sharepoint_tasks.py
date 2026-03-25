@@ -4,17 +4,19 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
-from croniter import croniter, CroniterBadCronError
+
 from celery import shared_task
-from app.modules.data.utils import FileTextExtractor
+from croniter import CroniterBadCronError, croniter
+
+from app.core.utils.encryption_utils import decrypt_key
 from app.dependencies.injector import injector
 from app.modules.data.manager import AgentRAGServiceManager
+from app.modules.data.utils import FileTextExtractor
+from app.modules.integration.office365_connector import Office365Connector
 from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_knowledge import KnowledgeBaseService
-from app.services.datasources import DataSourceService
-from app.modules.integration.office365_connector import Office365Connector
 from app.services.app_settings import AppSettingsService
-from app.core.utils.encryption_utils import decrypt_key
+from app.services.datasources import DataSourceService
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +71,10 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
     rag_manager = injector.get(AgentRAGServiceManager)
     app_settings_service = injector.get(AppSettingsService)
 
-    kb_list = [await kb_service.get_by_id(kb_id)] if kb_id else await kb_service.get_all()
+    if kb_id:
+        kb_list = [await kb_service.get_by_id(kb_id)]
+    else:
+        kb_list = [kb for kb in await kb_service.get_all(sync_active=True) if kb.sync_source_id]
 
     processed_ds = 0
     files_added_tot = 0

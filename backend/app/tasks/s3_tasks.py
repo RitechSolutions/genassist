@@ -4,16 +4,17 @@ import logging
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
+
+from celery import shared_task
 from croniter import croniter
-from app.dependencies.injector import injector
+
 from app.core.utils.s3_utils import S3Client
+from app.dependencies.injector import injector
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.data.utils import FileTextExtractor
 from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.datasources import DataSourceService
-from celery import shared_task
-
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +54,10 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
     kb_service = injector.get(KnowledgeBaseService)
     rag_manager = injector.get(AgentRAGServiceManager)
 
-    kbList = []
-    if not kb_id:
-        kbList = await kb_service.get_all()
-    else:
+    if kb_id:
         kbList = [await kb_service.get_by_id(kb_id)]
+    else:
+        kbList = [kb for kb in await kb_service.get_all(sync_active=True) if kb.sync_source_id]
 
     processed_ds = 0
     files_added_tot = 0
@@ -68,11 +68,6 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
     for kb in kbList:
         logger.info(f"Processing knowledge base {kb.name}")
 
-        if kb.sync_active == 0 or not kb.sync_source_id:
-            logger.info(
-                f"Knowledge base {kb.id} is not active or does not have a sync source"
-            )
-            continue
 
         ds = await injector.get(DataSourceService).get_by_id(kb.sync_source_id, True)
         if not ds:
@@ -152,7 +147,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         logger.info(
             f"Found {len(existing_files)} existing files in RAG for knowledge base {kb.id}"
         )
-        logger.info(f"Existing files: {existing_files}")
+        logger.debug(f"Existing files: {existing_files}")
 
         s3_new_files = [
             file_info
@@ -166,7 +161,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         logger.info(
             f"Found {len(s3_new_files)} new files in S3 to process for knowledge base {kb.id}"
         )
-        logger.info(f"New files: {s3_new_files}")
+        logger.debug(f"New files: {s3_new_files}")
 
         s3_deleted_files = [
             ex_file
@@ -199,7 +194,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         for file_info in s3_new_files:
             try:
                 current_file += 1
-                logger.info(f"Processing file {current_file} of {len(result['files'])}")
+                logger.info(f"Processing file {current_file} of {len(s3_new_files)}")
 
                 # Download file content
                 file_content = s3_client.get_file_content(file_info["key"])
@@ -237,17 +232,6 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                 logger.error(error_msg)
                 kb_errors.append(error_msg)
                 continue
-
-        # Check final status
-        existing_files = await rag_manager.get_document_ids(kb)
-        logger.info(
-            f"Updated to {len(existing_files)} existing files in RAG for knowledge base {kb.id}"
-        )
-
-        search_results = await rag_manager.search([kb], "Test", limit=2)
-        logger.info(
-            f"Found {len(search_results)} search results in RAG for knowledge base {kb.id}"
-        )
 
         # Update last synced time
         logger.info(f"Updating knowledge base {kb.id} last synced time...")
