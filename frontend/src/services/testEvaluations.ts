@@ -21,6 +21,21 @@ export const createTestEvaluation = (payload: CreateTestEvaluationPayload) =>
     payload as unknown as Record<string, unknown>,
   );
 
+export type UpdateTestEvaluationPayload = Partial<CreateTestEvaluationPayload>;
+
+export const updateTestEvaluation = (
+  id: string,
+  payload: UpdateTestEvaluationPayload,
+) =>
+  apiRequest<TestEvaluationConfig>(
+    "PATCH",
+    `${BASE}/evaluations/${id}`,
+    payload as unknown as Record<string, unknown>,
+  );
+
+export const deleteTestEvaluation = (id: string) =>
+  apiRequest<void>("DELETE", `${BASE}/evaluations/${id}`);
+
 export const appendRunToEvaluation = (evaluationId: string, runId: string) =>
   apiRequest<TestEvaluationConfig>(
     "POST",
