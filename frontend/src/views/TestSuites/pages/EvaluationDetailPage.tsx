@@ -329,7 +329,7 @@ const EvaluationDetailPage: React.FC = () => {
                       {selectedRunResults.map((result) => (
                         <div key={result.id} className="border rounded p-3 text-sm">
                           <div className="font-medium mb-1">
-                            Case #{result.case_id?.slice(0, 8)}
+                            Case #{result.case_id?.slice(-4)}
                           </div>
                           {result.metrics && (
                             <div className="mb-2 flex flex-wrap gap-1 text-[11px] text-gray-700">
