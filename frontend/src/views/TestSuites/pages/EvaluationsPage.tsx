@@ -7,6 +7,7 @@ import { getTestRun, listTestSuites } from "@/services/testSuites";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { TestSuite } from "@/interfaces/testSuite.interface";
 import { Label } from "@/components/label";
+import { Checkbox } from "@/components/checkbox";
 import {
   Select,
   SelectContent,
@@ -496,22 +497,27 @@ const EvaluationsPage: React.FC = () => {
               <Switch checked={useMemory} onCheckedChange={setUseMemory} />
             </div>
             <Label className="text-xs">Validation methods</Label>
-            <div className="space-y-1">
+            <div className="space-y-2">
               {METRICS.map((metric) => (
-                <label key={metric} className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
+                <div key={metric} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`metric-${metric}`}
                     checked={metrics.includes(metric)}
-                    onChange={(e) => {
+                    onCheckedChange={(checked) => {
                       setMetrics((prev) =>
-                        e.target.checked
+                        checked
                           ? [...prev, metric]
                           : prev.filter((m) => m !== metric),
                       );
                     }}
                   />
-                  {metric}
-                </label>
+                  <Label
+                    htmlFor={`metric-${metric}`}
+                    className="text-xs font-normal cursor-pointer"
+                  >
+                    {metric}
+                  </Label>
+                </div>
               ))}
             </div>
 
@@ -533,14 +539,16 @@ const EvaluationsPage: React.FC = () => {
                 </Select>
                 <Label className="text-xs">Min entailment score (0-1)</Label>
                 <Input value={nliMinEntailScore} onChange={(e) => setNliMinEntailScore(e.target.value)} />
-                <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="nli-fail-on-contradiction"
                     checked={nliFailOnContradiction}
-                    onChange={(e) => setNliFailOnContradiction(e.target.checked)}
+                    onCheckedChange={(checked) => setNliFailOnContradiction(Boolean(checked))}
                   />
-                  Fail on contradiction
-                </label>
+                  <Label htmlFor="nli-fail-on-contradiction" className="text-xs font-normal cursor-pointer">
+                    Fail on contradiction
+                  </Label>
+                </div>
               </div>
             )}
 
@@ -562,14 +570,16 @@ const EvaluationsPage: React.FC = () => {
                 </Select>
                 <Label className="text-xs">Min score (0-1)</Label>
                 <Input value={provMinScore} onChange={(e) => setProvMinScore(e.target.value)} />
-                <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="prov-fail-on-violation"
                     checked={provFailOnViolation}
-                    onChange={(e) => setProvFailOnViolation(e.target.checked)}
+                    onCheckedChange={(checked) => setProvFailOnViolation(Boolean(checked))}
                   />
-                  Fail on violation
-                </label>
+                  <Label htmlFor="prov-fail-on-violation" className="text-xs font-normal cursor-pointer">
+                    Fail on violation
+                  </Label>
+                </div>
                 {provMode === "embeddings" && (
                   <>
                     <Label className="text-xs">Embedding provider</Label>
@@ -723,22 +733,27 @@ const EvaluationsPage: React.FC = () => {
               <Switch checked={useMemory} onCheckedChange={setUseMemory} />
             </div>
             <Label className="text-xs">Validation methods</Label>
-            <div className="space-y-1">
+            <div className="space-y-2">
               {METRICS.map((metric) => (
-                <label key={metric} className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
+                <div key={metric} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`metric-${metric}`}
                     checked={metrics.includes(metric)}
-                    onChange={(e) => {
+                    onCheckedChange={(checked) => {
                       setMetrics((prev) =>
-                        e.target.checked
+                        checked
                           ? [...prev, metric]
                           : prev.filter((m) => m !== metric),
                       );
                     }}
                   />
-                  {metric}
-                </label>
+                  <Label
+                    htmlFor={`metric-${metric}`}
+                    className="text-xs font-normal cursor-pointer"
+                  >
+                    {metric}
+                  </Label>
+                </div>
               ))}
             </div>
 
@@ -767,14 +782,16 @@ const EvaluationsPage: React.FC = () => {
                   value={nliMinEntailScore}
                   onChange={(e) => setNliMinEntailScore(e.target.value)}
                 />
-                <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="nli-fail-on-contradiction"
                     checked={nliFailOnContradiction}
-                    onChange={(e) => setNliFailOnContradiction(e.target.checked)}
+                    onCheckedChange={(checked) => setNliFailOnContradiction(Boolean(checked))}
                   />
-                  Fail on contradiction
-                </label>
+                  <Label htmlFor="nli-fail-on-contradiction" className="text-xs font-normal cursor-pointer">
+                    Fail on contradiction
+                  </Label>
+                </div>
               </div>
             )}
 
@@ -807,14 +824,16 @@ const EvaluationsPage: React.FC = () => {
                   value={provMinScore}
                   onChange={(e) => setProvMinScore(e.target.value)}
                 />
-                <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="prov-fail-on-violation"
                     checked={provFailOnViolation}
-                    onChange={(e) => setProvFailOnViolation(e.target.checked)}
+                    onCheckedChange={(checked) => setProvFailOnViolation(Boolean(checked))}
                   />
-                  Fail on violation
-                </label>
+                  <Label htmlFor="prov-fail-on-violation" className="text-xs font-normal cursor-pointer">
+                    Fail on violation
+                  </Label>
+                </div>
                 {provMode === "embeddings" && (
                   <>
                     <Label className="text-xs">Embedding provider</Label>

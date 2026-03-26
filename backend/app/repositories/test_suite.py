@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.test_suite import (
@@ -27,7 +27,10 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
 
     async def delete_all_for_suite(self, suite_id: UUID) -> None:
         await self.db.execute(
-            delete(TestCaseModel).where(TestCaseModel.suite_id == str(suite_id))
+            update(TestCaseModel)
+            .where(TestCaseModel.suite_id == str(suite_id))
+            .values(is_deleted=1)
+            .execution_options(synchronize_session="fetch")
         )
         await self.db.commit()
 

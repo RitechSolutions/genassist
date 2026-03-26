@@ -139,6 +139,7 @@ class ErrorKey(Enum):
     LANGUAGE_ALREADY_EXISTS = "LANGUAGE_ALREADY_EXISTS"
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
     EMPTY_MESSAGES_FOR_CONVERSATION = "EMPTY_MESSAGES"
+    TEST_CASES_HAVE_RESULTS = "TEST_CASES_HAVE_RESULTS"
 
 
 ERROR_MESSAGES = {
@@ -270,7 +271,9 @@ ERROR_MESSAGES = {
         ErrorKey.LANGUAGE_ALREADY_EXISTS: "A language with this code already exists.",
         ErrorKey.INTERNAL_SERVER_ERROR: "An internal server error occurred. Please try again later.",
         ErrorKey.EMPTY_MESSAGES_FOR_CONVERSATION: "No messages were found for this conversation.",
-    },
+        ErrorKey.TEST_CASES_HAVE_RESULTS: "This dataset has cases with existing evaluation results. "
+                                          "Delete the related evaluations first, then try again.",
+        },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",

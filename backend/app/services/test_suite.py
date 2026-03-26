@@ -448,6 +448,12 @@ class TestSuiteService:
         suite = await self.suite_repo.get_by_id(suite_id)
         if not suite:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        from sqlalchemy import select, exists
+        case_ids_stmt = select(TestCaseModel.id).where(TestCaseModel.suite_id == str(suite_id))
+        has_results_stmt = select(exists().where(TestResultModel.case_id.in_(case_ids_stmt)))
+        result = await self.suite_repo.db.execute(has_results_stmt)
+        if result.scalar():
+            raise AppException(status_code=409, error_key=ErrorKey.TEST_CASES_HAVE_RESULTS)
         await self.suite_repo.delete(suite)
 
     # ---- Cases ------------------------------------------------------------
@@ -516,6 +522,15 @@ class TestSuiteService:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
 
         if replace:
+            from sqlalchemy import select, exists
+            case_ids_stmt = select(TestCaseModel.id).where(TestCaseModel.suite_id == str(suite_id))
+            has_results_stmt = select(exists().where(TestResultModel.case_id.in_(case_ids_stmt)))
+            result = await self.case_repo.db.execute(has_results_stmt)
+            if result.scalar():
+                raise AppException(
+                    status_code=409,
+                    error_key=ErrorKey.TEST_CASES_HAVE_RESULTS,
+                )
             await self.case_repo.delete_all_for_suite(suite_id)
 
         created: List[TestCaseInDB] = []
