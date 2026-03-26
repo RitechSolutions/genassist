@@ -21,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Database, Pencil, Trash2, MessageSquareQuote, ChevronRight, ChevronDown } from "lucide-react";
+import { Plus, Database, Pencil, Trash2, Import, ChevronRight, ChevronDown } from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { fetchConversationById, fetchTranscripts } from "@/services/transcripts";
@@ -239,12 +239,13 @@ const DatasetsPage: React.FC = () => {
                       DATASET
                     </span>
                     <Button
-                      variant="outline"
-                      size="sm"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="Import from Conversation"
                       onClick={() => openImportDialog(suite)}
                     >
-                      <MessageSquareQuote className="h-4 w-4 mr-1.5" />
-                      Import from Conversation
+                      <Import className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
