@@ -168,19 +168,18 @@ class AnalyticsAggregationService:
             # Conversation tracking + thumbs (deduplicated by conversation_id)
             conv_id = log.conversation_id
             conv_id_str = str(conv_id) if conv_id else None
-            if conv_id_str:
+            if conv_id_str and log.conversation is not None:
                 ab["conversation_ids"].add(conv_id_str)
-                if log.conversation is not None:
-                    conv_status = (log.conversation.status or "").lower()
-                    if conv_status == "finalized":
-                        ab["finalized_conversation_ids"].add(conv_id_str)
-                    else:
-                        ab["in_progress_conversation_ids"].add(conv_id_str)
-                    if conv_id_str not in ab["thumbs_data"]:
-                        ab["thumbs_data"][conv_id_str] = (
-                            log.conversation.thumbs_up_count or 0,
-                            log.conversation.thumbs_down_count or 0,
-                        )
+                conv_status = (log.conversation.status or "").lower()
+                if conv_status == "finalized":
+                    ab["finalized_conversation_ids"].add(conv_id_str)
+                else:
+                    ab["in_progress_conversation_ids"].add(conv_id_str)
+                if conv_id_str not in ab["thumbs_data"]:
+                    ab["thumbs_data"][conv_id_str] = (
+                        log.conversation.thumbs_up_count or 0,
+                        log.conversation.thumbs_down_count or 0,
+                    )
 
             # Response timing — camelCase keys from row_agent_response.performance_metrics
             row_response = payload.get("row_agent_response") or {}

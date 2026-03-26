@@ -3,15 +3,16 @@ from typing import Optional
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import and_, case, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.db.models.agent import AgentModel
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.app_settings import AppSettingsModel
 from app.db.models.conversation import ConversationModel
+from app.db.models.message_model import TranscriptMessageModel
 from app.db.models.operator import OperatorModel
 
 
@@ -60,13 +61,25 @@ class DashboardRepository:
         """Get average response time in milliseconds calculated from message timestamps.
 
         Calculates the actual time between customer messages and agent responses
-        by analyzing message pairs within conversations.
+        by analyzing consecutive message pairs entirely in SQL.
         """
-        # Get conversations with their messages
+        m1 = aliased(TranscriptMessageModel, name="m1")
+        m2 = aliased(TranscriptMessageModel, name="m2")
+
         query = (
-            select(ConversationModel)
-            .where(ConversationModel.is_deleted == 0)
-            .options(selectinload(ConversationModel.messages))
+            select(func.avg((m2.start_time - m1.end_time) * 1000))
+            .select_from(m1)
+            .join(m2, and_(
+                m2.conversation_id == m1.conversation_id,
+                m2.sequence_number == m1.sequence_number + 1,
+                m2.start_time >= m1.end_time,
+            ))
+            .join(ConversationModel, ConversationModel.id == m1.conversation_id)
+            .where(
+                ConversationModel.is_deleted == 0,
+                or_(m1.speaker.ilike("%customer%"), func.lower(m1.speaker) == "speaker_00"),
+                or_(m2.speaker.ilike("%agent%"), func.lower(m2.speaker) == "speaker_01"),
+            )
         )
 
         if from_date:
@@ -75,41 +88,8 @@ class DashboardRepository:
             query = query.where(ConversationModel.conversation_date <= to_date)
 
         result = await self.db.execute(query)
-        conversations = list(result.scalars().all())
-
-        response_times = []
-        for conv in conversations:
-            if not conv.messages or len(conv.messages) < 2:
-                continue
-
-            # Sort messages by sequence number to ensure correct order
-            sorted_messages = sorted(conv.messages, key=lambda m: m.sequence_number)
-
-            # Find pairs where customer message is followed by agent message
-            for i in range(len(sorted_messages) - 1):
-                current_msg = sorted_messages[i]
-                next_msg = sorted_messages[i + 1]
-
-                # Check if current is customer and next is agent
-                # Speaker can be "customer", "SPEAKER_00", etc. for customer
-                # and "agent", "SPEAKER_01", etc. for agent
-                current_speaker = current_msg.speaker.lower() if current_msg.speaker else ""
-                next_speaker = next_msg.speaker.lower() if next_msg.speaker else ""
-
-                is_customer_msg = "customer" in current_speaker or current_speaker == "speaker_00"
-                is_agent_msg = "agent" in next_speaker or next_speaker == "speaker_01"
-
-                if is_customer_msg and is_agent_msg:
-                    # Calculate response time using start_time (seconds from conversation start)
-                    # start_time of agent message - end_time of customer message
-                    response_time_seconds = next_msg.start_time - current_msg.end_time
-                    if response_time_seconds >= 0:
-                        response_times.append(response_time_seconds * 1000)  # Convert to ms
-
-        if not response_times:
-            return 0
-
-        return int(sum(response_times) / len(response_times))
+        avg = result.scalar()
+        return int(avg) if avg else 0
 
     async def get_active_conversations(
         self,
@@ -212,11 +192,10 @@ class DashboardRepository:
         result = await self.db.execute(query)
         agents = list(result.scalars().all())
 
-        # Get conversation counts and cost per agent for today
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         today_date = today_start.date()
 
-        # Pre-fetch total_cost_usd for today per agent
+        # Fetch today's cost per agent in a single query
         cost_query = (
             select(
                 AgentExecutionDailyStatsModel.agent_id,
@@ -231,81 +210,84 @@ class DashboardRepository:
         cost_result = await self.db.execute(cost_query)
         cost_by_agent = {row.agent_id: float(row.cost_usd or 0) for row in cost_result.all()}
 
+        # Fetch today's conversation counts for all operators in a single GROUP BY query
+        operator_ids = [a.operator_id for a in agents if a.operator_id]
+        conv_count_by_operator: dict = {}
+        if operator_ids:
+            conv_count_query = (
+                select(
+                    ConversationModel.operator_id,
+                    func.count(ConversationModel.id).label("count"),
+                )
+                .where(
+                    ConversationModel.operator_id.in_(operator_ids),
+                    ConversationModel.is_deleted == 0,
+                    ConversationModel.conversation_date >= today_start,
+                )
+                .group_by(ConversationModel.operator_id)
+            )
+            conv_count_result = await self.db.execute(conv_count_query)
+            conv_count_by_operator = {row.operator_id: row.count for row in conv_count_result.all()}
+
+        # Fetch avg response times for all operators in a single query
+        avg_response_by_operator = await self._calculate_response_times_for_operators(operator_ids)
+
         agent_stats = []
         for agent in agents:
-            # Get conversation count for this agent's operator
-            conv_count_query = select(func.count(ConversationModel.id)).where(
-                ConversationModel.operator_id == agent.operator_id,
-                ConversationModel.is_deleted == 0,
-                ConversationModel.conversation_date >= today_start
-            )
-            conv_result = await self.db.execute(conv_count_query)
-            conversations_today = conv_result.scalar() or 0
-
-            # Get stats from operator statistics
             operator_stats = (
                 agent.operator.operator_statistics
                 if agent.operator and agent.operator.operator_statistics
                 else None
             )
-
-            # Calculate actual response time from messages for this agent
-            avg_response_time_ms = await self._calculate_agent_response_time(agent.operator_id)
-
             agent_stats.append({
                 "id": agent.id,
                 "name": agent.name,
                 "is_active": agent.is_active == 1,
-                "conversations_today": conversations_today,
+                "conversations_today": conv_count_by_operator.get(agent.operator_id, 0),
                 "resolution_rate": operator_stats.avg_resolution_rate if operator_stats else 0,
-                "avg_response_time_ms": avg_response_time_ms,
+                "avg_response_time_ms": avg_response_by_operator.get(agent.operator_id, 0),
                 "cost": cost_by_agent.get(agent.id, 0.0),
             })
 
         return agent_stats
 
-    async def _calculate_agent_response_time(self, operator_id: UUID) -> int:
-        """Calculate average response time for a specific agent/operator from message timestamps."""
-        # Get recent conversations for this operator with messages
+    async def _calculate_response_times_for_operators(
+        self, operator_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        """Calculate average response time per operator in a single SQL query."""
+        if not operator_ids:
+            return {}
+
+        m1 = aliased(TranscriptMessageModel, name="m1")
+        m2 = aliased(TranscriptMessageModel, name="m2")
+
         query = (
-            select(ConversationModel)
-            .where(
-                ConversationModel.operator_id == operator_id,
-                ConversationModel.is_deleted == 0
+            select(
+                ConversationModel.operator_id,
+                func.avg((m2.start_time - m1.end_time) * 1000).label("avg_ms"),
             )
-            .options(selectinload(ConversationModel.messages))
-            .limit(100)  # Limit to recent conversations for performance
+            .select_from(m1)
+            .join(m2, and_(
+                m2.conversation_id == m1.conversation_id,
+                m2.sequence_number == m1.sequence_number + 1,
+                m2.start_time >= m1.end_time,
+            ))
+            .join(ConversationModel, ConversationModel.id == m1.conversation_id)
+            .where(
+                ConversationModel.operator_id.in_(operator_ids),
+                ConversationModel.is_deleted == 0,
+                or_(m1.speaker.ilike("%customer%"), func.lower(m1.speaker) == "speaker_00"),
+                or_(m2.speaker.ilike("%agent%"), func.lower(m2.speaker) == "speaker_01"),
+            )
+            .group_by(ConversationModel.operator_id)
         )
 
         result = await self.db.execute(query)
-        conversations = list(result.scalars().all())
-
-        response_times = []
-        for conv in conversations:
-            if not conv.messages or len(conv.messages) < 2:
-                continue
-
-            sorted_messages = sorted(conv.messages, key=lambda m: m.sequence_number)
-
-            for i in range(len(sorted_messages) - 1):
-                current_msg = sorted_messages[i]
-                next_msg = sorted_messages[i + 1]
-
-                current_speaker = current_msg.speaker.lower() if current_msg.speaker else ""
-                next_speaker = next_msg.speaker.lower() if next_msg.speaker else ""
-
-                is_customer_msg = "customer" in current_speaker or current_speaker == "speaker_00"
-                is_agent_msg = "agent" in next_speaker or next_speaker == "speaker_01"
-
-                if is_customer_msg and is_agent_msg:
-                    response_time_seconds = next_msg.start_time - current_msg.end_time
-                    if response_time_seconds >= 0:
-                        response_times.append(response_time_seconds * 1000)
-
-        if not response_times:
-            return 0
-
-        return int(sum(response_times) / len(response_times))
+        return {
+            row.operator_id: int(row.avg_ms)
+            for row in result.all()
+            if row.avg_ms is not None
+        }
 
     async def get_active_integrations(self) -> list[AppSettingsModel]:
         """Get all active integrations (app settings)."""
@@ -323,7 +305,6 @@ class DashboardRepository:
 
     async def get_total_cost_usd(self, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> float:
         """Get total cost in USD for the given date range."""
-        # Get sum of total_cost_usd for the given date range
         query = select(func.sum(AgentExecutionDailyStatsModel.total_cost_usd)).where(
             AgentExecutionDailyStatsModel.stat_date >= from_date,
             AgentExecutionDailyStatsModel.stat_date <= to_date,
