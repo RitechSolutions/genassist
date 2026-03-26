@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
 import {
@@ -28,6 +29,13 @@ import { fetchConversationById, fetchTranscripts } from "@/services/transcripts"
 import type { BackendTranscript, TranscriptEntry } from "@/interfaces/transcript.interface";
 import { getAllWorkflows } from "@/services/workflows";
 import type { Workflow } from "@/interfaces/workflow.interface";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/select";
 
 const CONV_PAGE_SIZE = 20;
 
@@ -111,6 +119,10 @@ const DatasetsPage: React.FC = () => {
     try {
       await deleteTestSuite(datasetToDelete.id);
       setSuites((prev) => prev.filter((s) => s.id !== datasetToDelete.id));
+      toast.success("Dataset deleted successfully.");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      toast.error(axiosErr?.response?.data?.error ?? "Failed to delete dataset.");
     } finally {
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);
@@ -126,7 +138,6 @@ const DatasetsPage: React.FC = () => {
       skip: page * CONV_PAGE_SIZE,
       limit: CONV_PAGE_SIZE,
       workflow_id: workflowId || undefined,
-      conversation_status: ["finalized"],
     });
     setConversations(result.items);
     setConvTotal(result.total);
@@ -178,9 +189,18 @@ const DatasetsPage: React.FC = () => {
     if (!importTargetSuite?.id || !pendingImportConv) return;
     importSucceededRef.current = true;
     setIsImporting(true);
-    await importCasesFromConversation(importTargetSuite.id, pendingImportConv.id, true);
-    setIsImporting(false);
-    setPendingImportConv(null);
+    try {
+      await importCasesFromConversation(importTargetSuite.id, pendingImportConv.id, true);
+      toast.success("Cases imported successfully.");
+      setPendingImportConv(null);
+    } catch (err: unknown) {
+      importSucceededRef.current = false;
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      const msg = axiosErr?.response?.data?.error ?? "Failed to import cases.";
+      toast.error(msg);
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   // ---- Filtering -----------------------------------------------------------
@@ -343,18 +363,22 @@ const DatasetsPage: React.FC = () => {
 
           <div className="px-6 pb-2 shrink-0">
             <Label className="text-xs mb-1 block">Filter by Workflow</Label>
-            <select
-              className="w-full border rounded px-2 py-1.5 text-sm"
-              value={selectedWorkflowId}
-              onChange={(e) => handleWorkflowFilterChange(e.target.value)}
+            <Select
+              value={selectedWorkflowId || "__all__"}
+              onValueChange={(v) => handleWorkflowFilterChange(v === "__all__" ? "" : v)}
             >
-              <option value="">All workflows</option>
-              {workflows.map((wf) => (
-                <option key={wf.id} value={wf.id ?? ""}>
-                  {wf.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="All workflows" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All workflows</SelectItem>
+                {workflows.map((wf) => (
+                  <SelectItem key={wf.id} value={wf.id ?? ""}>
+                    {wf.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6">
