@@ -179,7 +179,6 @@ export const useChat = ({
     () => JSON.stringify(metadata || {}),
     [metadata],
   );
-  const metadataRef = useRef<string>(metadataString);
   const prevBaseUrlRef = useRef<string>(baseUrl);
   const prevWebsocketUrlRef = useRef<string | undefined>(websocketUrl);
   const prevApiKeyRef = useRef<string>(apiKey);
@@ -218,10 +217,14 @@ export const useChat = ({
     onConfigLoadedRef.current = onConfigLoaded;
   }, [onConfigLoaded]);
 
-  // Initialize chat service - only when baseUrl, apiKey, tenant, useWs, or metadata actually change
+  // Sync metadata (e.g. `language` for outbound requests) without cancelling bootstrap or recreating the service
+  useEffect(() => {
+    chatServiceRef.current?.setMetadata(metadata);
+  }, [metadataString, metadata]);
+
+  // Initialize chat service - only when connection-related inputs change (not language/metadata — those cancel in-flight locale fetch)
   useEffect(() => {
     let cancelled = false;
-    const metadataChanged = metadataRef.current !== metadataString;
     const baseUrlChanged = prevBaseUrlRef.current !== baseUrl;
     const websocketUrlChanged = prevWebsocketUrlRef.current !== websocketUrl;
     const apiKeyChanged = prevApiKeyRef.current !== apiKey;
@@ -245,7 +248,6 @@ export const useChat = ({
       if (tenantChanged) prevTenantRef.current = tenant;
       if (useWsChanged) prevUseWsRef.current = useWs;
       if (usePollChanged) prevUsePollRef.current = usePoll;
-      if (metadataChanged) metadataRef.current = metadataString;
 
       // Clean up existing service if it exists
       if (chatServiceRef.current) {
@@ -406,12 +408,6 @@ export const useChat = ({
         }
         onConfigLoadedRef.current?.({ chatInputMetadata: meta ?? {} });
       }
-    } else if (chatServiceRef.current) {
-      // Just update metadata without re-initializing
-      if (metadataChanged) {
-        metadataRef.current = metadataString;
-        chatServiceRef.current.setMetadata(metadata);
-      }
     }
 
     // Always update handlers when callbacks change (without re-initializing)
@@ -448,8 +444,6 @@ export const useChat = ({
     websocketUrl,
     apiKey,
     tenant,
-    metadataString,
-    language,
     useWs,
     usePoll,
     serverUnavailableMessage,
@@ -457,17 +451,11 @@ export const useChat = ({
     serverUnavailableContactLabel,
   ]);
 
-  // Update language when it changes (without re-initializing the service)
-  useEffect(() => {
-    if (chatServiceRef.current) {
-      chatServiceRef.current.setLanguage(language);
-    }
-  }, [language]);
-
-  // Apply server-side agent strings for the selected locale (welcome, queries, thinking) without reset
+  // When the plugin language changes: update Accept-Language and apply the agent locale bundle (from fetchAgentChatLocales)
   useEffect(() => {
     const svc = chatServiceRef.current;
     if (!svc) return;
+    svc.setLanguage(language);
     const lang = language || "en";
     const applied = svc.applyLanguageFromLocales(lang);
     if (applied) {

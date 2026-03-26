@@ -30,7 +30,6 @@ function bootstrap() {
       agentName={cfg.agentName ?? "GenAssist"}
       description={cfg.description ?? "Your Virtual Assistant"}
       logoUrl={cfg.logoUrl}
-      placeholder={cfg.placeholder ?? "Ask a question"}
       mode={cfg.mode ?? "floating"}
       serverUnavailableMessage={
         cfg.serverUnavailableMessage ??

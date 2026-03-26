@@ -318,6 +318,7 @@ export class ChatService {
 
   /**
    * Fetch resolved welcome / FAQ / thinking strings for all agent locales (no conversation required).
+   * Request headers include `Accept-Language` from the current {@link setLanguage} value.
    */
   async fetchAgentChatLocales(): Promise<AgentChatLocalesResponse | null> {
     try {

@@ -106,11 +106,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   // Get translated placeholder or use provided/default
   // Make it reactive to language changes
-  const inputPlaceholder = useMemo(() => {
-    // If placeholder prop is explicitly provided, use it
-    // Otherwise, use the translation which will update with language changes
-    return placeholder || t('input.placeholder', 'Ask a question');
-  }, [placeholder, translations]);
+  const inputPlaceholder = useMemo(() => placeholder || t('input.placeholder', 'Ask a question'), [placeholder, translations]);
   const [inputValue, setInputValue] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
