@@ -53,6 +53,7 @@ class TestCase(TestCaseInDB):
 
 class ImportCasesFromConversationRequest(BaseModel):
     conversation_id: UUID
+    replace: bool = False
 
 
 class TestSuiteBase(BaseModel):

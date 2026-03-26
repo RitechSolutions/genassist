@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
 import {
   createTestSuite,
   deleteTestSuite,
+  importCasesFromConversation,
   listTestSuites,
   updateTestSuite,
 } from "@/services/testSuites";
@@ -20,9 +21,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Database, Pencil, Trash2 } from "lucide-react";
+import { Plus, Database, Pencil, Trash2, MessageSquareQuote, ChevronRight, ChevronDown } from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { fetchConversationById, fetchTranscripts } from "@/services/transcripts";
+import type { BackendTranscript, TranscriptEntry } from "@/interfaces/transcript.interface";
+import { getAllWorkflows } from "@/services/workflows";
+import type { Workflow } from "@/interfaces/workflow.interface";
+
+const CONV_PAGE_SIZE = 20;
 
 const DatasetsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -34,9 +41,24 @@ const DatasetsPage: React.FC = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [editingDatasetId, setEditingDatasetId] = useState<string | null>(null);
-
   const [suiteName, setSuiteName] = useState("");
   const [suiteDescription, setSuiteDescription] = useState("");
+
+  // Import from conversation state
+  const [importTargetSuite, setImportTargetSuite] = useState<TestSuite | null>(null);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
+  const [conversations, setConversations] = useState<BackendTranscript[]>([]);
+  const [convPage, setConvPage] = useState(0);
+  const [convTotal, setConvTotal] = useState(0);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
+  const [expandedMessages, setExpandedMessages] = useState<TranscriptEntry[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [pendingImportConv, setPendingImportConv] = useState<BackendTranscript | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const importSucceededRef = useRef(false);
 
   useEffect(() => {
     const load = async () => {
@@ -45,6 +67,8 @@ const DatasetsPage: React.FC = () => {
     };
     load();
   }, []);
+
+  // ---- Dataset CRUD -------------------------------------------------------
 
   const handleCreateDataset = async () => {
     if (!suiteName.trim()) return;
@@ -57,9 +81,7 @@ const DatasetsPage: React.FC = () => {
       setSuiteName("");
       setSuiteDescription("");
       setIsCreateDialogOpen(false);
-      if (created.id) {
-        navigate(`/tests/datasets/${created.id}`);
-      }
+      if (created.id) navigate(`/tests/datasets/${created.id}`);
     }
   };
 
@@ -76,9 +98,7 @@ const DatasetsPage: React.FC = () => {
       name: suiteName.trim(),
       description: suiteDescription.trim() || undefined,
     });
-    setSuites((prev) =>
-      prev.map((suite) => (suite.id === editingDatasetId ? updated : suite)),
-    );
+    setSuites((prev) => prev.map((s) => (s.id === editingDatasetId ? updated : s)));
     setIsEditDialogOpen(false);
     setEditingDatasetId(null);
     setSuiteName("");
@@ -90,13 +110,80 @@ const DatasetsPage: React.FC = () => {
     setIsDeleting(true);
     try {
       await deleteTestSuite(datasetToDelete.id);
-      setSuites((prev) => prev.filter((suite) => suite.id !== datasetToDelete.id));
+      setSuites((prev) => prev.filter((s) => s.id !== datasetToDelete.id));
     } finally {
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);
       setDatasetToDelete(null);
     }
   };
+
+  // ---- Conversation picker -------------------------------------------------
+
+  const loadConversations = useCallback(async (page: number, workflowId: string) => {
+    setIsLoadingConversations(true);
+    const result = await fetchTranscripts({
+      skip: page * CONV_PAGE_SIZE,
+      limit: CONV_PAGE_SIZE,
+      workflow_id: workflowId || undefined,
+      conversation_status: ["finalized"],
+    });
+    setConversations(result.items);
+    setConvTotal(result.total);
+    setIsLoadingConversations(false);
+  }, []);
+
+  const openImportDialog = async (suite: TestSuite) => {
+    setImportTargetSuite(suite);
+    setConvPage(0);
+    setSelectedWorkflowId("");
+    setExpandedConvId(null);
+    setExpandedMessages([]);
+    setIsImportDialogOpen(true);
+    const wfs = await getAllWorkflows();
+    setWorkflows(wfs ?? []);
+    loadConversations(0, "");
+  };
+
+  const handleWorkflowFilterChange = (workflowId: string) => {
+    setSelectedWorkflowId(workflowId);
+    setConvPage(0);
+    setExpandedConvId(null);
+    setExpandedMessages([]);
+    loadConversations(0, workflowId);
+  };
+
+  const handleConvPageChange = (next: number) => {
+    setConvPage(next);
+    setExpandedConvId(null);
+    setExpandedMessages([]);
+    loadConversations(next, selectedWorkflowId);
+  };
+
+  const toggleExpandConversation = async (convId: string) => {
+    if (expandedConvId === convId) {
+      setExpandedConvId(null);
+      setExpandedMessages([]);
+      return;
+    }
+    setExpandedConvId(convId);
+    setExpandedMessages([]);
+    setIsLoadingMessages(true);
+    const conv = await fetchConversationById(convId);
+    setExpandedMessages((conv?.messages ?? []) as TranscriptEntry[]);
+    setIsLoadingMessages(false);
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importTargetSuite?.id || !pendingImportConv) return;
+    importSucceededRef.current = true;
+    setIsImporting(true);
+    await importCasesFromConversation(importTargetSuite.id, pendingImportConv.id, true);
+    setIsImporting(false);
+    setPendingImportConv(null);
+  };
+
+  // ---- Filtering -----------------------------------------------------------
 
   const filteredSuites = suites.filter((suite) => {
     const query = searchQuery.trim().toLowerCase();
@@ -120,66 +207,73 @@ const DatasetsPage: React.FC = () => {
       />
 
       <div className="rounded-lg border bg-white overflow-hidden">
-          {filteredSuites.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
-              <Database className="h-12 w-12 text-gray-400" />
-              <h3 className="font-medium text-lg">No datasets found</h3>
-              <p className="text-sm text-gray-500 max-w-sm">
-                {searchQuery ? "Try adjusting your search query or " : ""}
-                create your first dataset.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {filteredSuites.map((suite) => (
-                <div
-                  key={suite.id}
-                  className="w-full py-4 px-6 text-left hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/tests/datasets/${suite.id}`)}
-                      className="min-w-0 flex-1 text-left"
+        {filteredSuites.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+            <Database className="h-12 w-12 text-gray-400" />
+            <h3 className="font-medium text-lg">No datasets found</h3>
+            <p className="text-sm text-gray-500 max-w-sm">
+              {searchQuery ? "Try adjusting your search query or " : ""}
+              create your first dataset.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {filteredSuites.map((suite) => (
+              <div
+                key={suite.id}
+                className="w-full py-4 px-6 text-left hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/tests/datasets/${suite.id}`)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <div className="text-lg font-semibold truncate">{suite.name}</div>
+                    <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                      {suite.description || "No description"}
+                    </p>
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black">
+                      DATASET
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openImportDialog(suite)}
                     >
-                      <div className="text-lg font-semibold truncate">
-                        {suite.name}
-                      </div>
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">
-                        {suite.description || "No description"}
-                      </p>
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black">
-                        DATASET
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleOpenEditDataset(suite)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-red-500"
-                        onClick={() => {
-                          setDatasetToDelete(suite);
-                          setIsDeleteDialogOpen(true);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                      <MessageSquareQuote className="h-4 w-4 mr-1.5" />
+                      Import from Conversation
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleOpenEditDataset(suite)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-red-500"
+                      onClick={() => {
+                        setDatasetToDelete(suite);
+                        setIsDeleteDialogOpen(true);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* Create dataset dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="w-[95vw] max-w-lg h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
@@ -200,22 +294,17 @@ const DatasetsPage: React.FC = () => {
             />
           </div>
           <DialogFooter className="border-t px-6 py-4 shrink-0">
-            <Button
-              variant="outline"
-              onClick={() => setIsCreateDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleCreateDataset}
-              disabled={!suiteName.trim()}
-            >
+            <Button onClick={handleCreateDataset} disabled={!suiteName.trim()}>
               Create Dataset
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Edit dataset dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="w-[95vw] max-w-lg h-[60vh] max-h-[60vh] overflow-hidden p-0 flex flex-col">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
@@ -223,10 +312,7 @@ const DatasetsPage: React.FC = () => {
           </DialogHeader>
           <div className="space-y-3 px-6 py-4 flex-1 min-h-0 overflow-y-auto">
             <Label className="text-xs">Dataset name</Label>
-            <Input
-              value={suiteName}
-              onChange={(e) => setSuiteName(e.target.value)}
-            />
+            <Input value={suiteName} onChange={(e) => setSuiteName(e.target.value)} />
             <Label className="text-xs">Description</Label>
             <Textarea
               value={suiteDescription}
@@ -245,6 +331,155 @@ const DatasetsPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Import from conversation dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <DialogContent className="w-[95vw] max-w-2xl h-[80vh] max-h-[80vh] overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+            <DialogTitle>
+              Import into "{importTargetSuite?.name}"
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="px-6 pb-2 shrink-0">
+            <Label className="text-xs mb-1 block">Filter by Workflow</Label>
+            <select
+              className="w-full border rounded px-2 py-1.5 text-sm"
+              value={selectedWorkflowId}
+              onChange={(e) => handleWorkflowFilterChange(e.target.value)}
+            >
+              <option value="">All workflows</option>
+              {workflows.map((wf) => (
+                <option key={wf.id} value={wf.id ?? ""}>
+                  {wf.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-6">
+            {isLoadingConversations ? (
+              <div className="text-sm text-gray-400 py-4">Loading conversations…</div>
+            ) : conversations.length === 0 ? (
+              <div className="text-sm text-gray-400 py-4">No conversations found.</div>
+            ) : (
+              <div className="space-y-2 py-2">
+                {conversations.map((conv) => {
+                  const isExpanded = expandedConvId === conv.id;
+                  return (
+                    <div key={conv.id} className="border rounded overflow-hidden">
+                      <div className="p-3 flex items-center justify-between gap-3">
+                        <button
+                          className="flex items-center gap-2 min-w-0 text-left flex-1"
+                          onClick={() => toggleExpandConversation(conv.id)}
+                        >
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 text-gray-400 shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`}
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground">
+                              #{conv.id.slice(-4)}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {conv.conversation_date
+                                ? new Date(conv.conversation_date).toLocaleDateString()
+                                : "—"}{" "}
+                              · {conv.word_count ?? 0} words · {conv.status}
+                            </p>
+                          </div>
+                        </button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setIsImportDialogOpen(false);
+                            setPendingImportConv(conv);
+                          }}
+                        >
+                          Import
+                        </Button>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="border-t bg-gray-50 px-3 py-2 max-h-60 overflow-y-auto space-y-1.5">
+                          {isLoadingMessages ? (
+                            <p className="text-xs text-gray-400">Loading messages…</p>
+                          ) : expandedMessages.length === 0 ? (
+                            <p className="text-xs text-gray-400">No messages found.</p>
+                          ) : (
+                            expandedMessages.map((msg, idx) => (
+                              <div
+                                key={(msg as { id?: string }).id ?? idx}
+                                className={`flex gap-2 ${msg.speaker?.toLowerCase() === "agent" ? "justify-end" : "justify-start"}`}
+                              >
+                                <div
+                                  className={`max-w-[80%] rounded px-2.5 py-1.5 text-xs ${
+                                    msg.speaker?.toLowerCase() === "agent"
+                                      ? "bg-blue-100 text-blue-900"
+                                      : "bg-white border text-gray-800"
+                                  }`}
+                                >
+                                  <span className="font-semibold capitalize block mb-0.5 opacity-60 text-[10px]">
+                                    {msg.speaker}
+                                  </span>
+                                  {msg.text}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="border-t px-6 py-3 shrink-0 flex items-center justify-between">
+            <span className="text-xs text-gray-500">
+              {convTotal} conversation{convTotal !== 1 ? "s" : ""} total
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={convPage === 0}
+                onClick={() => handleConvPageChange(convPage - 1)}
+              >
+                Previous
+              </Button>
+              <span className="text-xs text-gray-500">Page {convPage + 1}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={(convPage + 1) * CONV_PAGE_SIZE >= convTotal}
+                onClick={() => handleConvPageChange(convPage + 1)}
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm import — replaces all existing records */}
+      <ConfirmDialog
+        isOpen={!!pendingImportConv}
+        onOpenChange={(open) => {
+          if (!open) {
+            const succeeded = importSucceededRef.current;
+            importSucceededRef.current = false;
+            setPendingImportConv(null);
+            if (!succeeded) setIsImportDialogOpen(true);
+          }
+        }}
+        onConfirm={handleConfirmImport}
+        isInProgress={isImporting}
+        title={`Import from conversation #${pendingImportConv?.id.slice(-4) ?? ""}`}
+        description={`This will replace all existing records in "${importTargetSuite?.name ?? ""}" with Q&A pairs from conversation #${pendingImportConv?.id.slice(-4) ?? ""} (${pendingImportConv?.word_count ?? 0} words).`}
+        primaryButtonText="Replace & Import"
+      />
+
       <ConfirmDialog
         isOpen={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
@@ -258,4 +493,3 @@ const DatasetsPage: React.FC = () => {
 };
 
 export default DatasetsPage;
-
