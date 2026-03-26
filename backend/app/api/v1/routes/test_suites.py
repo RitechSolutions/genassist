@@ -154,7 +154,7 @@ async def import_cases_from_conversation(
     """
     Import all Q&A pairs from a conversation as test cases into the given suite.
     """
-    return await service.import_cases_from_conversation(suite_id, data.conversation_id)
+    return await service.import_cases_from_conversation(suite_id, data.conversation_id, data.replace)
 
 
 @router.post(

@@ -21707,6 +21707,11 @@
             "type": "string",
             "format": "uuid",
             "title": "Conversation Id"
+          },
+          "replace": {
+            "type": "boolean",
+            "title": "Replace",
+            "default": false
           }
         },
         "type": "object",

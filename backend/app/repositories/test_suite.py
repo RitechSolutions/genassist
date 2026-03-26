@@ -1,4 +1,7 @@
+from uuid import UUID
+
 from injector import inject
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.test_suite import (
@@ -21,6 +24,12 @@ class TestSuiteRepository(DbRepository[TestSuiteModel]):
 class TestCaseRepository(DbRepository[TestCaseModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(TestCaseModel, db)
+
+    async def delete_all_for_suite(self, suite_id: UUID) -> None:
+        await self.db.execute(
+            delete(TestCaseModel).where(TestCaseModel.suite_id == str(suite_id))
+        )
+        await self.db.commit()
 
 
 @inject

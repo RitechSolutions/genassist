@@ -499,7 +499,7 @@ class TestSuiteService:
         await self.case_repo.delete(case)
 
     async def import_cases_from_conversation(
-        self, suite_id: UUID, conversation_id: UUID
+        self, suite_id: UUID, conversation_id: UUID, replace: bool = False
     ) -> List[TestCaseInDB]:
         suite = await self.suite_repo.get_by_id(suite_id)
         if not suite:
@@ -510,6 +510,9 @@ class TestSuiteService:
         )
         if not conversation:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+
+        if replace:
+            await self.case_repo.delete_all_for_suite(suite_id)
 
         created: List[TestCaseInDB] = []
         for question, answer in extract_qa_pairs(conversation.messages):

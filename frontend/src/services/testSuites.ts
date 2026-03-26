@@ -57,11 +57,11 @@ export const updateTestCase = (caseId: string, payload: Partial<CreateTestCasePa
 export const deleteTestCase = (caseId: string) =>
   apiRequest<void>("DELETE", `${BASE}/cases/${caseId}`);
 
-export const importCasesFromConversation = (suiteId: string, conversationId: string) =>
+export const importCasesFromConversation = (suiteId: string, conversationId: string, replace = false) =>
   apiRequest<TestCase[]>(
     "POST",
     `${BASE}/suites/${suiteId}/cases/import-from-conversation`,
-    { conversation_id: conversationId },
+    { conversation_id: conversationId, replace },
   );
 
 export const startTestRun = (suiteId: string, payload: StartTestRunPayload) =>
