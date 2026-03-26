@@ -29,13 +29,10 @@ class PermissionsService:
             raise AppException(error_key=ErrorKey.PERMISSION_NOT_FOUND, status_code=404)
         return model
 
-    async def get_all(self, filter: BaseFilterModel, mode: str) -> list[PermissionModel]:
-        permissions = await self.repository.get_all(filter_obj=filter)
-
-        if mode == "create":
-            # avoid returning the wildcard permission here
-            permissions = [permission for permission in permissions if permission.name != "*"]
-
+    async def get_all(self, filter: BaseFilterModel) -> list[PermissionModel]:
+        permissions = await self.repository.get_all(filter_obj=filter or {})
+        # avoid returning the wildcard permission here
+        permissions = [permission for permission in permissions if permission.name != "*"]
         return permissions
 
     async def delete(self, permission_id: UUID):

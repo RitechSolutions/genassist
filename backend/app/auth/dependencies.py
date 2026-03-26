@@ -166,7 +166,7 @@ def socket_auth(required_permissions: list[str]):
             else:
                 raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Missing credentials")
 
-            if not set(required_permissions).issubset(set(perms)):
+            if "*" not in perms and not set(required_permissions).issubset(set(perms)):
                 raise WebSocketException(code=4403, reason="Invalid permissions")
 
             return SocketPrincipal(principal, user_id, perms, resolved_tenant_id)

@@ -6,9 +6,9 @@ from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
+from app.schemas.filter import BaseFilterModel
 from app.schemas.permission import (
     PermissionCreate,
-    PermissionQueryParams,
     PermissionRead,
     PermissionUpdate,
 )
@@ -36,13 +36,11 @@ async def create(
     dependencies=[Depends(auth), Depends(permissions(P.Permission.READ))],
 )
 async def get_all(
-    query_params: PermissionQueryParams = Depends(),
+    filter: BaseFilterModel = Depends(),
     service: PermissionsService = Injected(PermissionsService),
 ):
-    query_params.filter.limit = 1000 if query_params.filter.limit == 20 else query_params.filter.limit
-
-    return await service.get_all(query_params.filter, mode=query_params.mode)
-
+    filter.limit = 1000 if filter.limit == 20 else filter.limit
+    return await service.get_all(filter)
 
 @router.get(
     "/{permission_id}",

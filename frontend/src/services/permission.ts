@@ -5,8 +5,7 @@ import toast from "react-hot-toast";
 export const getAllPermissions = async (dialogMode: "create" | "edit"): Promise<Permission[]> => {
   // eslint-disable-next-line no-useless-catch
   try {
-    const mode = dialogMode === "create" ? "create" : "edit";
-    const data = await apiRequest<Permission[]>("GET", "/permissions?mode=" + mode);
+    const data = await apiRequest<Permission[]>("GET", "/permissions");
     return data || [];
   } catch (error) {
     throw error;

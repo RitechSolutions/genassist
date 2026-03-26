@@ -1517,15 +1517,6 @@
         ],
         "parameters": [
           {
-            "name": "mode",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Mode"
-            }
-          },
-          {
             "name": "skip",
             "in": "query",
             "required": false,
