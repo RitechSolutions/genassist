@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ListChecks, Pencil, Trash2 } from "lucide-react";
+import { Switch } from "@/components/switch";
 import {
   createTestEvaluation,
   deleteTestEvaluation,
@@ -75,6 +76,7 @@ const EvaluationsPage: React.FC = () => {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>("none");
   const [metrics, setMetrics] = useState<string[]>(["exact_match"]);
   const [inputMetadataText, setInputMetadataText] = useState("{}");
+  const [useMemory, setUseMemory] = useState(false);
   const [nliModelName, setNliModelName] = useState(
     "cross-encoder/nli-deberta-v3-base",
   );
@@ -157,6 +159,11 @@ const EvaluationsPage: React.FC = () => {
     } catch {
       parsedMetadata = undefined;
     }
+    if (useMemory) {
+      parsedMetadata = { ...(parsedMetadata ?? {}), use_memory: true };
+    } else if (parsedMetadata) {
+      delete parsedMetadata["use_memory"];
+    }
 
     const created = await createTestEvaluation({
       name: evaluationName.trim(),
@@ -206,6 +213,7 @@ const EvaluationsPage: React.FC = () => {
     setEvaluationName("");
     setEvaluationDescription("");
     setInputMetadataText("{}");
+    setUseMemory(false);
     navigate(`/tests/evaluations/${created.id}`);
   };
 
@@ -216,9 +224,11 @@ const EvaluationsPage: React.FC = () => {
     setSelectedSuiteId(evaluation.suite_id);
     setSelectedWorkflowId(evaluation.workflow_id ?? "none");
     setMetrics(evaluation.techniques);
-    setInputMetadataText(
-      evaluation.input_metadata ? JSON.stringify(evaluation.input_metadata, null, 2) : "{}",
-    );
+    const metaWithoutMemory = evaluation.input_metadata
+      ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
+      : {};
+    setInputMetadataText(JSON.stringify(metaWithoutMemory, null, 2));
+    setUseMemory(Boolean(evaluation.input_metadata?.use_memory));
     const nliCfg = evaluation.technique_configs?.["nli_eval"] as Record<string, unknown> | undefined;
     if (nliCfg) {
       setNliModelName((nliCfg.nli_model_name as string) ?? "cross-encoder/nli-deberta-v3-base");
@@ -242,6 +252,7 @@ const EvaluationsPage: React.FC = () => {
     setEvaluationName("");
     setEvaluationDescription("");
     setInputMetadataText("{}");
+    setUseMemory(false);
   };
 
   const handleUpdateEvaluation = async () => {
@@ -253,6 +264,11 @@ const EvaluationsPage: React.FC = () => {
       parsedMetadata = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined;
     } catch {
       parsedMetadata = undefined;
+    }
+    if (useMemory) {
+      parsedMetadata = { ...(parsedMetadata ?? {}), use_memory: true };
+    } else if (parsedMetadata) {
+      delete parsedMetadata["use_memory"];
     }
 
     const updated = await updateTestEvaluation(editingEvaluation.id, {
@@ -472,6 +488,13 @@ const EvaluationsPage: React.FC = () => {
               className="font-mono text-xs"
               rows={4}
             />
+            <div className="flex items-center justify-between rounded-md border px-3 py-2 mt-1">
+              <div>
+                <div className="text-xs font-medium">Use memory</div>
+                <div className="text-xs text-gray-400">Generates a unique thread ID per run so the workflow remembers previous inputs/outputs</div>
+              </div>
+              <Switch checked={useMemory} onCheckedChange={setUseMemory} />
+            </div>
             <Label className="text-xs">Validation methods</Label>
             <div className="space-y-1">
               {METRICS.map((metric) => (
@@ -692,6 +715,13 @@ const EvaluationsPage: React.FC = () => {
               className="font-mono text-xs"
               rows={4}
             />
+            <div className="flex items-center justify-between rounded-md border px-3 py-2 mt-1">
+              <div>
+                <div className="text-xs font-medium">Use memory</div>
+                <div className="text-xs text-gray-400">Generates a unique thread ID per run so the workflow remembers previous inputs/outputs</div>
+              </div>
+              <Switch checked={useMemory} onCheckedChange={setUseMemory} />
+            </div>
             <Label className="text-xs">Validation methods</Label>
             <div className="space-y-1">
               {METRICS.map((metric) => (

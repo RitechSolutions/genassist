@@ -477,7 +477,11 @@ class TestSuiteService:
         # Simple filter: where suite_id == suite_id
         from sqlalchemy import select
 
-        stmt = select(TestCaseModel).where(TestCaseModel.suite_id == str(suite_id))
+        stmt = (
+            select(TestCaseModel)
+            .where(TestCaseModel.suite_id == str(suite_id))
+            .order_by(TestCaseModel.id)
+        )
         result = await self.case_repo.db.execute(stmt)
         rows: List[TestCaseModel] = result.scalars().all()
         return [TestCaseInDB.model_validate(c, from_attributes=True) for c in rows]

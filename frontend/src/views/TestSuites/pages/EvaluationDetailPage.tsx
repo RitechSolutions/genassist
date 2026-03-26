@@ -126,11 +126,15 @@ const EvaluationDetailPage: React.FC = () => {
     if (!evaluation || !evaluationId) return;
     setIsRunning(true);
     try {
+      let runMetadata = evaluation.input_metadata ?? undefined;
+      if (runMetadata?.use_memory) {
+        runMetadata = { ...runMetadata, thread_id: crypto.randomUUID() };
+      }
       const created = await startTestRun(evaluation.suite_id, {
         techniques: evaluation.techniques,
         technique_configs: evaluation.technique_configs,
         workflow_id: evaluation.workflow_id,
-        input_metadata: evaluation.input_metadata,
+        input_metadata: runMetadata,
       });
       if (created?.id) {
         await appendRunToEvaluation(evaluationId, created.id);
@@ -222,7 +226,7 @@ const EvaluationDetailPage: React.FC = () => {
                 }}
               >
                 <div className="flex items-center justify-between">
-                  <div className="font-medium">Run #{run.id?.slice(0, 8)}</div>
+                  <div className="font-medium">Run #{run.id?.slice(-4)}</div>
                   <Badge variant="outline">{run.status}</Badge>
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
@@ -274,7 +278,7 @@ const EvaluationDetailPage: React.FC = () => {
           <DialogContent className="w-[95vw] max-w-5xl h-[85vh] max-h-[85vh] overflow-hidden p-0 flex flex-col">
             <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
               <DialogTitle>
-                Run Details {selectedRun ? `#${selectedRun.id?.slice(0, 8)}` : ""}
+                Run Details {selectedRun ? `#${selectedRun.id?.slice(-4)}` : ""}
               </DialogTitle>
             </DialogHeader>
             <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
