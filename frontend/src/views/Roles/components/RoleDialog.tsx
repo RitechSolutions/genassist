@@ -88,7 +88,7 @@ export function RoleDialog({
   const fetchPermissions = async () => {
     setPermissionsLoading(true);
     try {
-      const permissions = await getAllPermissions();
+      const permissions = await getAllPermissions(dialogMode);
       setAllPermissions(permissions);
 
       if (roleToEdit && roleToEdit.id) {

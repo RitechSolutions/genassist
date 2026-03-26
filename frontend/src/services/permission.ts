@@ -2,10 +2,11 @@ import { apiRequest } from "@/config/api";
 import { Permission } from "@/interfaces/permission.interface";
 import toast from "react-hot-toast";
 
-export const getAllPermissions = async (): Promise<Permission[]> => {
+export const getAllPermissions = async (dialogMode: "create" | "edit"): Promise<Permission[]> => {
   // eslint-disable-next-line no-useless-catch
   try {
-    const data = await apiRequest<Permission[]>("GET", "/permissions/");
+    const mode = dialogMode === "create" ? "create" : "edit";
+    const data = await apiRequest<Permission[]>("GET", "/permissions?mode=" + mode);
     return data || [];
   } catch (error) {
     throw error;

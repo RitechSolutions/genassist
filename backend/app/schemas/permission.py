@@ -1,8 +1,10 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field, ConfigDict
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.filter import BaseFilterModel
 
 
 class PermissionBase(BaseModel):
@@ -41,3 +43,7 @@ class PermissionRead(PermissionBase):
     model_config = ConfigDict(
         from_attributes = True
     )
+
+class PermissionQueryParams(BaseModel):
+    mode: str = Field(..., description="Mode of the permission")
+    filter: BaseFilterModel = Field(..., description="Filter for the permissions")
