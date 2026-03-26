@@ -228,7 +228,31 @@ async def _handle_jsonrpc_internal(
             )
 
         # Route based on method
-        if request.method == "tools/list":
+        if request.method == "initialize":
+            # Handle MCP protocol handshake
+            params = request.params or {}
+            protocol_version = params.get("protocolVersion", "2024-11-05")
+            return JSONRPCResponse(
+                jsonrpc="2.0",
+                id=request.id,
+                result={
+                    "protocolVersion": protocol_version,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "workflow-mcp-server", "version": "1.0.0"},
+                },
+                error=None,
+            )
+
+        elif request.method.startswith("notifications/"):
+            # Notifications don't require a meaningful response
+            return JSONRPCResponse(
+                jsonrpc="2.0",
+                id=request.id,
+                result=None,
+                error=None,
+            )
+
+        elif request.method == "tools/list":
             # List tools using MCP SDK adapter
             workflow_repo = injector.get(WorkflowRepository)
 
@@ -249,7 +273,7 @@ async def _handle_jsonrpc_internal(
             return JSONRPCResponse(
                 jsonrpc="2.0",
                 id=request.id,
-                result=tools_list,
+                result={"tools": tools_list},
                 error=None
             )
 
