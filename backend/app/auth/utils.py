@@ -1,16 +1,15 @@
+import hashlib
 import re
 import secrets
-import hashlib
 import string
 import unicodedata
+from contextvars import ContextVar
+from typing import Optional
+from uuid import UUID
 
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from passlib.context import CryptContext
-from uuid import UUID
 from starlette_context import context
-from contextvars import ContextVar
-from uuid import UUID
-from typing import Optional
 
 API_KEY_HEADER_NAME = "X-API-Key"
 
@@ -26,7 +25,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def has_permission(available, *required:  str) -> bool:
-    return all([permission in available or "*" in available for permission in required])
+    if "*" in available:
+        return True
+
+    if not all([permission in available or "*" in available for permission in required]):
+        return False
+    return True
 
 
 def get_password_hash(password: str) -> str:
