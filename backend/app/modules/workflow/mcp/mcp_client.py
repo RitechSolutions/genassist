@@ -7,12 +7,13 @@ Supports multiple connection types:
 """
 
 import logging
-from typing import Dict, Any, List, Optional, Literal
 from contextlib import asynccontextmanager
+from typing import Any, Dict, List, Literal, Optional
 
 from mcp import ClientSession as MCPClientSession
-from mcp.client.stdio import stdio_client as mcp_stdio_client
 from mcp.client.sse import sse_client as mcp_sse_client
+from mcp.client.stdio import stdio_client as mcp_stdio_client
+from mcp.client.streamable_http import streamable_http_client as mcp_streamablehttp_client
 from mcp.types import TextContent as MCPTextContent
 
 logger = logging.getLogger(__name__)
@@ -102,9 +103,9 @@ class MCPConnectionManager:
     @asynccontextmanager
     async def _create_http_session(self):
         """
-        Create HTTP-based MCP session.
-        Note: The official MCP SDK may use SSE for HTTP connections.
-        For pure HTTP, we might need to use a custom transport.
+        Create Streamable HTTP-based MCP session (MCP 2025 spec).
+        Uses POST requests, which is required by servers implementing the
+        Streamable HTTP transport (as opposed to the older SSE transport).
         """
         url = self.connection_config.get("url")
         headers = self.connection_config.get("headers", {})
@@ -113,12 +114,11 @@ class MCPConnectionManager:
         if not url:
             raise ValueError("HTTP connection requires 'url' in connection_config")
 
-        # HTTP connections in MCP typically use SSE transport
-        # If the SDK doesn't support pure HTTP, we'll use SSE
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        async with mcp_sse_client(url, headers=headers) as (read, write):
+        import httpx
+        async with mcp_streamablehttp_client(url, http_client=httpx.AsyncClient(headers=headers)) as (read, write, _):
             async with MCPClientSession(read, write) as session:
                 await session.initialize()
                 yield session
