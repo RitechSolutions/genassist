@@ -20,7 +20,7 @@ import { SearchInput } from '@/components/SearchInput';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { KBListItem, FileItem } from '../types/knowledgeBase';
 
-const DEFAULT_PAGE_SIZE = 5;
+const DEFAULT_PAGE_SIZE = 20;
 
 const KB_TYPE_OPTIONS = [
   { value: 'all', label: '(Show all)' },
