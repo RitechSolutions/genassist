@@ -20,6 +20,10 @@ export interface AnalyticsFiltersProps {
   dateRange: DateRange | undefined;
   onDateRangeChange: (value: DateRange | undefined) => void;
 
+  /** Optional comparison date range */
+  compareDateRange?: DateRange | undefined;
+  onCompareDateRangeChange?: (value: DateRange | undefined) => void;
+
   /** Optional extra controls rendered after the built-in filters (e.g. ExportButton, node type select) */
   children?: ReactNode;
 }
@@ -30,6 +34,8 @@ export const AnalyticsFilters = ({
   onAgentFilterChange,
   dateRange,
   onDateRangeChange,
+  compareDateRange,
+  onCompareDateRangeChange,
   children,
 }: AnalyticsFiltersProps) => {
   return (
@@ -53,6 +59,18 @@ export const AnalyticsFilters = ({
 
       {/* Date range with presets */}
       <DateRangePicker value={dateRange} onChange={onDateRangeChange} />
+
+      {/* Optional comparison date range */}
+      {onCompareDateRangeChange && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">vs</span>
+          <DateRangePicker
+            value={compareDateRange}
+            onChange={onCompareDateRangeChange}
+            placeholder="Compare period…"
+          />
+        </div>
+      )}
 
       {/* Extra controls (export button, node type filter, etc.) */}
       {children}
