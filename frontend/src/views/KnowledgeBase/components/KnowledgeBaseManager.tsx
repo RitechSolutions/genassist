@@ -20,7 +20,7 @@ import { SearchInput } from '@/components/SearchInput';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { KBListItem, FileItem } from '../types/knowledgeBase';
 
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 5;
 
 const KB_TYPE_OPTIONS = [
   { value: 'all', label: '(Show all)' },
@@ -90,7 +90,7 @@ const KnowledgeBaseManager: React.FC = () => {
     if (!sentinel) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
           loadMore();
         }
       },
@@ -98,7 +98,7 @@ const KnowledgeBaseManager: React.FC = () => {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasMore, loadingMore, loadMore]);
+  }, [hasMore, loadingMore, loadMore, loading]);
 
   const handleDeleteClick = (id: string, name: string) => {
     setKnowledgeBaseToDelete({ id, name });
