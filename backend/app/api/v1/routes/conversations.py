@@ -23,6 +23,7 @@ from app.auth.dependencies_agent_security import (
 from app.auth.utils import get_current_user_id
 from app.cache.redis_cache import invalidate_cache
 from app.core.agent_security_utils import apply_agent_cors_headers
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import send_socket_error
@@ -105,6 +106,83 @@ async def get_agent_info(
     response = {
         "agent_id": str(agent.id),
         "agent_available_languages": available_languages,
+    }
+
+    agent_security_settings = agent.security_settings if hasattr(agent, "security_settings") else None
+    json_response = JSONResponse(content=response)
+    apply_agent_cors_headers(request, json_response, agent_security_settings)
+    return json_response
+
+
+@router.get(
+    "/in-progress/agent-chat-locales",
+    dependencies=[
+        Depends(auth),
+        Depends(get_agent_for_start),
+        Depends(permissions(P.Conversation.CREATE_IN_PROGRESS)),
+    ],
+)
+async def get_agent_chat_locales(
+    request: Request,
+    translations_service: TranslationsService = Injected(TranslationsService),
+):
+    """
+    Return welcome / quick queries / thinking strings for every locale that has agent translations,
+    plus the tenant default language. Lets the widget switch UI language without restarting the conversation.
+    """
+    agent = getattr(request.state, "agent", None)
+    if not agent:
+        logger.debug("agent not found")
+        raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
+
+    agent_read = AgentRead.model_validate(agent)
+    agent_data = agent_read.model_dump(mode="json")
+
+    agent_prefix = f"agent.{agent.id}"
+    possible_queries = agent_data.get("possible_queries") or []
+    thinking_phrases = agent_data.get("thinking_phrases") or []
+
+    translation_items: dict[str, str | None] = {
+        f"{agent_prefix}.welcome_message": agent_data.get("welcome_message"),
+        f"{agent_prefix}.welcome_title": agent_data.get("welcome_title"),
+        f"{agent_prefix}.input_disclaimer_html": agent_data.get("input_disclaimer_html"),
+    }
+    for idx, query in enumerate(possible_queries):
+        translation_items[f"{agent_prefix}.possible_queries.{idx}"] = query
+    for idx, phrase in enumerate(thinking_phrases):
+        translation_items[f"{agent_prefix}.thinking_phrases.{idx}"] = phrase
+
+    available_languages = await translations_service.get_languages_for_prefix(f"agent.{agent.id}.")
+    default_lang = (settings.DEFAULT_LANGUAGE or "en").split("-")[0].lower()
+    lang_codes = sorted(set(available_languages) | {default_lang})
+
+    locales: dict[str, dict[str, object]] = {}
+    for code in lang_codes:
+        resolved = await translations_service.resolve_many_for_lang(translation_items, code)
+        welcome_message = resolved.get(f"{agent_prefix}.welcome_message")
+        welcome_title = resolved.get(f"{agent_prefix}.welcome_title")
+        input_disclaimer_html = resolved.get(f"{agent_prefix}.input_disclaimer_html")
+        resolved_queries = [
+            resolved.get(f"{agent_prefix}.possible_queries.{idx}") or query for idx, query in enumerate(possible_queries)
+        ]
+        resolved_phrases = [
+            resolved.get(f"{agent_prefix}.thinking_phrases.{idx}") or phrase for idx, phrase in enumerate(thinking_phrases)
+        ]
+        locales[code] = {
+            "welcome_message": welcome_message,
+            "welcome_title": welcome_title,
+            "input_disclaimer_html": input_disclaimer_html,
+            "possible_queries": resolved_queries,
+            "thinking_phrases": resolved_phrases,
+        }
+
+    response = {
+        "agent_id": str(agent.id),
+        "agent_available_languages": available_languages,
+        "agent_thinking_phrase_delay": agent_data.get("thinking_phrase_delay"),
+        "agent_chat_input_metadata": agent_data.get("workflow"),
+        "agent_has_welcome_image": agent_data.get("welcome_image") is not None,
+        "locales": locales,
     }
 
     agent_security_settings = agent.security_settings if hasattr(agent, "security_settings") else None

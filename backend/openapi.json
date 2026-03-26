@@ -4306,6 +4306,35 @@
         ]
       }
     },
+    "/api/conversations/in-progress/agent-chat-locales": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Get Agent Chat Locales",
+        "description": "Return welcome / quick queries / thinking strings for every locale that has agent translations,\nplus the tenant default language. Lets the widget switch UI language without restarting the conversation.",
+        "operationId": "get_agent_chat_locales_api_conversations_in_progress_agent_chat_locales_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/conversations/{conversation_id}": {
       "get": {
         "tags": [

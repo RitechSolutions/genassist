@@ -93,6 +93,9 @@ export const useChat = ({
   const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
 
+  const languageRef = useRef(language);
+  languageRef.current = language;
+
   // Unified WebSocket connection (reconnect, keep-alive)
   const onWsMessage = useCallback((data: Record<string, unknown>) => {
     chatServiceRef.current?.processWebSocketMessage(data);
@@ -340,10 +343,29 @@ export const useChat = ({
 
       const service = chatServiceRef.current;
       void (async () => {
-        const info = await service.fetchAgentInfo?.();
-        if (cancelled || !info) return;
-        if (Array.isArray(info.agent_available_languages)) {
+        const [info] = await Promise.all([
+          service.fetchAgentInfo?.() ?? Promise.resolve(null),
+          service.fetchAgentChatLocales?.() ?? Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        if (info && Array.isArray(info.agent_available_languages)) {
           setAvailableLanguages(info.agent_available_languages);
+        }
+        const lang = languageRef.current || "en";
+        const applied = service.applyLanguageFromLocales(lang);
+        if (!cancelled && applied) {
+          setThinkingPhrases(applied.thinkingPhrases);
+          setThinkingDelayMs(applied.thinkingDelayMs);
+        }
+        const meta = service.getChatInputMetadata?.();
+        if (
+          !cancelled &&
+          meta &&
+          typeof meta === "object" &&
+          Object.keys(meta).length > 0
+        ) {
+          setChatInputMetadata(meta);
+          onConfigLoadedRef.current?.({ chatInputMetadata: meta });
         }
       })();
 
@@ -439,6 +461,18 @@ export const useChat = ({
   useEffect(() => {
     if (chatServiceRef.current) {
       chatServiceRef.current.setLanguage(language);
+    }
+  }, [language]);
+
+  // Apply server-side agent strings for the selected locale (welcome, queries, thinking) without reset
+  useEffect(() => {
+    const svc = chatServiceRef.current;
+    if (!svc) return;
+    const lang = language || "en";
+    const applied = svc.applyLanguageFromLocales(lang);
+    if (applied) {
+      setThinkingPhrases(applied.thinkingPhrases);
+      setThinkingDelayMs(applied.thinkingDelayMs);
     }
   }, [language]);
 

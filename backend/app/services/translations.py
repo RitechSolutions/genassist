@@ -193,6 +193,24 @@ class TranslationsService:
             for key, default in items.items()
         }
 
+    async def resolve_many_for_lang(
+        self,
+        items: dict[str, Optional[str]],
+        lang_code: Optional[str],
+    ) -> dict[str, Optional[str]]:
+        """
+        Like resolve_many, but uses an explicit BCP-47 primary tag (e.g. "es") instead of
+        parsing Accept-Language. Pass None to use translation defaults / agent fallbacks only.
+        """
+        normalized: Optional[str] = None
+        if lang_code and str(lang_code).strip():
+            normalized = str(lang_code).strip().split("-")[0].lower()
+        lookup = await self._get_all_as_dict()
+        return {
+            key: _resolve_single(lookup.get(key), normalized, default)
+            for key, default in items.items()
+        }
+
     async def update(self, key: str, dto: TranslationUpdate) -> TranslationRead:
         lang_map = await self.languages_repository.get_code_to_id_map()
         updated = await self.repository.update(key, dto, lang_map)

@@ -41,6 +41,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   agentName,
   logoUrl,
   mode = 'embedded',
+  onExitFullscreen,
   floatingConfig = {},
   language,
   translations: customTranslations,
@@ -704,8 +705,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     setShowMenu(false);
   };
 
-  // Track window resize to update mobile detection
+  // Track window / visual viewport size for layout and mobile detection
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const [windowHeight, setWindowHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 700);
 
   // Automatically determine if should be fullscreen (mobile devices or widget mode or manual toggle or fullscreen mode)
   const isFullscreen = useMemo(() => {
@@ -719,12 +721,71 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     return windowWidth <= 768;
   }, [windowWidth, widget, isFullscreenToggled, mode]);
 
+  // Escape: close overlays first, then exit UI fullscreen when applicable
   useEffect(() => {
-    const handleResize = () => {
-      setWindowWidth(window.innerWidth);
+    if (typeof window === 'undefined') return;
+    if (mode === 'floating' && !isFloatingOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+
+      if (showResetConfirm) {
+        e.preventDefault();
+        setShowResetConfirm(false);
+        return;
+      }
+      if (showLanguageDropdown) {
+        e.preventDefault();
+        setShowLanguageDropdown(false);
+        return;
+      }
+      if (showMenu) {
+        e.preventDefault();
+        setShowMenu(false);
+        return;
+      }
+
+      if (!isFullscreen) return;
+
+      if (isFullscreenToggled) {
+        e.preventDefault();
+        setIsFullscreenToggled(false);
+        return;
+      }
+      if (mode === 'fullscreen' && onExitFullscreen) {
+        e.preventDefault();
+        onExitFullscreen();
+      }
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    isFloatingOpen,
+    isFullscreen,
+    isFullscreenToggled,
+    mode,
+    onExitFullscreen,
+    showLanguageDropdown,
+    showMenu,
+    showResetConfirm,
+  ]);
+
+  useEffect(() => {
+    const updateViewport = () => {
+      setWindowWidth(window.innerWidth);
+      setWindowHeight(window.innerHeight);
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    vv?.addEventListener('resize', updateViewport);
+    vv?.addEventListener('scroll', updateViewport);
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      vv?.removeEventListener('resize', updateViewport);
+      vv?.removeEventListener('scroll', updateViewport);
+    };
   }, []);
 
   // Lock body scroll when fullscreen is active on mobile
@@ -783,13 +844,22 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const offsetX = offset.x || 20;
   const offsetY = offset.y || 20;
 
+  const isFloatingDocked = mode === 'floating' && !isFullscreen;
+
   const containerStyle: React.CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
     // When fullscreen, let height be calculated from top/bottom, otherwise use specified height
     height: isFullscreen ? undefined : '100%',
-    maxHeight: isFullscreen ? undefined : (windowWidth > 768 ? '700px' : '600px'),
-    width: isFullscreen ? '100vw' : '100%',
+    maxHeight: isFullscreen
+      ? undefined
+      : isFloatingDocked
+        ? '100%'
+        : windowWidth > 768
+          ? '700px'
+          : '600px',
+    minHeight: isFloatingDocked ? 0 : undefined,
+    width: isFullscreen ? '100vw' : '380px',
     maxWidth: isFullscreen ? '100vw' : '400px',
     border: isFullscreen ? 'none' : '1px solid #e0e0e0',
     borderRadius: isFullscreen ? '0' : '32px',
@@ -892,6 +962,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   const chatContainerStyle: React.CSSProperties = {
     flex: 1,
+    minHeight: 0,
     overflowY: 'auto',
     padding: '15px',
     backgroundColor: 'transparent',
@@ -1199,19 +1270,50 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     <span dangerouslySetInnerHTML={{ __html: inputDisclaimerHtml! }} />
   );
 
-  const getResponsiveDimensions = () => {
+  const getResponsiveDimensions = (): React.CSSProperties => {
     const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    // If fullscreen on mobile, use full viewport
+    const fallbackHeight = isFullscreen ? '100vh' : '60vh';
+
     if (isFullscreen) {
-      return { width: '100vw', height: '100vh', borderRadius: '0' };
+      return { width: '100vw', height: fallbackHeight, borderRadius: '0' };
     }
+
+    // Floating docked panel: width only; height/maxHeight come from viewport-aware shell styles
+    if (mode === 'floating') {
+      if (screenWidth <= 480) {
+        return { width: 'calc(100vw - 40px)' };
+      }
+      if (screenWidth <= 768) {
+        return { width: '350px' };
+      }
+      return { width: '380px' };
+    }
+
     if (screenWidth <= 480) {
-      return { width: 'calc(100vw - 40px)', height: '450px' };
-    } else if (screenWidth <= 768) {
-      return { width: '350px', height: '500px' };
-    } else {
-      return { width: '380px', height: '700px' };
+      return { width: 'calc(100vw - 40px)', height: fallbackHeight };
     }
+    if (screenWidth <= 768) {
+      return { width: '350px', height: fallbackHeight };
+    }
+
+    return { width: '380px', height: fallbackHeight };
+  };
+
+  /** Max height for open floating chat ≈ viewport minus corner offset; updates with resize / visualViewport. */
+  const getFloatingShellStyle = (): React.CSSProperties => {
+    const margin = 12;
+    const usableHeight = Math.max(280, windowHeight - offsetY - margin * 10);
+
+    return {
+      display: 'flex',
+      flexDirection: 'column',
+      maxHeight: usableHeight,
+      height: usableHeight,
+      // Prefer anchoring from bottom of the viewport when using bottom-* positions
+      ...(position === 'top-right' || position === 'top-left'
+        ? { top: offsetY, bottom: 'auto' }
+        : { top: 'auto', bottom: offsetY }),
+    };
   };
 
   const floatingContainerStyle: React.CSSProperties = {
@@ -1222,7 +1324,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           left: 0,
           right: 0,
           bottom: 'env(safe-area-inset-bottom, 0px)',
-          width: '100vw',
           // Height will be automatically calculated from top and bottom
           borderRadius: '0',
           zIndex: 9999,
@@ -1230,6 +1331,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       : {
           ...getChatPositionStyles(),
           ...getResponsiveDimensions(),
+          ...(mode === 'floating' && !isFullscreen ? getFloatingShellStyle() : {}),
         }
     ),
   };
@@ -1558,11 +1660,15 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               const isNextSameSpeaker = index < messages.length - 1 && messages[index + 1].speaker === message.speaker;
               const isPrevSameSpeaker = index > 0 && messages[index - 1].speaker === message.speaker;
               const isFirstAgentMessage = index === firstAgentIndex && message.speaker === 'agent' && !hasUserMessages;
+              const displayMessage =
+                isFirstAgentMessage && welcomeMessage
+                  ? { ...message, text: welcomeMessage }
+                  : message;
 
               return (
                 <ChatMessageComponent
                   key={index}
-                  message={message}
+                  message={displayMessage}
                   theme={theme}
                   onPlayAudio={message.speaker === 'agent' ? playResponseAudio : undefined}
                   isPlayingAudio={isPlayingAudio}

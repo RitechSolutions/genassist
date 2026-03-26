@@ -40,6 +40,7 @@ function bootstrap() {
       theme={cfg.theme}
       useWs={cfg.useWs ?? false}
       useFiles={cfg.useFiles ?? false}
+      usePoll={cfg.usePoll ?? false}
     />,
   );
 }
