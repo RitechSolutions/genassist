@@ -430,25 +430,28 @@ const DatasetsPage: React.FC = () => {
                           ) : expandedMessages.length === 0 ? (
                             <p className="text-xs text-gray-400">No messages found.</p>
                           ) : (
-                            expandedMessages.map((msg, idx) => (
-                              <div
-                                key={(msg as { id?: string }).id ?? idx}
-                                className={`flex gap-2 ${msg.speaker?.toLowerCase() === "agent" ? "justify-end" : "justify-start"}`}
-                              >
+                            expandedMessages.map((msg, idx) => {
+                              const isAgent = msg.speaker?.toLowerCase() === "agent";
+                              return (
                                 <div
-                                  className={`max-w-[80%] rounded px-2.5 py-1.5 text-xs ${
-                                    msg.speaker?.toLowerCase() === "agent"
-                                      ? "bg-blue-100 text-blue-900"
-                                      : "bg-white border text-gray-800"
-                                  }`}
+                                  key={(msg as { id?: string }).id ?? idx}
+                                  className={`flex flex-col ${isAgent ? "items-end" : "items-start"}`}
                                 >
-                                  <span className="font-semibold capitalize block mb-0.5 opacity-60 text-[10px]">
+                                  <span className="text-[10px] text-black font-medium mb-0.5 capitalize">
                                     {msg.speaker}
                                   </span>
-                                  {msg.text}
+                                  <div
+                                    className={`max-w-[80%] rounded-lg px-2.5 py-1.5 text-xs leading-tight break-words ${
+                                      isAgent
+                                        ? "bg-blue-500 text-white rounded-tr-none"
+                                        : "bg-gray-200 text-gray-900 rounded-tl-none"
+                                    }`}
+                                  >
+                                    {msg.text}
+                                  </div>
                                 </div>
-                              </div>
-                            ))
+                              );
+                            })
                           )}
                         </div>
                       )}
