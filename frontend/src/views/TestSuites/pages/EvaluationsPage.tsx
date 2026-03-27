@@ -638,7 +638,8 @@ const EvaluationsPage: React.FC = () => {
             <DialogTitle>Delete Evaluation</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Are you sure you want to delete this evaluation? This action cannot be undone.
+            Are you sure you want to delete this evaluation? This will also permanently delete all
+            associated runs and their results. This action cannot be undone.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeletingEvaluationId(null)}>

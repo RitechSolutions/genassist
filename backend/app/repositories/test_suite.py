@@ -52,6 +52,16 @@ class TestRunRepository(DbRepository[TestRunModel]):
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
+    async def delete_all_by_ids(self, run_ids: List[str]) -> None:
+        if not run_ids:
+            return
+        stmt = select(TestRunModel).where(TestRunModel.id.in_(run_ids))
+        result = await self.db.execute(stmt)
+        runs = result.scalars().all()
+        for run in runs:
+            await self.db.delete(run)
+        await self.db.commit()
+
 
 @inject
 class TestResultRepository(DbRepository[TestResultModel]):
