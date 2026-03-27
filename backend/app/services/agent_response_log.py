@@ -25,11 +25,22 @@ class AgentResponseLogService:
     ):
         """
         Persist the raw agent response for later debugging.
+        Extracts token_usage and cost_usd when present.
         """
+        token_usage = agent_response.get("token_usage") or {}
+        input_tokens = token_usage.get("input_tokens")
+        output_tokens = token_usage.get("output_tokens")
+        total_tokens = token_usage.get("total_tokens")
+        cost_usd = agent_response.get("cost_usd")
+
         return await self.repo.log_response(
             conversation_id=conversation_id,
             transcript_message_id=transcript_message_id,
             raw_response=agent_response,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cost_usd=cost_usd,
         )
 
     async def get_log_for_message(

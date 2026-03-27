@@ -1,15 +1,14 @@
-from uuid import UUID
-from fastapi import APIRouter, Depends
-from app.core.permissions.constants import Permissions as P
 from typing import List
+from uuid import UUID
 
+from fastapi import APIRouter, Depends
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.permissions.constants import Permissions as P
 from app.schemas.filter import BaseFilterModel
-from app.schemas.role import RoleCreate, RoleUpdate, RoleRead
+from app.schemas.role import RoleCreate, RoleRead, RoleUpdate
 from app.services.roles import RolesService
-
 
 router = APIRouter()
 

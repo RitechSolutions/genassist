@@ -1,16 +1,18 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
+
 from injector import inject
-from sqlalchemy import func, case, and_
+from sqlalchemy import and_, case, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.db.models.agent import AgentModel
-from app.db.models.conversation import ConversationModel
-from app.db.models.operator import OperatorModel, OperatorStatisticsModel
+from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.app_settings import AppSettingsModel
+from app.db.models.conversation import ConversationModel
+from app.db.models.operator import OperatorModel
 
 
 @inject
@@ -210,8 +212,24 @@ class DashboardRepository:
         result = await self.db.execute(query)
         agents = list(result.scalars().all())
 
-        # Get conversation counts per agent for today
+        # Get conversation counts and cost per agent for today
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_date = today_start.date()
+
+        # Pre-fetch total_cost_usd for today per agent
+        cost_query = (
+            select(
+                AgentExecutionDailyStatsModel.agent_id,
+                func.coalesce(AgentExecutionDailyStatsModel.total_cost_usd, 0).label("cost_usd"),
+            )
+            .where(
+                AgentExecutionDailyStatsModel.stat_date == today_date,
+                AgentExecutionDailyStatsModel.is_deleted == 0,
+                AgentExecutionDailyStatsModel.agent_id.in_([a.id for a in agents]),
+            )
+        )
+        cost_result = await self.db.execute(cost_query)
+        cost_by_agent = {row.agent_id: float(row.cost_usd or 0) for row in cost_result.all()}
 
         agent_stats = []
         for agent in agents:
@@ -241,7 +259,7 @@ class DashboardRepository:
                 "conversations_today": conversations_today,
                 "resolution_rate": operator_stats.avg_resolution_rate if operator_stats else 0,
                 "avg_response_time_ms": avg_response_time_ms,
-                "cost": 0  # Cost calculation would depend on LLM usage tracking
+                "cost": cost_by_agent.get(agent.id, 0.0),
             })
 
         return agent_stats
@@ -302,3 +320,14 @@ class DashboardRepository:
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+    async def get_total_cost_usd(self, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> float:
+        """Get total cost in USD for the given date range."""
+        # Get sum of total_cost_usd for the given date range
+        query = select(func.sum(AgentExecutionDailyStatsModel.total_cost_usd)).where(
+            AgentExecutionDailyStatsModel.stat_date >= from_date,
+            AgentExecutionDailyStatsModel.stat_date <= to_date,
+            AgentExecutionDailyStatsModel.is_deleted == 0
+        )
+        result = await self.db.execute(query)
+        return float(result.scalar() or 0.00)

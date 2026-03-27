@@ -1,17 +1,22 @@
-from fastapi import APIRouter, Depends, Request
 from typing import List
 from uuid import UUID
-from app.core.permissions.constants import Permissions as P
+
+from fastapi import APIRouter, Depends, Request
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.permissions.constants import Permissions as P
 from app.schemas.filter import BaseFilterModel
-from app.schemas.permission import PermissionRead, PermissionCreate, PermissionUpdate
+from app.schemas.permission import (
+    PermissionCreate,
+    PermissionRead,
+    PermissionUpdate,
+)
 from app.services.permissions import PermissionsService
 
 router = APIRouter()
 
-
+# Query params + filters
 @router.post(
     "",
     response_model=PermissionRead,
@@ -35,9 +40,7 @@ async def get_all(
     service: PermissionsService = Injected(PermissionsService),
 ):
     filter.limit = 1000 if filter.limit == 20 else filter.limit
-
     return await service.get_all(filter)
-
 
 @router.get(
     "/{permission_id}",
