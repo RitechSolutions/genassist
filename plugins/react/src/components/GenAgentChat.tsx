@@ -1583,18 +1583,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               (Boolean(welcomeTitle) || Boolean(welcomeImageUrl) || Boolean(welcomeMessage))
               && conversationId;
 
-            console.table({
-              showWelcomeBeforeStart,
-              hasUserMessages,
-              messagesLength: messages.length,
-              firstMessageSpeaker: messages[0]?.speaker,
-              welcomeTitle,
-              welcomeImageUrl,
-              welcomeMessage,
-              conversationId,
-              shouldShowSyntheticWelcome,
-            });
-
             if (!shouldShowSyntheticWelcome) return null;
 
             const now = Math.floor(Date.now() / 1000);
