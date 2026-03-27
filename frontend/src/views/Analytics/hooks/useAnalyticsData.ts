@@ -1,13 +1,37 @@
 import { useState, useEffect, useRef, useTransition } from "react";
 import {
-  fetchMetricsWithComparison,
+  fetchMetrics,
   type FetchedMetricsData,
   type MetricsDeltas,
 } from "@/services/metrics";
 import { toMetricsApiParams } from "@/helpers/analyticsParams";
 import type { DateRange } from "react-day-picker";
 
-export const useAnalyticsData = (dateRange: DateRange | undefined, agentId?: string) => {
+function computeDeltas(current: FetchedMetricsData, previous: FetchedMetricsData): MetricsDeltas {
+  const keys = [
+    "Customer Satisfaction",
+    "Resolution Rate",
+    "Positive Sentiment",
+    "Negative Sentiment",
+    "Efficiency",
+    "Quality of Service",
+  ] as const;
+  const result: MetricsDeltas = {};
+  for (const key of keys) {
+    const curr = parseFloat(current[key] as string);
+    const prev = parseFloat(previous[key] as string);
+    if (!isNaN(curr) && !isNaN(prev) && prev !== 0) {
+      result[key] = Math.round(((curr - prev) / prev) * 100 * 10) / 10;
+    }
+  }
+  return result;
+}
+
+export const useAnalyticsData = (
+  dateRange: DateRange | undefined,
+  agentId?: string,
+  compareDateRange?: DateRange,
+) => {
   const [metrics, setMetrics] = useState<FetchedMetricsData | null>(null);
   const [deltas, setDeltas] = useState<MetricsDeltas | null>(null);
   const [initialLoading, setInitialLoading] = useState<boolean>(true);
@@ -21,10 +45,19 @@ export const useAnalyticsData = (dateRange: DateRange | undefined, agentId?: str
 
     const doFetch = async () => {
       try {
-        const data = await fetchMetricsWithComparison(params);
+        const hasCompare = compareDateRange?.from && compareDateRange?.to;
+        const compareParams = hasCompare
+          ? toMetricsApiParams(compareDateRange, agentId)
+          : undefined;
+
+        const [current, previous] = await Promise.all([
+          fetchMetrics(params),
+          compareParams ? fetchMetrics(compareParams) : Promise.resolve(null),
+        ]);
+
         if (fetchId !== fetchIdRef.current) return;
-        setMetrics(data?.current ?? null);
-        setDeltas(data?.deltas ?? null);
+        setMetrics(current);
+        setDeltas(current && previous ? computeDeltas(current, previous) : null);
         setError(null);
       } catch (err) {
         if (fetchId !== fetchIdRef.current) return;
@@ -43,7 +76,7 @@ export const useAnalyticsData = (dateRange: DateRange | undefined, agentId?: str
         doFetch();
       });
     }
-  }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), agentId]);
+  }, [dateRange?.from?.getTime(), dateRange?.to?.getTime(), agentId, compareDateRange?.from?.getTime(), compareDateRange?.to?.getTime()]);
 
   return { metrics, deltas, loading: initialLoading, refreshing, error };
 };
