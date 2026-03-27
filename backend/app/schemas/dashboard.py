@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -10,6 +11,7 @@ class DashboardSummaryStats(BaseModel):
     active_agents: int
     workflow_runs: int
     avg_response_time_ms: int
+    total_cost_usd: float
 
     model_config = ConfigDict(from_attributes=True)
 

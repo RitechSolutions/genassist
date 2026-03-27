@@ -33,6 +33,9 @@ export function RolesCard({
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // roles that cannot be edited
+  const restrictedRoles = new Set(["admin", "superadmin"]);
+
   useEffect(() => {
     fetchRoles();
   }, [refreshKey]);
@@ -117,6 +120,8 @@ export function RolesCard({
       <TableCell className="truncate">{formatDate(role.updated_at)}</TableCell>
       <TableCell>
         <ActionButtons
+          canEdit={!restrictedRoles.has(role.name)}
+          canDelete={!restrictedRoles.has(role.name)}
           onEdit={() => onEditRole(role)}
           onDelete={() => handleDeleteClick(role)}
           editTitle="Edit Role"

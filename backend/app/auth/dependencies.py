@@ -83,7 +83,8 @@ def permissions(*permissions: str) -> Callable[[Request], Awaitable[None]]:
 
         elif hasattr(request.state, "user") and request.state.user:
             user = request.state.user
-            if not has_permission(user.permissions, *permissions):
+            user_has_permission = has_permission(user.permissions, *permissions)
+            if not user_has_permission:
                 raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
         else:
             raise AppException(status_code=403, error_key=ErrorKey.NOT_AUTHORIZED)
@@ -165,7 +166,7 @@ def socket_auth(required_permissions: list[str]):
             else:
                 raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Missing credentials")
 
-            if not set(required_permissions).issubset(set(perms)):
+            if "*" not in perms and not set(required_permissions).issubset(set(perms)):
                 raise WebSocketException(code=4403, reason="Invalid permissions")
 
             return SocketPrincipal(principal, user_id, perms, resolved_tenant_id)

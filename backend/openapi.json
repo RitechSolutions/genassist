@@ -6331,6 +6331,57 @@
         }
       }
     },
+    "/api/conversations/{conversation_id}/agent-response-logs": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Get Agent Response Logs By Conversation",
+        "description": "Return token usage and cost for each agent message in the conversation.\nUsed by the Transcript dialog to display per-message costs when the switch is enabled.",
+        "operationId": "get_agent_response_logs_by_conversation_api_conversations__conversation_id__agent_response_logs_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/conversations/message/agent-response-log/{message_id}": {
       "get": {
         "tags": [
@@ -6825,6 +6876,135 @@
                 "schema": {}
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm-cost-rates": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "List Cost Rates",
+        "operationId": "list_cost_rates_api_llm_cost_rates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LlmCostRateRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Cost Rates Api Llm Cost Rates Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/llm-cost-rates/import": {
+      "post": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "Import Cost Rates Csv",
+        "operationId": "import_cost_rates_csv_api_llm_cost_rates_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_cost_rates_csv_api_llm_cost_rates_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmCostRateImportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/llm-cost-rates/{rate_id}": {
+      "delete": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "Delete Cost Rate",
+        "operationId": "delete_cost_rate_api_llm_cost_rates__rate_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Rate Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -19549,6 +19729,20 @@
         ],
         "title": "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
       },
+      "Body_import_cost_rates_csv_api_llm_cost_rates_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_cost_rates_csv_api_llm_cost_rates_import_post"
+      },
       "Body_process_files_api_genagent_knowledge_process_files_post": {
         "properties": {
           "files": {
@@ -20876,13 +21070,18 @@
           "avg_response_time_ms": {
             "type": "integer",
             "title": "Avg Response Time Ms"
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd"
           }
         },
         "type": "object",
         "required": [
           "active_agents",
           "workflow_runs",
-          "avg_response_time_ms"
+          "avg_response_time_ms",
+          "total_cost_usd"
         ],
         "title": "DashboardSummaryStats",
         "description": "Summary statistics for the dashboard header."
@@ -23201,6 +23400,73 @@
         },
         "type": "object",
         "title": "LlmAnalystUpdate"
+      },
+      "LlmCostRateImportResult": {
+        "properties": {
+          "inserted": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Inserted"
+          },
+          "updated": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Updated"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "inserted",
+          "updated"
+        ],
+        "title": "LlmCostRateImportResult"
+      },
+      "LlmCostRateRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "provider_key": {
+            "type": "string",
+            "title": "Provider Key"
+          },
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "input_per_1k": {
+            "type": "string",
+            "title": "Input Per 1K"
+          },
+          "output_per_1k": {
+            "type": "string",
+            "title": "Output Per 1K"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "provider_key",
+          "model_key",
+          "input_per_1k",
+          "output_per_1k",
+          "updated_at"
+        ],
+        "title": "LlmCostRateRead"
       },
       "LlmProviderBase": {
         "properties": {
