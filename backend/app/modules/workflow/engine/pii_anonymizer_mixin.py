@@ -13,6 +13,47 @@ _service = PIIAnonymizer()
 _HISTORY_METHOD_NAMES = ("_get_chat_history_for_agent", "_get_chat_history_for_context")
 
 
+def _wrap_history_method(method_name: str, original_fn: Any) -> Any:
+    """
+    Wraps a history-fetch method at class-definition time.
+
+    Reads piiMasking from config (same dict the node received) and, when
+    enabled, masks PII in the returned history and stores replacements in
+    self._pii_history_token_items so execute() can merge them into the
+    combined token map for unmasking the final result.
+    """
+
+    async def _wrapped(
+        self: Any,
+        memory: Any,
+        config: Dict[str, Any],
+        provider_id: str,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> Any:
+        history = await original_fn(self, memory, config, provider_id, system_prompt, user_prompt)
+
+        if not config.get("piiMasking"):
+            return history
+
+        masked, token_map = _mask_history(history)
+
+        if token_map:
+            logger.debug(
+                "[PII] %s — history masked, %d replacement(s): %r",
+                method_name,
+                len(token_map.get("items", [])),
+                token_map.get("items", []),
+            )
+            getattr(self, "_pii_history_token_items", []).extend(token_map.get("items", []))
+
+        return masked
+
+    _wrapped.__name__ = original_fn.__name__
+    _wrapped.__qualname__ = original_fn.__qualname__
+    return _wrapped
+
+
 class PIIAnonymizerMixin:
     """
     Transparent PII masking layer for LLM workflow nodes.
@@ -22,60 +63,35 @@ class PIIAnonymizerMixin:
         class LLMModelNode(PIIAnonymizerMixin, BaseNode): ...
         class AgentNode(PIIAnonymizerMixin, BaseNode): ...
 
-    Hooks into execute() — not process() — because both concrete nodes define
-    their own process(), which would shadow a mixin-level process() in the MRO.
-    Instead, this mixin overrides execute() (which neither node defines), wraps
-    self.process with a PII-aware version before calling super().execute(), then
-    restores it in a finally block.
-
-    When piiMasking is True in the resolved config:
-    - Masks PII in userPrompt before the LLM call
-    - Masks PII in chat history by wrapping _get_chat_history_for_agent /
-      _get_chat_history_for_context at the instance level, so all trimming modes
-      are covered transparently without duplicating the history-fetch logic
-    - Restores original values in the result
+    How it works:
+    - __init_subclass__ wraps _get_chat_history_for_agent /
+      _get_chat_history_for_context ONCE at class definition time (not per
+      execute() call), so there is no dynamic patching at runtime.
+    - execute() sets self._pii_history_token_items = [] before calling
+      super().execute(), then merges those items with the prompt token map
+      to unmask the final result.
+    - _pii_process (injected the same way as before) masks _PII_FIELDS
+      (userPrompt) before passing config to the real process().
 
     systemPrompt is intentionally excluded — it is operator-authored.
-    The token_map is local to each execute() call and never persisted.
+    The token map is local to each execute() call and never persisted.
     """
 
     _PII_FIELDS: tuple[str, ...] = ("userPrompt",)
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        for method_name in _HISTORY_METHOD_NAMES:
+            # Only wrap methods defined directly on this subclass, not
+            # inherited ones that may already be wrapped.
+            if method_name in cls.__dict__:
+                original_fn = cls.__dict__[method_name]
+                setattr(cls, method_name, _wrap_history_method(method_name, original_fn))
+
     async def execute(self, direct_input: Any = None) -> Any:
+        # Per-execution accumulator read by the class-level history wrappers
+        self._pii_history_token_items: list[dict[str, Any]] = []
         original_process = self.process
-        # Accumulates token items produced by history masking during process()
-        history_token_items: list[dict[str, Any]] = []
-        wrapped_attrs: list[str] = []
-
-        # Wrap history-fetch methods so PII in chat history is masked
-        # transparently, regardless of trimming mode.  We capture the bound
-        # method before shadowing it with an instance attribute so the wrapper
-        # can call the original without recursion.
-        for attr_name in _HISTORY_METHOD_NAMES:
-            if not hasattr(self, attr_name):
-                continue
-            original_method = getattr(self, attr_name)  # bound to self via class
-
-            def _make_history_wrapper(orig: Any) -> Any:
-                async def _pii_history(
-                    memory: Any,
-                    config: Dict[str, Any],
-                    provider_id: str,
-                    system_prompt: str,
-                    user_prompt: str,
-                ) -> Any:
-                    history = await orig(memory, config, provider_id, system_prompt, user_prompt)
-                    if not config.get("piiMasking"):
-                        return history
-                    masked, token_map = _mask_history(history)
-                    if token_map:
-                        history_token_items.extend(token_map.get("items", []))
-                    return masked
-
-                return _pii_history
-
-            setattr(self, attr_name, _make_history_wrapper(original_method))
-            wrapped_attrs.append(attr_name)
 
         async def _pii_process(config: Dict[str, Any]) -> Any:
             if not config.get("piiMasking", False):
@@ -89,6 +105,12 @@ class PIIAnonymizerMixin:
                 if isinstance(value, str) and value:
                     masked_value, token_map = _service.mask(value)
                     if token_map:
+                        logger.debug(
+                            "[PII] %s masked, %d replacement(s): %r",
+                            field_name,
+                            len(token_map.get("items", [])),
+                            token_map.get("items", []),
+                        )
                         masked_config[field_name] = masked_value
                         if combined_token_map is None:
                             combined_token_map = {"items": []}
@@ -96,27 +118,28 @@ class PIIAnonymizerMixin:
 
             result = await original_process(masked_config)
 
-            # Merge token items accumulated from history-fetch wrappers
-            if history_token_items:
+            # Merge token items accumulated by the class-level history wrappers
+            if self._pii_history_token_items:
                 if combined_token_map is None:
                     combined_token_map = {"items": []}
-                combined_token_map["items"].extend(history_token_items)
+                combined_token_map["items"].extend(self._pii_history_token_items)
 
             if not combined_token_map:
                 return result
 
-            return self._unmask_result(result, combined_token_map)
+            unmasked = self._unmask_result(result, combined_token_map)
+            logger.debug(
+                "[PII] unmasked result using %d replacement(s)",
+                len(combined_token_map.get("items", [])),
+            )
+            return unmasked
 
         self.process = _pii_process
         try:
             return await super().execute(direct_input)  # type: ignore[misc]
         finally:
-            del self.process  # remove instance attribute, restores class-level method
-            for attr in wrapped_attrs:
-                try:
-                    delattr(self, attr)
-                except AttributeError:
-                    pass
+            del self.process
+            del self._pii_history_token_items
 
     def _unmask_result(self, result: Any, token_map: dict[str, Any]) -> Any:
         if isinstance(result, str):
