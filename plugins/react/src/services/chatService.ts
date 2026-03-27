@@ -2,6 +2,8 @@ import axios from "axios";
 import {
   ChatMessage,
   AgentInfoResponse,
+  AgentChatLocalesResponse,
+  AgentChatLocaleContent,
   StartConversationResponse,
   Attachment,
   AgentThinkingConfig,
@@ -43,6 +45,8 @@ export class ChatService {
   private tenant: string | undefined;
   private agentId: string | undefined;
   private availableLanguages: string[] | null = null;
+  private agentChatLocales: Record<string, AgentChatLocaleContent> | null =
+    null;
   private language: string | undefined;
   private useWs: boolean;
   private serverUnavailableMessage: string | undefined;
@@ -160,6 +164,7 @@ export class ChatService {
       'pt': 'pt-PT',
       'ar': 'ar-SA',
       'sq': 'sq-AL',
+      'zh': 'zh-CN',
     };
 
     // Check if the code already has a region (e.g., "en-US", "es-ES")
@@ -299,6 +304,7 @@ export class ChatService {
       if (agentId) {
         this.agentId = agentId;
       }
+
       if (availableLanguages) {
         this.availableLanguages = availableLanguages;
       }
@@ -310,6 +316,118 @@ export class ChatService {
     } catch (_error) {
       return null;
     }
+  }
+
+  /**
+   * Fetch resolved welcome / FAQ / thinking strings for all agent locales (no conversation required).
+   * Request headers include `Accept-Language` from the current {@link setLanguage} value.
+   */
+  async fetchAgentChatLocales(): Promise<AgentChatLocalesResponse | null> {
+    try {
+      const response = await axios.get<AgentChatLocalesResponse>(
+        `${this.baseUrl}/api/conversations/in-progress/agent-chat-locales`,
+        { headers: this.getHeaders() }
+      );
+      const data = response.data;
+      if (data?.locales && typeof data.locales === "object") {
+        this.agentChatLocales = data.locales;
+      }
+      if (Array.isArray(data.agent_available_languages)) {
+        this.availableLanguages = data.agent_available_languages
+          .filter((lang) => typeof lang === "string" && lang.trim().length > 0)
+          .map((lang) => lang.toLowerCase());
+      }
+      if (typeof data.agent_id === "string") {
+        this.agentId = data.agent_id;
+      }
+      if (
+        typeof data.agent_thinking_phrase_delay === "number" &&
+        data.agent_thinking_phrase_delay >= 0
+      ) {
+        this.thinkingConfig.delayMs = Math.max(
+          250,
+          Math.round(data.agent_thinking_phrase_delay * 1000)
+        );
+      }
+      if (
+        data.agent_chat_input_metadata != null &&
+        typeof data.agent_chat_input_metadata === "object" &&
+        !Array.isArray(data.agent_chat_input_metadata) &&
+        Object.keys(this.chatInputMetadata).length === 0
+      ) {
+        this.chatInputMetadata = { ...data.agent_chat_input_metadata };
+        this.persistAndEmitAgentMetadata(this.chatInputMetadata);
+      }
+      return data;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  /**
+   * Apply pre-fetched locale strings for the widget UI without restarting the conversation.
+   * Returns current thinking config when a locale bundle was applied, so React state can sync.
+   */
+  applyLanguageFromLocales(lang: string): {
+    thinkingPhrases: string[];
+    thinkingDelayMs: number;
+  } | null {
+    if (!this.agentChatLocales || !lang) {
+      return null;
+    }
+    const code = lang.toLowerCase().split("-")[0];
+    const bundle = this.agentChatLocales;
+    const slice =
+      bundle[code] || bundle["en"] || Object.values(bundle)[0];
+    if (!slice) {
+      return null;
+    }
+
+    if (Array.isArray(slice.possible_queries)) {
+      this.possibleQueries = slice.possible_queries.filter(
+        (query) => typeof query === "string" && query.trim().length > 0
+      );
+    }
+
+    this.welcomeData = {
+      ...this.welcomeData,
+      title: slice.welcome_title ?? this.welcomeData.title ?? null,
+      message: slice.welcome_message ?? this.welcomeData.message ?? null,
+      inputDisclaimerHtml:
+        slice.input_disclaimer_html ?? this.welcomeData.inputDisclaimerHtml ?? null,
+      possibleQueries:
+        this.possibleQueries.length > 0
+          ? this.possibleQueries
+          : this.welcomeData.possibleQueries,
+    };
+
+    if (Array.isArray(slice.thinking_phrases)) {
+      const phrases = slice.thinking_phrases.filter(
+        (p) => typeof p === "string" && p.trim().length > 0
+      );
+      if (phrases.length > 0) {
+        this.thinkingConfig = {
+          ...this.thinkingConfig,
+          phrases,
+        };
+      }
+    }
+
+    if (this.welcomeDataHandler) {
+      this.welcomeDataHandler({
+        title: this.welcomeData.title ?? null,
+        message: this.welcomeData.message ?? null,
+        imageUrl: this.welcomeData.imageUrl ?? null,
+        possibleQueries: this.possibleQueries,
+        inputDisclaimerHtml: this.welcomeData.inputDisclaimerHtml ?? null,
+      });
+    }
+
+    this.saveConversation();
+    return {
+      thinkingPhrases: [...this.thinkingConfig.phrases],
+      thinkingDelayMs: this.thinkingConfig.delayMs,
+    };
   }
 
   /**
