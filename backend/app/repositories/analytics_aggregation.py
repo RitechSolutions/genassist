@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import date, datetime, time, timezone
 
 from app.core.utils.date_time_utils import utc_now
 from uuid import UUID
@@ -43,6 +43,42 @@ class AnalyticsAggregationRepository:
             .where(
                 AgentResponseLogModel.logged_at >= since,
                 AgentResponseLogModel.logged_at <= until,
+                AgentResponseLogModel.is_deleted == 0,
+            )
+            .order_by(AgentResponseLogModel.logged_at)
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_affected_dates_since(
+        self, since: datetime, until: datetime
+    ) -> list[date]:
+        """Return distinct dates that have logs in the given time range."""
+        stmt = (
+            select(func.distinct(func.date(AgentResponseLogModel.logged_at)))
+            .where(
+                AgentResponseLogModel.logged_at >= since,
+                AgentResponseLogModel.logged_at <= until,
+                AgentResponseLogModel.is_deleted == 0,
+            )
+            .order_by(func.date(AgentResponseLogModel.logged_at))
+        )
+        result = await self.db.execute(stmt)
+        return [row[0] for row in result.all()]
+
+    async def get_response_logs_for_date(
+        self, stat_date: date, *, limit: int = 10000, offset: int = 0
+    ) -> list[AgentResponseLogModel]:
+        """Fetch ALL agent response logs for a specific date."""
+        start_of_day = datetime.combine(stat_date, time.min, tzinfo=timezone.utc)
+        end_of_day = datetime.combine(stat_date, time.max, tzinfo=timezone.utc)
+        stmt = (
+            select(AgentResponseLogModel)
+            .where(
+                AgentResponseLogModel.logged_at >= start_of_day,
+                AgentResponseLogModel.logged_at <= end_of_day,
                 AgentResponseLogModel.is_deleted == 0,
             )
             .order_by(AgentResponseLogModel.logged_at)
