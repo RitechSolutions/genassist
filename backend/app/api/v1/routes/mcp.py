@@ -3,26 +3,39 @@ MCP (Model Context Protocol) API endpoints for discovering and managing MCP tool
 """
 
 import logging
-from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
-from pydantic import BaseModel, Field, ConfigDict
-from starlette.responses import Response as StarletteResponse
-from app.core.permissions.constants import Permissions as P
-from app.auth.dependencies import auth, permissions
-from app.modules.workflow.mcp.mcp_client import MCPClientV2
-from app.modules.workflow.mcp.mcp_server_adapter import WorkflowMCPServerAdapter
-from app.services.mcp_server import MCPServerService
-from app.repositories.workflow import WorkflowRepository
-from app.modules.workflow.engine.workflow_engine import WorkflowEngine
-from app.dependencies.injector import injector
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi_injector import Injected
-from mcp.types import TextContent
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
+from mcp.types import TextContent
+from pydantic import BaseModel, ConfigDict, Field
+from starlette.responses import Response as StarletteResponse
+from starlette.types import Receive, Scope, Send
+
+from app.auth.dependencies import auth, permissions
+from app.core.permissions.constants import Permissions as P
+from app.dependencies.injector import injector
+from app.modules.workflow.mcp.mcp_client import MCPClientV2
+from app.modules.workflow.mcp.mcp_server_adapter import WorkflowMCPServerAdapter
+from app.repositories.workflow import WorkflowRepository
+from app.services.mcp_server import MCPServerService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class _TransportAlreadyResponded(StarletteResponse):
+    """
+    MCP SSE/POST handlers invoke ASGI ``send`` via the transport before returning.
+    Returning ``None`` makes FastAPI emit a second JSON body (``null``), which
+    interleaves with streaming SSE and breaks Starlette's BaseHTTPMiddleware.
+    """
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        return
 
 
 class DiscoverToolsRequest(BaseModel):
@@ -144,7 +157,7 @@ class JSONRPCResponse(BaseModel):
     id: Optional[Any] = Field(default=None, description="Request ID")
     result: Optional[Any] = Field(default=None, description="Method result")
     error: Optional[Dict[str, Any]] = Field(default=None, description="Error information")
-    
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -152,7 +165,7 @@ class MCPToolCallRequest(BaseModel):
     """Request model for calling an MCP tool"""
     tool: str = Field(..., description="Tool name to execute")
     arguments: Optional[Dict[str, Any]] = Field(None, description="Tool arguments")
-    
+
     def get_arguments(self) -> Dict[str, Any]:
         """Get arguments"""
         return self.arguments or {}
@@ -170,7 +183,7 @@ async def _handle_jsonrpc_internal(
 ) -> JSONRPCResponse:
     """
     Internal handler for JSON-RPC requests.
-    
+
     Supports:
     - tools/list: List available tools
     - tools/call: Execute a tool
@@ -215,15 +228,39 @@ async def _handle_jsonrpc_internal(
             )
 
         # Route based on method
-        if request.method == "tools/list":
+        if request.method == "initialize":
+            # Handle MCP protocol handshake
+            params = request.params or {}
+            protocol_version = params.get("protocolVersion", "2024-11-05")
+            return JSONRPCResponse(
+                jsonrpc="2.0",
+                id=request.id,
+                result={
+                    "protocolVersion": protocol_version,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "workflow-mcp-server", "version": "1.0.0"},
+                },
+                error=None,
+            )
+
+        elif request.method.startswith("notifications/"):
+            # Notifications don't require a meaningful response
+            return JSONRPCResponse(
+                jsonrpc="2.0",
+                id=request.id,
+                result=None,
+                error=None,
+            )
+
+        elif request.method == "tools/list":
             # List tools using MCP SDK adapter
             workflow_repo = injector.get(WorkflowRepository)
-            
+
             adapter = WorkflowMCPServerAdapter(
                 mcp_server, workflow_repo
             )
             mcp_tools = await adapter.list_tools()
-            
+
             # Convert MCP Tool objects to dict format for JSON-RPC response
             tools_list = []
             for tool in mcp_tools:
@@ -232,11 +269,11 @@ async def _handle_jsonrpc_internal(
                     "description": tool.description or "",
                     "inputSchema": tool.inputSchema or {},
                 })
-            
+
             return JSONRPCResponse(
                 jsonrpc="2.0",
                 id=request.id,
-                result=tools_list,
+                result={"tools": tools_list},
                 error=None
             )
 
@@ -259,16 +296,16 @@ async def _handle_jsonrpc_internal(
 
             try:
                 workflow_repo = injector.get(WorkflowRepository)
-                
+
                 adapter = WorkflowMCPServerAdapter(
                     mcp_server, workflow_repo
                 )
-                
+
                 # Call tool using MCP SDK adapter
                 # Note: adapter.call_tool returns List[TextContent], not CallToolResult
                 # (The server decorator wraps it in CallToolResult, but we're calling it directly)
                 content_list_result = await adapter.call_tool(tool_name, tool_arguments)
-                
+
                 # Convert List[TextContent] to JSON-RPC format
                 content_list = []
                 for content_item in content_list_result:
@@ -278,12 +315,12 @@ async def _handle_jsonrpc_internal(
                         content_list.append(content_item)
                     else:
                         content_list.append({"type": "text", "text": str(content_item)})
-                
+
                 result_data = {
                     "content": content_list,
                     "isError": False,  # No error if we got here
                 }
-                
+
                 return JSONRPCResponse(
                     jsonrpc="2.0",
                     id=request.id,
@@ -359,7 +396,7 @@ async def handle_root_get(
 ):
     """
     Handle GET requests at root endpoint for SSE connections.
-    
+
     This allows the MCP SDK's SSE client to connect to the base URL.
     """
     # Check if this is an SSE request (Accept header contains text/event-stream)
@@ -417,15 +454,15 @@ async def handle_sse(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     mcp_server_service: MCPServerService = Injected(MCPServerService),
-) -> None:
+) -> StarletteResponse:
     """
     Handle SSE (Server-Sent Events) connections for MCP protocol.
-    
+
     This endpoint supports GET requests and streams Server-Sent Events
     as required by the MCP SDK's SSE client.
-    
-    Note: The SSE transport handles sending the response directly via ASGI,
-    so this function returns None.
+
+    Note: The SSE transport sends the HTTP response via ASGI ``send``; the return
+    value must not trigger a second response (see ``_TransportAlreadyResponded``).
     """
     # Extract API key from Authorization header
     api_key = extract_bearer_token(authorization)
@@ -452,32 +489,32 @@ async def handle_sse(
 
     # Create MCP server instance
     workflow_repo = injector.get(WorkflowRepository)
-    
+
     adapter = WorkflowMCPServerAdapter(mcp_server, workflow_repo)
-    
+
     # Create server instance
     server = Server("workflow-mcp-server")
-    
+
     @server.list_tools()
     async def list_tools():
         """List available tools."""
         return await adapter.list_tools()
-    
+
     @server.call_tool()
     async def call_tool(name: str, arguments: Dict[str, Any]):
         """Execute a tool."""
         return await adapter.call_tool(name, arguments)
-    
+
     # Get SSE transport and handle the connection
     transport = get_sse_transport()
-    
+
     # Ensure root_path is set correctly in scope for the transport
     # Extract root_path from request path - if request is to /api/mcp/sse, root_path should be /api/mcp
     request_path = request.url.path
     # Remove the endpoint path (/sse) to get the root_path
     root_path = request_path.rsplit("/sse", 1)[0] if "/sse" in request_path else "/api/mcp"
     scope = ensure_root_path_in_scope(request.scope, root_path)
-    
+
     # Use SSE transport's connect_sse method
     # The transport handles sending the response directly via request._send
     # so we don't return anything from this function
@@ -490,10 +527,8 @@ async def handle_sse(
             write_stream,
             server.create_initialization_options()
         )
-    
-    # The SSE transport has already sent the response via ASGI
-    # We return None to indicate the response was handled by the transport
-    return None
+
+    return _TransportAlreadyResponded()
 
 
 @router.post("/messages", include_in_schema=False)
@@ -501,10 +536,10 @@ async def handle_sse_messages(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     mcp_server_service: MCPServerService = Injected(MCPServerService),
-) -> None:
+) -> StarletteResponse:
     """
     Handle POST messages for SSE transport.
-    
+
     This endpoint receives client messages that link to a previously-established SSE session.
     Note: This endpoint uses an ASGI app that handles the response directly.
     """
@@ -538,36 +573,23 @@ async def handle_sse_messages(
     # Remove the endpoint path (/messages/) to get the root_path
     root_path = request_path.rsplit("/messages", 1)[0] if "/messages/" in request_path else "/api/mcp"
     scope = ensure_root_path_in_scope(request.scope, root_path)
-    
+
     # Call the ASGI app directly - it handles sending the response itself
     # The ASGI app will call send() to send the response (202 Accepted)
     # handle_post_message expects (scope, receive, send) where send is an ASGI send function
     # The send function signature: async def send(message: MutableMapping[str, Any]) -> None
     from collections.abc import MutableMapping
-    
-    # Track if response was sent to prevent FastAPI from sending another
-    response_sent = False
-    
+
     async def asgi_send(message: MutableMapping[str, Any]) -> None:
         """ASGI send function that forwards to request._send"""
-        nonlocal response_sent
-        if message.get("type") == "http.response.start":
-            response_sent = True
-        # Convert MutableMapping to dict for request._send if needed
         msg_dict = dict(message) if not isinstance(message, dict) else message
         await request._send(msg_dict)
-    
+
     await transport.handle_post_message(
         scope, request.receive, asgi_send  # type: ignore[arg-type]
     )
-    
-    # The ASGI app has already sent the response (202 Accepted) via asgi_send
-    # Return None to prevent FastAPI from trying to send another response
-    # The response was already sent by the ASGI app, so FastAPI middleware
-    # should not try to process a return value
-    # Note: This may still cause an error in middleware, but the response
-    # was successfully sent by the ASGI app
-    return None
+
+    return _TransportAlreadyResponded()
 
 
 async def _list_mcp_tools_internal(
@@ -603,12 +625,12 @@ async def _list_mcp_tools_internal(
 
     # Build tools list using MCP SDK adapter
     workflow_repo = injector.get(WorkflowRepository)
-    
+
     adapter = WorkflowMCPServerAdapter(
         mcp_server, workflow_repo
     )
     mcp_tools = await adapter.list_tools()
-    
+
     # Convert MCP Tool objects to dict format
     tools_list = []
     for tool in mcp_tools:
@@ -628,7 +650,7 @@ async def list_mcp_tools_get(
 ):
     """
     List available tools from active MCP servers (MCP Protocol endpoint - GET).
-    
+
     Authenticates using API key from Authorization header and returns all tools
     exposed by the authenticated MCP server.
     """
@@ -642,7 +664,7 @@ async def list_mcp_tools_post(
 ):
     """
     List available tools from active MCP servers (MCP Protocol endpoint - POST).
-    
+
     This endpoint matches the MCP client's expected format for tool discovery.
     Authenticates using API key from Authorization header and returns all tools
     exposed by the authenticated MCP server.
@@ -658,7 +680,7 @@ async def execute_mcp_tool(
 ):
     """
     Execute a workflow as an MCP tool (MCP Protocol endpoint).
-    
+
     Authenticates using API key, finds the tool in the server's workflows,
     validates arguments, and executes the workflow.
     """
@@ -688,19 +710,19 @@ async def execute_mcp_tool(
     try:
         # Use MCP SDK adapter for tool execution
         workflow_repo = injector.get(WorkflowRepository)
-        
+
         adapter = WorkflowMCPServerAdapter(
             mcp_server, workflow_repo
         )
-        
+
         # Get arguments
         input_data = request.get_arguments()
-        
+
         # Call tool using MCP SDK adapter
         # Note: adapter.call_tool returns List[TextContent], not CallToolResult
         # (The server decorator wraps it in CallToolResult, but we're calling it directly)
         content_list_result = await adapter.call_tool(request.tool, input_data)
-        
+
         # Extract content from List[TextContent]
         # For HTTP endpoint, we return the first text content as output
         output = {}
@@ -713,7 +735,7 @@ async def execute_mcp_tool(
                     except json.JSONDecodeError:
                         output = {"text": content_item.text}
                     break
-        
+
         return MCPToolCallResponse(output=output)
 
     except HTTPException:
