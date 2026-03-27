@@ -349,6 +349,12 @@ export const useChat = ({
           service.fetchAgentInfo?.() ?? Promise.resolve(null),
           service.fetchAgentChatLocales?.() ?? Promise.resolve(null),
         ]);
+
+        // set available languages from the agent info
+        if (info && Array.isArray(info.agent_available_languages)) {
+          setAvailableLanguages(info.agent_available_languages);
+        }
+
         if (cancelled) return;
         if (info && Array.isArray(info.agent_available_languages)) {
           setAvailableLanguages(info.agent_available_languages);
@@ -730,6 +736,7 @@ export const useChat = ({
           setThinkingDelayMs(thinking.delayMs || 1000);
         }
         if (chatServiceRef.current.getAvailableLanguages) {
+          debugger;
           const langs = chatServiceRef.current.getAvailableLanguages();
           if (Array.isArray(langs)) {
             setAvailableLanguages(langs);

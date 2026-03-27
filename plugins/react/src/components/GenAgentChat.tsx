@@ -22,6 +22,8 @@ import {
 } from '../utils/i18n';
 import { GoogleReCaptcha, GoogleReCaptchaProvider } from 'react-google-recaptcha-v3';
 
+// can be used to hide the language selector on the chat box
+const SHOW_CHAT_LANGUAGE_SELECTOR = true;
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
@@ -1332,6 +1334,30 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     ),
   };
 
+  const renderLanguageSelector = () => {
+    // ------------------------------------------------------------
+    // Show language selector only when SHOW_CHAT_LANGUAGE_SELECTOR is true
+    // ------------------------------------------------------------
+    if (!SHOW_CHAT_LANGUAGE_SELECTOR) {
+      return null;
+    }
+
+    if (!hasLanguageOptions || (conversationId && !isFinalized) || messages.length > 0 || hasUserMessages) {
+      return null;
+    }
+    return (
+      <>
+        <LanguageSelector
+          availableLanguages={availableLanguages}
+          selectedLanguage={resolvedLanguage}
+          onLanguageChange={handleLanguageChange}
+          translations={translations}
+          theme={theme}
+        />
+      </>
+    );
+  };
+
   /**
    * Render the component with ReCaptcha
    * @param children - The children to be rendered
@@ -1546,26 +1572,28 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
       <div style={contentCardStyle}>
         <div style={chatContainerStyle} ref={chatContainerRef}>
-          {/* Language Selector - Show only when no conversation started */}
-          {hasLanguageOptions && (!conversationId || isFinalized) && messages.length === 0 && !hasUserMessages && (
-            <LanguageSelector
-              availableLanguages={availableLanguages}
-              selectedLanguage={resolvedLanguage}
-              onLanguageChange={handleLanguageChange}
-              translations={translations}
-              theme={theme}
-            />
-          )}
-          {(() => {
-            return null;
-          })()}
+          {renderLanguageSelector()}
+
           {(() => {
             // show welcome card (only when showWelcomeBeforeStart is true)
             const shouldShowSyntheticWelcome =
               showWelcomeBeforeStart &&
               !hasUserMessages &&
               (messages.length === 0 || messages[0].speaker !== 'agent') &&
-              (Boolean(welcomeTitle) || Boolean(welcomeImageUrl) || Boolean(welcomeMessage));
+              (Boolean(welcomeTitle) || Boolean(welcomeImageUrl) || Boolean(welcomeMessage))
+              && conversationId;
+
+            console.table({
+              showWelcomeBeforeStart,
+              hasUserMessages,
+              messagesLength: messages.length,
+              firstMessageSpeaker: messages[0]?.speaker,
+              welcomeTitle,
+              welcomeImageUrl,
+              welcomeMessage,
+              conversationId,
+              shouldShowSyntheticWelcome,
+            });
 
             if (!shouldShowSyntheticWelcome) return null;
 

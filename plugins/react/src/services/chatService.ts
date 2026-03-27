@@ -164,6 +164,7 @@ export class ChatService {
       'pt': 'pt-PT',
       'ar': 'ar-SA',
       'sq': 'sq-AL',
+      'zh': 'zh-CN',
     };
 
     // Check if the code already has a region (e.g., "en-US", "es-ES")
@@ -303,6 +304,7 @@ export class ChatService {
       if (agentId) {
         this.agentId = agentId;
       }
+
       if (availableLanguages) {
         this.availableLanguages = availableLanguages;
       }
