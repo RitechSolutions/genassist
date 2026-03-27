@@ -37,7 +37,6 @@ export const GlobalChat = () => {
       apiKey={genassistApiKey}
       tenant={undefined}
       headerTitle="Genassist Chat"
-      placeholder="Ask anything..."
       theme={{
         primaryColor: "#173DED",
         backgroundColor: "#ffffff",

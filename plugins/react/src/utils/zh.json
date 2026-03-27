@@ -1,0 +1,91 @@
+{
+  "header": {
+    "subtitle": "支持"
+  },
+  "menu": {
+    "title": "菜单",
+    "resetConversation": "重置对话",
+    "fullscreen": "全屏",
+    "language": "语言"
+  },
+  "buttons": {
+    "startConversation": "开始对话",
+    "cancel": "取消",
+    "reset": "重置",
+    "save": "保存",
+    "saveChanges": "保存更改",
+    "add": "添加"
+  },
+  "input": {
+    "placeholder": "请输入您的问题"
+  },
+  "labels": {
+    "agent": "助手",
+    "you": "您"
+  },
+  "dialog": {
+    "resetConversation": {
+      "title": "重置对话",
+      "message": "这将清除当前对话记录并开始新对话。确定要继续吗？"
+    }
+  },
+  "feedback": {
+    "thumbsUp": "赞",
+    "thumbsDown": "踩"
+  },
+  "thinking": {
+    "messages": [
+      "思考中…",
+      "正在分析您的问题…",
+      "正在检索知识…",
+      "正在获取相关信息…",
+      "正在撰写回答…",
+      "正在核对细节…",
+      "正在汇总…",
+      "即将完成…"
+    ]
+  },
+  "time": {
+    "justNow": "刚刚",
+    "today": "今天",
+    "yesterday": "昨天"
+  },
+  "settings": {
+    "defaultDescription": "支持"
+  },
+  "metadata": {
+    "addParameter": "添加参数",
+    "editParameter": "编辑参数",
+    "defineKeyValue": "定义将作为聊天元数据发送的键/值参数。"
+  },
+  "configPanel": {
+    "appearance": "外观",
+    "settings": "设置",
+    "metadata": "元数据",
+    "primaryColor": "主色",
+    "secondaryColor": "辅色",
+    "backgroundColor": "背景色",
+    "textColor": "文字颜色",
+    "fontSize": "字号",
+    "fontFamily": "字体",
+    "name": "名称",
+    "description": "描述",
+    "small": "小（12px）",
+    "medium": "中（15px）",
+    "large": "大（18px）",
+    "parameterName": "参数名",
+    "type": "类型",
+    "required": "必填",
+    "defaultValue": "默认值",
+    "value": "值",
+    "yes": "是",
+    "no": "否",
+    "true": "真",
+    "false": "假",
+    "string": "字符串",
+    "number": "数字",
+    "boolean": "布尔",
+    "edit": "编辑",
+    "remove": "移除"
+  }
+}
