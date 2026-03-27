@@ -448,11 +448,7 @@ class TestSuiteService:
         suite = await self.suite_repo.get_by_id(suite_id)
         if not suite:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
-        from sqlalchemy import select, exists
-        case_ids_stmt = select(TestCaseModel.id).where(TestCaseModel.suite_id == str(suite_id))
-        has_results_stmt = select(exists().where(TestResultModel.case_id.in_(case_ids_stmt)))
-        result = await self.suite_repo.db.execute(has_results_stmt)
-        if result.scalar():
+        if await self.result_repo.exists_for_suite(suite_id):
             raise AppException(status_code=409, error_key=ErrorKey.TEST_CASES_HAVE_RESULTS)
         await self.suite_repo.delete(suite)
 
@@ -479,17 +475,7 @@ class TestSuiteService:
         return TestCaseInDB.model_validate(created, from_attributes=True)
 
     async def list_cases_for_suite(self, suite_id: UUID) -> List[TestCaseInDB]:
-        # Reuse generic repository filter via manual select
-        # Simple filter: where suite_id == suite_id
-        from sqlalchemy import select
-
-        stmt = (
-            select(TestCaseModel)
-            .where(TestCaseModel.suite_id == str(suite_id))
-            .order_by(TestCaseModel.id)
-        )
-        result = await self.case_repo.db.execute(stmt)
-        rows: List[TestCaseModel] = result.scalars().all()
+        rows = await self.case_repo.get_all_for_suite(suite_id)
         return [TestCaseInDB.model_validate(c, from_attributes=True) for c in rows]
 
     async def update_case(self, case_id: UUID, data: TestCaseUpdate) -> TestCaseInDB:
@@ -522,15 +508,8 @@ class TestSuiteService:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
 
         if replace:
-            from sqlalchemy import select, exists
-            case_ids_stmt = select(TestCaseModel.id).where(TestCaseModel.suite_id == str(suite_id))
-            has_results_stmt = select(exists().where(TestResultModel.case_id.in_(case_ids_stmt)))
-            result = await self.case_repo.db.execute(has_results_stmt)
-            if result.scalar():
-                raise AppException(
-                    status_code=409,
-                    error_key=ErrorKey.TEST_CASES_HAVE_RESULTS,
-                )
+            if await self.result_repo.exists_for_suite(suite_id):
+                raise AppException(status_code=409, error_key=ErrorKey.TEST_CASES_HAVE_RESULTS)
             await self.case_repo.delete_all_for_suite(suite_id)
 
         created: List[TestCaseInDB] = []
@@ -706,19 +685,11 @@ class TestSuiteService:
         return TestRun.model_validate(run, from_attributes=True)
 
     async def list_runs_for_suite(self, suite_id: UUID) -> List[TestRunInDB]:
-        from sqlalchemy import select
-
-        stmt = select(TestRunModel).where(TestRunModel.suite_id == str(suite_id))
-        result = await self.run_repo.db.execute(stmt)
-        rows: List[TestRunModel] = result.scalars().all()
+        rows = await self.run_repo.get_all_for_suite(suite_id)
         return [TestRunInDB.model_validate(r, from_attributes=True) for r in rows]
 
     async def list_results_for_run(self, run_id: UUID) -> List[TestResultInDB]:
-        from sqlalchemy import select
-
-        stmt = select(TestResultModel).where(TestResultModel.run_id == str(run_id))
-        result = await self.result_repo.db.execute(stmt)
-        rows: List[TestResultModel] = result.scalars().all()
+        rows = await self.result_repo.get_all_for_run(run_id)
         return [TestResultInDB.model_validate(r, from_attributes=True) for r in rows]
 
     # ---- Evaluations -------------------------------------------------------
