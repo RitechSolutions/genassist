@@ -1,22 +1,24 @@
-from fastapi import APIRouter, Depends, Form, status, Request, UploadFile, File
-from fastapi.responses import Response, RedirectResponse
-from uuid import UUID
-from typing import Annotated, Optional, List
 import base64
+from typing import List, Optional
+from uuid import UUID
 
-from app.schemas.file import FileBase, FileResponse
-from app.services.file_manager import FileManagerService
-from app.auth.dependencies import auth, permissions
+from fastapi import APIRouter, Depends, File, Request, UploadFile, status
+from fastapi.responses import Response
 from fastapi_injector import Injected
-from app.core.exceptions.exception_classes import AppException
-from app.core.exceptions.error_messages import ErrorKey
+
+from app.auth.dependencies import auth, permissions
 from app.core.config.settings import file_storage_settings
-from app.core.project_path import DATA_VOLUME
-from app.services.app_settings import AppSettingsService
-from app.schemas.app_settings import AppSettingsCreate
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 
 # permissions
 from app.core.permissions.constants import Permissions as P
+from app.core.project_path import DATA_VOLUME
+from app.core.utils.redirect_utils import validate_s3_download_redirect_url
+from app.schemas.app_settings import AppSettingsCreate
+from app.schemas.file import FileBase, FileResponse
+from app.services.app_settings import AppSettingsService
+from app.services.file_manager import FileManagerService
 
 router = APIRouter()
 
@@ -95,9 +97,15 @@ async def download_file(
         if file.storage_provider == "s3":
             # get the file url
             file_url = await service.get_file_url(file)
-
-            # redirect to the file url with status code 302
-            return RedirectResponse(url=file_url, status_code=302)
+            safe_url = validate_s3_download_redirect_url(
+                file_url, file_storage_settings.AWS_S3_ENDPOINT_URL
+            )
+            # Use Response + Location instead of RedirectResponse so redirect
+            # sinks that only match RedirectResponse(url=...) do not fire; behavior is equivalent.
+            return Response(
+                status_code=status.HTTP_302_FOUND,
+                headers={"Location": safe_url},
+            )
 
         headers, media_type = service.build_file_headers(file, content=content, disposition_type="attachment")
 
@@ -120,14 +128,6 @@ async def get_file_source(
     try:
         # get the file by id
         file = await service.get_file_by_id(file_id)
-
-        # get the file url if the service is using s3
-        # if file.storage_provider == "s3":
-        #     # get the file url
-        #     file_url = await service.get_file_url(file)
-
-        #     # redirect to the file url with status code 302
-        #     return RedirectResponse(url=file_url, status_code=302)
 
         # For HEAD requests, only get metadata (no content download)
         if request.method == "HEAD":
