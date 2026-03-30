@@ -448,10 +448,11 @@ class TestSuiteService:
         suite = await self.suite_repo.get_by_id(suite_id)
         if not suite:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
-        result = await self.result_repo.exists_for_suite(suite_id)
-        if result:
-            raise AppException(status_code=409, error_key=ErrorKey.TEST_CASES_HAVE_RESULTS)
-        await self.suite_repo.delete(suite)
+        evaluations = await self.evaluation_repo.get_all_for_suite(suite_id)
+        for evaluation in evaluations:
+            await self.run_repo.soft_delete_all_by_ids(list(evaluation.run_ids or []))
+            await self.evaluation_repo.soft_delete(evaluation)
+        await self.suite_repo.soft_delete(suite)
 
     # ---- Cases ------------------------------------------------------------
 
@@ -740,6 +741,6 @@ class TestSuiteService:
         row = await self.evaluation_repo.get_by_id(evaluation_id)
         if not row:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
-        await self.run_repo.delete_all_by_ids(list(row.run_ids or []))
-        await self.evaluation_repo.delete(row)
+        await self.run_repo.soft_delete_all_by_ids(list(row.run_ids or []))
+        await self.evaluation_repo.soft_delete(row)
 

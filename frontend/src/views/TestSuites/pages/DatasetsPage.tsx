@@ -616,7 +616,8 @@ const DatasetsPage: React.FC = () => {
         onConfirm={handleDeleteDataset}
         isInProgress={isDeleting}
         itemName={datasetToDelete?.name || ""}
-        description={`This action cannot be undone. This will permanently delete dataset "${datasetToDelete?.name}".`}
+        description={`This will delete dataset "${datasetToDelete?.name}" along with all related evaluations and their runs.`}
+        requireConfirmText="delete"
       />
     </PageLayout>
   );

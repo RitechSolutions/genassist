@@ -52,14 +52,15 @@ class TestRunRepository(DbRepository[TestRunModel]):
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
-    async def delete_all_by_ids(self, run_ids: List[str]) -> None:
+    async def soft_delete_all_by_ids(self, run_ids: List[str]) -> None:
         if not run_ids:
             return
-        stmt = select(TestRunModel).where(TestRunModel.id.in_(run_ids))
-        result = await self.db.execute(stmt)
-        runs = result.scalars().all()
-        for run in runs:
-            await self.db.delete(run)
+        await self.db.execute(
+            update(TestRunModel)
+            .where(TestRunModel.id.in_(run_ids))
+            .values(is_deleted=True)
+            .execution_options(synchronize_session="fetch")
+        )
         await self.db.commit()
 
 
@@ -86,4 +87,11 @@ class TestResultRepository(DbRepository[TestResultModel]):
 class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(TestEvaluationModel, db)
+
+    async def get_all_for_suite(self, suite_id: UUID) -> List[TestEvaluationModel]:
+        stmt = select(TestEvaluationModel).where(
+            TestEvaluationModel.suite_id == str(suite_id)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 

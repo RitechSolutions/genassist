@@ -132,23 +132,25 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             }
           />
         </div>
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <Label>Fail on violation</Label>
-            <p className="text-xs text-muted-foreground">
-              When enabled, blocks the workflow branch if the provenance score is below the threshold.
-            </p>
+        {false && (
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label>Fail on violation</Label>
+              <p className="text-xs text-muted-foreground">
+                When enabled, blocks the workflow branch if the provenance score is below the threshold.
+              </p>
+            </div>
+            <Switch
+              checked={localData.fail_on_violation ?? false}
+              onCheckedChange={(checked) =>
+                setLocalData((prev) => ({
+                  ...prev,
+                  fail_on_violation: checked,
+                }))
+              }
+            />
           </div>
-          <Switch
-            checked={localData.fail_on_violation ?? false}
-            onCheckedChange={(checked) =>
-              setLocalData((prev) => ({
-                ...prev,
-                fail_on_violation: checked,
-              }))
-            }
-          />
-        </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <Label>Fallback answer on violation</Label>
