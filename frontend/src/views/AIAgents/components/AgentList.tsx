@@ -123,6 +123,7 @@ const AgentList: React.FC<AgentListProps> = ({
         thinking_phrases: config.thinking_phrases ?? [],
         is_active: config.is_active,
         llm_analyst_id: config.llm_analyst_id ?? null,
+        has_welcome_image: config?.has_welcome_image ?? false,
         // workflow_id: config.workflow_id,
         // has_welcome_image: (config as { has_welcome_image?: boolean }).has_welcome_image,
       };
