@@ -344,6 +344,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     <Checkbox
                       id={`metric-${metric.value}`}
                       checked={metrics.includes(metric.value)}
+                      onClick={(e) => e.stopPropagation()}
                       onCheckedChange={(checked) => {
                         setMetrics((prev) =>
                           checked
@@ -415,16 +416,18 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     placeholder="0.5"
                   />
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="nli-fail-on-contradiction"
-                    checked={nliFailOnContradiction}
-                    onCheckedChange={(checked) => setNliFailOnContradiction(Boolean(checked))}
-                  />
-                  <Label htmlFor="nli-fail-on-contradiction" className="text-xs font-normal cursor-pointer">
-                    Fail on contradiction
-                  </Label>
-                </div>
+                {false && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="nli-fail-on-contradiction"
+                      checked={nliFailOnContradiction}
+                      onCheckedChange={(checked) => setNliFailOnContradiction(Boolean(checked))}
+                    />
+                    <Label htmlFor="nli-fail-on-contradiction" className="text-xs font-normal cursor-pointer">
+                      Fail on contradiction
+                    </Label>
+                  </div>
+                )}
               </div>
             )}
 
@@ -461,16 +464,18 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                     placeholder="0.5"
                   />
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="prov-fail-on-violation"
-                    checked={provFailOnViolation}
-                    onCheckedChange={(checked) => setProvFailOnViolation(Boolean(checked))}
-                  />
-                  <Label htmlFor="prov-fail-on-violation" className="text-xs font-normal cursor-pointer">
-                    Fail on violation
-                  </Label>
-                </div>
+                {false && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="prov-fail-on-violation"
+                      checked={provFailOnViolation}
+                      onCheckedChange={(checked) => setProvFailOnViolation(Boolean(checked))}
+                    />
+                    <Label htmlFor="prov-fail-on-violation" className="text-xs font-normal cursor-pointer">
+                      Fail on violation
+                    </Label>
+                  </div>
+                )}
 
                 {provMode === "embeddings" && (
                   <>

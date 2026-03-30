@@ -145,23 +145,25 @@ export const GuardrailNliDialog: React.FC<Props> = (props) => {
             }
           />
         </div>
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <Label>Fail on contradiction</Label>
-            <p className="text-xs text-muted-foreground">
-              When enabled, blocks the workflow branch if the answer contradicts the evidence.
-            </p>
+        {false && (
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label>Fail on contradiction</Label>
+              <p className="text-xs text-muted-foreground">
+                When enabled, blocks the workflow branch if the answer contradicts the evidence.
+              </p>
+            </div>
+            <Switch
+              checked={localData.fail_on_contradiction ?? false}
+              onCheckedChange={(checked) =>
+                setLocalData((prev) => ({
+                  ...prev,
+                  fail_on_contradiction: checked,
+                }))
+              }
+            />
           </div>
-          <Switch
-            checked={localData.fail_on_contradiction ?? false}
-            onCheckedChange={(checked) =>
-              setLocalData((prev) => ({
-                ...prev,
-                fail_on_contradiction: checked,
-              }))
-            }
-          />
-        </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <Label>Fallback answer on contradiction</Label>
