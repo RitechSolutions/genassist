@@ -2,7 +2,7 @@ import datetime
 from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 from injector import inject
-from sqlalchemy import asc, desc, func, and_, or_, nulls_last
+from sqlalchemy import asc, cast, desc, func, and_, or_, nulls_last, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import contains_eager, joinedload, selectinload
@@ -238,6 +238,11 @@ class ConversationRepository:
 
         if conversation_filter.exclude_empty:
             query = query.where(ConversationModel.word_count > 0)
+
+        if conversation_filter.id_suffix:
+            query = query.where(
+                cast(ConversationModel.id, String).like(f"%{conversation_filter.id_suffix.lower()}")
+            )
 
         # Conditional topic filtering
         if conversation_filter.conversation_topics:

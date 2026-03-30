@@ -62,6 +62,7 @@ const DatasetsPage: React.FC = () => {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
+  const [convIdSuffix, setConvIdSuffix] = useState("");
   const [conversations, setConversations] = useState<BackendTranscript[]>([]);
   const [convPage, setConvPage] = useState(0);
   const [convTotal, setConvTotal] = useState(0);
@@ -72,6 +73,7 @@ const DatasetsPage: React.FC = () => {
   const [pendingImportConv, setPendingImportConv] = useState<BackendTranscript | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const importSucceededRef = useRef(false);
+  const idSuffixDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -153,12 +155,13 @@ const DatasetsPage: React.FC = () => {
 
   // ---- Conversation picker -------------------------------------------------
 
-  const loadConversations = useCallback(async (page: number, workflowId: string) => {
+  const loadConversations = useCallback(async (page: number, workflowId: string, idSuffix: string) => {
     setIsLoadingConversations(true);
     const result = await fetchTranscripts({
       skip: page * CONV_PAGE_SIZE,
       limit: CONV_PAGE_SIZE,
       workflow_id: workflowId || undefined,
+      id_suffix: idSuffix || undefined,
     });
     setConversations(result.items);
     setConvTotal(result.total);
@@ -169,12 +172,13 @@ const DatasetsPage: React.FC = () => {
     setImportTargetSuite(suite);
     setConvPage(0);
     setSelectedWorkflowId("");
+    setConvIdSuffix("");
     setExpandedConvId(null);
     setExpandedMessages([]);
     setIsImportDialogOpen(true);
     const wfs = await getAllWorkflows();
     setWorkflows(wfs ?? []);
-    loadConversations(0, "");
+    loadConversations(0, "", "");
   };
 
   const handleWorkflowFilterChange = (workflowId: string) => {
@@ -182,14 +186,25 @@ const DatasetsPage: React.FC = () => {
     setConvPage(0);
     setExpandedConvId(null);
     setExpandedMessages([]);
-    loadConversations(0, workflowId);
+    loadConversations(0, workflowId, convIdSuffix);
+  };
+
+  const handleConvIdSuffixChange = (suffix: string) => {
+    setConvIdSuffix(suffix);
+    if (idSuffixDebounceRef.current) clearTimeout(idSuffixDebounceRef.current);
+    idSuffixDebounceRef.current = setTimeout(() => {
+      setConvPage(0);
+      setExpandedConvId(null);
+      setExpandedMessages([]);
+      loadConversations(0, selectedWorkflowId, suffix);
+    }, 700);
   };
 
   const handleConvPageChange = (next: number) => {
     setConvPage(next);
     setExpandedConvId(null);
     setExpandedMessages([]);
-    loadConversations(next, selectedWorkflowId);
+    loadConversations(next, selectedWorkflowId, convIdSuffix);
   };
 
   const toggleExpandConversation = async (convId: string) => {
@@ -437,24 +452,35 @@ const DatasetsPage: React.FC = () => {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="px-6 pb-2 shrink-0">
-            <Label className="text-xs mb-1 block">Filter by Workflow</Label>
-            <Select
-              value={selectedWorkflowId || "__all__"}
-              onValueChange={(v) => handleWorkflowFilterChange(v === "__all__" ? "" : v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="All workflows" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All workflows</SelectItem>
-                {workflows.map((wf) => (
-                  <SelectItem key={wf.id} value={wf.id ?? ""}>
-                    {wf.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="px-6 pb-2 shrink-0 flex gap-3">
+            <div className="flex-1">
+              <Label className="text-xs mb-1 block">Filter by Workflow</Label>
+              <Select
+                value={selectedWorkflowId || "__all__"}
+                onValueChange={(v) => handleWorkflowFilterChange(v === "__all__" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All workflows" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All workflows</SelectItem>
+                  {workflows.map((wf) => (
+                    <SelectItem key={wf.id} value={wf.id ?? ""}>
+                      {wf.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-36">
+              <Label className="text-xs mb-1 block">Search by ID</Label>
+              <Input
+                placeholder="e.g. a3f2"
+                value={convIdSuffix}
+                onChange={(e) => handleConvIdSuffixChange(e.target.value)}
+                maxLength={36}
+              />
+            </div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6">

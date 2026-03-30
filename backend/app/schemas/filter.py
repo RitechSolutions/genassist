@@ -62,6 +62,7 @@ class ConversationFilter(BaseFilterModel):
     from_create_datetime_messages: Optional[datetime] = Field(None, description="Start datetime message was created")
     to_create_datetime_messages: Optional[datetime] = Field(None, description="End datetime message was created")
     workflow_id: Optional[UUID] = Field(None, description="Filter conversations by the workflow used by the agent")
+    id_suffix: Optional[str] = Field(None, description="Filter conversations by the last N characters of the UUID")
 
 
 class ApiKeysFilter(BaseFilterModel):

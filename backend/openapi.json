@@ -4839,6 +4839,22 @@
               ],
               "title": "Workflow Id"
             }
+          },
+          {
+            "name": "id_suffix",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Suffix"
+            }
           }
         ],
         "responses": {
@@ -5696,6 +5712,22 @@
               ],
               "title": "Workflow Id"
             }
+          },
+          {
+            "name": "id_suffix",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Suffix"
+            }
           }
         ],
         "responses": {
@@ -6215,6 +6247,22 @@
                 }
               ],
               "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "id_suffix",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Suffix"
             }
           }
         ],
