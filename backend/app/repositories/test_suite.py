@@ -41,6 +41,15 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         )
         await self.db.commit()
 
+    async def soft_delete_all_for_suite(self, suite_id: UUID) -> None:
+        await self.db.execute(
+            update(TestCaseModel)
+            .where(TestCaseModel.suite_id == str(suite_id))
+            .values(is_deleted=1)
+            .execution_options(synchronize_session="fetch")
+        )
+        await self.db.commit()
+
 
 @inject
 class TestRunRepository(DbRepository[TestRunModel]):
@@ -58,7 +67,7 @@ class TestRunRepository(DbRepository[TestRunModel]):
         await self.db.execute(
             update(TestRunModel)
             .where(TestRunModel.id.in_(run_ids))
-            .values(is_deleted=True)
+            .values(is_deleted=1)
             .execution_options(synchronize_session="fetch")
         )
         await self.db.commit()

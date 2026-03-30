@@ -510,9 +510,7 @@ class TestSuiteService:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
 
         if replace:
-            if await self.result_repo.exists_for_suite(suite_id):
-                raise AppException(status_code=409, error_key=ErrorKey.TEST_CASES_HAVE_RESULTS)
-            await self.case_repo.delete_all_for_suite(suite_id)
+            await self.case_repo.soft_delete_all_for_suite(suite_id)
 
         created: List[TestCaseInDB] = []
         for question, answer in extract_qa_pairs(conversation.messages):
