@@ -6,6 +6,7 @@ import {
   createTestSuite,
   deleteTestSuite,
   importCasesFromConversation,
+  listTestCases,
   listTestSuites,
   updateTestSuite,
 } from "@/services/testSuites";
@@ -16,19 +17,36 @@ import {Textarea} from "@/components/textarea";
 import {Label} from "@/components/label";
 import {useNavigate} from "react-router-dom";
 import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/ui/dialog";
-import {ChevronDown, ChevronRight, Database, Import, Pencil, Trash2} from "lucide-react";
+import {ChevronDown, ChevronRight, Clock, Database, Import, Pencil, Plus, Trash2} from "lucide-react";
 import {ConfirmDialog} from "@/components/ConfirmDialog";
 import {fetchConversationById, fetchTranscripts} from "@/services/transcripts";
 import type {BackendTranscript, TranscriptEntry} from "@/interfaces/transcript.interface";
 import {getAllWorkflows} from "@/services/workflows";
 import type {Workflow} from "@/interfaces/workflow.interface";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/components/select";
+import {Skeleton} from "@/components/skeleton";
 
 const CONV_PAGE_SIZE = 20;
+
+const getTimeAgo = (date: Date): string => {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? "s" : ""} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? "s" : ""} ago`;
+  return date.toLocaleDateString();
+};
 
 const DatasetsPage: React.FC = () => {
   const navigate = useNavigate();
   const [suites, setSuites] = useState<TestSuite[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [recordCounts, setRecordCounts] = useState<Record<string, number>>({});
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -57,8 +75,24 @@ const DatasetsPage: React.FC = () => {
 
   useEffect(() => {
     const load = async () => {
-      const suiteData = await listTestSuites();
-      setSuites(suiteData ?? []);
+      setIsLoading(true);
+      try {
+        const suiteData = await listTestSuites();
+        setSuites(suiteData ?? []);
+        // Load record counts for each suite
+        const counts: Record<string, number> = {};
+        await Promise.all(
+          (suiteData ?? []).map(async (suite) => {
+            if (suite.id) {
+              const cases = await listTestCases(suite.id);
+              counts[suite.id] = (cases ?? []).length;
+            }
+          })
+        );
+        setRecordCounts(counts);
+      } finally {
+        setIsLoading(false);
+      }
     };
     load();
   }, []);
@@ -214,69 +248,124 @@ const DatasetsPage: React.FC = () => {
       />
 
       <div className="rounded-lg border bg-white overflow-hidden">
-        {filteredSuites.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
-            <Database className="h-12 w-12 text-gray-400" />
-            <h3 className="font-medium text-lg">No datasets found</h3>
-            <p className="text-sm text-gray-500 max-w-sm">
-              {searchQuery ? "Try adjusting your search query or " : ""}
-              create your first dataset.
-            </p>
-          </div>
-        ) : (
+        {isLoading ? (
           <div className="divide-y divide-gray-100">
-            {filteredSuites.map((suite) => (
-              <div
-                key={suite.id}
-                className="w-full py-4 px-6 text-left hover:bg-gray-50 transition-colors"
-              >
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="py-4 px-6">
                 <div className="flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/tests/datasets/${suite.id}`)}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <div className="text-lg font-semibold truncate">{suite.name}</div>
-                    <p className="text-sm text-gray-500 mt-1 line-clamp-1">
-                      {suite.description || "No description"}
-                    </p>
-                  </button>
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-6 w-48" />
+                    <Skeleton className="h-4 w-64" />
+                    <Skeleton className="h-3 w-32 mt-2" />
+                  </div>
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black">
-                      DATASET
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      title="Import from Conversation"
-                      onClick={() => openImportDialog(suite)}
-                    >
-                      <Import className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => handleOpenEditDataset(suite)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-red-500"
-                      onClick={() => {
-                        setDatasetToDelete(suite);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <Skeleton className="h-6 w-16 rounded-md" />
+                    <Skeleton className="h-8 w-8 rounded" />
+                    <Skeleton className="h-8 w-8 rounded" />
+                    <Skeleton className="h-8 w-8 rounded" />
                   </div>
                 </div>
               </div>
             ))}
+          </div>
+        ) : filteredSuites.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+            <div className="rounded-full bg-gray-100 p-4">
+              <Database className="h-12 w-12 text-gray-400" />
+            </div>
+            <h3 className="font-medium text-lg">No datasets yet</h3>
+            <p className="text-sm text-gray-500 max-w-sm">
+              {searchQuery
+                ? "No datasets match your search. Try adjusting your query."
+                : "Datasets contain test cases for evaluating your AI agents. Create your first dataset to get started."}
+            </p>
+            {!searchQuery && (
+              <Button onClick={() => setIsCreateDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create your first dataset
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {filteredSuites.map((suite) => {
+              const recordCount = suite.id ? recordCounts[suite.id] ?? 0 : 0;
+              const updatedAt = suite.updated_at
+                ? new Date(suite.updated_at)
+                : null;
+              const timeAgo = updatedAt
+                ? getTimeAgo(updatedAt)
+                : null;
+
+              return (
+                <div
+                  key={suite.id}
+                  className="w-full py-4 px-6 text-left hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/tests/datasets/${suite.id}`)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="text-lg font-semibold truncate">{suite.name}</div>
+                        <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black shrink-0">
+                          DATASET
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                        {suite.description || "No description"}
+                      </p>
+                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                        <span className="inline-flex items-center gap-1">
+                          <Database className="h-3 w-3" />
+                          {recordCount} record{recordCount !== 1 ? "s" : ""}
+                        </span>
+                        {timeAgo && (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            Updated {timeAgo}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label="Import from Conversation"
+                        onClick={() => openImportDialog(suite)}
+                      >
+                        <Import className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label="Edit dataset"
+                        onClick={() => handleOpenEditDataset(suite)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-red-500"
+                        aria-label="Delete dataset"
+                        onClick={() => {
+                          setDatasetToDelete(suite);
+                          setIsDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

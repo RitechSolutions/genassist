@@ -3,19 +3,14 @@ import {useNavigate} from "react-router-dom";
 import {PageLayout} from "@/components/PageLayout";
 import {PageHeader} from "@/components/PageHeader";
 import {getAllWorkflows} from "@/services/workflows";
-import {getTestRun, listTestSuites} from "@/services/testSuites";
+import {getTestRun, listTestSuites, startTestRun} from "@/services/testSuites";
 import {Workflow} from "@/interfaces/workflow.interface";
 import {TestRun, TestSuite} from "@/interfaces/testSuite.interface";
-import {Label} from "@/components/label";
-import {Checkbox} from "@/components/checkbox";
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/components/select";
 import {Button} from "@/components/button";
-import {Input} from "@/components/input";
-import {Textarea} from "@/components/textarea";
 import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/ui/dialog";
-import {ListChecks, Pencil, Trash2} from "lucide-react";
-import {Switch} from "@/components/switch";
+import {ListChecks, Pencil, Play, Plus, Trash2} from "lucide-react";
 import {
+  appendRunToEvaluation,
   createTestEvaluation,
   deleteTestEvaluation,
   listTestEvaluations,
@@ -24,25 +19,11 @@ import {
 import {TestEvaluationConfig} from "@/interfaces/testEvaluation.interface";
 import {getAllLLMProviders} from "@/services/llmProviders";
 import {LLMProvider} from "@/interfaces/llmProvider.interface";
-
-const METRICS = [
-  "exact_match",
-  "contains",
-  "json_match",
-  "nli_eval",
-  "provenance_eval",
-];
-
-const NLI_MODEL_OPTIONS = [
-  {
-    value: "cross-encoder/nli-deberta-v3-base",
-    label: "DeBERTa v3 Base (NLI)",
-  },
-  {
-    value: "cross-encoder/nli-roberta-base",
-    label: "RoBERTa Base (NLI)",
-  },
-];
+import {Skeleton} from "@/components/skeleton";
+import {Progress} from "@/components/progress";
+import {Badge} from "@/components/badge";
+import {EvaluationWizard, EvaluationWizardData} from "../components/EvaluationWizard";
+import toast from "react-hot-toast";
 
 const EvaluationsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -50,6 +31,8 @@ const EvaluationsPage: React.FC = () => {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [evaluations, setEvaluations] = useState<TestEvaluationConfig[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [runningEvalIds, setRunningEvalIds] = useState<Set<string>>(new Set());
   const [lastRunsByEvaluationId, setLastRunsByEvaluationId] = useState<
     Record<string, TestRun | null>
   >({});
@@ -57,48 +40,25 @@ const EvaluationsPage: React.FC = () => {
   const [editingEvaluation, setEditingEvaluation] = useState<TestEvaluationConfig | null>(null);
   const [deletingEvaluationId, setDeletingEvaluationId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [evaluationName, setEvaluationName] = useState("");
-  const [evaluationDescription, setEvaluationDescription] = useState("");
-  const [selectedSuiteId, setSelectedSuiteId] = useState<string>("none");
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>("none");
-  const [metrics, setMetrics] = useState<string[]>(["exact_match"]);
-  const [inputMetadataText, setInputMetadataText] = useState("{}");
-  const [useMemory, setUseMemory] = useState(false);
-  const [nliModelName, setNliModelName] = useState(
-    "cross-encoder/nli-deberta-v3-base",
-  );
-  const [nliMinEntailScore, setNliMinEntailScore] = useState("0.5");
-  const [nliFailOnContradiction, setNliFailOnContradiction] = useState(false);
-  const [provMode, setProvMode] = useState<"embeddings" | "llm">("embeddings");
-  const [provEmbeddingType, setProvEmbeddingType] = useState<
-    "openai" | "huggingface" | "bedrock"
-  >("huggingface");
-  const [provEmbeddingModelName, setProvEmbeddingModelName] = useState(
-    "all-MiniLM-L6-v2",
-  );
-  const [provMinScore, setProvMinScore] = useState("0.5");
-  const [provFailOnViolation, setProvFailOnViolation] = useState(false);
-  const [provLlmProviderId, setProvLlmProviderId] = useState("");
-  const [provLlmJudgeSystemPromptSuffix, setProvLlmJudgeSystemPromptSuffix] = useState("");
 
   useEffect(() => {
     const load = async () => {
-      const [suiteData, workflowData, providersData] = await Promise.all([
-        listTestSuites(),
-        getAllWorkflows(),
-        getAllLLMProviders(),
-      ]);
-      setSuites(suiteData ?? []);
-      setWorkflows(workflowData ?? []);
-      const activeProviders = (providersData ?? []).filter((p) => p.is_active === 1);
-      setProviders(activeProviders);
-      if (activeProviders[0]?.id) {
-        setProvLlmProviderId(activeProviders[0].id);
+      setIsLoading(true);
+      try {
+        const [suiteData, workflowData, providersData] = await Promise.all([
+          listTestSuites(),
+          getAllWorkflows(),
+          getAllLLMProviders(),
+        ]);
+        setSuites(suiteData ?? []);
+        setWorkflows(workflowData ?? []);
+        const activeProviders = (providersData ?? []).filter((p) => p.is_active === 1);
+        setProviders(activeProviders);
+        const evaluationData = await listTestEvaluations();
+        setEvaluations(evaluationData ?? []);
+      } finally {
+        setIsLoading(false);
       }
-      const evaluationData = await listTestEvaluations();
-      setEvaluations(evaluationData ?? []);
-      if (suiteData?.[0]?.id) setSelectedSuiteId(suiteData[0].id);
-      if (workflowData?.[0]?.id) setSelectedWorkflowId(workflowData[0].id);
     };
     load();
   }, []);
@@ -131,14 +91,142 @@ const EvaluationsPage: React.FC = () => {
     void loadLastRuns();
   }, [evaluations]);
 
-  const handleCreateEvaluation = async () => {
-    if (!evaluationName.trim() || selectedSuiteId === "none" || metrics.length === 0) {
-      return;
-    }
+  const handleDeleteEvaluation = async (id: string) => {
+    await deleteTestEvaluation(id);
+    setEvaluations((prev) => prev.filter((e) => e.id !== id));
+    setDeletingEvaluationId(null);
+  };
+
+  const getEditInitialData = (evaluation: TestEvaluationConfig): Partial<EvaluationWizardData> => {
+    const nliCfg = evaluation.technique_configs?.["nli_eval"] as Record<string, unknown> | undefined;
+    const provCfg = evaluation.technique_configs?.["provenance_eval"] as Record<string, unknown> | undefined;
+    const metaWithoutMemory = evaluation.input_metadata
+      ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
+      : {};
+
+    return {
+      name: evaluation.name,
+      description: evaluation.description ?? "",
+      suiteId: evaluation.suite_id,
+      workflowId: evaluation.workflow_id ?? "none",
+      metrics: evaluation.techniques,
+      inputMetadataText: JSON.stringify(metaWithoutMemory, null, 2),
+      useMemory: Boolean(evaluation.input_metadata?.use_memory),
+      nliModelName: (nliCfg?.nli_model_name as string) ?? "cross-encoder/nli-deberta-v3-base",
+      nliMinEntailScore: String(nliCfg?.min_entail_score ?? "0.5"),
+      nliFailOnContradiction: Boolean(nliCfg?.fail_on_contradiction),
+      provMode: (provCfg?.provenance_mode as "embeddings" | "llm") ?? "embeddings",
+      provEmbeddingType: (provCfg?.embedding_type as "openai" | "huggingface" | "bedrock") ?? "huggingface",
+      provEmbeddingModelName: (provCfg?.embedding_model_name as string) ?? "all-MiniLM-L6-v2",
+      provMinScore: String(provCfg?.min_score ?? "0.5"),
+      provFailOnViolation: Boolean(provCfg?.fail_on_violation),
+      provLlmProviderId: (provCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
+      provLlmJudgeSystemPromptSuffix: (provCfg?.llm_judge_system_prompt_suffix as string) ?? "",
+    };
+  };
+
+  const handleEditWizardSubmit = async (data: EvaluationWizardData) => {
+    if (!editingEvaluation?.id) return;
 
     let parsedMetadata: Record<string, unknown> | undefined;
     try {
-      const parsed = JSON.parse(inputMetadataText || "{}");
+      const parsed = JSON.parse(data.inputMetadataText || "{}");
+      parsedMetadata = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined;
+    } catch {
+      parsedMetadata = undefined;
+    }
+    if (data.useMemory) {
+      parsedMetadata = { ...(parsedMetadata ?? {}), use_memory: true };
+    } else if (parsedMetadata) {
+      delete parsedMetadata["use_memory"];
+    }
+
+    const updated = await updateTestEvaluation(editingEvaluation.id, {
+      name: data.name.trim(),
+      description: data.description.trim() || undefined,
+      suite_id: data.suiteId,
+      workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
+      techniques: data.metrics,
+      technique_configs: {
+        ...(data.metrics.includes("nli_eval")
+          ? {
+              nli_eval: {
+                min_entail_score: Number(data.nliMinEntailScore || "0.5"),
+                fail_on_contradiction: data.nliFailOnContradiction,
+                ...(data.nliModelName.trim() ? { nli_model_name: data.nliModelName.trim() } : {}),
+              },
+            }
+          : {}),
+        ...(data.metrics.includes("provenance_eval")
+          ? {
+              provenance_eval: {
+                min_score: Number(data.provMinScore || "0.5"),
+                fail_on_violation: data.provFailOnViolation,
+                use_llm_judge: data.provMode === "llm",
+                ...(data.provMode === "llm" && data.provLlmProviderId.trim()
+                  ? { llm_provider_id: data.provLlmProviderId.trim() }
+                  : {}),
+                ...(data.provMode === "llm" && data.provLlmJudgeSystemPromptSuffix.trim()
+                  ? { llm_judge_system_prompt_suffix: data.provLlmJudgeSystemPromptSuffix.trim() }
+                  : {}),
+                ...(data.provMode === "embeddings"
+                  ? {
+                      embedding_type: data.provEmbeddingType,
+                      embedding_model_name: data.provEmbeddingModelName.trim() || undefined,
+                    }
+                  : {}),
+                provenance_mode: data.provMode,
+              },
+            }
+          : {}),
+      },
+      input_metadata: parsedMetadata,
+    });
+
+    if (!updated) return;
+    setEvaluations((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    setEditingEvaluation(null);
+    toast.success("Evaluation updated successfully");
+  };
+
+  const handleQuickRun = async (evaluation: TestEvaluationConfig, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!evaluation.id) return;
+
+    setRunningEvalIds((prev) => new Set(prev).add(evaluation.id));
+    try {
+      let runMetadata = evaluation.input_metadata ?? undefined;
+      if (runMetadata?.use_memory) {
+        runMetadata = { ...runMetadata, thread_id: crypto.randomUUID() };
+      }
+      const created = await startTestRun(evaluation.suite_id, {
+        techniques: evaluation.techniques,
+        technique_configs: evaluation.technique_configs,
+        workflow_id: evaluation.workflow_id,
+        input_metadata: runMetadata,
+      });
+      if (created?.id) {
+        await appendRunToEvaluation(evaluation.id, created.id);
+        // Update the last run for this evaluation
+        setLastRunsByEvaluationId((prev) => ({ ...prev, [evaluation.id]: created }));
+        toast.success("Evaluation started successfully");
+        navigate(`/tests/evaluations/${evaluation.id}`);
+      }
+    } catch (err) {
+      toast.error("Failed to start evaluation");
+    } finally {
+      setRunningEvalIds((prev) => {
+        const next = new Set(prev);
+        next.delete(evaluation.id);
+        return next;
+      });
+    }
+  };
+
+  const handleWizardSubmit = async (data: EvaluationWizardData) => {
+    let parsedMetadata: Record<string, unknown> | undefined;
+    try {
+      const parsed = JSON.parse(data.inputMetadataText || "{}");
       parsedMetadata =
         parsed && typeof parsed === "object"
           ? (parsed as Record<string, unknown>)
@@ -146,49 +234,49 @@ const EvaluationsPage: React.FC = () => {
     } catch {
       parsedMetadata = undefined;
     }
-    if (useMemory) {
+    if (data.useMemory) {
       parsedMetadata = { ...(parsedMetadata ?? {}), use_memory: true };
     } else if (parsedMetadata) {
       delete parsedMetadata["use_memory"];
     }
 
     const created = await createTestEvaluation({
-      name: evaluationName.trim(),
-      description: evaluationDescription.trim() || undefined,
-      suite_id: selectedSuiteId,
-      workflow_id: selectedWorkflowId === "none" ? undefined : selectedWorkflowId,
-      techniques: metrics,
+      name: data.name.trim(),
+      description: data.description.trim() || undefined,
+      suite_id: data.suiteId,
+      workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
+      techniques: data.metrics,
       technique_configs: {
-        ...(metrics.includes("nli_eval")
+        ...(data.metrics.includes("nli_eval")
           ? {
               nli_eval: {
-                min_entail_score: Number(nliMinEntailScore || "0.5"),
-                fail_on_contradiction: nliFailOnContradiction,
-                ...(nliModelName.trim()
-                  ? { nli_model_name: nliModelName.trim() }
+                min_entail_score: Number(data.nliMinEntailScore || "0.5"),
+                fail_on_contradiction: data.nliFailOnContradiction,
+                ...(data.nliModelName.trim()
+                  ? { nli_model_name: data.nliModelName.trim() }
                   : {}),
               },
             }
           : {}),
-        ...(metrics.includes("provenance_eval")
+        ...(data.metrics.includes("provenance_eval")
           ? {
               provenance_eval: {
-                min_score: Number(provMinScore || "0.5"),
-                fail_on_violation: provFailOnViolation,
-                use_llm_judge: provMode === "llm",
-                ...(provMode === "llm" && provLlmProviderId.trim()
-                  ? { llm_provider_id: provLlmProviderId.trim() }
+                min_score: Number(data.provMinScore || "0.5"),
+                fail_on_violation: data.provFailOnViolation,
+                use_llm_judge: data.provMode === "llm",
+                ...(data.provMode === "llm" && data.provLlmProviderId.trim()
+                  ? { llm_provider_id: data.provLlmProviderId.trim() }
                   : {}),
-                ...(provMode === "llm" && provLlmJudgeSystemPromptSuffix.trim()
-                  ? { llm_judge_system_prompt_suffix: provLlmJudgeSystemPromptSuffix.trim() }
+                ...(data.provMode === "llm" && data.provLlmJudgeSystemPromptSuffix.trim()
+                  ? { llm_judge_system_prompt_suffix: data.provLlmJudgeSystemPromptSuffix.trim() }
                   : {}),
-                ...(provMode === "embeddings"
+                ...(data.provMode === "embeddings"
                   ? {
-                      embedding_type: provEmbeddingType,
-                      embedding_model_name: provEmbeddingModelName.trim() || undefined,
+                      embedding_type: data.provEmbeddingType,
+                      embedding_model_name: data.provEmbeddingModelName.trim() || undefined,
                     }
                   : {}),
-                provenance_mode: provMode,
+                provenance_mode: data.provMode,
               },
             }
           : {}),
@@ -197,112 +285,24 @@ const EvaluationsPage: React.FC = () => {
     });
     if (!created) return;
     setIsCreateDialogOpen(false);
-    setEvaluationName("");
-    setEvaluationDescription("");
-    setInputMetadataText("{}");
-    setUseMemory(false);
     navigate(`/tests/evaluations/${created.id}`);
   };
 
-  const openEditDialog = (evaluation: TestEvaluationConfig) => {
-    setEditingEvaluation(evaluation);
-    setEvaluationName(evaluation.name);
-    setEvaluationDescription(evaluation.description ?? "");
-    setSelectedSuiteId(evaluation.suite_id);
-    setSelectedWorkflowId(evaluation.workflow_id ?? "none");
-    setMetrics(evaluation.techniques);
-    const metaWithoutMemory = evaluation.input_metadata
-      ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
-      : {};
-    setInputMetadataText(JSON.stringify(metaWithoutMemory, null, 2));
-    setUseMemory(Boolean(evaluation.input_metadata?.use_memory));
-    const nliCfg = evaluation.technique_configs?.["nli_eval"] as Record<string, unknown> | undefined;
-    if (nliCfg) {
-      setNliModelName((nliCfg.nli_model_name as string) ?? "cross-encoder/nli-deberta-v3-base");
-      setNliMinEntailScore(String(nliCfg.min_entail_score ?? "0.5"));
-      setNliFailOnContradiction(Boolean(nliCfg.fail_on_contradiction));
-    }
-    const provCfg = evaluation.technique_configs?.["provenance_eval"] as Record<string, unknown> | undefined;
-    if (provCfg) {
-      setProvMode((provCfg.provenance_mode as "embeddings" | "llm") ?? "embeddings");
-      setProvMinScore(String(provCfg.min_score ?? "0.5"));
-      setProvFailOnViolation(Boolean(provCfg.fail_on_violation));
-      setProvEmbeddingType((provCfg.embedding_type as "openai" | "huggingface" | "bedrock") ?? "huggingface");
-      setProvEmbeddingModelName((provCfg.embedding_model_name as string) ?? "all-MiniLM-L6-v2");
-      setProvLlmProviderId((provCfg.llm_provider_id as string) ?? "");
-      setProvLlmJudgeSystemPromptSuffix((provCfg.llm_judge_system_prompt_suffix as string) ?? "");
-    }
-  };
+  const getAverageAccuracy = (evaluation: TestEvaluationConfig): number | null => {
+    if (!evaluation.id) return null;
+    const lastRun = lastRunsByEvaluationId[evaluation.id];
+    if (!lastRun?.summary_metrics) return null;
 
-  const closeEditDialog = () => {
-    setEditingEvaluation(null);
-    setEvaluationName("");
-    setEvaluationDescription("");
-    setInputMetadataText("{}");
-    setUseMemory(false);
-  };
+    const metrics = lastRun.summary_metrics as Record<
+      string,
+      { accuracy?: number; avg_score?: number; cases?: number }
+    >;
+    const accuracies = Object.values(metrics)
+      .map((m) => m.accuracy)
+      .filter((a): a is number => typeof a === "number");
 
-  const handleUpdateEvaluation = async () => {
-    if (!editingEvaluation?.id || !evaluationName.trim() || selectedSuiteId === "none" || metrics.length === 0) return;
-
-    let parsedMetadata: Record<string, unknown> | undefined;
-    try {
-      const parsed = JSON.parse(inputMetadataText || "{}");
-      parsedMetadata = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : undefined;
-    } catch {
-      parsedMetadata = undefined;
-    }
-    if (useMemory) {
-      parsedMetadata = { ...(parsedMetadata ?? {}), use_memory: true };
-    } else if (parsedMetadata) {
-      delete parsedMetadata["use_memory"];
-    }
-
-    const updated = await updateTestEvaluation(editingEvaluation.id, {
-      name: evaluationName.trim(),
-      description: evaluationDescription.trim() || undefined,
-      suite_id: selectedSuiteId,
-      workflow_id: selectedWorkflowId === "none" ? undefined : selectedWorkflowId,
-      techniques: metrics,
-      technique_configs: {
-        ...(metrics.includes("nli_eval")
-          ? {
-              nli_eval: {
-                min_entail_score: Number(nliMinEntailScore || "0.5"),
-                fail_on_contradiction: nliFailOnContradiction,
-                ...(nliModelName.trim() ? { nli_model_name: nliModelName.trim() } : {}),
-              },
-            }
-          : {}),
-        ...(metrics.includes("provenance_eval")
-          ? {
-              provenance_eval: {
-                min_score: Number(provMinScore || "0.5"),
-                fail_on_violation: provFailOnViolation,
-                use_llm_judge: provMode === "llm",
-                ...(provMode === "llm" && provLlmProviderId.trim() ? { llm_provider_id: provLlmProviderId.trim() } : {}),
-                ...(provMode === "llm" && provLlmJudgeSystemPromptSuffix.trim()
-                  ? { llm_judge_system_prompt_suffix: provLlmJudgeSystemPromptSuffix.trim() }
-                  : {}),
-                ...(provMode === "embeddings"
-                  ? { embedding_type: provEmbeddingType, embedding_model_name: provEmbeddingModelName.trim() || undefined }
-                  : {}),
-                provenance_mode: provMode,
-              },
-            }
-          : {}),
-      },
-      input_metadata: parsedMetadata,
-    });
-    if (!updated) return;
-    setEvaluations((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
-    closeEditDialog();
-  };
-
-  const handleDeleteEvaluation = async (id: string) => {
-    await deleteTestEvaluation(id);
-    setEvaluations((prev) => prev.filter((e) => e.id !== id));
-    setDeletingEvaluationId(null);
+    if (accuracies.length === 0) return null;
+    return accuracies.reduce((sum, a) => sum + a, 0) / accuracies.length;
   };
 
   const filteredEvaluations = evaluations.filter((evaluation) => {
@@ -327,309 +327,164 @@ const EvaluationsPage: React.FC = () => {
       />
 
       <div className="rounded-lg border bg-white overflow-hidden">
-          {filteredEvaluations.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+        {isLoading ? (
+          <div className="divide-y divide-gray-100">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="py-4 px-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-6 w-48" />
+                    <Skeleton className="h-4 w-64" />
+                    <div className="flex items-center gap-2 mt-2">
+                      <Skeleton className="h-2 w-32 rounded-full" />
+                      <Skeleton className="h-4 w-16" />
+                    </div>
+                    <div className="flex gap-1 mt-2">
+                      <Skeleton className="h-5 w-20 rounded-full" />
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-8 w-8 rounded" />
+                    <Skeleton className="h-8 w-8 rounded" />
+                    <Skeleton className="h-8 w-20 rounded" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredEvaluations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+            <div className="rounded-full bg-gray-100 p-4">
               <ListChecks className="h-12 w-12 text-gray-400" />
-              <h3 className="font-medium text-lg">No evaluations found</h3>
-              <p className="text-sm text-gray-500 max-w-sm">
-                {searchQuery ? "Try adjusting your search query or " : ""}
-                create your first evaluation.
-              </p>
             </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {filteredEvaluations.map((evaluation) => (
+            <h3 className="font-medium text-lg">No evaluations yet</h3>
+            <p className="text-sm text-gray-500 max-w-sm">
+              {searchQuery
+                ? "No evaluations match your search. Try adjusting your query."
+                : "Evaluations help you test your AI agents against golden datasets. Create your first evaluation to get started."}
+            </p>
+            {!searchQuery && (
+              <Button onClick={() => setIsCreateDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create your first evaluation
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {filteredEvaluations.map((evaluation) => {
+              const avgAccuracy = getAverageAccuracy(evaluation);
+              const isRunning = evaluation.id ? runningEvalIds.has(evaluation.id) : false;
+
+              return (
                 <div
                   key={evaluation.id}
-                  className="w-full py-4 px-6 text-left hover:bg-gray-50 transition-colors flex items-center gap-3"
+                  className="w-full py-4 px-6 text-left hover:bg-gray-50 transition-colors"
                 >
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/tests/evaluations/${evaluation.id}`)}
-                    className="flex-1 min-w-0 text-left"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/tests/evaluations/${evaluation.id}`)}
+                      className="flex-1 min-w-0 text-left"
+                    >
+                      <div className="flex items-center gap-2">
                         <div className="text-lg font-semibold truncate">
                           {evaluation.name}
                         </div>
-                        <p className="text-sm text-gray-500 mt-1 line-clamp-1">
-                          {evaluation.description || "No description"}
-                        </p>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Metrics: {evaluation.techniques.join(", ")} | Runs:{" "}
-                          {evaluation.run_ids.length}
-                        </div>
-                        {evaluation.id &&
-                          lastRunsByEvaluationId[evaluation.id] &&
-                          lastRunsByEvaluationId[evaluation.id]?.summary_metrics && (
-                            <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-gray-600">
-                              {Object.entries(
-                                lastRunsByEvaluationId[evaluation.id]!
-                                  .summary_metrics as Record<
-                                  string,
-                                  { accuracy?: number; avg_score?: number; cases?: number }
-                                >,
-                              ).map(([tech, summary]) => (
-                                <span
-                                  key={tech}
-                                  className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5"
-                                >
-                                  <span className="font-semibold mr-1">
-                                    {tech}
-                                  </span>
-                                  {typeof summary.accuracy === "number" && (
-                                    <span>
-                                      {Math.round(summary.accuracy * 100)}%
-                                    </span>
-                                  )}
-                                </span>
-                              ))}
-                            </div>
-                          )}
+                        <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5">
+                          EVAL
+                        </Badge>
                       </div>
-                      <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold text-black">
-                        EVAL
-                      </span>
+                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                        {evaluation.description || "No description"}
+                      </p>
+
+                      {/* Accuracy progress bar */}
+                      {avgAccuracy !== null && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <Progress
+                            value={avgAccuracy * 100}
+                            className="h-2 w-32 bg-gray-100"
+                          />
+                          <span
+                            className={`text-xs font-medium ${
+                              avgAccuracy >= 0.9
+                                ? "text-green-600"
+                                : avgAccuracy >= 0.7
+                                ? "text-amber-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            {Math.round(avgAccuracy * 100)}% accuracy
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            ({evaluation.run_ids.length} run{evaluation.run_ids.length !== 1 ? "s" : ""})
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Metrics badges */}
+                      <div className="flex flex-wrap items-center gap-1 mt-2">
+                        <span className="text-xs text-gray-500 mr-1">Metrics:</span>
+                        {evaluation.techniques.map((tech) => (
+                          <Badge key={tech} variant="outline" className="text-[10px] px-1.5 py-0">
+                            {tech}
+                          </Badge>
+                        ))}
+                      </div>
+                    </button>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label="Edit evaluation"
+                        onClick={() => setEditingEvaluation(evaluation)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        aria-label="Delete evaluation"
+                        onClick={() => setDeletingEvaluationId(evaluation.id ?? null)}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="ml-1"
+                        disabled={isRunning}
+                        onClick={(e) => handleQuickRun(evaluation, e)}
+                      >
+                        <Play className="h-3.5 w-3.5 mr-1" />
+                        {isRunning ? "Running..." : "Run"}
+                      </Button>
                     </div>
-                  </button>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openEditDialog(evaluation)}
-                      title="Edit evaluation"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeletingEvaluationId(evaluation.id ?? null)}
-                      title="Delete evaluation"
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Edit Dialog */}
-      <Dialog open={!!editingEvaluation} onOpenChange={(open) => { if (!open) closeEditDialog(); }}>
-        <DialogContent className="w-[95vw] max-w-xl h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-            <DialogTitle>Edit Evaluation</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 px-6 py-4 flex-1 min-h-0 overflow-y-auto">
-            <Label className="text-xs">Evaluation name</Label>
-            <Input
-              value={evaluationName}
-              onChange={(e) => setEvaluationName(e.target.value)}
-              placeholder="e.g. FAQ assistant regression"
-            />
-            <Label className="text-xs">Description</Label>
-            <Textarea
-              value={evaluationDescription}
-              onChange={(e) => setEvaluationDescription(e.target.value)}
-              rows={2}
-            />
-            <Label className="text-xs">Dataset</Label>
-            <Select value={selectedSuiteId} onValueChange={setSelectedSuiteId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select dataset" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select dataset</SelectItem>
-                {suites
-                  .filter((s): s is TestSuite & { id: string } => Boolean(s.id))
-                  .map((suite) => (
-                    <SelectItem key={suite.id} value={suite.id}>
-                      {suite.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <Label className="text-xs">Workflow version to evaluate</Label>
-            <Select value={selectedWorkflowId} onValueChange={setSelectedWorkflowId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select workflow version" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Use dataset default workflow</SelectItem>
-                {workflows
-                  .filter((wf): wf is Workflow & { id: string } => Boolean(wf.id))
-                  .map((wf) => (
-                    <SelectItem key={wf.id} value={wf.id}>
-                      {wf.name} (v{wf.version})
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <Label className="text-xs">Extra metadata (JSON)</Label>
-            <Textarea
-              value={inputMetadataText}
-              onChange={(e) => setInputMetadataText(e.target.value)}
-              className="font-mono text-xs"
-              rows={4}
-            />
-            <div className="flex items-center justify-between rounded-md border px-3 py-2 mt-1">
-              <div>
-                <div className="text-xs font-medium">Use memory</div>
-                <div className="text-xs text-gray-400">Generates a unique thread ID per run so the workflow remembers previous inputs/outputs</div>
-              </div>
-              <Switch checked={useMemory} onCheckedChange={setUseMemory} />
-            </div>
-            <Label className="text-xs">Validation methods</Label>
-            <div className="space-y-2">
-              {METRICS.map((metric) => (
-                <div key={metric} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`metric-${metric}`}
-                    checked={metrics.includes(metric)}
-                    onCheckedChange={(checked) => {
-                      setMetrics((prev) =>
-                        checked
-                          ? [...prev, metric]
-                          : prev.filter((m) => m !== metric),
-                      );
-                    }}
-                  />
-                  <Label
-                    htmlFor={`metric-${metric}`}
-                    className="text-xs font-normal cursor-pointer"
-                  >
-                    {metric}
-                  </Label>
-                </div>
-              ))}
-            </div>
-
-            {metrics.includes("nli_eval") && (
-              <div className="border rounded-md p-3 space-y-2">
-                <div className="text-xs font-semibold">Guardrail NLI Config</div>
-                <Label className="text-xs">NLI model</Label>
-                <Select value={nliModelName} onValueChange={setNliModelName}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select NLI model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NLI_MODEL_OPTIONS.map((model) => (
-                      <SelectItem key={model.value} value={model.value}>
-                        {model.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Label className="text-xs">Min entailment score (0-1)</Label>
-                <Input value={nliMinEntailScore} onChange={(e) => setNliMinEntailScore(e.target.value)} />
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="nli-fail-on-contradiction"
-                    checked={nliFailOnContradiction}
-                    onCheckedChange={(checked) => setNliFailOnContradiction(Boolean(checked))}
-                  />
-                  <Label htmlFor="nli-fail-on-contradiction" className="text-xs font-normal cursor-pointer">
-                    Fail on contradiction
-                  </Label>
-                </div>
-              </div>
-            )}
-
-            {metrics.includes("provenance_eval") && (
-              <div className="border rounded-md p-3 space-y-2">
-                <div className="text-xs font-semibold">Guardrail Provenance Config</div>
-                <Label className="text-xs">Provenance mode</Label>
-                <Select
-                  value={provMode}
-                  onValueChange={(value: "embeddings" | "llm") => setProvMode(value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select mode" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="embeddings">Provenance (Embeddings)</SelectItem>
-                    <SelectItem value="llm">Provenance (LLM judge)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Label className="text-xs">Min score (0-1)</Label>
-                <Input value={provMinScore} onChange={(e) => setProvMinScore(e.target.value)} />
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="prov-fail-on-violation"
-                    checked={provFailOnViolation}
-                    onCheckedChange={(checked) => setProvFailOnViolation(Boolean(checked))}
-                  />
-                  <Label htmlFor="prov-fail-on-violation" className="text-xs font-normal cursor-pointer">
-                    Fail on violation
-                  </Label>
-                </div>
-                {provMode === "embeddings" && (
-                  <>
-                    <Label className="text-xs">Embedding provider</Label>
-                    <Select
-                      value={provEmbeddingType}
-                      onValueChange={(value: "openai" | "huggingface" | "bedrock") => setProvEmbeddingType(value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select embedding provider" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="huggingface">HuggingFace</SelectItem>
-                        <SelectItem value="openai">OpenAI</SelectItem>
-                        <SelectItem value="bedrock">AWS Bedrock</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Label className="text-xs">Embedding model name</Label>
-                    <Input
-                      value={provEmbeddingModelName}
-                      onChange={(e) => setProvEmbeddingModelName(e.target.value)}
-                      placeholder="all-MiniLM-L6-v2"
-                    />
-                  </>
-                )}
-                {provMode === "llm" && (
-                  <>
-                    <Label className="text-xs">LLM Provider</Label>
-                    <Select value={provLlmProviderId} onValueChange={setProvLlmProviderId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select provider" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {providers.map((provider) => (
-                          <SelectItem key={provider.id} value={provider.id}>
-                            {provider.name} ({provider.llm_model_provider} - {provider.llm_model})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Label className="text-xs">Additional judge instructions</Label>
-                    <Textarea
-                      value={provLlmJudgeSystemPromptSuffix}
-                      onChange={(e) => setProvLlmJudgeSystemPromptSuffix(e.target.value)}
-                      placeholder="Optional extra instructions for the judge..."
-                      rows={4}
-                    />
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-          <DialogFooter className="border-t px-6 py-4 shrink-0">
-            <Button variant="outline" onClick={closeEditDialog}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleUpdateEvaluation}
-              disabled={!evaluationName.trim() || selectedSuiteId === "none" || metrics.length === 0}
-            >
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Edit Wizard */}
+      {editingEvaluation && (
+        <EvaluationWizard
+          isOpen={!!editingEvaluation}
+          onOpenChange={(open) => { if (!open) setEditingEvaluation(null); }}
+          onSubmit={handleEditWizardSubmit}
+          suites={suites}
+          workflows={workflows}
+          providers={providers}
+          mode="edit"
+          initialData={getEditInitialData(editingEvaluation)}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deletingEvaluationId} onOpenChange={(open) => { if (!open) setDeletingEvaluationId(null); }}>
@@ -655,251 +510,15 @@ const EvaluationsPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="w-[95vw] max-w-xl h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-            <DialogTitle>Create Evaluation</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 px-6 py-4 flex-1 min-h-0 overflow-y-auto">
-            <Label className="text-xs">Evaluation name</Label>
-            <Input
-              value={evaluationName}
-              onChange={(e) => setEvaluationName(e.target.value)}
-              placeholder="e.g. FAQ assistant regression"
-            />
-            <Label className="text-xs">Description</Label>
-            <Textarea
-              value={evaluationDescription}
-              onChange={(e) => setEvaluationDescription(e.target.value)}
-              rows={2}
-            />
-            <Label className="text-xs">Dataset</Label>
-            <Select value={selectedSuiteId} onValueChange={setSelectedSuiteId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select dataset" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select dataset</SelectItem>
-                {suites
-                  .filter((s): s is TestSuite & { id: string } => Boolean(s.id))
-                  .map((suite) => (
-                    <SelectItem key={suite.id} value={suite.id}>
-                      {suite.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <Label className="text-xs">Workflow version to evaluate</Label>
-            <Select value={selectedWorkflowId} onValueChange={setSelectedWorkflowId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select workflow version" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Use dataset default workflow</SelectItem>
-                {workflows
-                  .filter((wf): wf is Workflow & { id: string } => Boolean(wf.id))
-                  .map((wf) => (
-                    <SelectItem key={wf.id} value={wf.id}>
-                      {wf.name} (v{wf.version})
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <Label className="text-xs">Extra metadata (JSON)</Label>
-            <Textarea
-              value={inputMetadataText}
-              onChange={(e) => setInputMetadataText(e.target.value)}
-              className="font-mono text-xs"
-              rows={4}
-            />
-            <div className="flex items-center justify-between rounded-md border px-3 py-2 mt-1">
-              <div>
-                <div className="text-xs font-medium">Use memory</div>
-                <div className="text-xs text-gray-400">Generates a unique thread ID per run so the workflow remembers previous inputs/outputs</div>
-              </div>
-              <Switch checked={useMemory} onCheckedChange={setUseMemory} />
-            </div>
-            <Label className="text-xs">Validation methods</Label>
-            <div className="space-y-2">
-              {METRICS.map((metric) => (
-                <div key={metric} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`metric-${metric}`}
-                    checked={metrics.includes(metric)}
-                    onCheckedChange={(checked) => {
-                      setMetrics((prev) =>
-                        checked
-                          ? [...prev, metric]
-                          : prev.filter((m) => m !== metric),
-                      );
-                    }}
-                  />
-                  <Label
-                    htmlFor={`metric-${metric}`}
-                    className="text-xs font-normal cursor-pointer"
-                  >
-                    {metric}
-                  </Label>
-                </div>
-              ))}
-            </div>
-
-            {metrics.includes("nli_eval") && (
-              <div className="border rounded-md p-3 space-y-2">
-                <div className="text-xs font-semibold">Guardrail NLI Config</div>
-                <p className="text-xs text-gray-500">
-                  Uses workflow output as answer and expected output as evidence by
-                  default.
-                </p>
-                <Label className="text-xs">NLI model</Label>
-                <Select value={nliModelName} onValueChange={setNliModelName}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select NLI model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NLI_MODEL_OPTIONS.map((model) => (
-                      <SelectItem key={model.value} value={model.value}>
-                        {model.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Label className="text-xs">Min entailment score (0-1)</Label>
-                <Input
-                  value={nliMinEntailScore}
-                  onChange={(e) => setNliMinEntailScore(e.target.value)}
-                />
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="nli-fail-on-contradiction"
-                    checked={nliFailOnContradiction}
-                    onCheckedChange={(checked) => setNliFailOnContradiction(Boolean(checked))}
-                  />
-                  <Label htmlFor="nli-fail-on-contradiction" className="text-xs font-normal cursor-pointer">
-                    Fail on contradiction
-                  </Label>
-                </div>
-              </div>
-            )}
-
-            {metrics.includes("provenance_eval") && (
-              <div className="border rounded-md p-3 space-y-2">
-                <div className="text-xs font-semibold">
-                  Guardrail Provenance Config
-                </div>
-                <p className="text-xs text-gray-500">
-                  Uses workflow output as answer and expected output as context by
-                  default.
-                </p>
-                <Label className="text-xs">Provenance mode</Label>
-                <Select
-                  value={provMode}
-                  onValueChange={(value: "embeddings" | "llm") => setProvMode(value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select mode" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="embeddings">
-                      Provenance (Embeddings)
-                    </SelectItem>
-                    <SelectItem value="llm">Provenance (LLM judge)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Label className="text-xs">Min score (0-1)</Label>
-                <Input
-                  value={provMinScore}
-                  onChange={(e) => setProvMinScore(e.target.value)}
-                />
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="prov-fail-on-violation"
-                    checked={provFailOnViolation}
-                    onCheckedChange={(checked) => setProvFailOnViolation(Boolean(checked))}
-                  />
-                  <Label htmlFor="prov-fail-on-violation" className="text-xs font-normal cursor-pointer">
-                    Fail on violation
-                  </Label>
-                </div>
-                {provMode === "embeddings" && (
-                  <>
-                    <Label className="text-xs">Embedding provider</Label>
-                    <Select
-                      value={provEmbeddingType}
-                      onValueChange={(
-                        value: "openai" | "huggingface" | "bedrock",
-                      ) => setProvEmbeddingType(value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select embedding provider" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="huggingface">HuggingFace</SelectItem>
-                        <SelectItem value="openai">OpenAI</SelectItem>
-                        <SelectItem value="bedrock">AWS Bedrock</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Label className="text-xs">Embedding model name</Label>
-                    <Input
-                      value={provEmbeddingModelName}
-                      onChange={(e) => setProvEmbeddingModelName(e.target.value)}
-                      placeholder="all-MiniLM-L6-v2"
-                    />
-                  </>
-                )}
-                {provMode === "llm" && (
-                  <>
-                    <Label className="text-xs">LLM Provider</Label>
-                    <Select
-                      value={provLlmProviderId}
-                      onValueChange={setProvLlmProviderId}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select provider" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {providers.map((provider) => (
-                          <SelectItem key={provider.id} value={provider.id}>
-                            {provider.name} ({provider.llm_model_provider} -{" "}
-                            {provider.llm_model})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Label className="text-xs">Additional judge instructions</Label>
-                    <p className="text-xs text-gray-500">
-                      Appended to the base system prompt to fine-tune judge behaviour.
-                      E.g. <em>"When no Context is available, treat the answer as supported."</em>
-                    </p>
-                    <Textarea
-                      value={provLlmJudgeSystemPromptSuffix}
-                      onChange={(e) => setProvLlmJudgeSystemPromptSuffix(e.target.value)}
-                      placeholder="Optional extra instructions for the judge..."
-                      rows={4}
-                    />
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-          <DialogFooter className="border-t px-6 py-4 shrink-0">
-            <Button
-              variant="outline"
-              onClick={() => setIsCreateDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateEvaluation}
-              disabled={
-                !evaluationName.trim() || selectedSuiteId === "none" || metrics.length === 0
-              }
-            >
-              Create Evaluation
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EvaluationWizard
+        isOpen={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        onSubmit={handleWizardSubmit}
+        suites={suites}
+        workflows={workflows}
+        providers={providers}
+        mode="create"
+      />
     </PageLayout>
   );
 };
