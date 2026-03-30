@@ -169,11 +169,16 @@ export async function uploadWelcomeImage(
 
 export async function getWelcomeImage(agentId: string): Promise<Blob> {
   const baseURL = await getApiUrl();
-  const fullUrl = `${baseURL}genagent/agents/configs/${agentId}/welcome-image`;
+  // Bust caches so a replaced image is not shown as the previous blob.
+  const fullUrl = `${baseURL}genagent/agents/configs/${agentId}/welcome-image?_=${Date.now()}`;
 
   try {
     const response = await api.get(fullUrl, {
       responseType: "blob",
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
     });
     return response.data;
   } catch (error: unknown) {

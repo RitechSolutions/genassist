@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import {
@@ -38,11 +38,10 @@ import {
 import { Textarea } from "@/components/textarea";
 import { TranslationDialog } from "@/views/Settings/components/TranslationDialog";
 import { DisclaimerEditor } from "@/components/DisclaimerEditor";
-import { getTranslationByKey } from "@/services/translations";
+import { getTranslationByKey, getLanguages } from "@/services/translations";
+import { Language, Translation } from "@/interfaces/translation.interface";
 import { getTranslationCount } from "../utils";
 import { Toggle } from "@/components/toggle";
-
-type RequiredFieldId = "name" | "description" | "welcome_message";
 
 interface AgentFormData {
   id?: string;
@@ -60,14 +59,8 @@ interface AgentFormData {
   llm_analyst_id?: string | null;
 }
 
-/** Input placeholders only; new "+ Add" rows start empty until the user types. */
-const PLACEHOLDER_POSSIBLE_QUERY = "Enter a sample query";
-const PLACEHOLDER_THINKING_PHRASE = "I think...|Getting the data...";
-
-function nonEmptyTrimmedStrings(items: string[] | undefined): string[] {
-  return (items ?? [])
-    .map((s) => s.trim())
-    .filter((s) => s !== "");
+function omitEmptyStrings(items: string[] | undefined): string[] {
+  return (items ?? []).map((s) => s.trim()).filter((s) => s !== "");
 }
 
 interface AgentFormProps {
@@ -88,14 +81,17 @@ interface AgentFormProps {
 interface TranslationTriggerProps {
   translationKey: string;
   currentValue: string;
-  /** Sync the agent field to the translation row marked as default after save. */
-  onApplySavedDefault?: (value: string) => void;
+  /** Shared list from the form so each dialog does not call getLanguages. */
+  languages: Language[];
+  /** Sync parent field to the saved translation default. */
+  onTranslationDefaultSaved?: (defaultText: string) => void;
 }
 
 const TranslationTrigger: React.FC<TranslationTriggerProps> = ({
   translationKey,
   currentValue,
-  onApplySavedDefault,
+  languages,
+  onTranslationDefaultSaved,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
@@ -128,11 +124,9 @@ const TranslationTrigger: React.FC<TranslationTriggerProps> = ({
     setIsOpen(true);
   };
 
-  const handleTranslationSaved = (savedDefault?: string | null) => {
+  const handleSaved = (translation: Translation) => {
     setRefreshCounter((prev) => prev + 1);
-    if (onApplySavedDefault && savedDefault != null) {
-      onApplySavedDefault(savedDefault);
-    }
+    onTranslationDefaultSaved?.(translation.default ?? "");
   };
 
   const hasTranslations = translationCount > 0;
@@ -169,7 +163,8 @@ const TranslationTrigger: React.FC<TranslationTriggerProps> = ({
         translationToEdit={null}
         initialKey={translationKey}
         initialDefaultValue={currentValue}
-        onTranslationSaved={handleTranslationSaved}
+        onTranslationSaved={handleSaved}
+        languages={languages}
       />
     </>
   );
@@ -212,12 +207,20 @@ const AgentForm: React.FC<AgentFormProps> = ({
   });
 
   const [llmAnalysts, setLlmAnalysts] = useState<LLMAnalyst[]>([]);
+  const [editFormLanguages, setEditFormLanguages] = useState<Language[]>([]);
 
   useEffect(() => {
     getAllLLMAnalysts()
       .then(setLlmAnalysts)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!isEditMode || !id) return;
+    getLanguages()
+      .then(setEditFormLanguages)
+      .catch(() => toast.error("Failed to load languages."));
+  }, [isEditMode, id]);
 
   const [loading, setLoading] = useState<boolean>(false);
   const [success, setSuccess] = useState<boolean>(false);
@@ -227,40 +230,40 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const [imageDeleting, setImageDeleting] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [showAdvanced, setShowAdvanced] = useState<boolean>(data?.llm_analyst_id ? true : false);
-  const [fieldErrors, setFieldErrors] = useState<
-    Partial<Record<RequiredFieldId, boolean>>
-  >({});
 
-  const clearFieldError = (field: RequiredFieldId) => {
-    setFieldErrors((prev) => {
-      if (!prev[field]) return prev;
-      const next = { ...prev };
-      delete next[field];
-      return next;
-    });
-  };
-
-  const invalidFieldClass =
-    "border-destructive focus-visible:ring-destructive aria-invalid:border-destructive";
+  /** Avoids a slow GET welcome-image finishing after the user picked a replacement and overwriting preview/state. */
+  const imageFileRef = useRef<File | null>(null);
+  useEffect(() => {
+    imageFileRef.current = imageFile;
+  }, [imageFile]);
 
   // Load existing image when editing (only if agent has one)
-  React.useEffect(() => {
+  useEffect(() => {
     let objectUrl: string | null = null;
+    let cancelled = false;
 
     const loadExistingImage = async () => {
-      // Only fetch if agent has a welcome image
-      if (isEditMode && id && data?.has_welcome_image) {
-        try {
-          const imageBlob = await getWelcomeImage(id);
-          objectUrl = URL.createObjectURL(imageBlob);
-          setImagePreview(objectUrl);
-        } catch (error) {
-          // Image failed to load
+      if (!(isEditMode && id && data?.has_welcome_image)) return;
+      try {
+        const imageBlob = await getWelcomeImage(id);
+        if (cancelled) return;
+        const newUrl = URL.createObjectURL(imageBlob);
+        if (cancelled) {
+          URL.revokeObjectURL(newUrl);
+          return;
         }
+        if (imageFileRef.current) {
+          URL.revokeObjectURL(newUrl);
+          return;
+        }
+        objectUrl = newUrl;
+        setImagePreview(newUrl);
+      } catch (error) {
+        // Image failed to load
       }
     };
 
-    loadExistingImage();
+    void loadExistingImage();
 
     // load advanced settings
     if (isEditMode && !!formData.llm_analyst_id) {
@@ -268,6 +271,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
     }
 
     return () => {
+      cancelled = true;
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl);
       }
@@ -278,13 +282,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
-    if (
-      name === "name" ||
-      name === "description" ||
-      name === "welcome_message"
-    ) {
-      clearFieldError(name);
-    }
     setFormData((prev) => ({
       ...prev,
       [name]: name === "thinking_phrase_delay" ? Number(value) || 0 : value,
@@ -354,6 +351,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
     if (file) {
       processFile(file);
     }
+    e.target.value = "";
   };
 
   const handleRemoveImage = async () => {
@@ -421,72 +419,55 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const requiredChecks: {
-      id: RequiredFieldId;
-      label: string;
-      isEmpty: boolean;
-    }[] = [
-      {
-        id: "name",
-        label: "Name",
-        isEmpty: !String(formData.name ?? "").trim(),
-      },
-      {
-        id: "description",
-        label: "Description",
-        isEmpty: !String(formData.description ?? "").trim(),
-      },
-      {
-        id: "welcome_message",
-        label: "Welcome Message",
-        isEmpty: !String(formData.welcome_message ?? "").trim(),
-      },
+    const requiredFields = [
+      { label: "Name", isEmpty: !formData.name },
+      { label: "Description", isEmpty: !formData.description },
+      { label: "Welcome Message", isEmpty: !formData.welcome_message },
     ];
 
-    const missing = requiredChecks.filter((f) => f.isEmpty);
-    if (missing.length > 0) {
-      const nextErrors: Partial<Record<RequiredFieldId, boolean>> = {};
-      for (const f of missing) nextErrors[f.id] = true;
-      setFieldErrors(nextErrors);
+    const missingFields = requiredFields
+      .filter((field) => field.isEmpty)
+      .map((field) => field.label);
 
-      const missingLabels = missing.map((f) => f.label);
-      if (missingLabels.length === 1) {
-        toast.error(`${missingLabels[0]} is required.`);
+    if (missingFields.length > 0) {
+      if (missingFields.length === 1) {
+        toast.error(`${missingFields[0]} is required.`);
       } else {
-        toast.error(`Please fill in: ${missingLabels.join(", ")}.`);
+        toast.error(`Please provide: ${missingFields.join(", ")}.`);
       }
-
-      requestAnimationFrame(() => {
-        const first = missing[0]?.id;
-        if (first) document.getElementById(first)?.focus();
-      });
       return;
     }
-
-    setFieldErrors({});
 
     try {
       setLoading(true);
       let agentId: string;
 
       if (isEditMode) {
+        if (imageFile) {
+          setImageLoading(true);
+          try {
+            await uploadWelcomeImage(id, imageFile);
+            toast.success("Welcome image uploaded successfully.");
+          } catch (error) {
+            toast.error("Failed to upload welcome image.");
+          } finally {
+            setImageLoading(false);
+          }
+        }
         const { id: _, ...rest } = formData;
         const dataToSubmit = {
           ...rest,
-          possible_queries: nonEmptyTrimmedStrings(rest.possible_queries),
-          thinking_phrases: nonEmptyTrimmedStrings(rest.thinking_phrases),
+          possible_queries: omitEmptyStrings(rest.possible_queries),
+          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
         };
         await updateAgentConfig(id, dataToSubmit);
         agentId = id;
-        setSuccess(true);
-        onSaved?.();
-        onClose?.();
       } else {
         const { id: _, ...rest } = formData;
         const dataToSubmit = {
           ...rest,
-          possible_queries: nonEmptyTrimmedStrings(rest.possible_queries),
-          thinking_phrases: nonEmptyTrimmedStrings(rest.thinking_phrases),
+          possible_queries: omitEmptyStrings(rest.possible_queries),
+          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
         };
         const agentConfig = await createAgentConfig({
           ...dataToSubmit,
@@ -495,19 +476,10 @@ const AgentForm: React.FC<AgentFormProps> = ({
 
         // Notify parent about the newly created agent
         onCreated?.(agentId);
-
-        if (redirectOnCreate) {
-          navigate(`/ai-agents/workflow/${agentConfig.id}`);
-        } else {
-          // When redirect is disabled, mark success and let the parent handle next steps.
-          setSuccess(true);
-          onSaved?.();
-          onClose?.();
-        }
       }
 
-      // Upload image if provided
-      if (imageFile && agentId) {
+      // Create flow: upload after we have an id. Edit flow uploads above before PUT.
+      if (!isEditMode && imageFile && agentId) {
         setImageLoading(true);
         try {
           await uploadWelcomeImage(agentId, imageFile);
@@ -517,6 +489,14 @@ const AgentForm: React.FC<AgentFormProps> = ({
         } finally {
           setImageLoading(false);
         }
+      }
+
+      if (!isEditMode && redirectOnCreate) {
+        navigate(`/ai-agents/workflow/${agentId}`);
+      } else {
+        setSuccess(true);
+        onSaved?.();
+        onClose?.();
       }
 
       toast.success(
@@ -563,8 +543,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   value={formData.name}
                   onChange={handleInputChange}
                   placeholder="Enter agent name"
-                  aria-invalid={fieldErrors.name ? true : undefined}
-                  className={fieldErrors.name ? invalidFieldClass : undefined}
                 />
               </div>
 
@@ -576,10 +554,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   value={formData.description}
                   onChange={handleInputChange}
                   placeholder="Enter agent description"
-                  aria-invalid={fieldErrors.description ? true : undefined}
-                  className={
-                    fieldErrors.description ? invalidFieldClass : undefined
-                  }
                 />
               </div>
 
@@ -782,11 +756,9 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     <TranslationTrigger
                       translationKey={`agent.${id}.welcome_title`}
                       currentValue={formData.welcome_title || ""}
-                      onApplySavedDefault={(value) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          welcome_title: value,
-                        }))
+                      languages={editFormLanguages}
+                      onTranslationDefaultSaved={(text) =>
+                        setFormData((prev) => ({ ...prev, welcome_title: text }))
                       }
                     />
                   )}
@@ -806,10 +778,11 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     <TranslationTrigger
                       translationKey={`agent.${id}.welcome_message`}
                       currentValue={formData.welcome_message || ""}
-                      onApplySavedDefault={(value) =>
+                      languages={editFormLanguages}
+                      onTranslationDefaultSaved={(text) =>
                         setFormData((prev) => ({
                           ...prev,
-                          welcome_message: value,
+                          welcome_message: text,
                         }))
                       }
                     />
@@ -821,10 +794,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   value={formData.welcome_message}
                   onChange={handleInputChange}
                   placeholder="Enter welcome message"
-                  aria-invalid={fieldErrors.welcome_message ? true : undefined}
-                  className={
-                    fieldErrors.welcome_message ? invalidFieldClass : undefined
-                  }
                 />
               </div>
               <div className="border border-border rounded-lg overflow-hidden">
@@ -863,15 +832,16 @@ const AgentForm: React.FC<AgentFormProps> = ({
                           onChange={(e) =>
                             handlePossibleQueryChange(index, e.target.value)
                           }
-                          placeholder={PLACEHOLDER_POSSIBLE_QUERY}
+                          placeholder="Enter a sample query"
                           className="flex-1 placeholder:text-muted-foreground"
                         />
                         {isEditMode && (
                           <TranslationTrigger
                             translationKey={`agent.${id}.possible_queries.${index}`}
                             currentValue={query}
-                            onApplySavedDefault={(value) =>
-                              handlePossibleQueryChange(index, value)
+                            languages={editFormLanguages}
+                            onTranslationDefaultSaved={(text) =>
+                              handlePossibleQueryChange(index, text)
                             }
                           />
                         )}
@@ -936,15 +906,16 @@ const AgentForm: React.FC<AgentFormProps> = ({
                           onChange={(e) =>
                             handleThinkingPhraseChange(index, e.target.value)
                           }
-                          placeholder={PLACEHOLDER_THINKING_PHRASE}
+                          placeholder='e.g. Thinking...|Processing...'
                           className="flex-1 placeholder:text-muted-foreground"
                         />
                         {isEditMode && (
                           <TranslationTrigger
                             translationKey={`agent.${id}.thinking_phrases.${index}`}
                             currentValue={phrase}
-                            onApplySavedDefault={(value) =>
-                              handleThinkingPhraseChange(index, value)
+                            languages={editFormLanguages}
+                            onTranslationDefaultSaved={(text) =>
+                              handleThinkingPhraseChange(index, text)
                             }
                           />
                         )}
@@ -994,10 +965,11 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     <TranslationTrigger
                       translationKey={`agent.${id}.input_disclaimer_html`}
                       currentValue={formData.input_disclaimer_html || ""}
-                      onApplySavedDefault={(value) =>
+                      languages={editFormLanguages}
+                      onTranslationDefaultSaved={(text) =>
                         setFormData((prev) => ({
                           ...prev,
-                          input_disclaimer_html: value,
+                          input_disclaimer_html: text,
                         }))
                       }
                     />

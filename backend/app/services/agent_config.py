@@ -323,12 +323,15 @@ class AgentConfigService:
         self, agent_id: UUID, image_data: bytes
     ) -> AgentModel:
         """Upload welcome image for an agent"""
-        agent = await self.repository.get_by_id(agent_id)
+        agent = await self.repository.get_by_id_full(agent_id)
         if not agent:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
+        user_id = agent.operator.user.id
         agent.welcome_image = image_data
-        return await self.repository.update(agent)
+        updated = await self.repository.update(agent)
+        await invalidate_agent_cache(agent_id, user_id)
+        return updated
 
     async def get_welcome_image(self, agent_id: UUID) -> Optional[bytes]:
         """Get welcome image for an agent"""
@@ -339,12 +342,15 @@ class AgentConfigService:
 
     async def delete_welcome_image(self, agent_id: UUID) -> AgentModel:
         """Delete welcome image for an agent"""
-        agent = await self.repository.get_by_id(agent_id)
+        agent = await self.repository.get_by_id_full(agent_id)
         if not agent:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
+        user_id = agent.operator.user.id
         agent.welcome_image = None
-        return await self.repository.update(agent)
+        updated = await self.repository.update(agent)
+        await invalidate_agent_cache(agent_id, user_id)
+        return updated
 
     async def get_by_operator_id(self, operator_id: UUID) -> AgentModel:
         """Get agent by operator ID with security_settings eagerly loaded."""
