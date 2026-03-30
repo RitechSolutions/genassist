@@ -56,7 +56,11 @@ const DatasetDetailPage: React.FC = () => {
         listTestCases(datasetId),
       ]);
       setSuite(suiteData ?? null);
-      setCases(caseData ?? []);
+      const records = caseData ?? [];
+      setCases(records);
+      if (records.length > 0) {
+        setExpandedRecords(new Set([records[0].id]));
+      }
     };
     load();
   }, [datasetId]);
