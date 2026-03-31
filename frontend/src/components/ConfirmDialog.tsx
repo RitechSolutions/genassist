@@ -68,7 +68,7 @@ export function ConfirmDialog({
           </button>
           <AlertDialogHeader>
             <AlertDialogTitle>{title}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="pb-4">
               {description || defaultDescription}
             </AlertDialogDescription>
           </AlertDialogHeader>

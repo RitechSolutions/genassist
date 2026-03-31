@@ -53,6 +53,7 @@ class UserRead(BaseModel):
     username: str
     email: EmailStr
     is_active: int
+    is_deleted: int = 0
     roles: list[RoleRead] = []
     user_type: Optional[UserTypeRead] = None
     api_keys: Optional[list[ApiKeyBase]] = []
