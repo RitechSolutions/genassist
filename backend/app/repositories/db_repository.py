@@ -181,7 +181,7 @@ class DbRepository(Generic[OrmModelT]):
         await self.db.execute(
                 update(obj.__class__)
                 .where(obj.__class__.id == obj.id)
-                .values(is_deleted=True)
+                .values(is_deleted=1)
                 .execution_options(synchronize_session="fetch")
                 )
         await self.db.commit()
