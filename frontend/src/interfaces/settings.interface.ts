@@ -1,6 +1,6 @@
 import { ElementType } from 'react';
 
-export type FieldType = "text" | "email" | "toggle" | "number" | "select";
+export type FieldType = "text" | "email" | "toggle" | "number" | "select" | "tags";
 
 export interface SettingFieldType {
   label: string;
@@ -8,7 +8,7 @@ export interface SettingFieldType {
   placeholder?: string;
   options?: string[];
   valueKey?: string;
-  value?: string | number | boolean;
+  value?: string | number | boolean | string[];
   readOnly?: boolean;
   className?: string;
 }

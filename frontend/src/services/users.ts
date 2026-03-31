@@ -3,9 +3,15 @@ import { Role } from "@/interfaces/role.interface";
 import { User } from "@/interfaces/user.interface";
 import { UserType } from "@/interfaces/userType.interface";
 
-export const getAllUsers = async (): Promise<User[]> => {
+export const getAllUsers = async (options?: {
+  deletedOnly?: boolean;
+}): Promise<User[]> => {
   try {
-    const data = await apiRequest<User[]>("GET", "user/");
+    const path =
+      options?.deletedOnly === true
+        ? "user/?deleted_only=true"
+        : "user/";
+    const data = await apiRequest<User[]>("GET", path);
     return data || [];
   } catch (error) {
     throw error;
@@ -43,6 +49,24 @@ export const updateUser = async (id: string, userData: Partial<User>): Promise<U
   try {
     const response = await apiRequest<User>("PUT", `user/${id}`, userData);
     if (!response) throw new Error("Failed to update user");
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const deleteUser = async (id: string): Promise<void> => {
+  try {
+    await apiRequest("DELETE", `user/${id}`);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const restoreUser = async (id: string): Promise<User> => {
+  try {
+    const response = await apiRequest<User>("POST", `user/${id}/restore`);
+    if (!response) throw new Error("Failed to restore user");
     return response;
   } catch (error) {
     throw error;
