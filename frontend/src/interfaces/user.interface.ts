@@ -8,14 +8,14 @@ export interface User {
     email: string;
     password?: string;
     is_active: number;
-    
+
     roles?: Role[];
     user_type?: UserType;
     api_keys?: ApiKey[];
-    
+
     role_ids?: string[];
     user_type_id?: string;
-    
+
     created_at?: string;
     updated_at?: string;
 }

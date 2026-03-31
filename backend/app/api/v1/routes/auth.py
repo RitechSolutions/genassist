@@ -1,15 +1,15 @@
 import logging
-from typing import Optional
-from typing import Annotated
+from typing import Annotated, Optional
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, get_current_user
 from app.auth.utils import get_password_hash
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.config.settings import settings
 from app.middlewares.rate_limit_middleware import limiter
 from app.schemas.password_update_request import PasswordUpdateRequest
 from app.services.auth import AuthService
@@ -80,6 +80,7 @@ async def me(
             "email": user_details.email,
             "permissions": permissions,
             "force_upd_pass_date": user.force_upd_pass_date,
+            "roles": user_details.roles,
         }  # Return user details
     else:
         raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)

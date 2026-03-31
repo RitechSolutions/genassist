@@ -20,9 +20,9 @@ export const SettingSection = ({ section, toggleStates, onToggle }: SettingSecti
             aria-label={field.label}
             className="relative px-0 h-6 w-11 bg-zinc-200 hover:bg-zinc-300 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground rounded-full"
           >
-            <span 
-              className="absolute left-[2px] transition-transform h-5 w-5 rounded-full bg-white data-[state=on]:translate-x-[20px]" 
-              data-state={toggleStates[field.label] ? 'on' : 'off'} 
+            <span
+              className="absolute left-[2px] transition-transform h-5 w-5 rounded-full bg-white data-[state=on]:translate-x-[20px]"
+              data-state={toggleStates[field.label] ? 'on' : 'off'}
             />
           </Toggle>
         );
@@ -34,6 +34,37 @@ export const SettingSection = ({ section, toggleStates, onToggle }: SettingSecti
             ))}
           </select>
         );
+      case "labels": {
+        const items = Array.isArray(field.value)
+          ? field.value
+          : field.value != null && field.value !== ""
+            ? [String(field.value)]
+            : [];
+        return (
+          <div
+            className={cn(
+              "flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-full border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background",
+              "cursor-default select-none opacity-75",
+              field.className
+            )}
+            aria-readonly="true"
+            tabIndex={-1}
+          >
+            {items.length > 0 ? (
+              items.map((text) => (
+                <span
+                  key={text}
+                  className="inline-flex shrink-0 items-center rounded-full border border-input bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-foreground"
+                >
+                  {text}
+                </span>
+              ))
+            ) : (
+              <span className="text-sm text-muted-foreground">—</span>
+            )}
+          </div>
+        );
+      }
       default:
         return (
           <input
@@ -60,12 +91,27 @@ export const SettingSection = ({ section, toggleStates, onToggle }: SettingSecti
 
       <div className="space-y-0">
         {section.fields.map((field) => (
-          <div key={field.label} className="flex items-center justify-between h-[40px]">
-            <label className="text-sm font-medium">{field.label}</label>
+          <div
+            key={field.label}
+            className={cn(
+              "flex justify-between gap-4",
+              field.type === "labels"
+                ? "items-start min-h-[40px] py-1.5"
+                : "items-center h-[40px]"
+            )}
+          >
+            <label
+              className={cn(
+                "text-sm font-medium shrink-0",
+                field.type === "labels" && "pt-2"
+              )}
+            >
+              {field.label}
+            </label>
             {renderField(field)}
           </div>
         ))}
       </div>
     </Card>
   );
-}; 
+};
