@@ -10,7 +10,7 @@ import {
   Megaphone,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/dialog';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   getAudioUrl,
   submitConversationFeedback,
@@ -45,6 +45,100 @@ const isCallTranscript = (transcript: Transcript | null) => {
   if (!transcript) return false;
   return Boolean(transcript.recording_id) || Boolean(transcript.metadata?.isCall);
 };
+
+function MessageFeedbackButton({
+  messageId,
+  localTranscript,
+  setLocalTranscript,
+  onOpenChange,
+}: {
+  messageId: string;
+  localTranscript: Transcript | null;
+  setLocalTranscript: Dispatch<SetStateAction<Transcript | null>>;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [text, setText] = useState('');
+  const { toast } = useToast();
+
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    onOpenChange?.(open);
+
+    if (open) {
+      const collection = (localTranscript?.messages ?? localTranscript?.messages) || [];
+      const message = collection.find((entry) => entry.message_id === messageId);
+      const feedbackArr = Array.isArray(message?.feedback) ? (message?.feedback as ConversationFeedbackEntry[]) : [];
+      const lastFeedback = feedbackArr.length > 0 ? feedbackArr[feedbackArr.length - 1] : null;
+      setText(lastFeedback?.feedback_message || '');
+    }
+  };
+
+  const message = (localTranscript?.messages ?? localTranscript?.messages)?.find(
+    (entry) => entry.message_id === messageId
+  );
+  const feedbackArr = Array.isArray(message?.feedback) ? (message?.feedback as ConversationFeedbackEntry[]) : [];
+  const lastFeedback = feedbackArr.length > 0 ? feedbackArr[feedbackArr.length - 1] : null;
+  const hasFeedbackMessage = Boolean(lastFeedback?.feedback_message?.trim());
+
+  const handleClose = () => {
+    handleOpenChange(false);
+    setText('');
+  };
+
+  const handleSave = async () => {
+    if (!messageId || !localTranscript) return;
+
+    const base = (localTranscript.messages ?? localTranscript.messages) || [];
+    const msg = base.find((entry) => entry.message_id === messageId);
+    if (!msg) return;
+
+    const existingFeedback =
+      Array.isArray(msg.feedback) && msg.feedback.length > 0 ? msg.feedback[msg.feedback.length - 1] : null;
+
+    const feedbackType = existingFeedback ? existingFeedback.feedback : 'good';
+    const success = await submitMessageFeedback(messageId, feedbackType, text);
+
+    if (success) {
+      setLocalTranscript((currentTranscript) => {
+        if (!currentTranscript) return null;
+        const b = (currentTranscript.messages ?? currentTranscript.messages) || [];
+        const newTranscriptEntries = b.map((entry) => {
+          if (entry.message_id === messageId) {
+            const newFeedbackEntry: ConversationFeedbackEntry = {
+              feedback: feedbackType,
+              feedback_message: text,
+              feedback_timestamp: new Date().toISOString(),
+              feedback_user_id: '',
+            };
+            const existingFeedbackArr = Array.isArray(entry.feedback) ? entry.feedback : [];
+            const otherFeedback = existingFeedbackArr.filter((f) => f.feedback !== feedbackType);
+            return { ...entry, feedback: [...otherFeedback, newFeedbackEntry] };
+          }
+          return entry;
+        });
+        return { ...currentTranscript, messages: newTranscriptEntries, transcript: newTranscriptEntries };
+      });
+
+      toast({ title: 'Success', description: 'Feedback message saved.' });
+      handleClose();
+    } else {
+      toast({ title: 'Error', description: 'Failed to save feedback.', variant: 'destructive' });
+    }
+  };
+
+  return (
+    <MessageFeedbackPopover
+      isOpen={isOpen}
+      hasFeedbackMessage={hasFeedbackMessage}
+      text={text}
+      onOpenChange={handleOpenChange}
+      onTextChange={setText}
+      onSave={handleSave}
+      onCancel={handleClose}
+    />
+  );
+}
 
 export function TranscriptDialog({ transcript, isOpen, onOpenChange }: TranscriptDialogProps) {
   const [audioSrc, setAudioSrc] = useState<string>('');
@@ -311,99 +405,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
         return { ...currentTranscript, messages: newTranscriptEntries, transcript: newTranscriptEntries };
       });
     }
-  };
-
-  const MessageFeedbackButton = ({
-    messageId,
-    onOpenChange,
-  }: {
-    messageId: string;
-    onOpenChange?: (open: boolean) => void;
-  }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [text, setText] = useState('');
-
-    const handleOpenChange = (open: boolean) => {
-      setIsOpen(open);
-      onOpenChange?.(open);
-
-      // When opening, populate the text with existing feedback
-      if (open) {
-        const collection = (localTranscript?.messages ?? localTranscript?.messages) || [];
-        const message = collection.find((entry) => entry.message_id === messageId);
-        const feedbackArr = Array.isArray(message?.feedback) ? (message?.feedback as ConversationFeedbackEntry[]) : [];
-        const lastFeedback = feedbackArr.length > 0 ? feedbackArr[feedbackArr.length - 1] : null;
-        setText(lastFeedback?.feedback_message || '');
-      }
-    };
-
-    // Check if this message already has a feedback message
-    const message = (localTranscript?.messages ?? localTranscript?.messages)?.find(
-      (entry) => entry.message_id === messageId
-    );
-    const feedbackArr = Array.isArray(message?.feedback) ? (message?.feedback as ConversationFeedbackEntry[]) : [];
-    const lastFeedback = feedbackArr.length > 0 ? feedbackArr[feedbackArr.length - 1] : null;
-    const hasFeedbackMessage = lastFeedback?.feedback_message && lastFeedback.feedback_message.trim().length > 0;
-
-    const handleClose = () => {
-      handleOpenChange(false);
-      setText('');
-    };
-
-    const handleSave = async () => {
-      if (!messageId || !localTranscript) return;
-
-      const base = (localTranscript.messages ?? localTranscript.messages) || [];
-      const message = base.find((entry) => entry.message_id === messageId);
-      if (!message) return;
-
-      const existingFeedback =
-        Array.isArray(message.feedback) && message.feedback.length > 0
-          ? message.feedback[message.feedback.length - 1]
-          : null;
-
-      const feedbackType = existingFeedback ? existingFeedback.feedback : 'good';
-      const success = await submitMessageFeedback(messageId, feedbackType, text);
-
-      if (success) {
-        setLocalTranscript((currentTranscript) => {
-          if (!currentTranscript) return null;
-          const base = (currentTranscript.messages ?? currentTranscript.messages) || [];
-          const newTranscriptEntries = base.map((entry) => {
-            if (entry.message_id === messageId) {
-              const newFeedbackEntry: ConversationFeedbackEntry = {
-                feedback: feedbackType,
-                feedback_message: text,
-                feedback_timestamp: new Date().toISOString(),
-                feedback_user_id: '',
-              };
-              const existingFeedbackArr = Array.isArray(entry.feedback) ? entry.feedback : [];
-              const otherFeedback = existingFeedbackArr.filter((f) => f.feedback !== feedbackType);
-              return { ...entry, feedback: [...otherFeedback, newFeedbackEntry] };
-            }
-            return entry;
-          });
-          return { ...currentTranscript, messages: newTranscriptEntries, transcript: newTranscriptEntries };
-        });
-
-        toast({ title: 'Success', description: 'Feedback message saved.' });
-        handleClose();
-      } else {
-        toast({ title: 'Error', description: 'Failed to save feedback.', variant: 'destructive' });
-      }
-    };
-
-    return (
-      <MessageFeedbackPopover
-        isOpen={isOpen}
-        hasFeedbackMessage={hasFeedbackMessage}
-        text={text}
-        onOpenChange={handleOpenChange}
-        onTextChange={setText}
-        onSave={handleSave}
-        onCancel={handleClose}
-      />
-    );
   };
 
   if (!localTranscript) return null;
@@ -685,6 +686,8 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
                                     {messageId && (
                                       <MessageFeedbackButton
                                         messageId={messageId}
+                                        localTranscript={localTranscript}
+                                        setLocalTranscript={setLocalTranscript}
                                         onOpenChange={(open) => setOpenPopoverMessageId(open ? messageId : null)}
                                       />
                                     )}
@@ -708,6 +711,8 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
                                     {messageId && (
                                       <MessageFeedbackButton
                                         messageId={messageId}
+                                        localTranscript={localTranscript}
+                                        setLocalTranscript={setLocalTranscript}
                                         onOpenChange={(open) => setOpenPopoverMessageId(open ? messageId : null)}
                                       />
                                     )}
