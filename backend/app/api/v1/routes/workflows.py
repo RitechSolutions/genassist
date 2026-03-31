@@ -55,7 +55,9 @@ SUPPORTED_NODE_TYPES = [
     "mcpNode",
     "workflowExecutorNode",
     "humanInTheLoopNode",
-    "setStateNode"
+    "setStateNode",
+    "guardrailProvenanceNode",
+    "guardrailNliNode",
 ]
 
 

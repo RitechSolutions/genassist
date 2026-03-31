@@ -2,7 +2,12 @@
 Node implementations for the workflow engine.
 """
 
-from .ml import MLModelInferenceNode, TrainDataSourceNode, TrainPreprocessNode, TrainModelNode
+from .ml import (
+    MLModelInferenceNode,
+    TrainDataSourceNode,
+    TrainPreprocessNode,
+    TrainModelNode,
+)
 from .jira_node import JiraNode
 from .chat_nodes import ChatInputNode, ChatOutputNode
 from .router_node import RouterNode
@@ -28,6 +33,8 @@ from .mcp_node import MCPNode
 from .workflow_executor_node import WorkflowExecutorNode
 from .human_in_the_loop_node import HumanInTheLoopNode
 from .set_state_node import SetStateNode
+from .guardrail_provenance_node import GuardrailProvenanceNode
+from .guardrail_nli_node import GuardrailNliNode
 
 __all__ = [
     "ChatInputNode",
@@ -59,5 +66,7 @@ __all__ = [
     "MCPNode",
     "WorkflowExecutorNode",
     "HumanInTheLoopNode",
-    "SetStateNode"
+    "SetStateNode",
+    "GuardrailProvenanceNode",
+    "GuardrailNliNode",
 ]
