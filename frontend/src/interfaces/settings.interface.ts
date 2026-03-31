@@ -1,6 +1,6 @@
 import { ElementType } from 'react';
 
-export type FieldType = "text" | "email" | "toggle" | "number" | "select" | "labels";
+export type FieldType = "text" | "email" | "toggle" | "number" | "select" | "tags";
 
 export interface SettingFieldType {
   label: string;

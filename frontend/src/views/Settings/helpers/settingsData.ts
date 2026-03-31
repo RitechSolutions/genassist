@@ -9,7 +9,7 @@ export const settingSections: SettingSectionType[] = [
     fields: [
       { label: 'Username', type: 'text', placeholder: 'john23', valueKey: 'username', readOnly: true },
       { label: 'Email', type: 'email', placeholder: 'john@example.com', valueKey: 'email', readOnly: true },
-      { label: 'Roles', type: 'labels', options: ['admin', 'supervisor', 'user'], valueKey: 'roles', readOnly: true },
+      { label: 'Roles', type: 'tags', options: ['admin', 'supervisor', 'user'], valueKey: 'roles', readOnly: true },
       { label: 'Tenant', type: 'text', placeholder: 'genassist-support', valueKey: 'tenant', readOnly: true },
     ],
   },
