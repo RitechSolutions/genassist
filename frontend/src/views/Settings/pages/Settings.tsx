@@ -55,8 +55,8 @@ const SettingsPage = () => {
               readOnly: true,
               className: 'w-1/2',
               value: field.valueKey
-                ? (profileValues[field.valueKey as keyof typeof profileValues] ?? (field.type === 'labels' ? [] : ''))
-                : field.type === 'labels'
+                ? (profileValues[field.valueKey as keyof typeof profileValues] ?? (field.type === 'tags' ? [] : ''))
+                : field.type === 'tags'
                   ? []
                   : '',
             })),
