@@ -103,9 +103,16 @@ class UserRepository:
         return result.scalars().first()
 
 
-    async def get_by_email(self, email: str) -> UserModel | None:
+    async def get_by_email(
+        self, email: str, *, include_deleted: bool = False
+    ) -> UserModel | None:
         query = select(UserModel).where(UserModel.email == email)
-        result = await self.db.execute(query)
+        exec_query = (
+            query.execution_options(**{SOFT_DELETE_FLAG: True})
+            if include_deleted
+            else query
+        )
+        result = await self.db.execute(exec_query)
         return result.scalars().first()
 
     async def get_all(self, filter: BaseFilterModel):

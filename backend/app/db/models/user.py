@@ -7,7 +7,6 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     String,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import TYPE_CHECKING
@@ -24,12 +23,7 @@ class UserModel(Base):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='users_pkey'),
         UniqueConstraint('username', name='users_username_key'),
-        Index(
-            'users_email_active_key',
-            'email',
-            unique=True,
-            postgresql_where=text('is_deleted = 0'),
-        ),
+        Index('uq_users_email', 'email', unique=True),
     )
     username: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255))

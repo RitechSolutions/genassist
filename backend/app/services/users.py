@@ -35,7 +35,9 @@ class UserService:
         if existing_user:
             raise AppException(error_key=ErrorKey.USERNAME_ALREADY_EXISTS)
 
-        existing_email = await self.repository.get_by_email(user.email)
+        existing_email = await self.repository.get_by_email(
+            user.email, include_deleted=True
+        )
         if existing_email:
             raise AppException(error_key=ErrorKey.EMAIL_ALREADY_EXISTS)
 
@@ -122,7 +124,9 @@ class UserService:
 
     async def update(self, user_id: UUID, user_data: UserUpdate):
         if user_data.email is not None:
-            existing = await self.repository.get_by_email(user_data.email)
+            existing = await self.repository.get_by_email(
+                user_data.email, include_deleted=True
+            )
             if existing is not None and existing.id != user_id:
                 raise AppException(error_key=ErrorKey.EMAIL_ALREADY_EXISTS)
 

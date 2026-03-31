@@ -57,7 +57,9 @@ async def test_create_user_success(user_service, mock_repository, sample_user_da
 
     # Assert
     mock_repository.get_by_username.assert_called_once_with(user_create.username)
-    mock_repository.get_by_email.assert_called_once_with(user_create.email)
+    mock_repository.get_by_email.assert_called_once_with(
+        user_create.email, include_deleted=True
+    )
     mock_repository.create.assert_called_once()
     mock_repository.get_full.assert_called_once()
     assert result.username == sample_user_data["username"]
@@ -89,7 +91,9 @@ async def test_create_user_duplicate_email(user_service, mock_repository, sample
 
     assert exc_info.value.error_key == ErrorKey.EMAIL_ALREADY_EXISTS
     mock_repository.get_by_username.assert_called_once_with(user_create.username)
-    mock_repository.get_by_email.assert_called_once_with(user_create.email)
+    mock_repository.get_by_email.assert_called_once_with(
+        user_create.email, include_deleted=True
+    )
     mock_repository.create.assert_not_called()
 
 @pytest.mark.asyncio
@@ -199,7 +203,9 @@ async def test_update_user_success(user_service, mock_repository):
     result = await user_service.update(user_id, update_data)
 
     # Assert
-    mock_repository.get_by_email.assert_called_once_with(update_data.email)
+    mock_repository.get_by_email.assert_called_once_with(
+        update_data.email, include_deleted=True
+    )
     mock_repository.update.assert_called_once_with(user_id, update_data)
     mock_repository.get_full.assert_called_once_with(mock_updated_user.id)
     assert result == mock_updated_user
@@ -215,7 +221,9 @@ async def test_update_user_duplicate_email(user_service, mock_repository):
         await user_service.update(user_id, update_data)
 
     assert exc_info.value.error_key == ErrorKey.EMAIL_ALREADY_EXISTS
-    mock_repository.get_by_email.assert_called_once_with(update_data.email)
+    mock_repository.get_by_email.assert_called_once_with(
+        update_data.email, include_deleted=True
+    )
     mock_repository.update.assert_not_called()
 
 @pytest.mark.asyncio
