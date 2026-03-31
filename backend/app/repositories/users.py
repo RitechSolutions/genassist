@@ -103,7 +103,7 @@ class UserRepository:
         return result.scalars().first()
 
 
-    async def get_by_email(self, email: str) -> UserModel:
+    async def get_by_email(self, email: str) -> UserModel | None:
         query = select(UserModel).where(UserModel.email == email)
         result = await self.db.execute(query)
         return result.scalars().first()

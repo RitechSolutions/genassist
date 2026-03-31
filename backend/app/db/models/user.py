@@ -1,5 +1,14 @@
 from typing import Optional
-from sqlalchemy import DateTime, Integer, PrimaryKeyConstraint, String, UniqueConstraint, ForeignKey, text
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    PrimaryKeyConstraint,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -14,7 +23,13 @@ class UserModel(Base):
     __tablename__ = 'users'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='users_pkey'),
-        UniqueConstraint('username', name='users_username_key')
+        UniqueConstraint('username', name='users_username_key'),
+        Index(
+            'users_email_active_key',
+            'email',
+            unique=True,
+            postgresql_where=text('is_deleted = 0'),
+        ),
     )
     username: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255))
