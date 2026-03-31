@@ -46,6 +46,7 @@ class ErrorKey(Enum):
     GPT_TRANSCRIPT_QUESTION_ERROR = "GPT_TRANSCRIPT_QUESTION_ERROR"
     USER_TYPE_NOT_FOUND = "USER_TYPE_NOT_FOUND"
     ROLE_NOT_FOUND = "ROLE_NOT_FOUND"
+    ROLE_CANNOT_DELETE_IN_USE = "ROLE_CANNOT_DELETE_IN_USE"
     INVALID_USER = "INVALID_USER"
     API_KEY_NOT_FOUND = "API_KEY_NOT_FOUND"
     API_KEY_NAME_EXISTS = "API_KEY_NAME_EXISTS"
@@ -179,6 +180,10 @@ ERROR_MESSAGES = {
         ErrorKey.GPT_TRANSCRIPT_QUESTION_ERROR: "Error while calling GPT for question answering.",
         ErrorKey.USER_TYPE_NOT_FOUND: "User type not found.",
         ErrorKey.ROLE_NOT_FOUND: "Role not found.",
+        ErrorKey.ROLE_CANNOT_DELETE_IN_USE: (
+            "This role cannot be deleted while it is assigned to users or API keys. "
+            "Remove those assignments first."
+        ),
         ErrorKey.INVALID_USER: "Invalid user.",
         ErrorKey.API_KEY_NOT_FOUND: "Api key not found.",
         ErrorKey.API_KEY_NAME_EXISTS: "An API key with this name already exists.",
