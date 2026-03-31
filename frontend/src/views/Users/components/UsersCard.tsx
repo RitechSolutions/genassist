@@ -253,7 +253,7 @@ export function UsersCard({
         itemName={userToDelete?.username || ""}
         description={
           isAdmin
-            ? `This will soft-delete the user "${userToDelete?.username}". They will be removed from the active list; admins can view them with "Show only deleted".`
+            ? `This will soft-delete the user "${userToDelete?.username}". They will be removed from the active list; admins can view them with "Show deleted users".`
             : `This will soft-delete the user "${userToDelete?.username}". They will be removed from the active list.`
         }
       />
