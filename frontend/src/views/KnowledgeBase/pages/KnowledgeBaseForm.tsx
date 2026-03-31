@@ -14,6 +14,7 @@ import { getAllLLMAnalysts } from '@/services/llmAnalyst';
 import { v4 as uuidv4 } from 'uuid';
 import { Badge } from '@/components/badge';
 import { Button } from '@/components/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/popover';
 import { Input } from '@/components/input';
 import { Textarea } from '@/components/textarea';
 import { Switch } from '@/components/switch';
@@ -107,6 +108,12 @@ function syncStatusBadgeVariant(
   if (s.includes('warning')) return 'secondary';
   if (s === 'success') return 'success';
   return 'outline';
+}
+
+function isSyncErrorStatus(status: string | null | undefined): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s === 'error' || s.includes('fail');
 }
 
 const KnowledgeBaseForm: React.FC = () => {
@@ -396,7 +403,8 @@ const KnowledgeBaseForm: React.FC = () => {
         return;
       }
       if (firstKb?.status === 'error') {
-        toast.error(firstKb.error ?? 'Zendesk sync error. See knowledge base sync status.');
+        console.error(firstKb?.error ?? 'Unknown error');
+        toast.error('Zendesk sync error. See knowledge base sync status.');
         return;
       }
       if (z != null && (z.articles_added != null || z.articles_updated != null || z.articles_deleted != null)) {
@@ -990,13 +998,48 @@ const KnowledgeBaseForm: React.FC = () => {
                                                     : ''}
                                                 </span>
                                                 {editingItem.last_sync_status ? (
-                                                  <Badge variant={syncStatusBadgeVariant(editingItem.last_sync_status)}>
-                                                    {editingItem.last_sync_status}
-                                                  </Badge>
+                                                  isSyncErrorStatus(editingItem.last_sync_status) &&
+                                                  editingItem.last_sync_error ? (
+                                                    <Popover>
+                                                      <PopoverTrigger asChild>
+                                                        <button
+                                                          type="button"
+                                                          className="inline-flex rounded-full border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                                        >
+                                                          <Badge
+                                                            variant={syncStatusBadgeVariant(
+                                                              editingItem.last_sync_status
+                                                            )}
+                                                            className="cursor-pointer"
+                                                          >
+                                                            {editingItem.last_sync_status}
+                                                          </Badge>
+                                                        </button>
+                                                      </PopoverTrigger>
+                                                      <PopoverContent
+                                                        align="start"
+                                                        className="w-80 max-w-[min(90vw,24rem)]"
+                                                      >
+                                                        <p className="mb-2 text-xs font-medium text-muted-foreground">
+                                                          Error details
+                                                        </p>
+                                                        <p className="whitespace-pre-wrap break-words text-sm text-destructive">
+                                                          {editingItem.last_sync_error}
+                                                        </p>
+                                                      </PopoverContent>
+                                                    </Popover>
+                                                  ) : (
+                                                    <Badge
+                                                      variant={syncStatusBadgeVariant(editingItem.last_sync_status)}
+                                                    >
+                                                      {editingItem.last_sync_status}
+                                                    </Badge>
+                                                  )
                                                 ) : null}
-                                                {editingItem.last_sync_error ? (
+                                                {editingItem.last_sync_error &&
+                                                !isSyncErrorStatus(editingItem.last_sync_status) ? (
                                                   <Badge
-                                                    variant="destructive"
+                                                    variant="secondary"
                                                     className="max-w-[min(100%,20rem)] shrink truncate font-normal sm:max-w-[28rem]"
                                                     title={editingItem.last_sync_error}
                                                   >
