@@ -171,8 +171,12 @@ class DataSourceService:
         return connection_data
 
     async def decrypt_connection_data_fields(
-        self, connection_data: Dict[str, Any], datasource_id: Optional[UUID] = None
-    ) -> Dict[str, Any]:
+        self,
+        connection_data: Optional[Dict[str, Any]],
+        datasource_id: Optional[UUID] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if connection_data is None:
+            return None
         for field_name in self.encrypted_fields:
             if field_name in connection_data and connection_data[field_name]:
                 try:
