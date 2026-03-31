@@ -82,7 +82,7 @@ def upgrade() -> None:
     _dedupe_user_emails(connection)
 
     op.create_index(
-        "uq_users_email",
+        "users_email_unique",
         "users",
         ["email"],
         unique=True,
@@ -90,4 +90,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("uq_users_email", table_name="users")
+    op.drop_index("users_email_unique", table_name="users")
