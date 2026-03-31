@@ -631,6 +631,9 @@ export function AppSidebar() {
                         <SidebarMenuButton className={parentMenuClasses}>
                           {item.icon && <item.icon className="w-4 h-4" />}
                           <span>{item.title}</span>
+                          <span className="ml-1.5 rounded-md bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-indigo-700">
+                            BETA
+                          </span>
                           <div className="ml-auto transition-transform duration-200">
                             {isTestsOpen ? (
                               <ChevronUp className="w-4 h-4" />
