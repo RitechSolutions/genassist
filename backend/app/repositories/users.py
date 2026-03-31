@@ -16,6 +16,7 @@ from app.core.exceptions.exception_classes import AppException
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy import delete, select, update
 
+from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserCreate, UserUpdate
 from app.db.models.user import UserModel
@@ -116,10 +117,18 @@ class UserRepository:
                 joinedload(UserModel.user_type)
             )
         )
+        deleted_only = getattr(filter, "deleted_only", False)
+        if deleted_only:
+            query = query.where(UserModel.is_deleted == 1)
         query = add_dynamic_ordering(UserModel, filter, query)
         query = add_pagination(filter, query)
 
-        results = await self.db.execute(query)
+        exec_query = (
+            query.execution_options(**{SOFT_DELETE_FLAG: True})
+            if deleted_only
+            else query
+        )
+        results = await self.db.execute(exec_query)
         return results.scalars().all()
 
 
@@ -159,16 +168,43 @@ class UserRepository:
         await self.db.commit()
         await self.db.refresh(user)
 
-        # Invalidate the cache for this user (safe for Redis Cluster: Lua scripts without keys not supported)
+        await self._clear_user_full_cache(user_id)
+
+        return user
+
+    async def _clear_user_full_cache(self, user_id: UUID) -> None:
         cache_key = f"auth:users:get_full:{user_id}"
         try:
             await FastAPICache.get_backend().clear(key=cache_key)
         except ResponseError as e:
             if "Lua scripts without any input keys are not supported" not in str(e):
                 raise
-            # Redis Cluster: ignore; cache will expire or be overwritten
 
-        return user
+    async def soft_delete(self, user_id: UUID) -> bool:
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id, UserModel.is_deleted == 0)
+            .values(is_deleted=1)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        if result.rowcount:
+            await self._clear_user_full_cache(user_id)
+            return True
+        return False
+
+    async def restore_soft_deleted(self, user_id: UUID) -> bool:
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id, UserModel.is_deleted == 1)
+            .values(is_deleted=0)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        if result.rowcount:
+            await self._clear_user_full_cache(user_id)
+            return True
+        return False
 
 
     async def update_user_password(self, user_id: int, new_hashed: str, next_update_date: datetime):

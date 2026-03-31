@@ -8,6 +8,7 @@ export interface User {
     email: string;
     password?: string;
     is_active: number;
+    is_deleted?: number;
 
     roles?: Role[];
     user_type?: UserType;

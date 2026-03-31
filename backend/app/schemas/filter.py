@@ -22,6 +22,10 @@ class BaseFilterModel(BaseModel):
     sort_direction: Optional[SortDirection] = Field(SortDirection.DESC, description="Order by direction")
 
 
+class UserListFilter(BaseFilterModel):
+    deleted_only: bool = Field(False, description="Return only soft-deleted users")
+
+
 class ConversationFilter(BaseFilterModel):
     conversation_status: Optional[list[ConversationStatus]] = Field(Query(None, description="Conversation statuses"))
     conversation_topics: Optional[list[ConversationTopic]] = Field(
