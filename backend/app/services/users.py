@@ -94,6 +94,28 @@ class UserService:
         users = await self.repository.get_all(filter)
         return users
 
+    async def soft_delete(self, user_id: UUID, actor_user_id: UUID | None) -> dict:
+        if actor_user_id is not None and user_id == actor_user_id:
+            raise AppException(
+                error_key=ErrorKey.USER_CANNOT_DELETE_SELF,
+                status_code=400,
+            )
+        deleted = await self.repository.soft_delete(user_id)
+        if not deleted:
+            raise AppException(error_key=ErrorKey.USER_NOT_FOUND)
+        await invalidate_user_cache(user_id)
+        return {"message": f"User with ID {user_id} has been deleted."}
+
+    async def restore_soft_deleted(self, user_id: UUID) -> UserRead:
+        restored = await self.repository.restore_soft_deleted(user_id)
+        if not restored:
+            raise AppException(error_key=ErrorKey.USER_NOT_FOUND)
+        await invalidate_user_cache(user_id)
+        full = await self.get_by_id(user_id)
+        if not full:
+            raise AppException(error_key=ErrorKey.USER_NOT_FOUND)
+        return full
+
     async def update(self, user_id: UUID, user_data: UserUpdate):
         updated_user = await self.repository.update(user_id, user_data)
         await invalidate_user_cache(user_id)

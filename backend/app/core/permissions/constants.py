@@ -147,6 +147,7 @@ class UserPermissions:
     CREATE = "create:user"
     READ = "read:user"
     UPDATE = "update:user"
+    DELETE = "delete:user"
 
 
 class UserTypePermissions:

@@ -27,6 +27,7 @@ class ErrorKey(Enum):
     MISSING_FIELD_UPLOAD_AUDIO = "missing_field_upload_audio"
     USERNAME_ALREADY_EXISTS = "USERNAME_ALREADY_EXISTS"
     USER_NOT_FOUND = "USER_NOT_FOUND"
+    USER_CANNOT_DELETE_SELF = "USER_CANNOT_DELETE_SELF"
     TRANSCRIPT_PARSE_ERROR = "TRANSCRIPT_PARSE_ERROR"
     INVALID_USERNAME_OR_PASSWORD = "INVALID_USERNAME_OR_PASSWORD"
     INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS"
@@ -160,6 +161,7 @@ ERROR_MESSAGES = {
         ErrorKey.MISSING_FIELD_UPLOAD_AUDIO: "Missing file, agent_id, or recorded_at.",
         ErrorKey.USERNAME_ALREADY_EXISTS: "Username already exists.",
         ErrorKey.USER_NOT_FOUND: "User not found.",
+        ErrorKey.USER_CANNOT_DELETE_SELF: "You cannot delete your own account.",
         ErrorKey.OPERATOR_NOT_FOUND: "Operator not found.",
         ErrorKey.TRANSCRIPT_PARSE_ERROR: "There was an error parsing the transcript. Summary, title or metrics may be missing.",
         ErrorKey.INVALID_USERNAME_OR_PASSWORD: "Invalid username or password.",
