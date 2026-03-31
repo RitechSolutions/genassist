@@ -77,18 +77,27 @@ class UserService:
         #     raise AppException(error_key=ErrorKey.LOGIN_ERROR_CONSOLE_USER)
         return user_auth
 
-    async def get_by_username(self, username: str, throw_not_found: bool = True):
+    async def get_by_username(self, username: str, *, include_deleted: bool = False, throw_not_found: bool = True):
         """Fetch a user by their username."""
-        user = await self.repository.get_by_username(username)
+        user = await self.repository.get_by_username(username, include_deleted=include_deleted)
         if not user:
             if throw_not_found:
                 raise AppException(error_key=ErrorKey.USER_NOT_FOUND, status_code=404)
             return None
         return user
 
-    async def get_user_by_email(self, email: str, throw_not_found: bool = True):
+    async def get_by_email(self, email: str, *, include_deleted: bool = False, throw_not_found: bool = True):
+        """Fetch a user by their email."""
+        user = await self.repository.get_by_email(email, include_deleted=include_deleted)
+        if not user:
+            if throw_not_found:
+                raise AppException(error_key=ErrorKey.USER_NOT_FOUND, status_code=404)
+            return None
+        return user
+
+    async def get_by_username_or_email(self, username_or_email: str, *, include_deleted: bool = False, throw_not_found: bool = True):
         """Fetch a user by their username."""
-        user = await self.repository.get_by_email(email)
+        user = await self.repository.get_by_username_or_email(username_or_email, include_deleted=include_deleted)
         if not user:
             if throw_not_found:
                 raise AppException(error_key=ErrorKey.USER_NOT_FOUND, status_code=404)
