@@ -12255,7 +12255,7 @@
           "Workflow Test Suites"
         ],
         "summary": "Run Test Suite",
-        "description": "Execute all test cases in the suite against the configured workflow and\nevaluate with the requested techniques.",
+        "description": "Queue a test suite run. Returns immediately with status ``queued``.\nThe actual execution is handled by a Celery background worker.",
         "operationId": "run_test_suite_api_genagent_eval_suites__suite_id__runs_post",
         "security": [
           {

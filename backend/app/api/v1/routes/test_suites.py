@@ -6,6 +6,8 @@ from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
+from app.core.tenant_scope import get_tenant_context
+from app.tasks.test_suite_tasks import execute_test_suite_run_task
 from app.schemas.test_suite import (
     ImportCasesFromConversationRequest,
     TestCase,
@@ -169,10 +171,17 @@ async def run_test_suite(
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     """
-    Execute all test cases in the suite against the configured workflow and
-    evaluate with the requested techniques.
+    Queue a test suite run. Returns immediately with status ``queued``.
+    The actual execution is handled by a Celery background worker.
     """
-    return await service.start_run(suite_id, data)
+    run = await service.create_run(suite_id, data)
+    execute_test_suite_run_task.delay(
+        str(run.id),
+        get_tenant_context(),
+        data.input_metadata,
+        data.technique_configs,
+    )
+    return run
 
 
 @router.get(
