@@ -180,6 +180,8 @@ const EvaluationDetailPage: React.FC = () => {
           if (updated.status === "completed" || updated.status === "failed") {
             clearInterval(pollInterval);
             setIsRunning(false);
+            const results = await listResultsForRun(created.id);
+            setResultsByRun((prev) => ({ ...prev, [created.id]: results ?? [] }));
           }
         }, 10_000);
         // Return early — setIsRunning(false) is handled by the interval above.
