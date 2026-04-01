@@ -1,7 +1,7 @@
 """seed_workflow_builder_agent
 
 Revision ID: b3c4d5e6f7a8
-Revises: a7b8c9d0e1f2
+Revises: e8f9a0b1c2d3
 Create Date: 2026-03-11 12:00:00.000000
 
 """
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "b3c4d5e6f7a8"
-down_revision: Union[str, None] = "a7b8c9d0e1f2"
+down_revision: Union[str, None] = "e8f9a0b1c2d3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
