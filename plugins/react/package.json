@@ -1,6 +1,6 @@
 {
   "name": "genassist-chat-react",
-  "version": "1.0.37",
+  "version": "1.0.38-rc.0",
   "description": "React chat component for GenAssist",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -28,6 +28,10 @@
     "bump:patch": "npm version patch",
     "bump:minor": "npm version minor",
     "bump:major": "npm version major",
+    "release:patch": "npm version patch && npm run build && npm publish",
+    "release:candidate": "npm version prerelease --preid=rc && npm run build && npm publish --tag beta",
+    "release:candidate:prepatch": "npm version prepatch --preid=rc && npm run build && npm publish --tag beta",
+    "release:candidate:preminor": "npm version preminor --preid=rc && npm run build && npm publish --tag beta",
     "prepare": "npm run build"
   },
   "keywords": [
