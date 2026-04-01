@@ -12,7 +12,9 @@ import { getApiUrlString } from '@/config/api';
 import { getAllDataSources } from '@/services/dataSources';
 import { getAllLLMAnalysts } from '@/services/llmAnalyst';
 import { v4 as uuidv4 } from 'uuid';
+import { Badge } from '@/components/badge';
 import { Button } from '@/components/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/popover';
 import { Input } from '@/components/input';
 import { Textarea } from '@/components/textarea';
 import { Switch } from '@/components/switch';
@@ -97,6 +99,22 @@ const acceptedFileTypes = [
   '.pdf', '.docx', '.doc', '.txt', '.csv', '.xls', '.xlsx',
   '.pptx', '.ppt', '.html', '.htm', '.yaml', '.yml', '.json', '.jsonl', '.md',
 ];
+
+function syncStatusBadgeVariant(
+  status: string
+): 'default' | 'secondary' | 'destructive' | 'outline' | 'success' {
+  const s = status.toLowerCase();
+  if (s === 'error' || s.includes('fail')) return 'destructive';
+  if (s.includes('warning')) return 'secondary';
+  if (s === 'success') return 'success';
+  return 'outline';
+}
+
+function isSyncErrorStatus(status: string | null | undefined): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s === 'error' || s.includes('fail');
+}
 
 const KnowledgeBaseForm: React.FC = () => {
   const navigate = useNavigate();
@@ -349,15 +367,64 @@ const KnowledgeBaseForm: React.FC = () => {
 
   const performSync = async () => {
     if (!editingItem?.id) return;
+    let syncApiReturned = false;
     try {
       setIsSyncing(true);
-      toast.success('Synchronization started');
-      await executeKnowledgeBaseSyncronizationManually(editingItem.id);
-      toast.success('Synchronization completed successfully.');
+      const data = (await executeKnowledgeBaseSyncronizationManually(editingItem.id)) as {
+        status?: string;
+        message?: string;
+        zendesk_sync_results?: Array<{
+          result?: {
+            status?: string;
+            error?: string;
+            message?: string;
+            articles_added?: number;
+            articles_updated?: number;
+            articles_deleted?: number;
+            per_kb?: Array<{ status?: string; reason?: string; error?: string; note?: string }>;
+          };
+        }>;
+      };
+      syncApiReturned = true;
+      if (data.status === 'error') {
+        toast.error(data.message ?? 'Synchronization failed.');
+        return;
+      }
+      const z = data.zendesk_sync_results?.[0]?.result;
+      if (z?.status === 'failed') {
+        toast.error(z.error ?? z.message ?? 'Zendesk sync failed.');
+        return;
+      }
+      const firstKb = z?.per_kb?.[0];
+      if (firstKb?.status === 'skipped') {
+        toast.error(
+          `Sync skipped: ${firstKb.reason ?? 'unknown'}. Check schedule, datasource, or Zendesk connection.`
+        );
+        return;
+      }
+      if (firstKb?.status === 'error') {
+        console.error(firstKb?.error ?? 'Unknown error');
+        toast.error('Zendesk sync error. See knowledge base sync status.');
+        return;
+      }
+      if (z != null && (z.articles_added != null || z.articles_updated != null || z.articles_deleted != null)) {
+        toast.success(
+          `Sync completed: ${z.articles_added ?? 0} added, ${z.articles_updated ?? 0} updated, ${z.articles_deleted ?? 0} removed.`
+        );
+      } else {
+        toast.success('Synchronization completed successfully.');
+      }
     } catch {
       toast.error('Failed to trigger synchronization.');
     } finally {
       setIsSyncing(false);
+      if (syncApiReturned && id) {
+        try {
+          setEditingItem((await getKnowledgeItem(id)) as KnowledgeItem);
+        } catch {
+          /* ignore refresh failure */
+        }
+      }
     }
   };
 
@@ -918,9 +985,78 @@ const KnowledgeBaseForm: React.FC = () => {
                                       </div>
 
                                       {editingItem && (
-                                        <div className="flex flex-row justify-end p-4">
-                                          <Button type="button" variant="outline" onClick={handleSyncNow} disabled={isSyncing} className="min-w-[130px] rounded-full">
-                                            <div className="flex items-center gap-2 ml-auto">
+                                        <div className="flex flex-row flex-wrap items-center justify-between gap-3 p-4">
+                                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                            {(editingItem.last_synced ||
+                                              editingItem.last_sync_status ||
+                                              editingItem.last_sync_error) && (
+                                              <>
+                                                <span className="text-xs text-gray-600">
+                                                  Last sync
+                                                  {editingItem.last_synced
+                                                    ? `: ${new Date(editingItem.last_synced).toLocaleString()}`
+                                                    : ''}
+                                                </span>
+                                                {editingItem.last_sync_status ? (
+                                                  isSyncErrorStatus(editingItem.last_sync_status) &&
+                                                  editingItem.last_sync_error ? (
+                                                    <Popover>
+                                                      <PopoverTrigger asChild>
+                                                        <button
+                                                          type="button"
+                                                          className="inline-flex rounded-full border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                                        >
+                                                          <Badge
+                                                            variant={syncStatusBadgeVariant(
+                                                              editingItem.last_sync_status
+                                                            )}
+                                                            className="cursor-pointer"
+                                                          >
+                                                            {editingItem.last_sync_status}
+                                                          </Badge>
+                                                        </button>
+                                                      </PopoverTrigger>
+                                                      <PopoverContent
+                                                        align="start"
+                                                        className="w-80 max-w-[min(90vw,24rem)]"
+                                                      >
+                                                        <p className="mb-2 text-xs font-medium text-muted-foreground">
+                                                          Error details
+                                                        </p>
+                                                        <p className="whitespace-pre-wrap break-words text-sm text-destructive">
+                                                          {editingItem.last_sync_error}
+                                                        </p>
+                                                      </PopoverContent>
+                                                    </Popover>
+                                                  ) : (
+                                                    <Badge
+                                                      variant={syncStatusBadgeVariant(editingItem.last_sync_status)}
+                                                    >
+                                                      {editingItem.last_sync_status}
+                                                    </Badge>
+                                                  )
+                                                ) : null}
+                                                {editingItem.last_sync_error &&
+                                                !isSyncErrorStatus(editingItem.last_sync_status) ? (
+                                                  <Badge
+                                                    variant="secondary"
+                                                    className="max-w-[min(100%,20rem)] shrink truncate font-normal sm:max-w-[28rem]"
+                                                    title={editingItem.last_sync_error}
+                                                  >
+                                                    {editingItem.last_sync_error}
+                                                  </Badge>
+                                                ) : null}
+                                              </>
+                                            )}
+                                          </div>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={handleSyncNow}
+                                            disabled={isSyncing}
+                                            className="min-w-[130px] shrink-0 rounded-full"
+                                          >
+                                            <div className="flex items-center gap-2">
                                               <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
                                               {isSyncing ? 'Syncing...' : 'Sync Now'}
                                             </div>
