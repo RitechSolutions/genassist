@@ -253,6 +253,12 @@ class AgentNode(BaseNode):
             result = await agent.invoke(prompt, chat_history=chat_history)
             logger.debug("Agent result: %s", result)
 
+            from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
+
+            await merge_llm_usage_from_result(
+                self.get_state(), result, self.node_id, provider_id
+            )
+
             # Prepare output
             output = {
                 "message": result.get("response", "Something went wrong"),

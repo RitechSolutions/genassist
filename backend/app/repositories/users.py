@@ -1,27 +1,30 @@
+import logging
 from datetime import datetime
+from operator import or_
 from uuid import UUID
+
+from fastapi_cache import FastAPICache
 from injector import inject
+from redis.exceptions import ResponseError
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload, selectinload
+
 from app.auth.utils import get_password_hash
 from app.cache.redis_cache import make_key_builder
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination
+from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.db.models import UserRoleModel
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
+from app.db.models.user import UserModel
 from app.db.models.user_type import UserTypeModel
-from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.exception_classes import AppException
-from sqlalchemy.orm import selectinload, joinedload
-from sqlalchemy import delete, select, update
-
 from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserCreate, UserUpdate
-from app.db.models.user import UserModel
-import logging
-from fastapi_cache import FastAPICache
-from redis.exceptions import ResponseError
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +36,7 @@ class UserRepository:
 
     def __init__(self, db: AsyncSession):
         self.db = db
-        
+
     async def create(self, user: UserCreate):
         # Validate user type
         user_type = await self.db.get(UserTypeModel, user.user_type_id)
@@ -101,10 +104,28 @@ class UserRepository:
         result = await self.db.execute(query)
         return result.scalars().first()
 
+    async def get_by_username_or_email(self, username_or_email: str, *, include_deleted: bool = False) -> UserModel | None:
+        """Retrieve a user by username or email."""
+        query = select(UserModel).where(or_(UserModel.username == username_or_email, UserModel.email == username_or_email)).options(joinedload(UserModel.user_type))
+        exec_query = (
+            query.execution_options(**{SOFT_DELETE_FLAG: True})
+            if include_deleted
+            else query
+        )
+        result = await self.db.execute(exec_query)
+        return result.scalars().first()
 
-    async def get_by_email(self, email: str) -> UserModel:
+
+    async def get_by_email(
+        self, email: str, *, include_deleted: bool = False
+    ) -> UserModel | None:
         query = select(UserModel).where(UserModel.email == email)
-        result = await self.db.execute(query)
+        exec_query = (
+            query.execution_options(**{SOFT_DELETE_FLAG: True})
+            if include_deleted
+            else query
+        )
+        result = await self.db.execute(exec_query)
         return result.scalars().first()
 
     async def get_all(self, filter: BaseFilterModel):
@@ -116,10 +137,18 @@ class UserRepository:
                 joinedload(UserModel.user_type)
             )
         )
+        deleted_only = getattr(filter, "deleted_only", False)
+        if deleted_only:
+            query = query.where(UserModel.is_deleted == 1)
         query = add_dynamic_ordering(UserModel, filter, query)
         query = add_pagination(filter, query)
 
-        results = await self.db.execute(query)
+        exec_query = (
+            query.execution_options(**{SOFT_DELETE_FLAG: True})
+            if deleted_only
+            else query
+        )
+        results = await self.db.execute(exec_query)
         return results.scalars().all()
 
 
@@ -159,16 +188,43 @@ class UserRepository:
         await self.db.commit()
         await self.db.refresh(user)
 
-        # Invalidate the cache for this user (safe for Redis Cluster: Lua scripts without keys not supported)
+        await self._clear_user_full_cache(user_id)
+
+        return user
+
+    async def _clear_user_full_cache(self, user_id: UUID) -> None:
         cache_key = f"auth:users:get_full:{user_id}"
         try:
             await FastAPICache.get_backend().clear(key=cache_key)
         except ResponseError as e:
             if "Lua scripts without any input keys are not supported" not in str(e):
                 raise
-            # Redis Cluster: ignore; cache will expire or be overwritten
 
-        return user
+    async def soft_delete(self, user_id: UUID) -> bool:
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id, UserModel.is_deleted == 0)
+            .values(is_deleted=1)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        if result.rowcount:
+            await self._clear_user_full_cache(user_id)
+            return True
+        return False
+
+    async def restore_soft_deleted(self, user_id: UUID) -> bool:
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id, UserModel.is_deleted == 1)
+            .values(is_deleted=0)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        if result.rowcount:
+            await self._clear_user_full_cache(user_id)
+            return True
+        return False
 
 
     async def update_user_password(self, user_id: int, new_hashed: str, next_update_date: datetime):

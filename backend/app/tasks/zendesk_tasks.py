@@ -1,22 +1,19 @@
 import asyncio
+import json
 import logging
 from uuid import UUID
-import json
 
+from celery import shared_task
 
+from app.core.config.settings import settings
 from app.core.utils.date_time_utils import utc_now
-from app.services.conversations import ConversationService
-
-from app.schemas.conversation import ConversationCreate
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
 from app.db.seed.seed_data_config import seed_test_data
-
-from app.modules.integration.zendesk import ZendeskConnector
-from app.core.config.settings import settings
 from app.dependencies.injector import injector
-
-from celery import shared_task
+from app.modules.integration.zendesk import ZendeskConnector
+from app.schemas.conversation import ConversationCreate
+from app.services.conversations import ConversationService
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +53,7 @@ async def analyze_zendesk_tickets_async():
 
 ############################
 async def process_zendesk_tickets():
+
     logger.info("Processing Zendesk tickets...")
     conversation_service = injector.get(ConversationService)
     zendesk_connector = ZendeskConnector()
@@ -67,7 +65,6 @@ async def process_zendesk_tickets():
         try:
             ticket_id = ticket["id"]
             comments = ticket.get("transcription")
-            conversation_id = UUID(int=ticket_id)
             ticket_subject = ticket.get("subject") or ""
             ticket_status = ticket.get("status") or ""
 
@@ -108,7 +105,6 @@ async def process_zendesk_tickets():
             customer_satisfaction = conversation_analysis.customer_satisfaction or 0
             service_quality = conversation_analysis.quality_of_service or 0
 
-            # Helper to convert 0–10 scale to percentage
             def to_percent(value: int) -> int:
                 return int((value / 10) * 100)
 
@@ -142,12 +138,12 @@ async def process_zendesk_tickets():
             # if ticket status is 'closed' - no update is allowed so related followup ticket must be created
             # otherwise is status is 'solved' it is allowed to update it and change the status to 'closed'
             if ticket_status == "closed":
-                x = await zendesk_connector.create_followup_ticket(
+                await zendesk_connector.create_followup_ticket(
                     ticket_id, payload
                 )  # creates new related ticket (POST)
             else:
                 payload["ticket"]["subject"] = f"ANALYZED: {ticket_subject}"
-                x = await zendesk_connector.update_ticket(
+                await zendesk_connector.update_ticket(
                     ticket_id, payload=payload
                 )  # updates existing ticket with evaluation and closes it (PUT)
 

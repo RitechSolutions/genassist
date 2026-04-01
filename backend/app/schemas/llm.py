@@ -1,13 +1,18 @@
-from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Any, Dict, List, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.common import ConnectionStatus
+
 
 class LlmProviderBase(BaseModel):
-    name: str
-    llm_model_provider: str
-    llm_model: str
-    connection_data: Dict[str, Any] = Field(..., description="Connection parameters like api key.")
+    name: Optional[str] = None
+    llm_model_provider: Optional[str] = None
+    llm_model: Optional[str] = None
+    connection_data: Optional[Dict[str, Any]] = Field(None, description="Connection parameters like api key.")
+    connection_status: Optional[ConnectionStatus] = None
     is_active: Optional[int] = 1
     is_default: Optional[int] = 0
     model_config = ConfigDict(
@@ -17,24 +22,18 @@ class LlmProviderBase(BaseModel):
 
 
 class LlmProviderCreate(LlmProviderBase):
-    pass
+    name: str
+    llm_model_provider: str
+    llm_model: str
+    connection_data: Dict[str, Any]
 
 
 class LlmProviderRead(LlmProviderBase):
     id: UUID
 
-    model_config = ConfigDict(
-        from_attributes = True
-    )
 
-
-class LlmProviderUpdate(BaseModel):
-    name: Optional[str] = None
-    llm_model_provider: Optional[str] = None
-    llm_model: Optional[str] = None
-    connection_data: Optional[Dict[str, Any]] = None
-    is_default: Optional[int] = None
-    is_active: Optional[int] = None
+class LlmProviderUpdate(LlmProviderBase):
+    pass
 
 
 class LlmAnalystBase(BaseModel):
@@ -43,6 +42,7 @@ class LlmAnalystBase(BaseModel):
     prompt: Optional[str]
     is_active: Optional[int]
     context_enrichments: Optional[List[str]] = None
+    settings: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(
         from_attributes = True
@@ -71,3 +71,4 @@ class LlmAnalystUpdate(BaseModel):
     prompt: Optional[str] = None
     is_active: Optional[int] = None
     context_enrichments: Optional[List[str]] = None
+    settings: Optional[Dict[str, Any]] = None

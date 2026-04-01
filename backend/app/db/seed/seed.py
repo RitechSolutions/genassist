@@ -325,20 +325,22 @@ async def seed_data(session: AsyncSession, injector: Injector):
     )
     # Seed LLM analyst kpi analyzer
     gpt_kpi_analyzer_llm_analyst = LlmAnalystModel(
-        id=UUID(seed_test_data.llm_analyst_kpi_analyzer_id),
-        name='gpt_kpi_analyzer_service system prompt',
-        llm_provider_id=llm_provider.id,
-        prompt=seed_test_data.kpi_analyzer_system_prompt,
-        is_active=1
-    )
+            id=UUID(seed_test_data.llm_analyst_kpi_analyzer_id),
+            name='gpt_kpi_analyzer_service system prompt',
+            llm_provider_id=llm_provider.id,
+            prompt=seed_test_data.kpi_analyzer_system_prompt,
+            settings={"topics": ["Product Inquiry", "Technical Support", "Billing Questions", "Other"]},
+            is_active=1
+            )
     # Seed LLM analyst hostility score
     in_progress_hostility_llm_analyst = LlmAnalystModel(
-        id=UUID(seed_test_data.llm_analyst_in_progress_hostility_id),
-        name='gpt_kpi_analyzer_service in progress hostility system prompt',
-        llm_provider_id=llm_provider.id,
-        prompt=seed_test_data.in_progress_hostility_system_prompt,
-        is_active=1
-    )
+            id=UUID(seed_test_data.llm_analyst_in_progress_hostility_id),
+            name='gpt_kpi_analyzer_service in progress hostility system prompt',
+            llm_provider_id=llm_provider.id,
+            prompt=seed_test_data.in_progress_hostility_system_prompt,
+            settings={"topics": ["Product Inquiry", "Technical Support", "Billing Questions", "Other"]},
+            is_active=1
+            )
     session.add_all([gpt_speaker_separator_llm_analyst,
                     gpt_kpi_analyzer_llm_analyst, in_progress_hostility_llm_analyst])
 

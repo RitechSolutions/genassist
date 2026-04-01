@@ -1,3 +1,7 @@
+# Pin project name so `docker compose -f docker-compose.dev.yml` matches stacks
+# started with `-p genassist_dev` and avoids container_name conflicts (e.g. genassist_db_dev).
+name: genassist_dev
+
 services:
   # Init container to set up volume permissions
   volume-init:
@@ -54,7 +58,7 @@ services:
       - DB_PORT=5432
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - QDRANT_HOST=http://qdrant
       - QDRANT_PORT=6333
     healthcheck:
@@ -174,7 +178,7 @@ services:
     ports:
       - "6379:6379"
     environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     networks:
       - genassist-network-dev
     healthcheck:
@@ -195,7 +199,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - CELERY_TRACE_APP=1
       - WHISPER_TRANSCRIBE_SERVICE=http://whisper:8001/transcribe
       - DB_HOST=db
@@ -220,7 +224,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - CELERY_TRACE_APP=1
     depends_on:
       redis:
@@ -244,7 +248,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - CELERY_TRACE_APP=1
     depends_on:
       redis:
@@ -306,9 +310,9 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - BACKEND_URL=http://app:8000
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     depends_on:
       redis:
         condition: service_healthy

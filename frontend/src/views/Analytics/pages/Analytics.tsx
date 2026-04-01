@@ -16,8 +16,9 @@ const AnalyticsPage = () => {
     to: new Date(),
   });
   const [agentFilter, setAgentFilter] = useState("all");
+  const [compareDateRange, setCompareDateRange] = useState<DateRange | undefined>(undefined);
   const { agents } = useAgentsList();
-  const { metrics, deltas, loading, refreshing, error } = useAnalyticsData(dateRange, agentFilter);
+  const { metrics, deltas, loading, refreshing, error } = useAnalyticsData(dateRange, agentFilter, compareDateRange);
 
   return (
     <SidebarProvider>
@@ -38,6 +39,8 @@ const AnalyticsPage = () => {
                   onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
+                  compareDateRange={compareDateRange}
+                  onCompareDateRangeChange={setCompareDateRange}
                 />
               </header>
 
@@ -49,6 +52,7 @@ const AnalyticsPage = () => {
                 loading={loading}
                 refreshing={refreshing}
                 error={error}
+                compareDateRange={compareDateRange}
               />
             </div>
           </div>

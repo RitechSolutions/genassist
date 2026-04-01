@@ -7,6 +7,7 @@ import {
   AgentListItem,
 } from "@/interfaces/ai-agent.interface";
 import { PaginatedResponse } from "@/interfaces/common.interface";
+import { KBListItem } from "@/views/KnowledgeBase/types/knowledgeBase";
 import { getApiKeys, getApiKey } from "@/services/apiKeys";
 import { AxiosError } from "axios";
 import { UploadFileResponse } from "@/interfaces/file-manager.interface";
@@ -129,6 +130,7 @@ const AGENT_UPDATE_ALLOWED_KEYS = [
   "thinking_phrases",
   "thinking_phrase_delay",
   "workflow_id",
+  "llm_analyst_id",
   "security_settings",
 ] as const;
 
@@ -167,11 +169,16 @@ export async function uploadWelcomeImage(
 
 export async function getWelcomeImage(agentId: string): Promise<Blob> {
   const baseURL = await getApiUrl();
-  const fullUrl = `${baseURL}genagent/agents/configs/${agentId}/welcome-image`;
+  // Bust caches so a replaced image is not shown as the previous blob.
+  const fullUrl = `${baseURL}genagent/agents/configs/${agentId}/welcome-image?_=${Date.now()}`;
 
   try {
     const response = await api.get(fullUrl, {
       responseType: "blob",
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
     });
     return response.data;
   } catch (error: unknown) {
@@ -214,6 +221,17 @@ export async function queryAgent(
 // Knowledge base endpoints
 export async function getAllKnowledgeItems() {
   return apiRequest("GET", "genagent/knowledge/items");
+}
+
+export async function getKnowledgeItemsList(
+  page: number = 1,
+  pageSize: number = 20
+): Promise<PaginatedResponse<KBListItem>> {
+  const skip = (page - 1) * pageSize;
+  return apiRequest<PaginatedResponse<KBListItem>>(
+    "GET",
+    `genagent/knowledge/list?skip=${skip}&limit=${pageSize}`
+  );
 }
 
 export async function getKnowledgeItem(id: string) {

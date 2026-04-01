@@ -1,11 +1,13 @@
 from injector import inject
 from sqlalchemy import UUID
+
+from app.cache.redis_cache import invalidate_user_cache
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.db.models import RoleModel
+from app.repositories.roles import RolesRepository
 from app.schemas.filter import BaseFilterModel
 from app.schemas.role import RoleCreate, RoleUpdate
-from app.repositories.roles import RolesRepository
-from app.core.exceptions.exception_classes import AppException
-from app.core.exceptions.error_messages import ErrorKey
 
 
 @inject
@@ -36,9 +38,24 @@ class RolesService:
             model.is_active = update_data.is_active
 
         updated_model = await self.repository.update(model)
+
+        # find all users with this role
+        # invalidate user cache for all users with this role
+        users = await self.repository.get_by_role_id(model.id)
+        for user in users:
+            await invalidate_user_cache(user.id)
+
         return updated_model
 
     async def delete(self, role_id: UUID):
         model = await self.get_by_id(role_id)
+        user_assignments, api_key_assignments = await self.repository.count_assignments_for_role(
+            role_id
+        )
+        if user_assignments > 0 or api_key_assignments > 0:
+            raise AppException(
+                error_key=ErrorKey.ROLE_CANNOT_DELETE_IN_USE,
+                status_code=409,
+            )
         await self.repository.delete(model)
         return {"message": f"Role with ID {role_id} has been deleted."}

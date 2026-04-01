@@ -1,21 +1,20 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
+from io import BytesIO
 from typing import Optional
 
 from celery import shared_task
-from io import BytesIO
-
-from app.dependencies.injector import injector
-from app.services.datasources import DataSourceService
-from app.services.audio import AudioService
-from app.services.app_settings import AppSettingsService
-from app.schemas.recording import RecordingCreate
-from app.db.seed.seed_data_config import SeedTestData
 from fastapi import UploadFile
 
-from app.services.smb_share_service import SMBShareFSService
+from app.db.seed.seed_data_config import SeedTestData
+from app.dependencies.injector import injector
+from app.schemas.recording import RecordingCreate
+from app.services.app_settings import AppSettingsService
+from app.services.audio import AudioService
+from app.services.datasources import DataSourceService
 from app.services.GoogleTranscribeService import GoogleTranscribeService
+from app.services.smb_share_service import SMBShareFSService
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +74,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
     if not google_cloud_bucket:
         raise ValueError("Google Cloud setting 'google_cloud_bucket' value is empty")
 
-    logger.info(f"google_cloud_json key and google_cloud_bucket is loaded")
+    logger.info("google_cloud_json key and google_cloud_bucket is loaded")
 
     gts = GoogleTranscribeService(
         sst_region="us-central1",

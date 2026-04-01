@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AxiosError } from "axios";
 import { DataTable } from "@/components/DataTable";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -32,6 +33,9 @@ export function RolesCard({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // roles that cannot be edited
+  const restrictedRoles = new Set(["admin", "superadmin"]);
 
   useEffect(() => {
     fetchRoles();
@@ -79,7 +83,9 @@ export function RolesCard({
       toast.success("Role deleted successfully.");
       setRoles((prev) => prev.filter((s) => s.id !== roleToDelete.id));
     } catch (error) {
-      toast.error("Failed to delete role.");
+      const axiosError = error as AxiosError<{ error?: string }>;
+      const apiMessage = axiosError.response?.data?.error;
+      toast.error(apiMessage ?? "Failed to delete role.");
     } finally {
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);
@@ -117,6 +123,8 @@ export function RolesCard({
       <TableCell className="truncate">{formatDate(role.updated_at)}</TableCell>
       <TableCell>
         <ActionButtons
+          canEdit={!restrictedRoles.has(role.name)}
+          canDelete={!restrictedRoles.has(role.name)}
           onEdit={() => onEditRole(role)}
           onDelete={() => handleDeleteClick(role)}
           editTitle="Edit Role"

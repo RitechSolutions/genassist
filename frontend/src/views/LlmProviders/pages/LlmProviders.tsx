@@ -4,7 +4,9 @@ import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { LLMProviderCard } from "../components/LLMProviderCard";
 import { LLMProviderDialog } from "../components/LLMProviderDialog";
+import { LlmCostRatesDialog } from "../components/LlmCostRatesDialog";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
+import { Coins } from "lucide-react";
 import toast from "react-hot-toast";
 
 export default function LLMProviders() {
@@ -19,6 +21,7 @@ export default function LLMProviders() {
     null
   );
   const [updatedProvider, setUpdatedProvider] = useState<LLMProvider | null>(null);
+  const [costRatesOpen, setCostRatesOpen] = useState(false);
 
   // Fetch all providers
   useEffect(() => {
@@ -78,6 +81,13 @@ export default function LLMProviders() {
         searchPlaceholder="Search providers..."
         actionButtonText="Add New Provider"
         onActionClick={handleCreate}
+        secondaryActionButtonText={
+          <>
+          <Coins className="w-4 h-4 text-primary" />
+          <span>Manage costs</span>
+          </>
+        }
+        onSecondaryActionClick={() => setCostRatesOpen(true)}
       />
 
       <LLMProviderCard
@@ -95,6 +105,8 @@ export default function LLMProviders() {
         providerToEdit={providerToEdit}
         mode={dialogMode}
       />
+
+      <LlmCostRatesDialog open={costRatesOpen} onOpenChange={setCostRatesOpen} />
     </PageLayout>
   );
 }

@@ -43,6 +43,7 @@ async def test_create_user_success(user_service, mock_repository, sample_user_da
     # Setup
     user_create = UserCreate(**sample_user_data)
     mock_repository.get_by_username.return_value = None
+    mock_repository.get_by_email.return_value = None
     mock_repository.create.return_value = MagicMock(id=uuid4())
     mock_repository.get_full.return_value = MagicMock(
         id=uuid4(),
@@ -56,6 +57,9 @@ async def test_create_user_success(user_service, mock_repository, sample_user_da
 
     # Assert
     mock_repository.get_by_username.assert_called_once_with(user_create.username)
+    mock_repository.get_by_email.assert_called_once_with(
+        user_create.email, include_deleted=True
+    )
     mock_repository.create.assert_called_once()
     mock_repository.get_full.assert_called_once()
     assert result.username == sample_user_data["username"]
@@ -73,6 +77,23 @@ async def test_create_user_duplicate_username(user_service, mock_repository, sam
     
     assert exc_info.value.error_key == ErrorKey.USERNAME_ALREADY_EXISTS
     mock_repository.get_by_username.assert_called_once_with(user_create.username)
+    mock_repository.get_by_email.assert_not_called()
+    mock_repository.create.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_create_user_duplicate_email(user_service, mock_repository, sample_user_data):
+    user_create = UserCreate(**sample_user_data)
+    mock_repository.get_by_username.return_value = None
+    mock_repository.get_by_email.return_value = MagicMock()
+
+    with pytest.raises(AppException) as exc_info:
+        await user_service.create(user_create)
+
+    assert exc_info.value.error_key == ErrorKey.EMAIL_ALREADY_EXISTS
+    mock_repository.get_by_username.assert_called_once_with(user_create.username)
+    mock_repository.get_by_email.assert_called_once_with(
+        user_create.email, include_deleted=True
+    )
     mock_repository.create.assert_not_called()
 
 @pytest.mark.asyncio
@@ -161,20 +182,20 @@ async def test_update_user_success(user_service, mock_repository):
     # Setup
     user_id = uuid4()
     update_data = UserUpdate(
-        username="test",
         email="updated@example.com",
         is_active=0,
-        user_type=UserTypeRead(id=UUID('00000196-edb1-2b80-a681-167fc2a697dd'), name="interactive", created_at=datetime.now(), updated_at=datetime.now())
+        user_type_id=UUID('00000196-edb1-2b80-a681-167fc2a697dd'),
     )
     mock_updated_user = UserRead(
             id=user_id,
-            username="test",
+            username="testuser",
             email="updated@example.com",
             is_active=0,
             roles=[],
             user_type=UserTypeRead(id=UUID("00000196-edb1-2b80-a681-167fc2a697dd"), name="interactive", created_at=datetime.now(), updated_at=datetime.now()),
             api_keys=[]
             )
+    mock_repository.get_by_email.return_value = None
     mock_repository.update.return_value = mock_updated_user
     mock_repository.get_full.return_value = mock_updated_user
 
@@ -182,9 +203,28 @@ async def test_update_user_success(user_service, mock_repository):
     result = await user_service.update(user_id, update_data)
 
     # Assert
+    mock_repository.get_by_email.assert_called_once_with(
+        update_data.email, include_deleted=True
+    )
     mock_repository.update.assert_called_once_with(user_id, update_data)
     mock_repository.get_full.assert_called_once_with(mock_updated_user.id)
     assert result == mock_updated_user
+
+@pytest.mark.asyncio
+async def test_update_user_duplicate_email(user_service, mock_repository):
+    user_id = uuid4()
+    other_id = uuid4()
+    update_data = UserUpdate(email="taken@example.com")
+    mock_repository.get_by_email.return_value = MagicMock(id=other_id)
+
+    with pytest.raises(AppException) as exc_info:
+        await user_service.update(user_id, update_data)
+
+    assert exc_info.value.error_key == ErrorKey.EMAIL_ALREADY_EXISTS
+    mock_repository.get_by_email.assert_called_once_with(
+        update_data.email, include_deleted=True
+    )
+    mock_repository.update.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_get_all_users(user_service, mock_repository):
