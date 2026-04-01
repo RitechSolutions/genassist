@@ -7,7 +7,7 @@ import { OnboardingHero } from "@/views/Onboarding/components/OnboardingHero";
 import { OnboardingInput } from "@/views/Onboarding/components/Onboardinginput";
 import { OnboardingNameAgent } from "@/views/Onboarding/components/OnboardingNameAgent";
 import { useOnboardingChat } from "@/views/Onboarding/hooks/useOnboardingChat";
-import { extractWorkflowDraftFromText, isWorkflowDraft } from "@/views/Onboarding/utils/extractWorkflowDraft";
+import { isWorkflowDraft } from "@/views/Onboarding/utils/extractWorkflowDraft";
 import { parseInteractiveContentBlocks } from "genassist-chat-react";
 import { useRoutesContext } from "@/context/RoutesContext";
 
@@ -34,6 +34,8 @@ export default function Onboarding() {
     hasConfig,
     handleSubmit,
     sendQuickAction,
+    workflowDraft,
+    isWorkflowReady,
   } = useOnboardingChat({ registrationStatus });
 
   const [showCongrats, setShowCongrats] = useState(true);
@@ -84,18 +86,13 @@ export default function Onboarding() {
     };
   }, []);
 
-  const extractedDraft = useMemo(() => {
-    if (!agentReply) return null;
-    return extractWorkflowDraftFromText(agentReply);
-  }, [agentReply]);
-
-  const effectiveScreen: OnboardingScreen = extractedDraft ? "name-agent" : screen;
+  const effectiveScreen: OnboardingScreen = isWorkflowReady ? "name-agent" : screen;
 
   useEffect(() => {
-    if (!extractedDraft) return;
+    if (!isWorkflowReady || !workflowDraft) return;
 
     try {
-      localStorage.setItem(WORKFLOW_DRAFT_STORAGE_KEY, extractedDraft.raw);
+      localStorage.setItem(WORKFLOW_DRAFT_STORAGE_KEY, JSON.stringify(workflowDraft));
     } catch {
       // ignore
     }
@@ -103,7 +100,7 @@ export default function Onboarding() {
     if (screen !== "name-agent") {
       setScreen("name-agent");
     }
-  }, [extractedDraft, screen]);
+  }, [isWorkflowReady, workflowDraft, screen]);
 
   const isInputDisabled = !hasConfig || isSending;
 
@@ -147,6 +144,7 @@ export default function Onboarding() {
               disableQuickActions={isInputDisabled}
               messages={messages}
               isThinking={isThinking}
+              workflowDraft={workflowDraft}
             />
 
             <OnboardingInput
@@ -162,7 +160,7 @@ export default function Onboarding() {
             disabled={isSending}
             onChange={handleAgentNameChange}
             onContinue={handleContinue}
-            workflowDraft={extractedDraft?.parsed ?? null}
+            workflowDraft={workflowDraft}
           />
         )}
 

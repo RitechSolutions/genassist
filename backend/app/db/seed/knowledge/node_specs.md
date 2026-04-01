@@ -118,6 +118,66 @@ Edges: 1→2, 2→3
 
 ---
 
+## Architecture Rules
+
+These rules are **non-negotiable**. Violating any of them produces a broken workflow. Always verify your workflow against these before outputting JSON.
+
+### Connection Rules
+- **Single input rule**: Every node accepts ONLY ONE incoming edge — except `aggregatorNode`. NEVER connect two edges to the same node's input.
+- **Branching rule**: When a workflow branches (e.g., after a routerNode), each branch MUST have its own separate `chatOutputNode`. Do NOT merge branches into a single chatOutputNode.
+- **Output formatting**: If the user wants formatted output, add a `templateNode` before `chatOutputNode` to structure the response.
+
+### Router Rules
+- `routerNode` does **SIMPLE STRING COMPARISON only**. It CANNOT understand topics, intent, meaning, or analyze content.
+- NEVER use routerNode to check if a document contains a keyword, if a search returned results, or any semantic condition.
+- The `agentNode` handles all semantic decisions — it reads tool results and decides what to do next based on its reasoning and systemPrompt instructions.
+- routerNode is ONLY appropriate for simple deterministic routing (e.g., checking a classification label output by an llmModelNode).
+- **WRONG**: `knowledgeBaseNode → routerNode` (to check if results contain something) — the agent should decide this.
+- **WRONG**: `chatInput → routerNode` (to check if message is about a topic)
+- **RIGHT**: `chatInput → llmModelNode` (classifies topic) → `routerNode` (checks classification string)
+- If the user's use case involves "if X is found, do Y", put the search as a **TOOL** of the agent and let the agent decide via its reasoning + systemPrompt instructions. Do NOT use a routerNode for this.
+- routerNode config has ONLY these fields: `first_value`, `compare_condition`, `second_value`. Do NOT invent fields like `condition`, `trueLabel`, `falseLabel`.
+
+### Tool Connection Rules
+- Integration and data nodes (`knowledgeBaseNode`, `zendeskTicketNode`, `slackMessageNode`, `gmailNode`, `jiraNode`, `apiToolNode`, `sqlNode`, `calendarEventNode`, `readMailsNode`, `whatsappToolNode`, etc.) **MUST** be connected as **TOOLS** of an `agentNode` via a `toolBuilderNode`. They must **NEVER** be placed as standalone nodes in the main chain.
+- The `agentNode` decides WHEN and WHETHER to call each tool based on its reasoning. This is how the agent handles conditional logic like "if X is found, do Y" — the agent reads the tool result and decides the next action.
+- Tools connect **FROM** `toolBuilderNode` **TO** `agentNode` — NOT the reverse.
+- **WRONG**: `agentNode → knowledgeBaseNode → routerNode` (inline chain)
+- **RIGHT**: `toolBuilderNode → agentNode` (tool connection), `toolBuilderNode → knowledgeBaseNode` (processor connection)
+- Every tool requires **BOTH** edges:
+  - `{"from": "<toolBuilder_id>", "to": "<agent_id>", "sourceHandle": "output_tool", "targetHandle": "input_tools"}` — registers the tool with the agent
+  - `{"from": "<toolBuilder_id>", "to": "<sub_node_id>", "sourceHandle": "starter_processor", "targetHandle": "input"}` — connects the tool's processor
+
+### Integration Rules
+- Use dedicated nodes where available: `zendeskTicketNode` for Zendesk, `slackMessageNode` for Slack, `jiraNode` for Jira, `gmailNode` for Gmail, `knowledgeBaseNode` for document search, `calendarEventNode` for calendar, `readMailsNode` for reading emails, `whatsappToolNode` for WhatsApp. Only use `apiToolNode` for APIs without a dedicated node.
+- **ALL** integration nodes MUST be connected as tools of an `agentNode`. NEVER place them inline in the main flow.
+
+### Node Config Rules
+- Every chat workflow MUST start with `chatInputNode` and end with `chatOutputNode`.
+- Agent and LLM nodes MUST have `"userPrompt": "{{session.message}}"`. NEVER set it to null, empty, or literal text.
+- Use `{{session.message}}` for tool/KB query fields.
+- Write real, specific `systemPrompt` values. Never use generic placeholders like "You are a helpful assistant."
+
+### Edge Format Reference
+Regular connections — no handles needed:
+```json
+{"from": "1", "to": "2"}
+```
+
+Router connections — must specify branch:
+```json
+{"from": "<router_id>", "to": "<target>", "sourceHandle": "output_true", "targetHandle": "input"}
+{"from": "<router_id>", "to": "<target>", "sourceHandle": "output_false", "targetHandle": "input"}
+```
+
+Tool connections — both edges required:
+```json
+{"from": "<toolBuilder_id>", "to": "<agent_id>", "sourceHandle": "output_tool", "targetHandle": "input_tools"}
+{"from": "<toolBuilder_id>", "to": "<sub_node_id>", "sourceHandle": "starter_processor", "targetHandle": "input"}
+```
+
+---
+
 ## Node Reference
 
 ---
@@ -168,8 +228,8 @@ Edges: 1→2, 2→3
 | providerId | select | — | LLM provider to use |
 | systemPrompt | text | "You are a helpful assistant..." | Instructions for the agent |
 | userPrompt | text | "{{source.message}}" | User input template. MUST be "{{source.message}}" — never replace with literal text |
-| type | select | "ToolSelector" | Agent pattern: ReAct, ToolSelector, SimpleToolExecutor, ChainOfThought |
-| maxIterations | number | 3 | Max reasoning cycles before stopping |
+| type | select | "ToolSelector" | Agent pattern: ReActAgent, ToolSelector, SimpleToolExecutor, ReActAgentLC |
+| maxIterations | number | 7 | Max reasoning cycles before stopping |
 | memory | boolean | false | Enable conversation memory |
 
 **Optional config:**
@@ -209,9 +269,9 @@ Edges: 1→2, 2→3
 | Field | Type | Default | Description |
 |---|---|---|---|
 | providerId | select | — | LLM provider |
-| systemPrompt | text | — | System instructions |
+| systemPrompt | text | "" | System instructions |
 | userPrompt | text | "{{source.message}}" | User input template |
-| type | select | — | Model type |
+| type | select | "Base" | Model type: "Base" or "Chain-of-Thought" |
 | memory | boolean | false | Enable memory |
 
 **Optional config:** Same memory sub-settings as agentNode (conditional on memoryTrimmingMode).
@@ -333,16 +393,14 @@ Edges: 1→2, 2→3
 | name | text | No | Node name |
 
 **Available compare_condition values:**
-- `equals` — exact match
-- `not_equals` — not equal
+- `equal` — exact match
+- `not_equal` — not equal
 - `contains` — first_value contains second_value
 - `not_contain` — first_value does not contain second_value
 - `starts_with` — first_value starts with second_value
 - `not_starts_with` — first_value does not start with second_value
 - `ends_with` — first_value ends with second_value
 - `not_ends_with` — first_value does not end with second_value
-- `greater_than` — numeric greater than
-- `less_than` — numeric less than
 - `regex` — second_value is a regex pattern to test against first_value
 
 ---
@@ -361,8 +419,8 @@ Edges: 1→2, 2→3
 **Config:**
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| aggregationStrategy | select | Yes | — | How to combine: list, merge, first, last |
-| timeoutSeconds | number | Yes | — | Max wait time in seconds |
+| aggregationStrategy | select | Yes | "list" | How to combine: list, merge, concat |
+| timeoutSeconds | number | No | 15 | Max wait time in seconds |
 | name | text | No | — | Node name |
 | forwardTemplate | text | No | — | Template for output formatting |
 | requireAllInputs | boolean | No | true | Wait for all upstream nodes |
@@ -400,7 +458,94 @@ Edges: 1→2, 2→3
 | input | target | left | any |
 | output | source | right | any |
 
-**Config:** Select the target workflow to execute via the workflow studio UI.
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| workflowId | select | Yes | ID of the workflow to execute as a sub-workflow |
+| inputParameters | object | No | Key-value parameters to pass to the sub-workflow (auto-detected from selected workflow's input schema) |
+| workflowName | text | No | Display name of the selected workflow (auto-filled) |
+| name | text | No | Node name |
+
+---
+
+### guardrailProvenanceNode — Guardrail: Provenance
+**Category:** Utils
+**Purpose:** Scores how well an answer is grounded in (supported by) provided context. Uses either embedding-based token overlap or an LLM judge to compute a provenance score. If the score falls below the threshold the node can block the workflow or substitute a fallback answer.
+**Use cases:** Verifying RAG answers are grounded in retrieved documents, preventing hallucinated responses, enforcing factual accuracy before sending output to users.
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
+
+**Required config:**
+| Field | Type | Default | Description |
+|---|---|---|---|
+| answer_field | text | "" | Key of the upstream field containing the answer text to check |
+| context_field | text | "" | Key of the upstream field containing the context/source text |
+| min_score | number | 0.5 | Minimum provenance score (0–1) to pass |
+
+**Optional config:**
+| Field | Type | Default | Condition | Description |
+|---|---|---|---|---|
+| name | text | "Guardrail Provenance" | Always | Node name |
+| fail_on_violation | boolean | false | Always | Add `verdict="fail"` and `blocked=true` when score is below threshold |
+| fallback_answer_enabled | boolean | false | Always | Use a fallback answer instead of blocking |
+| fallback_answer | text | "" | fallback_answer_enabled=true | Text to substitute when a violation is detected |
+| provenance_mode | select | "embeddings" | Always | Scoring method: "embeddings" (token overlap / embedding similarity) or "llm" (LLM judge) |
+| embedding_type | select | "huggingface" | provenance_mode=embeddings | Embedding provider: "huggingface", "openai", or "bedrock" |
+| embedding_model_name | text | "all-MiniLM-L6-v2" | provenance_mode=embeddings | Embedding model name |
+| use_llm_judge | boolean | false | provenance_mode=llm | Use an LLM to compute the provenance score |
+| llm_provider_id | select | "" | provenance_mode=llm | LLM provider for the judge; uses default if omitted |
+| llm_judge_system_prompt_suffix | text | "" | provenance_mode=llm | Additional instructions appended to the judge system prompt |
+
+**Output fields:**
+| Field | Description |
+|---|---|
+| answer | Original answer or the fallback answer if substituted |
+| context | The context text that was checked against |
+| _guardrail_provenance | Object with: `type` ("provenance"), `score` (0–1), `threshold`, `verdict` ("pass" or "fail"), `heuristic_score`, optional `llm_judge` details, optional `fallback_used` |
+| blocked | (optional) `true` if `fail_on_violation` triggered |
+| verdict | (optional) `"provenance_fail"` if blocked |
+
+---
+
+### guardrailNliNode — Guardrail: NLI Fact-check
+**Category:** Utils
+**Purpose:** Runs Natural Language Inference (NLI) between an answer and evidence to determine if the answer is entailed by, contradicts, or is unknown relative to the evidence. Uses a local cross-encoder NLI model (falls back to heuristic if unavailable). Can block the workflow or substitute a fallback on contradiction.
+**Use cases:** Fact-checking agent answers against source documents, detecting contradictions before responding, ensuring consistency between generated text and evidence.
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
+
+**Required config:**
+| Field | Type | Default | Description |
+|---|---|---|---|
+| answer_field | text | "" | Key of the upstream field containing the answer text to check |
+| evidence_field | text | "" | Key of the upstream field containing the evidence/context text |
+| min_entail_score | number | 0.5 | Minimum entailment score (0–1) to pass |
+
+**Optional config:**
+| Field | Type | Default | Description |
+|---|---|---|---|
+| name | text | "Guardrail NLI" | Node name |
+| nli_model_name | select | "cross-encoder/nli-deberta-v3-base" | NLI model. Options: "cross-encoder/nli-deberta-v3-base" (DeBERTa v3), "cross-encoder/nli-roberta-base" (RoBERTa) |
+| fail_on_contradiction | boolean | false | Add `verdict="fail"` and `blocked=true` when contradiction detected |
+| fallback_answer_enabled | boolean | false | Use a fallback answer instead of blocking |
+| fallback_answer | text | "" | Text to substitute on contradiction (requires fallback_answer_enabled=true) |
+
+**Output fields:**
+| Field | Description |
+|---|---|
+| answer | Original answer or the fallback answer if substituted |
+| evidence | The evidence text that was checked against |
+| _guardrail_nli | Object with: `type` ("nli"), `entail_score` (0–1), `contradiction_score` (0–1), `threshold`, `verdict` ("entails", "contradicts", or "unknown"), optional `fallback_used` |
+| blocked | (optional) `true` if `fail_on_contradiction` triggered |
+| verdict | (optional) `"nli_contradiction"` if blocked |
 
 ---
 
@@ -463,7 +608,7 @@ Edges: 1→2, 2→3
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | endpoint | text | Yes | — | Full URL of the API endpoint |
-| method | select | Yes | "GET" | HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS |
+| method | select | Yes | "GET" | HTTP method: GET, POST, PUT, DELETE, PATCH |
 | name | text | No | — | Node name |
 | requestBody | text | No | — | JSON request body |
 | headers | object | No | — | HTTP headers |
@@ -595,7 +740,7 @@ Edges: 1→2, 2→3
 **Handlers:**
 | ID | Type | Position | Compatibility |
 |---|---|---|---|
-| input | target | left | text |
+| input | target | left | any |
 
 **Config:**
 | Field | Type | Required | Description |
@@ -603,10 +748,11 @@ Edges: 1→2, 2→3
 | app_settings_id | select | Yes | Zendesk integration settings |
 | subject | text | Yes | Ticket subject |
 | description | text | Yes | Ticket description |
-| requester_name | text | Yes | Requester's name |
-| requester_email | text | Yes | Requester's email |
+| requester_name | text | No | Requester's name |
+| requester_email | text | No | Requester's email |
 | name | text | No | Node name |
 | tags | tags | No | Ticket tags |
+| custom_fields | array | No | Custom Zendesk fields (array of {id, value} objects) |
 
 ---
 
@@ -625,12 +771,15 @@ Edges: 1→2, 2→3
 | Field | Type | Required | Description |
 |---|---|---|---|
 | dataSourceId | select | Yes | Calendar data source connector |
-| operation | select | Yes | Create or Read |
-| summary | text | Yes | Event summary/title |
+| operation | select | Yes | "create_calendar_event" or "search_calendar_events" |
+| summary | text | Yes* | Event summary/title (*for create operation) |
+| start | text | Yes | Start datetime in ISO format |
+| end | text | Yes | End datetime in ISO format |
+| timezone | text | No | Timezone for datetime parsing (default: browser timezone, falls back to UTC) |
 | name | text | No | Node name |
-| start | text | No | Start time |
-| end | text | No | End time |
 | subjectContains | text | No | Search filter for reading events |
+| attendee | text | No | Attendee email filter (search operation only) |
+| max_results | number | No | Maximum search results (default: 10) |
 
 ---
 
@@ -691,7 +840,31 @@ Edges: 1→2, 2→3
 | input | target | left | any |
 | output | source | right | any |
 
-**Config:** MCP server connection configured via the workflow studio UI.
+**Config:**
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| connectionType | select | Yes | "http" | Connection type: "stdio", "sse", or "http" |
+| connectionConfig | object | Yes | — | Connection settings (see below) |
+| name | text | No | "MCP Server" | Node name |
+| description | text | No | — | Description of what this MCP server provides |
+| availableTools | array | No | [] | List of tools discovered from the MCP server (auto-populated) |
+| whitelistedTools | array | No | [] | Tool names to expose to the agent |
+| returnDirect | boolean | No | false | Whether tool results are returned directly |
+
+**connectionConfig for `stdio`:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| command | text | Yes | Command to run the MCP server |
+| args | array | No | Command arguments |
+| env | object | No | Environment variables |
+
+**connectionConfig for `http` / `sse`:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| url | text | Yes | MCP server URL |
+| api_key | text | No | API key for authentication |
+| headers | object | No | Custom HTTP headers |
+| timeout | number | No | Request timeout in seconds (default: 30) |
 
 ---
 
@@ -710,7 +883,8 @@ Edges: 1→2, 2→3
 | Field | Type | Required | Description |
 |---|---|---|---|
 | modelId | select | Yes | Trained ML model to use |
-| modelName | text | Yes | Display name |
+| modelName | text | No | Display name (auto-filled from selected model) |
+| inferenceInputs | object | No | Dynamic feature inputs for prediction (Record of field name → value) |
 | name | text | No | Node name |
 
 ---
@@ -729,12 +903,14 @@ Edges: 1→2, 2→3
 **Config:**
 | Field | Type | Required | Description |
 |---|---|---|---|
-| sourceType | select | Yes | Type of data source |
+| sourceType | select | Yes | Type of data source: "datasource" (database) or "csv" (file upload) |
 | name | text | No | Node name |
-| dataSourceType | select | No | Specific data source type |
-| dataSourceId | text | No | Data source ID |
-| query | text | No | Query for data extraction |
-| csvFile | text | No | CSV file path |
+| dataSourceId | select | No | Data source ID (required when sourceType="datasource") |
+| query | text | No | SQL query for data extraction (required when sourceType="datasource") |
+| csvFileName | text | No | Name of the uploaded CSV file (when sourceType="csv") |
+| csvFilePath | text | No | Server path to the uploaded CSV file |
+| csvFileId | text | No | ID of the uploaded CSV file |
+| csvFileUrl | text | No | URL of the uploaded CSV file |
 
 ---
 
@@ -752,9 +928,9 @@ Edges: 1→2, 2→3
 **Config:**
 | Field | Type | Required | Description |
 |---|---|---|---|
-| fileUrl | text | Yes | URL of the training data file |
+| pythonCode | text | Yes | Custom preprocessing Python code |
+| fileUrl | text | No | URL of the training data file (auto-filled from upstream node via `{{source.data_path}}`) |
 | name | text | No | Node name |
-| pythonCode | text | No | Custom preprocessing Python code |
 
 ---
 
@@ -776,8 +952,9 @@ Edges: 1→2, 2→3
 | modelType | select | Yes | Model: xgboost, random_forest, linear_regression, logistic_regression, neural_network |
 | targetColumn | text | Yes | Target variable column name |
 | featureColumns | tags | Yes | Feature column names |
-| validationSplit | number | Yes | Train/test split ratio |
+| validationSplit | number | Yes | Train/test split ratio (default: 0.2, range: 0.1–0.5) |
 | name | text | No | Node name |
+| modelParameters | object | No | Model-specific hyperparameters |
 
 ---
 

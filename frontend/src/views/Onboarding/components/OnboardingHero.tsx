@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { Sparkles, User } from "lucide-react";
 import { type OnboardingMessage } from "@/views/Onboarding/hooks/useOnboardingChat";
+import { WorkflowPreview } from "@/views/Onboarding/components/WorkflowPreview";
+import type { WorkflowDraft } from "@/views/Onboarding/utils/extractWorkflowDraft";
 
 /** Lightweight markdown-ish renderer for agent messages (bold, numbered lists, bullet lists). */
 const FormattedText = ({ text }: { text: string }) => {
@@ -73,6 +75,7 @@ interface OnboardingHeroProps {
   disableQuickActions?: boolean;
   messages: OnboardingMessage[];
   isThinking: boolean;
+  workflowDraft?: WorkflowDraft | null;
 }
 
 const AiAvatar = () => (
@@ -108,6 +111,7 @@ export const OnboardingHero = ({
   disableQuickActions = false,
   messages,
   isThinking,
+  workflowDraft = null,
 }: OnboardingHeroProps) => {
   const hasMessages = messages.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -170,6 +174,9 @@ export const OnboardingHero = ({
                 </div>
               </div>
             ),
+          )}
+          {workflowDraft && (
+            <WorkflowPreview messages={messages} workflowDraft={workflowDraft} />
           )}
           {isThinking && <ThinkingIndicator />}
         </div>

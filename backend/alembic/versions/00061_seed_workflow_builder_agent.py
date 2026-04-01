@@ -281,8 +281,8 @@ def downgrade() -> None:
     ).scalar()
 
     # Delete in reverse order (children before parents)
-    conn.execute(sa.text("DELETE FROM api_key_roles WHERE api_key_id IN (SELECT id FROM api_keys WHERE name = 'workflow-builder default key')"))
-    conn.execute(sa.text("DELETE FROM api_keys WHERE name = 'workflow-builder default key'"))
+    conn.execute(sa.text("DELETE FROM api_key_roles WHERE api_key_id IN (SELECT id FROM api_keys WHERE user_id = :user_id)"), {"user_id": user_id})
+    conn.execute(sa.text("DELETE FROM api_keys WHERE user_id = :user_id"), {"user_id": user_id})
     conn.execute(sa.text("DELETE FROM user_roles WHERE user_id = :user_id"), {"user_id": user_id})
     conn.execute(sa.text("DELETE FROM agent_security_settings WHERE agent_id = :agent_id"), {"agent_id": agent_id})
     conn.execute(sa.text("DELETE FROM conversation_analysis WHERE conversation_id IN (SELECT id FROM conversations WHERE operator_id = :operator_id)"), {"operator_id": operator_id})

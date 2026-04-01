@@ -144,18 +144,39 @@ const findBalancedJsonCandidate = (text: string, startIndex: number): string | n
 export interface ExtractedWorkflowDraft {
   raw: string;
   parsed: WorkflowDraft;
+  isReady: boolean;
 }
+
+const WORKFLOW_READY_REGEX = /<WORKFLOW_READY\s*\/?>/i;
+
+/** Check whether the agent signalled the workflow is finalized. */
+export const hasWorkflowReadySignal = (text: string): boolean =>
+  WORKFLOW_READY_REGEX.test(text);
+
+/** Strip <WORKFLOW_JSON>, <WORKFLOW_READY/>, and code-fence blocks containing workflow drafts from display text. */
+export const stripWorkflowTags = (text: string): string => {
+  let cleaned = text;
+  // Remove <WORKFLOW_JSON>...</WORKFLOW_JSON> blocks
+  cleaned = cleaned.replace(/<WORKFLOW_JSON>\s*[\s\S]*?<\/WORKFLOW_JSON>/gi, "");
+  // Remove <WORKFLOW_READY/> or <WORKFLOW_READY />
+  cleaned = cleaned.replace(WORKFLOW_READY_REGEX, "");
+  // Remove code-fence blocks that contain workflow draft JSON
+  cleaned = cleaned.replace(/```(?:json)?\s*\{[\s\S]*?"workflow"[\s\S]*?\}\s*```/gi, "");
+  return cleaned.trim();
+};
 
 // Extract the final workflow JSON from a free-form assistant reply.
 export const extractWorkflowDraftFromText = (text: string): ExtractedWorkflowDraft | null => {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
+  const isReady = hasWorkflowReadySignal(trimmed);
+
   const prioritizedCandidates = [...findCodeFenceBlocks(trimmed), ...findTaggedBlocks(trimmed)];
   for (const candidate of prioritizedCandidates) {
     const parsed = tryParseJson(candidate);
     const normalized = normalizeWorkflowDraft(parsed);
-    if (normalized) return { raw: JSON.stringify(normalized), parsed: normalized };
+    if (normalized) return { raw: JSON.stringify(normalized), parsed: normalized, isReady };
   }
 
   for (let i = 0; i < trimmed.length; i += 1) {
@@ -166,7 +187,7 @@ export const extractWorkflowDraftFromText = (text: string): ExtractedWorkflowDra
 
     const parsed = tryParseJson(candidate);
     const normalized = normalizeWorkflowDraft(parsed);
-    if (normalized) return { raw: JSON.stringify(normalized), parsed: normalized };
+    if (normalized) return { raw: JSON.stringify(normalized), parsed: normalized, isReady };
   }
 
   return null;

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatService, type AgentWelcomeData, type ChatMessage } from "genassist-chat-react";
 import { type RegistrationStatus } from "@/context/RoutesContext";
+import {
+  extractWorkflowDraftFromText,
+  stripWorkflowTags,
+  type WorkflowDraft,
+} from "@/views/Onboarding/utils/extractWorkflowDraft";
 
 export interface OnboardingMessage {
   role: "user" | "agent";
@@ -12,6 +17,8 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
   const [prompt, setPrompt] = useState<string>("");
   const [agentReply, setAgentReply] = useState<string | null>(null);
   const [messages, setMessages] = useState<OnboardingMessage[]>([]);
+  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(null);
+  const [isWorkflowReady, setIsWorkflowReady] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -38,7 +45,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
   useEffect(() => {
     if (!hasConfig || !onboardingBaseUrl) return;
 
-    const chat = new ChatService(onboardingBaseUrl, onboardingApiKey, undefined, tenant);
+    const chat = new ChatService(onboardingBaseUrl, undefined, onboardingApiKey, undefined, tenant, undefined, false, false);
     chatRef.current = chat;
     chat.resetChatConversation();
     setIsChatReady(true);
@@ -71,8 +78,22 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
         setIsThinking(false);
       }
       if (message.speaker === "agent") {
-        setAgentReply(message.text);
-        setMessages((prev) => [...prev, { role: "agent", text: message.text }]);
+        const rawText = message.text;
+
+        // Extract progressive workflow draft if present
+        const extracted = extractWorkflowDraftFromText(rawText);
+        if (extracted) {
+          setWorkflowDraft(extracted.parsed);
+          if (extracted.isReady) {
+            setIsWorkflowReady(true);
+          }
+        }
+
+        // Strip workflow tags from displayed text
+        const displayText = stripWorkflowTags(rawText);
+
+        setAgentReply(displayText);
+        setMessages((prev) => [...prev, { role: "agent", text: displayText }]);
       }
     });
 
@@ -227,5 +248,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
     hasConfig,
     handleSubmit,
     sendQuickAction,
+    workflowDraft,
+    isWorkflowReady,
   };
 };

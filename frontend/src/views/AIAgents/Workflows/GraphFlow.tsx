@@ -44,7 +44,7 @@ import {
   handleNodeDoubleClick,
 } from "./utils/helpers";
 import { Button } from "@/components/button";
-import { History, ChevronLeft, X, Plus, Sparkles } from "lucide-react";
+import { History, ChevronLeft, X, Plus, Sparkles, ArrowUp } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
@@ -360,6 +360,8 @@ const GraphFlowContent: React.FC = () => {
 
   // Canvas AI assistant
   const [conversationalTabActive, setConversationalTabActive] = useState(false);
+  const [hasStartedConversation, setHasStartedConversation] = useState(false);
+  const [bottomInputMessage, setBottomInputMessage] = useState("");
   const assistant = useCanvasAssistant({
     nodes,
     edges,
@@ -793,6 +795,7 @@ const GraphFlowContent: React.FC = () => {
               activeConversationalTab={conversationalTabActive}
               onSendMessage={(message) => {
                 assistant.sendMessage(message);
+                setHasStartedConversation(true);
               }}
             />
 
@@ -821,17 +824,44 @@ const GraphFlowContent: React.FC = () => {
               onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
             />
 
-            {showChatInput && (
-              <button
-                onClick={() => {
-                  setShowNodePanel(true);
-                  setConversationalTabActive(true);
-                }}
-                className="fixed bottom-6 right-6 z-30 h-12 w-12 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 shadow-lg flex items-center justify-center transition-opacity"
-                title="AI Assistant"
-              >
-                <Sparkles className="h-5 w-5 text-white" />
-              </button>
+            {showChatInput && !hasStartedConversation && (
+              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-xl px-4">
+                <div className="relative flex items-center">
+                  <Sparkles className="absolute left-4 h-4 w-4 text-[hsl(var(--brand-600))] pointer-events-none" />
+                  <input
+                    type="text"
+                    value={bottomInputMessage}
+                    onChange={(e) => setBottomInputMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && bottomInputMessage.trim()) {
+                        e.preventDefault();
+                        assistant.sendMessage(bottomInputMessage.trim());
+                        setBottomInputMessage("");
+                        setHasStartedConversation(true);
+                        setShowNodePanel(true);
+                        setConversationalTabActive(true);
+                      }
+                    }}
+                    placeholder="Ask AI to update your workflow..."
+                    className="w-full h-12 bg-white rounded-full pl-10 pr-12 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 shadow-lg transition-all"
+                  />
+                  <button
+                    onClick={() => {
+                      if (bottomInputMessage.trim()) {
+                        assistant.sendMessage(bottomInputMessage.trim());
+                        setBottomInputMessage("");
+                        setHasStartedConversation(true);
+                        setShowNodePanel(true);
+                        setConversationalTabActive(true);
+                      }
+                    }}
+                    disabled={!bottomInputMessage.trim()}
+                    className="absolute right-2 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 disabled:bg-gray-200 disabled:opacity-100 disabled:cursor-not-allowed h-8 w-8 flex items-center justify-center transition-opacity"
+                  >
+                    <ArrowUp className="h-4 w-4 text-white" />
+                  </button>
+                </div>
+              </div>
             )}
 
             {showSetupWizard ? (

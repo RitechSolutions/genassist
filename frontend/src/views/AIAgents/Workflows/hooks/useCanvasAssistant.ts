@@ -151,7 +151,7 @@ export function useCanvasAssistant({
   useEffect(() => {
     if (!hasConfig) return;
 
-    const chat = new ChatService(baseUrl, apiKey, undefined, tenant, undefined, false, false);
+    const chat = new ChatService(baseUrl, undefined, apiKey, undefined, tenant, undefined, false, false);
     chatRef.current = chat;
 
     // Always start fresh on mount — clear any persisted conversation from a previous session
