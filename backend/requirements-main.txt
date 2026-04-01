@@ -134,6 +134,7 @@ orjson==3.11.6
 ormsgpack==1.12.1
 overrides==7.7.0
 packaging==24.2
+presidio-analyzer>=2.2.0
 passlib==1.7.4
 pdfminer.six>=20251230
 pendulum==3.1.0
