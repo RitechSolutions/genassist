@@ -187,7 +187,11 @@ export function UserDialog({
       let errorMessage = "";
 
       if (error.status === 400) {
-        errorMessage = "A user with this username already exists.";
+        if (data?.error_key === 'EMAIL_ALREADY_EXISTS') {
+          errorMessage = "A user with this email already exists.";
+        } else {
+          errorMessage = "A user with this username already exists.";
+        }
       } else if (data.error) {
         errorMessage = data.error;
       } else if (data.detail) {

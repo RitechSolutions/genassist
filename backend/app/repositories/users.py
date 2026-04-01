@@ -1,28 +1,30 @@
+import logging
 from datetime import datetime
+from operator import or_
 from uuid import UUID
+
+from fastapi_cache import FastAPICache
 from injector import inject
+from redis.exceptions import ResponseError
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload, selectinload
+
 from app.auth.utils import get_password_hash
 from app.cache.redis_cache import make_key_builder
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination
+from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.db.models import UserRoleModel
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
+from app.db.models.user import UserModel
 from app.db.models.user_type import UserTypeModel
-from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.exception_classes import AppException
-from sqlalchemy.orm import selectinload, joinedload
-from sqlalchemy import delete, select, update
-
-from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.schemas.filter import BaseFilterModel
 from app.schemas.user import UserCreate, UserUpdate
-from app.db.models.user import UserModel
-import logging
-from fastapi_cache import FastAPICache
-from redis.exceptions import ResponseError
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ class UserRepository:
 
     def __init__(self, db: AsyncSession):
         self.db = db
-        
+
     async def create(self, user: UserCreate):
         # Validate user type
         user_type = await self.db.get(UserTypeModel, user.user_type_id)
@@ -102,10 +104,28 @@ class UserRepository:
         result = await self.db.execute(query)
         return result.scalars().first()
 
+    async def get_by_username_or_email(self, username_or_email: str, *, include_deleted: bool = False) -> UserModel | None:
+        """Retrieve a user by username or email."""
+        query = select(UserModel).where(or_(UserModel.username == username_or_email, UserModel.email == username_or_email)).options(joinedload(UserModel.user_type))
+        exec_query = (
+            query.execution_options(**{SOFT_DELETE_FLAG: True})
+            if include_deleted
+            else query
+        )
+        result = await self.db.execute(exec_query)
+        return result.scalars().first()
 
-    async def get_by_email(self, email: str) -> UserModel:
+
+    async def get_by_email(
+        self, email: str, *, include_deleted: bool = False
+    ) -> UserModel | None:
         query = select(UserModel).where(UserModel.email == email)
-        result = await self.db.execute(query)
+        exec_query = (
+            query.execution_options(**{SOFT_DELETE_FLAG: True})
+            if include_deleted
+            else query
+        )
+        result = await self.db.execute(exec_query)
         return result.scalars().first()
 
     async def get_all(self, filter: BaseFilterModel):
