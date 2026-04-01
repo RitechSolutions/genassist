@@ -1299,13 +1299,21 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   /** Max height for open floating chat ≈ viewport minus corner offset; updates with resize / visualViewport. */
   const getFloatingShellStyle = (): React.CSSProperties => {
-    const margin = 12;
+    const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 1080;
+    const margin = 10;
     const usableHeight = Math.max(280, windowHeight - offsetY - margin * 10);
+    let maxHeight: number | string = usableHeight;
+
+    // If the screen is large enough, set the max height to 60vh
+    if (screenWidth >= 765 && screenHeight >= 1070) {
+      maxHeight = '60vh';
+    }
 
     return {
       display: 'flex',
       flexDirection: 'column',
-      maxHeight: usableHeight,
+      maxHeight: maxHeight,
       height: usableHeight,
       // Prefer anchoring from bottom of the viewport when using bottom-* positions
       ...(position === 'top-right' || position === 'top-left'
