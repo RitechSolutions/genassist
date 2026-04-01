@@ -2431,10 +2431,10 @@ function-bind@^1.1.2:
   resolved "https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz"
   integrity sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==
 
-genassist-chat-react@^1.0.35:
-  version "1.0.35"
-  resolved "https://registry.npmjs.org/genassist-chat-react/-/genassist-chat-react-1.0.35.tgz"
-  integrity sha512-D2rAbDeGokLuYYJwd88m3qvj1I7y0yjoV41G1MEEreiXD08x7mTXdMifAfoLWGBUrVOE9egY/T0+PSzQzznFqA==
+genassist-chat-react@^1.0.37:
+  version "1.0.37"
+  resolved "https://registry.npmjs.org/genassist-chat-react/-/genassist-chat-react-1.0.37.tgz"
+  integrity sha512-dI5nkGdDEfE2kYmZGLKmvpBUbckHMYlfZfUn2wieOqxFUz8XscVt4GlytzTWiUSJm+8vj/nlgp1OfyJQcEAl4w==
   dependencies:
     axios "^1.13.5"
     lucide-react "^0.511.0"
