@@ -26,7 +26,7 @@ export default function Roles() {
     setRoleToEdit(null);
     setIsDialogOpen(true);
   };
-  
+
   const handleEditRole = (role: Role) => {
     setDialogMode('edit');
     setRoleToEdit(role);
@@ -44,7 +44,7 @@ export default function Roles() {
         actionButtonText="Add New Role"
         onActionClick={handleCreateRole}
       />
-      
+
       <RolesCard
         searchQuery={searchQuery}
         refreshKey={refreshKey}
@@ -62,4 +62,4 @@ export default function Roles() {
       />
     </PageLayout>
   );
-} 
+}

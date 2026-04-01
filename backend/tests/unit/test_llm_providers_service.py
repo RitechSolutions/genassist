@@ -1,16 +1,17 @@
-import pytest
+import secrets
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import pytest
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 
-from app.services.llm_providers import LlmProviderService
-from app.repositories.llm_providers import LlmProviderRepository
-from app.schemas.llm import LlmProviderCreate, LlmProviderUpdate
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.llm import LlmProvidersModel
+from app.repositories.llm_providers import LlmProviderRepository
+from app.schemas.llm import LlmProviderCreate, LlmProviderUpdate
+from app.services.llm_providers import LlmProviderService
 
 
 @pytest.fixture(autouse=True)
@@ -37,7 +38,7 @@ def sample_llm_provider_data():
         "name": "test_provider",
         "llm_model_provider": "openai",
         "connection_data": {
-            "api_key": "sk-test-key-for-unit-tests"
+            "api_key": secrets.token_hex(16),
         },
         "is_active": 1,
         "llm_model": "gpt-3.5-turbo"

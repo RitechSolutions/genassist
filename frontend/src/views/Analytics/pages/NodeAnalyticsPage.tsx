@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
-import { format, subDays } from "date-fns";
+import { subDays } from "date-fns";
+import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
 import { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
@@ -58,8 +59,7 @@ const NodeAnalyticsPage = () => {
     setError(null);
     try {
       const data = await fetchNodeDailyStats({
-        from_date: range?.from ? format(range.from, "yyyy-MM-dd") : undefined,
-        to_date: range?.to ? format(range.to, "yyyy-MM-dd") : undefined,
+        ...toExpandedUTCDateRange(range),
         node_type: nodeType !== "all" ? nodeType : undefined,
         agent_id: agentId !== "all" ? agentId : undefined,
       });
@@ -175,8 +175,7 @@ const NodeAnalyticsPage = () => {
   const exportParams = {
     agent_id: agentFilter !== "all" ? agentFilter : undefined,
     node_type: nodeTypeFilter !== "all" ? nodeTypeFilter : undefined,
-    from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
-    to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+    ...toExpandedUTCDateRange(dateRange),
   };
 
   return (

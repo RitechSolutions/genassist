@@ -90,6 +90,12 @@ def parse_agent_response_for_stats(agent_response: dict) -> dict | None:
             "execution_ms": n_ms,
         })
 
+    # Token usage and cost
+    token_usage = agent_response.get("token_usage") or {}
+    input_tokens = token_usage.get("input_tokens")
+    output_tokens = token_usage.get("output_tokens")
+    cost_usd = agent_response.get("cost_usd")
+
     return {
         "agent_id": agent_id,
         "stat_date": datetime.now(timezone.utc).date(),
@@ -98,6 +104,9 @@ def parse_agent_response_for_stats(agent_response: dict) -> dict | None:
         "rag_used": rag_used,
         "total_nodes_executed": len(nodes),
         "nodes": nodes,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cost_usd": cost_usd,
     }
 
 
@@ -115,6 +124,10 @@ async def _increment_agent_daily_stats(session: AsyncSession, data: dict) -> Non
     if nodes:
         success_nodes = sum(1 for n in nodes if n["is_success"])
         node_success_rate = success_nodes / len(nodes)
+
+    input_tokens = data.get("input_tokens")
+    output_tokens = data.get("output_tokens")
+    cost_usd = data.get("cost_usd") or 0.0
 
     row = {
         "id": generate_sequential_uuid(),
@@ -136,6 +149,9 @@ async def _increment_agent_daily_stats(session: AsyncSession, data: dict) -> Non
         "in_progress_conversations": 0,
         "thumbs_up_count": 0,
         "thumbs_down_count": 0,
+        "total_input_tokens": input_tokens or 0,
+        "total_output_tokens": output_tokens or 0,
+        "total_cost_usd": cost_usd,
         "last_aggregated_at": now,
         "is_deleted": 0,
         "created_at": now,
@@ -151,6 +167,9 @@ async def _increment_agent_daily_stats(session: AsyncSession, data: dict) -> Non
         "error_count": tbl.c.error_count + stmt.excluded.error_count,
         "total_nodes_executed": tbl.c.total_nodes_executed + stmt.excluded.total_nodes_executed,
         "rag_used_count": tbl.c.rag_used_count + stmt.excluded.rag_used_count,
+        "total_input_tokens": func.coalesce(tbl.c.total_input_tokens, 0) + (input_tokens or 0),
+        "total_output_tokens": func.coalesce(tbl.c.total_output_tokens, 0) + (output_tokens or 0),
+        "total_cost_usd": func.coalesce(tbl.c.total_cost_usd, 0.0) + cost_usd,
         "last_aggregated_at": stmt.excluded.last_aggregated_at,
         "updated_at": stmt.excluded.updated_at,
     }

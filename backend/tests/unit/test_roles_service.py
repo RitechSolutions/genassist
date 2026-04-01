@@ -121,11 +121,28 @@ async def test_delete_success(role_service, mock_repository, sample_role_data):
     role_id = uuid4()
     mock_role = RoleModel(id=role_id, **sample_role_data)
     mock_repository.get_by_id.return_value = mock_role
+    mock_repository.count_assignments_for_role.return_value = (0, 0)
 
     # Execute
     result = await role_service.delete(role_id)
 
     # Assert
     mock_repository.get_by_id.assert_called_once_with(role_id)
+    mock_repository.count_assignments_for_role.assert_called_once_with(role_id)
     mock_repository.delete.assert_called_once_with(mock_role)
-    assert result["message"] == f"Role with ID {role_id} has been deleted." 
+    assert result["message"] == f"Role with ID {role_id} has been deleted."
+
+
+@pytest.mark.asyncio
+async def test_delete_blocked_when_role_assigned(role_service, mock_repository, sample_role_data):
+    role_id = uuid4()
+    mock_role = RoleModel(id=role_id, **sample_role_data)
+    mock_repository.get_by_id.return_value = mock_role
+    mock_repository.count_assignments_for_role.return_value = (1, 0)
+
+    with pytest.raises(AppException) as exc_info:
+        await role_service.delete(role_id)
+
+    assert exc_info.value.error_key == ErrorKey.ROLE_CANNOT_DELETE_IN_USE
+    assert exc_info.value.status_code == 409
+    mock_repository.delete.assert_not_called() 

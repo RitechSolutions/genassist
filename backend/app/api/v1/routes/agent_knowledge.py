@@ -3,7 +3,6 @@ from typing import List, Dict, Optional
 import os
 import uuid
 import shutil
-import asyncio
 from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.core.exceptions.error_messages import ErrorKey
@@ -21,12 +20,15 @@ from app.modules.data.providers.legra import (
     SemanticChunker,
     SentenceTransformerEmbedder,
 )
-from app.schemas.agent_knowledge import KBBase, KBCreate, KBRead
+from app.schemas.agent_knowledge import KBBase, KBCreate, KBListItem, KBRead
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import BaseFilterModel
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.agent_knowledge_utils import (
     populate_remote_file_metadata,
     schedule_rag_load,
 )
+from app.core.tenant_scope import get_tenant_context
 from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 from app.core.project_path import DATA_VOLUME
@@ -62,6 +64,19 @@ async def get_all_knowledge_items(
     """Get all knowledge base items"""
     items = await knowledge_service.get_all()
     return items
+
+
+@router.get(
+    "/list",
+    response_model=PaginatedResponse[KBListItem],
+    dependencies=[Depends(auth)],
+)
+async def get_knowledge_items_list(
+    filter_obj: BaseFilterModel = Depends(),
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
+):
+    """Paginated KB list — optimized for performance (minimal fields only)."""
+    return await knowledge_service.get_list_paginated(filter_obj)
 
 
 @router.get(
@@ -530,26 +545,25 @@ async def get_form_schemas():
 
 
 
-#Endpoint to trigger KB batch processing for files from various sources Same way as (e.g. Azure Blob, S3, SharePoint)
-from fastapi import BackgroundTasks
-
+# Endpoint to trigger KB batch processing (S3, Azure Blob, SharePoint, Zendesk, etc.)
 @router.get(
     "/kb-batch-tasks-execution",
     dependencies=[Depends(auth)],
-    summary="Runs the job that sync the KB with files from various sources"
+    summary="Runs the job that syncs the KB with files or Zendesk articles for this tenant",
 )
 async def summarize_files_from_azure(
-    background_tasks: BackgroundTasks,
-    kb_id: Optional[UUID] = None
+    kb_id: Optional[UUID] = None,
 ):
-    await asyncio.sleep(2) # simulate some delay before starting the background task
     if not kb_id:
         logger.warning("Attempting to run KB batch processing without specifying a KB ID.")
         return {"status": "error", "message": "kb_id is required"}
 
-    background_tasks.add_task(
-        batch_process_files_kb_async_with_scope,
-        kb_id
+    tenant_id = get_tenant_context()
+    # Await inline so the response includes batch results (Zendesk counts, file lists, etc.).
+    # Previously this used BackgroundTasks + Celery for Zendesk only, so the client saw
+    # {"status": "started"} while real metrics appeared only in worker logs.
+    batch_result = await batch_process_files_kb_async_with_scope(
+        kb_id=str(kb_id),
+        tenant_id=tenant_id,
     )
-
-    return {"status": "started"}
+    return {"status": "completed", **batch_result}

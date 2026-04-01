@@ -93,6 +93,9 @@ export const useChat = ({
   const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
 
+  const languageRef = useRef(language);
+  languageRef.current = language;
+
   // Unified WebSocket connection (reconnect, keep-alive)
   const onWsMessage = useCallback((data: Record<string, unknown>) => {
     chatServiceRef.current?.processWebSocketMessage(data);
@@ -176,7 +179,6 @@ export const useChat = ({
     () => JSON.stringify(metadata || {}),
     [metadata],
   );
-  const metadataRef = useRef<string>(metadataString);
   const prevBaseUrlRef = useRef<string>(baseUrl);
   const prevWebsocketUrlRef = useRef<string | undefined>(websocketUrl);
   const prevApiKeyRef = useRef<string>(apiKey);
@@ -215,10 +217,14 @@ export const useChat = ({
     onConfigLoadedRef.current = onConfigLoaded;
   }, [onConfigLoaded]);
 
-  // Initialize chat service - only when baseUrl, apiKey, tenant, useWs, or metadata actually change
+  // Sync metadata (e.g. `language` for outbound requests) without cancelling bootstrap or recreating the service
+  useEffect(() => {
+    chatServiceRef.current?.setMetadata(metadata);
+  }, [metadataString, metadata]);
+
+  // Initialize chat service - only when connection-related inputs change (not language/metadata — those cancel in-flight locale fetch)
   useEffect(() => {
     let cancelled = false;
-    const metadataChanged = metadataRef.current !== metadataString;
     const baseUrlChanged = prevBaseUrlRef.current !== baseUrl;
     const websocketUrlChanged = prevWebsocketUrlRef.current !== websocketUrl;
     const apiKeyChanged = prevApiKeyRef.current !== apiKey;
@@ -242,7 +248,6 @@ export const useChat = ({
       if (tenantChanged) prevTenantRef.current = tenant;
       if (useWsChanged) prevUseWsRef.current = useWs;
       if (usePollChanged) prevUsePollRef.current = usePoll;
-      if (metadataChanged) metadataRef.current = metadataString;
 
       // Clean up existing service if it exists
       if (chatServiceRef.current) {
@@ -340,10 +345,35 @@ export const useChat = ({
 
       const service = chatServiceRef.current;
       void (async () => {
-        const info = await service.fetchAgentInfo?.();
-        if (cancelled || !info) return;
-        if (Array.isArray(info.agent_available_languages)) {
+        const [info] = await Promise.all([
+          service.fetchAgentInfo?.() ?? Promise.resolve(null),
+          service.fetchAgentChatLocales?.() ?? Promise.resolve(null),
+        ]);
+
+        // set available languages from the agent info
+        if (info && Array.isArray(info.agent_available_languages)) {
           setAvailableLanguages(info.agent_available_languages);
+        }
+
+        if (cancelled) return;
+        if (info && Array.isArray(info.agent_available_languages)) {
+          setAvailableLanguages(info.agent_available_languages);
+        }
+        const lang = languageRef.current || "en";
+        const applied = service.applyLanguageFromLocales(lang);
+        if (!cancelled && applied) {
+          setThinkingPhrases(applied.thinkingPhrases);
+          setThinkingDelayMs(applied.thinkingDelayMs);
+        }
+        const meta = service.getChatInputMetadata?.();
+        if (
+          !cancelled &&
+          meta &&
+          typeof meta === "object" &&
+          Object.keys(meta).length > 0
+        ) {
+          setChatInputMetadata(meta);
+          onConfigLoadedRef.current?.({ chatInputMetadata: meta });
         }
       })();
 
@@ -384,12 +414,6 @@ export const useChat = ({
         }
         onConfigLoadedRef.current?.({ chatInputMetadata: meta ?? {} });
       }
-    } else if (chatServiceRef.current) {
-      // Just update metadata without re-initializing
-      if (metadataChanged) {
-        metadataRef.current = metadataString;
-        chatServiceRef.current.setMetadata(metadata);
-      }
     }
 
     // Always update handlers when callbacks change (without re-initializing)
@@ -426,8 +450,6 @@ export const useChat = ({
     websocketUrl,
     apiKey,
     tenant,
-    metadataString,
-    language,
     useWs,
     usePoll,
     serverUnavailableMessage,
@@ -435,10 +457,16 @@ export const useChat = ({
     serverUnavailableContactLabel,
   ]);
 
-  // Update language when it changes (without re-initializing the service)
+  // When the plugin language changes: update Accept-Language and apply the agent locale bundle (from fetchAgentChatLocales)
   useEffect(() => {
-    if (chatServiceRef.current) {
-      chatServiceRef.current.setLanguage(language);
+    const svc = chatServiceRef.current;
+    if (!svc) return;
+    svc.setLanguage(language);
+    const lang = language || "en";
+    const applied = svc.applyLanguageFromLocales(lang);
+    if (applied) {
+      setThinkingPhrases(applied.thinkingPhrases);
+      setThinkingDelayMs(applied.thinkingDelayMs);
     }
   }, [language]);
 
@@ -708,6 +736,7 @@ export const useChat = ({
           setThinkingDelayMs(thinking.delayMs || 1000);
         }
         if (chatServiceRef.current.getAvailableLanguages) {
+          debugger;
           const langs = chatServiceRef.current.getAvailableLanguages();
           if (Array.isArray(langs)) {
             setAvailableLanguages(langs);

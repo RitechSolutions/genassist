@@ -18,6 +18,7 @@ from app.services.role_permissions import RolePermissionsService
 from app.services.permissions import PermissionsService
 from app.services.operators import OperatorService
 from app.services.operator_statistics import OperatorStatisticsService
+from app.services.llm_cost_rates import LlmCostRateService
 from app.services.llm_providers import LlmProviderService
 from app.services.llm_analysts import LlmAnalystService
 from app.services.gpt_speaker_separator import SpeakerSeparator
@@ -46,6 +47,7 @@ from app.repositories.recordings import RecordingsRepository
 from app.repositories.permissions import PermissionsRepository
 from app.repositories.operators import OperatorRepository
 from app.repositories.operator_statistics import OperatorStatisticsRepository
+from app.repositories.llm_cost_rates import LlmCostRateRepository
 from app.repositories.llm_providers import LlmProviderRepository
 from app.repositories.llm_analysts import LlmAnalystRepository
 from app.repositories.knowledge_base import KnowledgeBaseRepository
@@ -229,6 +231,9 @@ class Dependencies(Module):
 
         binder.bind(LlmProviderService, scope=request_scope)
         binder.bind(LlmProviderRepository, scope=request_scope)
+
+        binder.bind(LlmCostRateService, scope=request_scope)
+        binder.bind(LlmCostRateRepository, scope=request_scope)
 
         binder.bind(LlmAnalystService, scope=request_scope)
         binder.bind(LlmAnalystRepository, scope=request_scope)

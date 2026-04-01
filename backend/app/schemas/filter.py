@@ -22,6 +22,10 @@ class BaseFilterModel(BaseModel):
     sort_direction: Optional[SortDirection] = Field(SortDirection.DESC, description="Order by direction")
 
 
+class UserListFilter(BaseFilterModel):
+    deleted_only: bool = Field(False, description="Return only soft-deleted users")
+
+
 class ConversationFilter(BaseFilterModel):
     conversation_status: Optional[list[ConversationStatus]] = Field(Query(None, description="Conversation statuses"))
     conversation_topics: Optional[list[ConversationTopic]] = Field(
@@ -61,6 +65,8 @@ class ConversationFilter(BaseFilterModel):
     exclude_empty: Optional[bool] = Field(None, description="Exclude conversations with zero word count")
     from_create_datetime_messages: Optional[datetime] = Field(None, description="Start datetime message was created")
     to_create_datetime_messages: Optional[datetime] = Field(None, description="End datetime message was created")
+    workflow_id: Optional[UUID] = Field(None, description="Filter conversations by the workflow used by the agent")
+    id_suffix: Optional[str] = Field(None, description="Filter conversations by the last N characters of the UUID")
 
 
 class ApiKeysFilter(BaseFilterModel):

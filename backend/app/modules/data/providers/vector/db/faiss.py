@@ -197,7 +197,44 @@ class FaissVectorDB(BaseVectorDB):
         except Exception as e:
             logger.error(f"Failed to delete vectors from FAISS: {e}")
             return False
-    
+
+    async def delete_vectors_by_metadata(self, filter_dict: Dict[str, Any]) -> bool:
+        """
+        Delete vectors by metadata filters (FAISS implementation)
+        
+        Args:
+            filter_dict: Dictionary of metadata field-value pairs to filter by
+            
+        Returns:
+            Success status
+        """
+        try:
+            if not filter_dict:
+                logger.warning("No metadata filters provided for deletion")
+                return True
+
+            # Find IDs that match the metadata filters
+            ids_to_delete = []
+            for doc_id, metadata in self.metadata_map.items():
+                if metadata:
+                    matches = True
+                    for key, value in filter_dict.items():
+                        if metadata.get(key) != value:
+                            matches = False
+                            break
+                    if matches:
+                        ids_to_delete.append(doc_id)
+
+            if ids_to_delete:
+                return await self.delete_vectors(ids_to_delete)
+            else:
+                logger.info("No vectors found matching metadata filters")
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete vectors by metadata from FAISS: {e}")
+            return False
+
     async def search(
         self, 
         query_vector: List[float], 

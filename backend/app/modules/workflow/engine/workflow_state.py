@@ -2,11 +2,11 @@
 Enhanced workflow state management for execution tracking and performance metrics.
 """
 
-from typing import Dict, Any, Union
 import logging
+import time
 import uuid
 from datetime import datetime
-import time
+from typing import Any, Dict, Union
 
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
@@ -86,6 +86,9 @@ class WorkflowState:
 
         # Error tracking
         self.errors = []
+
+        # LLM token usage and cost tracking (per request)
+        self.llm_usage: list[dict] = []
 
         # Edge data and execution context
         self.source_edges = workflow.get("source_edges", {}) if workflow else {}
@@ -223,6 +226,45 @@ class WorkflowState:
         """Clear all errors"""
         self.errors.clear()
 
+    def add_llm_usage(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        provider: str = "",
+        model: str = "",
+        node_id: str = "",
+    ) -> None:
+        """Append LLM token usage for this workflow execution."""
+        self.llm_usage.append({
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "provider": provider,
+            "model": model,
+            "node_id": node_id,
+        })
+
+    def get_total_llm_usage(self) -> dict:
+        """Sum token usage and compute total cost in USD."""
+        total_input = sum(u.get("input_tokens", 0) for u in self.llm_usage)
+        total_output = sum(u.get("output_tokens", 0) for u in self.llm_usage)
+        total_cost_usd = 0.0
+        from app.services.llm_cost_calculator import LlmCostCalculator
+        self.llm_cost_calculator = LlmCostCalculator()
+        for u in self.llm_usage:
+            total_cost_usd += self.llm_cost_calculator.calculate_cost(
+                u.get("provider", ""),
+                u.get("model", ""),
+                u.get("input_tokens", 0),
+                u.get("output_tokens", 0),
+            )
+        return {
+            "input_tokens": total_input,
+            "output_tokens": total_output,
+            "total_tokens": total_input + total_output,
+            "cost_usd": round(total_cost_usd, 6),
+            "calls": len(self.llm_usage),
+        }
+
     def reset_execution_state(self) -> None:
         """Reset execution state to initial values"""
         self.status = "idle"
@@ -235,6 +277,7 @@ class WorkflowState:
         self.execution_path.clear()
         self.execution_history.clear()
         self.errors.clear()
+        self.llm_usage.clear()
         self.performance_metrics = {
             "totalExecutionTime": 0,
             "averageNodeExecutionTime": 0,
@@ -466,6 +509,7 @@ class WorkflowState:
         }
         self.execution_path = [*self.execution_path, *state.execution_path]
         self.execution_history = [*self.execution_history, *state.execution_history]
+        self.llm_usage = [*self.llm_usage, *state.llm_usage]
 
         # Merge stateful values from sub-workflow session into parent session
         # This ensures stateful values updated in sub-workflows propagate to parent
@@ -531,12 +575,15 @@ class WorkflowState:
         else:
             status = "success"
 
+        token_usage = self.get_total_llm_usage()
         response = {
             "status": status,
             "input": _input,
             "output": output,
             "performance_metrics": performance_metrics,
             "state": state,
+            "token_usage": token_usage,
+            "cost_usd": token_usage.get("cost_usd", 0.0),
         }
 
         # Sanitize response to ensure JSON compliance (handle inf, -inf, nan values)
