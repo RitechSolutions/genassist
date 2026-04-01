@@ -9021,7 +9021,7 @@
           "v1",
           "Knowledge Base"
         ],
-        "summary": "Runs the job that sync the KB with files from various sources",
+        "summary": "Runs the job that syncs the KB with files or Zendesk articles for this tenant",
         "operationId": "summarize_files_from_azure_api_genagent_knowledge_kb_batch_tasks_execution_get",
         "security": [
           {

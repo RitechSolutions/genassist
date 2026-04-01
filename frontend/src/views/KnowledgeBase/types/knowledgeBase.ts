@@ -41,6 +41,11 @@ export interface UploadResult {
     save_output?: boolean;
     save_output_path?: string;
 
+    /** Set by server after remote sync (Zendesk, S3, etc.) */
+    last_synced?: string | null;
+    last_sync_status?: string | null;
+    last_sync_error?: string | null;
+
     [key: string]: unknown;
   }
 
