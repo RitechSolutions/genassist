@@ -41,6 +41,7 @@ class GenAgentChat extends StatefulWidget {
   final String? serverUnavailableMessage;
   final String? serverUnavailableContactUrl;
   final String? serverUnavailableContactLabel;
+  final VoidCallback? onClose;
 
   const GenAgentChat({
     super.key,
@@ -76,6 +77,7 @@ class GenAgentChat extends StatefulWidget {
     this.serverUnavailableMessage,
     this.serverUnavailableContactUrl,
     this.serverUnavailableContactLabel,
+    this.onClose,
   });
 
   @override
@@ -138,26 +140,14 @@ class _GenAgentChatState extends State<GenAgentChat> {
 
   Widget _buildFloatingMode() {
     return Stack(
+      fit: StackFit.expand,
       children: [
-        if (_isFloatingOpen)
-          Positioned(
-            bottom: 80,
-            right: 16,
-            width: 380,
-            height: 600,
-            child: Material(
-              elevation: 8,
-              borderRadius: BorderRadius.circular(16),
-              clipBehavior: Clip.antiAlias,
-              child: _buildChatContent(),
-            ),
-          ),
         Positioned(
           bottom: 16,
           right: 16,
           child: ChatBubble(
             isOpen: _isFloatingOpen,
-            onToggle: () => setState(() => _isFloatingOpen = !_isFloatingOpen),
+            onToggle: _toggleFloating,
             config: widget.floatingConfig,
             theme: widget.theme,
           ),
@@ -166,8 +156,41 @@ class _GenAgentChatState extends State<GenAgentChat> {
     );
   }
 
-  Widget _buildChatContent({bool fullscreen = false}) {
+  Future<void> _toggleFloating() async {
+    if (_isFloatingOpen) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
+    setState(() => _isFloatingOpen = true);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (ctx) => ChangeNotifierProvider.value(
+          value: _chatState,
+          child: Scaffold(
+            backgroundColor: widget.theme?.backgroundColor ?? Colors.white,
+            body: _buildChatContent(
+              fullscreen: true,
+              onClose: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(() => _isFloatingOpen = false);
+      widget.onClose?.call();
+    }
+  }
+
+  Widget _buildChatContent({
+    bool fullscreen = false,
+    VoidCallback? onClose,
+  }) {
     final theme = widget.theme;
+    final effectiveOnClose = onClose ?? widget.onClose;
     return Container(
       decoration: BoxDecoration(
         color: theme?.backgroundColor ?? Colors.white,
@@ -182,6 +205,7 @@ class _GenAgentChatState extends State<GenAgentChat> {
             logoUrl: widget.logoUrl,
             theme: widget.theme,
             noColorAnimation: widget.noColorAnimation,
+            onClose: effectiveOnClose,
           ),
           Expanded(
             child: ChatMessageList(

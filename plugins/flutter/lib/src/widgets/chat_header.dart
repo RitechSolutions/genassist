@@ -11,6 +11,7 @@ class ChatHeader extends StatelessWidget {
   final String? logoUrl;
   final GenAgentChatTheme? theme;
   final bool noColorAnimation;
+  final VoidCallback? onClose;
 
   const ChatHeader({
     super.key,
@@ -20,6 +21,7 @@ class ChatHeader extends StatelessWidget {
     this.logoUrl,
     this.theme,
     this.noColorAnimation = false,
+    this.onClose,
   });
 
   @override
@@ -38,6 +40,14 @@ class ChatHeader extends StatelessWidget {
         bottom: false,
         child: Row(
           children: [
+            if (onClose != null) ...[
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: onClose,
+                tooltip: 'Close',
+              ),
+              const SizedBox(width: 4),
+            ],
             _buildLogo(primaryColor),
             const SizedBox(width: 12),
             Expanded(

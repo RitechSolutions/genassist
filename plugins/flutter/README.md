@@ -33,7 +33,8 @@ GenAgentChat(
 | `url` | `String` | required | Base API URL |
 | `apiKey` | `String` | required | API key |
 | `metadata` | `Map<String, dynamic>?` | `null` | User metadata |
-| `mode` | `ChatMode` | `embedded` | `embedded`, `floating`, or `fullscreen` |
+| `mode` | `ChatMode` | `embedded` | `embedded`, `floating`, or `fullscreen`. **Floating:** bubble opens a **full-screen modal** (not an inline panel). **Fullscreen:** fills the parent. |
+| `onClose` | `VoidCallback?` | `null` | Optional header close button; after a floating modal closes, this is called once. |
 | `theme` | `GenAgentChatTheme?` | `null` | Colors, fonts, sizing |
 | `headerTitle` | `String?` | `null` | Header bar title |
 | `description` | `String?` | `null` | Header subtitle |

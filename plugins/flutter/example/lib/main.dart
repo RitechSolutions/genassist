@@ -27,7 +27,7 @@ class ChatExamplePage extends StatefulWidget {
 }
 
 class _ChatExamplePageState extends State<ChatExamplePage> {
-  ChatMode _selectedMode = ChatMode.embedded;
+  ChatMode _selectedMode = ChatMode.floating;
 
   @override
   Widget build(BuildContext context) {
@@ -45,24 +45,41 @@ class _ChatExamplePageState extends State<ChatExamplePage> {
               ),
               PopupMenuItem(
                 value: ChatMode.floating,
-                child: Text('Floating'),
+                child: Text('Floating (full-screen modal)'),
               ),
               PopupMenuItem(
                 value: ChatMode.fullscreen,
-                child: Text('Fullscreen'),
+                child: Text('Fullscreen in page'),
               ),
             ],
           ),
         ],
       ),
-      body: _buildChat(),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_selectedMode == ChatMode.floating)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Tap the chat bubble (bottom-right) to open the assistant '
+                  'as a full-screen modal.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ),
+            ),
+          _buildChat(),
+        ],
+      ),
     );
   }
 
   Widget _buildChat() {
     return GenAgentChat(
-      url: 'https://api.dev.genassist.ritech.io',
-      apiKey: 'genagent123',
+      url: 'http://localhost:8000/',
+      apiKey: 'KHDPIvKbP8EXruNwLiBmu679hp0tM4XZxNrYKRyWdxZTQx4GVTFCKw',
       metadata: const {
         'id': 'user-123',
         'name': 'John Doe',
