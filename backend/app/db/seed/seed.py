@@ -88,6 +88,7 @@ async def seed_data(session: AsyncSession, injector: Injector):
     recording_permissions = create_crud_permissions("recording")
     conversation_permissions = create_crud_permissions("conversation")
     dashboard_permissions = create_crud_permissions("dashboard")
+    evaluation_permissions = create_crud_permissions("evaluation")
 
     audit_log_permissions = create_crud_permissions("audit_log")
     conversation_in_progress_permissions = create_crud_permissions(
@@ -166,11 +167,19 @@ async def seed_data(session: AsyncSession, injector: Injector):
         agent_role.role_permissions.append(
             RolePermissionModel(permission=permission))
 
+    eval_run_permission = PermissionModel(name='run:evaluation', description='Start an evaluation run.',
+                    is_active=True)
+
+    for permission in evaluation_permissions:
+        supervisor_role.role_permissions.append(RolePermissionModel(permission=permission))
+    supervisor_role.role_permissions.append(RolePermissionModel(permission=eval_run_permission))
+
     # Add all permissions and roles
     session.add_all(
         user_permissions + llm_analyst_permissions + llm_provider_permissions +
         operator_permissions + data_sources_permissions + non_standard_crud_permissions +
         app_settings_permissions + feature_flag_permissions + dashboard_permissions +
+        evaluation_permissions + [eval_run_permission] +
         [admin_role, supervisor_role, operator_role, api_role, agent_role]
     )
 

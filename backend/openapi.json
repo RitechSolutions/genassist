@@ -11727,7 +11727,7 @@
       "get": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Suites"
         ],
         "summary": "List Test Suites",
         "operationId": "list_test_suites_api_genagent_eval_suites_get",
@@ -11759,7 +11759,7 @@
       "post": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Suites"
         ],
         "summary": "Create Test Suite",
         "operationId": "create_test_suite_api_genagent_eval_suites_post",
@@ -11809,7 +11809,7 @@
       "get": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Suites"
         ],
         "summary": "Get Test Suite",
         "operationId": "get_test_suite_api_genagent_eval_suites__suite_id__get",
@@ -11859,7 +11859,7 @@
       "patch": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Suites"
         ],
         "summary": "Update Test Suite",
         "operationId": "update_test_suite_api_genagent_eval_suites__suite_id__patch",
@@ -11919,7 +11919,7 @@
       "delete": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Suites"
         ],
         "summary": "Delete Test Suite",
         "operationId": "delete_test_suite_api_genagent_eval_suites__suite_id__delete",
@@ -11964,7 +11964,7 @@
       "post": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Cases"
         ],
         "summary": "Add Test Case",
         "operationId": "add_test_case_api_genagent_eval_suites__suite_id__cases_post",
@@ -12024,7 +12024,7 @@
       "get": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Cases"
         ],
         "summary": "List Test Cases",
         "operationId": "list_test_cases_api_genagent_eval_suites__suite_id__cases_get",
@@ -12076,116 +12076,11 @@
         }
       }
     },
-    "/api/genagent/eval/cases/{case_id}": {
-      "patch": {
-        "tags": [
-          "v1",
-          "Workflow Test Suites"
-        ],
-        "summary": "Update Test Case",
-        "operationId": "update_test_case_api_genagent_eval_cases__case_id__patch",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "case_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Case Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TestCaseUpdate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TestCase"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "v1",
-          "Workflow Test Suites"
-        ],
-        "summary": "Delete Test Case",
-        "operationId": "delete_test_case_api_genagent_eval_cases__case_id__delete",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "case_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Case Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/genagent/eval/suites/{suite_id}/cases/import-from-conversation": {
       "post": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Cases"
         ],
         "summary": "Import Cases From Conversation",
         "description": "Import all Q&A pairs from a conversation as test cases into the given suite.",
@@ -12248,14 +12143,119 @@
         }
       }
     },
+    "/api/genagent/eval/cases/{case_id}": {
+      "patch": {
+        "tags": [
+          "v1",
+          "Test Cases"
+        ],
+        "summary": "Update Test Case",
+        "operationId": "update_test_case_api_genagent_eval_cases__case_id__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestCaseUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestCase"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "Test Cases"
+        ],
+        "summary": "Delete Test Case",
+        "operationId": "delete_test_case_api_genagent_eval_cases__case_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/eval/suites/{suite_id}/runs": {
       "post": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Runs"
         ],
         "summary": "Run Test Suite",
-        "description": "Execute all test cases in the suite against the configured workflow and\nevaluate with the requested techniques.",
+        "description": "Queue a test suite run. Returns immediately with status ``queued``.\nThe actual execution is handled by a Celery background worker.",
         "operationId": "run_test_suite_api_genagent_eval_suites__suite_id__runs_post",
         "security": [
           {
@@ -12313,7 +12313,7 @@
       "get": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Runs"
         ],
         "summary": "List Runs For Suite",
         "operationId": "list_runs_for_suite_api_genagent_eval_suites__suite_id__runs_get",
@@ -12369,7 +12369,7 @@
       "get": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Runs"
         ],
         "summary": "Get Run",
         "operationId": "get_run_api_genagent_eval_runs__run_id__get",
@@ -12421,7 +12421,7 @@
       "get": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Runs"
         ],
         "summary": "List Results For Run",
         "operationId": "list_results_for_run_api_genagent_eval_runs__run_id__results_get",
@@ -12477,7 +12477,7 @@
       "get": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Evaluations"
         ],
         "summary": "List Evaluations",
         "operationId": "list_evaluations_api_genagent_eval_evaluations_get",
@@ -12509,7 +12509,7 @@
       "post": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Evaluations"
         ],
         "summary": "Create Evaluation",
         "operationId": "create_evaluation_api_genagent_eval_evaluations_post",
@@ -12559,7 +12559,7 @@
       "get": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Evaluations"
         ],
         "summary": "Get Evaluation",
         "operationId": "get_evaluation_api_genagent_eval_evaluations__evaluation_id__get",
@@ -12609,7 +12609,7 @@
       "patch": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Evaluations"
         ],
         "summary": "Update Evaluation",
         "operationId": "update_evaluation_api_genagent_eval_evaluations__evaluation_id__patch",
@@ -12669,7 +12669,7 @@
       "delete": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Evaluations"
         ],
         "summary": "Delete Evaluation",
         "operationId": "delete_evaluation_api_genagent_eval_evaluations__evaluation_id__delete",
@@ -12714,7 +12714,7 @@
       "post": {
         "tags": [
           "v1",
-          "Workflow Test Suites"
+          "Test Evaluations"
         ],
         "summary": "Append Run To Evaluation",
         "operationId": "append_run_to_evaluation_api_genagent_eval_evaluations__evaluation_id__runs__run_id__post",
