@@ -167,8 +167,7 @@ async def seed_data(session: AsyncSession, injector: Injector):
         agent_role.role_permissions.append(
             RolePermissionModel(permission=permission))
 
-    eval_run_permission = PermissionModel(name='run:evaluation', description='Allow analysis and transcription of '
-                                                                             'audio record.',
+    eval_run_permission = PermissionModel(name='run:evaluation', description='Start an evaluation run.',
                     is_active=True)
 
     for permission in evaluation_permissions:
