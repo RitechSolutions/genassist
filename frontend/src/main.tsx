@@ -50,8 +50,18 @@ const queryClient = new QueryClient({
   },
 })
 
-createRoot(document.getElementById("root")!).render(
-  <QueryClientProvider client={queryClient}>
-    <App />
-  </QueryClientProvider>
-);
+async function bootstrap() {
+  if (import.meta.env.VITE_SENTRY_DSN) {
+    await import("@/plugins/instrument");
+  }
+
+  const container = document.getElementById("root")!;
+  const root = createRoot(container);
+  root.render(
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  );
+}
+
+void bootstrap();
