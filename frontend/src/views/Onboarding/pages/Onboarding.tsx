@@ -144,7 +144,6 @@ export default function Onboarding() {
               disableQuickActions={isInputDisabled}
               messages={messages}
               isThinking={isThinking}
-              workflowDraft={workflowDraft}
             />
 
             <OnboardingInput

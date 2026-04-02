@@ -3,6 +3,7 @@ import { ChatService, type AgentWelcomeData, type ChatMessage } from "genassist-
 import { type RegistrationStatus } from "@/context/RoutesContext";
 import {
   extractWorkflowDraftFromText,
+  hasWorkflowReadySignal,
   stripWorkflowTags,
   type WorkflowDraft,
 } from "@/views/Onboarding/utils/extractWorkflowDraft";
@@ -18,6 +19,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
   const [agentReply, setAgentReply] = useState<string | null>(null);
   const [messages, setMessages] = useState<OnboardingMessage[]>([]);
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(null);
+  const workflowDraftRef = useRef<WorkflowDraft | null>(null);
   const [isWorkflowReady, setIsWorkflowReady] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
@@ -83,10 +85,16 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
         // Extract progressive workflow draft if present
         const extracted = extractWorkflowDraftFromText(rawText);
         if (extracted) {
+          workflowDraftRef.current = extracted.parsed;
           setWorkflowDraft(extracted.parsed);
           if (extracted.isReady) {
             setIsWorkflowReady(true);
           }
+        } else if (hasWorkflowReadySignal(rawText) && workflowDraftRef.current) {
+          // The LLM emitted <WORKFLOW_READY/> but didn't include the
+          // <WORKFLOW_JSON> block in this message. If we already have a
+          // draft from a previous message, honour the ready signal.
+          setIsWorkflowReady(true);
         }
 
         // Strip workflow tags from displayed text
