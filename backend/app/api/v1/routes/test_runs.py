@@ -23,7 +23,7 @@ router = APIRouter()
     "/suites/{suite_id}/runs",
     response_model=TestRun,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.RUN))],
 )
 async def run_test_suite(
     suite_id: UUID,
@@ -47,7 +47,7 @@ async def run_test_suite(
 @router.get(
     "/suites/{suite_id}/runs",
     response_model=List[TestRun],
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
 )
 async def list_runs_for_suite(
     suite_id: UUID,
@@ -59,7 +59,7 @@ async def list_runs_for_suite(
 @router.get(
     "/runs/{run_id}",
     response_model=TestRun,
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
 )
 async def get_run(
     run_id: UUID,
@@ -71,7 +71,7 @@ async def get_run(
 @router.get(
     "/runs/{run_id}/results",
     response_model=List[TestResult],
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
 )
 async def list_results_for_run(
     run_id: UUID,
