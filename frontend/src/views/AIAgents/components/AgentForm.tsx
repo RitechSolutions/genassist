@@ -463,7 +463,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
         await updateAgentConfig(id, dataToSubmit);
         agentId = id;
       } else {
-        const { id: _, ...rest } = formData;
+        const { id: _, has_welcome_image, ...rest } = formData;
         const dataToSubmit = {
           ...rest,
           possible_queries: omitEmptyStrings(rest.possible_queries),
