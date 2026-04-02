@@ -20,7 +20,7 @@ router = APIRouter()
 @router.get(
     "/suites",
     response_model=List[TestSuite],
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
 )
 async def list_test_suites(
     service: TestSuiteService = Injected(TestSuiteService),
@@ -32,7 +32,7 @@ async def list_test_suites(
     "/suites",
     response_model=TestSuite,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
 )
 async def create_test_suite(
     data: TestSuiteCreate,
@@ -44,7 +44,7 @@ async def create_test_suite(
 @router.get(
     "/suites/{suite_id}",
     response_model=TestSuite,
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
 )
 async def get_test_suite(
     suite_id: UUID,
@@ -56,7 +56,7 @@ async def get_test_suite(
 @router.patch(
     "/suites/{suite_id}",
     response_model=TestSuite,
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
 )
 async def update_test_suite(
     suite_id: UUID,
@@ -69,7 +69,7 @@ async def update_test_suite(
 @router.delete(
     "/suites/{suite_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
 )
 async def delete_test_suite(
     suite_id: UUID,
