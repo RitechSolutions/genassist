@@ -2,13 +2,18 @@ import { useEffect, useRef } from "react";
 import { Sparkles, User } from "lucide-react";
 import { type OnboardingMessage } from "@/views/Onboarding/hooks/useOnboardingChat";
 
+/** Escape HTML entities to prevent XSS. */
+const escapeHtml = (str: string): string =>
+  str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 /** Lightweight markdown-ish renderer for agent messages (bold, numbered lists, bullet lists). */
 const FormattedText = ({ text }: { text: string }) => {
   const lines = text.split("\n");
 
   const renderInline = (line: string, key: number) => {
+    const safe = escapeHtml(line);
     // Split on **bold** markers
-    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    const parts = safe.split(/(\*\*[^*]+\*\*)/g);
     return (
       <span key={key}>
         {parts.map((part, i) => {
@@ -151,7 +156,7 @@ export const OnboardingHero = ({
 
       {/* Chat thread */}
       {hasMessages && (
-        <div ref={scrollRef} className="space-y-4 text-left max-h-[40vh] overflow-y-auto px-1">
+        <div ref={scrollRef} role="log" aria-live="polite" className="space-y-4 text-left max-h-[40vh] overflow-y-auto px-1">
           {messages.map((msg, index) =>
             msg.role === "user" ? (
               <div key={index} className="flex items-start gap-3 justify-end animate-fade-up">

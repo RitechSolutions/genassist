@@ -210,6 +210,7 @@ export function useCanvasAssistant({
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
+      executedActionsRef.current.clear();
     };
   }, []);
 
