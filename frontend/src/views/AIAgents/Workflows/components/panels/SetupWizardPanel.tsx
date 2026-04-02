@@ -35,7 +35,7 @@ export const SetupWizardPanel = ({
   onTest,
 }: SetupWizardPanelProps) => {
   // Fetch the same node schemas used by the node validation system
-  const { data: nodeSchemas } = useQuery({
+  const { data: nodeSchemas, isError: schemasError } = useQuery({
     queryKey: ["nodeSchemas"],
     queryFn: getAllNodeSchemas,
   });
@@ -75,7 +75,7 @@ export const SetupWizardPanel = ({
   const completedCount = steps.filter((s) => s.completed).length;
   const allDone = steps.length > 0 && completedCount === steps.length;
 
-  if (steps.length === 0) return null;
+  if (schemasError || steps.length === 0) return null;
 
   return (
     <div className="fixed bottom-20 left-4 z-30 w-80 animate-fade-up">

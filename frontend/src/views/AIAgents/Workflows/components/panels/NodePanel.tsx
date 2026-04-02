@@ -124,7 +124,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     }
 
     const query = searchQuery.toLowerCase();
-    const filtered: { [key: string]: any[] } = {};
+    const filtered: Record<string, ReturnType<typeof nodeRegistry.getNodeTypesByCategory>> = {};
 
     nodeCategories.forEach((category) => {
       const nodesInCategory = nodeRegistry.getNodeTypesByCategory(category);
@@ -179,7 +179,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
   };
 
   // Render a single category section
-  const renderCategorySection = (category: string, nodesInCategory: any[]) => {
+  const renderCategorySection = (category: string, nodesInCategory: ReturnType<typeof nodeRegistry.getNodeTypesByCategory>) => {
     return (
       <div key={category} className="px-4 py-2">
         <div className="flex items-center py-3">
@@ -254,12 +254,14 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 <TabsList className="w-full h-10 bg-muted p-1 rounded-full">
                   <TabsTrigger
                     value="available"
+                    aria-label="Available Nodes"
                     className="flex-1 text-sm font-medium rounded-full"
                   >
                     Available Nodes
                   </TabsTrigger>
                   <TabsTrigger
                     value="conversational"
+                    aria-label="Conversational AI"
                     className="flex-1 text-sm font-medium rounded-full"
                   >
                     Conversational
@@ -325,7 +327,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                                 </div>
                                 {msg.actions && msg.actions.length > 0 && (
                                   <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {msg.actions.map((action, i) => {
+                                    {msg.actions.map((action) => {
                                       const isAdd = action.type === "add_node";
                                       const isUpdate = action.type === "update_node";
                                       const Icon = isAdd ? Plus : isUpdate ? Pencil : Trash2;
@@ -334,9 +336,10 @@ const NodePanel: React.FC<NodePanelProps> = ({
                                         : isUpdate
                                         ? "bg-blue-50 text-blue-700 border-blue-200"
                                         : "bg-red-50 text-red-700 border-red-200";
+                                      const actionKey = `${action.type}-${getActionLabel(action)}`;
                                       return (
                                         <span
-                                          key={i}
+                                          key={actionKey}
                                           className={`inline-flex items-center gap-1 text-xs border rounded-full px-2.5 py-1 ${colorClass}`}
                                         >
                                           <Icon className="h-3 w-3" />

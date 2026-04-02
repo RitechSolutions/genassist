@@ -36,6 +36,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
   const isMountedRef = useRef(true);
   const isStartingConversationRef = useRef(false);
   const hasUserStartedChatRef = useRef(false);
+  const thinkingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onboardingBaseUrl = (import.meta.env.VITE_ONBOARDING_API_URL as string) || "";
   const onboardingApiKey = (import.meta.env.VITE_ONBOARDING_CHAT_APIKEY as string) || "";
@@ -78,6 +79,10 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
       if (!hasUserAskedRef.current) return;
       if (message.speaker !== "customer") {
         setIsThinking(false);
+        if (thinkingTimeoutRef.current) {
+          clearTimeout(thinkingTimeoutRef.current);
+          thinkingTimeoutRef.current = null;
+        }
       }
       if (message.speaker === "agent") {
         const rawText = message.text;
@@ -118,6 +123,9 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
+      if (thinkingTimeoutRef.current) {
+        clearTimeout(thinkingTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -192,10 +200,22 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
       setIsThinking(true);
       setThinkingIndex(0);
 
+      // Safety timeout — clear thinking state if no response within 60s
+      thinkingTimeoutRef.current = setTimeout(() => {
+        if (!isMountedRef.current) return;
+        setIsThinking(false);
+        setError("Response timed out. Please try again.");
+        thinkingTimeoutRef.current = null;
+      }, 60_000);
+
       try {
         await startConversationIfNeeded();
         await chat.sendMessage(trimmed);
       } catch (err: unknown) {
+        if (thinkingTimeoutRef.current) {
+          clearTimeout(thinkingTimeoutRef.current);
+          thinkingTimeoutRef.current = null;
+        }
         const message = err instanceof Error ? err.message : "Unable to send message.";
         setError(message);
         setIsThinking(false);

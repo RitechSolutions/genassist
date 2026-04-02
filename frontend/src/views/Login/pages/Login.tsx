@@ -126,6 +126,12 @@ const LoginPage = () => {
         const pendingName = localStorage.getItem(AGENT_NAME_STORAGE_KEY);
         const cameFromOnboarding = location.state?.from?.pathname === "/onboarding";
 
+        // Mark onboarding as done early so any redirect/reload won't loop back
+        if (cameFromOnboarding) {
+          localStorage.setItem("skip_onboarding", "true");
+          window.dispatchEvent(new Event("skip-onboarding"));
+        }
+
         if (pendingDraft && pendingName) {
           try {
             let hasEdges = false;
@@ -168,7 +174,8 @@ const LoginPage = () => {
 
         toast.success("Logged in successfully.");
         const from = location.state?.from?.pathname || "/dashboard";
-        window.location.href = from;
+        // Never redirect back to onboarding — go to dashboard instead
+        window.location.href = from === "/onboarding" ? "/dashboard" : from;
       } else {
         toast.error("Failed to log in.");
       }
