@@ -527,7 +527,12 @@ class TestSuiteService:
 
     # ---- Runs -------------------------------------------------------------
 
-    async def start_run(self, suite_id: UUID, data: TestRunCreate) -> TestRunInDB:
+    async def create_run(self, suite_id: UUID, data: TestRunCreate) -> TestRunInDB:
+        """
+        Validate the suite/workflow and create a TestRun with status ``queued``.
+        Does NOT execute the run — the caller is responsible for dispatching
+        the background task.
+        """
         suite = await self.suite_repo.get_by_id(suite_id)
         if not suite:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
@@ -555,17 +560,7 @@ class TestSuiteService:
         )
 
         created = await self.run_repo.create(run)
-
-        # Fire-and-forget async execution; in the current context we execute inline
-        await self._execute_run(
-            suite,
-            workflow,
-            created,
-            run_input_metadata=data.input_metadata,
-            technique_configs=data.technique_configs,
-        )
-        refreshed = await self.run_repo.get_by_id(UUID(str(created.id)))
-        return TestRunInDB.model_validate(refreshed, from_attributes=True)  # type: ignore[arg-type]
+        return TestRunInDB.model_validate(created, from_attributes=True)
 
     async def _execute_run(
         self,
