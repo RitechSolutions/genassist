@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
+import { GenerateFromConversationsDialog } from "./GenerateFromConversationsDialog";
 
 interface FineTuneJobDialogProps {
   isOpen: boolean;
@@ -54,6 +55,7 @@ export function FineTuneJobDialog({
   const [uploadingValidation, setUploadingValidation] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
+  const [generateDialogTarget, setGenerateDialogTarget] = useState<"training" | "validation" | null>(null);
   const toggleAdvanced = () => setShowAdvanced((v) => !v);
   const handleAdvancedKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -272,6 +274,13 @@ export function FineTuneJobDialog({
               {trainingFile && (
                 <div className="text-sm text-green-700">Uploaded: {trainingFile.name}</div>
               )}
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                onClick={() => setGenerateDialogTarget("training")}
+              >
+                Generate from conversations
+              </button>
             </div>
 
             <div className="space-y-2">
@@ -311,6 +320,13 @@ export function FineTuneJobDialog({
               {validationFile && (
                 <div className="text-sm text-green-700">Uploaded: {validationFile.name}</div>
               )}
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                onClick={() => setGenerateDialogTarget("validation")}
+              >
+                Generate from conversations
+              </button>
             </div>
 
             <div className="space-y-2">
@@ -385,6 +401,18 @@ export function FineTuneJobDialog({
         title="Save changes before closing?"
         description="You have uploaded files. Save to keep your selections or discard to reset the form."
       />
+      {generateDialogTarget && (
+        <GenerateFromConversationsDialog
+          isOpen={!!generateDialogTarget}
+          onOpenChange={(open) => { if (!open) setGenerateDialogTarget(null); }}
+          fileType={generateDialogTarget}
+          onFileGenerated={(file) => {
+            if (generateDialogTarget === "training") setTrainingFile(file);
+            else setValidationFile(file);
+            setGenerateDialogTarget(null);
+          }}
+        />
+      )}
     </>
   );
 }

@@ -86,3 +86,14 @@ export async function listOpenAIFiles(): Promise<OpenAIFileItem[]> {
   );
   return normalizeList<OpenAIFileItem>(res);
 }
+
+export async function generateTrainingFileFromConversations(payload: {
+  conversation_ids: string[];
+  upload_to_openai: boolean;
+}): Promise<OpenAIFileItem> {
+  return apiRequest<OpenAIFileItem>(
+    "POST",
+    "openai/fine-tuning/generate-from-conversations",
+    payload
+  );
+}

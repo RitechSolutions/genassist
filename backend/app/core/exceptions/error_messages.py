@@ -125,6 +125,7 @@ class ErrorKey(Enum):
     ERROR_ACTIVE_JOB_EVENTS_SYNC = "ERROR_ACTIVE_JOB_EVENTS_SYNC"
     ERROR_JOB_EVENTS_SYNC = "ERROR_ERROR_JOB_EVENTS_SYNC"
     ERROR_JOB_EVENT_BY_ID = "ERROR_JOB_EVENT_BY_ID"
+    ERROR_GENERATE_TRAINING_FILE = "ERROR_GENERATE_TRAINING_FILE"
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
     CUSTOMER_ALREADY_EXISTS = "CUSTOMER_ALREADY_EXISTS"
     RECAPTCHA_VERIFICATION_FAILED = "RECAPTCHA_VERIFICATION_FAILED"
@@ -261,6 +262,7 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_JOB_EVENTS: "There was an error fetching job events.",
         ErrorKey.ERROR_ACTIVE_JOB_EVENTS_SYNC: "There was an error syncing active job events.",
         ErrorKey.ERROR_JOB_EVENTS_SYNC: "There was an error syncing job events.",
+        ErrorKey.ERROR_GENERATE_TRAINING_FILE: "Failed to generate training file from conversations.",
         ErrorKey.ERROR_JOB_EVENT_BY_ID: "There was an error fetching job events for this job id.",
         ErrorKey.CUSTOMER_NOT_FOUND: "Customer not found.",
         ErrorKey.CUSTOMER_ALREADY_EXISTS: "A customer with this external ID already exists.",
