@@ -8,7 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/collapsible";
-import { ChevronDown, ChevronRight, Settings } from "lucide-react";
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { getRagFromSchema } from "@/services/api";
 import { finalizeKnowledgeItem } from "@/services/api";
 import { toast } from "react-hot-toast";
@@ -287,7 +287,7 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
                     <Collapsible key={section.name} open={isSectionOpen} onOpenChange={() => toggleSection(sectionKey)}>
                       <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                         <h4 className="text-sm font-medium">{section.label}</h4>
-                        {isSectionOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        {isSectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </CollapsibleTrigger>
                       <CollapsibleContent className="mt-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">

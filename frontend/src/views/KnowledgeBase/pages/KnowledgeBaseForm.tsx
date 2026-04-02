@@ -33,7 +33,6 @@ import {
   Trash2,
   Download,
   RefreshCw,
-  Info,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RagConfigValues } from '../types/ragSchema';
@@ -42,7 +41,6 @@ import DynamicRagConfigSection from '../components/DynamicRagConfigSection';
 import { DataSourceDialog } from '@/views/DataSources/components/DataSourceDialog';
 import { isEqual } from 'lodash';
 import { KnowledgeItem, UrlHeaderRow, UploadResult, FileItem } from '../types/knowledgeBase';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/RadixTooltip';
 import { SidebarProvider, SidebarTrigger } from '@/components/sidebar';
 import { AppSidebar } from '@/layout/app-sidebar';
 import { useIsMobile } from '@/hooks/useMobile';
@@ -1003,6 +1001,65 @@ const KnowledgeBaseForm: React.FC = () => {
                                 </div>
                               )}
 
+                              {formData.type === 'zendesk' && (
+                                <div className="flex flex-col gap-6 mt-6">
+                                  <div className="rounded-lg border bg-white p-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex-1 pr-4">
+                                        <div className="text-sm font-medium text-gray-900">
+                                          Allow Unpublished Articles
+                                        </div>
+                                        <p className="text-sm text-gray-500 mt-1">
+                                          Allow unpublished articles to be indexed in the knowledge base.
+                                        </p>
+                                      </div>
+                                      <Switch
+                                        checked={
+                                          (formData.extra_metadata?.allow_unpublished_articles as boolean) || false
+                                        }
+                                        onCheckedChange={(checked) =>
+                                          setFormData(
+                                            (prev) =>
+                                              ({
+                                                ...prev,
+                                                extra_metadata: {
+                                                  ...prev.extra_metadata,
+                                                  allow_unpublished_articles: checked,
+                                                },
+                                              }) as KnowledgeItem
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="rounded-lg border bg-white p-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex-1 pr-4">
+                                        <div className="text-sm font-medium text-gray-900">Allow HTML Content</div>
+                                        <p className="text-sm text-gray-500 mt-1">
+                                          Allow HTML content to be indexed in the knowledge base.
+                                        </p>
+                                      </div>
+                                      <Switch
+                                        checked={(formData.extra_metadata?.allow_html_content as boolean) || false}
+                                        onCheckedChange={(checked) =>
+                                          setFormData(
+                                            (prev) =>
+                                              ({
+                                                ...prev,
+                                                extra_metadata: {
+                                                  ...prev.extra_metadata,
+                                                  allow_html_content: checked,
+                                                },
+                                              }) as KnowledgeItem
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
                               {['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk'].includes(
                                 formData.type
                               ) && (
@@ -1162,70 +1219,6 @@ const KnowledgeBaseForm: React.FC = () => {
                                             />
                                           )}
                                         </div>
-
-                                        {formData.type === 'zendesk' && (
-                                          <div className="flex flex-col gap-4 pt-2">
-                                            <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
-                                              Article Source Configuration
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <Info className="h-4 w-4 text-gray-500 cursor-help" />
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>Allow Unpublished Articles to be index in the knowledge base</p>
-                                                  <p>Allow HTML Content to be index in the knowledge base</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </label>
-                                            <div className="grid grid-cols-2 gap-8 py-2 px-6">
-                                              <div className="flex items-center gap-2">
-                                                <Switch
-                                                  checked={
-                                                    (formData.extra_metadata?.allow_unpublished_articles as boolean) ||
-                                                    false
-                                                  }
-                                                  onCheckedChange={(checked) =>
-                                                    setFormData(
-                                                      (prev) =>
-                                                        ({
-                                                          ...prev,
-                                                          extra_metadata: {
-                                                            ...prev.extra_metadata,
-                                                            allow_unpublished_articles: checked,
-                                                          },
-                                                        }) as KnowledgeItem
-                                                    )
-                                                  }
-                                                />
-                                                <label className="text-sm font-medium text-gray-700">
-                                                  Allow Unpublished Articles
-                                                </label>
-                                              </div>
-                                              <div className="flex items-center gap-2">
-                                                <Switch
-                                                  checked={
-                                                    (formData.extra_metadata?.allow_html_content as boolean) || false
-                                                  }
-                                                  onCheckedChange={(checked) =>
-                                                    setFormData(
-                                                      (prev) =>
-                                                        ({
-                                                          ...prev,
-                                                          extra_metadata: {
-                                                            ...prev.extra_metadata,
-                                                            allow_html_content: checked,
-                                                          },
-                                                        }) as KnowledgeItem
-                                                    )
-                                                  }
-                                                />
-                                                <label className="text-sm font-medium text-gray-700">
-                                                  Allow HTML Content
-                                                </label>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
                                       </div>
 
                                       {editingItem && (
