@@ -4,7 +4,7 @@ import { PageLayout } from "@/components/PageLayout";
 import JsonViewer from "@/components/JsonViewer";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
-import { ChevronLeft, Play, CheckCircle2, XCircle, ChevronDown, ChevronRight, AlertCircle } from "lucide-react";
+import { ChevronLeft, Play, CheckCircle2, XCircle, ChevronDown, ChevronRight, AlertCircle, Loader2 } from "lucide-react";
 import {
   getTestRun,
   listTestCases,
@@ -31,6 +31,16 @@ import { Progress } from "@/components/progress";
 import { cn } from "@/helpers/utils";
 
 type ResultFilter = "all" | "passed" | "failed";
+
+const RunStatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const inProgress = status === "queued" || status === "running";
+  return (
+    <Badge variant="outline" className="flex items-center gap-1">
+      {inProgress && <Loader2 className="h-3 w-3 animate-spin" />}
+      {status}
+    </Badge>
+  );
+};
 
 const EvaluationDetailPage: React.FC = () => {
   const navigate = useNavigate();
@@ -159,10 +169,28 @@ const EvaluationDetailPage: React.FC = () => {
         await appendRunToEvaluation(evaluationId, created.id);
         setRuns((prev) => [created, ...prev]);
         setSelectedRunId(created.id);
+
+        // Poll every 10 seconds until the run reaches a terminal state.
+        const pollInterval = setInterval(async () => {
+          const updated = await getTestRun(created.id);
+          if (!updated) return;
+          setRuns((prev) =>
+            prev.map((r) => (r.id === updated.id ? (updated as TestRun) : r))
+          );
+          if (updated.status === "completed" || updated.status === "failed") {
+            clearInterval(pollInterval);
+            setIsRunning(false);
+            const results = await listResultsForRun(created.id);
+            setResultsByRun((prev) => ({ ...prev, [created.id]: results ?? [] }));
+          }
+        }, 10_000);
+        // Return early — setIsRunning(false) is handled by the interval above.
+        return;
       }
-    } finally {
-      setIsRunning(false);
+    } catch {
+      // fall through to finally
     }
+    setIsRunning(false);
   };
 
   const selectedRun = runs.find((run) => run.id === selectedRunId);
@@ -323,7 +351,7 @@ const EvaluationDetailPage: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      <Badge variant="outline">{run.status}</Badge>
+                      <RunStatusBadge status={run.status} />
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
                       {new Date(run.created_at ?? "").toLocaleString()}
@@ -371,7 +399,7 @@ const EvaluationDetailPage: React.FC = () => {
                 <DialogTitle>
                   Run Details {selectedRun ? `#${selectedRun.id?.slice(-4)}` : ""}
                 </DialogTitle>
-                <Badge variant="outline">{selectedRun?.status}</Badge>
+                {selectedRun && <RunStatusBadge status={selectedRun.status} />}
               </div>
               {selectedRun?.created_at && (
                 <p className="text-xs text-gray-500 mt-1">

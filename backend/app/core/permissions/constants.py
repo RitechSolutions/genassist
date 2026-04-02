@@ -167,6 +167,13 @@ class WorkflowPermissions:
     EXECUTE = "execute:workflow"
     TEST = "test:workflow"
 
+class EvaluationPermissions:
+    """Workflow permissions"""
+    CREATE = "create:evaluation"
+    READ = "read:evaluation"
+    UPDATE = "update:evaluation"
+    DELETE = "delete:evaluation"
+    RUN = "run:evaluation"
 
 class OpenAIPermissions:
     """OpenAI fine-tuning permissions"""
@@ -230,6 +237,7 @@ class Permissions:
     User = UserPermissions
     UserType = UserTypePermissions
     Workflow = WorkflowPermissions
+    Evaluation = EvaluationPermissions
     OpenAI = OpenAIPermissions
     Customer = CustomerPermissions
     Dashboard = DashboardPermissions
@@ -260,7 +268,8 @@ def get_all_permission_constants() -> set[str]:
         PermissionPermissions, RecordingPermissions, RolePermissions,
         RolePermissionPermissions, TenantPermissions, UserPermissions,
         UserTypePermissions, WorkflowPermissions, OpenAIPermissions,
-        CustomerPermissions, DashboardPermissions, LegacyPermissions, FileManagerPermissions
+        CustomerPermissions, DashboardPermissions, LegacyPermissions, FileManagerPermissions,
+        EvaluationPermissions
     ]
 
     # Extract all string constants
