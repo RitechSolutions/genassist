@@ -1,20 +1,26 @@
-from typing import List, Dict, Any, Optional
+import json
 import logging
 import uuid
+from typing import Any, Dict, List, Optional
+
+from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.messages.base import BaseMessage
 from langchain_core.tools import StructuredTool
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-from langchain.agents import create_agent
-from app.modules.workflow.agents.base_tool import BaseTool
-from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
+
+from app.modules.workflow.agents.agent_prompts import (
+    create_react_no_tools_prompt,
+    create_react_tools_available_prompt,
+)
 from app.modules.workflow.agents.agent_utils import (
     create_error_response,
     create_success_response,
+    create_tool_descriptions,
     parse_json_response,
 )
-import json
-
+from app.modules.workflow.agents.base_tool import BaseTool
+from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
 
 logger = logging.getLogger(__name__)
 
@@ -140,13 +146,19 @@ class ReActAgentLC(BaseToolAgent):
         # Return None if no parameters (LangChain will handle this)
         return None
 
+    def _create_enhanced_system_prompt(self) -> str:
+        """Create an enhanced system prompt with tool descriptions"""
+        if self.tools:
+            tool_descriptions = create_tool_descriptions(self.tools)
+            return create_react_tools_available_prompt(self.system_prompt, tool_descriptions)
+        return create_react_no_tools_prompt(self.system_prompt)
+
     def _create_langgraph_agent(self):
         """Create the LangGraph React agent executor"""
-        # Create the agent with system prompt
         agent_executor = create_agent(
             model=self.llm_model,
             tools=self.lc_tools,
-            system_prompt=self.system_prompt,
+            system_prompt=self._create_enhanced_system_prompt(),
         )
 
         return agent_executor
