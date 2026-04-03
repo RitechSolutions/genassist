@@ -1,22 +1,23 @@
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Annotated, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
-from app.core.permissions.constants import Permissions as P
-from app.core.config.settings import settings
+
 from app.auth.dependencies import auth, permissions
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.schemas.recording import RecordingRead, RecordingCreate
-from app.schemas.question import QuestionCreate
-from app.schemas.conversation_transcript import ConversationTranscriptCreate
-from app.services.audio import AudioService
+from app.core.permissions.constants import Permissions as P
 from app.core.utils.bi_utils import validate_upload_file_size
 from app.core.utils.file_system_utils import get_safe_file_path
+from app.schemas.conversation_transcript import ConversationTranscriptCreate
+from app.schemas.question import QuestionCreate
+from app.schemas.recording import RecordingCreate, RecordingRead
+from app.services.audio import AudioService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -94,24 +95,11 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
     """Serve the saved recording file based on filename."""
     recording_data: RecordingRead = await service.find_recording_by_id(rec_id)
 
-    # Sanitize and validate file path to prevent path traversal attacks
-    safe_path = get_safe_file_path(
+    safe_serving_path = get_safe_file_path(
         recording_data.file_path,
-        settings.RECORDINGS_DIR
+        settings.RECORDINGS_DIR,
     )
-
-    # Final guard: resolve and verify path is within allowed directory before serving
-    recordings_base = Path(settings.RECORDINGS_DIR).resolve()
-    resolved_path = Path(safe_path).resolve()
-    try:
-        resolved_path.relative_to(recordings_base)
-    except ValueError:
-        raise AppException(error_key=ErrorKey.INVALID_FILE_PATH, status_code=400)
-
-    # Reconstruct path from trusted base + validated relative portion to break taint chain
-    safe_serving_path = str(recordings_base / resolved_path.relative_to(recordings_base))
-    response = FileResponse(safe_serving_path)
-    return response
+    return FileResponse(safe_serving_path)
 
 
 # @router.post("/transcribe_no_save")

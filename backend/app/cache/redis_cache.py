@@ -168,6 +168,9 @@ async def invalidate_agent_cache(agent_id: UUID, user_id: UUID):
     await invalidate_cache("agents:get_by_id_full", agent_id)
     await invalidate_cache("agents:get_by_user_id", user_id)
 
+async def invalidate_only_agent_cache(agent_id: UUID):
+    await invalidate_cache("agents:get_by_id_full", agent_id)
+
 async def clear_conversation_memory_cache(conversation_id: UUID) -> None:
     """
     Delete the Redis keys written by RedisConversationMemory for a conversation.

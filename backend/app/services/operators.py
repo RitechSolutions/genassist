@@ -35,7 +35,9 @@ class OperatorService:
     # ----------  helpers  ------------------------------------------------
 
     async def create(self, operator_create: OperatorCreate, generated_password):
-        if await self.user_repository.get_by_email(operator_create.user.email):
+        if await self.user_repository.get_by_email(
+            operator_create.user.email, include_deleted=True
+        ):
             raise AppException(error_key=ErrorKey.EMAIL_ALREADY_EXISTS)
 
         # --- 1) build UserModel -----------------------------------------
@@ -87,7 +89,7 @@ class OperatorService:
         last_name   = ""
         """
         # ---------- uniqueness checks ----------------------------------
-        if await self.user_repository.get_by_email(email):
+        if await self.user_repository.get_by_email(email, include_deleted=True):
             raise AppException(error_key=ErrorKey.EMAIL_ALREADY_EXISTS)
 
         # ---------- UserModel -----------------------------------------

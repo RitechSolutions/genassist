@@ -35,7 +35,9 @@ from app.modules.workflow.engine.nodes import (
     MCPNode,
     WorkflowExecutorNode,
     HumanInTheLoopNode,
-    SetStateNode
+    SetStateNode,
+    GuardrailProvenanceNode,
+    GuardrailNliNode,
 )
 from typing import Dict, Any, List, Optional, Set
 import logging
@@ -103,6 +105,8 @@ class WorkflowEngine:
         cls._node_registry["workflowExecutorNode"] = WorkflowExecutorNode
         cls._node_registry["humanInTheLoopNode"] = HumanInTheLoopNode
         cls._node_registry["setStateNode"] = SetStateNode
+        cls._node_registry["guardrailProvenanceNode"] = GuardrailProvenanceNode
+        cls._node_registry["guardrailNliNode"] = GuardrailNliNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")

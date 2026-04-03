@@ -56,7 +56,7 @@ export const login = async (
       const tokenType = response.token_type || "bearer";
       localStorage.setItem("token_type", tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType);
       localStorage.setItem("isAuthenticated", "true");
-    
+
     // Store force_upd_pass_date if provided
       if (response.force_upd_pass_date) {
         localStorage.setItem("force_upd_pass_date", response.force_upd_pass_date);
@@ -66,13 +66,48 @@ export const login = async (
     return response;
   };
 
+export const persistAuthMe = (
+  response: AuthMeResponse | null | undefined
+): void => {
+  if (!response) return;
+  localStorage.setItem(
+    "permissions",
+    JSON.stringify(response.permissions ?? [])
+  );
+  localStorage.setItem("user_roles", JSON.stringify(response.roles ?? []));
+};
+
+export const getUserRoleNames = (): string[] => {
+  const raw = localStorage.getItem("user_roles");
+  if (!raw) return [];
+  try {
+    const roles = JSON.parse(raw) as { name?: string }[];
+    return roles.map((r) => r.name).filter((n): n is string => Boolean(n));
+  } catch {
+    return [];
+  }
+};
+
+export const currentUserIsAdmin = (): boolean =>
+  getUserRoleNames().includes("admin");
+
 export const fetchUserPermissions = async (): Promise<void> => {
   const permissionsResponse = await apiRequest<AuthMeResponse>(
     "GET",
     "/auth/me"
   );
-  const userPermissions = permissionsResponse?.permissions || [];
-  localStorage.setItem("permissions", JSON.stringify(userPermissions));
+  persistAuthMe(permissionsResponse ?? undefined);
+};
+
+export const getCurrentUserId = (): string | null => {
+  const token = localStorage.getItem("access_token");
+  if (!token) return null;
+  try {
+    const payload = jwtDecode<TokenPayload>(token);
+    return payload.user_id ?? null;
+  } catch {
+    return null;
+  }
 };
 
 export const getPermissions = (): string[] => {
@@ -107,7 +142,7 @@ export const hasAnyPermission = (requiredPermissions: string[]): boolean => {
   const userPermissions = getPermissions();
 
   if (userPermissions.includes("*")) return true;
-  
+
   return requiredPermissions.some((perm) => userPermissions.includes(perm));
 };
 
@@ -117,6 +152,7 @@ export const logout = (): void => {
   localStorage.removeItem("token_type");
   localStorage.removeItem("isAuthenticated");
   localStorage.removeItem("permissions");
+  localStorage.removeItem("user_roles");
   localStorage.removeItem("force_upd_pass_date");
   localStorage.removeItem("tenant_id");
   localStorage.removeItem("auth_username");
@@ -188,7 +224,7 @@ export const isTokenValid = (): boolean => {
 export const isAuthenticated = (): boolean => {
   const accessToken = getAccessToken();
   const refreshToken = getRefreshToken();
-  
+
   // No tokens at all means not authenticated
   if (!accessToken && !refreshToken) {
     return false;
@@ -205,7 +241,7 @@ export const isAuthenticated = (): boolean => {
     return true;
   }
 
-  // If access token is expired but we have a refresh token, 
+  // If access token is expired but we have a refresh token,
   // consider user still authenticated (refresh will handle it)
   if (accessToken && refreshToken && isTokenExpired(accessToken)) {
     return true;
@@ -217,14 +253,14 @@ export const isAuthenticated = (): boolean => {
 
 export const isPasswordUpdateRequired = (): boolean => {
   const forceUpdPassDate = localStorage.getItem("force_upd_pass_date");
-  
+
   if (!forceUpdPassDate) return false;
-  
+
   try {
     const forceUpdateDate = new Date(forceUpdPassDate);
     const today = new Date();
     today.setHours(23, 59, 59, 999); // End of today
-    
+
     // If force_upd_pass_date is today or in the past, password update is required
     return forceUpdateDate <= today;
   } catch (error) {
