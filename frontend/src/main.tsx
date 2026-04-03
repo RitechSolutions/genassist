@@ -52,7 +52,7 @@ const queryClient = new QueryClient({
 
 async function bootstrap() {
   if (import.meta.env.VITE_SENTRY_DSN) {
-    await import("@/plugins/instrument");
+    await import("@/plugins/sentryInit.js");
   }
 
   const container = document.getElementById("root")!;
