@@ -158,8 +158,6 @@ class MCPServerRepository:
                 if workflow_id not in incoming_workflows:
                     await self.db.delete(wf)
 
-            await self.db.flush()
-
             for workflow_id, wf_data in incoming_workflows.items():
                 if workflow_id in existing_workflows:
                     # Update changed fields
