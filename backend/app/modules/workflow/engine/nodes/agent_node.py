@@ -169,6 +169,22 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             logger.error(f"Error during compaction: {e}")
             # Don't fail the main request if compaction fails
 
+    def _wrap_tools_for_pii_unmask(self, tools) -> None:
+        """Patch each tool's invoke so string arguments are unmasked before execution."""
+        for tool in tools:
+            original_invoke = tool.invoke
+
+            def _make_wrapper(orig):
+                def _unmasked_invoke(**kwargs):
+                    unmasked = {
+                        k: self._unmask_for_tool(v) if isinstance(v, str) else v
+                        for k, v in kwargs.items()
+                    }
+                    return orig(**unmasked)
+                return _unmasked_invoke
+
+            tool.invoke = _make_wrapper(original_invoke)
+
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process an agent node with tool selection and execution.
@@ -194,6 +210,11 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
         # Get tools from connected nodes using the new generic method
         tools = self.get_connected_nodes("tools")
+
+        # When PII masking is enabled, wrap tools so they receive unmasked
+        # (original) values instead of anonymization tokens like <EMAIL_ADDRESS_1>.
+        if config.get("piiMasking") and tools:
+            self._wrap_tools_for_pii_unmask(tools)
 
         # Add current time to system prompt
         system_prompt += f" Current time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
