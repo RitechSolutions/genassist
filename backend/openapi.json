@@ -16647,6 +16647,55 @@
         ]
       }
     },
+    "/api/workflow-builder/config/from-builder": {
+      "post": {
+        "tags": [
+          "v1",
+          "Workflow Builder"
+        ],
+        "summary": "Create Workflow From Builder",
+        "description": "Create a new Agent + Workflow from a structured builder specification.\n\nThe builder format extends the wizard format with:\n- Explicit edges (supporting branching, tool connections)\n- Config overrides per node\n- Non-default sourceHandle/targetHandle for special ports\n\nFalls back to linear chain if edges are not provided.",
+        "operationId": "create_workflow_from_builder_api_workflow_builder_config_from_builder_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_workflow_from_builder_api_workflow_builder_config_from_builder_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/mcp/discover-tools": {
       "post": {
         "tags": [
@@ -19897,6 +19946,29 @@
           "storage_path"
         ],
         "title": "Body_create_file_api_file_manager_files_post"
+      },
+      "Body_create_workflow_from_builder_api_workflow_builder_config_from_builder_post": {
+        "properties": {
+          "workflow_name": {
+            "type": "string",
+            "title": "Workflow Name"
+          },
+          "workflow_json": {
+            "type": "string",
+            "title": "Workflow Json"
+          },
+          "workflow_description": {
+            "type": "string",
+            "title": "Workflow Description",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_name",
+          "workflow_json"
+        ],
+        "title": "Body_create_workflow_from_builder_api_workflow_builder_config_from_builder_post"
       },
       "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post": {
         "properties": {

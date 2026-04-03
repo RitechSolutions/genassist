@@ -1,11 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatService, type AgentWelcomeData, type ChatMessage } from "genassist-chat-react";
 import { type RegistrationStatus } from "@/context/RoutesContext";
+import {
+  extractWorkflowDraftFromText,
+  hasWorkflowReadySignal,
+  stripWorkflowTags,
+  type WorkflowDraft,
+} from "@/views/Onboarding/utils/extractWorkflowDraft";
+
+export interface OnboardingMessage {
+  role: "user" | "agent";
+  text: string;
+}
 
 export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: RegistrationStatus }) => {
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<string>("");
   const [agentReply, setAgentReply] = useState<string | null>(null);
+  const [messages, setMessages] = useState<OnboardingMessage[]>([]);
+  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(null);
+  const workflowDraftRef = useRef<WorkflowDraft | null>(null);
+  const [isWorkflowReady, setIsWorkflowReady] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -21,6 +36,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
   const isMountedRef = useRef(true);
   const isStartingConversationRef = useRef(false);
   const hasUserStartedChatRef = useRef(false);
+  const thinkingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onboardingBaseUrl = (import.meta.env.VITE_ONBOARDING_API_URL as string) || "";
   const onboardingApiKey = (import.meta.env.VITE_ONBOARDING_CHAT_APIKEY as string) || "";
@@ -32,7 +48,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
   useEffect(() => {
     if (!hasConfig || !onboardingBaseUrl) return;
 
-    const chat = new ChatService(onboardingBaseUrl, onboardingApiKey, undefined, tenant);
+    const chat = new ChatService(onboardingBaseUrl, undefined, onboardingApiKey, undefined, tenant, undefined, false, false);
     chatRef.current = chat;
     chat.resetChatConversation();
     setIsChatReady(true);
@@ -63,9 +79,34 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
       if (!hasUserAskedRef.current) return;
       if (message.speaker !== "customer") {
         setIsThinking(false);
+        if (thinkingTimeoutRef.current) {
+          clearTimeout(thinkingTimeoutRef.current);
+          thinkingTimeoutRef.current = null;
+        }
       }
       if (message.speaker === "agent") {
-        setAgentReply(message.text);
+        const rawText = message.text;
+
+        // Extract progressive workflow draft if present
+        const extracted = extractWorkflowDraftFromText(rawText);
+        if (extracted) {
+          workflowDraftRef.current = extracted.parsed;
+          setWorkflowDraft(extracted.parsed);
+          if (extracted.isReady) {
+            setIsWorkflowReady(true);
+          }
+        } else if (hasWorkflowReadySignal(rawText) && workflowDraftRef.current) {
+          // The LLM emitted <WORKFLOW_READY/> but didn't include the
+          // <WORKFLOW_JSON> block in this message. If we already have a
+          // draft from a previous message, honour the ready signal.
+          setIsWorkflowReady(true);
+        }
+
+        // Strip workflow tags from displayed text
+        const displayText = stripWorkflowTags(rawText);
+
+        setAgentReply(displayText);
+        setMessages((prev) => [...prev, { role: "agent", text: displayText }]);
       }
     });
 
@@ -82,6 +123,9 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
+      if (thinkingTimeoutRef.current) {
+        clearTimeout(thinkingTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -121,9 +165,6 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
     if (!hasConfig || !isChatReady) return;
     if (chatRef.current?.getConversationId?.()) return;
 
-    // if the registration status is existing, skip the conversation
-    if (registrationStatus === "existing") return;
-
     startConversationIfNeeded().catch((err: unknown) => {
       if (!isMountedRef.current) return;
       const message = err instanceof Error ? err.message : "Unable to start onboarding chat.";
@@ -152,16 +193,29 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
       hasUserStartedChatRef.current = true;
       setWelcomeMessage(null);
       setWelcomeFaqs([]);
+      setMessages((prev) => [...prev, { role: "user", text: trimmed }]);
+      setPrompt("");
       setIsSending(true);
       hasUserAskedRef.current = true;
       setIsThinking(true);
       setThinkingIndex(0);
 
+      // Safety timeout — clear thinking state if no response within 60s
+      thinkingTimeoutRef.current = setTimeout(() => {
+        if (!isMountedRef.current) return;
+        setIsThinking(false);
+        setError("Response timed out. Please try again.");
+        thinkingTimeoutRef.current = null;
+      }, 60_000);
+
       try {
         await startConversationIfNeeded();
         await chat.sendMessage(trimmed);
-        setPrompt("");
       } catch (err: unknown) {
+        if (thinkingTimeoutRef.current) {
+          clearTimeout(thinkingTimeoutRef.current);
+          thinkingTimeoutRef.current = null;
+        }
         const message = err instanceof Error ? err.message : "Unable to send message.";
         setError(message);
         setIsThinking(false);
@@ -211,6 +265,8 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
     prompt,
     setPrompt,
     agentReply,
+    messages,
+    isThinking,
     subtitleText,
     titleText,
     welcomeFaqs,
@@ -220,5 +276,7 @@ export const useOnboardingChat = ({ registrationStatus }: { registrationStatus: 
     hasConfig,
     handleSubmit,
     sendQuickAction,
+    workflowDraft,
+    isWorkflowReady,
   };
 };

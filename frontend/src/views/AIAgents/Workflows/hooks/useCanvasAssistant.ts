@@ -1,0 +1,299 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChatService, type ChatMessage } from "genassist-chat-react";
+import { Node, Edge } from "reactflow";
+import { v4 as uuidv4 } from "uuid";
+import {
+  serializeCanvasContext,
+  parseAgentActions,
+  createNodeFromAction,
+  type AssistantMessage,
+  type ParsedAction,
+  type AddNodeAction,
+  type UpdateNodeAction,
+  type RemoveNodeAction,
+  type RemoveEdgeAction,
+} from "../utils/assistantActionParser";
+
+interface UseCanvasAssistantArgs {
+  nodes: Node[];
+  edges: Edge[];
+  setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
+  setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
+  updateNodeData: (nodeId: string, data: Record<string, unknown>) => void;
+  /** When this changes the conversation resets so context from a previous workflow doesn't leak. */
+  workflowScopeId?: string;
+}
+
+export function useCanvasAssistant({
+  nodes,
+  edges,
+  setNodes,
+  setEdges,
+  updateNodeData,
+  workflowScopeId,
+}: UseCanvasAssistantArgs) {
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
+  const chatRef = useRef<ChatService | null>(null);
+  const isMountedRef = useRef(true);
+  const isStartingRef = useRef(false);
+  const suppressWelcomeRef = useRef(false);
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  const executedActionsRef = useRef<Set<string>>(new Set());
+
+  // Keep refs in sync so callbacks always see current canvas state
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+
+  const baseUrl = (import.meta.env.VITE_ONBOARDING_API_URL as string) || "";
+  const apiKey = (import.meta.env.VITE_ONBOARDING_CHAT_APIKEY as string) || "";
+  const tenant =
+    (localStorage.getItem("tenant_id") as string | null) || undefined;
+
+  const hasConfig = Boolean(baseUrl && apiKey);
+
+  // Restore node functions after adding to canvas
+  const restoreNode = useCallback(
+    (node: Node): Node => ({
+      ...node,
+      data: { ...node.data, updateNodeData },
+    }),
+    [updateNodeData],
+  );
+
+  // Build a dedup key for any action
+  const actionKey = (action: ParsedAction): string => {
+    switch (action.type) {
+      case "add_node":
+        return `add-${action.nodeType}-${action.label}-${action.connectTo}-${action.thenConnectTo}-${action.asToolFor}`;
+      case "update_node":
+        return `update-${action.nodeId}-${JSON.stringify(action.updates)}`;
+      case "remove_node":
+        return `remove-${action.nodeId}`;
+      case "remove_edge":
+        return `remove-edge-${action.fromNodeId}-${action.toNodeId}`;
+    }
+  };
+
+  // Execute parsed actions on the canvas
+  const executeActions = useCallback(
+    (actions: ParsedAction[]) => {
+      // Track nodes added in this batch so label resolution works across sequential ADD_NODEs
+      let batchNodes: Node[] = [...nodesRef.current];
+
+      for (const action of actions) {
+        const key = actionKey(action);
+        if (executedActionsRef.current.has(key)) continue;
+        executedActionsRef.current.add(key);
+
+        if (action.type === "add_node") {
+          const { nodes: newNodes, edges: newEdges } = createNodeFromAction(
+            action as AddNodeAction,
+            batchNodes,
+          );
+          if (newNodes.length > 0) {
+            const restored = newNodes.map(restoreNode);
+            batchNodes = [...batchNodes, ...restored];
+            setNodes((nds) => {
+              const updated = [...nds, ...restored];
+              nodesRef.current = updated;
+              return updated;
+            });
+          }
+          if (newEdges.length > 0) {
+            setEdges((eds) => {
+              const updated = [...eds, ...newEdges];
+              edgesRef.current = updated;
+              return updated;
+            });
+          }
+        } else if (action.type === "update_node") {
+          const { nodeId, updates } = action as UpdateNodeAction;
+          setNodes((nds) => {
+            const updated = nds.map((n) =>
+              n.id === nodeId ? { ...n, data: { ...n.data, ...updates } } : n,
+            );
+            nodesRef.current = updated;
+            return updated;
+          });
+        } else if (action.type === "remove_node") {
+          const { nodeId } = action as RemoveNodeAction;
+          setNodes((nds) => {
+            const updated = nds.filter((n) => n.id !== nodeId);
+            nodesRef.current = updated;
+            return updated;
+          });
+          // Also remove edges connected to the removed node
+          setEdges((eds) => {
+            const updated = eds.filter(
+              (e) => e.source !== nodeId && e.target !== nodeId,
+            );
+            edgesRef.current = updated;
+            return updated;
+          });
+        } else if (action.type === "remove_edge") {
+          const { fromNodeId, toNodeId } = action as RemoveEdgeAction;
+          setEdges((eds) => {
+            const updated = eds.filter(
+              (e) => !(e.source === fromNodeId && e.target === toNodeId),
+            );
+            edgesRef.current = updated;
+            return updated;
+          });
+        }
+      }
+    },
+    [restoreNode, setNodes, setEdges],
+  );
+
+  // Initialize ChatService
+  useEffect(() => {
+    if (!hasConfig) return;
+
+    const chat = new ChatService(baseUrl, undefined, apiKey, undefined, tenant, undefined, false, false);
+    chatRef.current = chat;
+
+    // Always start fresh on mount — clear any persisted conversation from a previous session
+    chat.resetChatConversation();
+
+    chat.setMessageHandler((message: ChatMessage) => {
+      if (!isMountedRef.current) return;
+
+      // Always clear thinking for any non-customer message (agent, special, etc.)
+      if (message.speaker !== "customer") {
+        setIsThinking(false);
+      }
+
+      if (message.speaker === "agent") {
+        if (suppressWelcomeRef.current) {
+          suppressWelcomeRef.current = false;
+          return;
+        }
+        const { cleanText, actions } = parseAgentActions(message.text);
+
+        // Update or add the latest agent message
+        setMessages((prev) => {
+          const lastMsg = prev[prev.length - 1];
+          if (lastMsg?.speaker === "agent") {
+            // Replace streaming message
+            return [
+              ...prev.slice(0, -1),
+              { ...lastMsg, text: cleanText, actions },
+            ];
+          }
+          return [
+            ...prev,
+            { id: uuidv4(), speaker: "agent", text: cleanText, actions },
+          ];
+        });
+
+        if (actions.length > 0) {
+          executeActions(actions);
+        }
+      } else if (message.speaker === "special") {
+        // Show error/finalized/takeover messages to the user
+        setMessages((prev) => [
+          ...prev,
+          { id: uuidv4(), speaker: "agent", text: message.text },
+        ]);
+      }
+    });
+
+    return () => {
+      chat.disconnect();
+      chatRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseUrl, apiKey, tenant, hasConfig]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      executedActionsRef.current.clear();
+    };
+  }, []);
+
+  // Reset conversation when the workflow scope changes (e.g. switching agents/workflows)
+  const prevScopeRef = useRef(workflowScopeId);
+  useEffect(() => {
+    if (prevScopeRef.current !== undefined && workflowScopeId !== prevScopeRef.current) {
+      setMessages([]);
+      executedActionsRef.current.clear();
+      const chat = chatRef.current;
+      if (chat) {
+        chat.resetChatConversation();
+      }
+    }
+    prevScopeRef.current = workflowScopeId;
+  }, [workflowScopeId]);
+
+  const startConversationIfNeeded = useCallback(async () => {
+    const chat = chatRef.current;
+    if (!chat || isStartingRef.current) return;
+
+    const existing = chat.getConversationId?.();
+    if (existing) return;
+
+    isStartingRef.current = true;
+    suppressWelcomeRef.current = true;
+    try {
+      await chat.startConversation(undefined);
+    } finally {
+      isStartingRef.current = false;
+    }
+  }, []);
+
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || !chatRef.current) return;
+
+      // Add user message to chat
+      setMessages((prev) => [
+        ...prev,
+        { id: uuidv4(), speaker: "customer", text: trimmed },
+      ]);
+      setIsThinking(true);
+      // Reset executed actions for this new exchange
+      executedActionsRef.current.clear();
+
+      // Build context prefix
+      const context = serializeCanvasContext(
+        nodesRef.current,
+        edgesRef.current,
+      );
+      const fullMessage = `${context}\n\n${trimmed}`;
+
+      try {
+        await startConversationIfNeeded();
+        await chatRef.current.sendMessage(fullMessage);
+      } catch (err) {
+        setIsThinking(false);
+        const errMsg =
+          err instanceof Error ? err.message : "Failed to send message.";
+        setMessages((prev) => [
+          ...prev,
+          { id: uuidv4(), speaker: "agent", text: errMsg },
+        ]);
+      }
+    },
+    [startConversationIfNeeded],
+  );
+
+  const clearHistory = useCallback(() => {
+    setMessages([]);
+    const chat = chatRef.current;
+    if (chat) {
+      chat.resetChatConversation();
+    }
+  }, []);
+
+  return {
+    messages,
+    isThinking,
+    sendMessage,
+    clearHistory,
+    hasConfig,
+  };
+}

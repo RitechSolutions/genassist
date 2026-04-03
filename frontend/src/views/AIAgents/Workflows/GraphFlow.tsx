@@ -23,11 +23,11 @@ import WorkflowTestDialog from "./components/WorkflowTestDialog";
 import NodePanel from "./components/panels/NodePanel";
 import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
-import ChatInputBar from "./components/panels/ChatInputBar";
+import { useCanvasAssistant } from "./hooks/useCanvasAssistant";
 import { useSchemaValidation } from "./hooks/useSchemaValidation";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { getWorkflowById, updateWorkflow } from "@/services/workflows";
 import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
@@ -44,9 +44,16 @@ import {
   handleNodeDoubleClick,
 } from "./utils/helpers";
 import { Button } from "@/components/button";
-import { History, ChevronLeft, X, Plus } from "lucide-react";
+import { History, ChevronLeft, X, Plus, Sparkles, ArrowUp } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
+import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
+import { getAllAppSettings } from "@/services/appSettings";
+import { getAllDataSources } from "@/services/dataSources";
+import { getAllNodeSchemas } from "@/services/workflows";
+import type { AppSetting } from "@/interfaces/app-setting.interface";
+import type { DataSource } from "@/interfaces/dataSource.interface";
+import type { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
 
 // Get node types and edge types for React Flow
 const nodeTypes = getNodeTypes();
@@ -84,11 +91,138 @@ const GraphFlowContent: React.FC = () => {
   // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
+  // Setup wizard — show when arriving from onboarding workflow creation
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isSetupFlow = searchParams.get("setup") === "true";
+  const [showSetupWizard, setShowSetupWizard] = useState(isSetupFlow);
+  const [wizardWasShown] = useState(isSetupFlow);
+
+  // Clean up the ?setup=true param from URL without navigation
+  useEffect(() => {
+    if (searchParams.get("setup") === "true") {
+      searchParams.delete("setup");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, []);
+
+  /** Focus a node on the canvas and open its config dialog (used by setup wizard) */
+  const handleNodeFocus = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node || !reactFlowInstance) return;
+
+      // Center the viewport on the node
+      reactFlowInstance.setCenter(
+        node.position.x + (node.width ?? 200) / 2,
+        node.position.y + (node.height ?? 100) / 2,
+        { zoom: 1.2, duration: 400 }
+      );
+
+      // Select the node
+      setNodes((nds) =>
+        nds.map((n) => ({
+          ...n,
+          selected: n.id === nodeId,
+        }))
+      );
+
+      // After the viewport animation, click the node's settings button to open its config dialog
+      setTimeout(() => {
+        const nodeEl = document.querySelector(`[data-id="${nodeId}"]`);
+        const settingsBtn = nodeEl?.querySelector<HTMLButtonElement>("[data-node-settings]");
+        settingsBtn?.click();
+      }, 450);
+    },
+    [nodes, reactFlowInstance, setNodes]
+  );
+
+  // Smart defaults — dynamically auto-fill integration nodes using schemas + existing connections
+  const smartDefaultsApplied = useRef(false);
+  useEffect(() => {
+    if (!showSetupWizard || smartDefaultsApplied.current || nodes.length === 0) return;
+    smartDefaultsApplied.current = true;
+
+    const applySmartDefaults = async () => {
+      try {
+        const [appSettings, dataSources, nodeSchemas] = await Promise.all([
+          getAllAppSettings(),
+          getAllDataSources(),
+          getAllNodeSchemas(),
+        ]);
+
+        const activeSettings = appSettings.filter((s: AppSetting) => s.is_active === 1);
+        const activeSources = dataSources.filter((s: DataSource) => s.is_active === 1);
+
+        // Match a node type name to an AppSetting type (e.g. "slackMessageNode" → "Slack")
+        const findMatchingSettingId = (nodeType: string): string | undefined => {
+          const lower = nodeType.toLowerCase();
+          for (const setting of activeSettings) {
+            if (lower.includes(setting.type.toLowerCase())) {
+              return setting.id;
+            }
+          }
+          return undefined;
+        };
+
+        // Match a node type name to a connected DataSource (e.g. "gmailNode" → gmail source)
+        const findMatchingDataSourceId = (nodeType: string): string | undefined => {
+          const lower = nodeType.toLowerCase();
+          for (const source of activeSources) {
+            if (lower.includes(source.source_type.toLowerCase())) {
+              return source.id;
+            }
+          }
+          return undefined;
+        };
+
+        let updated = false;
+        setNodes((nds) =>
+          nds.map((node) => {
+            const nodeType = node.type ?? "";
+            const schema = nodeSchemas[nodeType] as FieldSchema[] | undefined;
+            if (!schema) return node;
+
+            const data = node.data as Record<string, unknown>;
+            const patch: Record<string, string> = {};
+
+            for (const field of schema) {
+              // Only auto-fill empty required select fields
+              if (!field.required || field.type !== "select") continue;
+              const current = data[field.name];
+              if (current && typeof current === "string" && current.trim() !== "") continue;
+
+              if (field.name === "app_settings_id") {
+                const id = findMatchingSettingId(nodeType);
+                if (id) patch[field.name] = id;
+              } else if (field.name === "dataSourceId") {
+                const id = findMatchingDataSourceId(nodeType);
+                if (id) patch[field.name] = id;
+              }
+            }
+
+            if (Object.keys(patch).length === 0) return node;
+
+            updated = true;
+            return { ...node, data: { ...data, ...patch } };
+          })
+        );
+
+        if (updated) {
+          setHasUnsavedChanges(true);
+        }
+      } catch {
+        // ignore — smart defaults are best-effort
+      }
+    };
+
+    applySmartDefaults();
+  }, [showSetupWizard, nodes.length]);
+
   // Prevent body scroll on Agent Studio page
   useEffect(() => {
     // Always hide overflow on the body when on Agent Studio page
     document.body.style.overflow = 'hidden';
-    
+
     // Cleanup on unmount - restore default overflow
     return () => {
       document.body.style.overflow = '';
@@ -223,6 +357,19 @@ const GraphFlowContent: React.FC = () => {
     },
     [setNodes]
   );
+
+  // Canvas AI assistant
+  const [conversationalTabActive, setConversationalTabActive] = useState(false);
+  const [hasStartedConversation, setHasStartedConversation] = useState(false);
+  const [bottomInputMessage, setBottomInputMessage] = useState("");
+  const assistant = useCanvasAssistant({
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    updateNodeData,
+    workflowScopeId: agentId,
+  });
 
   // Restore functions to nodes after loading
   const restoreNodeFunctions = (loadedNodes: Node[]): Node[] => {
@@ -658,6 +805,13 @@ const GraphFlowContent: React.FC = () => {
               isOpen={showNodePanel}
               onClose={toggleNodePanel}
               onAddNode={addNewNode}
+              messages={assistant.messages}
+              isThinking={assistant.isThinking}
+              activeConversationalTab={conversationalTabActive}
+              onSendMessage={(message) => {
+                assistant.sendMessage(message);
+                setHasStartedConversation(true);
+              }}
             />
 
             <WorkflowsSavedPanel
@@ -685,22 +839,56 @@ const GraphFlowContent: React.FC = () => {
               onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
             />
 
-            {showChatInput && (
-              <ChatInputBar
-                onSendMessage={(message) => {
-                  // Open test dialog with the message pre-filled
-                  setCurrentTestConfig({
-                    ...workflow,
-                    nodes: nodes,
-                    edges: edges,
-                    testInput: { message },
-                  });
-                  setShowNodePanel(false);
-                  setTestDialogOpen(true);
-                }}
-                disabled={!workflow?.nodes?.some((node) => node.type === "chatInputNode")}
-              />
+            {showChatInput && !hasStartedConversation && (
+              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-xl px-4">
+                <div className="relative flex items-center">
+                  <Sparkles className="absolute left-4 h-4 w-4 text-[hsl(var(--brand-600))] pointer-events-none" />
+                  <input
+                    type="text"
+                    value={bottomInputMessage}
+                    onChange={(e) => setBottomInputMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && bottomInputMessage.trim()) {
+                        e.preventDefault();
+                        assistant.sendMessage(bottomInputMessage.trim());
+                        setBottomInputMessage("");
+                        setHasStartedConversation(true);
+                        setShowNodePanel(true);
+                        setConversationalTabActive(true);
+                      }
+                    }}
+                    placeholder="Ask AI to update your workflow..."
+                    className="w-full h-12 bg-white rounded-full pl-10 pr-12 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 shadow-lg transition-all"
+                  />
+                  <button
+                    onClick={() => {
+                      if (bottomInputMessage.trim()) {
+                        assistant.sendMessage(bottomInputMessage.trim());
+                        setBottomInputMessage("");
+                        setHasStartedConversation(true);
+                        setShowNodePanel(true);
+                        setConversationalTabActive(true);
+                      }
+                    }}
+                    disabled={!bottomInputMessage.trim()}
+                    className="absolute right-2 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 disabled:bg-gray-200 disabled:opacity-100 disabled:cursor-not-allowed h-8 w-8 flex items-center justify-center transition-opacity"
+                  >
+                    <ArrowUp className="h-4 w-4 text-white" />
+                  </button>
+                </div>
+              </div>
             )}
+
+            {showSetupWizard ? (
+              <SetupWizardPanel
+                nodes={nodes}
+                onNodeFocus={handleNodeFocus}
+                onClose={() => setShowSetupWizard(false)}
+                onTest={() => handleTestGraph({ ...workflow, nodes, edges } as Workflow)}
+              />
+            ) : wizardWasShown ? (
+              <SetupWizardReopenButton onClick={() => setShowSetupWizard(true)} />
+            ) : null}
           </div>
         </div>
       </WorkflowExecutionProvider>

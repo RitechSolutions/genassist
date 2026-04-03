@@ -65,6 +65,7 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
               variant="ghost"
               className="h-8 w-8 text-accent-foreground hover:bg-white"
               onClick={onSettings}
+              data-node-settings
             >
               <Settings className="h-4 w-4" />
             </Button>

@@ -49,6 +49,7 @@ from app.api.v1.routes import (
     webhook,
     webhook_execute,
     workflow_manager,
+    workflow_builder,
     workflows,
     zendesk,
 )
@@ -147,6 +148,9 @@ router.include_router(
 )
 router.include_router(
     workflow_manager.router, prefix="/workflow-manager", tags=["Workflow Manager"]
+)
+router.include_router(
+    workflow_builder.router, prefix="/workflow-builder", tags=["Workflow Builder"]
 )
 router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP Servers"])
