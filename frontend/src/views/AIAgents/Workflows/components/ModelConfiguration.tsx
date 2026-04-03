@@ -109,6 +109,13 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     });
   };
 
+  const handlePiiMaskingChange = (checked: boolean) => {
+    onConfigChange({
+      ...config,
+      piiMasking: checked,
+    });
+  };
+
   const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval") => {
     onConfigChange({
       ...config,
@@ -338,6 +345,20 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           id={`memory-switch-${id}`}
           checked={config.memory}
           onCheckedChange={handleMemoryChange}
+        />
+      </div>
+      <div className="space-y-2 flex items-center gap-2 w-full">
+        <div className="flex flex-col gap-0.5">
+          <Label htmlFor={`pii-masking-switch-${id}`}>Enable PII Masking</Label>
+          <span className="text-xs text-muted-foreground">
+            Masks emails, phones, national IDs, credit cards and IPs before sending to the LLM
+          </span>
+        </div>
+        <div className="flex-1" />
+        <Switch
+          id={`pii-masking-switch-${id}`}
+          checked={config.piiMasking ?? false}
+          onCheckedChange={handlePiiMaskingChange}
         />
       </div>
       {config.memory && (

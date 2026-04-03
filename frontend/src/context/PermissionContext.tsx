@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { apiRequest } from "@/config/api";
 import { isServerDown } from "@/config/serverStatus";
-import { isAuthenticated } from "@/services/auth";
+import { AuthMeResponse, isAuthenticated, persistAuthMe } from "@/services/auth";
 
 interface PermissionContextType {
   permissions: string[];
@@ -43,9 +43,9 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({
 
     setIsLoading(true);
     try {
-      const response = await apiRequest("GET", "/auth/me");
-      const userPermissions: string[] =
-        (response as { permissions: string[] })?.permissions || [];
+      const response = await apiRequest<AuthMeResponse>("GET", "/auth/me");
+      persistAuthMe(response ?? undefined);
+      const userPermissions: string[] = response?.permissions || [];
       setPermissions(userPermissions);
     } catch (error) {
       // Quiet known down-state errors

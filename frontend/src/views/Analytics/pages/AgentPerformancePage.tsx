@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
-import { format, subDays } from "date-fns";
+import { subDays } from "date-fns";
+import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
 import { Settings2, TrendingDown, ShieldCheck, ThumbsUp, ThumbsDown } from "lucide-react";
 import { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
@@ -93,15 +94,15 @@ const AgentPerformancePage = () => {
     setError(null);
     try {
       const agentIdParam = agentId !== "all" ? agentId : undefined;
+      const { from_date, to_date } = toExpandedUTCDateRange(range);
       const params = {
-        from_date: range?.from ? format(range.from, "yyyy-MM-dd") : undefined,
-        to_date: range?.to ? format(range.to, "yyyy-MM-dd") : undefined,
+        from_date,
+        to_date,
         agent_id: agentIdParam,
       };
       const compareParams = compareRange?.from && compareRange?.to
         ? {
-            from_date: format(compareRange.from, "yyyy-MM-dd"),
-            to_date: format(compareRange.to, "yyyy-MM-dd"),
+            ...toExpandedUTCDateRange(compareRange),
             agent_id: agentIdParam,
           }
         : undefined;
@@ -126,10 +127,7 @@ const AgentPerformancePage = () => {
 
     if (agentFilter !== "all") {
       setEscalationNode(localStorage.getItem(LS_KEY(agentFilter)) ?? "");
-      fetchAgentNodeBreakdown(agentFilter, {
-        from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
-        to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
-      })
+      fetchAgentNodeBreakdown(agentFilter, toExpandedUTCDateRange(dateRange))
         .then((data) => setNodeBreakdown(data?.items ?? []))
         .catch(() => setNodeBreakdown([]));
     } else {
@@ -307,8 +305,7 @@ const AgentPerformancePage = () => {
 
   const exportParams = {
     agent_id: agentFilter !== "all" ? agentFilter : undefined,
-    from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
-    to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+    ...toExpandedUTCDateRange(dateRange),
   };
 
   return (
@@ -501,12 +498,8 @@ const AgentPerformancePage = () => {
           agentId={selectedItem.agent_id}
           agentName={agentNameMap[selectedItem.agent_id] ?? selectedItem.agent_id.slice(0, 8) + "…"}
           totalExecutions={selectedItem.execution_count}
-          fromDate={
-            dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined
-          }
-          toDate={
-            dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined
-          }
+          fromDate={toExpandedUTCDateRange(dateRange).from_date}
+          toDate={toExpandedUTCDateRange(dateRange).to_date}
         />
       )}
     </SidebarProvider>

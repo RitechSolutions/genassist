@@ -1,32 +1,34 @@
-from uuid import UUID
+import logging
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
+from typing import List, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from fastapi_injector import Injected
-from typing import Optional, List
-import os
-import logging
-from app.core.permissions.constants import Permissions as P
-from app.core.project_path import DATA_VOLUME
+
 from app.auth.dependencies import auth, permissions
-from app.schemas.ml_model_pipeline import (
-    MLModelPipelineConfigCreate,
-    MLModelPipelineConfigUpdate,
-    MLModelPipelineConfigRead,
-    MLModelPipelineRunCreate,
-    MLModelPipelineRunRead,
-    MLModelPipelineRunPromote,
-    MLModelPipelineArtifactRead,
-    PipelineRunStatus,
-    PipelineRunPromoteResponse
-)
-from app.services.ml_model_pipeline import (
-    MLModelPipelineConfigService,
-    MLModelPipelineRunService,
-    MLModelPipelineArtifactService
-)
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.permissions.constants import Permissions as P
+from app.core.project_path import DATA_VOLUME
+from app.core.utils.file_system_utils import get_safe_file_path
+from app.schemas.ml_model_pipeline import (
+    MLModelPipelineArtifactRead,
+    MLModelPipelineConfigCreate,
+    MLModelPipelineConfigRead,
+    MLModelPipelineConfigUpdate,
+    MLModelPipelineRunCreate,
+    MLModelPipelineRunPromote,
+    MLModelPipelineRunRead,
+    PipelineRunPromoteResponse,
+    PipelineRunStatus,
+)
+from app.services.ml_model_pipeline import (
+    MLModelPipelineArtifactService,
+    MLModelPipelineConfigService,
+    MLModelPipelineRunService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -268,50 +270,6 @@ async def get_pipeline_artifacts(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-def get_safe_artifact_path(artifact_path: str, base_directory: Path) -> str:
-    """
-    Sanitize and validate that an artifact path is within the allowed directory.
-    Prevents path traversal attacks by normalizing, validating, and reconstructing the path.
-
-    Args:
-        artifact_path: The artifact path to validate
-        base_directory: The base directory the artifact must be within
-
-    Returns:
-        A sanitized absolute path string that is safe to use
-
-    Raises:
-        HTTPException: If the path escapes the allowed directory
-    """
-    # Normalize the path to catch traversal attempts
-    normalized_path = os.path.normpath(artifact_path)
-
-    # Check for path traversal after normalization
-    if ".." in normalized_path:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid artifact path"
-        )
-
-    resolved_path = Path(normalized_path).resolve()
-    resolved_base = base_directory.resolve()
-
-    # Validate the file is within the allowed directory
-    try:
-        relative_path = resolved_path.relative_to(resolved_base)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid artifact path"
-        )
-
-    # Reconstruct the path from known-safe base directory and validated relative path
-    # This breaks the taint chain by creating a new path from safe components
-    safe_absolute_path = resolved_base / relative_path
-
-    return str(safe_absolute_path)
-
-
 @router.get(
     "/{model_id}/pipeline-runs/{run_id}/artifacts/{artifact_id}/download",
     dependencies=[Depends(auth), Depends(permissions(P.MlModel.READ))]
@@ -326,19 +284,12 @@ async def download_artifact(
     try:
         artifact = await service.get_by_id(model_id, run_id, artifact_id)
 
-        # Sanitize and validate artifact path to prevent path traversal attacks
-        safe_path = get_safe_artifact_path(artifact.artifact_path, DATA_VOLUME)
-
-        # Final guard: resolve and verify path is within allowed directory before serving
-        data_volume_base = DATA_VOLUME.resolve()
-        resolved_artifact_path = Path(safe_path).resolve()
-        try:
-            resolved_artifact_path.relative_to(data_volume_base)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid artifact path")
-
-        # Validate file exists
-        if not resolved_artifact_path.exists():
+        safe_serving_path = get_safe_file_path(
+            artifact.artifact_path,
+            DATA_VOLUME,
+            must_exist=False,
+        )
+        if not Path(safe_serving_path).exists():
             raise HTTPException(
                 status_code=404,
                 detail="Artifact file not found on disk"
@@ -350,9 +301,6 @@ async def download_artifact(
             media_type = "application/json"
         elif artifact.artifact_type.value == "logs":
             media_type = "text/plain"
-
-        # Reconstruct path from trusted base + validated relative portion to break taint chain
-        safe_serving_path = str(data_volume_base / resolved_artifact_path.relative_to(data_volume_base))
 
         response = FileResponse(
             path=safe_serving_path,

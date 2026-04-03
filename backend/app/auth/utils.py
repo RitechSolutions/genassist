@@ -94,4 +94,7 @@ async def generate_unique_username(user_repository, first: str, last: str) -> st
 
 
 def is_current_user_supervisor_or_admin():
-    return current_user_is_supervisor() or current_user_is_admin()
+    current_user_roles = context.get("user_roles") if context.exists() else None
+    if current_user_roles:
+        return any(role.name in ["supervisor", "admin"] for role in current_user_roles)
+    return False

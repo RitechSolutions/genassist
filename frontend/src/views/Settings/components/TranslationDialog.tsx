@@ -53,11 +53,13 @@ function findDefaultLangCode(
 interface TranslationDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  onTranslationSaved: () => void;
+  onTranslationSaved: (translation: Translation) => void;
   translationToEdit?: Translation | null;
   mode?: "create" | "edit";
   initialKey?: string;
   initialDefaultValue?: string;
+  /** When provided, the dialog does not fetch languages (caller loads once). */
+  languages?: Language[];
 }
 
 export function TranslationDialog({
@@ -68,26 +70,40 @@ export function TranslationDialog({
   mode = "create",
   initialKey,
   initialDefaultValue,
+  languages: languagesFromParent,
 }: TranslationDialogProps) {
   const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
   const [key, setKey] = useState("");
   const [defaultLangCode, setDefaultLangCode] = useState<string | null>(null);
   const [rows, setRows] = useState<TranslationRow[]>([]);
-  const [languages, setLanguages] = useState<Language[]>([]);
+  const [fetchedLanguages, setFetchedLanguages] = useState<Language[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const languages =
+    languagesFromParent !== undefined ? languagesFromParent : fetchedLanguages;
+
   useEffect(() => {
+    if (languagesFromParent !== undefined) return;
     getLanguages()
-      .then(setLanguages)
+      .then(setFetchedLanguages)
       .catch(() => toast.error("Failed to load languages."));
-  }, []);
+  }, [languagesFromParent]);
 
   const languagesRef = React.useRef(languages);
   languagesRef.current = languages;
 
   useEffect(() => {
     if (!isOpen) return;
+
+    // Caller-provided language list: wait until loaded so the default lang row
+    // matches the real catalog (parent input value seeds the correct language).
+    if (
+      languagesFromParent !== undefined &&
+      languagesFromParent.length === 0
+    ) {
+      return;
+    }
 
     let cancelled = false;
     const init = async () => {
@@ -108,19 +124,36 @@ export function TranslationDialog({
         const existing = await getTranslationByKey(initialKey);
         if (cancelled) return;
 
+        const langs = languagesRef.current;
+
         if (existing) {
           setDialogMode("edit");
           setKey(existing.key || "");
           const builtRows = translationsToRows(existing.translations);
-          setRows(builtRows);
-          setDefaultLangCode(
-            findDefaultLangCode(existing.default, builtRows)
-          );
+          let defaultLang = findDefaultLangCode(existing.default, builtRows);
+          if (defaultLang === null && builtRows.length > 0) {
+            defaultLang =
+              builtRows.find((r) => r.langCode === "en")?.langCode ??
+              builtRows[0]?.langCode ??
+              null;
+          }
+          let rowsToSet = builtRows;
+          if (initialDefaultValue !== undefined && defaultLang) {
+            rowsToSet = builtRows.map((r) =>
+              r.langCode === defaultLang
+                ? { ...r, value: initialDefaultValue }
+                : r
+            );
+          }
+          setRows(rowsToSet);
+          setDefaultLangCode(defaultLang);
         } else {
           setDialogMode("create");
           setKey(initialKey);
-          const firstLang = languagesRef.current.find((l) => l.code === "en")?.code
-            ?? languagesRef.current[0]?.code ?? "en";
+          const firstLang =
+            langs.find((l) => l.code === "en")?.code ??
+            langs[0]?.code ??
+            "en";
           setRows(
             initialDefaultValue
               ? [{ langCode: firstLang, value: initialDefaultValue }]
@@ -140,8 +173,15 @@ export function TranslationDialog({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, translationToEdit, mode, initialKey, initialDefaultValue]);
+  }, [
+    isOpen,
+    translationToEdit,
+    mode,
+    initialKey,
+    initialDefaultValue,
+    languagesFromParent,
+    languages,
+  ]);
 
   const resetForm = () => {
     setKey("");
@@ -246,8 +286,9 @@ export function TranslationDialog({
       const defaultRow = rows.find((r) => r.langCode === defaultLangCode);
       const defaultValue = defaultRow?.value.trim() || null;
 
+      let saved: Translation;
       if (dialogMode === "create") {
-        await createTranslation({
+        saved = await createTranslation({
           key: key.trim(),
           default: defaultValue,
           translations: cleanTranslations,
@@ -260,14 +301,14 @@ export function TranslationDialog({
           return;
         }
 
-        await updateTranslation(updateKey, {
+        saved = await updateTranslation(updateKey, {
           default: defaultValue,
           translations: cleanTranslations,
         });
         toast.success("Translation updated successfully.");
       }
 
-      onTranslationSaved();
+      onTranslationSaved(saved);
       onOpenChange(false);
       resetForm();
     } catch (err) {

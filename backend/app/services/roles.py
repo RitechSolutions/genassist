@@ -49,5 +49,13 @@ class RolesService:
 
     async def delete(self, role_id: UUID):
         model = await self.get_by_id(role_id)
+        user_assignments, api_key_assignments = await self.repository.count_assignments_for_role(
+            role_id
+        )
+        if user_assignments > 0 or api_key_assignments > 0:
+            raise AppException(
+                error_key=ErrorKey.ROLE_CANNOT_DELETE_IN_USE,
+                status_code=409,
+            )
         await self.repository.delete(model)
         return {"message": f"Role with ID {role_id} has been deleted."}

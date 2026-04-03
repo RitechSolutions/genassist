@@ -1,31 +1,22 @@
 import asyncio
-import io
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
-from queue import Full
 from typing import List, Optional
 
 from aiohttp import ClientError
-from app.modules.data.providers.vector.chunking.base import ChunkConfig
-from app.modules.data.manager import AgentRAGServiceManager
 from celery import shared_task
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import null, true
 
-from app.db.seed.seed_data_config import SeedTestData
 from app.dependencies.injector import injector
-from app.modules.data.providers.vector.chunking.recursive import RecursiveChunker
+from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.data.utils.file_extractor import FileTextExtractor
-from app.schemas.recording import RecordingCreate
 from app.services.agent_knowledge import KnowledgeBaseService
-from app.services.audio import AudioService
-from app.services.datasources import DataSourceService
-from app.services.app_settings import AppSettingsService
-from app.services.llm_analysts import LlmAnalystService
 from app.services.AzureStorageService import AzureStorageService
+from app.services.datasources import DataSourceService
+from app.services.llm_analysts import LlmAnalystService
 from app.services.transcription import transcribe_audio_whisper
-from app.tasks.zendesk_article_sync_tasks import import_zendesk_articles_to_kb
+from app.tasks.zendesk_article_sync_tasks import import_zendesk_articles_to_kb_async
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +44,8 @@ async def batch_process_files_kb_async_with_scope(
         tenant_id: Tenant context for manual sync. If provided with kb_id,
             processing runs only for that tenant.
     """
+    from app.core.tenant_scope import clear_tenant_context, set_tenant_context
     from app.tasks.base import run_task_with_tenant_support
-    from app.core.tenant_scope import set_tenant_context, clear_tenant_context
 
     if kb_id and tenant_id:
         try:
@@ -81,19 +72,25 @@ async def batch_process_files_kb_async(
     # Resolve list of kb_ids to process
     ids_to_process: List[str] = [kb_id] if kb_id else []
 
-    # Dispatch KBs by type to appropriate Celery tasks
-    celery_tasks_queued = []
+    # Dispatch KBs by type: Zendesk runs inline in this async context so the caller
+    # (API or Celery worker) gets results and we respect the current tenant context.
+    # Queuing import_zendesk_articles_to_kb.delay() here duplicated work and ran
+    # run_task_with_tenant_support in the worker (master + all tenants) for one KB.
+    zendesk_sync_results: list = []
     kb_items = []
     for kid in ids_to_process:
         try:
             kb_item = await kbService.get_by_id(kid)
 
-            # Queue Zendesk sync task (same as scheduled import_zendesk_articles_to_kb)
-            if kb_item.type == "zendesk":
-                # Queue Zendesk sync task (same as scheduled import_zendesk_articles_to_kb)
-                t = import_zendesk_articles_to_kb.delay(kb_id=str(kb_item.id), sync_now=True)
-                logger.info(f"Queued Zendesk sync task for KB {kb_item.id}: {t.id}")
-                celery_tasks_queued.append({"kb_id": str(kb_item.id), "type": "zendesk", "task_id": t.id})
+            # used for sync now on Zendesk KBs
+            if kb_item.type.lower() == "zendesk":
+                logger.info(f"Running Zendesk article import inline for KB {kb_item.id}")
+                zres = await import_zendesk_articles_to_kb_async(
+                    kb_id=kb_item.id, sync_now=True
+                )
+                zendesk_sync_results.append(
+                    {"kb_id": str(kb_item.id), "type": "zendesk", "result": zres}
+                )
             else:
                 # Queue regular KB batch processing task
                 kb_items.append(kb_item)
@@ -107,7 +104,7 @@ async def batch_process_files_kb_async(
     count_skipped = 0
     count_fail = 0
     files_processed = []
-    count_tasks_queued = len(celery_tasks_queued)
+    count_zendesk_syncs = len(zendesk_sync_results)
 
     # Process KBs
     for kb_item in kb_items:
@@ -245,7 +242,7 @@ async def batch_process_files_kb_async(
 
 
 
-        elif ds_item.type == "azure_blob":
+        elif ds_item.type.lower() == "azure_blob":
             # # Required connection details stored in datasource connection_data
             container = conn.get("container_name")
             prefix = conn.get("input_prefix", "incoming")
@@ -299,7 +296,8 @@ async def batch_process_files_kb_async(
         "failed_kb": count_fail,
         "skipped_kbs": count_skipped,
         "files": files_processed,
-        "tasks_queued": count_tasks_queued,
+        "zendesk_sync_results": zendesk_sync_results,
+        "zendesk_kbs_synced": count_zendesk_syncs,
     }
 
     return result
@@ -310,8 +308,11 @@ async def batch_process_files_kb_async(
 ############################################
 #  S3 Helper  FUnctions (to be moved to a separate module)
 ############################################
-import boto3
 import fnmatch
+
+import boto3
+
+
 async def s3_list_source(
     api_key: str,
     api_secret: str,

@@ -3,7 +3,6 @@ from typing import List, Dict, Optional
 import os
 import uuid
 import shutil
-import asyncio
 from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.core.exceptions.error_messages import ErrorKey
@@ -546,30 +545,25 @@ async def get_form_schemas():
 
 
 
-#Endpoint to trigger KB batch processing for files from various sources Same way as (e.g. Azure Blob, S3, SharePoint)
-from fastapi import BackgroundTasks
-
+# Endpoint to trigger KB batch processing (S3, Azure Blob, SharePoint, Zendesk, etc.)
 @router.get(
     "/kb-batch-tasks-execution",
     dependencies=[Depends(auth)],
-    summary="Runs the job that sync the KB with files from various sources"
+    summary="Runs the job that syncs the KB with files or Zendesk articles for this tenant",
 )
 async def summarize_files_from_azure(
-    background_tasks: BackgroundTasks,
-    kb_id: Optional[UUID] = None
+    kb_id: Optional[UUID] = None,
 ):
-    await asyncio.sleep(2) # simulate some delay before starting the background task
     if not kb_id:
         logger.warning("Attempting to run KB batch processing without specifying a KB ID.")
         return {"status": "error", "message": "kb_id is required"}
 
-    # Capture current tenant context
     tenant_id = get_tenant_context()
-
-    background_tasks.add_task(
-        batch_process_files_kb_async_with_scope,
-        kb_id,
-        tenant_id
+    # Await inline so the response includes batch results (Zendesk counts, file lists, etc.).
+    # Previously this used BackgroundTasks + Celery for Zendesk only, so the client saw
+    # {"status": "started"} while real metrics appeared only in worker logs.
+    batch_result = await batch_process_files_kb_async_with_scope(
+        kb_id=str(kb_id),
+        tenant_id=tenant_id,
     )
-
-    return {"status": "started"}
+    return {"status": "completed", **batch_result}

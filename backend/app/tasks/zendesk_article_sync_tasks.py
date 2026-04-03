@@ -19,6 +19,11 @@ from app.services.datasources import DataSourceService
 logger = logging.getLogger(__name__)
 
 
+def _kb_update_dict(kb: Any) -> dict[str, Any]:
+    """ORM/Pydantic KB row to a dict suitable for KBCreate(**payload)."""
+    return json.loads(kb.model_dump_json())
+
+
 def _parse_zendesk_category_ids(conn_data: dict[str, Any]) -> Optional[List[int]]:
     """Normalize category_id from connection data (legacy single value or list of IDs)."""
     raw = conn_data.get("category_id")
@@ -87,16 +92,78 @@ async def import_zendesk_articles_to_kb_async_with_scope(
 async def import_zendesk_articles_to_kb_async(
     kb_id: Optional[UUID] = None, sync_now: bool = False
 ):
-    """Async implementation of Zendesk article import"""
+    """Async implementation of Zendesk article import.
+
+    Persists ``last_synced``, ``last_sync_status``, and ``last_sync_error`` on the KB row
+    so the UI can show outcome. Returns aggregate counts plus ``per_kb`` for API responses.
+
+    Note: ``KnowledgeBaseService.update`` uses ``exclude_none=True``; use ``last_sync_error=""``
+    to clear a previous error on success.
+    """
     logger.info("Starting Zendesk article import...")
 
     kb_service = injector.get(KnowledgeBaseService)
     rag_manager = injector.get(AgentRAGServiceManager)
 
+    per_kb: List[dict[str, Any]] = []
+
     if not kb_id:
         kbList = await kb_service.get_all(kb_type="zendesk")
     else:
-        kbList = [await kb_service.get_by_id(kb_id)]
+        from app.core.exceptions.exception_classes import AppException
+
+        try:
+            single = await kb_service.get_by_id(kb_id)
+        except AppException:
+            res = {
+                "status": "failed",
+                "error": f"Knowledge base {kb_id} not found",
+                "articles_added": 0,
+                "articles_deleted": 0,
+                "articles_updated": 0,
+                "datasources_processed": 0,
+                "per_kb": [
+                    {
+                        "kb_id": str(kb_id),
+                        "status": "failed",
+                        "reason": "not_found",
+                    }
+                ],
+            }
+            logger.warning(res["error"])
+            return res
+        if single.type != "zendesk":
+            res = {
+                "status": "failed",
+                "error": f"Knowledge base {kb_id} is not a Zendesk type (got {single.type!r})",
+                "articles_added": 0,
+                "articles_deleted": 0,
+                "articles_updated": 0,
+                "datasources_processed": 0,
+                "per_kb": [
+                    {
+                        "kb_id": str(kb_id),
+                        "name": single.name,
+                        "status": "failed",
+                        "reason": "wrong_kb_type",
+                        "type": single.type,
+                    }
+                ],
+            }
+            logger.warning(res["error"])
+            return res
+        kbList = [single]
+
+    if not kbList:
+        return {
+            "status": "completed",
+            "message": "No Zendesk knowledge bases to process",
+            "articles_added": 0,
+            "articles_deleted": 0,
+            "articles_updated": 0,
+            "datasources_processed": 0,
+            "per_kb": [],
+        }
 
     processed_ds = 0
     articles_added_tot = 0
@@ -111,16 +178,49 @@ async def import_zendesk_articles_to_kb_async(
             logger.info(
                 f"Knowledge base {kb.id} is not active or does not have a sync source"
             )
+            per_kb.append(
+                {
+                    "kb_id": str(kb.id),
+                    "name": kb.name,
+                    "status": "skipped",
+                    "reason": "sync_inactive_or_no_source",
+                }
+            )
             continue
 
         ds = await injector.get(DataSourceService).get_by_id(kb.sync_source_id, True)
         if not ds:
             logger.info(f"Knowledge base {kb.id} has no sync source")
+            per_kb.append(
+                {
+                    "kb_id": str(kb.id),
+                    "name": kb.name,
+                    "status": "skipped",
+                    "reason": "datasource_not_found",
+                }
+            )
             continue
 
         if ds.source_type.lower() != "zendesk":
             logger.info(
                 f"Knowledge base {kb.id} has a sync source that is not Zendesk ({ds.source_type})"
+            )
+            if sync_now or kb_id is not None:
+                ku = _kb_update_dict(kb)
+                ku["last_synced"] = datetime.now()
+                ku["last_sync_status"] = "error"
+                ku["last_sync_error"] = (
+                    f"Sync source is not Zendesk (type={ds.source_type})"
+                )
+                await kb_service.update(kb.id, KBCreate(**ku))
+            per_kb.append(
+                {
+                    "kb_id": str(kb.id),
+                    "name": kb.name,
+                    "status": "skipped",
+                    "reason": "datasource_not_zendesk",
+                    "source_type": ds.source_type,
+                }
             )
             continue
 
@@ -129,6 +229,14 @@ async def import_zendesk_articles_to_kb_async(
         cron_string = kb.sync_schedule
         if not cron_string and not force_sync:
             logger.info(f"Knowledge base {kb.id} has no sync schedule")
+            per_kb.append(
+                {
+                    "kb_id": str(kb.id),
+                    "name": kb.name,
+                    "status": "skipped",
+                    "reason": "no_sync_schedule",
+                }
+            )
             continue
         if not force_sync:
             cron_iter = croniter(cron_string)
@@ -145,11 +253,34 @@ async def import_zendesk_articles_to_kb_async(
                 logger.info(
                     f"Knowledge base {kb.id} is not due for sync, next sync at {next_run_time}"
                 )
+                per_kb.append(
+                    {
+                        "kb_id": str(kb.id),
+                        "name": kb.name,
+                        "status": "skipped",
+                        "reason": "not_due_per_schedule",
+                        "next_sync_at": next_run_time.isoformat(),
+                    }
+                )
                 continue
 
         if not ds.connection_data:
             logger.info(
                 f"Knowledge base {kb.id} has no connection data for sync source {ds.name}"
+            )
+            if sync_now or kb_id is not None:
+                ku = _kb_update_dict(kb)
+                ku["last_synced"] = datetime.now()
+                ku["last_sync_status"] = "error"
+                ku["last_sync_error"] = "Zendesk datasource has no connection data"
+                await kb_service.update(kb.id, KBCreate(**ku))
+            per_kb.append(
+                {
+                    "kb_id": str(kb.id),
+                    "name": kb.name,
+                    "status": "skipped",
+                    "reason": "no_connection_data",
+                }
             )
             continue
 
@@ -163,8 +294,20 @@ async def import_zendesk_articles_to_kb_async(
         section_id = conn_data.get("section_id")  # Optional
 
         if not subdomain or not email or not api_token:
-            logger.error(
-                f"Knowledge base {kb.id} has incomplete Zendesk connection data"
+            err = "Incomplete Zendesk connection (subdomain, email, and api_token required)"
+            logger.error(f"Knowledge base {kb.id}: {err}")
+            ku = _kb_update_dict(kb)
+            ku["last_synced"] = datetime.now()
+            ku["last_sync_status"] = "error"
+            ku["last_sync_error"] = err
+            await kb_service.update(kb.id, KBCreate(**ku))
+            per_kb.append(
+                {
+                    "kb_id": str(kb.id),
+                    "name": kb.name,
+                    "status": "error",
+                    "reason": "incomplete_connection_data",
+                }
             )
             continue
 
@@ -205,8 +348,22 @@ async def import_zendesk_articles_to_kb_async(
                     f"No articles found in Zendesk for datasource {ds.name}"
                 )
                 processed_ds += 1
-                kb.last_synced = datetime.now()
-                await kb_service.update(kb.id, KBCreate(**kb.__dict__))  # type: ignore
+                ku = _kb_update_dict(kb)
+                ku["last_synced"] = datetime.now()
+                ku["last_sync_status"] = "success"
+                ku["last_sync_error"] = ""
+                await kb_service.update(kb.id, KBCreate(**ku))
+                per_kb.append(
+                    {
+                        "kb_id": str(kb.id),
+                        "name": kb.name,
+                        "status": "success",
+                        "articles_added": 0,
+                        "articles_updated": 0,
+                        "articles_deleted": 0,
+                        "note": "no_articles_from_zendesk",
+                    }
+                )
                 continue
 
             articles_added = 0
@@ -401,8 +558,14 @@ async def import_zendesk_articles_to_kb_async(
 
             # Update last synced time and persist article updated_at map (skip unchanged next run)
             logger.info(f"Updating knowledge base {kb.id} last synced time...")
-            kb_update = json.loads(kb.model_dump_json())
+            kb_update = _kb_update_dict(kb)
             kb_update["last_synced"] = datetime.now()
+            kb_update["last_sync_status"] = (
+                "success_with_warnings" if kb_errors else "success"
+            )
+            kb_update["last_sync_error"] = (
+                "; ".join(kb_errors[:5]) if kb_errors else ""
+            )
             if last_file_date:
                 kb_update["last_file_date"] = last_file_date
             extra = dict(kb_update.get("extra_metadata") or {})
@@ -414,16 +577,35 @@ async def import_zendesk_articles_to_kb_async(
             articles_deleted_tot += articles_deleted
             articles_updated_tot += articles_updated
             processed_ds += 1
+            entry: dict[str, Any] = {
+                "kb_id": str(kb.id),
+                "name": kb.name,
+                "status": kb_update["last_sync_status"],
+                "articles_added": articles_added,
+                "articles_updated": articles_updated,
+                "articles_deleted": articles_deleted,
+            }
+            if kb_errors:
+                entry["warnings"] = kb_errors[:10]
+            per_kb.append(entry)
 
         except Exception as e:
             error_msg = f"Error processing Zendesk datasource {ds.name}: {str(e)}"
             logger.error(error_msg)
             # Update KB with error status
-            kb_update = json.loads(kb.model_dump_json())
+            kb_update = _kb_update_dict(kb)
             kb_update["last_synced"] = datetime.now()
             kb_update["last_sync_status"] = "error"
             kb_update["last_sync_error"] = str(e)
             await kb_service.update(kb.id, KBCreate(**kb_update))
+            per_kb.append(
+                {
+                    "kb_id": str(kb.id),
+                    "name": kb.name,
+                    "status": "error",
+                    "error": str(e),
+                }
+            )
             continue
 
     res = {
@@ -432,6 +614,7 @@ async def import_zendesk_articles_to_kb_async(
         "articles_deleted": articles_deleted_tot,
         "articles_updated": articles_updated_tot,
         "datasources_processed": processed_ds,
+        "per_kb": per_kb,
     }
 
     logger.info(f"Zendesk article import completed with result: {res}")

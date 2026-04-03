@@ -40,6 +40,17 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         required=True
     ),
     FieldSchema(
+        name="piiMasking",
+        type="boolean",
+        label="Enable PII Masking",
+        required=False,
+        default=False,
+        description=(
+            "Mask PII (emails, phones, national IDs, credit cards, IPs) before "
+            "sending text to the LLM. Original values are restored in the response."
+        ),
+    ),
+    FieldSchema(
         name="memoryTrimmingMode",
         type="select",
         label="Memory Trimming Mode",

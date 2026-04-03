@@ -1,4 +1,5 @@
 dist/
 node_modules/
+.npmrc
 example-app/node_modules/
 example-app/dist/

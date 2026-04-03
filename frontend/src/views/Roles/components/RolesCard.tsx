@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AxiosError } from "axios";
 import { DataTable } from "@/components/DataTable";
 import { ActionButtons } from "@/components/ActionButtons";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -82,7 +83,9 @@ export function RolesCard({
       toast.success("Role deleted successfully.");
       setRoles((prev) => prev.filter((s) => s.id !== roleToDelete.id));
     } catch (error) {
-      toast.error("Failed to delete role.");
+      const axiosError = error as AxiosError<{ error?: string }>;
+      const apiMessage = axiosError.response?.data?.error;
+      toast.error(apiMessage ?? "Failed to delete role.");
     } finally {
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);

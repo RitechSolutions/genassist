@@ -6,26 +6,25 @@ from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
 from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.auth.utils import generate_password
-from app.cache.redis_cache import invalidate_agent_cache, make_key_builder
+from app.cache.redis_cache import invalidate_agent_cache, invalidate_only_agent_cache, make_key_builder
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.db.models import AgentModel
+from app.db.models import AgentModel, AgentSecuritySettingsModel
 from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.agent import AgentRepository
 from app.repositories.user_types import UserTypesRepository
 from app.schemas.agent import AgentCreate, AgentListItem, AgentRead, AgentUpdate
-from app.schemas.common import PaginatedResponse
-from app.schemas.filter import BaseFilterModel
 from app.schemas.agent_security_settings import (
     AgentSecuritySettingsCreate,
     AgentSecuritySettingsUpdate,
 )
-from app.db.models import AgentSecuritySettingsModel
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import BaseFilterModel
 from app.schemas.workflow import WorkflowUpdate, get_base_workflow
 from app.services.operators import OperatorService
 from app.services.workflow import WorkflowService
-
 
 logger = logging.getLogger(__name__)
 
@@ -328,7 +327,9 @@ class AgentConfigService:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
         agent.welcome_image = image_data
-        return await self.repository.update(agent)
+        updated = await self.repository.update(agent)
+        await invalidate_only_agent_cache(agent_id)
+        return updated
 
     async def get_welcome_image(self, agent_id: UUID) -> Optional[bytes]:
         """Get welcome image for an agent"""
@@ -344,7 +345,9 @@ class AgentConfigService:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
         agent.welcome_image = None
-        return await self.repository.update(agent)
+        updated = await self.repository.update(agent)
+        await invalidate_only_agent_cache(agent_id)
+        return updated
 
     async def get_by_operator_id(self, operator_id: UUID) -> AgentModel:
         """Get agent by operator ID with security_settings eagerly loaded."""
