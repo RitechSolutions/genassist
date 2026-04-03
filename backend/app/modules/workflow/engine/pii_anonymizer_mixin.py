@@ -91,6 +91,8 @@ class PIIAnonymizerMixin:
     async def execute(self, direct_input: Any = None) -> Any:
         # Per-execution accumulator read by the class-level history wrappers
         self._pii_history_token_items: list[dict[str, Any]] = []
+        # Per-execution accumulator for prompt token items, used by _unmask_for_tool
+        self._pii_prompt_token_items: list[dict[str, Any]] = []
         original_process = self.process
 
         async def _pii_process(config: Dict[str, Any]) -> Any:
@@ -116,6 +118,12 @@ class PIIAnonymizerMixin:
                             combined_token_map = {"items": []}
                         combined_token_map["items"].extend(token_map.get("items", []))
 
+            # Store prompt token items so _unmask_for_tool can access them
+            # during tool execution (before process() returns).
+            self._pii_prompt_token_items = list(
+                combined_token_map.get("items", [])
+            ) if combined_token_map else []
+
             result = await original_process(masked_config)
 
             # Merge token items accumulated by the class-level history wrappers
@@ -140,6 +148,21 @@ class PIIAnonymizerMixin:
         finally:
             del self.process
             del self._pii_history_token_items
+            del self._pii_prompt_token_items
+
+    def _unmask_for_tool(self, text: str) -> str:
+        """Unmask PII tokens in a string using the current combined token map.
+
+        This is meant to be called during tool execution (inside process())
+        so that tools receive original PII values instead of anonymization
+        tokens like ``<EMAIL_ADDRESS_1>``.
+        """
+        items = getattr(self, "_pii_prompt_token_items", []) + getattr(
+            self, "_pii_history_token_items", []
+        )
+        if not items:
+            return text
+        return _service.unmask(text, {"items": items})
 
     def _unmask_result(self, result: Any, token_map: dict[str, Any]) -> Any:
         if isinstance(result, str):

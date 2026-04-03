@@ -103,6 +103,20 @@ class PIIAnonymizer:
         if not results:
             return text, {}
 
+        # Presidio may return multiple detections for overlapping spans
+        # (e.g., a phone number also matching US_DRIVER_LICENSE).  Keep only
+        # the highest-score result for each span region so we never substitute
+        # the same characters twice, which would corrupt the output.
+        results = sorted(results, key=lambda r: (-r.score, r.start))
+        deduplicated: list = []
+        for result in results:
+            if any(
+                result.start < existing.end and result.end > existing.start
+                for existing in deduplicated
+            ):
+                continue
+            deduplicated.append(result)
+
         # Process right-to-left so earlier offsets stay valid after each substitution.
         # Each entity type gets its own counter so two different emails become
         # <EMAIL_ADDRESS_1> and <EMAIL_ADDRESS_2> and can be independently restored.
@@ -110,7 +124,7 @@ class PIIAnonymizer:
         items: list[dict[str, Any]] = []
         masked = text
 
-        for result in sorted(results, key=lambda r: r.start, reverse=True):
+        for result in sorted(deduplicated, key=lambda r: r.start, reverse=True):
             entity_counters[result.entity_type] = entity_counters.get(result.entity_type, 0) + 1
             token = f"<{result.entity_type}_{entity_counters[result.entity_type]}>"
             original = text[result.start:result.end]
