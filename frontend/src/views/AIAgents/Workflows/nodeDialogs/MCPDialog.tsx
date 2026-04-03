@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { MCPNodeData, MCPTool, MCPConnectionType, STDIOConnectionConfig, HTTPConnectionConfig } from "../types/nodes";
+import { MCPNodeData, MCPTool, MCPConnectionType, MCPAuthType, STDIOConnectionConfig, HTTPConnectionConfig } from "../types/nodes";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
@@ -84,9 +84,45 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
       ? connectionConfig.url
       : ""
   );
+  const [authType, setAuthType] = useState<MCPAuthType>(
+    (connectionType === "http" || connectionType === "sse") && "auth_type" in connectionConfig
+      ? (connectionConfig.auth_type || "api_key")
+      : "api_key"
+  );
   const [httpApiKey, setHttpApiKey] = useState(
     (connectionType === "http" || connectionType === "sse") && "api_key" in connectionConfig
       ? connectionConfig.api_key || ""
+      : ""
+  );
+  // OAuth2 state
+  const [oauth2ClientId, setOauth2ClientId] = useState(
+    (connectionType === "http" || connectionType === "sse") && "oauth2_client_id" in connectionConfig
+      ? connectionConfig.oauth2_client_id || ""
+      : ""
+  );
+  const [oauth2ClientSecret, setOauth2ClientSecret] = useState(
+    (connectionType === "http" || connectionType === "sse") && "oauth2_client_secret" in connectionConfig
+      ? connectionConfig.oauth2_client_secret || ""
+      : ""
+  );
+  const [oauth2TokenUrl, setOauth2TokenUrl] = useState(
+    (connectionType === "http" || connectionType === "sse") && "oauth2_token_url" in connectionConfig
+      ? connectionConfig.oauth2_token_url || ""
+      : ""
+  );
+  const [oauth2IssuerUrl, setOauth2IssuerUrl] = useState(
+    (connectionType === "http" || connectionType === "sse") && "oauth2_issuer_url" in connectionConfig
+      ? connectionConfig.oauth2_issuer_url || ""
+      : ""
+  );
+  const [oauth2Scopes, setOauth2Scopes] = useState(
+    (connectionType === "http" || connectionType === "sse") && "oauth2_scopes" in connectionConfig
+      ? (connectionConfig.oauth2_scopes || []).join(" ")
+      : ""
+  );
+  const [oauth2Audience, setOauth2Audience] = useState(
+    (connectionType === "http" || connectionType === "sse") && "oauth2_audience" in connectionConfig
+      ? connectionConfig.oauth2_audience || ""
       : ""
   );
   const [httpTimeout, setHttpTimeout] = useState(
@@ -115,7 +151,14 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           setStdioEnv(JSON.stringify(data.connectionConfig.env || {}, null, 2));
         } else {
           setHttpUrl(data.connectionConfig.url || "");
+          setAuthType(data.connectionConfig.auth_type || "api_key");
           setHttpApiKey(data.connectionConfig.api_key || "");
+          setOauth2ClientId(data.connectionConfig.oauth2_client_id || "");
+          setOauth2ClientSecret(data.connectionConfig.oauth2_client_secret || "");
+          setOauth2TokenUrl(data.connectionConfig.oauth2_token_url || "");
+          setOauth2IssuerUrl(data.connectionConfig.oauth2_issuer_url || "");
+          setOauth2Scopes((data.connectionConfig.oauth2_scopes || []).join(" "));
+          setOauth2Audience(data.connectionConfig.oauth2_audience || "");
           setHttpTimeout(data.connectionConfig.timeout?.toString() || "30");
           setHttpHeaders(JSON.stringify(data.connectionConfig.headers || {}, null, 2));
         }
@@ -128,7 +171,14 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           setStdioEnv("{}");
         } else {
           setHttpUrl("");
+          setAuthType("api_key");
           setHttpApiKey("");
+          setOauth2ClientId("");
+          setOauth2ClientSecret("");
+          setOauth2TokenUrl("");
+          setOauth2IssuerUrl("");
+          setOauth2Scopes("");
+          setOauth2Audience("");
           setHttpTimeout("30");
           setHttpHeaders("{}");
         }
@@ -148,14 +198,33 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         env: parseJsonSafely(stdioEnv, {}),
       });
     } else {
-      setConnectionConfig({
+      const cfg: HTTPConnectionConfig = {
         url: httpUrl,
-        api_key: httpApiKey || undefined,
+        auth_type: authType,
         timeout: httpTimeout ? parseInt(httpTimeout, 10) : undefined,
         headers: parseJsonSafely(httpHeaders, {}),
-      });
+      };
+      if (authType === "api_key") {
+        cfg.api_key = httpApiKey || undefined;
+      } else if (authType === "oauth2") {
+        cfg.oauth2_flow = "client_credentials";
+        cfg.oauth2_client_id = oauth2ClientId || undefined;
+        cfg.oauth2_client_secret = oauth2ClientSecret || undefined;
+        cfg.oauth2_token_url = oauth2TokenUrl || undefined;
+        cfg.oauth2_issuer_url = oauth2IssuerUrl || undefined;
+        cfg.oauth2_scopes = oauth2Scopes
+          ? oauth2Scopes.split(/\s+/).filter(Boolean)
+          : undefined;
+        cfg.oauth2_audience = oauth2Audience || undefined;
+      }
+      setConnectionConfig(cfg);
     }
-  }, [connectionType, stdioCommand, stdioArgs, stdioEnv, httpUrl, httpApiKey, httpTimeout, httpHeaders]);
+  }, [
+    connectionType, stdioCommand, stdioArgs, stdioEnv,
+    httpUrl, authType, httpApiKey,
+    oauth2ClientId, oauth2ClientSecret, oauth2TokenUrl, oauth2IssuerUrl, oauth2Scopes, oauth2Audience,
+    httpTimeout, httpHeaders,
+  ]);
 
   const parseJsonSafely = (jsonString: string, defaultValue: Record<string, string>): Record<string, string> => {
     try {
@@ -185,6 +254,16 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
       if (!httpUrl.trim()) {
         toast.error("Server URL is required for HTTP/SSE connections");
         return;
+      }
+      if (authType === "oauth2") {
+        if (!oauth2ClientId.trim() || !oauth2ClientSecret.trim()) {
+          toast.error("OAuth2 requires Client ID and Client Secret");
+          return;
+        }
+        if (!oauth2TokenUrl.trim() && !oauth2IssuerUrl.trim()) {
+          toast.error("OAuth2 requires either a Token URL or an Issuer URL");
+          return;
+        }
       }
     }
 
@@ -407,19 +486,120 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="httpApiKey">API Key (Optional)</Label>
-            <DraggableInput
-              id="httpApiKey"
-              type="password"
-              value={httpApiKey}
-              onChange={(e) => setHttpApiKey(e.target.value)}
-              placeholder="Enter API key if required"
-              className="w-full"
-            />
-            <div className="text-xs text-gray-500 break-words">
-              API key for authenticating with the MCP server
-            </div>
+            <Label htmlFor="authType">Authentication</Label>
+            <Select
+              value={authType}
+              onValueChange={(value) => setAuthType(value as MCPAuthType)}
+            >
+              <SelectTrigger id="authType">
+                <SelectValue placeholder="Select auth type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="api_key">API Key</SelectItem>
+                <SelectItem value="oauth2">OAuth2 / OpenID Connect</SelectItem>
+                <SelectItem value="none">None</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+
+          {authType === "api_key" && (
+            <div className="space-y-2">
+              <Label htmlFor="httpApiKey">API Key</Label>
+              <DraggableInput
+                id="httpApiKey"
+                type="password"
+                value={httpApiKey}
+                onChange={(e) => setHttpApiKey(e.target.value)}
+                placeholder="Enter API key"
+                className="w-full"
+              />
+              <div className="text-xs text-gray-500 break-words">
+                Sent as <code>Authorization: Bearer &lt;key&gt;</code>
+              </div>
+            </div>
+          )}
+
+          {authType === "oauth2" && (
+            <div className="space-y-3 rounded-md border p-3">
+              <p className="text-xs font-medium text-gray-700">OAuth2 — Client Credentials</p>
+
+              <div className="space-y-2">
+                <Label htmlFor="oauth2ClientId">Client ID *</Label>
+                <DraggableInput
+                  id="oauth2ClientId"
+                  value={oauth2ClientId}
+                  onChange={(e) => setOauth2ClientId(e.target.value)}
+                  placeholder="my-client-id"
+                  className="w-full"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="oauth2ClientSecret">Client Secret *</Label>
+                <DraggableInput
+                  id="oauth2ClientSecret"
+                  type="password"
+                  value={oauth2ClientSecret}
+                  onChange={(e) => setOauth2ClientSecret(e.target.value)}
+                  placeholder="my-client-secret"
+                  className="w-full"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="oauth2IssuerUrl">Issuer URL (OIDC Discovery)</Label>
+                <DraggableInput
+                  id="oauth2IssuerUrl"
+                  value={oauth2IssuerUrl}
+                  onChange={(e) => setOauth2IssuerUrl(e.target.value)}
+                  placeholder="https://auth.example.com"
+                  className="w-full"
+                />
+                <div className="text-xs text-gray-500 break-words">
+                  Token URL is auto-discovered via <code>/.well-known/openid-configuration</code>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="oauth2TokenUrl">Token URL (direct)</Label>
+                <DraggableInput
+                  id="oauth2TokenUrl"
+                  value={oauth2TokenUrl}
+                  onChange={(e) => setOauth2TokenUrl(e.target.value)}
+                  placeholder="https://auth.example.com/oauth/token"
+                  className="w-full"
+                />
+                <div className="text-xs text-gray-500 break-words">
+                  Use this instead of Issuer URL to skip OIDC discovery
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="oauth2Scopes">Scopes (space-separated)</Label>
+                <DraggableInput
+                  id="oauth2Scopes"
+                  value={oauth2Scopes}
+                  onChange={(e) => setOauth2Scopes(e.target.value)}
+                  placeholder="read write mcp:tools"
+                  className="w-full"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="oauth2Audience">Audience (optional)</Label>
+                <DraggableInput
+                  id="oauth2Audience"
+                  value={oauth2Audience}
+                  onChange={(e) => setOauth2Audience(e.target.value)}
+                  placeholder="https://api.example.com"
+                  className="w-full"
+                />
+                <div className="text-xs text-gray-500 break-words">
+                  Required by some providers (Auth0, Azure AD, etc.)
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="httpTimeout">Timeout (seconds)</Label>

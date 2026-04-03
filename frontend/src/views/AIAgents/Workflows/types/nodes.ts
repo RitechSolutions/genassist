@@ -332,6 +332,9 @@ export interface MCPTool {
 // Connection configuration types
 export type MCPConnectionType = "stdio" | "sse" | "http";
 
+export type MCPAuthType = "api_key" | "oauth2" | "none";
+export type MCPOAuth2Flow = "client_credentials";
+
 export interface STDIOConnectionConfig {
   command: string; // Required: Command to run
   args?: string[]; // Optional: Command arguments
@@ -340,7 +343,19 @@ export interface STDIOConnectionConfig {
 
 export interface HTTPConnectionConfig {
   url: string; // Required: Server URL
-  api_key?: string; // Optional: API key for auth
+  // --- Authentication ---
+  auth_type?: MCPAuthType; // "api_key" (default) | "oauth2" | "none"
+  // api_key auth
+  api_key?: string;
+  // oauth2 auth
+  oauth2_flow?: MCPOAuth2Flow; // "client_credentials" (default)
+  oauth2_client_id?: string;
+  oauth2_client_secret?: string;
+  oauth2_token_url?: string; // Direct token endpoint
+  oauth2_issuer_url?: string; // OIDC issuer — token URL auto-discovered
+  oauth2_scopes?: string[]; // e.g. ["read", "mcp:tools"]
+  oauth2_audience?: string; // Required by some providers (Auth0, etc.)
+  // --- General ---
   headers?: Record<string, string>; // Optional: Custom headers
   timeout?: number; // Optional: Timeout in seconds
 }

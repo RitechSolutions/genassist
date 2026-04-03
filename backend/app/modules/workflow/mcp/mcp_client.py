@@ -4,11 +4,17 @@ MCP Client using the official MCP Python SDK.
 Supports multiple connection types:
 - STDIO: For local MCP servers running as processes
 - HTTP/SSE: For remote MCP servers over HTTP/HTTPS
+
+Authentication (HTTP/SSE only):
+- api_key  : static Bearer token  (auth_type="api_key" or omitted)
+- oauth2   : OAuth2 Client Credentials / OIDC  (auth_type="oauth2")
 """
 
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Literal, Optional
+
+from app.modules.workflow.mcp.oauth2_client import get_oauth2_token
 
 from mcp import ClientSession as MCPClientSession
 from mcp.client.sse import sse_client as mcp_sse_client
@@ -80,19 +86,41 @@ class MCPConnectionManager:
                 await session.initialize()
                 yield session
 
+    async def _resolve_auth_header(self) -> Optional[str]:
+        """
+        Return the value for the Authorization header based on auth_type.
+
+        - auth_type "api_key" (or absent): use api_key field as Bearer token
+        - auth_type "oauth2"             : fetch token via OAuth2/OIDC
+        - auth_type "none"               : no Authorization header
+        """
+        auth_type: str = self.connection_config.get("auth_type", "api_key")
+
+        if auth_type == "none":
+            return None
+
+        if auth_type == "oauth2":
+            token = await get_oauth2_token(self.connection_config)
+            return f"Bearer {token}"
+
+        # Default: static api_key
+        api_key: Optional[str] = self.connection_config.get("api_key")
+        if api_key:
+            return f"Bearer {api_key}"
+        return None
+
     @asynccontextmanager
     async def _create_sse_session(self):
         """Create SSE-based MCP session"""
         url = self.connection_config.get("url")
-        headers = self.connection_config.get("headers", {})
-        api_key = self.connection_config.get("api_key")
+        headers: Dict[str, Any] = dict(self.connection_config.get("headers") or {})
 
         if not url:
             raise ValueError("SSE connection requires 'url' in connection_config")
 
-        # Add authentication header if API key provided
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        auth_header = await self._resolve_auth_header()
+        if auth_header:
+            headers["Authorization"] = auth_header
 
         # Create SSE client
         async with mcp_sse_client(url, headers=headers) as (read, write):
@@ -108,14 +136,14 @@ class MCPConnectionManager:
         Streamable HTTP transport (as opposed to the older SSE transport).
         """
         url = self.connection_config.get("url")
-        headers = self.connection_config.get("headers", {})
-        api_key = self.connection_config.get("api_key")
+        headers: Dict[str, Any] = dict(self.connection_config.get("headers") or {})
 
         if not url:
             raise ValueError("HTTP connection requires 'url' in connection_config")
 
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        auth_header = await self._resolve_auth_header()
+        if auth_header:
+            headers["Authorization"] = auth_header
 
         import httpx
         async with mcp_streamablehttp_client(url, http_client=httpx.AsyncClient(headers=headers)) as (read, write, _):
