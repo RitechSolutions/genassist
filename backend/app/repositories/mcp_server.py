@@ -1,13 +1,13 @@
-from typing import Optional, List
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
-from sqlalchemy.orm import selectinload
-from uuid import UUID
-from injector import inject
 import logging
+from typing import List, Optional
+from uuid import UUID
+
+from injector import inject
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.models.mcp_server import MCPServerModel, MCPServerWorkflowModel
-from app.auth.utils import get_current_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +153,9 @@ class MCPServerRepository:
             existing_workflows_result = await self.db.execute(existing_workflows_query)
             for wf in existing_workflows_result.scalars().all():
                 await self.db.delete(wf)
+
+            # Ensure DELETEs are sent before INSERTs to avoid unique constraint violation
+            await self.db.flush()
 
             # Create new workflows
             for wf_data in workflows:
