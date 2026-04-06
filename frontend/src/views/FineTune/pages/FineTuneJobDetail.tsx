@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/button";
 import { getFineTuneJob } from "@/services/openaiFineTune";
 import { getUser } from "@/services/users";
@@ -176,6 +176,19 @@ export default function FineTuneJobDetail() {
               </div>
             </div>
           </header>
+
+          {/* Failure reason banner */}
+          {normalizedStatus === "failed" && (job.error_message as string | undefined) && (
+            <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="space-y-0.5">
+                <p className="font-medium">{job.error_message as string}</p>
+                {(job.error_code as string | undefined) && (
+                  <p className="text-xs text-destructive/70">{job.error_code as string}</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Summary stats card — same style as Agent Performance SummaryStatsCards */}
           <JobSummaryStatsCard
