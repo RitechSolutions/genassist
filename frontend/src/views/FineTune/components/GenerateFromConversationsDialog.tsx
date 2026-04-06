@@ -9,10 +9,13 @@ import {
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Loader2, Upload } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { fetchConversationById, fetchTranscripts } from "@/services/transcripts";
-import { generateTrainingFileFromConversations } from "@/services/openaiFineTune";
+import {
+  downloadGeneratedTrainingFile,
+  generateTrainingFileFromConversations,
+} from "@/services/openaiFineTune";
 import type { BackendTranscript, TranscriptEntry } from "@/interfaces/transcript.interface";
 import type { OpenAIFileItem } from "@/interfaces/fineTune.interface";
 
@@ -43,7 +46,8 @@ export function GenerateFromConversationsDialog({
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
   const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const loadConversations = useCallback(async (page: number, idSuffix: string) => {
     setIsLoadingConversations(true);
@@ -65,22 +69,22 @@ export function GenerateFromConversationsDialog({
   useEffect(() => {
     if (isOpen) {
       setConvPage(0);
-      loadConversations(0, "");
+      void loadConversations(0, "");
     }
-  }, [isOpen]);
+  }, [isOpen, loadConversations]);
 
   const handleConvIdSuffixChange = (value: string) => {
     setConvIdSuffix(value);
     if (idSuffixDebounceRef.current) clearTimeout(idSuffixDebounceRef.current);
     idSuffixDebounceRef.current = setTimeout(() => {
       setConvPage(0);
-      loadConversations(0, value);
+      void loadConversations(0, value);
     }, 700);
   };
 
   const handlePageChange = (newPage: number) => {
     setConvPage(newPage);
-    loadConversations(newPage, convIdSuffix);
+    void loadConversations(newPage, convIdSuffix);
   };
 
   const toggleExpandConversation = async (convId: string) => {
@@ -111,26 +115,48 @@ export function GenerateFromConversationsDialog({
     });
   };
 
-  const handleGenerate = async () => {
+  const handleDownload = async () => {
     if (selectedConvIds.size === 0) {
       toast.error("Please select at least one conversation");
       return;
     }
-    setIsGenerating(true);
+    setIsDownloading(true);
+    try {
+      const blob = await downloadGeneratedTrainingFile({
+        conversation_ids: Array.from(selectedConvIds),
+      });
+      // Trigger browser download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `training_${fileType}.jsonl`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("File downloaded — review it, then upload when ready");
+    } catch {
+      toast.error("Failed to generate file");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleUploadToOpenAI = async () => {
+    if (selectedConvIds.size === 0) return;
+    setIsUploading(true);
     try {
       const result: OpenAIFileItem = await generateTrainingFileFromConversations({
         conversation_ids: Array.from(selectedConvIds),
         upload_to_openai: true,
       });
       const fileLabel = fileType === "training" ? "Training" : "Validation";
-      toast.success(`${fileLabel} file generated and uploaded`);
+      toast.success(`${fileLabel} file uploaded to OpenAI`);
       onFileGenerated({ id: result.id, name: result.filename ?? `generated_${fileType}.jsonl` });
       onOpenChange(false);
       resetState();
     } catch {
-      toast.error("Failed to generate file");
+      toast.error("Failed to upload file");
     } finally {
-      setIsGenerating(false);
+      setIsUploading(false);
     }
   };
 
@@ -150,6 +176,7 @@ export function GenerateFromConversationsDialog({
   };
 
   const fileTypeLabel = fileType === "training" ? "Training" : "Validation";
+  const isBusy = isDownloading || isUploading;
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -195,7 +222,7 @@ export function GenerateFromConversationsDialog({
                     <div className="p-3 flex items-center justify-between gap-3">
                       <button
                         className="flex items-center gap-2 min-w-0 text-left flex-1"
-                        onClick={() => toggleExpandConversation(conv.id)}
+                        onClick={() => void toggleExpandConversation(conv.id)}
                       >
                         <ChevronDown
                           className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${
@@ -216,6 +243,7 @@ export function GenerateFromConversationsDialog({
                         size="sm"
                         variant={isSelected ? "default" : "outline"}
                         onClick={() => toggleSelectConv(conv.id)}
+                        disabled={isBusy}
                       >
                         {isSelected ? "Selected" : "Select"}
                       </Button>
@@ -266,7 +294,7 @@ export function GenerateFromConversationsDialog({
             <Button
               variant="outline"
               size="sm"
-              disabled={convPage === 0}
+              disabled={convPage === 0 || isBusy}
               onClick={() => handlePageChange(convPage - 1)}
             >
               Previous
@@ -275,7 +303,7 @@ export function GenerateFromConversationsDialog({
             <Button
               variant="outline"
               size="sm"
-              disabled={(convPage + 1) * PAGE_SIZE >= convTotal}
+              disabled={(convPage + 1) * PAGE_SIZE >= convTotal || isBusy}
               onClick={() => handlePageChange(convPage + 1)}
             >
               Next
@@ -287,17 +315,30 @@ export function GenerateFromConversationsDialog({
               variant="outline"
               size="sm"
               onClick={() => handleOpenChange(false)}
-              disabled={isGenerating}
+              disabled={isBusy}
             >
               Cancel
             </Button>
             <Button
+              variant="outline"
               size="sm"
-              onClick={handleGenerate}
-              disabled={isGenerating || selectedConvIds.size === 0}
+              onClick={handleDownload}
+              disabled={isBusy || selectedConvIds.size === 0}
             >
-              {isGenerating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Generate & Upload
+              {isDownloading
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <Download className="w-4 h-4 mr-2" />}
+              Download
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleUploadToOpenAI}
+              disabled={isBusy || selectedConvIds.size === 0}
+            >
+              {isUploading
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <Upload className="w-4 h-4 mr-2" />}
+              Upload to OpenAI
             </Button>
           </div>
         </DialogFooter>

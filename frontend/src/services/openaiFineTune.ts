@@ -97,3 +97,17 @@ export async function generateTrainingFileFromConversations(payload: {
     payload
   );
 }
+
+export async function downloadGeneratedTrainingFile(payload: {
+  conversation_ids: string[];
+}): Promise<Blob> {
+  const baseURL = await getApiUrl();
+  const url = `${baseURL}openai/fine-tuning/generate-from-conversations`;
+  const response = await api.request<Blob>({
+    method: "POST",
+    url,
+    data: { ...payload, upload_to_openai: false },
+    responseType: "blob",
+  });
+  return response.data;
+}
