@@ -30,6 +30,19 @@ async def test_api_key_explicit_returns_bearer():
 
 
 @pytest.mark.asyncio
+async def test_api_key_strips_redundant_bearer_prefix():
+    mgr = _manager(
+        {
+            "url": "https://mcp.example.com",
+            "auth_type": "api_key",
+            "api_key": "Bearer  sk-abc",
+        }
+    )
+    header = await mgr._resolve_auth_header()
+    assert header == "Bearer sk-abc"
+
+
+@pytest.mark.asyncio
 async def test_api_key_missing_returns_none():
     """auth_type=api_key but no key → no header (don't crash)."""
     mgr = _manager({"url": "https://mcp.example.com", "auth_type": "api_key"})

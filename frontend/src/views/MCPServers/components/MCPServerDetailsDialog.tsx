@@ -83,6 +83,15 @@ export function MCPServerDetailsDialog({
     return null;
   }
 
+  const oauthIssuer =
+    typeof server.auth_values?.oauth2_issuer_url === "string"
+      ? server.auth_values.oauth2_issuer_url.trim()
+      : "";
+  const oauthAudience =
+    typeof server.auth_values?.oauth2_audience === "string"
+      ? server.auth_values.oauth2_audience.trim()
+      : "";
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
@@ -111,6 +120,119 @@ export function MCPServerDetailsDialog({
               </Badge>
             </div>
           </div>
+
+          <div>
+            <Label className="text-xs text-gray-500">Authentication</Label>
+            <div className="mt-1">
+              <Badge variant="outline">
+                {server.auth_type === "oauth2" ? "OAuth 2.0 (JWT)" : "API key"}
+              </Badge>
+            </div>
+          </div>
+
+          {server.auth_type === "oauth2" && (
+            <div className="rounded-md border bg-gray-50/80 p-4 space-y-4">
+              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                OAuth 2.0 configuration
+              </p>
+              <p className="text-xs text-gray-600 -mt-2">
+                Clients obtain a JWT via client credentials at your IdP, then call this MCP server with{" "}
+                <code className="text-xs bg-gray-100 px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
+                . Tokens are validated against the issuer below.
+              </p>
+
+              <div>
+                <Label className="text-xs text-gray-500">Issuer URL (OIDC)</Label>
+                <div className="mt-1 flex items-start gap-2">
+                  <p className="text-sm font-mono flex-1 break-all min-w-0">
+                    {oauthIssuer || "—"}
+                  </p>
+                  {oauthIssuer && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 flex-shrink-0"
+                        onClick={() => copyToClipboard(oauthIssuer, "issuer")}
+                        title="Copy issuer URL"
+                      >
+                        {copiedField === "issuer" ? (
+                          <Check className="h-3.5 w-3.5 text-green-600" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  JWKS from <code className="text-xs">/.well-known/openid-configuration</code>
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-500">Audience (JWT aud)</Label>
+                <div className="mt-1 flex items-start gap-2">
+                  <p className="text-sm font-mono flex-1 break-all min-w-0">
+                    {oauthAudience || "None — not required by this configuration"}
+                  </p>
+                  {oauthAudience && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8 flex-shrink-0"
+                        onClick={() => copyToClipboard(oauthAudience, "audience")}
+                        title="Copy audience"
+                      >
+                        {copiedField === "audience" ? (
+                          <Check className="h-3.5 w-3.5 text-green-600" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Some providers (e.g. Auth0) require a specific API identifier as <code className="text-xs">aud</code>.
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-500">Client ID</Label>
+                <p className="text-sm font-mono mt-1 break-all">
+                  {typeof server.auth_values?.oauth2_client_id === "string" &&
+                  server.auth_values.oauth2_client_id.trim()
+                    ? server.auth_values.oauth2_client_id
+                    : "—"}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  M2M client used with your IdP (client credentials grant).
+                </p>
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-500">Client secret</Label>
+                <p className="text-sm mt-1">
+                  {server.auth_values?.oauth2_client_secret_set
+                    ? "Stored on the server (not shown). Edit the server to rotate it."
+                    : "Not set"}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {server.auth_type === "api_key" && (
+            <div className="rounded-md border bg-gray-50/80 p-4 space-y-2">
+              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                API key
+              </p>
+              <p className="text-sm font-mono">
+                {server.auth_values?.api_key === "***"
+                  ? "*** (configured — key is not shown)"
+                  : "—"}
+              </p>
+            </div>
+          )}
 
           {server.url && (
             <div>

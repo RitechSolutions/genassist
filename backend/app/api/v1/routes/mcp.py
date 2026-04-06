@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi_injector import Injected
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
+from mcp.shared.exceptions import McpError
 from mcp.types import TextContent
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import Response as StarletteResponse
@@ -25,6 +26,25 @@ from app.services.mcp_server import MCPServerService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _first_mcp_error_or_leaf(exc: BaseException) -> BaseException:
+    """
+    The MCP Python SDK runs the session inside an anyio TaskGroup. Failures such as
+    ``McpError`` are often wrapped in ``ExceptionGroup``, which is not a subclass of
+    ``Exception`` — plain ``except Exception`` will not catch it.
+    """
+    if isinstance(exc, McpError):
+        return exc
+    if isinstance(exc, BaseExceptionGroup):
+        for sub in exc.exceptions:
+            got = _first_mcp_error_or_leaf(sub)
+            if isinstance(got, McpError):
+                return got
+        if exc.exceptions:
+            return _first_mcp_error_or_leaf(exc.exceptions[0])
+        return exc
+    return exc
 
 
 class _TransportAlreadyResponded(StarletteResponse):
@@ -118,20 +138,46 @@ async def discover_mcp_tools(request: DiscoverToolsRequest) -> DiscoverToolsResp
         return DiscoverToolsResponse(tools=tools)
 
     except ValueError as e:
-        # Validation errors (e.g., invalid URL, authentication failure)
-        logger.error(f"MCP tool discovery failed: {str(e)}")
+        logger.warning("MCP discover-tools validation error: %s", e)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail=str(e),
+        ) from e
+    except McpError as e:
+        logger.warning("MCP discover-tools remote error: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+    except BaseExceptionGroup as eg:
+        inner = _first_mcp_error_or_leaf(eg)
+        if isinstance(inner, McpError):
+            logger.warning("MCP discover-tools remote error (TaskGroup): %s", inner)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(inner),
+            ) from eg
+        if isinstance(inner, ValueError):
+            logger.warning("MCP discover-tools validation error (TaskGroup): %s", inner)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(inner),
+            ) from eg
+        logger.error(
+            "MCP discover-tools failed (ExceptionGroup): %s",
+            inner,
+            exc_info=True,
         )
-    except Exception as e:
-        # Connection errors, timeouts, etc.
-        logger.error(f"Error discovering MCP tools: {str(e)}", exc_info=True)
-        error_message = f"Failed to connect to MCP server: {str(e)}"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_message
-        )
+            detail=f"Failed to connect to MCP server: {inner}",
+        ) from eg
+    except Exception as e:
+        logger.error("Error discovering MCP tools: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect to MCP server: {e}",
+        ) from e
 
 
 def extract_bearer_token(authorization: Optional[str] = Header(None)) -> Optional[str]:

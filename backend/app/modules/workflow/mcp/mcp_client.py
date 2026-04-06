@@ -14,15 +14,24 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Literal, Optional
 
-from app.modules.workflow.mcp.oauth2_client import get_oauth2_token
-
+import httpx
 from mcp import ClientSession as MCPClientSession
 from mcp.client.sse import sse_client as mcp_sse_client
 from mcp.client.stdio import stdio_client as mcp_stdio_client
 from mcp.client.streamable_http import streamable_http_client as mcp_streamablehttp_client
 from mcp.types import TextContent as MCPTextContent
 
+from app.modules.workflow.mcp.oauth2_client import get_oauth2_token
+
 logger = logging.getLogger(__name__)
+
+
+def _normalize_bearer_secret(value: str) -> str:
+    """Strip whitespace and a single leading 'Bearer ' prefix (common paste mistake)."""
+    raw = (value or "").strip()
+    if raw.lower().startswith("bearer "):
+        raw = raw[7:].lstrip()
+    return raw
 
 
 class MCPConnectionManager:
@@ -101,12 +110,17 @@ class MCPConnectionManager:
 
         if auth_type == "oauth2":
             token = await get_oauth2_token(self.connection_config)
-            return f"Bearer {token}"
+            token_norm = _normalize_bearer_secret(token)
+            if not token_norm:
+                raise ValueError("OAuth2 token response was empty")
+            return f"Bearer {token_norm}"
 
         # Default: static api_key
         api_key: Optional[str] = self.connection_config.get("api_key")
         if api_key:
-            return f"Bearer {api_key}"
+            key_norm = _normalize_bearer_secret(api_key)
+            if key_norm:
+                return f"Bearer {key_norm}"
         return None
 
     @asynccontextmanager
@@ -145,11 +159,14 @@ class MCPConnectionManager:
         if auth_header:
             headers["Authorization"] = auth_header
 
-        import httpx
-        async with mcp_streamablehttp_client(url, http_client=httpx.AsyncClient(headers=headers)) as (read, write, _):
-            async with MCPClientSession(read, write) as session:
-                await session.initialize()
-                yield session
+        # Use AsyncClient as a context manager so the transport opens correctly; the MCP SDK
+        # does not enter a caller-provided client (see streamable_http_client client_provided).
+        timeout = httpx.Timeout(30.0, read=300.0)
+        async with httpx.AsyncClient(headers=headers, timeout=timeout, follow_redirects=True) as http_client:
+            async with mcp_streamablehttp_client(url, http_client=http_client) as (read, write, _):
+                async with MCPClientSession(read, write) as session:
+                    await session.initialize()
+                    yield session
 
     async def discover_tools(self) -> List[Dict[str, Any]]:
         """

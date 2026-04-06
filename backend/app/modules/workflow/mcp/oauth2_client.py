@@ -99,8 +99,9 @@ async def _client_credentials(config: Dict[str, Any]) -> str:
             )
         token_url = await _discover_token_url(issuer_url)
 
-    # Check cache
-    cache_key = f"cc:{client_id}:{token_url}:{' '.join(sorted(scopes))}"
+    # Check cache (audience affects token content for many providers, e.g. Auth0)
+    aud_key = audience or ""
+    cache_key = f"cc:{client_id}:{token_url}:{' '.join(sorted(scopes))}:{aud_key}"
     cached = _cache.get(cache_key)
     if cached:
         logger.debug(f"OAuth2: using cached token for client_id={client_id}")

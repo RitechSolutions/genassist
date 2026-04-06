@@ -15,6 +15,7 @@ import { toast } from "react-hot-toast";
 import { X, Plus, Copy, Check, RefreshCw, AlertTriangle } from "lucide-react";
 import {
   MCPServer,
+  MCPServerAuthType,
   MCPServerCreatePayload,
   MCPServerUpdatePayload,
   MCPServerWorkflow,
@@ -29,8 +30,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { ScrollArea } from "@/components/scroll-area";
-
 interface Props {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -49,7 +48,12 @@ export function MCPServerDialog({
   serverToEdit,
 }: Props) {
   const [name, setName] = useState("");
+  const [authType, setAuthType] = useState<MCPServerAuthType>("api_key");
   const [apiKey, setApiKey] = useState("");
+  const [oauth2ClientId, setOauth2ClientId] = useState("");
+  const [oauth2ClientSecret, setOauth2ClientSecret] = useState("");
+  const [oauth2IssuerUrl, setOauth2IssuerUrl] = useState("");
+  const [oauth2Audience, setOauth2Audience] = useState("");
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,7 +81,19 @@ export function MCPServerDialog({
 
       if (mode === "edit" && serverToEdit) {
         setName(serverToEdit.name);
+        setAuthType(serverToEdit.auth_type === "oauth2" ? "oauth2" : "api_key");
         setApiKey(""); // Don't show existing API key for security
+        setOauth2ClientSecret("");
+        const av = serverToEdit.auth_values ?? {};
+        setOauth2ClientId(
+          typeof av.oauth2_client_id === "string" ? av.oauth2_client_id : ""
+        );
+        setOauth2IssuerUrl(
+          typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url : ""
+        );
+        setOauth2Audience(
+          typeof av.oauth2_audience === "string" ? av.oauth2_audience : ""
+        );
         setDescription(serverToEdit.description || "");
         setIsActive(serverToEdit.is_active === 1);
         setSelectedWorkflows(serverToEdit.workflows || []);
@@ -85,7 +101,12 @@ export function MCPServerDialog({
         setIsApiKeyCopied(false);
       } else {
         setName("");
+        setAuthType("api_key");
         setApiKey("");
+        setOauth2ClientId("");
+        setOauth2ClientSecret("");
+        setOauth2IssuerUrl("");
+        setOauth2Audience("");
         setDescription("");
         setIsActive(true);
         setSelectedWorkflows([]);
@@ -126,7 +147,26 @@ export function MCPServerDialog({
   const handleSubmit = async () => {
     const missingFields: string[] = [];
     if (!name.trim()) missingFields.push("Name");
-    if (mode === "create" && !apiKey.trim()) missingFields.push("API Key");
+    if (mode === "create" && authType === "api_key" && !apiKey.trim()) {
+      missingFields.push("API Key");
+    }
+    if (mode === "create" && authType === "oauth2") {
+      if (!oauth2ClientId.trim()) missingFields.push("OAuth Client ID");
+      if (!oauth2ClientSecret.trim()) missingFields.push("OAuth Client Secret");
+      if (!oauth2IssuerUrl.trim()) missingFields.push("Issuer URL");
+    }
+    if (mode === "edit" && serverToEdit) {
+      const prevAuth: MCPServerAuthType =
+        serverToEdit.auth_type === "oauth2" ? "oauth2" : "api_key";
+      if (authType === "oauth2" && prevAuth !== "oauth2") {
+        if (!oauth2ClientId.trim()) missingFields.push("OAuth Client ID");
+        if (!oauth2ClientSecret.trim()) missingFields.push("OAuth Client Secret");
+        if (!oauth2IssuerUrl.trim()) missingFields.push("Issuer URL");
+      }
+      if (authType === "api_key" && prevAuth !== "api_key") {
+        if (!apiKey.trim()) missingFields.push("API Key");
+      }
+    }
     if (selectedWorkflows.length === 0) missingFields.push("At least one workflow");
 
     if (missingFields.length > 0) {
@@ -152,10 +192,18 @@ export function MCPServerDialog({
       if (mode === 'create') {
         const payload: MCPServerCreatePayload = {
           name,
+          auth_type: authType,
           description: description || undefined,
           is_active: isActive ? 1 : 0,
           workflows: selectedWorkflows,
-          api_key: apiKey,
+          ...(authType === "api_key"
+            ? { api_key: apiKey }
+            : {
+                oauth2_client_id: oauth2ClientId.trim(),
+                oauth2_client_secret: oauth2ClientSecret.trim(),
+                oauth2_issuer_url: oauth2IssuerUrl.trim(),
+                ...(oauth2Audience.trim() ? { oauth2_audience: oauth2Audience.trim() } : {}),
+              }),
         };
         await createMCPServer(payload);
         toast.success('MCP server created successfully.');
@@ -171,7 +219,43 @@ export function MCPServerDialog({
         if ((description || undefined) !== (serverToEdit.description || undefined))
           updatePayload.description = description || undefined;
         if ((isActive ? 1 : 0) !== serverToEdit.is_active) updatePayload.is_active = isActive ? 1 : 0;
-        if (apiKey.trim()) updatePayload.api_key = apiKey;
+
+        const prevAuth: MCPServerAuthType =
+          serverToEdit.auth_type === "oauth2" ? "oauth2" : "api_key";
+        if (authType !== prevAuth) {
+          updatePayload.auth_type = authType;
+        }
+        if (authType === "api_key" && apiKey.trim()) updatePayload.api_key = apiKey;
+        if (authType === "oauth2") {
+          const prevAv = serverToEdit.auth_values ?? {};
+          const prevIss =
+            typeof prevAv.oauth2_issuer_url === "string"
+              ? prevAv.oauth2_issuer_url
+              : "";
+          if (oauth2IssuerUrl.trim() !== prevIss.trim()) {
+            updatePayload.oauth2_issuer_url = oauth2IssuerUrl.trim();
+          }
+          const prevAud =
+            typeof prevAv.oauth2_audience === "string"
+              ? prevAv.oauth2_audience
+              : "";
+          const prevAudTrim = prevAud.trim();
+          const nextAud = oauth2Audience.trim();
+          if (nextAud !== prevAudTrim) {
+            updatePayload.oauth2_audience = nextAud || "";
+          }
+          const prevCid =
+            typeof prevAv.oauth2_client_id === "string" ? prevAv.oauth2_client_id : "";
+          if (
+            oauth2ClientId.trim() &&
+            oauth2ClientId.trim() !== prevCid.trim()
+          ) {
+            updatePayload.oauth2_client_id = oauth2ClientId.trim();
+          }
+          if (oauth2ClientSecret.trim()) {
+            updatePayload.oauth2_client_secret = oauth2ClientSecret.trim();
+          }
+        }
 
         const workflowsChanged =
           selectedWorkflows.length !== (serverToEdit.workflows || []).length ||
@@ -181,17 +265,10 @@ export function MCPServerDialog({
           });
         if (workflowsChanged) updatePayload.workflows = selectedWorkflows;
 
-        await updateMCPServer(serverToEdit.id, updatePayload);
+        const updated = await updateMCPServer(serverToEdit.id, updatePayload);
         toast.success('MCP server updated successfully.');
 
-        if (onServerUpdated) {
-          const updatedServer: MCPServer = {
-            ...serverToEdit,
-            ...updatePayload,
-            workflows: selectedWorkflows,
-          };
-          onServerUpdated(updatedServer);
-        }
+        onServerUpdated?.(updated);
 
         onOpenChange(false);
       }
@@ -295,6 +372,29 @@ export function MCPServerDialog({
             </div>
 
             <div>
+              <Label htmlFor="auth-type">Authentication *</Label>
+              <Select
+                value={authType}
+                onValueChange={(v) => setAuthType(v as MCPServerAuthType)}
+                disabled={isSubmitting}
+              >
+                <SelectTrigger id="auth-type" className="w-full mt-1">
+                  <SelectValue placeholder="Select method" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="api_key">API key</SelectItem>
+                  <SelectItem value="oauth2">OAuth 2.0 (JWT access token)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                {authType === "api_key"
+                  ? `MCP clients send Authorization: Bearer <api_key>.`
+                  : `Clients use the client credentials grant at your IdP, then send Authorization: Bearer <access_token>. The token must be a JWT whose issuer matches Issuer URL and whose azp/client_id matches Client ID.`}
+              </p>
+            </div>
+
+            {authType === "api_key" && (
+            <div>
               <div className="flex items-center justify-between mb-2">
                 <Label htmlFor="api-key">
                   API Key {mode === "create" ? "*" : "(leave blank to keep existing)"}
@@ -366,6 +466,104 @@ export function MCPServerDialog({
                   : "API key for authenticating MCP client requests"}
               </p>
             </div>
+            )}
+
+            {authType === "oauth2" && (
+              <div className="space-y-3 rounded-md border p-3">
+                <p className="text-xs font-medium text-gray-700">OAuth 2.0 — client credentials → JWT</p>
+
+                {mode === "edit" && serverToEdit?.auth_type === "oauth2" && (
+                  <div className="rounded-md bg-slate-50 border border-slate-200 p-3 space-y-2 mb-1">
+                    <p className="text-xs font-semibold text-slate-800">
+                      Current configuration (from server)
+                    </p>
+                    <dl className="grid gap-2 text-xs text-slate-700">
+                      <div>
+                        <dt className="text-slate-500 font-normal">Issuer URL (OIDC)</dt>
+                        <dd className="font-mono break-all mt-0.5">
+                          {oauth2IssuerUrl.trim() || "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500 font-normal">Audience</dt>
+                        <dd className="font-mono break-all mt-0.5">
+                          {oauth2Audience.trim() ? oauth2Audience : "None"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500 font-normal">Client ID</dt>
+                        <dd className="font-mono break-all mt-0.5">
+                          {oauth2ClientId.trim() || "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-500 font-normal">Client secret</dt>
+                        <dd className="mt-0.5">
+                          {serverToEdit.auth_values?.oauth2_client_secret_set
+                            ? "Stored (hidden) — enter a new secret below to replace it"
+                            : "Not set"}
+                        </dd>
+                      </div>
+                    </dl>
+                    <p className="text-xs text-slate-600 pt-1 border-t border-slate-200">
+                      Edit the fields below to change values. Leave Client secret empty to keep the current
+                      secret. Change Client ID only if you are rotating credentials at your IdP.
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="oauth-client-id">Client ID {mode === "create" ? "*" : "(optional if unchanged)"}</Label>
+                  <Input
+                    id="oauth-client-id"
+                    value={oauth2ClientId}
+                    onChange={(e) => setOauth2ClientId(e.target.value)}
+                    placeholder="Machine-to-machine client id"
+                    className="font-mono text-sm"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="oauth-client-secret">Client Secret {mode === "create" ? "*" : "(optional if unchanged)"}</Label>
+                  <Input
+                    id="oauth-client-secret"
+                    type="password"
+                    value={oauth2ClientSecret}
+                    onChange={(e) => setOauth2ClientSecret(e.target.value)}
+                    placeholder={
+                      mode === "edit" && serverToEdit?.auth_values?.oauth2_client_secret_set
+                        ? "Leave empty to keep current secret"
+                        : "Client secret"
+                    }
+                    className="font-mono text-sm"
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="oauth-issuer">Issuer URL (OIDC) *</Label>
+                  <Input
+                    id="oauth-issuer"
+                    value={oauth2IssuerUrl}
+                    onChange={(e) => setOauth2IssuerUrl(e.target.value)}
+                    placeholder="https://your-tenant.auth0.com"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-gray-500">
+                    JWKS are loaded from <code className="text-xs">/.well-known/openid-configuration</code>
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="oauth-audience">Audience (optional)</Label>
+                  <Input
+                    id="oauth-audience"
+                    value={oauth2Audience}
+                    onChange={(e) => setOauth2Audience(e.target.value)}
+                    placeholder="API identifier if your IdP sets aud"
+                    className="font-mono text-sm"
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <Label htmlFor="description">Description</Label>
