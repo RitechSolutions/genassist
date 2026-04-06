@@ -1,5 +1,7 @@
 import { Card } from "@/components/card";
-import { CheckCircle, FolderCog, Save } from "lucide-react";
+import { Files, FolderCog, Save } from "lucide-react";
+import { Link } from "react-router-dom";
+import { hasPermission } from "@/services/auth";
 import {
   Select,
   SelectTrigger,
@@ -9,7 +11,8 @@ import {
 } from "@/components/select";
 import type { FileManagerSettings } from "@/services/fileManager";
 import { useState } from "react";
-import { Button } from "@/components/button";
+import { Button, buttonVariants } from "@/components/button";
+import { cn } from "@/helpers/utils";
 import toast from "react-hot-toast";
 import { updateFileManagerSettings } from "@/services/appSettings";
 
@@ -81,15 +84,26 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          type="button"
-          className="ml-auto rounded-full"
-          loading={isSaving}
-          icon={<Save className="w-4 h-4" />}
-          onClick={handleSave}>
-          Save
-        </Button>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {hasPermission("read:file") && (
+            <Link
+              to="/settings/file-manager"
+              className={cn(buttonVariants({ variant: "outline" }), "rounded-full")}
+            >
+              <Files className="w-4 h-4" />
+              Manage Files
+            </Link>
+          )}
+          <Button
+            variant="outline"
+            type="button"
+            className="rounded-full"
+            loading={isSaving}
+            icon={<Save className="w-4 h-4" />}
+            onClick={handleSave}>
+            Save
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-1">

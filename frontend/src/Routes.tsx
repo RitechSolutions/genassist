@@ -35,6 +35,7 @@ import MLModelDetail from "@/views/MLModels/components/MLModelDetail";
 import { FeatureFlags } from "./views/Settings/pages/FeatureFlags";
 import { Translations } from "./views/Settings/pages/Translations";
 import { Languages } from "./views/Settings/pages/Languages";
+import { FileManagerFiles } from "./views/Settings/pages/FileManagerFiles";
 import { useFeatureFlag } from "./context/FeatureFlagContext";
 import { GlobalChat } from "./components/GlobalChat";
 import ServerDownPage from "@/components/ServerDownPage";
@@ -209,6 +210,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:app_setting"]}>
                   <Languages />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "settings/file-manager",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:file"]}>
+                  <FileManagerFiles />
                 </ProtectedRoute>
               ),
             },

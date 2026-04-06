@@ -1,4 +1,4 @@
-import axios, { Method, AxiosRequestConfig, AxiosError } from "axios";
+import axios, { Method, AxiosRequestConfig, AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { setServerDown, setServerUp } from "@/config/serverStatus";
 
 const AUTH_KEYS = ["access_token", "refresh_token", "token_type", "isAuthenticated", "force_upd_pass_date", "tenant_id"] as const;
@@ -30,7 +30,7 @@ const api = axios.create({
 
 // Interceptor: Request
 api.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
     const accessToken = localStorage.getItem("access_token");
     const tokenType = localStorage.getItem("token_type") || "Bearer";
     const tenantId = localStorage.getItem("tenant_id");
@@ -43,6 +43,16 @@ api.interceptors.request.use(
     // Add tenant ID header if available
     if (tenantId) {
       config.headers["x-tenant-id"] = tenantId;
+    }
+
+    // Let the runtime set multipart boundary; default application/json breaks FormData uploads
+    if (config.data instanceof FormData) {
+      const h = config.headers;
+      if (typeof h.delete === "function") {
+        h.delete("Content-Type");
+      } else {
+        delete (h as Record<string, unknown>)["Content-Type"];
+      }
     }
 
     return config;
