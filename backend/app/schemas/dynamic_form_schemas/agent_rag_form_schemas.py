@@ -33,7 +33,7 @@ AGENT_RAG_FORM_SCHEMAS_VECTOR_AND_LEGRA: Dict[str, TypeSchema] = {
                         type="select",
                         label="Database Type",
                         required=True,
-                        default="chroma",
+                        default="pgvector",
                         options=[
                             {"value": "chroma", "label": "ChromaDB"},
                             {"value": "pgvector", "label": "PostgreSQL (pgvector)"},
