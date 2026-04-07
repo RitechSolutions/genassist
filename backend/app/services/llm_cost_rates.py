@@ -1,6 +1,7 @@
 import csv
 import io
 import logging
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
@@ -24,6 +25,25 @@ class LlmCostRateService:
 
     async def list_active(self) -> list[LlmCostRateModel]:
         return await self.repo.list_active()
+
+    async def export_csv(self) -> str:
+        """
+        Export the current rates in the same 4-column format the importer accepts.
+        """
+        rows = await self.repo.list_active()
+        out = io.StringIO()
+        writer = csv.writer(out, lineterminator="\n")
+        writer.writerow(["provider", "model", "input_per_1k", "output_per_1k"])
+        for r in rows:
+            writer.writerow(
+                [
+                    (r.provider_key or "").strip(),
+                    (r.model_key or "").strip(),
+                    f"{float(r.input_per_1k):.10g}",
+                    f"{float(r.output_per_1k):.10g}",
+                ]
+            )
+        return out.getvalue()
 
     async def delete_by_id(self, rate_id: UUID) -> bool:
         tenant = get_tenant_context()
@@ -59,8 +79,8 @@ class LlmCostRateService:
             return ""
 
         for i, row in enumerate(reader, start=2):
-            prov = col(row, "provider").lower()
-            mod = col(row, "model").lower()
+            prov = col(row, "provider").strip().lower()
+            mod = col(row, "model").strip().lower()
             if not prov or not mod:
                 errors.append(f"Row {i}: provider and model are required")
                 continue
@@ -77,6 +97,8 @@ class LlmCostRateService:
             if existing:
                 existing.input_per_1k = inp
                 existing.output_per_1k = out
+                # Defensive: older schema/model mismatch could leave this NULL.
+                existing.updated_at = datetime.now(timezone.utc)
                 self.repo.db.add(existing)
                 updated += 1
             else:
@@ -86,6 +108,7 @@ class LlmCostRateService:
                         model_key=mod,
                         input_per_1k=inp,
                         output_per_1k=out,
+                        updated_at=datetime.now(timezone.utc),
                     )
                 )
                 inserted += 1

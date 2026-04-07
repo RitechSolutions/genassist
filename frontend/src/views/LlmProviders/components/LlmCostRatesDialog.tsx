@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import {
   getLlmCostRates,
   importLlmCostRatesCsv,
   deleteLlmCostRate,
+  exportLlmCostRatesCsv,
 } from "@/services/llmCostRates";
 import type { LlmCostRate } from "@/interfaces/llmCostRate.interface";
 import toast from "react-hot-toast";
@@ -59,6 +60,8 @@ export function LlmCostRatesDialog({
   const [rowToDelete, setRowToDelete] = useState<LlmCostRate | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,6 +81,25 @@ export function LlmCostRatesDialog({
       void load();
     }
   }, [open, load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [open]);
+
+  const totalRows = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return rows.slice(start, start + pageSize);
+  }, [rows, page, pageSize]);
+
+  const fromRow = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
+  const toRow = totalRows === 0 ? 0 : Math.min(totalRows, page * pageSize);
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -148,6 +170,21 @@ export function LlmCostRatesDialog({
     toast.success("Template downloaded.");
   };
 
+  const downloadCurrentRatesCsv = async () => {
+    try {
+      const blob = await exportLlmCostRatesCsv();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "llm-cost-rates.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Current rates downloaded.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed.");
+    }
+  };
+
   return (
     <>
     <Dialog
@@ -179,6 +216,15 @@ export function LlmCostRatesDialog({
           >
             <FileText className="w-4 h-4 mr-2" />
             CSV template
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void downloadCurrentRatesCsv()}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Download current CSV
           </Button>
           <Button
             type="button"
@@ -239,7 +285,7 @@ export function LlmCostRatesDialog({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {pagedRows.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-mono text-xs">
                       {r.provider_key}
@@ -276,6 +322,57 @@ export function LlmCostRatesDialog({
             </Table>
           )}
         </div>
+
+        {!loading && rows.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span className="tabular-nums">
+              {fromRow}–{toRow} of {totalRows}
+            </span>
+
+            <div className="flex items-center gap-2 ml-auto">
+              <label className="flex items-center gap-2">
+                <span className="text-xs">Rows</span>
+                <select
+                  className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
+                  value={pageSize}
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    setPageSize(next);
+                    setPage(1);
+                  }}
+                >
+                  {[10, 25, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Prev
+              </Button>
+              <span className="tabular-nums">
+                Page {page} / {totalPages}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
 
