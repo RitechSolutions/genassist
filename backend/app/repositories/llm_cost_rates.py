@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.llm_cost_rate import LlmCostRateModel
@@ -25,10 +25,12 @@ class LlmCostRateRepository:
     async def get_active_by_provider_model(
         self, provider_key: str, model_key: str
     ) -> LlmCostRateModel | None:
+        provider_key = (provider_key or "").strip().lower()
+        model_key = (model_key or "").strip().lower()
         result = await self.db.execute(
             select(LlmCostRateModel).where(
-                LlmCostRateModel.provider_key == provider_key,
-                LlmCostRateModel.model_key == model_key,
+                func.lower(func.trim(LlmCostRateModel.provider_key)) == provider_key,
+                func.lower(func.trim(LlmCostRateModel.model_key)) == model_key,
                 LlmCostRateModel.is_deleted == 0,
             )
         )

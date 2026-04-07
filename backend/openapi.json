@@ -7161,6 +7161,34 @@
         ]
       }
     },
+    "/api/llm-cost-rates/export": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "Export Cost Rates Csv",
+        "operationId": "export_cost_rates_csv_api_llm_cost_rates_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/llm-cost-rates/{rate_id}": {
       "delete": {
         "tags": [
