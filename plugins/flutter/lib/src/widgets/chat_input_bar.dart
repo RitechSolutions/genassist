@@ -34,6 +34,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
   final FocusNode _focusNode = FocusNode();
   final List<PlatformFile> _selectedFiles = [];
 
+  bool get _hasInput => _controller.text.trim().isNotEmpty || _selectedFiles.isNotEmpty;
+
   @override
   void dispose() {
     _controller.dispose();
@@ -102,8 +104,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
   @override
   Widget build(BuildContext context) {
     final chatState = context.watch<ChatState>();
-    final isDisabled = chatState.isTakenOver || chatState.isFinalized;
+    final isInputDisabled = chatState.isTakenOver || chatState.isFinalized;
+    final isSendDisabled = isInputDisabled || chatState.isAgentTyping;
     final primaryColor = widget.theme?.primaryColor ?? GenAgentChatTheme.defaultPrimaryColor;
+    final canSend = !isSendDisabled && _hasInput;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -133,7 +137,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
         // Input bar.
         Container(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
           decoration: BoxDecoration(
             color: widget.theme?.backgroundColor ?? Colors.white,
             border: Border(
@@ -144,30 +148,27 @@ class _ChatInputBarState extends State<ChatInputBar> {
             top: false,
             child: Row(
               children: [
-                // File picker button.
                 if (widget.useFile)
-                  IconButton(
-                    onPressed: isDisabled ? null : _pickFiles,
-                    icon: Icon(
-                      Icons.attach_file,
-                      color: isDisabled ? Colors.grey[400] : primaryColor,
-                    ),
+                  _buildActionCircle(
+                    onTap: isInputDisabled ? null : _pickFiles,
+                    icon: Icons.add,
                     tooltip: 'Attach file',
+                    background: const Color(0xFFF4F4F8),
+                    iconColor: isInputDisabled ? Colors.grey[400]! : const Color(0xFF8E8E93),
                   ),
-
-                // Text input field.
+                if (widget.useFile) const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: _controller,
                     focusNode: _focusNode,
-                    enabled: !isDisabled,
+                    enabled: !isInputDisabled,
                     maxLines: 4,
                     minLines: 1,
                     textInputAction: TextInputAction.send,
                     style: TextStyle(
-                      fontSize: widget.theme?.fontSize ?? 14,
+                      fontSize: widget.theme?.fontSize ?? 15,
                       fontFamily: widget.theme?.fontFamily,
-                      color: widget.theme?.textColor,
+                      color: widget.theme?.textColor ?? const Color(0xFF1F1F24),
                     ),
                     decoration: InputDecoration(
                       hintText: widget.placeholder ??
@@ -177,15 +178,16 @@ class _ChatInputBarState extends State<ChatInputBar> {
                             fallback: 'Ask a question',
                           ),
                       hintStyle: TextStyle(
-                        color: Colors.grey[400],
+                        color: const Color(0xFF9B9BA4),
                         fontFamily: widget.theme?.fontFamily,
                       ),
+                      isDense: true,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 10,
                       ),
                       filled: true,
-                      fillColor: Colors.grey[100],
+                      fillColor: const Color(0xFFF4F4F8),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                         borderSide: BorderSide.none,
@@ -197,45 +199,65 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                         borderSide: BorderSide(
-                          color: primaryColor.withOpacity(0.5),
+                          color: primaryColor.withValues(alpha: 0.35),
                         ),
                       ),
                     ),
-                    onSubmitted: isDisabled
-                        ? null
-                        : (_) => _handleSend(chatState),
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: canSend ? (_) => _handleSend(chatState) : null,
                   ),
                 ),
-
-                const SizedBox(width: 4),
-
-                // Voice input button.
-                if (widget.useAudio)
+                if (widget.useAudio) ...[
+                  const SizedBox(width: 4),
                   VoiceInputButton(
                     onResult: (text) {
                       _controller.text = text;
+                      setState(() {});
                       _focusNode.requestFocus();
                     },
                     theme: widget.theme,
-                    enabled: !isDisabled,
+                    enabled: !isInputDisabled,
                   ),
-
-                // Send button.
-                IconButton(
-                  onPressed: isDisabled
-                      ? null
-                      : () => _handleSend(chatState),
-                  icon: Icon(
-                    Icons.send_rounded,
-                    color: isDisabled ? Colors.grey[400] : primaryColor,
-                  ),
+                ],
+                const SizedBox(width: 4),
+                _buildActionCircle(
+                  onTap: canSend ? () => _handleSend(chatState) : null,
+                  icon: Icons.send_rounded,
                   tooltip: 'Send',
+                  background: canSend ? const Color(0xFFCC0000) : const Color(0xFFE7E7EC),
+                  iconColor: canSend ? Colors.white : const Color(0xFF9F9FA8),
                 ),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildActionCircle({
+    required VoidCallback? onTap,
+    required IconData icon,
+    required String tooltip,
+    required Color background,
+    required Color iconColor,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: background,
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: Icon(icon, size: 18, color: iconColor),
+        ),
+      ),
     );
   }
 }

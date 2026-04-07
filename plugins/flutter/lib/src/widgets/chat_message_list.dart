@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/chat_state.dart';
 import '../models/chat_config.dart';
+import '../models/chat_message.dart';
 import 'chat_message_bubble.dart';
 import 'welcome_card.dart';
 import 'typing_indicator.dart';
@@ -28,6 +29,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
   final ScrollController _scrollController = ScrollController();
   int _previousItemCount = 0;
   bool _previousTyping = false;
+  bool _shouldAutoScroll = true;
 
   @override
   void dispose() {
@@ -36,6 +38,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
   }
 
   void _scrollToBottom() {
+    if (!_shouldAutoScroll) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -53,12 +56,18 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final messages = chatState.messages;
     final isAgentTyping = chatState.isAgentTyping;
     final conversationId = chatState.conversationId;
+    final hasCustomerMessage = messages.any(
+      (m) => m.speaker == Speaker.customer,
+    );
     final hasWelcomeData = chatState.welcomeTitle != null ||
         chatState.welcomeMessage != null ||
         chatState.possibleQueries.isNotEmpty;
 
+    // Show welcome content only after a conversation starts, and hide it once
+    // the user sends the first message.
     final showWelcome = widget.showWelcomeBeforeStart &&
-        conversationId == null &&
+        conversationId != null &&
+        !hasCustomerMessage &&
         hasWelcomeData;
 
     final itemCount = messages.length + (showWelcome ? 1 : 0) + (isAgentTyping ? 1 : 0);
@@ -70,11 +79,23 @@ class _ChatMessageListState extends State<ChatMessageList> {
       _scrollToBottom();
     }
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      itemCount: itemCount,
-      itemBuilder: (context, index) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (!_scrollController.hasClients) return false;
+        final max = _scrollController.position.maxScrollExtent;
+        final current = _scrollController.position.pixels;
+        const threshold = 64.0;
+        _shouldAutoScroll = (max - current) <= threshold;
+        return false;
+      },
+      child: Container(
+        color: const Color(0xFFF5F5F7),
+        child: ListView.builder(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          itemCount: itemCount,
+          itemBuilder: (context, index) {
         // Welcome card at the top.
         if (showWelcome && index == 0) {
           return WelcomeCard(
@@ -111,7 +132,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
             language: widget.language,
           ),
         );
-      },
+          },
+        ),
+      ),
     );
   }
 }

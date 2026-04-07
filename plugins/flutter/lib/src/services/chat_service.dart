@@ -388,19 +388,11 @@ class ChatService {
       await fetchWelcomeImage(_agentId!);
     }
 
-    // Process welcome message
+    // Keep welcome message in welcome-card data only (don't inject as a
+    // transcript bubble on conversation start).
     final agentWelcomeMessage = data['agent_welcome_message'] as String?;
-    if (agentWelcomeMessage != null && messageHandler != null) {
-      final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
-      final welcomeMsg = ChatMessage(
-        createTime: now,
-        startTime: now - _conversationCreateTime!,
-        endTime: now - _conversationCreateTime! + 0.01,
-        speaker: Speaker.agent,
-        text: agentWelcomeMessage,
-      );
+    if (agentWelcomeMessage != null) {
       _welcomeData.message = agentWelcomeMessage;
-      messageHandler!(welcomeMsg);
     }
 
     welcomeDataHandler?.call(_welcomeData);

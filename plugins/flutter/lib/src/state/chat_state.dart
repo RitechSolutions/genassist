@@ -288,13 +288,32 @@ class ChatState extends ChangeNotifier {
       _lastServerCreateTime = normalized.createTime;
     }
 
-    // Deduplicate by message_id
+    // Deduplicate by message_id, but allow richer late updates to replace
+    // a previously stored placeholder/empty message.
     if (normalized.messageId != null) {
-      final exists = _messages.any((m) => m.messageId == normalized.messageId);
-      if (exists) return;
+      final existingIndex = _messages.indexWhere(
+        (m) => m.messageId == normalized.messageId,
+      );
+      if (existingIndex != -1) {
+        final existing = _messages[existingIndex];
+        final shouldReplace =
+            (existing.text.trim().isEmpty && normalized.text.trim().isNotEmpty) ||
+            ((existing.attachments == null || existing.attachments!.isEmpty) &&
+                (normalized.attachments != null &&
+                    normalized.attachments!.isNotEmpty)) ||
+            (existing.type == null && normalized.type != null);
+        if (!shouldReplace) return;
+        _messages = [
+          ..._messages.sublist(0, existingIndex),
+          normalized,
+          ..._messages.sublist(existingIndex + 1),
+        ];
+      } else {
+        _messages = [..._messages, normalized];
+      }
+    } else {
+      _messages = [..._messages, normalized];
     }
-
-    _messages = [..._messages, normalized];
 
     // Stop typing when agent/special message arrives
     if (normalized.speaker == Speaker.agent ||
@@ -442,6 +461,10 @@ class ChatState extends ChangeNotifier {
     Map<String, dynamic>? extraMetadata,
     String? reCaptchaToken,
   }) async {
+    // Prevent concurrent sends while agent is still responding.
+    if (_isAgentTyping || _isLoading || _isFinalized || _isTakenOver) {
+      return;
+    }
     try {
       _isLoading = true;
       notifyListeners();
@@ -470,6 +493,13 @@ class ChatState extends ChangeNotifier {
         extraMetadata: extraMetadata,
         reCaptchaToken: reCaptchaToken,
       );
+
+      // In request/response mode (no WS and no polling), some backends may not
+      // include an agent message in the update response. Avoid an infinite
+      // "Thinking..." state in that case.
+      if (!useWs && !usePoll) {
+        _isAgentTyping = false;
+      }
 
       _preloadedAttachments = [];
     } catch (error) {

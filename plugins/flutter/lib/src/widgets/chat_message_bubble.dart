@@ -56,28 +56,33 @@ class ChatMessageBubble extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 4),
-              child: Text(
-                agentName ?? 'Agent',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: theme?.textColor?.withOpacity(0.6) ??
-                      Colors.black54,
-                  fontFamily: theme?.fontFamily,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    agentName ?? 'Agent',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: theme?.textColor?.withOpacity(0.6) ??
+                          Colors.black54,
+                      fontFamily: theme?.fontFamily,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    formatTimestamp(message.createTime, language: language),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[500],
+                      fontFamily: theme?.fontFamily,
+                    ),
+                  ),
+                ],
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(4),
-                  topRight: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
-                  bottomRight: Radius.circular(16),
-                ),
-              ),
+            Padding(
+              padding: const EdgeInsets.only(left: 4, right: 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -101,22 +106,12 @@ class ChatMessageBubble extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    formatTimestamp(message.createTime, language: language),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[500],
-                      fontFamily: theme?.fontFamily,
-                    ),
-                  ),
-                  if (message.messageId != null) ...[
-                    const SizedBox(width: 8),
+                  if (message.messageId != null)
                     FeedbackButtons(
                       messageId: message.messageId!,
                       existingFeedback: message.feedback,
                       theme: theme,
                     ),
-                  ],
                 ],
               ),
             ),
@@ -127,7 +122,7 @@ class ChatMessageBubble extends StatelessWidget {
   }
 
   Widget _buildCustomerBubble(BuildContext context) {
-    final primaryColor = theme?.primaryColor ?? GenAgentChatTheme.defaultPrimaryColor;
+    const primaryColor = Color(0xFFCC0000);
 
     return Align(
       alignment: Alignment.centerRight,
@@ -138,6 +133,17 @@ class ChatMessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 4, bottom: 4),
+              child: Text(
+                formatTimestamp(message.createTime, language: language),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[500],
+                  fontFamily: theme?.fontFamily,
+                ),
+              ),
+            ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -166,17 +172,6 @@ class ChatMessageBubble extends StatelessWidget {
                     _buildAttachments(message.attachments!),
                   ],
                 ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: 4, top: 4),
-              child: Text(
-                formatTimestamp(message.createTime, language: language),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[500],
-                  fontFamily: theme?.fontFamily,
-                ),
               ),
             ),
           ],

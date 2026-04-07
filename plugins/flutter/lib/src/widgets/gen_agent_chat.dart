@@ -163,6 +163,7 @@ class _GenAgentChatState extends State<GenAgentChat> {
       }
       return;
     }
+    await _startConversationIfNeeded();
     setState(() => _isFloatingOpen = true);
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -183,6 +184,12 @@ class _GenAgentChatState extends State<GenAgentChat> {
       setState(() => _isFloatingOpen = false);
       widget.onClose?.call();
     }
+  }
+
+  Future<void> _startConversationIfNeeded() async {
+    if (_chatState.isLoading) return;
+    if (_chatState.conversationId != null) return;
+    await _chatState.startConversation();
   }
 
   Widget _buildChatContent({
@@ -206,6 +213,7 @@ class _GenAgentChatState extends State<GenAgentChat> {
             theme: widget.theme,
             noColorAnimation: widget.noColorAnimation,
             onClose: effectiveOnClose,
+            sheetStyle: fullscreen,
           ),
           Expanded(
             child: ChatMessageList(

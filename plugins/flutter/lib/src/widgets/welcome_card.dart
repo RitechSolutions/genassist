@@ -25,12 +25,12 @@ class WelcomeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final chatState = context.read<ChatState>();
-    final primaryColor = theme?.primaryColor ?? GenAgentChatTheme.defaultPrimaryColor;
+    const primaryColor = Color(0xFFCC0000);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (imageUrl != null && imageUrl!.isNotEmpty)
             Padding(
@@ -41,6 +41,7 @@ class WelcomeCard extends StatelessWidget {
                   imageUrl!,
                   height: 120,
                   fit: BoxFit.contain,
+                  alignment: Alignment.centerLeft,
                   errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                 ),
               ),
@@ -56,7 +57,7 @@ class WelcomeCard extends StatelessWidget {
                   color: theme?.textColor ?? Colors.black87,
                   fontFamily: theme?.fontFamily,
                 ),
-                textAlign: TextAlign.center,
+                textAlign: TextAlign.left,
               ),
             ),
           if (message != null && message!.isNotEmpty)
@@ -68,28 +69,39 @@ class WelcomeCard extends StatelessWidget {
               ),
             ),
           if (possibleQueries.isNotEmpty)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: possibleQueries.map((query) {
-                return ActionChip(
-                  label: Text(
-                    query,
-                    style: TextStyle(
-                      color: primaryColor,
-                      fontSize: 13,
-                      fontFamily: theme?.fontFamily,
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: ElevatedButton(
+                    onPressed: () {
+                      chatState.sendMessage(query);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      alignment: Alignment.centerLeft,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      minimumSize: const Size(0, 0),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      query,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: theme?.fontFamily,
+                      ),
                     ),
                   ),
-                  backgroundColor: primaryColor.withOpacity(0.08),
-                  side: BorderSide(color: primaryColor.withOpacity(0.3)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  onPressed: () {
-                    chatState.sendMessage(query);
-                  },
                 );
               }).toList(),
             ),

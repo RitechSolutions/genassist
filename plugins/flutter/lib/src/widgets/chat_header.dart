@@ -12,6 +12,8 @@ class ChatHeader extends StatelessWidget {
   final GenAgentChatTheme? theme;
   final bool noColorAnimation;
   final VoidCallback? onClose;
+  /// iOS-style sheet: grabber, light surface, [X] + logo + menu, bottom divider.
+  final bool sheetStyle;
 
   const ChatHeader({
     super.key,
@@ -22,15 +24,28 @@ class ChatHeader extends StatelessWidget {
     this.theme,
     this.noColorAnimation = false,
     this.onClose,
+    this.sheetStyle = false,
   });
+
+  static const Color _sheetIconColor = Color(0xFF1C1C1E);
+  static const Color _sheetDivider = Color(0xFFE5E5EA);
 
   @override
   Widget build(BuildContext context) {
     final chatState = context.watch<ChatState>();
     final primaryColor = theme?.primaryColor ?? GenAgentChatTheme.defaultPrimaryColor;
-    final textColor = Colors.white;
     final translations = defaultTranslations;
 
+    if (sheetStyle) {
+      return _buildSheetHeader(
+        context,
+        chatState,
+        translations,
+        primaryColor,
+      );
+    }
+
+    final textColor = Colors.white;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -48,7 +63,7 @@ class ChatHeader extends StatelessWidget {
               ),
               const SizedBox(width: 4),
             ],
-            _buildLogo(primaryColor),
+            _buildLogo(primaryColor, forSheet: false),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -71,7 +86,7 @@ class ChatHeader extends StatelessWidget {
                     Text(
                       description!,
                       style: TextStyle(
-                        color: textColor.withOpacity(0.8),
+                        color: textColor.withValues(alpha: 0.8),
                         fontSize: 12,
                         fontFamily: theme?.fontFamily,
                       ),
@@ -89,34 +104,113 @@ class ChatHeader extends StatelessWidget {
     );
   }
 
-  Widget _buildLogo(Color primaryColor) {
+  Widget _buildSheetHeader(
+    BuildContext context,
+    ChatState chatState,
+    Translations translations,
+    Color primaryColor,
+  ) {
+    final surface = theme?.backgroundColor ?? Colors.white;
+
+    return Material(
+      color: surface,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SafeArea(
+            bottom: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      if (onClose != null)
+                        IconButton(
+                          icon: const Icon(Icons.close, color: _sheetIconColor, size: 24),
+                          onPressed: onClose,
+                          tooltip: 'Close',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                        )
+                      else
+                        const SizedBox(width: 8),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: _buildLogo(primaryColor, forSheet: true),
+                        ),
+                      ),
+                      _buildMenuButton(
+                        context,
+                        chatState,
+                        translations,
+                        _sheetIconColor,
+                      ),
+                    ],
+                  ),
+                ),
+                if (description != null && description!.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Text(
+                      description!,
+                      style: TextStyle(
+                        color: _sheetIconColor.withValues(alpha: 0.65),
+                        fontSize: 13,
+                        fontFamily: theme?.fontFamily,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const Divider(height: 1, thickness: 0.5, color: _sheetDivider),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogo(Color primaryColor, {required bool forSheet}) {
+    final maxH = forSheet ? 36.0 : 40.0;
+    final maxW = forSheet ? 200.0 : 40.0;
+
     if (logoUrl != null && logoUrl!.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+      return ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH, maxWidth: maxW),
         child: Image.network(
           logoUrl!,
-          width: 40,
-          height: 40,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _defaultLogoIcon(primaryColor),
+          fit: BoxFit.contain,
+          alignment: Alignment.centerLeft,
+          errorBuilder: (_, __, ___) => _defaultLogoIcon(primaryColor, forSheet: forSheet),
         ),
       );
     }
-    return _defaultLogoIcon(primaryColor);
+    return _defaultLogoIcon(primaryColor, forSheet: forSheet);
   }
 
-  Widget _defaultLogoIcon(Color primaryColor) {
+  Widget _defaultLogoIcon(Color primaryColor, {required bool forSheet}) {
+    final size = forSheet ? 36.0 : 40.0;
+    final iconColor = forSheet ? _sheetIconColor : Colors.white;
+    final bg = forSheet ? const Color(0xFFF2F2F7) : Colors.white.withValues(alpha: 0.2);
+
     return Container(
-      width: 40,
-      height: 40,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(20),
+        color: bg,
+        borderRadius: BorderRadius.circular(size / 2),
       ),
-      child: const Icon(
+      child: Icon(
         Icons.smart_toy_outlined,
-        color: Colors.white,
-        size: 24,
+        color: iconColor,
+        size: size * 0.55,
       ),
     );
   }
@@ -145,13 +239,17 @@ class ChatHeader extends StatelessWidget {
             value: 'reset',
             child: Row(
               children: [
-                const Icon(Icons.refresh, size: 20),
+                const Icon(Icons.restart_alt, size: 20, color: Color(0xFFB42318)),
                 const SizedBox(width: 8),
                 Text(
                   getTranslationString(
                     'menu.resetConversation',
                     translations,
                     fallback: 'Reset conversation',
+                  ),
+                  style: const TextStyle(
+                    color: Color(0xFFB42318),
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -194,7 +292,20 @@ class ChatHeader extends StatelessWidget {
     showDialog<bool>(
       context: context,
       builder: (dialogContext) {
+        final resetLabel = getTranslationString(
+          'buttons.reset',
+          translations,
+          fallback: 'Reset',
+        );
+        final cancelLabel = getTranslationString(
+          'buttons.cancel',
+          translations,
+          fallback: 'Cancel',
+        );
         return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Text(
             getTranslationString(
               'dialog.resetConversation.title',
@@ -211,28 +322,38 @@ class ChatHeader extends StatelessWidget {
             ),
           ),
           actions: [
-            TextButton(
+            OutlinedButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFFD0D5DD)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
               child: Text(
-                getTranslationString(
-                  'buttons.cancel',
-                  translations,
-                  fallback: 'Cancel',
+                cancelLabel,
+                style: const TextStyle(
+                  color: Color(0xFF344054),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            TextButton(
+            ElevatedButton.icon(
               onPressed: () {
                 Navigator.of(dialogContext).pop(true);
                 chatState.resetConversation();
               },
-              child: Text(
-                getTranslationString(
-                  'buttons.reset',
-                  translations,
-                  fallback: 'Reset',
+              icon: const Icon(Icons.restart_alt, size: 18),
+              label: Text(resetLabel),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFB42318),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                style: const TextStyle(color: Colors.red),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
           ],
