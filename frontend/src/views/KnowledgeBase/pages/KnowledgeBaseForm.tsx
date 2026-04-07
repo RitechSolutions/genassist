@@ -33,7 +33,10 @@ import {
   Trash2,
   Download,
   RefreshCw,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/collapsible';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RagConfigValues } from '../types/ragSchema';
 import { LegacyRagConfig, DEFAULT_LEGACY_RAG_CONFIG } from '../utils/ragDefaults';
@@ -1064,243 +1067,238 @@ const KnowledgeBaseForm: React.FC = () => {
                                 formData.type
                               ) && (
                                 <div className="col-span-2 space-y-4">
-                                  <div className="mt-6">
-                                    <div className="bg-gray-50 rounded-lg">
-                                      <div className="flex items-center justify-between p-4">
-                                        <div>
-                                          <div>
-                                            <div className="mb-1">Sync Schedule/Enable</div>
-                                            <div className="flex gap-2">
-                                              <Input
-                                                id="sync_schedule"
-                                                name="sync_schedule"
-                                                disabled={!formData.sync_active}
-                                                value={formData.sync_schedule ?? ''}
-                                                onChange={(e) =>
-                                                  setFormData((prev) => ({ ...prev, sync_schedule: e.target.value }))
-                                                }
-                                                placeholder="e.g. every 15':  */15 * * * *"
-                                                className="flex-1"
-                                              />
-                                            </div>
-                                          </div>
+                                  <div className="flex flex-col gap-6 mt-6">
+                                    <div className="rounded-lg border bg-white p-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex-1 pr-4">
+                                          <div className="text-sm font-medium text-gray-900">Sync Schedule</div>
+                                          <p className="text-sm text-gray-500 mt-1">
+                                            Enable automatic syncing on a schedule.
+                                          </p>
                                         </div>
-                                        <div className="flex items-center justify-between mt-2">
-                                          <Switch
-                                            id="sync_active"
-                                            checked={formData.sync_active || false}
-                                            onCheckedChange={(checked) =>
-                                              setFormData((prev) => ({ ...prev, sync_active: checked }))
-                                            }
-                                          />
-                                        </div>
+                                        <Switch
+                                          id="sync_active"
+                                          checked={formData.sync_active || false}
+                                          onCheckedChange={(checked) =>
+                                            setFormData((prev) => ({ ...prev, sync_active: checked }))
+                                          }
+                                        />
                                       </div>
-
-                                      <div className="space-y-4 p-4 border-t">
-                                        <div>
-                                          <label className="block text-sm font-medium text-gray-700">
-                                            Processing Filter
-                                          </label>
+                                      {formData.sync_active && (
+                                        <div className="mt-3">
                                           <Input
-                                            name="processing_filter"
-                                            value={formData.processing_filter || ''}
-                                            onChange={handleInputChange}
-                                            placeholder="e.g. *.pdf or contains:report"
-                                            className="mt-1"
+                                            id="sync_schedule"
+                                            name="sync_schedule"
+                                            value={formData.sync_schedule ?? ''}
+                                            onChange={(e) =>
+                                              setFormData((prev) => ({ ...prev, sync_schedule: e.target.value }))
+                                            }
+                                            placeholder="e.g. every 15':  */15 * * * *"
+                                            className="w-full"
                                           />
-                                        </div>
-                                        <div>
-                                          <label className="block text-sm font-medium text-gray-700">
-                                            Processing Mode
-                                          </label>
-                                          <Select
-                                            value={formData.processing_mode || 'none'}
-                                            onValueChange={(value) =>
-                                              setFormData((prev) => ({
-                                                ...prev,
-                                                processing_mode: value === 'none' ? null : value,
-                                              }))
-                                            }
-                                          >
-                                            <SelectTrigger className="mt-1 w-full">
-                                              <SelectValue placeholder="None" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="none">None</SelectItem>
-                                              <SelectItem value="extract">Extract Only</SelectItem>
-                                              <SelectItem value="transcribe">Transcribe</SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-
-                                        {formData.processing_mode === 'transcribe' && (
-                                          <div>
-                                            <label className="block text-sm font-medium text-gray-700">
-                                              Transcription Engine
-                                            </label>
-                                            <Select
-                                              value={formData.transcription_engine}
-                                              onValueChange={(value) =>
-                                                setFormData((prev) => ({ ...prev, transcription_engine: value }))
-                                              }
-                                            >
-                                              <SelectTrigger className="mt-1 w-full">
-                                                <SelectValue placeholder="Select engine" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                <SelectItem value="openai_whisper">OpenAI Whisper</SelectItem>
-                                                <SelectItem value="google_chirp3">Google Chirp 3</SelectItem>
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                        )}
-
-                                        <div>
-                                          <label className="block text-sm font-medium text-gray-700">
-                                            LLM Analyst (optional)
-                                          </label>
-                                          <Select
-                                            value={formData.llm_analyst_id || 'none'}
-                                            onValueChange={(value) =>
-                                              setFormData((prev) => ({
-                                                ...prev,
-                                                llm_analyst_id: value === 'none' ? null : value,
-                                              }))
-                                            }
-                                          >
-                                            <SelectTrigger className="mt-1 w-full">
-                                              <SelectValue placeholder="Select an analyst" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="none">None</SelectItem>
-                                              {llmAnalysts.map((a) => (
-                                                <SelectItem key={a.id} value={String(a.id)}>
-                                                  {a.name}
-                                                </SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-
-                                        {formData.processing_mode === 'transcribe' && (
-                                          <div className="flex items-center justify-between">
-                                            <label className="text-sm font-medium text-gray-700">
-                                              Save In Conversation
-                                            </label>
-                                            <Switch
-                                              checked={formData.save_in_conversation}
-                                              onCheckedChange={(checked) =>
-                                                setFormData((prev) => ({ ...prev, save_in_conversation: checked }))
-                                              }
-                                            />
-                                          </div>
-                                        )}
-
-                                        <div className="flex flex-col gap-2">
-                                          <div className="flex items-center gap-2 justify-between">
-                                            <label className="text-sm font-medium text-gray-700">
-                                              Save Output in source location
-                                            </label>
-                                            <Switch
-                                              checked={formData.save_output}
-                                              onCheckedChange={(checked) =>
-                                                setFormData((prev) => ({ ...prev, save_output: checked }))
-                                              }
-                                            />
-                                          </div>
-                                          {formData.save_output && (
-                                            <Input
-                                              placeholder="Output path (e.g. /storage/out/)"
-                                              value={formData.save_output_path}
-                                              onChange={(e) =>
-                                                setFormData((prev) => ({ ...prev, save_output_path: e.target.value }))
-                                              }
-                                              className="flex-1"
-                                            />
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      {editingItem && (
-                                        <div className="flex flex-row flex-wrap items-center justify-between gap-3 p-4">
-                                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                                            {(editingItem.last_synced ||
-                                              editingItem.last_sync_status ||
-                                              editingItem.last_sync_error) && (
-                                              <>
-                                                <span className="text-xs text-gray-600">
-                                                  Last sync
-                                                  {editingItem.last_synced
-                                                    ? `: ${new Date(editingItem.last_synced).toLocaleString()}`
-                                                    : ''}
-                                                </span>
-                                                {editingItem.last_sync_status ? (
-                                                  isSyncErrorStatus(editingItem.last_sync_status) &&
-                                                  editingItem.last_sync_error ? (
-                                                    <Popover>
-                                                      <PopoverTrigger asChild>
-                                                        <button
-                                                          type="button"
-                                                          className="inline-flex rounded-full border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                                                        >
-                                                          <Badge
-                                                            variant={syncStatusBadgeVariant(
-                                                              editingItem.last_sync_status
-                                                            )}
-                                                            className="cursor-pointer"
-                                                          >
-                                                            {editingItem.last_sync_status}
-                                                          </Badge>
-                                                        </button>
-                                                      </PopoverTrigger>
-                                                      <PopoverContent
-                                                        align="start"
-                                                        className="w-80 max-w-[min(90vw,24rem)]"
-                                                      >
-                                                        <p className="mb-2 text-xs font-medium text-muted-foreground">
-                                                          Error details
-                                                        </p>
-                                                        <p className="whitespace-pre-wrap break-words text-sm text-destructive">
-                                                          {editingItem.last_sync_error}
-                                                        </p>
-                                                      </PopoverContent>
-                                                    </Popover>
-                                                  ) : (
-                                                    <Badge
-                                                      variant={syncStatusBadgeVariant(editingItem.last_sync_status)}
-                                                    >
-                                                      {editingItem.last_sync_status}
-                                                    </Badge>
-                                                  )
-                                                ) : null}
-                                                {editingItem.last_sync_error &&
-                                                !isSyncErrorStatus(editingItem.last_sync_status) ? (
-                                                  <Badge
-                                                    variant="secondary"
-                                                    className="max-w-[min(100%,20rem)] shrink truncate font-normal sm:max-w-[28rem]"
-                                                    title={editingItem.last_sync_error}
-                                                  >
-                                                    {editingItem.last_sync_error}
-                                                  </Badge>
-                                                ) : null}
-                                              </>
-                                            )}
-                                          </div>
-                                          <Button
-                                            type="button"
-                                            variant="outline"
-                                            onClick={handleSyncNow}
-                                            disabled={isSyncing}
-                                            className="min-w-[130px] shrink-0 rounded-full"
-                                          >
-                                            <div className="flex items-center gap-2">
-                                              <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                                              {isSyncing ? 'Syncing...' : 'Sync Now'}
-                                            </div>
-                                          </Button>
                                         </div>
                                       )}
                                     </div>
+
+                                    {editingItem && (
+                                      <div className="flex flex-row flex-wrap items-center justify-between gap-3">
+                                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                          {(editingItem.last_synced ||
+                                            editingItem.last_sync_status ||
+                                            editingItem.last_sync_error) && (
+                                            <>
+                                              <span className="text-xs text-gray-600">
+                                                Last sync
+                                                {editingItem.last_synced
+                                                  ? `: ${new Date(editingItem.last_synced).toLocaleString()}`
+                                                  : ''}
+                                              </span>
+                                              {editingItem.last_sync_status ? (
+                                                isSyncErrorStatus(editingItem.last_sync_status) &&
+                                                editingItem.last_sync_error ? (
+                                                  <Popover>
+                                                    <PopoverTrigger asChild>
+                                                      <button
+                                                        type="button"
+                                                        className="inline-flex rounded-full border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                                      >
+                                                        <Badge
+                                                          variant={syncStatusBadgeVariant(editingItem.last_sync_status)}
+                                                          className="cursor-pointer"
+                                                        >
+                                                          {editingItem.last_sync_status}
+                                                        </Badge>
+                                                      </button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent
+                                                      align="start"
+                                                      className="w-80 max-w-[min(90vw,24rem)]"
+                                                    >
+                                                      <p className="mb-2 text-xs font-medium text-muted-foreground">
+                                                        Error details
+                                                      </p>
+                                                      <p className="whitespace-pre-wrap break-words text-sm text-destructive">
+                                                        {editingItem.last_sync_error}
+                                                      </p>
+                                                    </PopoverContent>
+                                                  </Popover>
+                                                ) : (
+                                                  <Badge variant={syncStatusBadgeVariant(editingItem.last_sync_status)}>
+                                                    {editingItem.last_sync_status}
+                                                  </Badge>
+                                                )
+                                              ) : null}
+                                              {editingItem.last_sync_error &&
+                                              !isSyncErrorStatus(editingItem.last_sync_status) ? (
+                                                <Badge
+                                                  variant="secondary"
+                                                  className="max-w-[min(100%,20rem)] shrink truncate font-normal sm:max-w-[28rem]"
+                                                  title={editingItem.last_sync_error}
+                                                >
+                                                  {editingItem.last_sync_error}
+                                                </Badge>
+                                              ) : null}
+                                            </>
+                                          )}
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          onClick={handleSyncNow}
+                                          disabled={isSyncing}
+                                          className="min-w-[130px] shrink-0 rounded-full"
+                                        >
+                                          <div className="flex items-center gap-2">
+                                            <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                            {isSyncing ? 'Syncing...' : 'Sync Now'}
+                                          </div>
+                                        </Button>
+                                      </div>
+                                    )}
+
+                                    <Collapsible>
+                                      <CollapsibleTrigger className="group flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                                        <h4 className="text-sm font-medium">Processing & Output</h4>
+                                        <ChevronDown className="h-4 w-4 group-data-[state=open]:hidden" />
+                                        <ChevronUp className="h-4 w-4 hidden group-data-[state=open]:block" />
+                                      </CollapsibleTrigger>
+                                      <CollapsibleContent className="mt-3">
+                                        <div className="space-y-4 pl-4">
+                                          <div>
+                                            <label className="block text-sm font-medium">Processing Filter</label>
+                                            <Input
+                                              name="processing_filter"
+                                              value={formData.processing_filter || ''}
+                                              onChange={handleInputChange}
+                                              placeholder="e.g. *.pdf or contains:report"
+                                              className="mt-1"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-sm font-medium">Processing Mode</label>
+                                            <Select
+                                              value={formData.processing_mode || 'none'}
+                                              onValueChange={(value) =>
+                                                setFormData((prev) => ({
+                                                  ...prev,
+                                                  processing_mode: value === 'none' ? null : value,
+                                                }))
+                                              }
+                                            >
+                                              <SelectTrigger className="mt-1 w-full">
+                                                <SelectValue placeholder="None" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="none">None</SelectItem>
+                                                <SelectItem value="extract">Extract Only</SelectItem>
+                                                <SelectItem value="transcribe">Transcribe</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          {formData.processing_mode === 'transcribe' && (
+                                            <div>
+                                              <label className="block text-sm font-medium">Transcription Engine</label>
+                                              <Select
+                                                value={formData.transcription_engine}
+                                                onValueChange={(value) =>
+                                                  setFormData((prev) => ({ ...prev, transcription_engine: value }))
+                                                }
+                                              >
+                                                <SelectTrigger className="mt-1 w-full">
+                                                  <SelectValue placeholder="Select engine" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="openai_whisper">OpenAI Whisper</SelectItem>
+                                                  <SelectItem value="google_chirp3">Google Chirp 3</SelectItem>
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                          )}
+
+                                          <div>
+                                            <label className="block text-sm font-medium">LLM Analyst (optional)</label>
+                                            <Select
+                                              value={formData.llm_analyst_id || 'none'}
+                                              onValueChange={(value) =>
+                                                setFormData((prev) => ({
+                                                  ...prev,
+                                                  llm_analyst_id: value === 'none' ? null : value,
+                                                }))
+                                              }
+                                            >
+                                              <SelectTrigger className="mt-1 w-full">
+                                                <SelectValue placeholder="Select an analyst" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="none">None</SelectItem>
+                                                {llmAnalysts.map((a) => (
+                                                  <SelectItem key={a.id} value={String(a.id)}>
+                                                    {a.name}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          {formData.processing_mode === 'transcribe' && (
+                                            <div className="flex items-center justify-between">
+                                              <label className="text-sm font-medium">Save In Conversation</label>
+                                              <Switch
+                                                checked={formData.save_in_conversation}
+                                                onCheckedChange={(checked) =>
+                                                  setFormData((prev) => ({ ...prev, save_in_conversation: checked }))
+                                                }
+                                              />
+                                            </div>
+                                          )}
+
+                                          <div className="flex flex-col gap-2">
+                                            <div className="flex items-center gap-2 justify-between">
+                                              <label className="text-sm font-medium">
+                                                Save Output in source location
+                                              </label>
+                                              <Switch
+                                                checked={formData.save_output}
+                                                onCheckedChange={(checked) =>
+                                                  setFormData((prev) => ({ ...prev, save_output: checked }))
+                                                }
+                                              />
+                                            </div>
+                                            {formData.save_output && (
+                                              <Input
+                                                placeholder="Output path (e.g. /storage/out/)"
+                                                value={formData.save_output_path}
+                                                onChange={(e) =>
+                                                  setFormData((prev) => ({ ...prev, save_output_path: e.target.value }))
+                                                }
+                                                className="flex-1"
+                                              />
+                                            )}
+                                          </div>
+                                        </div>
+                                      </CollapsibleContent>
+                                    </Collapsible>
                                   </div>
                                 </div>
                               )}
