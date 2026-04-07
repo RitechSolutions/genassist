@@ -126,6 +126,26 @@ async def cancel_fine_tuning_job(
     return await service.cancel_fine_tuning_job(job_id)
 
 
+@router.get("/files/{file_id}/content", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.OpenAI.READ_FILE))
+])
+async def download_file(
+    file_id: str,
+    service: OpenAIFineTuningService = Injected(OpenAIFineTuningService)
+):
+    """
+    Download the raw content of an OpenAI file (e.g. training/validation JSONL).
+    """
+    logger.info(f"User {get_current_user_id()} downloading file: {file_id}")
+    content = await service.client.files.content(file_id)
+    return Response(
+        content=content.read(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{file_id}.jsonl"'},
+    )
+
+
 @router.delete("/files/{file_id}", dependencies=[
     Depends(auth),
     Depends(permissions(P.OpenAI.DELETE_FILE))

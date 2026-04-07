@@ -87,6 +87,22 @@ export async function listOpenAIFiles(): Promise<OpenAIFileItem[]> {
   return normalizeList<OpenAIFileItem>(res);
 }
 
+export async function downloadOpenAIFile(fileId: string, filename: string): Promise<void> {
+  const baseURL = await getApiUrl();
+  const url = `${baseURL}openai/files/${fileId}/content`;
+  const response = await api.request<Blob>({
+    method: "GET",
+    url,
+    responseType: "blob",
+  });
+  const objectUrl = URL.createObjectURL(response.data);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export async function generateTrainingFileFromConversations(payload: {
   conversation_ids: string[];
   upload_to_openai: boolean;

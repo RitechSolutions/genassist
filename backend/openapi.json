@@ -15948,6 +15948,56 @@
         }
       }
     },
+    "/api/openai/files/{file_id}/content": {
+      "get": {
+        "tags": [
+          "v1",
+          "OpenAI API"
+        ],
+        "summary": "Download File",
+        "description": "Download the raw content of an OpenAI file (e.g. training/validation JSONL).",
+        "operationId": "download_file_api_openai_files__file_id__content_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/openai/files/{file_id}": {
       "delete": {
         "tags": [

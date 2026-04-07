@@ -241,6 +241,22 @@ class OpenAIFineTuningService:
             # Build response with events and progress
             job_dict = job_record.to_dict()
 
+            # Attach file details from eager-loaded relationships
+            if job_record.training_file:
+                job_dict['training_file_info'] = {
+                    "id": str(job_record.training_file.id),
+                    "openai_file_id": job_record.training_file.openai_file_id,
+                    "filename": job_record.training_file.filename,
+                    "bytes": job_record.training_file.bytes,
+                }
+            if job_record.validation_file:
+                job_dict['validation_file_info'] = {
+                    "id": str(job_record.validation_file.id),
+                    "openai_file_id": job_record.validation_file.openai_file_id,
+                    "filename": job_record.validation_file.filename,
+                    "bytes": job_record.validation_file.bytes,
+                }
+
             # Add events
             self.attach_job_events(job_dict, job_record)
 
