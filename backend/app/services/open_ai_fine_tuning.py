@@ -6,7 +6,7 @@ from typing import Any, List, Optional
 from fastapi import UploadFile
 from injector import inject
 from openai import AsyncOpenAI
-from sqlalchemy import UUID
+from uuid import UUID
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
@@ -125,8 +125,8 @@ class OpenAIFineTuningService:
             OpenAI fine-tuning job response
         """
         try:
-            # Verify training file exists in our DB
-            training_file = await self.repository.get_file_by_openai_id(job_request.training_file)
+            # Verify training file exists in our DB by internal UUID
+            training_file = await self.repository.get_file_by_id(UUID(job_request.training_file))
             if not training_file:
                 logger.error(f"Training file {job_request.training_file} not found in database")
                 raise AppException(
@@ -136,24 +136,24 @@ class OpenAIFineTuningService:
             # Verify validation file if provided
             validation_file = None
             if job_request.validation_file:
-                validation_file = await self.repository.get_file_by_openai_id(job_request.validation_file)
+                validation_file = await self.repository.get_file_by_id(UUID(job_request.validation_file))
                 if not validation_file:
                     logger.error(f"Validation file {job_request.validation_file} not found in database")
                     raise AppException(
                             error_key=ErrorKey.ERROR_CREATE_JOB_OPEN_AI
                             )
 
-            logger.info(f"Creating fine-tuning job with training_file: {job_request.training_file}")
+            logger.info(f"Creating fine-tuning job with training_file: {training_file.openai_file_id}")
 
-            # Prepare the request parameters
+            # Prepare the request parameters using OpenAI file IDs
             params = {
-                "training_file": job_request.training_file,
+                "training_file": training_file.openai_file_id,
                 "model": job_request.model
                 }
 
             # Add optional parameters if provided
-            if job_request.validation_file:
-                params["validation_file"] = job_request.validation_file
+            if validation_file:
+                params["validation_file"] = validation_file.openai_file_id
             if job_request.hyperparameters:
                 params["hyperparameters"] = job_request.hyperparameters
             if job_request.suffix:

@@ -47,6 +47,12 @@ class FineTuningRepository(DbRepository[FineTuningJobModel]):
         return file_record
 
 
+    async def get_file_by_id(self, file_id: UUID) -> Optional[OpenAIFileModel]:
+        """Get file record by internal DB UUID"""
+        query = select(OpenAIFileModel).where(OpenAIFileModel.id == file_id)
+        result = await self.db.execute(query)
+        return result.scalars().first()
+
     async def get_file_by_openai_id(self, openai_file_id: str) -> Optional[OpenAIFileModel]:
         """Get file record by OpenAI file ID"""
         query = select(OpenAIFileModel).where(OpenAIFileModel.openai_file_id == openai_file_id)
