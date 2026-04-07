@@ -1,32 +1,67 @@
 import asyncio
+import json
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, List, Optional
 from fastapi import UploadFile
 from injector import inject
 from openai import AsyncOpenAI
-from sqlalchemy import UUID
+from uuid import UUID
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.utils.bi_utils import validate_bytes_size
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.enums.open_ai_fine_tuning_enum import FileStatus, JobStatus
 from app.db.models import FineTuningJobModel
+from app.repositories.agent_response_log import AgentResponseLogRepository
+from app.repositories.conversations import ConversationRepository
 from app.repositories.openai_fine_tuning import FineTuningRepository
-from app.schemas.open_ai_fine_tuning import CreateFineTuningJobRequest
+from app.schemas.open_ai_fine_tuning import CreateFineTuningJobRequest, GenerateTrainingFileRequest
+from app.services.agent_config import AgentConfigService
 from app.services.fine_tuning_event import FineTuningEventService
 
 
 logger = logging.getLogger(__name__)
 
 
+def _to_snake_case(s: str) -> str:
+    """Convert a string to snake_case (mirrors BaseTool.to_snake_case)."""
+    final = ""
+    for i in range(len(s)):
+        item = s[i]
+        next_underscored = (
+            i < len(s) - 1
+            and (s[i + 1] == "_" or s[i + 1] == " " or s[i + 1].isupper())
+        )
+        if (item == " " or item == "_") and next_underscored:
+            continue
+        elif item == " " or item == "_":
+            final += "_"
+        elif item.isupper():
+            final += "_" + item.lower()
+        else:
+            final += item
+    return final[1:] if final and final[0] == "_" else final
+
+
 @inject
 class OpenAIFineTuningService:
-    def __init__(self, repository: FineTuningRepository, event_service: FineTuningEventService):
+    def __init__(
+        self,
+        repository: FineTuningRepository,
+        event_service: FineTuningEventService,
+        agent_config_service: AgentConfigService,
+        agent_log_repo: AgentResponseLogRepository,
+        conversation_repo: ConversationRepository,
+    ):
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         self.repository = repository
         self.event_service = event_service
+        self.agent_config_service = agent_config_service
+        self.agent_log_repo = agent_log_repo
+        self.conversation_repo = conversation_repo
 
 
     async def upload_file(
@@ -61,15 +96,15 @@ class OpenAIFineTuningService:
 
             logger.info(f"Successfully uploaded file to OpenAI. File ID: {response.id}")
 
-            # Store in database
-            await self.repository.create_file_record(
+            # Store in database and return the DB record so callers have the internal UUID
+            db_record = await self.repository.create_file_record(
                     openai_file_id=response.id,
                     filename=response.filename,
                     purpose=response.purpose,
                     bytes=response.bytes,
                     )
 
-            return response
+            return db_record.to_dict()
 
         except Exception as e:
             logger.error(f"Error uploading file to OpenAI: {str(e)}")
@@ -90,8 +125,8 @@ class OpenAIFineTuningService:
             OpenAI fine-tuning job response
         """
         try:
-            # Verify training file exists in our DB
-            training_file = await self.repository.get_file_by_openai_id(job_request.training_file)
+            # Verify training file exists in our DB by internal UUID
+            training_file = await self.repository.get_file_by_id(UUID(job_request.training_file))
             if not training_file:
                 logger.error(f"Training file {job_request.training_file} not found in database")
                 raise AppException(
@@ -101,24 +136,24 @@ class OpenAIFineTuningService:
             # Verify validation file if provided
             validation_file = None
             if job_request.validation_file:
-                validation_file = await self.repository.get_file_by_openai_id(job_request.validation_file)
+                validation_file = await self.repository.get_file_by_id(UUID(job_request.validation_file))
                 if not validation_file:
                     logger.error(f"Validation file {job_request.validation_file} not found in database")
                     raise AppException(
                             error_key=ErrorKey.ERROR_CREATE_JOB_OPEN_AI
                             )
 
-            logger.info(f"Creating fine-tuning job with training_file: {job_request.training_file}")
+            logger.info(f"Creating fine-tuning job with training_file: {training_file.openai_file_id}")
 
-            # Prepare the request parameters
+            # Prepare the request parameters using OpenAI file IDs
             params = {
-                "training_file": job_request.training_file,
+                "training_file": training_file.openai_file_id,
                 "model": job_request.model
                 }
 
             # Add optional parameters if provided
-            if job_request.validation_file:
-                params["validation_file"] = job_request.validation_file
+            if validation_file:
+                params["validation_file"] = validation_file.openai_file_id
             if job_request.hyperparameters:
                 params["hyperparameters"] = job_request.hyperparameters
             if job_request.suffix:
@@ -205,6 +240,22 @@ class OpenAIFineTuningService:
                 logger.info(f"Retrieved and synced job {job_id}. Status: {response.status}")
             # Build response with events and progress
             job_dict = job_record.to_dict()
+
+            # Attach file details from eager-loaded relationships
+            if job_record.training_file:
+                job_dict['training_file_info'] = {
+                    "id": str(job_record.training_file.id),
+                    "openai_file_id": job_record.training_file.openai_file_id,
+                    "filename": job_record.training_file.filename,
+                    "bytes": job_record.training_file.bytes,
+                }
+            if job_record.validation_file:
+                job_dict['validation_file_info'] = {
+                    "id": str(job_record.validation_file.id),
+                    "openai_file_id": job_record.validation_file.openai_file_id,
+                    "filename": job_record.validation_file.filename,
+                    "bytes": job_record.validation_file.bytes,
+                }
 
             # Add events
             self.attach_job_events(job_dict, job_record)
@@ -597,3 +648,203 @@ class OpenAIFineTuningService:
         except Exception as e:
             logger.error(f"Error deleting fine-tuned model {model_id}: {str(e)}")
             raise AppException(error_key=ErrorKey.ERROR_DELETE_MODEL)
+
+    # ------------------------------------------------------------------
+    # Training file generation from conversations
+    # ------------------------------------------------------------------
+
+    def _extract_agent_node(self, workflow: dict) -> dict | None:
+        for node in workflow.get("nodes", []):
+            if node.get("type") == "agentNode":
+                return node
+        return None
+
+    def _extract_tool_nodes_for_agent(self, workflow: dict, agent_node_id: str) -> List[dict]:
+        node_map = {n["id"]: n for n in workflow.get("nodes", [])}
+        tool_nodes = []
+        for edge in workflow.get("edges", []):
+            if (
+                edge.get("target") == agent_node_id
+                and "tools" in edge.get("targetHandle", "")
+            ):
+                source_id = edge.get("source")
+                if source_id and source_id in node_map:
+                    tool_nodes.append(node_map[source_id])
+        return tool_nodes
+
+    def _build_openai_tool_schema(self, tool_node: dict) -> dict:
+        data = tool_node.get("data", {})
+        snake_name = _to_snake_case(data.get("name", tool_node["id"]))
+        raw_schema: dict = data.get("inputSchema", {})
+        filtered = {k: v for k, v in raw_schema.items() if "session." not in k}
+        properties: dict = {}
+        required_fields: List[str] = []
+        for param_name, param_def in filtered.items():
+            properties[param_name] = {"type": param_def.get("type", "string")}
+            if param_def.get("description"):
+                properties[param_name]["description"] = param_def["description"]
+            if param_def.get("required", False):
+                required_fields.append(param_name)
+        openai_params: dict = {"type": "object", "properties": properties}
+        if required_fields:
+            openai_params["required"] = required_fields
+        return {
+            "type": "function",
+            "function": {
+                "name": snake_name,
+                "description": data.get("description", ""),
+                "parameters": openai_params,
+            },
+        }
+
+    def _build_jsonl_entry(
+        self,
+        log: Any,
+        messages: list,
+        system_prompt: str,
+        tool_schemas: List[dict],
+    ) -> dict | None:
+        agent_msg = next(
+            (m for m in messages if str(m.id) == str(log.transcript_message_id)), None
+        )
+        if not agent_msg:
+            return None
+
+        user_msg = next(
+            (
+                m
+                for m in messages
+                if m.sequence_number == agent_msg.sequence_number - 1
+                and m.speaker.lower() in ("customer", "user")
+            ),
+            None,
+        )
+        user_text = user_msg.text if user_msg else ""
+
+        try:
+            payload = json.loads(log.raw_response)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        row = payload.get("row_agent_response", {})
+        node_execution_status = row.get("state", {}).get("nodeExecutionStatus", {})
+        node_statuses = (
+            list(node_execution_status.values())
+            if isinstance(node_execution_status, dict)
+            else node_execution_status
+        )
+
+        all_steps: list = []
+        final_output = row.get("output", "")
+        for ns in node_statuses:
+            if ns.get("type") == "agentNode":
+                output = ns.get("output") or {}
+                if not final_output:
+                    final_output = output.get("message", "")
+                all_steps.extend(output.get("steps", []))
+
+        tool_call_steps = [s for s in all_steps if s.get("type") == "tool_call"]
+
+        training_messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ]
+
+        if tool_call_steps:
+            tool_calls_payload = [
+                {
+                    "id": s.get("tool_call_id", f"call_{s.get('step', 0):03d}"),
+                    "type": "function",
+                    "function": {
+                        "name": s["tool_name"],
+                        "arguments": json.dumps(s.get("tool_input") or {}),
+                    },
+                }
+                for s in tool_call_steps
+            ]
+            training_messages.append({"role": "assistant", "tool_calls": tool_calls_payload})
+            entry: dict = {"messages": training_messages}
+            if tool_schemas:
+                entry["tools"] = tool_schemas
+            return entry
+        else:
+            if not final_output:
+                return None
+            training_messages.append({"role": "assistant", "content": str(final_output)})
+            return {"messages": training_messages}
+
+    async def _get_workflow_for_operator(self, operator_id: UUID) -> dict:
+        """Resolve the workflow for the agent that belongs to the given operator."""
+        from sqlalchemy import select as sa_select
+        from app.db.models.agent import AgentModel
+        from app.schemas.agent import AgentRead
+
+        result = await self.conversation_repo.db.execute(
+            sa_select(AgentModel).where(AgentModel.operator_id == operator_id)
+        )
+        agent_model = result.scalars().first()
+        if not agent_model:
+            return {}
+        agent_read = await self.agent_config_service.get_by_id_full(agent_model.id)
+        return agent_read.workflow or {}
+
+    async def generate_training_file_from_conversations(
+        self, request: GenerateTrainingFileRequest
+    ) -> bytes:
+        """
+        Generate a JSONL fine-tuning training file from past conversation logs.
+
+        Derives the agent workflow from each conversation's operator, then builds
+        one training example per agent response log found in each conversation.
+        """
+        try:
+            conversations = await self.conversation_repo.fetch_conversations_by_ids(
+                request.conversation_ids, include_messages=True
+            )
+            logs_all = await self.agent_log_repo.get_by_conversation_ids(request.conversation_ids)
+
+            # Group messages and logs by conversation_id for O(1) lookup
+            messages_by_conv: dict[UUID, list] = {c.id: sorted(c.messages, key=lambda m: m.sequence_number) for c in conversations}
+            logs_by_conv: dict[UUID, list] = {}
+            for log in logs_all:
+                logs_by_conv.setdefault(log.conversation_id, []).append(log)
+
+            # Cache workflows by operator_id
+            workflow_cache: dict[UUID, dict] = {}
+
+            jsonl_lines: List[str] = []
+            for conversation in conversations:
+                operator_id = conversation.operator_id
+                if operator_id not in workflow_cache:
+                    workflow_cache[operator_id] = await self._get_workflow_for_operator(operator_id)
+                workflow = workflow_cache[operator_id]
+
+                agent_node = self._extract_agent_node(workflow)
+                system_prompt = (
+                    agent_node.get("data", {}).get("systemPrompt", "") if agent_node else ""
+                )
+                tool_schemas: List[dict] = []
+                if agent_node:
+                    tool_nodes = self._extract_tool_nodes_for_agent(workflow, agent_node["id"])
+                    tool_schemas = [self._build_openai_tool_schema(t) for t in tool_nodes]
+
+                messages = messages_by_conv.get(conversation.id, [])
+                logs = logs_by_conv.get(conversation.id, [])
+
+                for log in logs:
+                    entry = self._build_jsonl_entry(log, messages, system_prompt, tool_schemas)
+                    if entry is not None:
+                        jsonl_lines.append(json.dumps(entry))
+
+            if not jsonl_lines:
+                logger.warning("No valid training examples were generated from the provided conversations")
+
+            result = "\n".join(jsonl_lines).encode("utf-8")
+            validate_bytes_size(result)
+            return result
+
+        except AppException:
+            raise
+        except Exception as e:
+            logger.error(f"Error generating training file: {str(e)}")
+            raise AppException(error_key=ErrorKey.ERROR_GENERATE_TRAINING_FILE)
