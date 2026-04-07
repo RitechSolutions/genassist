@@ -41,26 +41,30 @@ class _TokenCache:
 _cache = _TokenCache()
 
 
-async def _discover_token_url(issuer_url: str) -> str:
+async def _discover_token_url_from_document(discovery_url: str) -> str:
     """
-    Discover the token endpoint via OIDC Discovery.
-
-    Fetches <issuer>/.well-known/openid-configuration and returns token_endpoint.
+    Fetch the openid-configuration document at ``discovery_url`` and return token_endpoint.
     """
-    discovery_url = issuer_url.rstrip("/") + "/.well-known/openid-configuration"
-    logger.debug(f"OIDC discovery: fetching {discovery_url}")
+    url = (discovery_url or "").strip()
+    logger.debug("OIDC discovery: fetching %s", url)
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(discovery_url)
+        resp = await client.get(url)
         resp.raise_for_status()
         data = resp.json()
 
     token_url: Optional[str] = data.get("token_endpoint")
     if not token_url:
         raise ValueError(
-            f"OIDC discovery at {discovery_url} did not return a token_endpoint"
+            f"OIDC discovery at {url} did not return a token_endpoint"
         )
-    logger.debug(f"OIDC discovery: resolved token_endpoint = {token_url}")
+    logger.debug("OIDC discovery: resolved token_endpoint = %s", token_url)
     return token_url
+
+
+async def _discover_token_url(issuer_url: str) -> str:
+    """Legacy: discover token URL from issuer base (appends /.well-known/openid-configuration)."""
+    discovery_url = issuer_url.rstrip("/") + "/.well-known/openid-configuration"
+    return await _discover_token_url_from_document(discovery_url)
 
 
 async def _client_credentials(config: Dict[str, Any]) -> str:
@@ -72,8 +76,9 @@ async def _client_credentials(config: Dict[str, Any]) -> str:
         oauth2_client_secret (str)
 
     One of:
-        oauth2_token_url     (str)  — direct token endpoint
-        oauth2_issuer_url    (str)  — OIDC issuer, token URL auto-discovered
+        oauth2_token_url       (str)  — direct token endpoint
+        oauth2_discovery_url   (str)  — full openid-configuration URL (preferred)
+        oauth2_issuer_url      (str)  — OIDC issuer base; discovery URL is derived (legacy)
 
     Optional config keys:
         oauth2_scopes        (List[str])
@@ -82,6 +87,7 @@ async def _client_credentials(config: Dict[str, Any]) -> str:
     client_id: str = config.get("oauth2_client_id", "")
     client_secret: str = config.get("oauth2_client_secret", "")
     token_url: Optional[str] = config.get("oauth2_token_url")
+    discovery_url: Optional[str] = config.get("oauth2_discovery_url")
     issuer_url: Optional[str] = config.get("oauth2_issuer_url")
     scopes: List[str] = config.get("oauth2_scopes") or []
     audience: Optional[str] = config.get("oauth2_audience")
@@ -93,11 +99,15 @@ async def _client_credentials(config: Dict[str, Any]) -> str:
 
     # Resolve token URL
     if not token_url:
-        if not issuer_url:
+        disc = (discovery_url or "").strip()
+        if disc:
+            token_url = await _discover_token_url_from_document(disc)
+        elif issuer_url:
+            token_url = await _discover_token_url(issuer_url)
+        else:
             raise ValueError(
-                "OAuth2 config requires either oauth2_token_url or oauth2_issuer_url"
+                "OAuth2 config requires oauth2_token_url, oauth2_discovery_url, or oauth2_issuer_url"
             )
-        token_url = await _discover_token_url(issuer_url)
 
     # Check cache (audience affects token content for many providers, e.g. Auth0)
     aud_key = audience or ""

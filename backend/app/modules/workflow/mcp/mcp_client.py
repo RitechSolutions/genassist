@@ -140,6 +140,7 @@ class MCPConnectionManager:
                 "oauth2ClientId": "oauth2_client_id",
                 "oauth2ClientSecret": "oauth2_client_secret",
                 "oauth2TokenUrl": "oauth2_token_url",
+                "oauth2DiscoveryUrl": "oauth2_discovery_url",
                 "oauth2IssuerUrl": "oauth2_issuer_url",
                 "oauth2Scopes": "oauth2_scopes",
                 "oauth2Audience": "oauth2_audience",

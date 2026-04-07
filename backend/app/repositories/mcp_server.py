@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import String, and_, cast, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -81,7 +81,7 @@ class MCPServerRepository:
             .where(
                 and_(
                     MCPServerModel.auth_type == "api_key",
-                    cast(j["api_key_hash"], String) == api_key_hash,
+                    j["api_key_hash"].astext == api_key_hash,
                     MCPServerModel.is_deleted == 0,
                 )
             )
@@ -89,10 +89,16 @@ class MCPServerRepository:
         result = await self.db.execute(query)
         return result.scalars().first()
 
-    async def get_by_oauth_issuer_and_client_hash(
-        self, issuer_url: str, oauth_client_id_hash: str
+    async def get_by_oauth_client_id_hash(
+        self, oauth_client_id_hash: str
     ) -> Optional[MCPServerModel]:
-        """Fetch MCP server by normalized issuer + OAuth client id hash (inbound JWT auth)."""
+        """
+        Fetch an OAuth2 MCP server by ``auth_values.oauth2_client_id_hash`` only.
+
+        Issuer and audience for inbound JWT verification come from the matched row.
+        """
+        if not oauth_client_id_hash:
+            return None
         j = MCPServerModel.auth_values
         query = (
             select(MCPServerModel)
@@ -100,8 +106,7 @@ class MCPServerRepository:
             .where(
                 and_(
                     MCPServerModel.auth_type == "oauth2",
-                    cast(j["oauth2_issuer_url"], String) == issuer_url,
-                    cast(j["oauth2_client_id_hash"], String) == oauth_client_id_hash,
+                    j["oauth2_client_id_hash"].astext == oauth_client_id_hash,
                     MCPServerModel.is_deleted == 0,
                 )
             )
