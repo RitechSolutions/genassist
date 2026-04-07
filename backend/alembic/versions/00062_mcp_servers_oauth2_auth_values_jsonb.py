@@ -1,7 +1,7 @@
 """mcp_servers: add auth_type and auth_values (OAuth2 / JSONB); keep 00030 columns
 
 Revision ID: a1b2c3d4e5f7
-Revises: e8f9a0b1c2d3
+Revises: f1c2d3e4a5b6
 Create Date: 2026-04-03 12:00:00.000000
 
 Legacy columns come only from 00030_add_mcp_servers_tables (e.g. api_key_encrypted,
@@ -18,7 +18,7 @@ from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "a1b2c3d4e5f7"
-down_revision: Union[str, None] = "e8f9a0b1c2d3"
+down_revision: Union[str, None] = "f1c2d3e4a5b6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
