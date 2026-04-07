@@ -1,40 +1,98 @@
 import axios from "axios";
 import { getLocalFineTuneApiUrl } from "@/config/localFineTune";
-import { getAccessToken } from "@/services/auth";
+import { getAccessToken, getTenantId } from "@/services/auth";
 import type {
   CreateLocalFineTuneJobRequest,
   LocalFineTuneJob,
+  LocalFineTuneSupportedModel,
 } from "@/interfaces/localFineTune.interface";
 
 async function localFineTuneRequest<T>(
   method: "GET" | "POST",
   endpoint: string,
-  data?: unknown
+  options?: { data?: unknown; params?: Record<string, string | number | boolean> }
 ): Promise<T> {
   const baseURL = getLocalFineTuneApiUrl();
-  const url = `${baseURL.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`;
+  const path = `${baseURL.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`;
   const token = getAccessToken();
+  const tokenType = localStorage.getItem("token_type") || "Bearer";
+  const properTokenType =
+    tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType;
+  const tenantId = getTenantId();
 
   const config: {
     method: "GET" | "POST";
     url: string;
     data?: unknown;
+    params?: Record<string, string | number | boolean>;
     headers: Record<string, string>;
   } = {
     method,
-    url,
+    url: path,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(token ? { Authorization: `${properTokenType} ${token}` } : {}),
+      ...(tenantId ? { "x-tenant-id": tenantId } : {}),
     },
   };
 
-  if (data !== undefined && method === "POST") {
-    config.data = data;
+  if (options?.params !== undefined) {
+    config.params = options.params;
+  }
+
+  if (options?.data !== undefined && method === "POST") {
+    config.data = options.data;
   }
 
   const response = await axios.request<T>(config);
   return response.data;
+}
+
+function normalizeSupportedModelItem(
+  item: unknown
+): LocalFineTuneSupportedModel | null {
+  if (!item || typeof item !== "object") return null;
+  const o = item as Record<string, unknown>;
+  const id = o.id != null ? String(o.id) : "";
+  if (!id) return null;
+  const label =
+    o.name ??
+    o.display_name ??
+    o.model_name ??
+    o.model ??
+    o.title ??
+    id;
+  return { id, name: String(label) };
+}
+
+function normalizeSupportedModelsResponse(
+  raw: unknown
+): LocalFineTuneSupportedModel[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .map(normalizeSupportedModelItem)
+      .filter((m): m is LocalFineTuneSupportedModel => m !== null);
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    const list = o.items ?? o.data ?? o.results ?? o.models ?? o.rows;
+    if (Array.isArray(list)) {
+      return list
+        .map(normalizeSupportedModelItem)
+        .filter((m): m is LocalFineTuneSupportedModel => m !== null);
+    }
+  }
+  return [];
+}
+
+export async function listLocalFineTuneSupportedModels(
+  skip = 0,
+  limit = 10
+): Promise<LocalFineTuneSupportedModel[]> {
+  const res = await localFineTuneRequest<unknown>("GET", "api/v1/supported-models", {
+    params: { skip, limit },
+  });
+  return normalizeSupportedModelsResponse(res);
 }
 
 export async function listLocalFineTuneJobs(): Promise<LocalFineTuneJob[]> {
@@ -59,9 +117,7 @@ export async function getLocalFineTuneJob(id: string): Promise<LocalFineTuneJob 
 export async function createLocalFineTuneJob(
   payload: CreateLocalFineTuneJobRequest
 ): Promise<LocalFineTuneJob> {
-  return localFineTuneRequest<LocalFineTuneJob>(
-    "POST",
-    "api/v1/fine-tuning/jobs",
-    payload
-  );
+  return localFineTuneRequest<LocalFineTuneJob>("POST", "api/v1/fine-tuning/jobs", {
+    data: payload,
+  });
 }

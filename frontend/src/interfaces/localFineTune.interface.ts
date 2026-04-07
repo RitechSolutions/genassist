@@ -13,11 +13,17 @@ export interface LocalFineTuneHyperparameters {
   [key: string]: unknown;
 }
 
+export interface LocalFineTuneSupportedModel {
+  id: string;
+  name: string;
+}
+
 export interface CreateLocalFineTuneJobRequest {
   training_file: string;
   file_token: string;
-  model: string;
+  model_id: string;
   tool_training_mode?: string;
+  remote_files: boolean;
   cleanup_files?: boolean;
   hyperparameters: LocalFineTuneHyperparameters;
 }
