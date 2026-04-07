@@ -18,6 +18,56 @@ from app.services.smb_share_service import SMBShareFSService
 
 logger = logging.getLogger(__name__)
 
+def _empty_task_result(*, message: str) -> dict:
+    return {
+        "datasources": 0,
+        "processed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "transcribed": 0,
+        "files": [],
+        "message": message,
+    }
+
+
+def _extract_setting_value(setting: object) -> Optional[str]:
+    values = getattr(setting, "values", None)
+    if not isinstance(values, dict) or not values:
+        return None
+    if "value" in values and values["value"] not in (None, ""):
+        return str(values["value"])
+    for v in values.values():
+        if v not in (None, ""):
+            return str(v)
+    return None
+
+
+async def _load_google_cloud_settings_or_none(
+    settings_service: AppSettingsService,
+) -> Optional[tuple[str, str]]:
+    """
+    Load Google Cloud config used for transcription.
+
+    Returns None when settings are missing/empty, so the task can skip quietly
+    instead of bubbling an exception to the tenant task runner.
+    """
+    google_cloud_json_setting = await settings_service.get_by_type_and_name(
+        "Other", "google_cloud_json"
+    )
+    google_cloud_bucket_setting = await settings_service.get_by_type_and_name(
+        "Other", "google_cloud_bucket"
+    )
+
+    if not google_cloud_json_setting or not google_cloud_bucket_setting:
+        return None
+
+    google_cloud_json = _extract_setting_value(google_cloud_json_setting)
+    google_cloud_bucket = _extract_setting_value(google_cloud_bucket_setting)
+    if not google_cloud_json or not google_cloud_bucket:
+        return None
+
+    return google_cloud_json, google_cloud_bucket
+
 
 @shared_task
 def transcribe_audio_files_from_smb():
@@ -43,36 +93,22 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
     audioService = injector.get(AudioService)
     settingsService = injector.get(AppSettingsService)
 
-    # Get Google Cloud settings - using "Other" type and setting names
-    google_cloud_json_setting = await settingsService.get_by_type_and_name(
-        "Other", "google_cloud_json"
-    )
-    google_cloud_bucket_setting = await settingsService.get_by_type_and_name(
-        "Other", "google_cloud_bucket"
-    )
+    try:
+        gc = await _load_google_cloud_settings_or_none(settingsService)
+    except Exception as e:
+        logger.error(f"Error getting Google Cloud settings: {e}")
+        return _empty_task_result(message=f"Error getting Google Cloud settings: {e}")
 
-    if not google_cloud_json_setting:
-        raise ValueError("Google Cloud setting 'google_cloud_json' not found")
-    if not google_cloud_bucket_setting:
-        raise ValueError("Google Cloud setting 'google_cloud_bucket' not found")
+    if not gc:
+        logger.warning(
+            "Skipping SMB transcription: missing/empty Google Cloud settings "
+            "('google_cloud_json' and/or 'google_cloud_bucket')"
+        )
+        return _empty_task_result(
+            message="Skipped: missing/empty Google Cloud settings (google_cloud_json/google_cloud_bucket)"
+        )
 
-    # Extract values from the settings - check for "value" key first, otherwise get first value
-    google_cloud_json = None
-    if "value" in google_cloud_json_setting.values:
-        google_cloud_json = google_cloud_json_setting.values["value"]
-    elif google_cloud_json_setting.values:
-        google_cloud_json = list(google_cloud_json_setting.values.values())[0]
-
-    google_cloud_bucket = None
-    if "value" in google_cloud_bucket_setting.values:
-        google_cloud_bucket = google_cloud_bucket_setting.values["value"]
-    elif google_cloud_bucket_setting.values:
-        google_cloud_bucket = list(google_cloud_bucket_setting.values.values())[0]
-
-    if not google_cloud_json:
-        raise ValueError("Google Cloud setting 'google_cloud_json' value is empty")
-    if not google_cloud_bucket:
-        raise ValueError("Google Cloud setting 'google_cloud_bucket' value is empty")
+    google_cloud_json, google_cloud_bucket = gc
 
     logger.info("google_cloud_json key and google_cloud_bucket is loaded")
 
