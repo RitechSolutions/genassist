@@ -178,6 +178,7 @@ class FileManagerService:
                 storage_path=storage_path,
                 path=file_path,
                 description=file_base.description,
+                file_metadata=file_base.file_metadata,
                 tags=file_base.tags,
                 permissions=file_base.permissions,
             )

@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/react";
-import axios, { Method, AxiosRequestConfig, AxiosError } from "axios";
+import axios, { Method, AxiosRequestConfig, AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { setServerDown, setServerUp } from "@/config/serverStatus";
 
 function captureSentryIfApiHttpError(error: unknown): void {
@@ -43,7 +43,7 @@ const api = axios.create({
 
 // Interceptor: Request
 api.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
     const accessToken = localStorage.getItem("access_token");
     const tokenType = localStorage.getItem("token_type") || "Bearer";
     const tenantId = localStorage.getItem("tenant_id");
@@ -58,6 +58,16 @@ api.interceptors.request.use(
       config.headers["x-tenant-id"] = tenantId;
     }
 
+    // Let the runtime set multipart boundary; default application/json breaks FormData uploads
+    if (config.data instanceof FormData) {
+      const h = config.headers;
+      if (typeof h.delete === "function") {
+        h.delete("Content-Type");
+      } else {
+        delete (h as Record<string, unknown>)["Content-Type"];
+      }
+    }
+
     return config;
   },
   (error) => {
@@ -70,7 +80,6 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    console.log(error, '-- error --');
     captureSentryIfApiHttpError(error);
 
     // Handle 401 errors with token refresh
