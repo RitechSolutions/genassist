@@ -527,6 +527,20 @@ class ConversationRepository:
         result = await self.db.execute(query)
         return result.unique().scalars().first()
 
+    async def fetch_conversations_by_ids(
+        self,
+        conversation_ids: List[UUID],
+        include_messages: bool = False,
+    ) -> List[ConversationModel]:
+        """Fetch multiple conversations by ID in a single query."""
+        query = select(ConversationModel).where(ConversationModel.id.in_(conversation_ids))
+        if include_messages:
+            query = query.options(
+                selectinload(ConversationModel.messages)
+            )
+        result = await self.db.execute(query)
+        return list(result.unique().scalars().all())
+
     async def get_finalized_without_analysis(self, limit: int = 100) -> Sequence[ConversationModel]:
         """Return finalized conversations that have no conversation_analysis row."""
         query = (

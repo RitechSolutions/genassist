@@ -59,6 +59,17 @@ class AgentResponseLogRepository:
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
+    async def get_by_conversation_ids(
+        self,
+        conversation_ids: List[UUID],
+    ) -> List[AgentResponseLogModel]:
+        """Fetch all agent response logs for a list of conversation IDs in a single query."""
+        stmt = select(AgentResponseLogModel).where(
+            AgentResponseLogModel.conversation_id.in_(conversation_ids)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_by_filter(
         self,
         agent_response_log_filter: AgentResponseLogFilter,

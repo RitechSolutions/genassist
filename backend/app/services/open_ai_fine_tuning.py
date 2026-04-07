@@ -17,7 +17,6 @@ from app.db.models import FineTuningJobModel
 from app.repositories.agent_response_log import AgentResponseLogRepository
 from app.repositories.conversations import ConversationRepository
 from app.repositories.openai_fine_tuning import FineTuningRepository
-from app.schemas.filter import AgentResponseLogFilter
 from app.schemas.open_ai_fine_tuning import CreateFineTuningJobRequest, GenerateTrainingFileRequest
 from app.services.agent_config import AgentConfigService
 from app.services.fine_tuning_event import FineTuningEventService
@@ -782,18 +781,22 @@ class OpenAIFineTuningService:
         one training example per agent response log found in each conversation.
         """
         try:
-            jsonl_lines: List[str] = []
-            # Cache workflows by operator_id to avoid redundant DB lookups
+            conversations = await self.conversation_repo.fetch_conversations_by_ids(
+                request.conversation_ids, include_messages=True
+            )
+            logs_all = await self.agent_log_repo.get_by_conversation_ids(request.conversation_ids)
+
+            # Group messages and logs by conversation_id for O(1) lookup
+            messages_by_conv: dict[UUID, list] = {c.id: sorted(c.messages, key=lambda m: m.sequence_number) for c in conversations}
+            logs_by_conv: dict[UUID, list] = {}
+            for log in logs_all:
+                logs_by_conv.setdefault(log.conversation_id, []).append(log)
+
+            # Cache workflows by operator_id
             workflow_cache: dict[UUID, dict] = {}
 
-            for conv_id in request.conversation_ids:
-                conversation = await self.conversation_repo.fetch_conversation_by_id(
-                    conv_id, include_messages=True
-                )
-                if not conversation:
-                    logger.warning(f"Conversation {conv_id} not found, skipping")
-                    continue
-
+            jsonl_lines: List[str] = []
+            for conversation in conversations:
                 operator_id = conversation.operator_id
                 if operator_id not in workflow_cache:
                     workflow_cache[operator_id] = await self._get_workflow_for_operator(operator_id)
@@ -808,10 +811,8 @@ class OpenAIFineTuningService:
                     tool_nodes = self._extract_tool_nodes_for_agent(workflow, agent_node["id"])
                     tool_schemas = [self._build_openai_tool_schema(t) for t in tool_nodes]
 
-                messages = sorted(conversation.messages, key=lambda m: m.sequence_number)
-                logs = await self.agent_log_repo.get_by_filter(
-                    AgentResponseLogFilter(conversation_id=conv_id)
-                )
+                messages = messages_by_conv.get(conversation.id, [])
+                logs = logs_by_conv.get(conversation.id, [])
 
                 for log in logs:
                     entry = self._build_jsonl_entry(log, messages, system_prompt, tool_schemas)
