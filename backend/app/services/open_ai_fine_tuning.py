@@ -10,6 +10,7 @@ from sqlalchemy import UUID
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.utils.bi_utils import validate_bytes_size
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.enums.open_ai_fine_tuning_enum import FileStatus, JobStatus
@@ -822,7 +823,9 @@ class OpenAIFineTuningService:
             if not jsonl_lines:
                 logger.warning("No valid training examples were generated from the provided conversations")
 
-            return "\n".join(jsonl_lines).encode("utf-8")
+            result = "\n".join(jsonl_lines).encode("utf-8")
+            validate_bytes_size(result)
+            return result
 
         except AppException:
             raise
