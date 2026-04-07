@@ -179,6 +179,7 @@ export function FineTuneJobDialog({
   const handleDiscard = () => {
     resetForm();
     setIsCloseConfirmOpen(false);
+    setSubmitting(false);
     onOpenChange(false);
   };
 
@@ -401,7 +402,6 @@ export function FineTuneJobDialog({
               type="button"
               variant="outline"
               onClick={() => handleDialogOpenChange(false)}
-              disabled={submitting}
             >
               Cancel
             </Button>

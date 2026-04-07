@@ -96,15 +96,15 @@ class OpenAIFineTuningService:
 
             logger.info(f"Successfully uploaded file to OpenAI. File ID: {response.id}")
 
-            # Store in database
-            await self.repository.create_file_record(
+            # Store in database and return the DB record so callers have the internal UUID
+            db_record = await self.repository.create_file_record(
                     openai_file_id=response.id,
                     filename=response.filename,
                     purpose=response.purpose,
                     bytes=response.bytes,
                     )
 
-            return response
+            return db_record.to_dict()
 
         except Exception as e:
             logger.error(f"Error uploading file to OpenAI: {str(e)}")

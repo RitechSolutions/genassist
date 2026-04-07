@@ -226,10 +226,10 @@ async def generate_training_file_from_conversations(
         file=(filename, jsonl_bytes),
         purpose="fine-tune",
     )
-    await service.repository.create_file_record(
+    db_record = await service.repository.create_file_record(
         openai_file_id=response.id,
         filename=response.filename,
         purpose=response.purpose,
         bytes=response.bytes,
     )
-    return response
+    return db_record.to_dict()
