@@ -100,16 +100,65 @@ class MCPConnectionManager:
         Return the value for the Authorization header based on auth_type.
 
         - auth_type "api_key" (or absent): use api_key field as Bearer token
-        - auth_type "oauth2"             : fetch token via OAuth2/OIDC
+        - auth_type "oauth2" (and common aliases like "oauth2.0", "oidc"):
+            fetch token via OAuth2/OIDC (client credentials)
         - auth_type "none"               : no Authorization header
         """
-        auth_type: str = self.connection_config.get("auth_type", "api_key")
+        def _coerce_auth_type(value: Any) -> str:
+            raw = str(value or "").strip().lower()
+            if not raw:
+                return "api_key"
+            # Accept common variants that show up in UIs / configs.
+            if raw in {"oauth2.0", "oauth2_0", "oauth2-0", "oauth2"}:
+                return "oauth2"
+            if raw in {"oidc", "openid", "openidconnect", "open_id_connect", "open-id-connect"}:
+                return "oauth2"
+            if raw in {"apikey", "api-key", "api_key"}:
+                return "api_key"
+            return raw
+
+        def _merged_oauth2_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+            """
+            Normalize OAuth2 config shape for get_oauth2_token().
+
+            Supports:
+            - top-level oauth2_* keys (used by MCP node dialog)
+            - nested auth_values.oauth2_* (used by some persisted configs)
+            - camelCase keys from some clients
+            """
+            merged: Dict[str, Any] = dict(cfg)
+
+            av = merged.get("auth_values")
+            if isinstance(av, dict):
+                # Only merge non-empty values to avoid clobbering explicit top-level settings.
+                for k, v in av.items():
+                    if k not in merged and v is not None:
+                        merged[k] = v
+
+            # camelCase → snake_case aliases
+            alias_map = {
+                "oauth2ClientId": "oauth2_client_id",
+                "oauth2ClientSecret": "oauth2_client_secret",
+                "oauth2TokenUrl": "oauth2_token_url",
+                "oauth2IssuerUrl": "oauth2_issuer_url",
+                "oauth2Scopes": "oauth2_scopes",
+                "oauth2Audience": "oauth2_audience",
+                "oauth2Flow": "oauth2_flow",
+            }
+            for src, dst in alias_map.items():
+                if dst not in merged and src in merged:
+                    merged[dst] = merged.get(src)
+
+            return merged
+
+        auth_type = _coerce_auth_type(self.connection_config.get("auth_type", "api_key"))
 
         if auth_type == "none":
             return None
 
         if auth_type == "oauth2":
-            token = await get_oauth2_token(self.connection_config)
+            oauth_cfg = _merged_oauth2_config(self.connection_config)
+            token = await get_oauth2_token(oauth_cfg)
             token_norm = _normalize_bearer_secret(token)
             if not token_norm:
                 raise ValueError("OAuth2 token response was empty")
