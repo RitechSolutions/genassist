@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
@@ -20,6 +21,10 @@ router = APIRouter()
 )
 async def list_cost_rates(service: LlmCostRateService = Injected(LlmCostRateService)):
     rows = await service.list_active()
+    # Defensive: older rows might have NULL updated_at; avoid breaking response validation.
+    for r in rows:
+        if getattr(r, "updated_at", None) is None:
+            r.updated_at = getattr(r, "created_at", None)
     return [
         LlmCostRateRead.model_validate(r, from_attributes=True)
         for r in rows
@@ -49,6 +54,21 @@ async def import_cost_rates_csv(
             error_detail="File must be UTF-8 encoded"
         ) from e
     return await service.import_csv(text)
+
+
+@router.get(
+    "/export",
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.READ))],
+)
+async def export_cost_rates_csv(
+    service: LlmCostRateService = Injected(LlmCostRateService),
+):
+    csv_text = await service.export_csv()
+    return StreamingResponse(
+        iter([csv_text]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="llm-cost-rates.csv"'},
+    )
 
 
 @router.delete(

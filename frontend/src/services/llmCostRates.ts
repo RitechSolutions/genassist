@@ -49,3 +49,29 @@ export async function importLlmCostRatesCsv(
 export async function deleteLlmCostRate(id: string): Promise<void> {
   await apiRequest("DELETE", `llm-cost-rates/${id}`);
 }
+
+export async function exportLlmCostRatesCsv(): Promise<Blob> {
+  const baseURL = (await getApiUrl()).replace(/\/$/, "");
+  const fullUrl = `${baseURL}/llm-cost-rates/export`;
+
+  const token = localStorage.getItem("access_token");
+  const tokenType = localStorage.getItem("token_type") || "Bearer";
+  const tenantId = localStorage.getItem("tenant_id");
+
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `${tokenType} ${token}`;
+  }
+  if (tenantId) {
+    headers["x-tenant-id"] = tenantId;
+  }
+
+  const response = await fetch(fullUrl, { method: "GET", headers });
+  if (!response.ok) {
+    const errBody = (await response.json().catch(() => ({}))) as {
+      detail?: string;
+    };
+    throw new Error(errBody.detail || `Export failed (${response.status})`);
+  }
+  return await response.blob();
+}
