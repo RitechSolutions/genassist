@@ -83,14 +83,17 @@ export function MCPServerDetailsDialog({
     return null;
   }
 
-  const oauthIssuer =
-    typeof server.auth_values?.oauth2_issuer_url === "string"
-      ? server.auth_values.oauth2_issuer_url.trim()
-      : "";
+  const oauthDiscovery =
+    typeof av.oauth2_discovery_url === "string" ? av.oauth2_discovery_url.trim() : "";
+  const legacyIss =
+    typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.trim().replace(/\/+$/, "") : "";
+  const displayDiscovery =
+    oauthDiscovery ||
+    (legacyIss ? `${legacyIss}/.well-known/openid-configuration` : "");
+  const oauthScope =
+    typeof av.oauth2_scope === "string" ? av.oauth2_scope.trim() : "";
   const oauthAudience =
-    typeof server.auth_values?.oauth2_audience === "string"
-      ? server.auth_values.oauth2_audience.trim()
-      : "";
+    typeof av.oauth2_audience === "string" ? av.oauth2_audience.trim() : "";
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -125,7 +128,7 @@ export function MCPServerDetailsDialog({
             <Label className="text-xs text-gray-500">Authentication</Label>
             <div className="mt-1">
               <Badge variant="outline">
-                {server.auth_type === "oauth2" ? "OAuth 2.0 (JWT)" : "API key"}
+                {server.auth_type === "oauth2" ? "OAuth 2.0 / OIDC (JWT)" : "API key"}
               </Badge>
             </div>
           </div>
@@ -136,27 +139,31 @@ export function MCPServerDetailsDialog({
                 OAuth 2.0 configuration
               </p>
               <p className="text-xs text-gray-600 -mt-2">
-                Clients obtain a JWT via client credentials at your IdP, then call this MCP server with{" "}
-                <code className="text-xs bg-gray-100 px-1 rounded">Authorization: Bearer &lt;token&gt;</code>
-                . Tokens are validated against the issuer below.
+                Callers send a JWT with{" "}
+                <code className="text-xs bg-gray-100 px-1 rounded">Authorization: Bearer &lt;access_token&gt;</code>
+                . Genassist loads the discovery document below, then JWKS, and checks signature, issuer (
+                <code className="text-xs">iss</code> vs document <code className="text-xs">issuer</code>
+                ), optional scope/scp, and optional audience. The OAuth client id must match the application id
+                in the token (e.g. <code className="text-xs">azp</code>, <code className="text-xs">client_id</code>
+                , <code className="text-xs">appid</code>).
               </p>
 
               <div>
-                <Label className="text-xs text-gray-500">Issuer URL (OIDC)</Label>
+                <Label className="text-xs text-gray-500">OIDC discovery URL</Label>
                 <div className="mt-1 flex items-start gap-2">
                   <p className="text-sm font-mono flex-1 break-all min-w-0">
-                    {oauthIssuer || "—"}
+                    {displayDiscovery || "—"}
                   </p>
-                  {oauthIssuer && (
+                  {displayDiscovery && (
                       <Button
                         type="button"
                         variant="outline"
                         size="icon"
                         className="h-8 w-8 flex-shrink-0"
-                        onClick={() => copyToClipboard(oauthIssuer, "issuer")}
-                        title="Copy issuer URL"
+                        onClick={() => copyToClipboard(displayDiscovery, "discovery")}
+                        title="Copy discovery URL"
                       >
-                        {copiedField === "issuer" ? (
+                        {copiedField === "discovery" ? (
                           <Check className="h-3.5 w-3.5 text-green-600" />
                         ) : (
                           <Copy className="h-3.5 w-3.5" />
@@ -164,41 +171,40 @@ export function MCPServerDetailsDialog({
                       </Button>
                     )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  JWKS from <code className="text-xs">/.well-known/openid-configuration</code>
-                </p>
               </div>
 
               <div>
-                <Label className="text-xs text-gray-500">Audience (JWT aud)</Label>
-                <div className="mt-1 flex items-start gap-2">
-                  <p className="text-sm font-mono flex-1 break-all min-w-0">
-                    {oauthAudience || "None — not required by this configuration"}
-                  </p>
-                  {oauthAudience && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8 flex-shrink-0"
-                        onClick={() => copyToClipboard(oauthAudience, "audience")}
-                        title="Copy audience"
-                      >
-                        {copiedField === "audience" ? (
-                          <Check className="h-3.5 w-3.5 text-green-600" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    )}
+                <Label className="text-xs text-gray-500">Scope</Label>
+                <p className="text-sm font-mono mt-1 break-all">
+                  {oauthScope || "None — scope/scp not enforced"}
+                </p>
+              </div>
+
+              {oauthAudience ? (
+                <div>
+                  <Label className="text-xs text-gray-500">Expected JWT audience (legacy)</Label>
+                  <div className="mt-1 flex items-start gap-2">
+                    <p className="text-sm font-mono flex-1 break-all min-w-0">{oauthAudience}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 flex-shrink-0"
+                      onClick={() => copyToClipboard(oauthAudience, "audience")}
+                      title="Copy audience"
+                    >
+                      {copiedField === "audience" ? (
+                        <Check className="h-3.5 w-3.5 text-green-600" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Some providers (e.g. Auth0) require a specific API identifier as <code className="text-xs">aud</code>.
-                </p>
-              </div>
+              ) : null}
 
               <div>
-                <Label className="text-xs text-gray-500">Client ID</Label>
+                <Label className="text-xs text-gray-500">OAuth client ID</Label>
                 <p className="text-sm font-mono mt-1 break-all">
                   {typeof server.auth_values?.oauth2_client_id === "string" &&
                   server.auth_values.oauth2_client_id.trim()
@@ -206,7 +212,7 @@ export function MCPServerDetailsDialog({
                     : "—"}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  M2M client used with your IdP (client credentials grant).
+                  Must match the id embedded in access tokens from your IdP for this app.
                 </p>
               </div>
 
@@ -262,15 +268,13 @@ export function MCPServerDetailsDialog({
             </div>
           )}
 
-
-
           <div>
             <Label className="text-xs text-gray-500">Workflows</Label>
             <div className="mt-2 space-y-2">
               {server.workflows.length === 0 ? (
                 <p className="text-sm text-gray-500">No workflows configured</p>
               ) : (
-                server.workflows.map((workflow, index) => (
+                server.workflows.map((workflow) => (
                   <div
                     key={workflow.workflow_id}
                     className="border rounded-md p-3 bg-gray-50"
@@ -307,10 +311,12 @@ export function MCPServerDetailsDialog({
               Close
             </Button>
             {onEdit && (
-              <Button onClick={() => {
-                onEdit(server);
-                onOpenChange(false);
-              }}>
+              <Button
+                onClick={() => {
+                  onEdit(server);
+                  onOpenChange(false);
+                }}
+              >
                 Edit
               </Button>
             )}
@@ -320,4 +326,3 @@ export function MCPServerDetailsDialog({
     </Dialog>
   );
 }
-

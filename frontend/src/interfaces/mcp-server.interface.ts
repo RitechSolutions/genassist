@@ -12,8 +12,13 @@ export type MCPServerAuthType = "api_key" | "oauth2";
 export interface MCPServerPublicAuthValues {
   /** Present and masked (e.g. ***) when api_key auth is configured */
   api_key?: string | null;
+  /** Full URL to OIDC discovery (openid-configuration); token/JWKS URLs come from this document */
+  oauth2_discovery_url?: string | null;
+  /** Legacy issuer base; may be present on older servers */
   oauth2_issuer_url?: string | null;
-  /** Empty string when no audience is configured */
+  /** Space-separated scopes (optional inbound scope/scp check) */
+  oauth2_scope?: string | null;
+  /** Comma-separated allowlist for JWT aud; empty / omitted = do not enforce aud */
   oauth2_audience?: string | null;
   /** Decrypted client id for edit forms (management API only) */
   oauth2_client_id?: string | null;
@@ -39,9 +44,16 @@ export interface MCPServerCreatePayload {
   name: string;
   auth_type: MCPServerAuthType;
   api_key?: string;
+  /** Must match application id inside inbound access tokens (azp / client_id / appid, etc.) */
   oauth2_client_id?: string;
   oauth2_client_secret?: string;
+  /** Full URL to /.well-known/openid-configuration (preferred) */
+  oauth2_discovery_url?: string;
+  /** Legacy: issuer base if discovery URL is omitted */
   oauth2_issuer_url?: string;
+  /** Space-separated scopes for optional JWT scope/scp validation */
+  oauth2_scope?: string;
+  /** Optional; comma-separated JWT aud allowlist */
   oauth2_audience?: string;
   workflows: MCPServerWorkflow[];
   description?: string;
@@ -54,7 +66,9 @@ export interface MCPServerUpdatePayload {
   api_key?: string;
   oauth2_client_id?: string;
   oauth2_client_secret?: string;
+  oauth2_discovery_url?: string;
   oauth2_issuer_url?: string;
+  oauth2_scope?: string;
   oauth2_audience?: string;
   workflows?: MCPServerWorkflow[];
   description?: string;

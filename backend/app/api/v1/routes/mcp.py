@@ -181,12 +181,31 @@ async def discover_mcp_tools(request: DiscoverToolsRequest) -> DiscoverToolsResp
 
 
 def extract_bearer_token(authorization: Optional[str] = Header(None)) -> Optional[str]:
-    """Extract Bearer token from Authorization header."""
+    """
+    Extract the secret from ``Authorization`` (case-insensitive ``Bearer`` prefix).
+
+    Strips surrounding whitespace so pasted API keys / JWTs match stored hashes and JWKS checks.
+    """
     if not authorization:
         return None
-    if authorization.startswith("Bearer "):
-        return authorization[7:]
-    return authorization
+    auth = authorization.strip()
+    if len(auth) >= 7 and auth[:7].lower() == "bearer ":
+        raw = auth[7:].lstrip()
+    else:
+        raw = auth
+    raw = raw.strip()
+    return raw or None
+
+
+# ``Authorization: Bearer`` carries either a static MCP API key or an OAuth 2.0 access token (JWT)
+# when the MCP server is configured with ``auth_type`` oauth2 (verified via JWKS / ``mcp_oauth_inbound``).
+_MCP_MISSING_BEARER = (
+    "Missing Authorization bearer token. Use a static MCP API key or an OAuth 2.0 access token "
+    "from the IdP configured for this MCP server."
+)
+_MCP_INVALID_BEARER = (
+    "Invalid or unauthorized bearer token (API key or OAuth 2.0 access token)."
+)
 
 
 class JSONRPCRequest(BaseModel):
@@ -230,26 +249,26 @@ async def _handle_jsonrpc_internal(
     """
     Internal handler for JSON-RPC requests.
 
+    Authenticates with ``MCPServerService.authenticate_mcp_bearer`` (static API key or OAuth 2.0 JWT + JWKS).
+
     Supports:
     - tools/list: List available tools
     - tools/call: Execute a tool
     """
     try:
-        # Extract API key from Authorization header
-        api_key = extract_bearer_token(authorization)
-        if not api_key:
+        bearer = extract_bearer_token(authorization)
+        if not bearer:
             return JSONRPCResponse(
                 jsonrpc="2.0",
                 id=request.id,
                 result=None,
                 error={
                     "code": -32001,
-                    "message": "Missing API key in Authorization header"
+                    "message": _MCP_MISSING_BEARER,
                 }
             )
 
-        # Validate API key and get MCP server
-        mcp_server = await mcp_server_service.validate_api_key(api_key)
+        mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
         if not mcp_server:
             return JSONRPCResponse(
                 jsonrpc="2.0",
@@ -257,7 +276,7 @@ async def _handle_jsonrpc_internal(
                 result=None,
                 error={
                     "code": -32001,
-                    "message": "Invalid API key"
+                    "message": _MCP_INVALID_BEARER,
                 }
             )
 
@@ -510,20 +529,18 @@ async def handle_sse(
     Note: The SSE transport sends the HTTP response via ASGI ``send``; the return
     value must not trigger a second response (see ``_TransportAlreadyResponded``).
     """
-    # Extract API key from Authorization header
-    api_key = extract_bearer_token(authorization)
-    if not api_key:
+    bearer = extract_bearer_token(authorization)
+    if not bearer:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key in Authorization header"
+            detail=_MCP_MISSING_BEARER,
         )
 
-    # Validate API key and get MCP server
-    mcp_server = await mcp_server_service.validate_api_key(api_key)
+    mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
     if not mcp_server:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
+            detail=_MCP_INVALID_BEARER,
         )
 
     # Check if server is active
@@ -589,20 +606,18 @@ async def handle_sse_messages(
     This endpoint receives client messages that link to a previously-established SSE session.
     Note: This endpoint uses an ASGI app that handles the response directly.
     """
-    # Extract API key from Authorization header
-    api_key = extract_bearer_token(authorization)
-    if not api_key:
+    bearer = extract_bearer_token(authorization)
+    if not bearer:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key in Authorization header"
+            detail=_MCP_MISSING_BEARER,
         )
 
-    # Validate API key and get MCP server
-    mcp_server = await mcp_server_service.validate_api_key(api_key)
+    mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
     if not mcp_server:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
+            detail=_MCP_INVALID_BEARER,
         )
 
     # Check if server is active
@@ -646,20 +661,18 @@ async def _list_mcp_tools_internal(
     Internal function to list MCP tools.
     Used by both GET /tools and POST /tools/list endpoints.
     """
-    # Extract API key from Authorization header
-    api_key = extract_bearer_token(authorization)
-    if not api_key:
+    bearer = extract_bearer_token(authorization)
+    if not bearer:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key in Authorization header"
+            detail=_MCP_MISSING_BEARER,
         )
 
-    # Validate API key and get MCP server
-    mcp_server = await mcp_server_service.validate_api_key(api_key)
+    mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
     if not mcp_server:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
+            detail=_MCP_INVALID_BEARER,
         )
 
     # Check if server is active
@@ -697,8 +710,8 @@ async def list_mcp_tools_get(
     """
     List available tools from active MCP servers (MCP Protocol endpoint - GET).
 
-    Authenticates using API key from Authorization header and returns all tools
-    exposed by the authenticated MCP server.
+    Authenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)
+    and returns all tools exposed by the authenticated MCP server.
     """
     return await _list_mcp_tools_internal(authorization, mcp_server_service)
 
@@ -712,8 +725,8 @@ async def list_mcp_tools_post(
     List available tools from active MCP servers (MCP Protocol endpoint - POST).
 
     This endpoint matches the MCP client's expected format for tool discovery.
-    Authenticates using API key from Authorization header and returns all tools
-    exposed by the authenticated MCP server.
+    Authenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)
+    and returns all tools exposed by the authenticated MCP server.
     """
     return await _list_mcp_tools_internal(authorization, mcp_server_service)
 
@@ -727,23 +740,21 @@ async def execute_mcp_tool(
     """
     Execute a workflow as an MCP tool (MCP Protocol endpoint).
 
-    Authenticates using API key, finds the tool in the server's workflows,
-    validates arguments, and executes the workflow.
+    Authenticates with a static MCP API key or OAuth 2.0 access token, finds the tool
+    in the server's workflows, validates arguments, and executes the workflow.
     """
-    # Extract API key from Authorization header
-    api_key = extract_bearer_token(authorization)
-    if not api_key:
+    bearer = extract_bearer_token(authorization)
+    if not bearer:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key in Authorization header"
+            detail=_MCP_MISSING_BEARER,
         )
 
-    # Validate API key and get MCP server
-    mcp_server = await mcp_server_service.validate_api_key(api_key)
+    mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
     if not mcp_server:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
+            detail=_MCP_INVALID_BEARER,
         )
 
     # Check if server is active

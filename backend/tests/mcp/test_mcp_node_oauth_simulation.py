@@ -39,7 +39,7 @@ def _node_style_oauth2_config():
         "oauth2_flow": "client_credentials",
         "oauth2_client_id": "workflow-mcp-client",
         "oauth2_client_secret": "workflow-mcp-secret",
-        "oauth2_issuer_url": "https://issuer.example.com",
+        "oauth2_discovery_url": "https://issuer.example.com/.well-known/openid-configuration",
         "oauth2_scopes": ["mcp.read"],
         "oauth2_audience": "https://remote-mcp.example.com",
     }

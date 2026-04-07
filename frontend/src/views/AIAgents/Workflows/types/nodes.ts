@@ -351,10 +351,14 @@ export interface HTTPConnectionConfig {
   oauth2_flow?: MCPOAuth2Flow; // "client_credentials" (default)
   oauth2_client_id?: string;
   oauth2_client_secret?: string;
-  oauth2_token_url?: string; // Direct token endpoint
-  oauth2_issuer_url?: string; // OIDC issuer — token URL auto-discovered
-  oauth2_scopes?: string[]; // e.g. ["read", "mcp:tools"]
-  oauth2_audience?: string; // Required by some providers (Auth0, etc.)
+  /** Full openid-configuration URL — token_endpoint read from this document (preferred) */
+  oauth2_discovery_url?: string;
+  /** @deprecated use oauth2_discovery_url; issuer base, discovery path appended by backend */
+  oauth2_issuer_url?: string;
+  /** Direct token endpoint (legacy; omit when using discovery URL) */
+  oauth2_token_url?: string;
+  oauth2_scopes?: string[]; // e.g. ["openid", "mcp"]
+  oauth2_audience?: string; // Some IdPs (Auth0, etc.) require audience on token request
   // --- General ---
   headers?: Record<string, string>; // Optional: Custom headers
   timeout?: number; // Optional: Timeout in seconds

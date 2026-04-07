@@ -79,7 +79,7 @@ async def test_client_credentials_missing_credentials():
 
 @pytest.mark.asyncio
 async def test_client_credentials_missing_token_url():
-    with pytest.raises(ValueError, match="oauth2_token_url or oauth2_issuer_url"):
+    with pytest.raises(ValueError, match="oauth2_token_url, oauth2_discovery_url, or oauth2_issuer_url"):
         await get_oauth2_token({
             "oauth2_flow": "client_credentials",
             "oauth2_client_id": "cid",
@@ -222,6 +222,39 @@ async def test_oidc_discovery_resolves_token_url(monkeypatch):
     # Token POST called with discovered endpoint
     mock_client.post.assert_called_once()
     assert mock_client.post.call_args[0][0] == "https://auth.example.com/discovered/token"
+
+
+@pytest.mark.asyncio
+async def test_oidc_discovery_full_configuration_url(monkeypatch):
+    """oauth2_discovery_url may be the full openid-configuration URL."""
+    _cache._store.clear()
+
+    discovery_resp = MagicMock()
+    discovery_resp.status_code = 200
+    discovery_resp.raise_for_status = MagicMock()
+    discovery_resp.json.return_value = {
+        "token_endpoint": "https://auth.example.com/v1/token"
+    }
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=discovery_resp)
+    mock_client.post = AsyncMock(return_value=_mock_token_response("tok_full"))
+
+    full_url = "http://localhost:8000/.well-known/openid-configuration"
+    config = {
+        "oauth2_flow": "client_credentials",
+        "oauth2_client_id": "cid",
+        "oauth2_client_secret": "cs",
+        "oauth2_discovery_url": full_url,
+    }
+
+    with patch("app.modules.workflow.mcp.oauth2_client.httpx.AsyncClient", return_value=mock_client):
+        token = await get_oauth2_token(config)
+
+    assert token == "tok_full"
+    mock_client.get.assert_called_once_with(full_url)
 
 
 @pytest.mark.asyncio

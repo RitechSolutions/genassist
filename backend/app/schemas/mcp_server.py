@@ -60,13 +60,24 @@ class MCPServerCreate(BaseModel):
     oauth2_client_secret: Optional[str] = Field(
         default=None, description="Required when auth_type is oauth2"
     )
+    oauth2_discovery_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "When auth_type is oauth2 — full URL to openid-configuration "
+            "(token/JWKS endpoints discovered from this document)"
+        ),
+    )
     oauth2_issuer_url: Optional[str] = Field(
         default=None,
-        description="Required when auth_type is oauth2 — OIDC issuer (JWKS via /.well-known/openid-configuration)",
+        description="Legacy alternative: OIDC issuer base URL if discovery URL is omitted",
+    )
+    oauth2_scope: Optional[str] = Field(
+        default=None,
+        description="Space-separated scopes — token request (outbound) or optional JWT scope/scp check (inbound)",
     )
     oauth2_audience: Optional[str] = Field(
         None,
-        description="Optional expected JWT audience (aud) — required by some providers (e.g. Auth0 API identifier)",
+        description="Optional expected JWT audience (aud) — comma-separated allowlist; omit to skip aud check",
     )
     workflows: List[MCPServerWorkflowCreate] = Field(..., min_length=1, description="List of workflows to expose as tools")
     description: Optional[str] = None
@@ -94,9 +105,16 @@ class MCPServerCreate(BaseModel):
                 raise ValueError("oauth2_client_id is required when auth_type is oauth2")
             if not self.oauth2_client_secret or not self.oauth2_client_secret.strip():
                 raise ValueError("oauth2_client_secret is required when auth_type is oauth2")
+            disc = (self.oauth2_discovery_url or "").strip()
             iss = (self.oauth2_issuer_url or "").strip()
-            if not iss or len(iss) < 8:
-                raise ValueError("oauth2_issuer_url is required when auth_type is oauth2")
+            if not disc and not iss:
+                raise ValueError(
+                    "oauth2_discovery_url or oauth2_issuer_url is required when auth_type is oauth2"
+                )
+            if disc and len(disc) < 12:
+                raise ValueError("oauth2_discovery_url is too short or invalid")
+            if not disc and iss and len(iss) < 8:
+                raise ValueError("oauth2_issuer_url is too short or invalid")
         return self
 
 
@@ -110,7 +128,9 @@ class MCPServerUpdate(BaseModel):
     )
     oauth2_client_id: Optional[str] = None
     oauth2_client_secret: Optional[str] = None
+    oauth2_discovery_url: Optional[str] = None
     oauth2_issuer_url: Optional[str] = None
+    oauth2_scope: Optional[str] = None
     oauth2_audience: Optional[str] = None
     workflows: Optional[List[MCPServerWorkflowCreate]] = Field(None, min_length=1)
     description: Optional[str] = None
@@ -146,7 +166,7 @@ class MCPServerResponse(MCPServerBase):
         description=(
             "Stored auth for the UI (management API only): "
             "api_key → {api_key: '***'} when configured; "
-            "oauth2 → issuer URL, audience (string, may be empty), decrypted oauth2_client_id, "
+            "oauth2 → discovery URL, optional issuer (legacy), scope, audience, decrypted oauth2_client_id, "
             "oauth2_client_secret_set (bool; secret is never returned)"
         ),
     )

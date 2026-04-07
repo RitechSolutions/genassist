@@ -17001,7 +17001,7 @@
           "MCP"
         ],
         "summary": "List Mcp Tools Get",
-        "description": "List available tools from active MCP servers (MCP Protocol endpoint - GET).\n\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - GET).\n\nAuthenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)\nand returns all tools exposed by the authenticated MCP server.",
         "operationId": "list_mcp_tools_get_api_mcp_tools_get",
         "parameters": [
           {
@@ -17054,7 +17054,7 @@
           "MCP"
         ],
         "summary": "List Mcp Tools Post",
-        "description": "List available tools from active MCP servers (MCP Protocol endpoint - POST).\n\nThis endpoint matches the MCP client's expected format for tool discovery.\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - POST).\n\nThis endpoint matches the MCP client's expected format for tool discovery.\nAuthenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)\nand returns all tools exposed by the authenticated MCP server.",
         "operationId": "list_mcp_tools_post_api_mcp_tools_list_post",
         "parameters": [
           {
@@ -17107,7 +17107,7 @@
           "MCP"
         ],
         "summary": "Execute Mcp Tool",
-        "description": "Execute a workflow as an MCP tool (MCP Protocol endpoint).\n\nAuthenticates using API key, finds the tool in the server's workflows,\nvalidates arguments, and executes the workflow.",
+        "description": "Execute a workflow as an MCP tool (MCP Protocol endpoint).\n\nAuthenticates with a static MCP API key or OAuth 2.0 access token, finds the tool\nin the server's workflows, validates arguments, and executes the workflow.",
         "operationId": "execute_mcp_tool_api_mcp_tools_call_post",
         "parameters": [
           {
@@ -24188,6 +24188,18 @@
             "title": "Oauth2 Client Secret",
             "description": "Required when auth_type is oauth2"
           },
+          "oauth2_discovery_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Discovery Url",
+            "description": "When auth_type is oauth2 \u2014 full URL to openid-configuration (token/JWKS endpoints discovered from this document)"
+          },
           "oauth2_issuer_url": {
             "anyOf": [
               {
@@ -24198,7 +24210,19 @@
               }
             ],
             "title": "Oauth2 Issuer Url",
-            "description": "Required when auth_type is oauth2 \u2014 OIDC issuer (JWKS via /.well-known/openid-configuration)"
+            "description": "Legacy alternative: OIDC issuer base URL if discovery URL is omitted"
+          },
+          "oauth2_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Scope",
+            "description": "Space-separated scopes \u2014 token request (outbound) or optional JWT scope/scp check (inbound)"
           },
           "oauth2_audience": {
             "anyOf": [
@@ -24210,7 +24234,7 @@
               }
             ],
             "title": "Oauth2 Audience",
-            "description": "Optional expected JWT audience (aud) \u2014 required by some providers (e.g. Auth0 API identifier)"
+            "description": "Optional expected JWT audience (aud) \u2014 comma-separated allowlist; omit to skip aud check"
           },
           "workflows": {
             "items": {
@@ -24301,7 +24325,7 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Auth Values",
-            "description": "Stored auth for the UI (management API only): api_key \u2192 {api_key: '***'} when configured; oauth2 \u2192 issuer URL, audience (string, may be empty), decrypted oauth2_client_id, oauth2_client_secret_set (bool; secret is never returned)"
+            "description": "Stored auth for the UI (management API only): api_key \u2192 {api_key: '***'} when configured; oauth2 \u2192 discovery URL, optional issuer (legacy), scope, audience, decrypted oauth2_client_id, oauth2_client_secret_set (bool; secret is never returned)"
           },
           "workflows": {
             "items": {
@@ -24407,6 +24431,17 @@
             ],
             "title": "Oauth2 Client Secret"
           },
+          "oauth2_discovery_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Discovery Url"
+          },
           "oauth2_issuer_url": {
             "anyOf": [
               {
@@ -24417,6 +24452,17 @@
               }
             ],
             "title": "Oauth2 Issuer Url"
+          },
+          "oauth2_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Scope"
           },
           "oauth2_audience": {
             "anyOf": [

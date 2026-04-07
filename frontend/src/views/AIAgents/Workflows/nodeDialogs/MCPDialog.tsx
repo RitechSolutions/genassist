@@ -105,24 +105,20 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
       ? connectionConfig.oauth2_client_secret || ""
       : ""
   );
-  const [oauth2TokenUrl, setOauth2TokenUrl] = useState(
-    (connectionType === "http" || connectionType === "sse") && "oauth2_token_url" in connectionConfig
-      ? connectionConfig.oauth2_token_url || ""
-      : ""
-  );
-  const [oauth2IssuerUrl, setOauth2IssuerUrl] = useState(
-    (connectionType === "http" || connectionType === "sse") && "oauth2_issuer_url" in connectionConfig
-      ? connectionConfig.oauth2_issuer_url || ""
+  const initialDiscovery = (cfg: HTTPConnectionConfig) => {
+    if (cfg.oauth2_discovery_url?.trim()) return cfg.oauth2_discovery_url.trim();
+    const iss = cfg.oauth2_issuer_url?.trim().replace(/\/+$/, "");
+    if (iss) return `${iss}/.well-known/openid-configuration`;
+    return "";
+  };
+  const [oauth2DiscoveryUrl, setOauth2DiscoveryUrl] = useState(
+    (connectionType === "http" || connectionType === "sse") && "url" in connectionConfig
+      ? initialDiscovery(connectionConfig)
       : ""
   );
   const [oauth2Scopes, setOauth2Scopes] = useState(
     (connectionType === "http" || connectionType === "sse") && "oauth2_scopes" in connectionConfig
       ? (connectionConfig.oauth2_scopes || []).join(" ")
-      : ""
-  );
-  const [oauth2Audience, setOauth2Audience] = useState(
-    (connectionType === "http" || connectionType === "sse") && "oauth2_audience" in connectionConfig
-      ? connectionConfig.oauth2_audience || ""
       : ""
   );
   const [httpTimeout, setHttpTimeout] = useState(
@@ -155,10 +151,8 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           setHttpApiKey(data.connectionConfig.api_key || "");
           setOauth2ClientId(data.connectionConfig.oauth2_client_id || "");
           setOauth2ClientSecret(data.connectionConfig.oauth2_client_secret || "");
-          setOauth2TokenUrl(data.connectionConfig.oauth2_token_url || "");
-          setOauth2IssuerUrl(data.connectionConfig.oauth2_issuer_url || "");
+          setOauth2DiscoveryUrl(initialDiscovery(data.connectionConfig));
           setOauth2Scopes((data.connectionConfig.oauth2_scopes || []).join(" "));
-          setOauth2Audience(data.connectionConfig.oauth2_audience || "");
           setHttpTimeout(data.connectionConfig.timeout?.toString() || "30");
           setHttpHeaders(JSON.stringify(data.connectionConfig.headers || {}, null, 2));
         }
@@ -175,10 +169,8 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           setHttpApiKey("");
           setOauth2ClientId("");
           setOauth2ClientSecret("");
-          setOauth2TokenUrl("");
-          setOauth2IssuerUrl("");
+          setOauth2DiscoveryUrl("");
           setOauth2Scopes("");
-          setOauth2Audience("");
           setHttpTimeout("30");
           setHttpHeaders("{}");
         }
@@ -210,19 +202,21 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         cfg.oauth2_flow = "client_credentials";
         cfg.oauth2_client_id = oauth2ClientId || undefined;
         cfg.oauth2_client_secret = oauth2ClientSecret || undefined;
-        cfg.oauth2_token_url = oauth2TokenUrl || undefined;
-        cfg.oauth2_issuer_url = oauth2IssuerUrl || undefined;
+        if (oauth2DiscoveryUrl.trim()) {
+          cfg.oauth2_discovery_url = oauth2DiscoveryUrl.trim();
+          cfg.oauth2_token_url = undefined;
+          cfg.oauth2_issuer_url = undefined;
+        }
         cfg.oauth2_scopes = oauth2Scopes
           ? oauth2Scopes.split(/\s+/).filter(Boolean)
           : undefined;
-        cfg.oauth2_audience = oauth2Audience || undefined;
       }
       setConnectionConfig(cfg);
     }
   }, [
     connectionType, stdioCommand, stdioArgs, stdioEnv,
     httpUrl, authType, httpApiKey,
-    oauth2ClientId, oauth2ClientSecret, oauth2TokenUrl, oauth2IssuerUrl, oauth2Scopes, oauth2Audience,
+    oauth2ClientId, oauth2ClientSecret, oauth2DiscoveryUrl, oauth2Scopes,
     httpTimeout, httpHeaders,
   ]);
 
@@ -260,8 +254,8 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           toast.error("OAuth2 requires Client ID and Client Secret");
           return;
         }
-        if (!oauth2TokenUrl.trim() && !oauth2IssuerUrl.trim()) {
-          toast.error("OAuth2 requires either a Token URL or an Issuer URL");
+        if (!oauth2DiscoveryUrl.trim()) {
+          toast.error("OAuth2 requires an OIDC discovery URL (…/.well-known/openid-configuration)");
           return;
         }
       }
@@ -496,10 +490,17 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="api_key">API Key</SelectItem>
-                <SelectItem value="oauth2">OAuth2 / OpenID Connect</SelectItem>
+                <SelectItem value="oauth2">OAuth 2.0 / OIDC (client credentials)</SelectItem>
                 <SelectItem value="none">None</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs text-gray-500 break-words">
+              {authType === "api_key" &&
+                "Static bearer secret sent to the MCP server URL above."}
+              {authType === "oauth2" &&
+                "Machine-to-machine: discovery URL → token endpoint, then Bearer access token to MCP."}
+              {authType === "none" && "No Authorization header (only if the remote server allows it)."}
+            </p>
           </div>
 
           {authType === "api_key" && (
@@ -521,7 +522,58 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
 
           {authType === "oauth2" && (
             <div className="space-y-3 rounded-md border p-3">
-              <p className="text-xs font-medium text-gray-700">OAuth2 — Client Credentials</p>
+              <p className="text-xs font-medium text-gray-700">
+                OAuth 2.0 / OpenID Connect — client credentials (outbound)
+              </p>
+              <p className="text-xs text-gray-600 -mt-2 break-words">
+                Genassist fetches <code className="text-xs">token_endpoint</code> from the discovery document
+                whenever it needs a new access token (nothing hard-coded except your discovery URL). This differs
+                from <em>MCP Servers</em> in Settings, which define how <strong>this app&apos;s</strong> hosted
+                MCP endpoints <strong>validate</strong> inbound JWTs.
+              </p>
+
+              <div
+                className="rounded-md border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-xs text-slate-700"
+                role="region"
+                aria-label="OIDC fields reference"
+              >
+                <p className="font-semibold text-slate-800 mb-2">Typical OIDC client-credentials setup</p>
+                <dl className="space-y-1.5">
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="shrink-0 text-slate-500 sm:w-32">Discovery URL</dt>
+                    <dd className="font-mono text-[11px] text-slate-800 break-all">
+                      …/.well-known/openid-configuration
+                    </dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="shrink-0 text-slate-500 sm:w-32">Client ID</dt>
+                    <dd className="text-slate-800">M2M / service client at your IdP</dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="shrink-0 text-slate-500 sm:w-32">Client secret</dt>
+                    <dd className="text-slate-800">Matching secret for the client</dd>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:gap-2">
+                    <dt className="shrink-0 text-slate-500 sm:w-32">Scope</dt>
+                    <dd className="font-mono text-[11px] text-slate-800">e.g. openid mcp</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="oauth2DiscoveryUrl">OIDC discovery URL *</Label>
+                <DraggableInput
+                  id="oauth2DiscoveryUrl"
+                  value={oauth2DiscoveryUrl}
+                  onChange={(e) => setOauth2DiscoveryUrl(e.target.value)}
+                  placeholder="http://localhost:8000/.well-known/openid-configuration"
+                  className="w-full"
+                />
+                <div className="text-xs text-gray-500 break-words">
+                  Full URL to <code className="text-xs">openid-configuration</code> — client id, secret, and
+                  scopes below are sent to the discovered token endpoint.
+                </div>
+              </div>
 
               <div className="space-y-2">
                 <Label htmlFor="oauth2ClientId">Client ID *</Label>
@@ -529,7 +581,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                   id="oauth2ClientId"
                   value={oauth2ClientId}
                   onChange={(e) => setOauth2ClientId(e.target.value)}
-                  placeholder="my-client-id"
+                  placeholder="service-account"
                   className="w-full"
                 />
               </div>
@@ -541,61 +593,24 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                   type="password"
                   value={oauth2ClientSecret}
                   onChange={(e) => setOauth2ClientSecret(e.target.value)}
-                  placeholder="my-client-secret"
+                  placeholder="service-secret"
                   className="w-full"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="oauth2IssuerUrl">Issuer URL (OIDC Discovery)</Label>
-                <DraggableInput
-                  id="oauth2IssuerUrl"
-                  value={oauth2IssuerUrl}
-                  onChange={(e) => setOauth2IssuerUrl(e.target.value)}
-                  placeholder="https://auth.example.com"
-                  className="w-full"
-                />
-                <div className="text-xs text-gray-500 break-words">
-                  Token URL is auto-discovered via <code>/.well-known/openid-configuration</code>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="oauth2TokenUrl">Token URL (direct)</Label>
-                <DraggableInput
-                  id="oauth2TokenUrl"
-                  value={oauth2TokenUrl}
-                  onChange={(e) => setOauth2TokenUrl(e.target.value)}
-                  placeholder="https://auth.example.com/oauth/token"
-                  className="w-full"
-                />
-                <div className="text-xs text-gray-500 break-words">
-                  Use this instead of Issuer URL to skip OIDC discovery
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="oauth2Scopes">Scopes (space-separated)</Label>
+                <Label htmlFor="oauth2Scopes">Scope</Label>
                 <DraggableInput
                   id="oauth2Scopes"
                   value={oauth2Scopes}
                   onChange={(e) => setOauth2Scopes(e.target.value)}
-                  placeholder="read write mcp:tools"
-                  className="w-full"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="oauth2Audience">Audience (optional)</Label>
-                <DraggableInput
-                  id="oauth2Audience"
-                  value={oauth2Audience}
-                  onChange={(e) => setOauth2Audience(e.target.value)}
-                  placeholder="https://api.example.com"
+                  placeholder="openid mcp"
                   className="w-full"
                 />
                 <div className="text-xs text-gray-500 break-words">
-                  Required by some providers (Auth0, Azure AD, etc.)
+                  Space-separated; sent as the <code className="text-xs">scope</code> parameter on the token
+                  request. Many MCP / OIDC setups use something like{" "}
+                  <code className="text-xs">openid mcp</code>.
                 </div>
               </div>
             </div>
