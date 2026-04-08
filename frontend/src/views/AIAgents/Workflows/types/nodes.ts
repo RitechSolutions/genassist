@@ -352,10 +352,8 @@ export interface HTTPConnectionConfig {
   oauth2_client_id?: string;
   oauth2_client_secret?: string;
   /** Full openid-configuration URL — token_endpoint read from this document (preferred) */
-  oauth2_discovery_url?: string;
-  /** @deprecated use oauth2_discovery_url; issuer base, discovery path appended by backend */
   oauth2_issuer_url?: string;
-  /** Direct token endpoint (legacy; omit when using discovery URL) */
+  /** Direct token endpoint (legacy; omit when using issuer URL) */
   oauth2_token_url?: string;
   oauth2_scopes?: string[]; // e.g. ["openid", "mcp"]
   oauth2_audience?: string; // Some IdPs (Auth0, etc.) require audience on token request

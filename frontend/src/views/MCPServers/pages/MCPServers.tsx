@@ -37,10 +37,10 @@ export default function MCPServersPage() {
     <PageLayout>
       <PageHeader
         title="MCP Servers"
-        subtitle="Expose workflows as MCP tools. Use an API key or OIDC (discovery URL, client id, secret, optional scope) for inbound JWT access."
+        subtitle="Manage MCP servers and expose workflows as tools."
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        searchPlaceholder="Search by name, discovery URL, client id, or scope…"
+        searchPlaceholder="Search by name, issuer URL, client id, or scope…"
         actionButtonText="Add New MCP Server"
         onActionClick={handleCreateServer}
       />

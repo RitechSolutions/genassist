@@ -83,13 +83,10 @@ export function MCPServerDetailsDialog({
     return null;
   }
 
+  const av = server.auth_values ?? {};
   const oauthDiscovery =
-    typeof av.oauth2_discovery_url === "string" ? av.oauth2_discovery_url.trim() : "";
-  const legacyIss =
-    typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.trim().replace(/\/+$/, "") : "";
-  const displayDiscovery =
-    oauthDiscovery ||
-    (legacyIss ? `${legacyIss}/.well-known/openid-configuration` : "");
+    typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.trim() : "";
+  const displayDiscovery = oauthDiscovery;
   const oauthScope =
     typeof av.oauth2_scope === "string" ? av.oauth2_scope.trim() : "";
   const oauthAudience =
@@ -149,7 +146,7 @@ export function MCPServerDetailsDialog({
               </p>
 
               <div>
-                <Label className="text-xs text-gray-500">OIDC discovery URL</Label>
+                <Label className="text-xs text-gray-500">OIDC issuer URL</Label>
                 <div className="mt-1 flex items-start gap-2">
                   <p className="text-sm font-mono flex-1 break-all min-w-0">
                     {displayDiscovery || "—"}
@@ -161,7 +158,7 @@ export function MCPServerDetailsDialog({
                         size="icon"
                         className="h-8 w-8 flex-shrink-0"
                         onClick={() => copyToClipboard(displayDiscovery, "discovery")}
-                        title="Copy discovery URL"
+                        title="Copy issuer URL"
                       >
                         {copiedField === "discovery" ? (
                           <Check className="h-3.5 w-3.5 text-green-600" />

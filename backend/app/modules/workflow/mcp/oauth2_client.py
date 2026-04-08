@@ -77,8 +77,7 @@ async def _client_credentials(config: Dict[str, Any]) -> str:
 
     One of:
         oauth2_token_url       (str)  — direct token endpoint
-        oauth2_discovery_url   (str)  — full openid-configuration URL (preferred)
-        oauth2_issuer_url      (str)  — OIDC issuer base; discovery URL is derived (legacy)
+        oauth2_issuer_url      (str)  — full openid-configuration URL (preferred)
 
     Optional config keys:
         oauth2_scopes        (List[str])
@@ -87,7 +86,6 @@ async def _client_credentials(config: Dict[str, Any]) -> str:
     client_id: str = config.get("oauth2_client_id", "")
     client_secret: str = config.get("oauth2_client_secret", "")
     token_url: Optional[str] = config.get("oauth2_token_url")
-    discovery_url: Optional[str] = config.get("oauth2_discovery_url")
     issuer_url: Optional[str] = config.get("oauth2_issuer_url")
     scopes: List[str] = config.get("oauth2_scopes") or []
     audience: Optional[str] = config.get("oauth2_audience")
@@ -99,15 +97,11 @@ async def _client_credentials(config: Dict[str, Any]) -> str:
 
     # Resolve token URL
     if not token_url:
-        disc = (discovery_url or "").strip()
-        if disc:
-            token_url = await _discover_token_url_from_document(disc)
-        elif issuer_url:
-            token_url = await _discover_token_url(issuer_url)
+        iss = (issuer_url or "").strip()
+        if iss:
+            token_url = await _discover_token_url_from_document(iss)
         else:
-            raise ValueError(
-                "OAuth2 config requires oauth2_token_url, oauth2_discovery_url, or oauth2_issuer_url"
-            )
+            raise ValueError("OAuth2 config requires oauth2_token_url or oauth2_issuer_url")
 
     # Check cache (audience affects token content for many providers, e.g. Auth0)
     aud_key = audience or ""

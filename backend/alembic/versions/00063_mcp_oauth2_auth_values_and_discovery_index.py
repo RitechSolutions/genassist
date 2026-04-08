@@ -1,13 +1,8 @@
-"""mcp_servers: add auth_type and auth_values (OAuth2 / JSONB); keep 00030 columns
+"""mcp oauth2: auth_values JSONB + issuer URL index
 
-Revision ID: a1b2c3d4e5f7
-Revises: f1c2d3e4a5b6
-Create Date: 2026-04-03 12:00:00.000000
-
-Legacy columns come only from 00030_add_mcp_servers_tables (e.g. api_key_encrypted,
-api_key_hash). This revision does not drop or alter those columns. New behavior is
-carried by auth_type and auth_values; existing API key material remains in the
-original columns.
+Revision ID: b2c3d4e5f6a8
+Revises: a2b3c4d5e6f7
+Create Date: 2026-04-08 12:00:00.000000
 """
 
 from typing import Sequence, Union
@@ -17,7 +12,7 @@ from alembic import op
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision: str = "a1b2c3d4e5f7"
+revision: str = "b2c3d4e5f6a8"
 down_revision: Union[str, None] = "a2b3c4d5e6f7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -30,7 +25,7 @@ def _mcp_server_column_names(bind) -> set[str]:
     return {c["name"] for c in insp.get_columns("mcp_servers")}
 
 
-def _ensure_oauth_unique_index() -> None:
+def _ensure_oauth_issuer_url_unique_index() -> None:
     op.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_mcp_oauth_issuer_client
@@ -39,7 +34,8 @@ def _ensure_oauth_unique_index() -> None:
             (auth_values->>'oauth2_client_id_hash')
         )
         WHERE auth_type = 'oauth2' AND is_deleted = 0
-          AND auth_values->>'oauth2_client_id_hash' IS NOT NULL;
+          AND auth_values->>'oauth2_client_id_hash' IS NOT NULL
+          AND coalesce(btrim(auth_values->>'oauth2_issuer_url'), '') <> '';
         """
     )
 
@@ -48,10 +44,7 @@ def upgrade() -> None:
     bind = op.get_bind()
     cols = _mcp_server_column_names(bind)
 
-    if "auth_type" in cols and "auth_values" in cols:
-        _ensure_oauth_unique_index()
-        return
-
+    # Ensure columns exist (squashed from the prior revision).
     if "auth_type" not in cols:
         op.add_column(
             "mcp_servers",
@@ -68,18 +61,19 @@ def upgrade() -> None:
             ),
         )
 
-    _ensure_oauth_unique_index()
+    # Ensure we don't keep both index flavors around.
+    op.execute("DROP INDEX IF EXISTS uq_mcp_oauth_issuer_client;")
+
+    _ensure_oauth_issuer_url_unique_index()
 
 
 def downgrade() -> None:
     bind = op.get_bind()
     cols = _mcp_server_column_names(bind)
 
-    if "auth_type" not in cols and "auth_values" not in cols:
-        return
-
     op.execute("DROP INDEX IF EXISTS uq_mcp_oauth_issuer_client;")
 
+    # Squashed downgrade: remove the new auth columns too.
     if "auth_values" in cols:
         op.drop_column("mcp_servers", "auth_values")
     if "auth_type" in cols:

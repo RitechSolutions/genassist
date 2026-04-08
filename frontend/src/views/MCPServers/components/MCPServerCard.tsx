@@ -75,8 +75,6 @@ export function MCPServerCard({
   const filtered = servers.filter((s) => {
     const q = searchQuery.toLowerCase();
     const av = s.auth_values ?? {};
-    const disc =
-      typeof av.oauth2_discovery_url === "string" ? av.oauth2_discovery_url.toLowerCase() : "";
     const issuer =
       typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.toLowerCase() : "";
     const scope =
@@ -86,7 +84,6 @@ export function MCPServerCard({
     return (
       s.name.toLowerCase().includes(q) ||
       (s.description && s.description.toLowerCase().includes(q)) ||
-      (disc && disc.includes(q)) ||
       (issuer && issuer.includes(q)) ||
       (scope && scope.includes(q)) ||
       (cid && cid.includes(q))

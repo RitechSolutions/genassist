@@ -5,7 +5,7 @@ Clients obtain tokens from their IdP using the client credentials grant, then se
     Authorization: Bearer <access_token>
 
 Inbound JWTs are matched to an MCP server row (by client id hash). Verification loads the
-OIDC discovery document from the configured discovery URL (full path to openid-configuration),
+OIDC discovery document from the configured issuer URL (full path to openid-configuration),
 then validates ``iss`` against the document's ``issuer``, signature via ``jwks_uri``, and
 optional ``aud`` / scope claims from stored settings.
 """
@@ -31,29 +31,30 @@ def normalize_issuer_url(url: str) -> str:
     return (url or "").strip().rstrip("/")
 
 
-def normalize_discovery_url(url: str) -> str:
+def normalize_issuer_url_full(url: str) -> str:
+    """
+    Normalize a full OpenID configuration document URL.
+
+    Stored as ``oauth2_issuer_url`` in auth_values.
+    """
     return (url or "").strip()
 
 
-def resolve_oauth2_discovery_url(auth_values: Dict[str, Any]) -> str:
+def resolve_oauth2_issuer_url(auth_values: Dict[str, Any]) -> str:
     """
-    Effective discovery document URL for stored MCP oauth2 auth_values.
+    Effective OpenID configuration document URL for stored MCP oauth2 auth_values.
 
-    Prefers ``oauth2_discovery_url`` (full URL). Falls back to legacy ``oauth2_issuer_url``
-    by appending ``/.well-known/openid-configuration``.
+    Stored key is ``oauth2_issuer_url`` (full URL to openid-configuration).
     """
-    raw = auth_values.get("oauth2_discovery_url")
-    if raw is not None and str(raw).strip():
-        return normalize_discovery_url(str(raw))
-    iss = normalize_issuer_url(str(auth_values.get("oauth2_issuer_url") or ""))
-    if iss:
-        return f"{iss}/.well-known/openid-configuration"
-    return ""
+    raw = auth_values.get("oauth2_issuer_url")
+    if raw is None or not str(raw).strip():
+        return ""
+    return normalize_issuer_url_full(str(raw))
 
 
 async def fetch_openid_configuration_document(discovery_url: str) -> Dict[str, Any]:
     """Fetch OIDC discovery document from its full URL (cached)."""
-    url = normalize_discovery_url(discovery_url)
+    url = normalize_issuer_url_full(discovery_url)
     now = time.time()
     cached = _OPENID_DOC_CACHE.get(url)
     if cached and now - cached[0] < _CACHE_TTL_SEC:
@@ -198,17 +199,17 @@ def _token_satisfies_required_scopes(claims: Dict[str, Any], required: Set[str])
 
 async def verify_oauth_access_token(
     token: str,
-    discovery_url: str,
+    issuer_url: str,
     audience: Optional[str],
     required_scopes: Optional[str] = None,
 ) -> bool:
     """
     Verify JWT using JWKS from OIDC discovery.
 
-    ``discovery_url`` must be the full URL of the openid-configuration document.
+    ``issuer_url`` must be the full URL of the openid-configuration document.
     The JWT ``iss`` must match the ``issuer`` field from that document (after normalization).
     """
-    disc = normalize_discovery_url(discovery_url)
+    disc = normalize_issuer_url_full(issuer_url)
     if not disc:
         return False
 

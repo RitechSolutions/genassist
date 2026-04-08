@@ -24420,18 +24420,6 @@
             "title": "Oauth2 Client Secret",
             "description": "Required when auth_type is oauth2"
           },
-          "oauth2_discovery_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Oauth2 Discovery Url",
-            "description": "When auth_type is oauth2 \u2014 full URL to openid-configuration (token/JWKS endpoints discovered from this document)"
-          },
           "oauth2_issuer_url": {
             "anyOf": [
               {
@@ -24442,7 +24430,7 @@
               }
             ],
             "title": "Oauth2 Issuer Url",
-            "description": "Legacy alternative: OIDC issuer base URL if discovery URL is omitted"
+            "description": "When auth_type is oauth2 \u2014 full URL to openid-configuration (token/JWKS endpoints discovered from this document)"
           },
           "oauth2_scope": {
             "anyOf": [
@@ -24557,7 +24545,7 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Auth Values",
-            "description": "Stored auth for the UI (management API only): api_key \u2192 {api_key: '***'} when configured; oauth2 \u2192 discovery URL, optional issuer (legacy), scope, audience, decrypted oauth2_client_id, oauth2_client_secret_set (bool; secret is never returned)"
+            "description": "Stored auth for the UI (management API only): api_key \u2192 {api_key: '***'} when configured; oauth2 \u2192 issuer URL, optional issuer (legacy), scope, audience, decrypted oauth2_client_id, oauth2_client_secret_set (bool; secret is never returned)"
           },
           "workflows": {
             "items": {
@@ -24662,17 +24650,6 @@
               }
             ],
             "title": "Oauth2 Client Secret"
-          },
-          "oauth2_discovery_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Oauth2 Discovery Url"
           },
           "oauth2_issuer_url": {
             "anyOf": [

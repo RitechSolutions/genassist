@@ -34,7 +34,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
     if (data.connectionConfig) {
       return data.connectionConfig;
     }
-    
+
     const type = getInitialConnectionType();
     if (type === "stdio") {
       return { command: "" };
@@ -48,7 +48,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
   const [connectionType, setConnectionType] = useState<MCPConnectionType>(
     getInitialConnectionType()
   );
-  
+
   const [connectionConfig, setConnectionConfig] = useState<STDIOConnectionConfig | HTTPConnectionConfig>(
     getInitialConnectionConfig()
   );
@@ -106,10 +106,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
       : ""
   );
   const initialDiscovery = (cfg: HTTPConnectionConfig) => {
-    if (cfg.oauth2_discovery_url?.trim()) return cfg.oauth2_discovery_url.trim();
-    const iss = cfg.oauth2_issuer_url?.trim().replace(/\/+$/, "");
-    if (iss) return `${iss}/.well-known/openid-configuration`;
-    return "";
+    return cfg.oauth2_issuer_url?.trim() || "";
   };
   const [oauth2DiscoveryUrl, setOauth2DiscoveryUrl] = useState(
     (connectionType === "http" || connectionType === "sse") && "url" in connectionConfig
@@ -137,10 +134,10 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
       setName(data.name || "");
       setDescription(data.description || "");
       setConnectionType(data.connectionType || "http");
-      
+
       if (data.connectionConfig) {
         setConnectionConfig(data.connectionConfig);
-        
+
         if ("command" in data.connectionConfig) {
           setStdioCommand(data.connectionConfig.command || "");
           setStdioArgs(data.connectionConfig.args?.join(", ") || "");
@@ -175,7 +172,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           setHttpHeaders("{}");
         }
       }
-      
+
       setAvailableTools(data.availableTools || []);
       setWhitelistedTools(data.whitelistedTools || []);
     }
@@ -203,9 +200,8 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         cfg.oauth2_client_id = oauth2ClientId || undefined;
         cfg.oauth2_client_secret = oauth2ClientSecret || undefined;
         if (oauth2DiscoveryUrl.trim()) {
-          cfg.oauth2_discovery_url = oauth2DiscoveryUrl.trim();
+          cfg.oauth2_issuer_url = oauth2DiscoveryUrl.trim();
           cfg.oauth2_token_url = undefined;
-          cfg.oauth2_issuer_url = undefined;
         }
         cfg.oauth2_scopes = oauth2Scopes
           ? oauth2Scopes.split(/\s+/).filter(Boolean)
@@ -255,7 +251,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           return;
         }
         if (!oauth2DiscoveryUrl.trim()) {
-          toast.error("OAuth2 requires an OIDC discovery URL (…/.well-known/openid-configuration)");
+          toast.error("OAuth2 requires an OIDC issuer URL (…/.well-known/openid-configuration)");
           return;
         }
       }
@@ -309,7 +305,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         connectionConfig as HTTPConnectionConfig
       );
       setAvailableTools(tools);
-      
+
       // Keep only whitelisted tools that still exist in the new list
       setWhitelistedTools((prev) =>
         prev.filter((toolName) =>
@@ -473,7 +469,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               className="w-full"
             />
             <div className="text-xs text-gray-500 break-words">
-              {connectionType === "sse" 
+              {connectionType === "sse"
                 ? "Enter the SSE endpoint URL of your MCP server"
                 : "Enter the URL of your MCP server"}
             </div>
@@ -498,7 +494,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               {authType === "api_key" &&
                 "Static bearer secret sent to the MCP server URL above."}
               {authType === "oauth2" &&
-                "Machine-to-machine: discovery URL → token endpoint, then Bearer access token to MCP."}
+                "Machine-to-machine: issuer URL → token endpoint, then Bearer access token to MCP."}
               {authType === "none" && "No Authorization header (only if the remote server allows it)."}
             </p>
           </div>
@@ -527,7 +523,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               </p>
               <p className="text-xs text-gray-600 -mt-2 break-words">
                 Genassist fetches <code className="text-xs">token_endpoint</code> from the discovery document
-                whenever it needs a new access token (nothing hard-coded except your discovery URL). This differs
+                whenever it needs a new access token (nothing hard-coded except your issuer URL). This differs
                 from <em>MCP Servers</em> in Settings, which define how <strong>this app&apos;s</strong> hosted
                 MCP endpoints <strong>validate</strong> inbound JWTs.
               </p>
@@ -540,7 +536,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                 <p className="font-semibold text-slate-800 mb-2">Typical OIDC client-credentials setup</p>
                 <dl className="space-y-1.5">
                   <div className="flex flex-col sm:flex-row sm:gap-2">
-                    <dt className="shrink-0 text-slate-500 sm:w-32">Discovery URL</dt>
+                    <dt className="shrink-0 text-slate-500 sm:w-32">Issuer URL</dt>
                     <dd className="font-mono text-[11px] text-slate-800 break-all">
                       …/.well-known/openid-configuration
                     </dd>
@@ -561,7 +557,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="oauth2DiscoveryUrl">OIDC discovery URL *</Label>
+                <Label htmlFor="oauth2DiscoveryUrl">OIDC issuer URL *</Label>
                 <DraggableInput
                   id="oauth2DiscoveryUrl"
                   value={oauth2DiscoveryUrl}
@@ -692,7 +688,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         <ScrollArea className="h-60 border rounded-md p-2 w-full">
           {availableTools.length === 0 ? (
             <div className="text-sm text-gray-500 text-center py-4">
-              {connectionType === "stdio" 
+              {connectionType === "stdio"
                 ? "Tools will be discovered automatically when the workflow runs"
                 : connectionType === "sse"
                 ? "Enter a server URL and click 'Discover Tools' to fetch available tools"

@@ -22,9 +22,7 @@ from app.schemas.mcp_server import (
 from app.services.mcp_oauth_inbound import (
     extract_oauth_client_id_from_claims,
     looks_like_jwt,
-    normalize_discovery_url,
-    normalize_issuer_url,
-    resolve_oauth2_discovery_url,
+    resolve_oauth2_issuer_url,
     unverified_jwt_claims,
     verify_oauth_access_token,
 )
@@ -32,22 +30,11 @@ from app.services.mcp_oauth_inbound import (
 logger = logging.getLogger(__name__)
 
 
-def _oauth2_discovery_url_for_create(
-    oauth2_discovery_url: Optional[str],
-    oauth2_issuer_url: Optional[str],
-) -> tuple[str, Optional[str]]:
+def _oauth2_issuer_url_for_create(oauth2_issuer_url: Optional[str]) -> str:
     """
-    Canonical discovery URL and optional legacy issuer to persist.
-
-    Accepts either a full openid-configuration URL or a legacy issuer base.
+    Canonical openid-configuration document URL to persist.
     """
-    d = normalize_discovery_url(oauth2_discovery_url or "")
-    iss = normalize_issuer_url(oauth2_issuer_url or "")
-    if d:
-        return d, iss or None
-    if iss:
-        return f"{iss}/.well-known/openid-configuration", iss
-    return "", None
+    return (oauth2_issuer_url or "").strip()
 
 
 def _coerce_auth_values_dict(raw: Any) -> Dict[str, Any]:
@@ -84,9 +71,6 @@ def _public_auth_values_for_response(
 
     if auth_t == "oauth2":
         out: Dict[str, Any] = {}
-        disc = av.get("oauth2_discovery_url")
-        if disc is not None and str(disc).strip():
-            out["oauth2_discovery_url"] = str(disc).strip()
         iss = av.get("oauth2_issuer_url")
         if iss is not None and str(iss).strip():
             out["oauth2_issuer_url"] = str(iss).strip()
@@ -272,21 +256,17 @@ class MCPServerService:
                 )
             else:
                 assert data.oauth2_client_id and data.oauth2_client_secret
-                disc, legacy_iss = _oauth2_discovery_url_for_create(
-                    data.oauth2_discovery_url,
-                    data.oauth2_issuer_url,
-                )
+                iss = _oauth2_issuer_url_for_create(data.oauth2_issuer_url)
                 aud = (data.oauth2_audience or "").strip() or None
                 scope = (data.oauth2_scope or "").strip() or None
                 cid = data.oauth2_client_id.strip()
                 auth_values = oauth2_auth_values(
                     oauth2_client_id_encrypted=encrypt_key(cid),
                     oauth2_client_secret_encrypted=encrypt_key(data.oauth2_client_secret.strip()),
-                    oauth2_discovery_url=disc,
+                    oauth2_issuer_url=iss,
                     oauth2_client_id_hash=hash_api_key(cid.lower()),
                     oauth2_audience=aud,
                     oauth2_scope=scope,
-                    oauth2_issuer_url=legacy_iss,
                 )
                 mcp_server = await self.repo.create(
                     name=data.name,
@@ -304,7 +284,7 @@ class MCPServerService:
             raise AppException(
                 status_code=400,
                 error_key=ErrorKey.API_KEY_NAME_EXISTS,
-                error_detail="An MCP server already uses this OAuth2 discovery URL and client id combination",
+                error_detail="An MCP server already uses this OAuth2 issuer URL and client id combination",
             ) from None
 
         base_url = str(request.base_url).rstrip("/") if request else None
@@ -421,15 +401,12 @@ class MCPServerService:
                         error_key=ErrorKey.API_KEY_NAME_EXISTS,
                         error_detail="Switching to OAuth2 requires oauth2_client_id and oauth2_client_secret",
                     )
-                disc, legacy_iss = _oauth2_discovery_url_for_create(
-                    data.oauth2_discovery_url,
-                    data.oauth2_issuer_url,
-                )
-                if not disc:
+                iss = _oauth2_issuer_url_for_create(data.oauth2_issuer_url)
+                if not iss:
                     raise AppException(
                         status_code=400,
                         error_key=ErrorKey.API_KEY_NAME_EXISTS,
-                        error_detail="Switching to OAuth2 requires oauth2_discovery_url or oauth2_issuer_url",
+                        error_detail="Switching to OAuth2 requires oauth2_issuer_url",
                     )
                 aud = (data.oauth2_audience or "").strip() or None
                 scope = (data.oauth2_scope or "").strip() or None
@@ -437,30 +414,24 @@ class MCPServerService:
                 new_auth_values = oauth2_auth_values(
                     oauth2_client_id_encrypted=encrypt_key(cid),
                     oauth2_client_secret_encrypted=encrypt_key(data.oauth2_client_secret.strip()),
-                    oauth2_discovery_url=disc,
+                    oauth2_issuer_url=iss,
                     oauth2_client_id_hash=hash_api_key(cid.lower()),
                     oauth2_audience=aud,
                     oauth2_scope=scope,
-                    oauth2_issuer_url=legacy_iss,
                 )
             else:
                 prev = _coerce_auth_values_dict(existing.auth_values)
                 updates: Dict[str, Any] = {}
-                if data.oauth2_discovery_url is not None:
-                    dstrip = data.oauth2_discovery_url.strip()
-                    if not dstrip:
-                        raise AppException(
-                            status_code=400,
-                            error_key=ErrorKey.API_KEY_NAME_EXISTS,
-                            error_detail="oauth2_discovery_url cannot be empty",
-                        )
-                    updates["oauth2_discovery_url"] = normalize_discovery_url(dstrip)
                 if data.oauth2_issuer_url is not None:
                     stripped_iss = data.oauth2_issuer_url.strip()
                     if not stripped_iss:
-                        updates["oauth2_issuer_url"] = ""
+                        raise AppException(
+                            status_code=400,
+                            error_key=ErrorKey.API_KEY_NAME_EXISTS,
+                            error_detail="oauth2_issuer_url cannot be empty",
+                        )
                     else:
-                        updates["oauth2_issuer_url"] = normalize_issuer_url(stripped_iss)
+                        updates["oauth2_issuer_url"] = stripped_iss
                 if data.oauth2_scope is not None:
                     updates["oauth2_scope"] = data.oauth2_scope.strip() or ""
                 if data.oauth2_client_id is not None:
@@ -522,7 +493,7 @@ class MCPServerService:
             raise AppException(
                 status_code=400,
                 error_key=ErrorKey.API_KEY_NAME_EXISTS,
-                error_detail="An MCP server already uses this OAuth2 discovery URL and client id combination",
+                error_detail="An MCP server already uses this OAuth2 issuer URL and client id combination",
             ) from None
 
         if not updated:
@@ -584,8 +555,8 @@ class MCPServerService:
             return None
 
         av = _coerce_auth_values_dict(getattr(mcp_server, "auth_values", None))
-        disc = resolve_oauth2_discovery_url(av)
-        if not disc:
+        iss = resolve_oauth2_issuer_url(av)
+        if not iss:
             return None
         aud = av.get("oauth2_audience")
         if isinstance(aud, str) and not aud.strip():
@@ -593,7 +564,7 @@ class MCPServerService:
         scope_raw = av.get("oauth2_scope")
         scope = str(scope_raw).strip() if scope_raw is not None else None
 
-        if not await verify_oauth_access_token(bearer_token, disc, aud, scope):
+        if not await verify_oauth_access_token(bearer_token, iss, aud, scope):
             return None
 
         return await self._to_response(mcp_server, base_url=None, redact_auth_for_protocol=True)

@@ -13,8 +13,6 @@ export interface MCPServerPublicAuthValues {
   /** Present and masked (e.g. ***) when api_key auth is configured */
   api_key?: string | null;
   /** Full URL to OIDC discovery (openid-configuration); token/JWKS URLs come from this document */
-  oauth2_discovery_url?: string | null;
-  /** Legacy issuer base; may be present on older servers */
   oauth2_issuer_url?: string | null;
   /** Space-separated scopes (optional inbound scope/scp check) */
   oauth2_scope?: string | null;
@@ -48,8 +46,6 @@ export interface MCPServerCreatePayload {
   oauth2_client_id?: string;
   oauth2_client_secret?: string;
   /** Full URL to /.well-known/openid-configuration (preferred) */
-  oauth2_discovery_url?: string;
-  /** Legacy: issuer base if discovery URL is omitted */
   oauth2_issuer_url?: string;
   /** Space-separated scopes for optional JWT scope/scp validation */
   oauth2_scope?: string;
@@ -66,7 +62,6 @@ export interface MCPServerUpdatePayload {
   api_key?: string;
   oauth2_client_id?: string;
   oauth2_client_secret?: string;
-  oauth2_discovery_url?: string;
   oauth2_issuer_url?: string;
   oauth2_scope?: string;
   oauth2_audience?: string;

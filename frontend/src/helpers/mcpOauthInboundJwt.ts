@@ -4,8 +4,8 @@
  */
 
 export type InboundOAuthJwtHints = {
-  /** Full OIDC discovery document URL derived from the token `iss` claim */
-  discoveryUrl: string;
+  /** Full OIDC issuer URL derived from the token `iss` claim */
+  issuerUrl: string;
   clientIdHint?: string;
   /** Space-separated scopes from the token `scope` claim, if present */
   scopeHint?: string;
@@ -16,7 +16,7 @@ function normalizeIssuerLikeBackend(iss: string): string {
 }
 
 /**
- * Parse a JWT access token payload and return discovery URL (issuer + well-known path), optional client id and scope.
+ * Parse a JWT access token payload and return issuer URL (iss + well-known path), optional client id and scope.
  * Returns null if not a JWT or missing iss.
  */
 export function extractInboundOAuthHintsFromJwt(token: string): InboundOAuthJwtHints | null {
@@ -48,7 +48,7 @@ export function extractInboundOAuthHintsFromJwt(token: string): InboundOAuthJwtH
     return null;
   }
   const issuer = normalizeIssuerLikeBackend(issRaw);
-  const discoveryUrl = `${issuer}/.well-known/openid-configuration`;
+  const issuerUrl = `${issuer}/.well-known/openid-configuration`;
 
   const azp = payload["azp"];
   const clientId = payload["client_id"];
@@ -68,5 +68,5 @@ export function extractInboundOAuthHintsFromJwt(token: string): InboundOAuthJwtH
     scopeHint = scopeRaw.trim();
   }
 
-  return { discoveryUrl, clientIdHint, scopeHint };
+  return { issuerUrl, clientIdHint, scopeHint };
 }

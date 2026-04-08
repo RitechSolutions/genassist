@@ -53,7 +53,7 @@ export function MCPServerDialog({
   const [apiKey, setApiKey] = useState("");
   const [oauth2ClientId, setOauth2ClientId] = useState("");
   const [oauth2ClientSecret, setOauth2ClientSecret] = useState("");
-  const [oauth2DiscoveryUrl, setOauth2DiscoveryUrl] = useState("");
+  const [oauth2IssuerUrl, setOauth2IssuerUrl] = useState("");
   const [oauth2Scope, setOauth2Scope] = useState("");
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
@@ -63,7 +63,7 @@ export function MCPServerDialog({
   const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false);
   const [isApiKeyGenerated, setIsApiKeyGenerated] = useState(false);
   const [isApiKeyCopied, setIsApiKeyCopied] = useState(false);
-  /** Paste JWT to fill discovery URL / scope hints (client-side only; never submitted). */
+  /** Paste JWT to fill issuer URL / scope hints (client-side only; never submitted). */
   const [sampleJwtPaste, setSampleJwtPaste] = useState("");
 
   useEffect(() => {
@@ -91,13 +91,8 @@ export function MCPServerDialog({
         setOauth2ClientId(
           typeof av.oauth2_client_id === "string" ? av.oauth2_client_id : ""
         );
-        const storedDisc =
-          typeof av.oauth2_discovery_url === "string" ? av.oauth2_discovery_url.trim() : "";
-        const legacyIss =
-          typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.trim().replace(/\/+$/, "") : "";
-        setOauth2DiscoveryUrl(
-          storedDisc ||
-            (legacyIss ? `${legacyIss}/.well-known/openid-configuration` : "")
+        setOauth2IssuerUrl(
+          typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.trim() : ""
         );
         setOauth2Scope(typeof av.oauth2_scope === "string" ? av.oauth2_scope : "");
         setDescription(serverToEdit.description || "");
@@ -111,7 +106,7 @@ export function MCPServerDialog({
         setApiKey("");
         setOauth2ClientId("");
         setOauth2ClientSecret("");
-        setOauth2DiscoveryUrl("");
+        setOauth2IssuerUrl("");
         setOauth2Scope("");
         setDescription("");
         setIsActive(true);
@@ -139,7 +134,7 @@ export function MCPServerDialog({
   const copyApiKeyToClipboard = async (keyToCopy?: string) => {
     const key = keyToCopy || apiKey;
     if (!key) return;
-    
+
     try {
       await navigator.clipboard.writeText(key);
       setIsApiKeyCopied(true);
@@ -159,8 +154,8 @@ export function MCPServerDialog({
     if (mode === "create" && authType === "oauth2") {
       if (!oauth2ClientId.trim()) missingFields.push("OAuth Client ID");
       if (!oauth2ClientSecret.trim()) missingFields.push("OAuth Client Secret");
-      if (!oauth2DiscoveryUrl.trim()) {
-        missingFields.push("OIDC discovery URL");
+      if (!oauth2IssuerUrl.trim()) {
+        missingFields.push("OIDC issuer URL");
       }
     }
     if (mode === "edit" && serverToEdit) {
@@ -169,8 +164,8 @@ export function MCPServerDialog({
       if (authType === "oauth2" && prevAuth !== "oauth2") {
         if (!oauth2ClientId.trim()) missingFields.push("OAuth Client ID");
         if (!oauth2ClientSecret.trim()) missingFields.push("OAuth Client Secret");
-        if (!oauth2DiscoveryUrl.trim()) {
-          missingFields.push("OIDC discovery URL");
+        if (!oauth2IssuerUrl.trim()) {
+          missingFields.push("OIDC issuer URL");
         }
       }
       if (authType === "api_key" && prevAuth !== "api_key") {
@@ -211,7 +206,7 @@ export function MCPServerDialog({
             : {
                 oauth2_client_id: oauth2ClientId.trim(),
                 oauth2_client_secret: oauth2ClientSecret.trim(),
-                oauth2_discovery_url: oauth2DiscoveryUrl.trim(),
+                oauth2_issuer_url: oauth2IssuerUrl.trim(),
                 ...(oauth2Scope.trim() ? { oauth2_scope: oauth2Scope.trim() } : {}),
               }),
         };
@@ -238,19 +233,12 @@ export function MCPServerDialog({
         if (authType === "api_key" && apiKey.trim()) updatePayload.api_key = apiKey;
         if (authType === "oauth2") {
           const prevAv = serverToEdit.auth_values ?? {};
-          const prevDiscStored =
-            typeof prevAv.oauth2_discovery_url === "string"
-              ? prevAv.oauth2_discovery_url.trim()
-              : "";
           const prevIss =
             typeof prevAv.oauth2_issuer_url === "string"
-              ? prevAv.oauth2_issuer_url.trim().replace(/\/+$/, "")
+              ? prevAv.oauth2_issuer_url.trim()
               : "";
-          const prevDisc =
-            prevDiscStored ||
-            (prevIss ? `${prevIss}/.well-known/openid-configuration` : "");
-          if (oauth2DiscoveryUrl.trim() !== prevDisc.trim()) {
-            updatePayload.oauth2_discovery_url = oauth2DiscoveryUrl.trim();
+          if (oauth2IssuerUrl.trim() !== prevIss.trim()) {
+            updatePayload.oauth2_issuer_url = oauth2IssuerUrl.trim();
           }
           const prevScope =
             typeof prevAv.oauth2_scope === "string" ? prevAv.oauth2_scope.trim() : "";
@@ -374,14 +362,14 @@ export function MCPServerDialog({
       return;
     }
     const clientIdWasEmpty = !oauth2ClientId.trim();
-    setOauth2DiscoveryUrl(hints.discoveryUrl);
+    setOauth2IssuerUrl(hints.discoveryUrl);
     if (hints.scopeHint) {
       setOauth2Scope(hints.scopeHint);
     }
     if (hints.clientIdHint && clientIdWasEmpty) {
       setOauth2ClientId(hints.clientIdHint);
     }
-    const filled = ["Discovery URL"];
+    const filled = ["Issuer URL"];
     if (hints.scopeHint) filled.push("Scope");
     if (hints.clientIdHint && clientIdWasEmpty) filled.push("Client ID");
     toast.success(`Updated ${filled.join(", ")} from token (parsed in your browser only).`);
@@ -426,7 +414,7 @@ export function MCPServerDialog({
               <p className="text-xs text-gray-500 mt-1">
                 {authType === "api_key"
                   ? `MCP clients send Authorization: Bearer <api_key>.`
-                  : `Inbound auth: callers send Authorization: Bearer <JWT access_token>. Provide the full OIDC discovery URL (…/.well-known/openid-configuration); JWKS and issuer checks use that document. Client ID must match the application id in the token (e.g. azp, client_id, appid). Optional scope (space-separated) requires matching scope/scp claims in the token.`}
+                  : `Inbound auth: callers send Authorization: Bearer <JWT access_token>. Provide the full OIDC issuer URL (…/.well-known/openid-configuration); JWKS and issuer checks use that document. Client ID must match the application id in the token (e.g. azp, client_id, appid). Optional scope (space-separated) requires matching scope/scp claims in the token.`}
               </p>
             </div>
 
@@ -449,7 +437,7 @@ export function MCPServerDialog({
                   </Button>
                 )}
               </div>
-              
+
               {isApiKeyGenerated && (
                 <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                   <div className="flex items-start gap-2">
@@ -524,7 +512,7 @@ export function MCPServerDialog({
                   <p className="font-semibold text-slate-800 mb-2">Hosted MCP — OIDC discovery configuration</p>
                   <dl className="space-y-1.5">
                     <div className="flex flex-col sm:flex-row sm:gap-2">
-                      <dt className="shrink-0 text-slate-500 sm:w-32">Discovery URL</dt>
+                      <dt className="shrink-0 text-slate-500 sm:w-32">Issuer URL</dt>
                       <dd className="font-mono text-[11px] text-slate-800 break-all">
                         …/.well-known/openid-configuration
                       </dd>
@@ -549,11 +537,11 @@ export function MCPServerDialog({
 
                 <details className="rounded-md border border-dashed border-amber-200/80 bg-amber-50/50 p-3 text-xs text-gray-700">
                   <summary className="cursor-pointer font-medium text-gray-800 select-none">
-                    Don&apos;t know the discovery URL yet?
+                    Don&apos;t know the issuer URL yet?
                   </summary>
                   <div className="mt-3 space-y-3">
                     <p>
-                      <strong>Discovery URL</strong> is the full address of your IdP&apos;s OpenID
+                      <strong>Issuer URL</strong> is the full address of your IdP&apos;s OpenID
                       configuration document (usually ends in{" "}
                       <code className="text-xs">/.well-known/openid-configuration</code>). You do not need to
                       copy it from a portal first: obtain any <strong>access token</strong> from the same M2M
@@ -593,9 +581,9 @@ export function MCPServerDialog({
                     </p>
                     <dl className="grid gap-2 text-xs text-slate-700">
                       <div>
-                        <dt className="text-slate-500 font-normal">OIDC discovery URL</dt>
+                        <dt className="text-slate-500 font-normal">OIDC issuer URL</dt>
                         <dd className="font-mono break-all mt-0.5">
-                          {oauth2DiscoveryUrl.trim() || "—"}
+                          {oauth2IssuerUrl.trim() || "—"}
                         </dd>
                       </div>
                       <div>
@@ -628,11 +616,11 @@ export function MCPServerDialog({
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="oauth-discovery">OIDC discovery URL *</Label>
+                  <Label htmlFor="oauth-discovery">OIDC issuer URL *</Label>
                   <Input
                     id="oauth-discovery"
-                    value={oauth2DiscoveryUrl}
-                    onChange={(e) => setOauth2DiscoveryUrl(e.target.value)}
+                    value={oauth2IssuerUrl}
+                    onChange={(e) => setOauth2IssuerUrl(e.target.value)}
                     placeholder="http://localhost:8000/.well-known/openid-configuration"
                     className="font-mono text-sm"
                   />

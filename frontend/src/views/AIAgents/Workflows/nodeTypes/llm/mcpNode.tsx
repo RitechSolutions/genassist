@@ -16,11 +16,7 @@ function httpAuthSummary(cfg: HTTPConnectionConfig): string {
   if (at === "api_key") {
     return cfg.api_key?.trim() ? "API key" : "API key (not set)";
   }
-  const disc =
-    cfg.oauth2_discovery_url?.trim() ||
-    (cfg.oauth2_issuer_url
-      ? `${cfg.oauth2_issuer_url.trim().replace(/\/+$/, "")}/.well-known/openid-configuration`
-      : "");
+  const disc = cfg.oauth2_issuer_url?.trim() || "";
   if (disc) {
     return disc.length > 52 ? `${disc.slice(0, 50)}…` : disc;
   }

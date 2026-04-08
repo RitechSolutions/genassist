@@ -79,7 +79,7 @@ async def test_client_credentials_missing_credentials():
 
 @pytest.mark.asyncio
 async def test_client_credentials_missing_token_url():
-    with pytest.raises(ValueError, match="oauth2_token_url, oauth2_discovery_url, or oauth2_issuer_url"):
+    with pytest.raises(ValueError, match="oauth2_token_url or oauth2_issuer_url"):
         await get_oauth2_token({
             "oauth2_flow": "client_credentials",
             "oauth2_client_id": "cid",
@@ -208,7 +208,7 @@ async def test_oidc_discovery_resolves_token_url(monkeypatch):
         "oauth2_flow": "client_credentials",
         "oauth2_client_id": "cid",
         "oauth2_client_secret": "cs",
-        "oauth2_issuer_url": "https://auth.example.com",
+        "oauth2_issuer_url": "https://auth.example.com/.well-known/openid-configuration",
     }
 
     with patch("app.modules.workflow.mcp.oauth2_client.httpx.AsyncClient", return_value=mock_client):
@@ -226,7 +226,7 @@ async def test_oidc_discovery_resolves_token_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_oidc_discovery_full_configuration_url(monkeypatch):
-    """oauth2_discovery_url may be the full openid-configuration URL."""
+    """oauth2_issuer_url may be the full openid-configuration URL."""
     _cache._store.clear()
 
     discovery_resp = MagicMock()
@@ -247,7 +247,7 @@ async def test_oidc_discovery_full_configuration_url(monkeypatch):
         "oauth2_flow": "client_credentials",
         "oauth2_client_id": "cid",
         "oauth2_client_secret": "cs",
-        "oauth2_discovery_url": full_url,
+        "oauth2_issuer_url": full_url,
     }
 
     with patch("app.modules.workflow.mcp.oauth2_client.httpx.AsyncClient", return_value=mock_client):

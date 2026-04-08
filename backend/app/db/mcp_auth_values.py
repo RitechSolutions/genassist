@@ -8,8 +8,7 @@ api_key
 oauth2
     oauth2_client_id_encrypted (str)
     oauth2_client_secret_encrypted (str)
-    oauth2_discovery_url (str) — full URL to openid-configuration; primary for OIDC
-    oauth2_issuer_url (str) — legacy; derived from discovery document when missing
+    oauth2_issuer_url (str) — full URL to openid-configuration; primary for OIDC
     oauth2_scope (str | null) — space-separated; optional inbound scope/scp check
     oauth2_audience (str | null) — optional JWT aud allowlist (legacy / advanced)
     oauth2_client_id_hash (str)
@@ -28,20 +27,17 @@ def oauth2_auth_values(
     *,
     oauth2_client_id_encrypted: str,
     oauth2_client_secret_encrypted: str,
-    oauth2_discovery_url: str,
+    oauth2_issuer_url: str,
     oauth2_client_id_hash: str,
     oauth2_scope: Optional[str] = None,
     oauth2_audience: Optional[str] = None,
-    oauth2_issuer_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "oauth2_client_id_encrypted": oauth2_client_id_encrypted,
         "oauth2_client_secret_encrypted": oauth2_client_secret_encrypted,
-        "oauth2_discovery_url": oauth2_discovery_url,
+        "oauth2_issuer_url": oauth2_issuer_url,
         "oauth2_client_id_hash": oauth2_client_id_hash,
     }
-    if oauth2_issuer_url is not None and str(oauth2_issuer_url).strip():
-        out["oauth2_issuer_url"] = str(oauth2_issuer_url).strip().rstrip("/")
     if oauth2_audience is not None:
         out["oauth2_audience"] = oauth2_audience
     if oauth2_scope is not None and str(oauth2_scope).strip():

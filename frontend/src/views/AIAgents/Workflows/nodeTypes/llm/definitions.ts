@@ -161,7 +161,7 @@ export const MCP_NODE_DEFINITION: NodeTypeDefinition<MCPNodeData> = {
     "Connects to an MCP (Model Context Protocol) server and exposes selected tools to agents.",
   shortDescription: "Remote MCP via HTTP/SSE — API key or OIDC discovery",
   configSubtitle:
-    "Set server URL, auth (API key or OIDC discovery URL + client credentials + scope), then pick tools.",
+    "Set server URL, auth (API key or OIDC issuer URL + client credentials + scope), then pick tools.",
   category: "ai",
   icon: "Server",
   defaultData: {
