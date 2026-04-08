@@ -40,6 +40,7 @@ class ZendeskConnector:
         # Ensure api_token is not None for auth tuple
         token = self.api_token or ""
         self._auth: Tuple[str, str] = (f"{self.email}/token", token)
+        self.page_size = 50
 
     async def _make_request(
         self,
@@ -304,21 +305,55 @@ class ZendeskConnector:
         self, start_url: str, params: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         all_articles: List[Dict[str, Any]] = []
-        url: Optional[str] = start_url
-        page_params = dict(params) if params else {}
-        while url:
+        base_params = dict(params) if params else {}
+        # Zendesk HC list endpoints default to 30/page. Keep per_page constant across pages.
+        per_page = int(base_params.get("per_page") or self.page_size)
+        page = int(base_params.get("page") or 1)
+
+        page_count: Optional[int] = None
+        while page_count is None or page <= page_count:
             try:
-                result = await self._make_request("GET", url, params=page_params, timeout=30.0)
+                before = len(all_articles)
+                page_params = {**base_params, "per_page": per_page, "page": page}
+                result = await self._make_request(
+                    "GET", start_url, params=page_params, timeout=30.0
+                )
+
                 articles = result.get("articles", [])
                 all_articles.extend(articles)
-                url = result.get("next_page")
-                if url:
-                    page_params = {}
+                next_page = result.get("next_page")
+                try:
+                    page_count = int(result.get("page_count") or page_count or 0) or None
+                except (TypeError, ValueError):
+                    page_count = page_count
+
+                # Safety: stop if a page returns nothing new (prevents infinite loops on bad metadata).
+                if len(all_articles) == before:
+                    logger.warning(
+                        "Zendesk:No pagination progress; stopping",
+                        extra={
+                            "page": page,
+                            "page_count": page_count,
+                            "per_page": per_page,
+                            "total_articles": len(all_articles),
+                        },
+                    )
+                    break
                 logger.info(
-                    f"Fetched {len(all_articles)} articles from Zendesk (total: {len(all_articles)})"
+                    "Zendesk:Fetched %d articles from Zendesk (total: %d)",
+                    len(articles),
+                    len(all_articles),
+                    extra={
+                        "page": page,
+                        "page_count": page_count,
+                        "per_page": per_page,
+                        "next_page": next_page,
+                    },
                 )
+                page += 1
             except (httpx.HTTPStatusError, httpx.RequestError) as e:
-                logger.error(f"Error fetching articles: {e}")
+                logger.error(f"Zendesk:Error fetching articles: {e}")
+                logger.error(f"Zendesk:Error fetching articles: {e}", exc_info=True)
                 break
         return all_articles
 
@@ -339,6 +374,7 @@ class ZendeskConnector:
         """
 
         base_url = f"{self.help_center_url}/{locale}" if locale else self.help_center_url
+        logger.info("Zendesk:Base URL: %s", base_url)
 
         if section_id:
             start_url = f"{base_url}/sections/{section_id}/articles.json"
@@ -354,7 +390,7 @@ class ZendeskConnector:
             # Fetch articles from one category
             async def _fetch_one_category(cid: int) -> List[Dict[str, Any]]:
                 start_url = f"{base_url}/categories/{cid}/articles.json"
-                logger.info("Category Id: %s", cid)
+                logger.info("Zendesk:Category Id: %s", cid)
                 logger.debug("Fetching articles from category ID", {"category_id": cid})
                 async with sem:
                     return await self._fetch_articles_paginated(start_url)
@@ -375,5 +411,5 @@ class ZendeskConnector:
                 f"{self.help_center_url}/articles.json"
             )
 
-        logger.info(f"Total articles fetched: {len(all_articles)}")
+        logger.info(f"Zendesk:Total articles fetched: {len(all_articles)}")
         return all_articles
