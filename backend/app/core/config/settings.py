@@ -52,6 +52,7 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_CHECK_SCHEDULED_PIPELINE_RUNS_TASK: bool = True
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
+    CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
 
     # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
     # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.

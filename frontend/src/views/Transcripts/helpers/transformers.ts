@@ -174,6 +174,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
       feedback: feedbackArray,
       thumbs_up_count: backendData.thumbs_up_count ?? 0,
       thumbs_down_count: backendData.thumbs_down_count ?? 0,
+      custom_attributes: backendData.custom_attributes ?? null,
     };
   } catch (error) {
     return {

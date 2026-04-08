@@ -4965,6 +4965,22 @@
               ],
               "title": "Id Suffix"
             }
+          },
+          {
+            "name": "custom_attributes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom Attributes"
+            }
           }
         ],
         "responses": {
@@ -5838,6 +5854,22 @@
               ],
               "title": "Id Suffix"
             }
+          },
+          {
+            "name": "custom_attributes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom Attributes"
+            }
           }
         ],
         "responses": {
@@ -6373,6 +6405,22 @@
                 }
               ],
               "title": "Id Suffix"
+            }
+          },
+          {
+            "name": "custom_attributes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom Attributes"
             }
           }
         ],
@@ -11735,6 +11783,178 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/custom-attributes/keys": {
+      "get": {
+        "tags": [
+          "v1",
+          "Analytics"
+        ],
+        "summary": "Get available custom attribute keys",
+        "operationId": "get_custom_attribute_keys_api_analytics_custom_attributes_keys_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Custom Attribute Keys Api Analytics Custom Attributes Keys Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/custom-attributes/breakdown": {
+      "get": {
+        "tags": [
+          "v1",
+          "Analytics"
+        ],
+        "summary": "Get conversation breakdown by custom attribute value",
+        "operationId": "get_custom_attribute_breakdown_api_analytics_custom_attributes_breakdown_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Custom attribute key to group by",
+              "title": "Key"
+            },
+            "description": "Custom attribute key to group by"
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Get Custom Attribute Breakdown Api Analytics Custom Attributes Breakdown Get"
+                }
               }
             }
           },
@@ -20772,6 +20992,18 @@
             "type": "integer",
             "title": "Thumbs Up Count",
             "default": 0
+          },
+          "custom_attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Attributes"
           }
         },
         "type": "object",
