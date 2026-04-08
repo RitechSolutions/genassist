@@ -61,6 +61,37 @@ def upgrade() -> None:
             ),
         )
 
+    # Backfill auth_values from legacy api_key columns (00030) when present.
+    #
+    # Older deployments stored api_key material directly on mcp_servers as:
+    # - api_key_encrypted (string)
+    # - api_key_hash      (string)
+    #
+    # This migration squashes prior revisions, so we defensively migrate those
+    # columns into auth_values if they still exist. This is safe to run multiple
+    # times and won't overwrite oauth2 entries.
+    if "api_key_encrypted" in cols and "api_key_hash" in cols:
+        op.execute(
+            """
+            UPDATE mcp_servers
+            SET
+              auth_type = COALESCE(NULLIF(auth_type, ''), 'api_key'),
+              auth_values = auth_values
+                || jsonb_build_object(
+                  'api_key_encrypted', api_key_encrypted,
+                  'api_key_hash', api_key_hash
+                )
+            WHERE
+              COALESCE(NULLIF(auth_type, ''), 'api_key') = 'api_key'
+              AND api_key_hash IS NOT NULL
+              AND (
+                auth_values IS NULL
+                OR auth_values = '{}'::jsonb
+                OR auth_values->>'api_key_hash' IS NULL
+              );
+            """
+        )
+
     # Ensure we don't keep both index flavors around.
     op.execute("DROP INDEX IF EXISTS uq_mcp_oauth_issuer_client;")
 
