@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { apiRequest } from "@/config/api";
 import { isServerDown } from "@/config/serverStatus";
+import { applySentryUserFromMeResponse } from "@/plugins/sentryUserSync";
 import { AuthMeResponse, isAuthenticated, persistAuthMe } from "@/services/auth";
 
 interface PermissionContextType {
@@ -45,6 +46,7 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({
     try {
       const response = await apiRequest<AuthMeResponse>("GET", "/auth/me");
       persistAuthMe(response ?? undefined);
+      applySentryUserFromMeResponse(response ?? undefined);
       const userPermissions: string[] = response?.permissions || [];
       setPermissions(userPermissions);
     } catch (error) {
