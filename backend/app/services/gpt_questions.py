@@ -6,10 +6,10 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.config.settings import settings
 
-import opik
-# from opik.integrations.openai import track_openai
-from opik import track
-from opik.integrations.langchain import OpikTracer
+# import opik
+# # from opik.integrations.openai import track_openai
+# from opik import track
+# from opik.integrations.langchain import OpikTracer
 import os
 from dotenv import load_dotenv
 
@@ -24,7 +24,7 @@ class QuestionAnswerer:
         self.llm_model = llm_model
         self.temperature = temperature
         if USE_OPIK:
-            self.opik_tracer = OpikTracer()
+            # self.opik_tracer = OpikTracer()
             self.llm = ChatOpenAI(model=llm_model, temperature=temperature, stream_usage=True, callbacks=[self.opik_tracer])
         else:
             self.llm = ChatOpenAI(model=llm_model, temperature=temperature)
@@ -62,6 +62,7 @@ class QuestionAnswerer:
 
 # Conditionally assign the method after class definition
 if USE_OPIK:
-    QuestionAnswerer.answer_question = track(QuestionAnswerer.answer_question)
+    pass
+    # QuestionAnswerer.answer_question = track(QuestionAnswerer.answer_question)
 else:
     QuestionAnswerer.answer_question = QuestionAnswerer.answer_question

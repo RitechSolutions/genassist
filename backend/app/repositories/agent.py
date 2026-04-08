@@ -4,6 +4,7 @@ from injector import inject
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
+from app.db.events.group_scope import get_group_scope_clause
 from app.db.models import AgentModel, OperatorModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.filter import BaseFilterModel
@@ -77,10 +78,12 @@ class AgentRepository(DbRepository[AgentModel]):
         Only loads columns needed for the list display (no relationships).
         Returns tuple of (agents, total_count).
         """
+        group_clause = get_group_scope_clause(AgentModel)
+
         # Count query - get total without loading data
-        count_stmt = select(func.count(AgentModel.id)).where(
-            AgentModel.is_deleted == 0
-        )
+        count_stmt = select(func.count(AgentModel.id)).where(AgentModel.is_deleted == 0)
+        if group_clause is not None:
+            count_stmt = count_stmt.where(group_clause)
         count_result = await self.db.execute(count_stmt)
         total = count_result.scalar() or 0
 
@@ -92,6 +95,8 @@ class AgentRepository(DbRepository[AgentModel]):
             AgentModel.possible_queries,
             AgentModel.is_active,
         ).where(AgentModel.is_deleted == 0)
+        if group_clause is not None:
+            data_stmt = data_stmt.where(group_clause)
 
         # Apply sorting using base repository method
         data_stmt = self._apply_sorting(data_stmt, filter_obj)

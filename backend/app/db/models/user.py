@@ -15,7 +15,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.db.models.role import RoleModel
-
+    from app.db.models.user_group import UserGroupModel
 
 
 class UserModel(Base):
@@ -33,6 +33,7 @@ class UserModel(Base):
     force_upd_pass_date = mapped_column(DateTime(timezone=True)) # date to force password update
 
     user_type_id: Mapped[UUID] = mapped_column(ForeignKey("user_types.id"), nullable=False)
+    group_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("user_groups.id"), nullable=True)
 
     user_roles = relationship("UserRoleModel", back_populates="user", foreign_keys="[UserRoleModel.user_id]")
     user_type = relationship("UserTypeModel", back_populates="users", foreign_keys=[user_type_id])
@@ -41,6 +42,9 @@ class UserModel(Base):
                                                                                                 "OperatorModel.user_id]")
     workflows = relationship("WorkflowModel", back_populates="user", foreign_keys="[WorkflowModel.user_id]")
     mcp_servers = relationship("MCPServerModel", back_populates="user", foreign_keys="[MCPServerModel.user_id]")
+    group: Mapped[Optional["UserGroupModel"]] = relationship(
+        "UserGroupModel", back_populates="members", foreign_keys=[group_id]
+    )
 
     @property
     def roles(self) -> list["RoleModel"]:

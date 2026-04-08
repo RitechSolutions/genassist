@@ -67,6 +67,7 @@ class UserRead(BaseModel):
 class UserReadAuth(UserRead):
     permissions: Optional[list[str]] = Field([], description="Permissions needed for authorization")
     operator: Optional[OperatorAuth] = Field(None, description="Operator needed for authorization")
+    group_id: Optional[UUID] = Field(None, description="User group ID for row-level access control")
 
     model_config = ConfigDict(
         from_attributes = True
