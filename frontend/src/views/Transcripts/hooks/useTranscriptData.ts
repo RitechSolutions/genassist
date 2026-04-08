@@ -27,12 +27,14 @@ interface UseTranscriptDataOptions {
   from_date?: string;
   to_date?: string;
   exclude_empty?: boolean;
+  custom_attributes?: Record<string, string>;
 }
 
 export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
-  const { id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst = true, conversation_status, order_by, sort_direction, agent_id, scoreFilters, from_date, to_date, exclude_empty } = options;
+  const { id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst = true, conversation_status, order_by, sort_direction, agent_id, scoreFilters, from_date, to_date, exclude_empty, custom_attributes } = options;
   // Stabilize score filters for dependency tracking
   const scoreFiltersKey = scoreFilters ? JSON.stringify(scoreFilters) : "";
+  const customAttrsKey = custom_attributes ? JSON.stringify(custom_attributes) : "";
   // Stabilize array reference for useCallback dependency
   const statusKey = conversation_status?.join(",") ?? "";
 
@@ -75,7 +77,7 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
         const params = {
           limit, skip, sentiment, hostility_neutral_max, hostility_positive_max,
           include_feedback, conversation_status, order_by, sort_direction,
-          agent_id, scoreFilters, from_date, to_date, exclude_empty,
+          agent_id, scoreFilters, from_date, to_date, exclude_empty, custom_attributes,
         };
 
         const { items: backendData, total: backendTotal } = await fetchTranscripts(params);
@@ -132,7 +134,7 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst, statusKey, order_by, sort_direction, agent_id, scoreFiltersKey, from_date, to_date, exclude_empty]);
+  }, [id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst, statusKey, order_by, sort_direction, agent_id, scoreFiltersKey, from_date, to_date, exclude_empty, customAttrsKey]);
 
   const permissions = usePermissions();
 

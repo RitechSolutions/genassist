@@ -16,6 +16,7 @@ import {
   Award,
   Zap,
   SlidersHorizontal,
+  Tag,
 } from "lucide-react";
 import { Card } from "@/components/card";
 import { Button } from "@/components/button";
@@ -37,7 +38,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
-import { type CSSProperties, useState, useEffect, useMemo, type ReactNode } from "react";
+import { type CSSProperties, useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
 import { Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
@@ -61,6 +62,7 @@ import type { DateRange } from "react-day-picker";
 import { format, subDays } from "date-fns";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
+import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -136,6 +138,10 @@ const Transcripts = () => {
     efficiency: "all",
   });
 
+  // Custom attribute filters
+  const [customAttrFilters, setCustomAttrFilters] = useState<Record<string, string>>({});
+  const [availableAttrKeys, setAvailableAttrKeys] = useState<string[]>([]);
+
   // Derive initial status filter from URL
   const initStatusFilter = (): StatusFilter => {
     const statuses = searchParams.getAll("status");
@@ -183,6 +189,14 @@ const Transcripts = () => {
     [qualityFilters]
   );
 
+  const activeCustomAttrCount = Object.keys(customAttrFilters).length;
+
+  // Fetch available custom attribute keys when agent changes
+  useEffect(() => {
+    const agentId = selectedAgentId !== "all" ? selectedAgentId : undefined;
+    fetchCustomAttributeKeys(agentId).then(setAvailableAttrKeys);
+  }, [selectedAgentId]);
+
   const {
     conversations: wsConversations,
     resyncHint,
@@ -202,6 +216,7 @@ const Transcripts = () => {
     from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
     to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd 23:59:59") : undefined,
     exclude_empty: hideEmpty || undefined,
+    custom_attributes: activeCustomAttrCount > 0 ? customAttrFilters : undefined,
   });
 
   const isMobile = useIsMobile();
@@ -372,6 +387,19 @@ const Transcripts = () => {
     updateUrlParams({ page: 1 });
   };
 
+  const handleCustomAttrFilter = useCallback((key: string, value: string) => {
+    setCustomAttrFilters((prev) => {
+      if (value === "") {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: value };
+    });
+    setCurrentPage(1);
+    updateUrlParams({ page: 1 });
+  }, [updateUrlParams]);
+
   const getSortLabel = (): { label: string; icon: ReactNode } | null => {
     if (!orderBy) return null;
     const dirLabel = sortDirection === "desc" ? "High\u2192Low" : "Low\u2192High";
@@ -417,10 +445,8 @@ const Transcripts = () => {
     ITEMS_PER_PAGE,
     currentPage
   );
-  const paginatedTranscripts = filteredTranscripts.slice(
-    pagination.startIndex,
-    pagination.endIndex
-  );
+  // API already returns the correct page via skip/limit — no client-side slicing needed
+  const paginatedTranscripts = filteredTranscripts;
   const pageItemCount = paginatedTranscripts.length;
 
   const handleTakeOver = async (transcriptId: string): Promise<boolean> => {
@@ -640,6 +666,77 @@ const Transcripts = () => {
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
+
+                  {/* Custom attributes filter */}
+                  {availableAttrKeys.length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 transition-colors ${
+                            activeCustomAttrCount > 0
+                              ? "border-primary/30 bg-primary/5 text-foreground"
+                              : "border-input bg-white text-muted-foreground hover:bg-gray-50"
+                          }`}
+                        >
+                          <Tag className="h-3.5 w-3.5 shrink-0" />
+                          <span>Attributes</span>
+                          {activeCustomAttrCount > 0 && (
+                            <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                              {activeCustomAttrCount}
+                            </span>
+                          )}
+                          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-[12rem]">
+                        {activeCustomAttrCount > 0 && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setCustomAttrFilters({});
+                              setCurrentPage(1);
+                              updateUrlParams({ page: 1 });
+                            }}
+                            className="text-muted-foreground"
+                          >
+                            Clear attribute filters
+                          </DropdownMenuItem>
+                        )}
+                        {availableAttrKeys.map((attrKey) => (
+                          <DropdownMenuSub key={attrKey}>
+                            <DropdownMenuSubTrigger className="flex items-center gap-2">
+                              <Tag className="h-3.5 w-3.5 text-gray-400" />
+                              {attrKey}
+                              {customAttrFilters[attrKey] && (
+                                <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0">
+                                  {customAttrFilters[attrKey]}
+                                </Badge>
+                              )}
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              <DropdownMenuItem onClick={() => handleCustomAttrFilter(attrKey, "")}>
+                                All {!customAttrFilters[attrKey] && "\u2713"}
+                              </DropdownMenuItem>
+                              {/* Values are entered as text - user types the value they want to filter by */}
+                              <div className="px-2 py-1.5">
+                                <input
+                                  type="text"
+                                  placeholder={`Filter by ${attrKey}...`}
+                                  defaultValue={customAttrFilters[attrKey] || ""}
+                                  className="w-full rounded border border-input px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      handleCustomAttrFilter(attrKey, (e.target as HTMLInputElement).value);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
 
                   {/* Sort dropdown */}
                   <DropdownMenu>
@@ -875,6 +972,20 @@ const Transcripts = () => {
                                     {s.label}: {formatScorePercentage(s.value)}
                                   </TooltipContent>
                                 </Tooltip>
+                              ))}
+                            </div>
+                          )}
+                          {/* Custom attribute badges */}
+                          {transcript.custom_attributes && Object.keys(transcript.custom_attributes).length > 0 && (
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                              {Object.entries(transcript.custom_attributes).map(([key, value]) => (
+                                <span
+                                  key={key}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-[11px] font-medium text-gray-600"
+                                >
+                                  <Tag className="h-3 w-3 text-gray-400" />
+                                  {key}: {String(value)}
+                                </span>
                               ))}
                             </div>
                           )}
