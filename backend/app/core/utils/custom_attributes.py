@@ -11,11 +11,6 @@ considered custom attributes.
 
 from __future__ import annotations
 
-import logging
-from typing import Optional
-
-logger = logging.getLogger(__name__)
-
 
 def is_valid_attr_value(v) -> bool:
     """Return True if the value is a non-empty scalar suitable for a custom attribute."""
@@ -50,6 +45,39 @@ def get_filterable_keys(workflow_nodes: list[dict] | None) -> set[str]:
     return keys
 
 
+def _collect_filterable_values(
+    node_statuses: dict,
+    filterable_keys: set[str],
+) -> tuple[dict, dict]:
+    """Collect filterable values from chatInputNode and setStateNodes separately.
+
+    Returns:
+        (chat_input_values, set_state_values) — two dicts of key→value,
+        each containing only keys present in *filterable_keys* with valid values.
+    """
+    chat_input_values: dict = {}
+    set_state_values: dict = {}
+
+    for node_info in node_statuses.values():
+        node_type = node_info.get("type")
+
+        if node_type == "chatInputNode":
+            output = node_info.get("output", {})
+            if isinstance(output, dict):
+                for k, v in output.items():
+                    if k in filterable_keys and v is not None and is_valid_attr_value(v):
+                        chat_input_values[k] = v
+
+        elif node_type == "setStateNode":
+            updated = node_info.get("output", {}).get("updated", {})
+            if isinstance(updated, dict):
+                for k, v in updated.items():
+                    if k in filterable_keys and v is not None and is_valid_attr_value(v):
+                        set_state_values[k] = v
+
+    return chat_input_values, set_state_values
+
+
 def extract_custom_attributes_from_state(
     node_statuses: dict,
     workflow_nodes: list[dict] | None = None,
@@ -57,8 +85,8 @@ def extract_custom_attributes_from_state(
     """Extract custom attributes from nodeExecutionStatus dict.
 
     Only includes keys that are marked as ``useInFilter`` in the workflow's
-    chatInputNode inputSchema.  SetStateNode updates are included when
-    their key matches a filterable parameter.
+    chatInputNode inputSchema.  SetStateNode values take precedence over
+    chatInputNode values for the same key.
 
     Args:
         node_statuses: The ``nodeExecutionStatus`` dict from the agent response state.
@@ -73,28 +101,12 @@ def extract_custom_attributes_from_state(
     if not filterable_keys:
         return {}
 
-    attrs: dict = {}
+    chat_input_values, set_state_values = _collect_filterable_values(
+        node_statuses, filterable_keys
+    )
 
-    # Get custom attributes from chatInputNode output
-    for node_info in node_statuses.values():
-        if node_info.get("type") == "chatInputNode":
-            output = node_info.get("output", {})
-            if isinstance(output, dict):
-                for k, v in output.items():
-                    if k in filterable_keys and v is not None and is_valid_attr_value(v):
-                        attrs[k] = v
-            break  # Only one chatInputNode per workflow
-
-    # Merge SetStateNode updates (latest wins) — only for stateful keys
-    for node_info in node_statuses.values():
-        if node_info.get("type") == "setStateNode":
-            updated = node_info.get("output", {}).get("updated", {})
-            if isinstance(updated, dict):
-                for k, v in updated.items():
-                    if k in filterable_keys and v is not None and is_valid_attr_value(v):
-                        attrs[k] = v
-
-    return attrs
+    # chatInputNode provides base values; setStateNode overrides take precedence
+    return {**chat_input_values, **set_state_values}
 
 
 def extract_custom_attributes(
