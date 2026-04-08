@@ -3,9 +3,9 @@
 Stores workflow dynamic parameters (e.g. region, tier) as queryable
 JSONB on each conversation so they can be filtered and used in analytics.
 
-Revision ID: f1a2b3c4d5e6
-Revises: e8f9a0b1c2d3
-Create Date: 2026-04-03 10:00:00.000000
+Revision ID: a2b3c4d5e6f7
+Revises: f1c2d3e4a5b6
+Create Date: 2026-04-08 10:00:00.000000
 
 """
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision: str = "f1a2b3c4d5e6"
-down_revision: Union[str, None] = "e8f9a0b1c2d3"
+revision: str = "a2b3c4d5e6f7"
+down_revision: Union[str, None] = "f1c2d3e4a5b6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
