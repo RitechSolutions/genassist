@@ -2,6 +2,7 @@ import { jwtDecode } from "jwt-decode";
 import { apiRequest } from "@/config/api";
 import { User } from "@/interfaces/user.interface";
 import { Role } from "@/interfaces/role.interface";
+import { applySentryUserFromMeResponse, hasSentry } from "@/plugins/sentryUserSync";
 
 interface AuthTokens {
   access_token: string;
@@ -19,6 +20,9 @@ interface TokenPayload {
 }
 
 export interface AuthMeResponse {
+  id?: string;
+  username?: string;
+  email?: string;
   permissions: string[];
   roles: Role[]
 }
@@ -75,6 +79,10 @@ export const persistAuthMe = (
     JSON.stringify(response.permissions ?? [])
   );
   localStorage.setItem("user_roles", JSON.stringify(response.roles ?? []));
+
+  if (hasSentry()) {
+    applySentryUserFromMeResponse(response ?? undefined);
+  }
 };
 
 export const getUserRoleNames = (): string[] => {
@@ -157,11 +165,16 @@ export const logout = (): void => {
   localStorage.removeItem("tenant_id");
   localStorage.removeItem("auth_username");
 
+  if (hasSentry()) {
+    applySentryUserFromMeResponse(null);
+  }
+
   const token = localStorage.getItem("access_token");
   if (token) {
     try {
       apiRequest("POST", "auth/logout", {});
     } catch (error) {
+      /* ignore */
     }
   }
 };
