@@ -1,13 +1,11 @@
 import {
   Home,
   Settings,
-  User,
   Lock,
   LogOut,
   Users,
   ScrollText,
-  ChevronDown,
-  ChevronUp,
+  ChevronRight,
   Settings2,
   LineChart,
   MessageSquare,
@@ -15,6 +13,7 @@ import {
   Network,
   Waypoints,
   ListChecks,
+  ChevronsUpDown,
 } from "lucide-react";
 import {
   Sidebar,
@@ -22,11 +21,10 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/sidebar";
 import { useLocation } from "react-router";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,12 +32,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
-import { logout, getPermissions, hasAnyPermission, getAuthMe } from "@/services/auth";
+import {
+  logout,
+  getPermissions,
+  hasAnyPermission,
+  getAuthMe,
+} from "@/services/auth";
 import toast from "react-hot-toast";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useFeatureFlag } from "@/context/FeatureFlagContext";
-import { FeatureFlag } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import { usePersistedState } from "@/hooks/usePersistedState";
+import { cn } from "@/helpers/utils";
+
+// ---------------------------------------------------------------------------
+// Types & data
+// ---------------------------------------------------------------------------
 
 type MenuItem = {
   title: string;
@@ -48,37 +56,11 @@ type MenuItem = {
   permissionsRequired?: string[];
   children?: MenuItem[];
   feature_flag?: string;
+  badge?: string;
 };
 
-const notifications = [
-  {
-    id: "1",
-    title: "New Transcript Available",
-    description: "A new customer conversation transcript has been processed.",
-    time: "2 hours ago",
-    unread: true,
-  },
-  {
-    id: "2",
-    title: "Performance Update",
-    description: "Your weekly performance metrics are now available.",
-    time: "5 hours ago",
-    unread: true,
-  },
-  {
-    id: "3",
-    title: "System Update",
-    description: "The system will undergo maintenance in 24 hours.",
-    time: "1 day ago",
-    unread: false,
-  },
-];
-const mainMenuItems: MenuItem[] = [
-  {
-    title: "Dashboard",
-    icon: Home,
-    url: "/dashboard",
-  },
+const menuItems: MenuItem[] = [
+  { title: "Dashboard", icon: Home, url: "/dashboard" },
   {
     title: "Analytics",
     icon: LineChart,
@@ -125,6 +107,7 @@ const mainMenuItems: MenuItem[] = [
     icon: ListChecks,
     url: "#",
     permissionsRequired: ["test:workflow"],
+    badge: "BETA",
     children: [
       {
         title: "Datasets",
@@ -225,9 +208,6 @@ const mainMenuItems: MenuItem[] = [
       },
     ],
   },
-];
-
-const settingsMenuItems: MenuItem[] = [
   {
     title: "Audit Log",
     icon: ScrollText,
@@ -241,50 +221,252 @@ const settingsMenuItems: MenuItem[] = [
   },
 ];
 
-const getInitialAdminToolsState = () => {
-  const savedState = localStorage.getItem("isLLMSettingsOpen");
-  return savedState ? JSON.parse(savedState) : false;
+const STORAGE_KEYS: Record<string, string> = {
+  Analytics: "isAnalyticsOpen",
+  Tests: "isTestsOpen",
+  Integrations: "isIntegrationOpen",
+  "LLM Settings": "isLLMSettingsOpen",
+  Admin: "isAdminOpen",
 };
 
-const getInitialAnalyticsState = () => {
-  const saved = localStorage.getItem("isAnalyticsOpen");
-  return saved ? JSON.parse(saved) : false;
-};
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-const getInitialConversationsState = () => {
-  const savedState = localStorage.getItem("isIntegrationOpen");
-  return savedState ? JSON.parse(savedState) : false;
-};
+function isPathActive(currentPath: string, url: string): boolean {
+  if (url === "#") return false;
+  return currentPath === url || currentPath.startsWith(`${url}/`);
+}
 
-const getInitialGenAgentState = () => {
-  const saved = localStorage.getItem("isAdminOpen");
-  return saved ? JSON.parse(saved) : false;
-};
+function hasActiveChild(item: MenuItem, currentPath: string): boolean {
+  return (
+    item.children?.some((child) => isPathActive(currentPath, child.url)) ??
+    false
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+function NavLink({
+  item,
+  currentPath,
+}: {
+  item: MenuItem;
+  currentPath: string;
+}) {
+  const active = isPathActive(currentPath, item.url);
+
+  return (
+    <Link
+      to={item.url}
+      className={cn(
+        "group/link flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-sm font-medium transition-colors duration-150",
+        active
+          ? "bg-zinc-100 text-zinc-900"
+          : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-800"
+      )}
+    >
+      {item.icon && (
+        <item.icon
+          className={cn(
+            "h-4 w-4 shrink-0",
+            active ? "text-zinc-700" : "text-zinc-500 group-hover/link:text-zinc-600"
+          )}
+          strokeWidth={2.25}
+        />
+      )}
+      <span>{item.title}</span>
+    </Link>
+  );
+}
+
+function CollapsibleMenuItem({
+  item,
+  currentPath,
+  isOpen,
+  onToggle,
+}: {
+  item: MenuItem;
+  currentPath: string;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  const childActive = hasActiveChild(item, currentPath);
+
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className={cn(
+          "group/parent flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] text-sm font-medium transition-colors duration-150",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200",
+          childActive
+            ? "text-zinc-900"
+            : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-800"
+        )}
+      >
+        {item.icon && (
+          <item.icon
+            className={cn(
+              "h-4 w-4 shrink-0",
+              childActive
+                ? "text-zinc-700"
+                : "text-zinc-500 group-hover/parent:text-zinc-600"
+            )}
+            strokeWidth={2.25}
+          />
+        )}
+        <span>{item.title}</span>
+        {item.badge && (
+          <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-blue-600">
+            {item.badge}
+          </span>
+        )}
+        <ChevronRight
+          strokeWidth={2.25}
+          className={cn(
+            "ml-auto h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform duration-200",
+            isOpen && "rotate-90"
+          )}
+        />
+      </button>
+
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-in-out",
+          isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="relative py-0.5 pl-[30px]">
+            <div className="absolute left-[18px] top-0 bottom-0 w-px bg-zinc-200" />
+            {item.children?.map((child, i) => {
+              const active = isPathActive(currentPath, child.url);
+              return (
+                <Link
+                  key={i}
+                  to={child.url}
+                  className={cn(
+                    "flex items-center rounded-md px-2.5 py-[6px] text-sm font-semibold transition-colors duration-150",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200",
+                    active
+                      ? "bg-zinc-100 font-semibold text-zinc-900"
+                      : "font-medium text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
+                  )}
+                >
+                  <span>{child.title}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserFooter({
+  username,
+  onLogout,
+}: {
+  username: string;
+  onLogout: () => void;
+}) {
+  const initials = username
+    .split(/[\s._-]/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0].toUpperCase())
+    .join("");
+
+  return (
+    <div className="border-t border-zinc-100 px-3 py-3">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors",
+              "hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200"
+            )}
+          >
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold text-zinc-600">
+              {initials || "U"}
+            </div>
+            <span className="truncate text-[13px] font-medium text-zinc-600">
+              {username}
+            </span>
+            <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-zinc-300" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="start" className="w-48">
+          <DropdownMenuItem asChild className="flex items-center gap-2">
+            <Link
+              to="/change-password"
+              className="flex items-center gap-2"
+            >
+              <Lock className="h-4 w-4" />
+              <span>Change Password</span>
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={onLogout}
+            className="flex items-center gap-2 text-red-600"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Logout</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export function AppSidebar() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [username, setUsername] = useState<string>("");
-  const [isAdminToolsOpen, setIsAdminToolsOpen] = useState(
-    getInitialAdminToolsState
-  );
-  const [isConversationsOpen, setIsConversationsOpen] = useState(
-    getInitialConversationsState
-  );
-  const [isGenAgentOpen, setIsGenAgentOpen] = useState(getInitialGenAgentState);
-  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(getInitialAnalyticsState);
-  const [isTestsOpen, setIsTestsOpen] = useState(() => {
-    const saved = localStorage.getItem("isTestsOpen");
-    return saved ? JSON.parse(saved) : false;
-  });
   const { isEnabled } = useFeatureFlag();
 
   const location = useLocation();
-  const navigate = useNavigate();
   const currentPath = location.pathname;
 
+  // Persisted collapsible state
+  const [isAnalyticsOpen, toggleAnalytics, setAnalyticsOpen] =
+    usePersistedState("isAnalyticsOpen", false);
+  const [isTestsOpen, toggleTests, setTestsOpen] =
+    usePersistedState("isTestsOpen", false);
+  const [isIntegrationsOpen, toggleIntegrations, setIntegrationsOpen] =
+    usePersistedState("isIntegrationOpen", false);
+  const [isLLMSettingsOpen, toggleLLMSettings, setLLMSettingsOpen] =
+    usePersistedState("isLLMSettingsOpen", false);
+  const [isAdminOpen, toggleAdmin, setAdminOpen] =
+    usePersistedState("isAdminOpen", false);
+
+  const toggleMap: Record<string, () => void> = {
+    Analytics: toggleAnalytics,
+    Tests: toggleTests,
+    Integrations: toggleIntegrations,
+    "LLM Settings": toggleLLMSettings,
+    Admin: toggleAdmin,
+  };
+
+  const openMap: Record<string, boolean> = {
+    Analytics: isAnalyticsOpen,
+    Tests: isTestsOpen,
+    Integrations: isIntegrationsOpen,
+    "LLM Settings": isLLMSettingsOpen,
+    Admin: isAdminOpen,
+  };
+
   useEffect(() => {
-    const userPermissions = getPermissions();
-    setPermissions(userPermissions);
+    setPermissions(getPermissions());
   }, []);
 
   useEffect(() => {
@@ -307,134 +489,63 @@ export function AppSidebar() {
     loadUser();
   }, []);
 
+  // Auto-expand section when navigating directly to a child route
   useEffect(() => {
-    const integrationsChildren =
-      mainMenuItems.find((item) => item.title === "Integrations")?.children ??
-      [];
-    if (integrationsChildren.some((child) => child.url === currentPath)) {
-      setIsConversationsOpen(true);
-    }
+    const setterMap: Record<string, (v: boolean) => void> = {
+      Analytics: setAnalyticsOpen,
+      Tests: setTestsOpen,
+      Integrations: setIntegrationsOpen,
+      "LLM Settings": setLLMSettingsOpen,
+      Admin: setAdminOpen,
+    };
 
-    const adminChildren =
-      mainMenuItems.find((item) => item.title === "Admin")?.children ?? [];
-    if (adminChildren.some((child) => child.url === currentPath)) {
-      setIsGenAgentOpen(true);
-    }
-
-    const llmChildren =
-      mainMenuItems.find((item) => item.title === "LLM Settings")?.children ??
-      [];
-    if (llmChildren.some((child) => child.url === currentPath)) {
-      setIsAdminToolsOpen(true);
-    }
-
-    if (currentPath.startsWith("/analytics")) {
-      setIsAnalyticsOpen(true);
-    }
-
-    if (currentPath.startsWith("/tests")) {
-      setIsTestsOpen(true);
+    for (const item of menuItems) {
+      if (item.children && hasActiveChild(item, currentPath)) {
+        setterMap[item.title]?.(true);
+      }
     }
   }, [currentPath]);
 
-  const hasPermission = (permissionsRequired: string[] = []): boolean => {
-    if (permissionsRequired.length === 0) return true;
-    return hasAnyPermission(permissionsRequired);
+  const hasPermission = (required: string[] = []): boolean => {
+    if (required.length === 0) return true;
+    return hasAnyPermission(required);
   };
 
-  const filterMenuItems = (items: MenuItem[]): MenuItem[] => {
-    return items.filter((item) => {
-      // Check permission
-      if (
-        item.permissionsRequired &&
-        !hasPermission(item.permissionsRequired)
-      ) {
-        return false;
-      }
+  const filterMenuItems = useCallback(
+    (items: MenuItem[]): MenuItem[] => {
+      return items.filter((item) => {
+        if (item.permissionsRequired && !hasPermission(item.permissionsRequired))
+          return false;
+        if (item.feature_flag && !isEnabled(item.feature_flag)) return false;
+        if (item.children) {
+          item.children = filterMenuItems(item.children);
+          return item.children.length > 0;
+        }
+        return true;
+      });
+    },
+    [permissions, isEnabled]
+  );
 
-      // Check feature flag
-      if (item.feature_flag && !isEnabled(item.feature_flag)) {
-        return false;
-      }
-
-      // Filter children recursively
-      if (item.children) {
-        item.children = filterMenuItems(item.children);
-        return item.children.length > 0;
-      }
-
-      return true;
-    });
-  };
-
-  const filteredMainMenuItems = filterMenuItems(mainMenuItems);
-  const filteredSettingsMenuItems = filterMenuItems(settingsMenuItems);
-
-  const handleToggleLLMSettings = () => {
-    setIsAdminToolsOpen((prev) => {
-      const newAdminState = !prev;
-      localStorage.setItem("isLLMSettingsOpen", JSON.stringify(newAdminState));
-      return newAdminState;
-    });
-  };
-
-  const handleToggleIntegration = () => {
-    setIsConversationsOpen((prev) => {
-      const newConversationsState = !prev;
-      localStorage.setItem(
-        "isIntegrationOpen",
-        JSON.stringify(newConversationsState)
-      );
-      return newConversationsState;
-    });
-  };
-
-  const handleToggleAdmin = () => {
-    setIsGenAgentOpen((prev) => {
-      const next = !prev;
-      localStorage.setItem("isAdminOpen", JSON.stringify(next));
-      return next;
-    });
-  };
-
-  const handleToggleAnalytics = () => {
-    setIsAnalyticsOpen((prev) => {
-      const next = !prev;
-      localStorage.setItem("isAnalyticsOpen", JSON.stringify(next));
-      return next;
-    });
-  };
-
-  const handleToggleTests = () => {
-    setIsTestsOpen((prev) => {
-      const next = !prev;
-      localStorage.setItem("isTestsOpen", JSON.stringify(next));
-      return next;
-    });
-  };
+  const filteredMenuItems = filterMenuItems(menuItems);
 
   const handleLogout = () => {
-    localStorage.removeItem("isLLMSettingsOpen");
-    localStorage.removeItem("isIntegrationOpen");
-    localStorage.removeItem("isAdminOpen");
-    localStorage.removeItem("isAnalyticsOpen");
+    Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
     logout();
     toast.success("Logged out successfully.");
     window.location.href = "/login";
   };
 
-  const linkClasses = `flex w-full h-full items-center gap-2 font-medium transition-colors duration-200 text-zinc-600 hover:text-black hover:bg-zinc-100 px-3 rounded-md`;
-  const parentMenuClasses = `flex w-full items-center gap-2 font-medium transition-colors duration-200 text-zinc-700 hover:text-black hover:bg-zinc-100 px-3 rounded-md`;
-  const submenuLinkClasses = `flex h-full items-center gap-2 font-medium transition-colors duration-200 text-zinc-600 hover:text-black hover:bg-zinc-100 py-2 px-3 text-sm rounded-md w-[calc(100%-24px)] ml-2`;
-  const activeSubmenuClasses = `bg-[#F5F5F5] text-zinc-900 font-medium`;
-  const menuItemClasses = "h-8";
-
   return (
     <Sidebar variant="floating" side="left">
-      <SidebarContent className="bg-white" style={{ height: '100%' }}>
-        <div className="flex flex-row items-center justify-between p-4 mb-0">
+      <SidebarContent
+        className="bg-white flex flex-col"
+        style={{ height: "100%" }}
+      >
+        {/* Logo */}
+        <div className="flex items-center px-5 pt-5 pb-4">
           <svg
-            width="175"
+            width="150"
             viewBox="0 0 449 80"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -480,362 +591,36 @@ export function AppSidebar() {
               fill="#231F20"
             />
           </svg>
-          {/* <FeatureFlag flagKey={FeatureFlags.UI.NOTIFICATIONS}>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
-                  <Bell className="w-5 h-5 text-zinc-600" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80">
-                {notifications.map((notification) => (
-                  <DropdownMenuItem
-                    key={notification.id}
-                    className="flex flex-col items-start p-3 space-y-1"
-                  >
-                    <div className="flex items-center justify-between w-full">
-                      <span className="font-medium">{notification.title}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {notification.time}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {notification.description}
-                    </p>
-                    {notification.unread && (
-                      <div className="flex items-center gap-1 text-xs text-primary">
-                        <div className="w-1 h-1 rounded-full bg-primary" />
-                        New
-                      </div>
-                    )}
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuItem asChild className="p-3 border-t">
-                  <Link
-                    to="/notifications"
-                    className="w-full text-primary hover:text-primary"
-                  >
-                    View all notifications
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </FeatureFlag> */}
         </div>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {filteredMainMenuItems.map((item, index) => (
-                <SidebarMenuItem
-                  key={index}
-                  className={
-                    ["Integrations", "Admin", "LLM Settings", "Analytics", "Tests"].includes(
-                      item.title
-                    )
-                      ? "h-fit"
-                      : menuItemClasses
-                  }
-                >
-                  {item.title === "Analytics" && item.children ? (
-                    <div>
-                      <div onClick={handleToggleAnalytics}>
-                        <SidebarMenuButton className={parentMenuClasses}>
-                          {item.icon && <item.icon className="w-4 h-4" />}
-                          <span>{item.title}</span>
-                          <div className="ml-auto transition-transform duration-200">
-                            {isAnalyticsOpen ? (
-                              <ChevronUp className="w-4 h-4" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" />
-                            )}
-                          </div>
-                        </SidebarMenuButton>
-                      </div>
-                      {isAnalyticsOpen && (
-                        <div className="relative ml-6 space-y-1 pt-1">
-                          <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
-                          <div>
-                            {item.children.map((child, childIndex) => (
-                              <div
-                                key={childIndex}
-                                className={`${menuItemClasses} relative`}
-                              >
-                                <Link
-                                  to={child.url}
-                                  className={`${submenuLinkClasses} ${
-                                    currentPath === child.url ||
-                                    currentPath.startsWith(`${child.url}/`)
-                                      ? activeSubmenuClasses
-                                      : ""
-                                  }`}
-                                >
-                                  {child.icon && (
-                                    <child.icon className="w-4 h-4 mr-2" />
-                                  )}
-                                  <span>{child.title}</span>
-                                </Link>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : item.title === "Integrations" && item.children ? (
-                    <div>
-                      <div onClick={handleToggleIntegration}>
-                        <SidebarMenuButton className={parentMenuClasses}>
-                          {item.icon && <item.icon className="w-4 h-4" />}
-                          <span>{item.title}</span>
-                          <div className="ml-auto transition-transform duration-200">
-                            {isConversationsOpen ? (
-                              <ChevronUp className="w-4 h-4" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" />
-                            )}
-                          </div>
-                        </SidebarMenuButton>
-                      </div>
-                      {isConversationsOpen && (
-                        <div className="relative ml-6 space-y-1 pt-1">
-                          <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
-                          <div>
-                            {item.children.map((child, childIndex) => (
-                              <div
-                                key={childIndex}
-                                className={`${menuItemClasses} relative`}
-                              >
-                                <Link
-                                  to={child.url}
-                                  className={`${submenuLinkClasses} ${
-                                    currentPath === child.url ||
-                                    currentPath.startsWith(`${child.url}/`)
-                                      ? activeSubmenuClasses
-                                      : ""
-                                  }`}
-                                >
-                                  {child.icon && (
-                                    <child.icon className="w-4 h-4 mr-2" />
-                                  )}
-                                  <span>{child.title}</span>
-                                </Link>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : item.title === "Tests" && item.children ? (
-                    <div>
-                      <div onClick={handleToggleTests}>
-                        <SidebarMenuButton className={parentMenuClasses}>
-                          {item.icon && <item.icon className="w-4 h-4" />}
-                          <span>{item.title}</span>
-                          <span className="ml-1.5 rounded-md bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-indigo-700">
-                            BETA
-                          </span>
-                          <div className="ml-auto transition-transform duration-200">
-                            {isTestsOpen ? (
-                              <ChevronUp className="w-4 h-4" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" />
-                            )}
-                          </div>
-                        </SidebarMenuButton>
-                      </div>
-                      {isTestsOpen && (
-                        <div className="relative ml-6 space-y-1 pt-1">
-                          <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
-                          <div>
-                            {item.children.map((child, i) => (
-                              <div key={i} className={`${menuItemClasses} relative`}>
-                                <Link
-                                  to={child.url}
-                                  className={`${submenuLinkClasses} ${
-                                    child.url === currentPath
-                                      ? activeSubmenuClasses
-                                      : ""
-                                  }`}
-                                >
-                                  {child.icon && (
-                                    <child.icon className="w-4 h-4 mr-2" />
-                                  )}
-                                  <span>{child.title}</span>
-                                </Link>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : item.title === "Admin" && item.children ? (
-                    <div>
-                      <div onClick={handleToggleAdmin}>
-                        <SidebarMenuButton className={parentMenuClasses}>
-                          {item.icon && <item.icon className="w-4 h-4" />}
-                          <span>{item.title}</span>
-                          <div className="ml-auto transition-transform duration-200">
-                            {isGenAgentOpen ? (
-                              <ChevronUp className="w-4 h-4" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" />
-                            )}
-                          </div>
-                        </SidebarMenuButton>
-                      </div>
-                      {isGenAgentOpen && (
-                        <div className="relative ml-6 space-y-1 pt-1">
-                          <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
-                          <div>
-                            {item.children.map((child, i) => (
-                              <div
-                                key={i}
-                                className={`${menuItemClasses} relative`}
-                              >
-                                <Link
-                                  to={child.url}
-                                  className={`${submenuLinkClasses} ${
-                                    child.url === currentPath
-                                      ? activeSubmenuClasses
-                                      : ""
-                                  }`}
-                                >
-                                  {child.icon && (
-                                    <child.icon className="w-4 h-4 mr-2" />
-                                  )}
-                                  <span>{child.title}</span>
-                                </Link>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : item.children ? (
-                    <div>
-                      <div onClick={handleToggleLLMSettings}>
-                        <SidebarMenuButton className={parentMenuClasses}>
-                          {item.icon && <item.icon className="w-4 h-4" />}
-                          <span>{item.title}</span>
-                          <div className="ml-auto transition-transform duration-200">
-                            {isAdminToolsOpen ? (
-                              <ChevronUp className="w-4 h-4" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" />
-                            )}
-                          </div>
-                        </SidebarMenuButton>
-                      </div>
-                      {isAdminToolsOpen && (
-                        <div className="relative ml-6 space-y-1 pt-1">
-                          <div className="absolute top-0 bottom-0 w-[1.5px] bg-gray-200"></div>
-                          <div>
-                            {item.children.map((child, childIndex) => (
-                              <div
-                                key={childIndex}
-                                className={`${menuItemClasses} relative`}
-                              >
-                                <Link
-                                  to={child.url}
-                                  className={`${submenuLinkClasses} ${
-                                    child.url === currentPath
-                                      ? activeSubmenuClasses
-                                      : ""
-                                  }`}
-                                >
-                                  {child.icon && (
-                                    <child.icon className="w-4 h-4 mr-2" />
-                                  )}
-                                  <span>{child.title}</span>
-                                </Link>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <Link
-                      to={item.url}
-                      className={`${linkClasses} ${
-                        item.url === currentPath ? activeSubmenuClasses : ""
-                      }`}
-                    >
-                      {item.icon && <item.icon className="w-4 h-4" />}
-                      <span>{item.title}</span>
-                    </Link>
-                  )}
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
 
-        <div className="mt-auto">
-          <SidebarGroup>
+        {/* Scrollable nav */}
+        <nav className="flex-1 overflow-y-auto px-3 pb-2">
+          <SidebarGroup className="p-0">
             <SidebarGroupContent>
-              <SidebarMenu>
-                {username && (
-                  <SidebarMenuItem className={menuItemClasses}>
-                    <div
-                      className="flex w-full h-full items-center gap-2 px-3 rounded-md text-sm font-semibold text-zinc-400 cursor-default"
-                    >
-                      <span>{username}</span>
-                    </div>
-                  </SidebarMenuItem>
-                )}
-                {filteredSettingsMenuItems.map((item, index) => (
-                  <SidebarMenuItem key={index} className={menuItemClasses}>
-                    <SidebarMenuButton asChild className="h-full">
-                      <Link
-                        to={item.url}
-                        className={`${linkClasses} ${
-                          item.url === currentPath ? activeSubmenuClasses : ""
-                        }`}
-                      >
-                        {item.icon && <item.icon className="w-5 h-5" />}
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
+              <SidebarMenu className="gap-0.5">
+                {filteredMenuItems.map((item, iIdx) => (
+                  <SidebarMenuItem key={iIdx}>
+                    {item.children ? (
+                      <CollapsibleMenuItem
+                        item={item}
+                        currentPath={currentPath}
+                        isOpen={openMap[item.title] ?? false}
+                        onToggle={toggleMap[item.title]}
+                      />
+                    ) : (
+                      <NavLink item={item} currentPath={currentPath} />
+                    )}
                   </SidebarMenuItem>
                 ))}
-
-                <SidebarMenuItem className={menuItemClasses}>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className={linkClasses}>
-                        <User className="w-5 h-5" />
-                        <span>Account</span>
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
-                      <DropdownMenuItem
-                        asChild
-                        className="flex items-center gap-2"
-                      >
-                        <Link
-                          to="/change-password"
-                          className="flex items-center gap-2"
-                        >
-                          <Lock className="w-4 h-4" />
-                          <span>Change Password</span>
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={handleLogout}
-                        className="flex items-center gap-2 text-red-600"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Logout</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-        </div>
+        </nav>
+
+        {/* Pinned footer */}
+        {username && (
+          <UserFooter username={username} onLogout={handleLogout} />
+        )}
       </SidebarContent>
     </Sidebar>
   );
