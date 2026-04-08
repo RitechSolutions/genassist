@@ -11799,58 +11799,6 @@
         }
       }
     },
-    "/api/analytics/custom-attributes/backfill": {
-      "post": {
-        "tags": [
-          "v1",
-          "Analytics"
-        ],
-        "summary": "Trigger backfill of custom attributes from agent response logs",
-        "operationId": "trigger_custom_attributes_backfill_api_analytics_custom_attributes_backfill_post",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "force",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "Re-process all conversations, not just those without attributes",
-              "default": false,
-              "title": "Force"
-            },
-            "description": "Re-process all conversations, not just those without attributes"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/analytics/custom-attributes/keys": {
       "get": {
         "tags": [
