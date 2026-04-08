@@ -1,17 +1,17 @@
-import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
-import { AppSidebar } from "@/layout/app-sidebar";
-import { Card } from "@/components/card";
-import { Button } from "@/components/button";
-import { useIsMobile } from "@/hooks/useMobile";
-import { useEffect, useMemo, useState } from "react";
-import { SettingSection } from "../components/SettingSection";
-import { useSettings } from "../hooks/useSettings";
-import { settingSections } from "../helpers/settingsData";
-import { Link } from "react-router-dom";
-import { getAuthMe } from "@/services/auth";
-import { getFileManagerSettings, type FileManagerSettings } from "@/services/fileManager";
-import { FileManagerSettingsCard } from "../components/FileManagerSettingsCard";
-import type { User } from "@/interfaces/user.interface";
+import { SidebarProvider, SidebarTrigger } from '@/components/sidebar';
+import { AppSidebar } from '@/layout/app-sidebar';
+import { Card } from '@/components/card';
+import { Button } from '@/components/button';
+import { useIsMobile } from '@/hooks/useMobile';
+import { useEffect, useMemo, useState } from 'react';
+import { SettingSection } from '../components/SettingSection';
+import { useSettings } from '../hooks/useSettings';
+import { settingSections } from '../helpers/settingsData';
+import { Link } from 'react-router-dom';
+import { getAuthMe } from '@/services/auth';
+import { getFileManagerSettings, type FileManagerSettings } from '@/services/fileManager';
+import { FileManagerSettingsCard } from '../components/FileManagerSettingsCard';
+import type { User } from '@/interfaces/user.interface';
 
 const SettingsPage = () => {
   const { toggleStates, handleToggle } = useSettings();
@@ -37,28 +37,28 @@ const SettingsPage = () => {
   }, []);
 
   const sectionsWithData = useMemo(() => {
-    const tenant = localStorage.getItem("tenant_id") || "-";
+    const tenant = localStorage.getItem('tenant_id') || '-';
     const profileValues = {
-      fullName: userProfile?.username || userProfile?.email || "",
-      username: userProfile?.username || "",
-      email: userProfile?.email || "",
+      fullName: userProfile?.username || userProfile?.email || '',
+      username: userProfile?.username || '',
+      email: userProfile?.email || '',
+      roles: userProfile?.roles?.map((r) => r.name).filter(Boolean) ?? [],
       tenant,
     };
 
     return settingSections.map((section) =>
-      section.title === "Profile Settings"
+      section.title === 'Profile Settings'
         ? {
             ...section,
             fields: section.fields.map((field) => ({
               ...field,
               readOnly: true,
-              className: "w-1/2",
-              value:
-                (field.valueKey &&
-                  profileValues[
-                    field.valueKey as keyof typeof profileValues
-                  ]) ||
-                "",
+              className: 'w-1/2',
+              value: field.valueKey
+                ? (profileValues[field.valueKey as keyof typeof profileValues] ?? (field.type === 'tags' ? [] : ''))
+                : field.type === 'tags'
+                  ? []
+                  : '',
             })),
           }
         : section
@@ -131,17 +131,17 @@ const SettingsPage = () => {
                   </div>
                 </Card>
 
-                {fileManagerSettings?.values.file_manager_enabled === true && (
-                  (fileManagerSettings.is_active === 1) && (
-                    <Card className="md:col-span-2 mt-6">
-                      <FileManagerSettingsCard settings={fileManagerSettings} />
-                    </Card>
-                  )) || (
+                {(fileManagerSettings?.values.file_manager_enabled === true && fileManagerSettings.is_active === 1 && (
+                  <Card className="md:col-span-2 mt-6">
+                    <FileManagerSettingsCard settings={fileManagerSettings} />
+                  </Card>
+                )) || (
                   <Card className="md:col-span-2 mt-6 animate-fade-up animate-delay-200">
                     <div className="p-6">
                       <h2 className="text-xl font-semibold mb-4 animate-fade-up">File Manager Settings</h2>
                       <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
-                        File manager is not enabled or is disabled in the database. Please contact your administrator to enable it.
+                        File manager is not enabled or is disabled in the database. Please contact your administrator to
+                        enable it.
                       </p>
                     </div>
                   </Card>

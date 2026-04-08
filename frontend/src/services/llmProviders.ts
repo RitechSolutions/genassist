@@ -60,3 +60,15 @@ export const deleteLLMProvider = async (id: string): Promise<void> => {
 export async function getLLMProvidersFormSchemas(): Promise<DynamicFormSchema> {
   return apiRequest<DynamicFormSchema>("GET", "llm-providers/form_schemas");
 }
+
+export const testLLMProviderConnection = async (
+  llm_model_provider: string,
+  connection_data: Record<string, unknown>,
+  provider_id?: string,
+): Promise<{ success: boolean; message: string }> => {
+  const params = provider_id ? `?provider_id=${provider_id}` : "";
+  return apiRequest("POST", `llm-providers/test-connection${params}`, {
+    llm_model_provider,
+    connection_data,
+  });
+};

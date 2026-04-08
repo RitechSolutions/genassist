@@ -31,12 +31,22 @@ interface FineTuneJobDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onJobCreated: () => void;
+  onOpenGenerate: (target: "training" | "validation") => void;
+  onOpenSelectFile: (target: "training" | "validation") => void;
+  onSetFile: (target: "training" | "validation", file: { id: string; name: string } | null) => void;
+  trainingFile: { id: string; name: string } | null;
+  validationFile: { id: string; name: string } | null;
 }
 
 export function FineTuneJobDialog({
   isOpen,
   onOpenChange,
   onJobCreated,
+  onOpenGenerate,
+  onOpenSelectFile,
+  onSetFile,
+  trainingFile,
+  validationFile,
 }: FineTuneJobDialogProps) {
   const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -48,8 +58,6 @@ export function FineTuneJobDialog({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [modelTouched, setModelTouched] = useState(false);
 
-  const [trainingFile, setTrainingFile] = useState<{ id: string; name: string } | null>(null);
-  const [validationFile, setValidationFile] = useState<{ id: string; name: string } | null>(null);
   const [uploadingTraining, setUploadingTraining] = useState(false);
   const [uploadingValidation, setUploadingValidation] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -92,8 +100,7 @@ export function FineTuneJobDialog({
 
       const res = await uploadFineTuneFile(file, "fine-tune");
       const info = { id: res.id, name: res.filename || file.name };
-      if (type === "training") setTrainingFile(info);
-      else setValidationFile(info);
+      onSetFile(type, info);
       toast.success(`${type === "training" ? "Training" : "Validation"} file uploaded`);
     } catch (err) {
       toast.error("File upload failed");
@@ -110,8 +117,8 @@ export function FineTuneJobDialog({
     setBatchSize(4);
     setShowAdvanced(false);
     setModelTouched(false);
-    setTrainingFile(null);
-    setValidationFile(null);
+    onSetFile("training", null);
+    onSetFile("validation", null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -172,6 +179,7 @@ export function FineTuneJobDialog({
   const handleDiscard = () => {
     resetForm();
     setIsCloseConfirmOpen(false);
+    setSubmitting(false);
     onOpenChange(false);
   };
 
@@ -272,6 +280,23 @@ export function FineTuneJobDialog({
               {trainingFile && (
                 <div className="text-sm text-green-700">Uploaded: {trainingFile.name}</div>
               )}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                  onClick={() => onOpenGenerate("training")}
+                >
+                  Generate from conversations
+                </button>
+                <span className="text-xs text-muted-foreground">·</span>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                  onClick={() => onOpenSelectFile("training")}
+                >
+                  Select from uploaded files
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -311,6 +336,23 @@ export function FineTuneJobDialog({
               {validationFile && (
                 <div className="text-sm text-green-700">Uploaded: {validationFile.name}</div>
               )}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                  onClick={() => onOpenGenerate("validation")}
+                >
+                  Generate from conversations
+                </button>
+                <span className="text-xs text-muted-foreground">·</span>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                  onClick={() => onOpenSelectFile("validation")}
+                >
+                  Select from uploaded files
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -360,7 +402,6 @@ export function FineTuneJobDialog({
               type="button"
               variant="outline"
               onClick={() => handleDialogOpenChange(false)}
-              disabled={submitting}
             >
               Cancel
             </Button>

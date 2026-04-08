@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 
@@ -45,3 +47,8 @@ class FineTuningJobResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class GenerateTrainingFileRequest(BaseModel):
+    conversation_ids: List[UUID] = Field(..., description="Conversation UUIDs to generate training data from")
+    upload_to_openai: bool = Field(False, description="Upload generated file to OpenAI and return the file record")

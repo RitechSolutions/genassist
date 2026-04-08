@@ -5,6 +5,7 @@ import frenchTranslationsData from './fr.json';
 import germanTranslationsData from './de.json';
 import italianTranslationsData from './it.json';
 import portugueseTranslationsData from './pt.json';
+import chineseTranslationsData from './zh.json';
 
 export interface Translations {
   header: {
@@ -187,6 +188,9 @@ export const italianTranslations: Partial<Translations> = italianTranslationsDat
 // Portuguese translations loaded from JSON file
 export const portugueseTranslations: Partial<Translations> = portugueseTranslationsData as Partial<Translations>;
 
+// Chinese translations loaded from JSON file
+export const chineseTranslations: Partial<Translations> = chineseTranslationsData as Partial<Translations>;
+
 // Translations map for easy access by language code
 export const translationsByLanguage: Record<string, Partial<Translations>> = {
   en: defaultTranslations,
@@ -195,6 +199,7 @@ export const translationsByLanguage: Record<string, Partial<Translations>> = {
   de: germanTranslations,
   it: italianTranslations,
   pt: portugueseTranslations,
+  zh: chineseTranslations,
 };
 
 /**

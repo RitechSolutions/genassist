@@ -47,7 +47,6 @@ export function RoleDialog({
   const [roleId, setRoleId] = useState<string | undefined>("");
   const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
   const [allPermissions, setAllPermissions] = useState<Permission[]>([]);
-  const [rolePermissions, setRolePermissions] = useState<Permission[]>([]);
   const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>(
     []
   );
@@ -74,7 +73,6 @@ export function RoleDialog({
       resetForm();
 
       setAllPermissions([]);
-      setRolePermissions([]);
       setSelectedPermissionIds([]);
       setSearchQuery("");
 
@@ -88,17 +86,11 @@ export function RoleDialog({
   const fetchPermissions = async () => {
     setPermissionsLoading(true);
     try {
-      const permissions = await getAllPermissions();
+      const permissions = await getAllPermissions(dialogMode);
       setAllPermissions(permissions);
 
       if (roleToEdit && roleToEdit.id) {
         const rolePermissionIds = await getPermissionsByRoleId(roleToEdit.id);
-
-        const rolePermissionObjects = permissions.filter((permission) =>
-          rolePermissionIds.includes(permission.id)
-        );
-
-        setRolePermissions(rolePermissionObjects);
         setSelectedPermissionIds(rolePermissionIds);
       }
     } catch (error) {
@@ -210,6 +202,13 @@ export function RoleDialog({
               />
             </div>
 
+            {/* Permissions */}
+            {permissionsLoading ? (
+              <div className="flex flex-col gap-4 items-center justify-center p-4">
+                <Loader2 className="w-6 h-6 animate-spin" />
+                <span className="text-sm text-muted-foreground font-medium">Loading permissions...</span>
+              </div>
+            ) : (
             <div className="space-y-4">
               <div className="mb-3">
                 <Label className="mt-2 mb-0.5" htmlFor="permission-search">
@@ -281,8 +280,9 @@ export function RoleDialog({
                           </label>
                         </div>
                       ))}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex items-center gap-2">
               <Label htmlFor="is-active">Active</Label>

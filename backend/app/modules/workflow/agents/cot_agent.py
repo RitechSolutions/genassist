@@ -2,6 +2,7 @@ from typing import Optional, List, Dict, Any
 from langchain_core.language_models import BaseChatModel
 from app.modules.workflow.agents.memory import ConversationMemory
 
+from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.agent_utils import (
     create_error_response,
     extract_thought,
@@ -89,6 +90,7 @@ class ChainOfThoughtAgent:
         current_prompt = create_chain_of_thought_prompt("", context, query, examples)
 
         reasoning_steps = []
+        llm_usage_entries = []
 
         for iteration in range(self.max_iterations):
             try:
@@ -96,6 +98,10 @@ class ChainOfThoughtAgent:
                     [{"role": "user", "content": current_prompt}]
                 )
                 response_content = self._extract_response_content(response)
+
+                usage = extract_usage_from_aimessage(response)
+                if usage:
+                    llm_usage_entries.append(usage)
 
                 if self.verbose:
                     logger.debug(
@@ -118,29 +124,38 @@ class ChainOfThoughtAgent:
                 if final_answer:
                     logger.debug(f"Final answer found: {final_answer}")
 
-                    return create_success_response(
+                    result = create_success_response(
                         final_answer,
                         "ChainOfThoughtAgent",
                         iterations=iteration + 1,
                         reasoning_steps=reasoning_steps,
                     )
+                    if llm_usage_entries:
+                        result["llm_usage"] = llm_usage_entries
+                    return result
 
             except Exception as e:
                 logger.error(
                     f"Error in Chain-of-Thought cycle iteration {iteration}: {str(e)}"
                 )
-                return create_error_response(
+                result = create_error_response(
                     f"Error in iteration {iteration}: {str(e)}",
                     "ChainOfThoughtAgent",
                     reasoning_steps=reasoning_steps,
                 )
+                if llm_usage_entries:
+                    result["llm_usage"] = llm_usage_entries
+                return result
 
         # Max iterations reached
-        return create_error_response(
+        result = create_error_response(
             f"Max iterations ({self.max_iterations}) reached without final answer",
             "ChainOfThoughtAgent",
             reasoning_steps=reasoning_steps,
         )
+        if llm_usage_entries:
+            result["llm_usage"] = llm_usage_entries
+        return result
 
     def _build_context_from_search_results(
         self, search_results: List[Dict], max_length: int

@@ -2,6 +2,8 @@ import axios from "axios";
 import {
   ChatMessage,
   AgentInfoResponse,
+  AgentChatLocalesResponse,
+  AgentChatLocaleContent,
   StartConversationResponse,
   Attachment,
   AgentThinkingConfig,
@@ -12,6 +14,7 @@ import {
 } from "../types";
 import {
   createWebSocket,
+  createWebSocketConversationUrl,
   createWebSocketDiagnostic,
 } from "../utils/websocket";
 export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_updated";
@@ -42,13 +45,14 @@ export class ChatService {
   private tenant: string | undefined;
   private agentId: string | undefined;
   private availableLanguages: string[] | null = null;
+  private agentChatLocales: Record<string, AgentChatLocaleContent> | null =
+    null;
   private language: string | undefined;
   private useWs: boolean;
   private serverUnavailableMessage: string | undefined;
   private serverUnavailableContactUrl: string | undefined;
   private serverUnavailableContactLabel: string | undefined;
   private usePoll: boolean = false;
-  private wsVersion: number = 1;
 
   constructor(
     baseUrl: string,
@@ -61,13 +65,7 @@ export class ChatService {
     usePoll: boolean = false
   ) {
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-
-    if (websocketUrl) {
-      // use new websocket url
-      this.websocketUrl = websocketUrl.endsWith("/") ? websocketUrl.slice(0, -1) : websocketUrl;
-      this.wsVersion = 2;
-    }
-
+    this.websocketUrl = websocketUrl;
     this.apiKey = apiKey;
     this.metadata = metadata;
     this.tenant = tenant;
@@ -166,6 +164,7 @@ export class ChatService {
       'pt': 'pt-PT',
       'ar': 'ar-SA',
       'sq': 'sq-AL',
+      'zh': 'zh-CN',
     };
 
     // Check if the code already has a region (e.g., "en-US", "es-ES")
@@ -305,6 +304,7 @@ export class ChatService {
       if (agentId) {
         this.agentId = agentId;
       }
+
       if (availableLanguages) {
         this.availableLanguages = availableLanguages;
       }
@@ -316,6 +316,118 @@ export class ChatService {
     } catch (_error) {
       return null;
     }
+  }
+
+  /**
+   * Fetch resolved welcome / FAQ / thinking strings for all agent locales (no conversation required).
+   * Request headers include `Accept-Language` from the current {@link setLanguage} value.
+   */
+  async fetchAgentChatLocales(): Promise<AgentChatLocalesResponse | null> {
+    try {
+      const response = await axios.get<AgentChatLocalesResponse>(
+        `${this.baseUrl}/api/conversations/in-progress/agent-chat-locales`,
+        { headers: this.getHeaders() }
+      );
+      const data = response.data;
+      if (data?.locales && typeof data.locales === "object") {
+        this.agentChatLocales = data.locales;
+      }
+      if (Array.isArray(data.agent_available_languages)) {
+        this.availableLanguages = data.agent_available_languages
+          .filter((lang) => typeof lang === "string" && lang.trim().length > 0)
+          .map((lang) => lang.toLowerCase());
+      }
+      if (typeof data.agent_id === "string") {
+        this.agentId = data.agent_id;
+      }
+      if (
+        typeof data.agent_thinking_phrase_delay === "number" &&
+        data.agent_thinking_phrase_delay >= 0
+      ) {
+        this.thinkingConfig.delayMs = Math.max(
+          250,
+          Math.round(data.agent_thinking_phrase_delay * 1000)
+        );
+      }
+      if (
+        data.agent_chat_input_metadata != null &&
+        typeof data.agent_chat_input_metadata === "object" &&
+        !Array.isArray(data.agent_chat_input_metadata) &&
+        Object.keys(this.chatInputMetadata).length === 0
+      ) {
+        this.chatInputMetadata = { ...data.agent_chat_input_metadata };
+        this.persistAndEmitAgentMetadata(this.chatInputMetadata);
+      }
+      return data;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  /**
+   * Apply pre-fetched locale strings for the widget UI without restarting the conversation.
+   * Returns current thinking config when a locale bundle was applied, so React state can sync.
+   */
+  applyLanguageFromLocales(lang: string): {
+    thinkingPhrases: string[];
+    thinkingDelayMs: number;
+  } | null {
+    if (!this.agentChatLocales || !lang) {
+      return null;
+    }
+    const code = lang.toLowerCase().split("-")[0];
+    const bundle = this.agentChatLocales;
+    const slice =
+      bundle[code] || bundle["en"] || Object.values(bundle)[0];
+    if (!slice) {
+      return null;
+    }
+
+    if (Array.isArray(slice.possible_queries)) {
+      this.possibleQueries = slice.possible_queries.filter(
+        (query) => typeof query === "string" && query.trim().length > 0
+      );
+    }
+
+    this.welcomeData = {
+      ...this.welcomeData,
+      title: slice.welcome_title ?? this.welcomeData.title ?? null,
+      message: slice.welcome_message ?? this.welcomeData.message ?? null,
+      inputDisclaimerHtml:
+        slice.input_disclaimer_html ?? this.welcomeData.inputDisclaimerHtml ?? null,
+      possibleQueries:
+        this.possibleQueries.length > 0
+          ? this.possibleQueries
+          : this.welcomeData.possibleQueries,
+    };
+
+    if (Array.isArray(slice.thinking_phrases)) {
+      const phrases = slice.thinking_phrases.filter(
+        (p) => typeof p === "string" && p.trim().length > 0
+      );
+      if (phrases.length > 0) {
+        this.thinkingConfig = {
+          ...this.thinkingConfig,
+          phrases,
+        };
+      }
+    }
+
+    if (this.welcomeDataHandler) {
+      this.welcomeDataHandler({
+        title: this.welcomeData.title ?? null,
+        message: this.welcomeData.message ?? null,
+        imageUrl: this.welcomeData.imageUrl ?? null,
+        possibleQueries: this.possibleQueries,
+        inputDisclaimerHtml: this.welcomeData.inputDisclaimerHtml ?? null,
+      });
+    }
+
+    this.saveConversation();
+    return {
+      thinkingPhrases: [...this.thinkingConfig.phrases],
+      thinkingDelayMs: this.thinkingConfig.delayMs,
+    };
   }
 
   /**
@@ -833,8 +945,8 @@ export class ChatService {
       return;
     }
 
-    if (this.webSocket) {
-      this.webSocket.close();
+    if (this.webSocket && this.webSocket instanceof WebSocket) {
+      this.webSocket?.close();
     }
 
     if (!this.conversationId) {
@@ -843,27 +955,21 @@ export class ChatService {
 
     if (this.connectionStateHandler) this.connectionStateHandler("connecting");
 
-    // Build WebSocket URL with proper authentication
-    const topics = ["message", "takeover", "finalize"];
-    const topicsQuery = topics.map((t) => `topics=${t}`).join("&");
 
     // Use guest_token if available, otherwise fall back to api_key
     const authParam = this.guestToken
       ? `access_token=${encodeURIComponent(this.guestToken)}`
       : `api_key=${encodeURIComponent(this.apiKey)}`;
 
-    let wsUrl = "";
-    if (this.wsVersion === 1) {
-      const wsBase = this.baseUrl.replace("http", "ws");
-      wsUrl = `${wsBase}/api/conversations/ws/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
-    } else {
-      wsUrl = `${this.websocketUrl}/ws/conversations/${this.conversationId}?${authParam}&lang=en&${topicsQuery}`;
-    }
-
-    // Add tenant as query parameter if provided
-    if (this.tenant) {
-      wsUrl += `&x-tenant-id=${encodeURIComponent(this.tenant)}`;
-    }
+    // Build WebSocket URL with proper authentication
+    const wsUrl = createWebSocketConversationUrl(
+      this.baseUrl,
+      this.websocketUrl,
+      this.conversationId,
+      authParam,
+      this.tenant,
+      this.language || "en",
+    );
 
     // Use native browser WebSocket factory
     this.webSocket = createWebSocket(wsUrl);

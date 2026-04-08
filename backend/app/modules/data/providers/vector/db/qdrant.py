@@ -276,6 +276,40 @@ class QdrantVectorDB(BaseVectorDB):
             logger.error(f"Failed to delete vectors from Qdrant: {e}")
             return False
 
+    async def delete_vectors_by_metadata(self, filter_dict: Dict[str, Any]) -> bool:
+        """
+        Delete vectors by metadata filters (Qdrant implementation)
+        
+        Args:
+            filter_dict: Dictionary of metadata field-value pairs to filter by
+            
+        Returns:
+            Success status
+        """
+        try:
+            if not self.client:
+                logger.error("Client not initialized")
+                return False
+
+            if not filter_dict:
+                logger.warning("No metadata filters provided for deletion")
+                return True
+
+            # Build Qdrant filter from metadata filters
+            qdrant_filter = self._build_qdrant_filter(filter_dict)
+
+            await self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=FilterSelector(filter=qdrant_filter)
+            )
+
+            logger.info(f"Deleted vectors from Qdrant collection using metadata filters: {filter_dict}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete vectors by metadata from Qdrant: {e}")
+            return False
+
     def _build_qdrant_filter(
         self, filter_dict: Optional[Dict[str, Any]]
     ) -> Optional[Filter]:

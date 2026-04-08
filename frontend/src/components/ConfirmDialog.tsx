@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Loader2, X } from "lucide-react";
 import {
   AlertDialog,
@@ -21,6 +22,7 @@ interface ConfirmDialogProps {
   itemName?: string;
   title?: string;
   description?: string;
+  requireConfirmText?: string;
 }
 
 export function ConfirmDialog({
@@ -34,8 +36,16 @@ export function ConfirmDialog({
   itemName = "",
   title = "Are you sure?",
   description,
+  requireConfirmText,
 }: ConfirmDialogProps) {
+  const [confirmInput, setConfirmInput] = useState("");
+
+  useEffect(() => {
+    if (!isOpen) setConfirmInput("");
+  }, [isOpen]);
+
   const defaultDescription = `This action cannot be undone. This will permanently delete "${itemName}".`;
+  const confirmBlocked = !!requireConfirmText && confirmInput !== requireConfirmText;
   // const confirmButton = isDeleteDialog ? "Delete" : "Save";
   // const clickedConfirmButton = isDeleteDialog ? "Deleting..." : "Saving...";
   // const cancelButton = isDeleteDialog ? "Cancel" : "Discard";
@@ -58,17 +68,31 @@ export function ConfirmDialog({
           </button>
           <AlertDialogHeader>
             <AlertDialogTitle>{title}</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="pb-4">
               {description || defaultDescription}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {requireConfirmText && (
+            <div className="my-3 space-y-1.5">
+              <p className="text-sm text-muted-foreground">
+                Type <span className="font-semibold text-foreground">{requireConfirmText}</span> to confirm.
+              </p>
+              <input
+                type="text"
+                value={confirmInput}
+                onChange={(e) => setConfirmInput(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder={requireConfirmText}
+              />
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel onClick={onCancel} disabled={isInProgress}>
               {secondaryButtonText}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={onConfirm}
-              disabled={isInProgress}
+              disabled={isInProgress || confirmBlocked}
               className={confirmButtonClassName}
             >
               {isInProgress && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

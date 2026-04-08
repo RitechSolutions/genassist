@@ -117,7 +117,7 @@ export default function ChatAsCustomer() {
     );
   }
 
-  if (!baseUrl || !apiKey || !websocketUrl) {
+  if (!baseUrl || !apiKey) {
     return (
       <div className="h-full flex items-center justify-center">
         <p>Loading chat…</p>

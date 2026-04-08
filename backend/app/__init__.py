@@ -260,6 +260,7 @@ def create_celery():
             "app.tasks.ml_model_pipeline_tasks",
             "app.tasks.kb_batch_tasks",
             "app.tasks.analytics_aggregation_tasks",
+            "app.tasks.test_suite_tasks",
         ],
     )
 

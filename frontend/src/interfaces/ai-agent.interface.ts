@@ -49,7 +49,9 @@ export interface AgentConfig {
   thinking_phrases?: string[];
   workflow_id: string;
   user_id: string;
+  llm_analyst_id?: string | null;
   security_settings?: AgentSecuritySettings | null;
+  has_welcome_image?: boolean;
   [key: string]: unknown;
 }
 

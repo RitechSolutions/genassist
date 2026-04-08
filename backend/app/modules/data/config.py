@@ -108,7 +108,7 @@ class KbRAGConfig(BaseModel):
 
         # Extract vector_db config with schema defaults
         vector_db_data = {
-            "type": vector_data.get("vector_db_type", get_schema_default("vector", "vector_db_type", "chroma")),
+            "type": vector_data.get("vector_db_type", get_schema_default("vector", "vector_db_type", "pgvector")),
             "collection_name": vector_data.get("vector_db_collection_name", get_schema_default("vector", "vector_db_collection_name", ""))
         }
 

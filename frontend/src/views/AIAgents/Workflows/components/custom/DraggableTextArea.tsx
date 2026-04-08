@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
-import { Textarea } from "@/components/textarea";
 import { Label } from "@/components/label";
 import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/textarea";
 
 interface DraggableTextAreaProps {
   id?: string;
@@ -38,12 +38,7 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
   onVariableDrop,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
-  const [dragPosition, setDragPosition] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [cursorPosition, setCursorPosition] = useState(0);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -62,50 +57,55 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
     e.stopPropagation();
     setIsDragOver(false);
 
+    const el = textareaRef.current;
+    const insertPos =
+      el && document.activeElement === el
+        ? el.selectionStart ?? value.length
+        : value.length;
+
     try {
-      // Try to get JSON data first
       const jsonData = e.dataTransfer.getData("application/json");
 
       if (jsonData) {
         const { path, value: droppedValue } = JSON.parse(jsonData);
-
-        // Insert the variable reference at the cursor position
         const variableReference = path;
-        const newValue = insertAtPosition(
-          value,
-          variableReference,
-          cursorPosition
-        );
-        
-        // Create a synthetic event for the onChange callback
+        const newValue = insertAtPosition(value, variableReference, insertPos);
+        const cursorAfter = insertPos + variableReference.length;
+
         const syntheticEvent = {
           target: { value: newValue }
         } as React.ChangeEvent<HTMLTextAreaElement>;
         onChange(syntheticEvent);
 
-        // Call the callback if provided
+        setTimeout(() => {
+          if (textareaRef.current && document.activeElement === textareaRef.current) {
+            textareaRef.current.setSelectionRange(cursorAfter, cursorAfter);
+          }
+        }, 0);
+
         if (onVariableDrop) {
           onVariableDrop(path, droppedValue);
         }
         return;
       }
 
-      // Fallback to plain text
       const textData = e.dataTransfer.getData("text/plain");
 
       if (textData) {
         const variableReference = textData;
-        const newValue = insertAtPosition(
-          value,
-          variableReference,
-          cursorPosition
-        );
-        
-        // Create a synthetic event for the onChange callback
+        const newValue = insertAtPosition(value, variableReference, insertPos);
+        const cursorAfter = insertPos + variableReference.length;
+
         const syntheticEvent = {
           target: { value: newValue }
         } as React.ChangeEvent<HTMLTextAreaElement>;
         onChange(syntheticEvent);
+
+        setTimeout(() => {
+          if (textareaRef.current && document.activeElement === textareaRef.current) {
+            textareaRef.current.setSelectionRange(cursorAfter, cursorAfter);
+          }
+        }, 0);
       }
     } catch (error) {
       // ignore
@@ -144,28 +144,6 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
     return before + leadingSpace + newValue + trailingSpace + after;
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onChange(e);
-  };
-
-  const handleInputSelect = () => {
-    if (textareaRef.current) {
-      setCursorPosition(textareaRef.current.selectionStart || 0);
-    }
-  };
-
-  const handleInputClick = () => {
-    if (textareaRef.current) {
-      setCursorPosition(textareaRef.current.selectionStart || 0);
-    }
-  };
-
-  const handleInputKeyUp = () => {
-    if (textareaRef.current) {
-      setCursorPosition(textareaRef.current.selectionStart || 0);
-    }
-  };
-
   return (
     <div className="space-y-2 w-full">
       {label && <Label htmlFor={id}>{label}</Label>}
@@ -179,10 +157,7 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
           ref={textareaRef}
           id={id}
           value={value}
-          onChange={handleInputChange}
-          onSelect={handleInputSelect}
-          onClick={handleInputClick}
-          onKeyUp={handleInputKeyUp}
+          onChange={onChange}
           placeholder={placeholder}
           rows={rows}
           className={cn(

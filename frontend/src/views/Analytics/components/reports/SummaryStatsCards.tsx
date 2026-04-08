@@ -1,4 +1,4 @@
-import { subDays, differenceInCalendarDays, format } from "date-fns";
+import { format } from "date-fns";
 import { Card } from "@/components/card";
 import { Tooltip } from "@/components/tooltip";
 import { TrendingUp, TrendingDown } from "lucide-react";
@@ -8,7 +8,7 @@ import type { DateRange } from "react-day-picker";
 interface SummaryStatsCardsProps {
   summary: AgentStatsSummaryResponse | null;
   previousSummary?: AgentStatsSummaryResponse | null;
-  dateRange?: DateRange;
+  compareDateRange?: DateRange;
   loading: boolean;
   error: string | null;
   containmentRate?: number | null;
@@ -48,12 +48,9 @@ function ppDiff(currentRate: number, previousRate: number): number | null {
   return diff === 0 ? null : diff;
 }
 
-function getComparisonLabel(dateRange?: DateRange): string | null {
-  if (!dateRange?.from || !dateRange?.to) return null;
-  const days = differenceInCalendarDays(dateRange.to, dateRange.from);
-  const prevTo = subDays(dateRange.from, 1);
-  const prevFrom = subDays(prevTo, days);
-  return `vs ${format(prevFrom, "MMM d")} – ${format(prevTo, "MMM d")}`;
+function getComparisonLabel(compareDateRange?: DateRange): string | null {
+  if (!compareDateRange?.from || !compareDateRange?.to) return null;
+  return `vs ${format(compareDateRange.from, "MMM d")} – ${format(compareDateRange.to, "MMM d")}`;
 }
 
 function getResponseTimeColor(ms: number): string {
@@ -153,7 +150,7 @@ function buildMetrics(
 
 const PLACEHOLDER_COUNT = 5;
 
-export function SummaryStatsCards({ summary, previousSummary, dateRange, loading, error, containmentRate }: SummaryStatsCardsProps) {
+export function SummaryStatsCards({ summary, previousSummary, compareDateRange, loading, error, containmentRate }: SummaryStatsCardsProps) {
   if (loading) {
     return (
       <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
@@ -179,9 +176,9 @@ export function SummaryStatsCards({ summary, previousSummary, dateRange, loading
 
   return (
     <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-      {previousSummary && getComparisonLabel(dateRange) && (
+      {previousSummary && getComparisonLabel(compareDateRange) && (
         <p className="text-xs text-muted-foreground/60 mb-4">
-          {getComparisonLabel(dateRange)}
+          {getComparisonLabel(compareDateRange)}
         </p>
       )}
       <div className={`grid ${colClass} gap-4 sm:gap-6 lg:gap-8`}>
