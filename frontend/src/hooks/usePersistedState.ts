@@ -2,8 +2,12 @@ import { useState, useCallback } from "react";
 
 export function usePersistedState(key: string, defaultValue: boolean) {
   const [value, setValue] = useState<boolean>(() => {
-    const saved = localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : defaultValue;
+    try {
+      const saved = localStorage.getItem(key);
+      return saved !== null ? JSON.parse(saved) : defaultValue;
+    } catch {
+      return defaultValue;
+    }
   });
 
   const toggle = useCallback(() => {
