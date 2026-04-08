@@ -224,7 +224,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   onTap: canSend ? () => _handleSend(chatState) : null,
                   icon: Icons.send_rounded,
                   tooltip: 'Send',
-                  background: canSend ? const Color(0xFFCC0000) : const Color(0xFFE7E7EC),
+                  background: canSend ? primaryColor : const Color(0xFFE7E7EC),
                   iconColor: canSend ? Colors.white : const Color(0xFF9F9FA8),
                 ),
               ],

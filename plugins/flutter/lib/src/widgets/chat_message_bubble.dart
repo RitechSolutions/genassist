@@ -122,7 +122,7 @@ class ChatMessageBubble extends StatelessWidget {
   }
 
   Widget _buildCustomerBubble(BuildContext context) {
-    const primaryColor = Color(0xFFCC0000);
+    final primaryColor = theme?.primaryColor ?? GenAgentChatTheme.defaultPrimaryColor;
 
     return Align(
       alignment: Alignment.centerRight,

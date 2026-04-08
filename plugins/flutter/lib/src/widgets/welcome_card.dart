@@ -25,7 +25,7 @@ class WelcomeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final chatState = context.read<ChatState>();
-    const primaryColor = Color(0xFFCC0000);
+    final primaryColor = theme?.primaryColor ?? GenAgentChatTheme.defaultPrimaryColor;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
