@@ -404,6 +404,15 @@ def create_celery():
             "options": {"expires": 7200},  # Task expires after 2 hours
         }
 
+    # One-time backfill of custom attributes from agent response logs
+    # Runs once at startup via beat; skips conversations already populated
+    if settings.CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK:
+        beat_schedule["backfill-custom-attributes"] = {
+            "task": "app.tasks.backfill_custom_attributes.backfill_custom_attributes",
+            "schedule": crontab(minute="0", hour="3"),
+            "options": {"expires": 7200},
+        }
+
     celery_app.conf.beat_schedule = beat_schedule
 
     return celery_app
