@@ -22,6 +22,7 @@ from app.services.agent_config import AgentConfigService
 from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import update_stats_incrementally
 from app.services.conversations import ConversationService
+from app.core.utils.custom_attributes import extract_custom_attributes
 from app.services.file_manager import FileManagerService
 
 logger = logging.getLogger(__name__)
@@ -202,6 +203,18 @@ async def process_conversation_update_with_agent(
             tenant_id=tenant_id,
         )
     )
+
+    # Persist custom workflow attributes via direct UPDATE to avoid expiring ORM relationships
+    if conversation.status == ConversationStatus.IN_PROGRESS.value:
+        try:
+            new_attrs = extract_custom_attributes(agent_response)
+            if new_attrs:
+                existing = updated_conversation.custom_attributes or {}
+                existing.update(new_attrs)
+                await service.update_custom_attributes(updated_conversation.id, existing)
+                updated_conversation.custom_attributes = existing
+        except Exception as e:
+            logger.warning(f"Failed to persist custom_attributes: {e}")
 
     # return the updated conversation
     return updated_conversation
