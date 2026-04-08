@@ -12,7 +12,9 @@ import { getApiUrlString } from '@/config/api';
 import { getAllDataSources } from '@/services/dataSources';
 import { getAllLLMAnalysts } from '@/services/llmAnalyst';
 import { v4 as uuidv4 } from 'uuid';
+import { Badge } from '@/components/badge';
 import { Button } from '@/components/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/popover';
 import { Input } from '@/components/input';
 import { Textarea } from '@/components/textarea';
 import { Switch } from '@/components/switch';
@@ -31,8 +33,10 @@ import {
   Trash2,
   Download,
   RefreshCw,
-  Info,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/collapsible';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RagConfigValues } from '../types/ragSchema';
 import { LegacyRagConfig, DEFAULT_LEGACY_RAG_CONFIG } from '../utils/ragDefaults';
@@ -40,7 +44,6 @@ import DynamicRagConfigSection from '../components/DynamicRagConfigSection';
 import { DataSourceDialog } from '@/views/DataSources/components/DataSourceDialog';
 import { isEqual } from 'lodash';
 import { KnowledgeItem, UrlHeaderRow, UploadResult, FileItem } from '../types/knowledgeBase';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/RadixTooltip';
 import { SidebarProvider, SidebarTrigger } from '@/components/sidebar';
 import { AppSidebar } from '@/layout/app-sidebar';
 import { useIsMobile } from '@/hooks/useMobile';
@@ -97,6 +100,22 @@ const acceptedFileTypes = [
   '.pdf', '.docx', '.doc', '.txt', '.csv', '.xls', '.xlsx',
   '.pptx', '.ppt', '.html', '.htm', '.yaml', '.yml', '.json', '.jsonl', '.md',
 ];
+
+function syncStatusBadgeVariant(
+  status: string
+): 'default' | 'secondary' | 'destructive' | 'outline' | 'success' {
+  const s = status.toLowerCase();
+  if (s === 'error' || s.includes('fail')) return 'destructive';
+  if (s.includes('warning')) return 'secondary';
+  if (s === 'success') return 'success';
+  return 'outline';
+}
+
+function isSyncErrorStatus(status: string | null | undefined): boolean {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s === 'error' || s.includes('fail');
+}
 
 const KnowledgeBaseForm: React.FC = () => {
   const navigate = useNavigate();
@@ -349,15 +368,64 @@ const KnowledgeBaseForm: React.FC = () => {
 
   const performSync = async () => {
     if (!editingItem?.id) return;
+    let syncApiReturned = false;
     try {
       setIsSyncing(true);
-      toast.success('Synchronization started');
-      await executeKnowledgeBaseSyncronizationManually(editingItem.id);
-      toast.success('Synchronization completed successfully.');
+      const data = (await executeKnowledgeBaseSyncronizationManually(editingItem.id)) as {
+        status?: string;
+        message?: string;
+        zendesk_sync_results?: Array<{
+          result?: {
+            status?: string;
+            error?: string;
+            message?: string;
+            articles_added?: number;
+            articles_updated?: number;
+            articles_deleted?: number;
+            per_kb?: Array<{ status?: string; reason?: string; error?: string; note?: string }>;
+          };
+        }>;
+      };
+      syncApiReturned = true;
+      if (data.status === 'error') {
+        toast.error(data.message ?? 'Synchronization failed.');
+        return;
+      }
+      const z = data.zendesk_sync_results?.[0]?.result;
+      if (z?.status === 'failed') {
+        toast.error(z.error ?? z.message ?? 'Zendesk sync failed.');
+        return;
+      }
+      const firstKb = z?.per_kb?.[0];
+      if (firstKb?.status === 'skipped') {
+        toast.error(
+          `Sync skipped: ${firstKb.reason ?? 'unknown'}. Check schedule, datasource, or Zendesk connection.`
+        );
+        return;
+      }
+      if (firstKb?.status === 'error') {
+        console.error(firstKb?.error ?? 'Unknown error');
+        toast.error('Zendesk sync error. See knowledge base sync status.');
+        return;
+      }
+      if (z != null && (z.articles_added != null || z.articles_updated != null || z.articles_deleted != null)) {
+        toast.success(
+          `Sync completed: ${z.articles_added ?? 0} added, ${z.articles_updated ?? 0} updated, ${z.articles_deleted ?? 0} removed.`
+        );
+      } else {
+        toast.success('Synchronization completed successfully.');
+      }
     } catch {
       toast.error('Failed to trigger synchronization.');
     } finally {
       setIsSyncing(false);
+      if (syncApiReturned && id) {
+        try {
+          setEditingItem((await getKnowledgeItem(id)) as KnowledgeItem);
+        } catch {
+          /* ignore refresh failure */
+        }
+      }
     }
   };
 
@@ -596,11 +664,23 @@ const KnowledgeBaseForm: React.FC = () => {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                               <div className="mb-1">Name</div>
-                              <Input id="name" name="name" value={formData.name} onChange={handleInputChange} placeholder="Name for this knowledge base item" />
+                              <Input
+                                id="name"
+                                name="name"
+                                value={formData.name}
+                                onChange={handleInputChange}
+                                placeholder="Name for this knowledge base item"
+                              />
                             </div>
                             <div>
                               <div className="mb-1">Description</div>
-                              <Input id="description" name="description" value={formData.description} onChange={handleInputChange} placeholder="Brief description of this knowledge base item" />
+                              <Input
+                                id="description"
+                                name="description"
+                                value={formData.description}
+                                onChange={handleInputChange}
+                                placeholder="Brief description of this knowledge base item"
+                              />
                             </div>
                           </div>
 
@@ -608,7 +688,11 @@ const KnowledgeBaseForm: React.FC = () => {
                             <div className="mb-1">Type</div>
                             <Select
                               value={formData.type}
-                              onValueChange={(value) => handleInputChange({ target: { name: 'type', value } } as React.ChangeEvent<HTMLInputElement>)}
+                              onValueChange={(value) =>
+                                handleInputChange({
+                                  target: { name: 'type', value },
+                                } as React.ChangeEvent<HTMLInputElement>)
+                              }
                             >
                               <SelectTrigger id="type">
                                 <SelectValue placeholder="Select content type" />
@@ -619,7 +703,9 @@ const KnowledgeBaseForm: React.FC = () => {
                                 <SelectItem value="url">URLs</SelectItem>
                                 <SelectItem value="s3">S3</SelectItem>
                                 <SelectItem value="sharepoint">Sharepoint</SelectItem>
-                                <SelectItem key="smb_share_folder" value="smb_share_folder">Network Share/Folder</SelectItem>
+                                <SelectItem key="smb_share_folder" value="smb_share_folder">
+                                  Network Share/Folder
+                                </SelectItem>
                                 <SelectItem value="azure_blob">Azure Blob Storage</SelectItem>
                                 <SelectItem value="google_bucket">Google Bucket Storage</SelectItem>
                                 <SelectItem value="zendesk">Zendesk</SelectItem>
@@ -630,7 +716,15 @@ const KnowledgeBaseForm: React.FC = () => {
                           {formData.type === 'text' ? (
                             <div>
                               <div className="mb-1">Content</div>
-                              <Textarea id="content" name="content" value={formData.content} onChange={handleInputChange} placeholder="The knowledge content" rows={4} className="min-h-32" />
+                              <Textarea
+                                id="content"
+                                name="content"
+                                value={formData.content}
+                                onChange={handleInputChange}
+                                placeholder="The knowledge content"
+                                rows={4}
+                                className="min-h-32"
+                              />
                             </div>
                           ) : formData.type === 'url' ? (
                             <div className="space-y-4">
@@ -643,7 +737,13 @@ const KnowledgeBaseForm: React.FC = () => {
                               {urls.map((url, index) => (
                                 <div key={index} className="flex gap-2 items-end">
                                   <div className="flex-1">
-                                    <Input id={`url-${index}`} value={url} onChange={(e) => handleUrlChange(index, e.target.value)} placeholder="Enter URL (e.g., https://example.com)" type="url" />
+                                    <Input
+                                      id={`url-${index}`}
+                                      value={url}
+                                      onChange={(e) => handleUrlChange(index, e.target.value)}
+                                      placeholder="Enter URL (e.g., https://example.com)"
+                                      type="url"
+                                    />
                                   </div>
                                   {urls.length > 1 && (
                                     <Button type="button" variant="ghost" size="sm" onClick={() => removeUrl(index)}>
@@ -656,42 +756,86 @@ const KnowledgeBaseForm: React.FC = () => {
                                 <div className="flex items-center justify-between">
                                   <div className="flex-1 pr-4">
                                     <div className="text-sm font-medium text-gray-900">Use HTTP request</div>
-                                    <p className="text-sm text-gray-500 mt-1">Fetch content via a direct HTTP request instead of browser scraping.</p>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                      Fetch content via a direct HTTP request instead of browser scraping.
+                                    </p>
                                   </div>
-                                  <Switch checked={formData.use_http_request || false} onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, use_http_request: checked }))} />
+                                  <Switch
+                                    checked={formData.use_http_request || false}
+                                    onCheckedChange={(checked) =>
+                                      setFormData((prev) => ({ ...prev, use_http_request: checked }))
+                                    }
+                                  />
                                 </div>
                               </div>
                               <div className="mt-4">
                                 <div className="space-y-2">
                                   <div className="flex justify-between items-center">
                                     <Label>Custom Headers (optional)</Label>
-                                    <Button type="button" size="sm" variant="outline" className="h-6 text-xs"
-                                      onClick={() => setUrlHeaders((prev) => [...prev, { id: uuidv4(), key: '', value: '', keyType: 'known' }])}
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-6 text-xs"
+                                      onClick={() =>
+                                        setUrlHeaders((prev) => [
+                                          ...prev,
+                                          { id: uuidv4(), key: '', value: '', keyType: 'known' },
+                                        ])
+                                      }
                                     >
                                       <Plus className="h-3 w-3 mr-1" /> Add Header
                                     </Button>
                                   </div>
                                   <div className="space-y-2">
                                     <datalist id="known-url-headers">
-                                      {KNOWN_HTTP_HEADERS.map((key) => <option key={key} value={key} />)}
+                                      {KNOWN_HTTP_HEADERS.map((key) => (
+                                        <option key={key} value={key} />
+                                      ))}
                                     </datalist>
                                     {urlHeaders.map((header, idx) => (
                                       <div key={`url-header-${idx}`} className="flex items-center gap-2 w-full">
                                         <Input
                                           placeholder="Header name"
                                           value={header.key}
-                                          onChange={(e) => setUrlHeaders((prev) => prev.map((row) => row.id === header.id ? { ...row, key: e.target.value, keyType: KNOWN_HTTP_HEADERS.includes(e.target.value) ? 'known' : 'custom' } : row))}
+                                          onChange={(e) =>
+                                            setUrlHeaders((prev) =>
+                                              prev.map((row) =>
+                                                row.id === header.id
+                                                  ? {
+                                                      ...row,
+                                                      key: e.target.value,
+                                                      keyType: KNOWN_HTTP_HEADERS.includes(e.target.value)
+                                                        ? 'known'
+                                                        : 'custom',
+                                                    }
+                                                  : row
+                                              )
+                                            )
+                                          }
                                           list="known-url-headers"
                                           className="flex-1 text-xs min-w-0 w-full"
                                         />
                                         <Input
                                           placeholder="Value"
                                           value={header.value}
-                                          onChange={(e) => setUrlHeaders((prev) => prev.map((row) => row.id === header.id ? { ...row, value: e.target.value } : row))}
+                                          onChange={(e) =>
+                                            setUrlHeaders((prev) =>
+                                              prev.map((row) =>
+                                                row.id === header.id ? { ...row, value: e.target.value } : row
+                                              )
+                                            )
+                                          }
                                           className="flex-1 text-xs min-w-0 w-full"
                                         />
-                                        <Button type="button" size="icon" variant="ghost" className="h-6 w-6 flex-shrink-0"
-                                          onClick={() => setUrlHeaders((prev) => prev.filter((row) => row.id !== header.id))}
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-6 w-6 flex-shrink-0"
+                                          onClick={() =>
+                                            setUrlHeaders((prev) => prev.filter((row) => row.id !== header.id))
+                                          }
                                         >
                                           <X className="h-3.5 w-3.5" />
                                         </Button>
@@ -706,23 +850,49 @@ const KnowledgeBaseForm: React.FC = () => {
                               <div className="mb-1">Upload Files</div>
                               <div className="flex flex-col gap-2">
                                 <div className="flex items-center justify-center w-full border-2 border-dashed border-border rounded-md cursor-pointer">
-                                  <label htmlFor="file-upload" className="flex flex-col items-center gap-2 cursor-pointer w-full p-6">
+                                  <label
+                                    htmlFor="file-upload"
+                                    className="flex flex-col items-center gap-2 cursor-pointer w-full p-6"
+                                  >
                                     <Upload className="h-10 w-10 text-muted-foreground" />
                                     <span className="text-sm font-medium text-muted-foreground">
-                                      {selectedFiles.length > 0 ? `${selectedFiles.length} file(s) selected` : formData.files && formData.files.length > 0 ? 'Replace files' : 'Select files to upload'}
+                                      {selectedFiles.length > 0
+                                        ? `${selectedFiles.length} file(s) selected`
+                                        : formData.files && formData.files.length > 0
+                                          ? 'Replace files'
+                                          : 'Select files to upload'}
                                     </span>
-                                    <input id="file-upload" type="file" multiple onChange={handleFileChange} disabled={isUploading} accept={acceptedFileTypes.join(',')} className="hidden" />
+                                    <input
+                                      id="file-upload"
+                                      type="file"
+                                      multiple
+                                      onChange={handleFileChange}
+                                      disabled={isUploading}
+                                      accept={acceptedFileTypes.join(',')}
+                                      className="hidden"
+                                    />
                                   </label>
                                 </div>
                                 {selectedFiles.length > 0 && (
                                   <div className="space-y-2">
                                     {selectedFiles.map((file, index) => (
-                                      <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                                      <div
+                                        key={index}
+                                        className="flex items-center justify-between p-2 bg-muted rounded-md"
+                                      >
                                         <div className="flex items-center gap-2">
                                           <FilePlus className="h-4 w-4" />
-                                          <span className="text-sm">{file.name} ({(file.size / 1024).toFixed(1)} KB)</span>
+                                          <span className="text-sm">
+                                            {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                                          </span>
                                         </div>
-                                        <Button type="button" variant="ghost" size="icon" onClick={() => setSelectedFiles((prev) => prev.filter((_, i) => i !== index))} className="h-8 w-8">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => setSelectedFiles((prev) => prev.filter((_, i) => i !== index))}
+                                          className="h-8 w-8"
+                                        >
                                           <X className="h-4 w-4" />
                                         </Button>
                                       </div>
@@ -733,24 +903,51 @@ const KnowledgeBaseForm: React.FC = () => {
                                   <div className="space-y-2">
                                     {formData.files.map((fileItem, index) => {
                                       const fileLinkUrl = getFileUrl(fileItem);
-                                      const canLink = fileLinkUrl && (fileLinkUrl.startsWith('http://') || fileLinkUrl.startsWith('https://') || fileLinkUrl.startsWith('/'));
+                                      const canLink =
+                                        fileLinkUrl &&
+                                        (fileLinkUrl.startsWith('http://') ||
+                                          fileLinkUrl.startsWith('https://') ||
+                                          fileLinkUrl.startsWith('/'));
                                       return (
-                                        <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                                        <div
+                                          key={index}
+                                          className="flex items-center justify-between p-2 bg-muted rounded-md"
+                                        >
                                           <div className="flex items-center gap-2">
                                             <Database className="h-4 w-4" />
-                                            <span className="text-sm">{maskFileName(getFileDisplayName(fileItem))}</span>
+                                            <span className="text-sm">
+                                              {maskFileName(getFileDisplayName(fileItem))}
+                                            </span>
                                           </div>
                                           <div className="flex items-center gap-1">
                                             {canLink ? (
-                                              <a href={fileLinkUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md hover:bg-accent hover:text-accent-foreground" title="Open file">
+                                              <a
+                                                href={fileLinkUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md hover:bg-accent hover:text-accent-foreground"
+                                                title="Open file"
+                                              >
                                                 <Download className="h-4 w-4" />
                                               </a>
                                             ) : (
-                                              <span className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground"><Download className="h-4 w-4" /></span>
+                                              <span className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground">
+                                                <Download className="h-4 w-4" />
+                                              </span>
                                             )}
                                             {editingItem && (
-                                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Remove file"
-                                                onClick={() => setFormData((prev) => ({ ...prev, files: prev.files?.filter((_, i) => i !== index) ?? [] }))}
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8"
+                                                title="Remove file"
+                                                onClick={() =>
+                                                  setFormData((prev) => ({
+                                                    ...prev,
+                                                    files: prev.files?.filter((_, i) => i !== index) ?? [],
+                                                  }))
+                                                }
                                               >
                                                 <Trash2 className="h-4 w-4" />
                                               </Button>
@@ -761,7 +958,11 @@ const KnowledgeBaseForm: React.FC = () => {
                                     })}
                                   </div>
                                 )}
-                                {isUploading && <div className="p-2 text-sm text-muted-foreground">Uploading files... Please wait.</div>}
+                                {isUploading && (
+                                  <div className="p-2 text-sm text-muted-foreground">
+                                    Uploading files... Please wait.
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ) : (
@@ -770,7 +971,10 @@ const KnowledgeBaseForm: React.FC = () => {
                               <Select
                                 value={formData.sync_source_id || ''}
                                 onValueChange={(value) => {
-                                  if (value === '__create__') { setIsDataSourceDialogOpen(true); return; }
+                                  if (value === '__create__') {
+                                    setIsDataSourceDialogOpen(true);
+                                    return;
+                                  }
                                   setFormData((prev) => ({ ...prev, sync_source_id: value }));
                                 }}
                               >
@@ -779,7 +983,9 @@ const KnowledgeBaseForm: React.FC = () => {
                                 </SelectTrigger>
                                 <SelectContent>
                                   {availableSources.map((source) => (
-                                    <SelectItem key={source.id} value={source.id}>{source.name}</SelectItem>
+                                    <SelectItem key={source.id} value={source.id}>
+                                      {source.name}
+                                    </SelectItem>
                                   ))}
                                   <CreateNewSelectItem />
                                 </SelectContent>
@@ -788,146 +994,311 @@ const KnowledgeBaseForm: React.FC = () => {
                               {formData.type === 'sharepoint' && (
                                 <div className="mt-4">
                                   <div className="mb-1">SharePoint Site Link</div>
-                                  <Input id="sharepoint-url" type="url" value={urls[0] || ''} onChange={(e) => handleUrlChange(0, e.target.value)} placeholder="https://yourcompany.sharepoint.com/sites/..." />
+                                  <Input
+                                    id="sharepoint-url"
+                                    type="url"
+                                    value={urls[0] || ''}
+                                    onChange={(e) => handleUrlChange(0, e.target.value)}
+                                    placeholder="https://yourcompany.sharepoint.com/sites/..."
+                                  />
                                 </div>
                               )}
 
-                              {['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk'].includes(formData.type) && (
+                              {formData.type === 'zendesk' && (
+                                <div className="flex flex-col gap-6 mt-6">
+                                  <div className="rounded-lg border bg-white p-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex-1 pr-4">
+                                        <div className="text-sm font-medium text-gray-900">
+                                          Allow Unpublished Articles
+                                        </div>
+                                        <p className="text-sm text-gray-500 mt-1">
+                                          Allow unpublished articles to be indexed in the knowledge base.
+                                        </p>
+                                      </div>
+                                      <Switch
+                                        checked={
+                                          (formData.extra_metadata?.allow_unpublished_articles as boolean) || false
+                                        }
+                                        onCheckedChange={(checked) =>
+                                          setFormData(
+                                            (prev) =>
+                                              ({
+                                                ...prev,
+                                                extra_metadata: {
+                                                  ...prev.extra_metadata,
+                                                  allow_unpublished_articles: checked,
+                                                },
+                                              }) as KnowledgeItem
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="rounded-lg border bg-white p-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex-1 pr-4">
+                                        <div className="text-sm font-medium text-gray-900">Allow HTML Content</div>
+                                        <p className="text-sm text-gray-500 mt-1">
+                                          Allow HTML content to be indexed in the knowledge base.
+                                        </p>
+                                      </div>
+                                      <Switch
+                                        checked={(formData.extra_metadata?.allow_html_content as boolean) || false}
+                                        onCheckedChange={(checked) =>
+                                          setFormData(
+                                            (prev) =>
+                                              ({
+                                                ...prev,
+                                                extra_metadata: {
+                                                  ...prev.extra_metadata,
+                                                  allow_html_content: checked,
+                                                },
+                                              }) as KnowledgeItem
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk'].includes(
+                                formData.type
+                              ) && (
                                 <div className="col-span-2 space-y-4">
-                                  <div className="mt-6">
-                                    <div className="bg-gray-50 rounded-lg">
-                                      <div className="flex items-center justify-between p-4">
-                                        <div>
-                                          <div>
-                                            <div className="mb-1">Sync Schedule/Enable</div>
-                                            <div className="flex gap-2">
-                                              <Input
-                                                id="sync_schedule" name="sync_schedule"
-                                                disabled={!formData.sync_active}
-                                                value={formData.sync_schedule ?? ''}
-                                                onChange={(e) => setFormData((prev) => ({ ...prev, sync_schedule: e.target.value }))}
-                                                placeholder="e.g. every 15':  */15 * * * *"
-                                                className="flex-1"
-                                              />
-                                            </div>
-                                          </div>
+                                  <div className="flex flex-col gap-6 mt-6">
+                                    <div className="rounded-lg border bg-white p-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex-1 pr-4">
+                                          <div className="text-sm font-medium text-gray-900">Sync Schedule</div>
+                                          <p className="text-sm text-gray-500 mt-1">
+                                            Enable automatic syncing on a schedule.
+                                          </p>
                                         </div>
-                                        <div className="flex items-center justify-between mt-2">
-                                          <Switch id="sync_active" checked={formData.sync_active || false} onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, sync_active: checked }))} />
-                                        </div>
+                                        <Switch
+                                          id="sync_active"
+                                          checked={formData.sync_active || false}
+                                          onCheckedChange={(checked) =>
+                                            setFormData((prev) => ({ ...prev, sync_active: checked }))
+                                          }
+                                        />
                                       </div>
-
-                                      <div className="space-y-4 p-4 border-t">
-                                        <div>
-                                          <label className="block text-sm font-medium text-gray-700">Processing Filter</label>
-                                          <Input name="processing_filter" value={formData.processing_filter || ''} onChange={handleInputChange} placeholder="e.g. *.pdf or contains:report" className="mt-1" />
-                                        </div>
-                                        <div>
-                                          <label className="block text-sm font-medium text-gray-700">Processing Mode</label>
-                                          <Select
-                                            value={formData.processing_mode || 'none'}
-                                            onValueChange={(value) => setFormData((prev) => ({ ...prev, processing_mode: value === 'none' ? null : value }))}
-                                          >
-                                            <SelectTrigger className="mt-1 w-full"><SelectValue placeholder="None" /></SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="none">None</SelectItem>
-                                              <SelectItem value="extract">Extract Only</SelectItem>
-                                              <SelectItem value="transcribe">Transcribe</SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-
-                                        {formData.processing_mode === 'transcribe' && (
-                                          <div>
-                                            <label className="block text-sm font-medium text-gray-700">Transcription Engine</label>
-                                            <Select value={formData.transcription_engine} onValueChange={(value) => setFormData((prev) => ({ ...prev, transcription_engine: value }))}>
-                                              <SelectTrigger className="mt-1 w-full"><SelectValue placeholder="Select engine" /></SelectTrigger>
-                                              <SelectContent>
-                                                <SelectItem value="openai_whisper">OpenAI Whisper</SelectItem>
-                                                <SelectItem value="google_chirp3">Google Chirp 3</SelectItem>
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                        )}
-
-                                        <div>
-                                          <label className="block text-sm font-medium text-gray-700">LLM Analyst (optional)</label>
-                                          <Select value={formData.llm_analyst_id || 'none'} onValueChange={(value) => setFormData((prev) => ({ ...prev, llm_analyst_id: value === 'none' ? null : value }))}>
-                                            <SelectTrigger className="mt-1 w-full"><SelectValue placeholder="Select an analyst" /></SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="none">None</SelectItem>
-                                              {llmAnalysts.map((a) => (
-                                                <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-
-                                        {formData.processing_mode === 'transcribe' && (
-                                          <div className="flex items-center justify-between">
-                                            <label className="text-sm font-medium text-gray-700">Save In Conversation</label>
-                                            <Switch checked={formData.save_in_conversation} onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, save_in_conversation: checked }))} />
-                                          </div>
-                                        )}
-
-                                        <div className="flex flex-col gap-2">
-                                          <div className="flex items-center gap-2 justify-between">
-                                            <label className="text-sm font-medium text-gray-700">Save Output in source location</label>
-                                            <Switch checked={formData.save_output} onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, save_output: checked }))} />
-                                          </div>
-                                          {formData.save_output && (
-                                            <Input
-                                              placeholder="Output path (e.g. /storage/out/)"
-                                              value={formData.save_output_path}
-                                              onChange={(e) => setFormData((prev) => ({ ...prev, save_output_path: e.target.value }))}
-                                              className="flex-1"
-                                            />
-                                          )}
-                                        </div>
-
-                                        {formData.type === 'zendesk' && (
-                                          <div className="flex flex-col gap-4 pt-2">
-                                            <label className="block text-sm font-medium text-gray-700 flex items-center gap-2">
-                                              Article Source Configuration
-                                              <Tooltip>
-                                                <TooltipTrigger asChild><Info className="h-4 w-4 text-gray-500 cursor-help" /></TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>Allow Unpublished Articles to be index in the knowledge base</p>
-                                                  <p>Allow HTML Content to be index in the knowledge base</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </label>
-                                            <div className="grid grid-cols-2 gap-8 py-2 px-6">
-                                              <div className="flex items-center gap-2">
-                                                <Switch
-                                                  checked={(formData.extra_metadata?.allow_unpublished_articles as boolean) || false}
-                                                  onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, extra_metadata: { ...prev.extra_metadata, allow_unpublished_articles: checked } }) as KnowledgeItem)}
-                                                />
-                                                <label className="text-sm font-medium text-gray-700">Allow Unpublished Articles</label>
-                                              </div>
-                                              <div className="flex items-center gap-2">
-                                                <Switch
-                                                  checked={(formData.extra_metadata?.allow_html_content as boolean) || false}
-                                                  onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, extra_metadata: { ...prev.extra_metadata, allow_html_content: checked } }) as KnowledgeItem)}
-                                                />
-                                                <label className="text-sm font-medium text-gray-700">Allow HTML Content</label>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      {editingItem && (
-                                        <div className="flex flex-row justify-end p-4">
-                                          <Button type="button" variant="outline" onClick={handleSyncNow} disabled={isSyncing} className="min-w-[130px] rounded-full">
-                                            <div className="flex items-center gap-2 ml-auto">
-                                              <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                                              {isSyncing ? 'Syncing...' : 'Sync Now'}
-                                            </div>
-                                          </Button>
+                                      {formData.sync_active && (
+                                        <div className="mt-3">
+                                          <Input
+                                            id="sync_schedule"
+                                            name="sync_schedule"
+                                            value={formData.sync_schedule ?? ''}
+                                            onChange={(e) =>
+                                              setFormData((prev) => ({ ...prev, sync_schedule: e.target.value }))
+                                            }
+                                            placeholder="e.g. every 15':  */15 * * * *"
+                                            className="w-full"
+                                          />
                                         </div>
                                       )}
                                     </div>
+
+                                    {editingItem && (
+                                      <div className="flex flex-row flex-wrap items-center justify-between gap-3">
+                                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                          {(editingItem.last_synced ||
+                                            editingItem.last_sync_status ||
+                                            editingItem.last_sync_error) && (
+                                            <>
+                                              <span className="text-xs text-gray-600">
+                                                Last sync
+                                                {editingItem.last_synced
+                                                  ? `: ${new Date(editingItem.last_synced).toLocaleString()}`
+                                                  : ''}
+                                              </span>
+                                              {editingItem.last_sync_status ? (
+                                                isSyncErrorStatus(editingItem.last_sync_status) &&
+                                                editingItem.last_sync_error ? (
+                                                  <Popover>
+                                                    <PopoverTrigger asChild>
+                                                      <button
+                                                        type="button"
+                                                        className="inline-flex rounded-full border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                                      >
+                                                        <Badge
+                                                          variant={syncStatusBadgeVariant(editingItem.last_sync_status)}
+                                                          className="cursor-pointer"
+                                                        >
+                                                          {editingItem.last_sync_status}
+                                                        </Badge>
+                                                      </button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent
+                                                      align="start"
+                                                      className="w-80 max-w-[min(90vw,24rem)]"
+                                                    >
+                                                      <p className="mb-2 text-xs font-medium text-muted-foreground">
+                                                        Error details
+                                                      </p>
+                                                      <p className="whitespace-pre-wrap break-words text-sm text-destructive">
+                                                        {editingItem.last_sync_error}
+                                                      </p>
+                                                    </PopoverContent>
+                                                  </Popover>
+                                                ) : (
+                                                  <Badge variant={syncStatusBadgeVariant(editingItem.last_sync_status)}>
+                                                    {editingItem.last_sync_status}
+                                                  </Badge>
+                                                )
+                                              ) : null}
+                                              {editingItem.last_sync_error &&
+                                              !isSyncErrorStatus(editingItem.last_sync_status) ? (
+                                                <Badge
+                                                  variant="secondary"
+                                                  className="max-w-[min(100%,20rem)] shrink truncate font-normal sm:max-w-[28rem]"
+                                                  title={editingItem.last_sync_error}
+                                                >
+                                                  {editingItem.last_sync_error}
+                                                </Badge>
+                                              ) : null}
+                                            </>
+                                          )}
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          onClick={handleSyncNow}
+                                          disabled={isSyncing}
+                                          className="min-w-[130px] shrink-0 rounded-full"
+                                        >
+                                          <div className="flex items-center gap-2">
+                                            <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                            {isSyncing ? 'Syncing...' : 'Sync Now'}
+                                          </div>
+                                        </Button>
+                                      </div>
+                                    )}
+
+                                    <Collapsible>
+                                      <CollapsibleTrigger className="group flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                                        <h4 className="text-sm font-medium">Processing & Output</h4>
+                                        <ChevronDown className="h-4 w-4 group-data-[state=open]:hidden" />
+                                        <ChevronUp className="h-4 w-4 hidden group-data-[state=open]:block" />
+                                      </CollapsibleTrigger>
+                                      <CollapsibleContent className="mt-3">
+                                        <div className="space-y-4 pl-4">
+                                          <div>
+                                            <label className="block text-sm font-medium">Processing Filter</label>
+                                            <Input
+                                              name="processing_filter"
+                                              value={formData.processing_filter || ''}
+                                              onChange={handleInputChange}
+                                              placeholder="e.g. *.pdf or contains:report"
+                                              className="mt-1"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-sm font-medium">Processing Mode</label>
+                                            <Select
+                                              value={formData.processing_mode || 'none'}
+                                              onValueChange={(value) =>
+                                                setFormData((prev) => ({
+                                                  ...prev,
+                                                  processing_mode: value === 'none' ? null : value,
+                                                }))
+                                              }
+                                            >
+                                              <SelectTrigger className="mt-1 w-full">
+                                                <SelectValue placeholder="None" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="none">None</SelectItem>
+                                                <SelectItem value="extract">Extract Only</SelectItem>
+                                                <SelectItem value="transcribe">Transcribe</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          {formData.processing_mode === 'transcribe' && (
+                                            <div>
+                                              <label className="block text-sm font-medium">Transcription Engine</label>
+                                              <Select
+                                                value={formData.transcription_engine}
+                                                onValueChange={(value) =>
+                                                  setFormData((prev) => ({ ...prev, transcription_engine: value }))
+                                                }
+                                              >
+                                                <SelectTrigger className="mt-1 w-full">
+                                                  <SelectValue placeholder="Select engine" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="openai_whisper">OpenAI Whisper</SelectItem>
+                                                  <SelectItem value="google_chirp3">Google Chirp 3</SelectItem>
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                          )}
+
+                                          <div>
+                                            <label className="block text-sm font-medium">LLM Analyst (optional)</label>
+                                            <Select
+                                              value={formData.llm_analyst_id || 'none'}
+                                              onValueChange={(value) =>
+                                                setFormData((prev) => ({
+                                                  ...prev,
+                                                  llm_analyst_id: value === 'none' ? null : value,
+                                                }))
+                                              }
+                                            >
+                                              <SelectTrigger className="mt-1 w-full">
+                                                <SelectValue placeholder="Select an analyst" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="none">None</SelectItem>
+                                                {llmAnalysts.map((a) => (
+                                                  <SelectItem key={a.id} value={String(a.id)}>
+                                                    {a.name}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          {formData.processing_mode === 'transcribe' && (
+                                            <div className="flex items-center justify-between">
+                                              <label className="text-sm font-medium">Save In Conversation</label>
+                                              <Switch
+                                                checked={formData.save_in_conversation}
+                                                onCheckedChange={(checked) =>
+                                                  setFormData((prev) => ({ ...prev, save_in_conversation: checked }))
+                                                }
+                                              />
+                                            </div>
+                                          )}
+
+                                          <div className="flex flex-col gap-2">
+                                            <div className="flex items-center gap-2 justify-between">
+                                              <label className="text-sm font-medium">
+                                                Save Output in source location
+                                              </label>
+                                              <Switch
+                                                checked={formData.save_output}
+                                                onCheckedChange={(checked) =>
+                                                  setFormData((prev) => ({ ...prev, save_output: checked }))
+                                                }
+                                              />
+                                            </div>
+                                            {formData.save_output && (
+                                              <Input
+                                                placeholder="Output path (e.g. /storage/out/)"
+                                                value={formData.save_output_path}
+                                                onChange={(e) =>
+                                                  setFormData((prev) => ({ ...prev, save_output_path: e.target.value }))
+                                                }
+                                                className="flex-1"
+                                              />
+                                            )}
+                                          </div>
+                                        </div>
+                                      </CollapsibleContent>
+                                    </Collapsible>
                                   </div>
                                 </div>
                               )}
@@ -937,21 +1308,29 @@ const KnowledgeBaseForm: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="-mx-6 my-0 border-t border-gray-200" />
+                    <div className="my-0 border-t border-gray-200" />
 
                     <DynamicRagConfigSection
                       ragConfig={dynamicRagConfig}
                       onChange={handleRagConfigChange}
                       showOnlyRequired={true}
                       knowledgeId={editingItem?.id}
-                      initialLegraFinalize={Boolean((editingItem as KnowledgeItem & { legra_finalize?: boolean })?.legra_finalize)}
+                      initialLegraFinalize={Boolean(
+                        (editingItem as KnowledgeItem & { legra_finalize?: boolean })?.legra_finalize
+                      )}
                     />
                   </div>
 
                   <div className="flex justify-end gap-3">
-                    <Button type="button" variant="outline" onClick={() => navigate('/knowledge-base')}>Cancel</Button>
+                    <Button type="button" variant="outline" onClick={() => navigate('/knowledge-base')}>
+                      Cancel
+                    </Button>
                     <Button type="submit" disabled={loading || isUploading}>
-                      {loading || isUploading ? 'Saving...' : isEditMode ? 'Update Knowledge Base' : 'Create Knowledge Base'}
+                      {loading || isUploading
+                        ? 'Saving...'
+                        : isEditMode
+                          ? 'Update Knowledge Base'
+                          : 'Create Knowledge Base'}
                     </Button>
                   </div>
                 </div>
@@ -965,7 +1344,10 @@ const KnowledgeBaseForm: React.FC = () => {
         <DataSourceDialog
           isOpen={isDataSourceDialogOpen}
           onOpenChange={setIsDataSourceDialogOpen}
-          onDataSourceSaved={() => { setIsDataSourceDialogOpen(false); fetchSources(); }}
+          onDataSourceSaved={() => {
+            setIsDataSourceDialogOpen(false);
+            fetchSources();
+          }}
         />
       )}
 

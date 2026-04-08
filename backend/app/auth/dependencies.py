@@ -8,7 +8,7 @@ from fastapi_injector import Injected
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from starlette_context import context
 
-from app.auth.utils import api_key_header, has_permission, oauth2
+from app.auth.utils import api_key_header, current_user_is_admin, has_permission, oauth2
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -90,6 +90,15 @@ def permissions(*permissions: str) -> Callable[[Request], Awaitable[None]]:
             raise AppException(status_code=403, error_key=ErrorKey.NOT_AUTHORIZED)
 
     return wrapper
+
+
+async def require_admin_user():
+    """Caller must use after Depends(auth) so starlette_context has user_roles."""
+    if not current_user_is_admin():
+        raise AppException(
+            error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE,
+            status_code=403,
+        )
 
 
 def socket_auth(required_permissions: list[str]):

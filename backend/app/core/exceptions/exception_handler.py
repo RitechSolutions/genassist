@@ -35,8 +35,31 @@ def init_error_handlers(app):
 
     @app.exception_handler(IntegrityError)
     async def integrity_error_handler(request: Request, exc: IntegrityError):
-        orig = exc.orig  # asyncpg UniqueViolationError
-        if getattr(orig, "sqlstate", "") != "23505":  # not a duplicate-key error
+        orig = exc.orig
+        sqlstate = getattr(orig, "sqlstate", "")
+
+        # Role delete: SQLAlchemy may try to null FKs on user_roles/api_key_roles; role_id is NOT NULL.
+        if sqlstate == "23502":
+            detail_lower = (getattr(orig, "detail", "") or str(exc)).lower()
+            if "role_id" in detail_lower and (
+                "user_roles" in detail_lower or "api_key_roles" in detail_lower
+            ):
+                msg = get_error_message(
+                    request=request, error_key=ErrorKey.ROLE_CANNOT_DELETE_IN_USE
+                )
+                return JSONResponse(
+                    status_code=409,
+                    content=jsonable_encoder(
+                        {
+                            "error": msg,
+                            "error_code": 409,
+                            "error_key": ErrorKey.ROLE_CANNOT_DELETE_IN_USE.value,
+                            "error_detail": None,
+                        }
+                    ),
+                )
+
+        if sqlstate != "23505":  # not a duplicate-key error
             raise exc  # let FastAPI handle anything else
 
         #  asyncpg sometimes gives column_name directly

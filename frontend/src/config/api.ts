@@ -1,5 +1,14 @@
-import axios, { Method, AxiosRequestConfig, AxiosError } from "axios";
+import * as Sentry from "@sentry/react";
+import axios, { Method, AxiosRequestConfig, AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { setServerDown, setServerUp } from "@/config/serverStatus";
+
+function captureSentryIfApiHttpError(error: unknown): void {
+  if (!import.meta.env.VITE_SENTRY_DSN) return;
+  if (!(error instanceof AxiosError)) return;
+  const status = error.response?.status;
+  if (status === undefined || status < 400 || status >= 600) return;
+  Sentry.captureException(error, { tags: { source: "api", http_status: String(status) } });
+}
 
 const AUTH_KEYS = ["access_token", "refresh_token", "token_type", "isAuthenticated", "force_upd_pass_date", "tenant_id"] as const;
 
@@ -13,7 +22,11 @@ let failedQueue: Array<{
 
 const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach(({ resolve, reject }) => {
-    error ? reject(error) : resolve(token);
+    if (error) {
+      reject(error);
+    } else {
+      resolve(token);
+    }
   });
   failedQueue = [];
 };
@@ -30,7 +43,7 @@ const api = axios.create({
 
 // Interceptor: Request
 api.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
     const accessToken = localStorage.getItem("access_token");
     const tokenType = localStorage.getItem("token_type") || "Bearer";
     const tenantId = localStorage.getItem("tenant_id");
@@ -45,6 +58,16 @@ api.interceptors.request.use(
       config.headers["x-tenant-id"] = tenantId;
     }
 
+    // Let the runtime set multipart boundary; default application/json breaks FormData uploads
+    if (config.data instanceof FormData) {
+      const h = config.headers;
+      if (typeof h.delete === "function") {
+        h.delete("Content-Type");
+      } else {
+        delete (h as Record<string, unknown>)["Content-Type"];
+      }
+    }
+
     return config;
   },
   (error) => {
@@ -57,6 +80,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    captureSentryIfApiHttpError(error);
 
     // Handle 401 errors with token refresh
     if (error.response?.status === 401 && !originalRequest._retry) {

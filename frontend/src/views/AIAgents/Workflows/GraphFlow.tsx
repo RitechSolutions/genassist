@@ -166,9 +166,9 @@ const GraphFlowContent: React.FC = () => {
     setHasUnsavedChanges(hasChanged);
   }, [nodes, edges, workflow, isSettling, compareWorkflows]);
 
-  // Clipboard for node copy/paste
-  const clipboardRef = useRef<Node | null>(null);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  // Clipboard for node copy/paste (supports multi-node + edges)
+  const clipboardRef = useRef<{ nodes: Node[]; edges: typeof edges } | null>(null);
+  const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
 
   const loadWorkflow = useCallback(async (workflowId: string) => {
     const workflow = await getWorkflowById(workflowId);
@@ -412,16 +412,16 @@ const GraphFlowContent: React.FC = () => {
   };
 
   // Handle selection change
-  const onSelectionChange = useCallback(({ nodes: selectedNodes }) => {
-    if (selectedNodes && selectedNodes.length === 1) {
-      setSelectedNode(selectedNodes[0]);
-      
-      // Add animated-edge class to edges connected to selected node
-      const selectedNodeId = selectedNodes[0].id;
+  const onSelectionChange = useCallback(({ nodes: selNodes }) => {
+    setSelectedNodes(selNodes || []);
+
+    if (selNodes && selNodes.length >= 1) {
+      // Add animated-edge class to edges connected to any selected node
+      const selectedIds = new Set(selNodes.map((n: Node) => n.id));
       setEdges((eds) =>
         eds.map((edge) => {
-          const isConnected = 
-            edge.source === selectedNodeId || edge.target === selectedNodeId;
+          const isConnected =
+            selectedIds.has(edge.source) || selectedIds.has(edge.target);
           return {
             ...edge,
             className: isConnected ? 'animated-edge' : '',
@@ -429,7 +429,6 @@ const GraphFlowContent: React.FC = () => {
         })
       );
     } else {
-      setSelectedNode(null);
       // Remove animated-edge class from all edges
       setEdges((eds) =>
         eds.map((edge) => ({
@@ -471,74 +470,90 @@ const GraphFlowContent: React.FC = () => {
   );
 
   // Keyboard event handlers for copy/paste/undo/redo
+  // Copy selected nodes and their internal edges to clipboard
+  const copySelectedNodes = useCallback(() => {
+    if (selectedNodes.length === 0) return;
+
+    const selectedIds = new Set(selectedNodes.map((n) => n.id));
+    const connectedEdges = edges.filter(
+      (edge) => selectedIds.has(edge.source) && selectedIds.has(edge.target)
+    );
+
+    clipboardRef.current = {
+      nodes: selectedNodes.map((n) => ({ ...n })),
+      edges: connectedEdges.map((e) => ({ ...e })),
+    };
+  }, [selectedNodes, edges]);
+
+  // Paste nodes and edges from clipboard with new IDs
+  const pasteFromClipboard = useCallback(() => {
+    if (!clipboardRef.current || clipboardRef.current.nodes.length === 0) return;
+
+    const { nodes: copiedNodes, edges: copiedEdges } = clipboardRef.current;
+    const offset = 40;
+
+    const idMap = new Map<string, string>();
+    copiedNodes.forEach((node) => idMap.set(node.id, uuidv4()));
+
+    const newNodes: Node[] = copiedNodes.map((node) => {
+      const { id, selected, position, ...rest } = node;
+      return {
+        ...rest,
+        id: idMap.get(id)!,
+        position: {
+          x: (position?.x || 0) + offset,
+          y: (position?.y || 0) + offset,
+        },
+        data: {
+          ...node.data,
+          updateNodeData: node.data?.updateNodeData,
+        },
+        selected: false,
+      };
+    });
+
+    const newEdges = copiedEdges.map((edge) => ({
+      ...edge,
+      id: uuidv4(),
+      source: idMap.get(edge.source)!,
+      target: idMap.get(edge.target)!,
+      selected: false,
+      className: '',
+    }));
+
+    setNodes((nds) => [...nds, ...newNodes]);
+    setEdges((eds) => [...eds, ...newEdges]);
+    clipboardRef.current = null;
+  }, [setNodes, setEdges]);
+
+  // Keyboard shortcuts for canvas interactions
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle copy/paste if ReactFlow canvas is focused
       const target = e.target as HTMLElement;
       const isReactFlowCanvas =
         target.closest(".react-flow__viewport") ||
         target.closest(".react-flow__pane") ||
         target.closest(".react-flow__renderer");
 
-      if (!isReactFlowCanvas) {
-        return;
-      }
+      if (!isReactFlowCanvas) return;
 
-      // Undo (Ctrl+Z or Cmd+Z)
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
-        return;
-      }
-
-      // Redo (Ctrl+Shift+Z or Cmd+Shift+Z)
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "z") {
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "z") {
         e.preventDefault();
         redo();
-        return;
-      }
-
-      // Copy (Ctrl+C or Cmd+C)
-      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
-        if (selectedNode) {
-          e.preventDefault(); // Prevent default browser copy
-          clipboardRef.current = { ...selectedNode };
-        }
-      }
-      // Paste (Ctrl+V or Cmd+V)
-      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
-        if (clipboardRef.current) {
-          e.preventDefault(); // Prevent default browser paste
-          const copiedNode = clipboardRef.current;
-          // Create a new node with a new ID and offset position
-          const newId = uuidv4();
-          const offset = 40;
-          const newPosition = {
-            x: (copiedNode.position?.x || 0) + offset,
-            y: (copiedNode.position?.y || 0) + offset,
-          };
-          // Remove selected, parent, and source/target handles if present
-          const { id, selected, position, ...rest } = copiedNode;
-          const newNode: Node = {
-            ...rest,
-            id: newId,
-            position: newPosition,
-            data: {
-              ...copiedNode.data,
-              // If updateNodeData is a function, keep it
-              updateNodeData: copiedNode.data?.updateNodeData,
-            },
-            selected: false,
-          };
-          setNodes((nds) => [...nds, newNode]);
-          // Clear the clipboard after pasting
-          clipboardRef.current = null;
-        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        e.preventDefault();
+        copySelectedNodes();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        e.preventDefault();
+        pasteFromClipboard();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedNode, setNodes, undo, redo]);
+  }, [copySelectedNodes, pasteFromClipboard, undo, redo]);
 
   return (
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>

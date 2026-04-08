@@ -27,6 +27,7 @@ class ErrorKey(Enum):
     MISSING_FIELD_UPLOAD_AUDIO = "missing_field_upload_audio"
     USERNAME_ALREADY_EXISTS = "USERNAME_ALREADY_EXISTS"
     USER_NOT_FOUND = "USER_NOT_FOUND"
+    USER_CANNOT_DELETE_SELF = "USER_CANNOT_DELETE_SELF"
     TRANSCRIPT_PARSE_ERROR = "TRANSCRIPT_PARSE_ERROR"
     INVALID_USERNAME_OR_PASSWORD = "INVALID_USERNAME_OR_PASSWORD"
     INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS"
@@ -46,6 +47,7 @@ class ErrorKey(Enum):
     GPT_TRANSCRIPT_QUESTION_ERROR = "GPT_TRANSCRIPT_QUESTION_ERROR"
     USER_TYPE_NOT_FOUND = "USER_TYPE_NOT_FOUND"
     ROLE_NOT_FOUND = "ROLE_NOT_FOUND"
+    ROLE_CANNOT_DELETE_IN_USE = "ROLE_CANNOT_DELETE_IN_USE"
     INVALID_USER = "INVALID_USER"
     API_KEY_NOT_FOUND = "API_KEY_NOT_FOUND"
     API_KEY_NAME_EXISTS = "API_KEY_NAME_EXISTS"
@@ -123,6 +125,8 @@ class ErrorKey(Enum):
     ERROR_ACTIVE_JOB_EVENTS_SYNC = "ERROR_ACTIVE_JOB_EVENTS_SYNC"
     ERROR_JOB_EVENTS_SYNC = "ERROR_ERROR_JOB_EVENTS_SYNC"
     ERROR_JOB_EVENT_BY_ID = "ERROR_JOB_EVENT_BY_ID"
+    ERROR_GENERATE_TRAINING_FILE = "ERROR_GENERATE_TRAINING_FILE"
+    ERROR_TRAINING_FILE_TOO_LARGE = "ERROR_TRAINING_FILE_TOO_LARGE"
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
     CUSTOMER_ALREADY_EXISTS = "CUSTOMER_ALREADY_EXISTS"
     RECAPTCHA_VERIFICATION_FAILED = "RECAPTCHA_VERIFICATION_FAILED"
@@ -139,6 +143,7 @@ class ErrorKey(Enum):
     LANGUAGE_ALREADY_EXISTS = "LANGUAGE_ALREADY_EXISTS"
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
     EMPTY_MESSAGES_FOR_CONVERSATION = "EMPTY_MESSAGES"
+    TEST_CASES_HAVE_RESULTS = "TEST_CASES_HAVE_RESULTS"
 
 
 ERROR_MESSAGES = {
@@ -159,6 +164,7 @@ ERROR_MESSAGES = {
         ErrorKey.MISSING_FIELD_UPLOAD_AUDIO: "Missing file, agent_id, or recorded_at.",
         ErrorKey.USERNAME_ALREADY_EXISTS: "Username already exists.",
         ErrorKey.USER_NOT_FOUND: "User not found.",
+        ErrorKey.USER_CANNOT_DELETE_SELF: "You cannot delete your own account.",
         ErrorKey.OPERATOR_NOT_FOUND: "Operator not found.",
         ErrorKey.TRANSCRIPT_PARSE_ERROR: "There was an error parsing the transcript. Summary, title or metrics may be missing.",
         ErrorKey.INVALID_USERNAME_OR_PASSWORD: "Invalid username or password.",
@@ -179,6 +185,10 @@ ERROR_MESSAGES = {
         ErrorKey.GPT_TRANSCRIPT_QUESTION_ERROR: "Error while calling GPT for question answering.",
         ErrorKey.USER_TYPE_NOT_FOUND: "User type not found.",
         ErrorKey.ROLE_NOT_FOUND: "Role not found.",
+        ErrorKey.ROLE_CANNOT_DELETE_IN_USE: (
+            "This role cannot be deleted while it is assigned to users or API keys. "
+            "Remove those assignments first."
+        ),
         ErrorKey.INVALID_USER: "Invalid user.",
         ErrorKey.API_KEY_NOT_FOUND: "Api key not found.",
         ErrorKey.API_KEY_NAME_EXISTS: "An API key with this name already exists.",
@@ -253,6 +263,8 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_JOB_EVENTS: "There was an error fetching job events.",
         ErrorKey.ERROR_ACTIVE_JOB_EVENTS_SYNC: "There was an error syncing active job events.",
         ErrorKey.ERROR_JOB_EVENTS_SYNC: "There was an error syncing job events.",
+        ErrorKey.ERROR_GENERATE_TRAINING_FILE: "Failed to generate training file from conversations.",
+        ErrorKey.ERROR_TRAINING_FILE_TOO_LARGE: "Generated training file exceeds the 512 MB limit. Select fewer conversations.",
         ErrorKey.ERROR_JOB_EVENT_BY_ID: "There was an error fetching job events for this job id.",
         ErrorKey.CUSTOMER_NOT_FOUND: "Customer not found.",
         ErrorKey.CUSTOMER_ALREADY_EXISTS: "A customer with this external ID already exists.",
@@ -270,7 +282,9 @@ ERROR_MESSAGES = {
         ErrorKey.LANGUAGE_ALREADY_EXISTS: "A language with this code already exists.",
         ErrorKey.INTERNAL_SERVER_ERROR: "An internal server error occurred. Please try again later.",
         ErrorKey.EMPTY_MESSAGES_FOR_CONVERSATION: "No messages were found for this conversation.",
-    },
+        ErrorKey.TEST_CASES_HAVE_RESULTS: "This dataset has cases with existing evaluation results. "
+                                          "Delete the related evaluations first, then try again.",
+        },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
