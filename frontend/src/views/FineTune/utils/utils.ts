@@ -37,6 +37,14 @@ export const formatNumber = (value: unknown): string => {
   return new Intl.NumberFormat().format(Number(value));
 };
 
+/** Tailwind class for accuracy percentage: green ≥80%, amber ≥60%, red <60%. */
+export function getAccuracyColor(percent: number | null): string {
+  if (percent === null || !Number.isFinite(percent)) return "text-foreground";
+  if (percent >= 80) return "text-emerald-600";
+  if (percent >= 60) return "text-amber-600";
+  return "text-rose-600";
+}
+
 const toDate = (value: unknown): Date | null => {
   if (!value) return null;
   if (value instanceof Date) return value;

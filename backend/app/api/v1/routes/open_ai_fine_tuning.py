@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import UUID
 from app.core.permissions.constants import Permissions as P
 from fastapi import APIRouter, Depends, File, Form, UploadFile, Query
+from fastapi.responses import Response
 from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.auth.utils import get_current_user_id
@@ -10,6 +11,7 @@ from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
 from app.schemas.open_ai_fine_tuning import (
     CreateFineTuningJobRequest,
     FineTuningJobResponse,
+    GenerateTrainingFileRequest,
 )
 from app.schemas.user import UserUpdate
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
@@ -124,6 +126,26 @@ async def cancel_fine_tuning_job(
     return await service.cancel_fine_tuning_job(job_id)
 
 
+@router.get("/files/{file_id}/content", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.OpenAI.READ_FILE))
+])
+async def download_file(
+    file_id: str,
+    service: OpenAIFineTuningService = Injected(OpenAIFineTuningService)
+):
+    """
+    Download the raw content of an OpenAI file (e.g. training/validation JSONL).
+    """
+    logger.info(f"User {get_current_user_id()} downloading file: {file_id}")
+    content = await service.client.files.content(file_id)
+    return Response(
+        content=content.read(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{file_id}.jsonl"'},
+    )
+
+
 @router.delete("/files/{file_id}", dependencies=[
     Depends(auth),
     Depends(permissions(P.OpenAI.DELETE_FILE))
@@ -166,3 +188,48 @@ async def delete_fine_tuned_model(
     """
     logger.info(f"User {get_current_user_id()} deleting fine-tuned model: {model_id}")
     return await service.delete_fine_tuned_model(model_id)
+
+
+@router.post("/fine-tuning/generate-from-conversations", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.OpenAI.WRITE_FILE))
+])
+async def generate_training_file_from_conversations(
+    request: GenerateTrainingFileRequest,
+    service: OpenAIFineTuningService = Injected(OpenAIFineTuningService),
+):
+    """
+    Generate a JSONL fine-tuning training file from past conversation logs.
+
+    Extracts the system prompt and tool schemas from the specified agent's workflow,
+    then builds one training example per agent response found in each conversation.
+
+    When upload_to_openai=false (default), returns the JSONL as a file download.
+    When upload_to_openai=true, uploads to OpenAI and returns the file record.
+    """
+    logger.info(
+        f"User {get_current_user_id()} generating training file "
+        f"from {len(request.conversation_ids)} conversations"
+    )
+
+    jsonl_bytes = await service.generate_training_file_from_conversations(request)
+
+    if not request.upload_to_openai:
+        return Response(
+            content=jsonl_bytes,
+            media_type="application/jsonl",
+            headers={"Content-Disposition": 'attachment; filename="training_data.jsonl"'},
+        )
+
+    filename = "training_conversations.jsonl"
+    response = await service.client.files.create(
+        file=(filename, jsonl_bytes),
+        purpose="fine-tune",
+    )
+    db_record = await service.repository.create_file_record(
+        openai_file_id=response.id,
+        filename=response.filename,
+        purpose=response.purpose,
+        bytes=response.bytes,
+    )
+    return db_record.to_dict()

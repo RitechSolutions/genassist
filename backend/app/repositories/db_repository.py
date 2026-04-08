@@ -1,12 +1,15 @@
 import logging
 from typing import Generic, List, Optional, Sequence, Type, TypeVar
 from uuid import UUID
-from sqlalchemy import select, update, asc, desc
+
+from sqlalchemy import asc, desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Load, selectinload
-from app.db.base import Base
-from app.schemas.filter import BaseFilterModel
 
+from app.db.base import Base
+from app.db.models.user import UserModel
+from app.db.models.user_role import UserRoleModel
+from app.schemas.filter import BaseFilterModel
 
 logger = logging.getLogger(__name__)
 OrmModelT = TypeVar("OrmModelT", bound=Base)
@@ -146,6 +149,11 @@ class DbRepository(Generic[OrmModelT]):
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
+    async def get_by_role_id(self, role_id: UUID) -> List[UserModel]:
+        stmt = select(UserModel).join(UserRoleModel).where(UserRoleModel.role_id == role_id)
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
 
     # ---------- WRITE ----------
     async def create(self, obj: OrmModelT) -> OrmModelT:
@@ -173,7 +181,7 @@ class DbRepository(Generic[OrmModelT]):
         await self.db.execute(
                 update(obj.__class__)
                 .where(obj.__class__.id == obj.id)
-                .values(is_deleted=True)
+                .values(is_deleted=1)
                 .execution_options(synchronize_session="fetch")
                 )
         await self.db.commit()

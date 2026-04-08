@@ -38,9 +38,13 @@ import {
 import {
   DATA_MAPPER_NODE_DEFINITION,
   TEMPLATE_NODE_DEFINITION,
+  GUARDRAIL_PROVENANCE_NODE_DEFINITION,
+  GUARDRAIL_NLI_NODE_DEFINITION,
 } from "./utils/definitions";
 import TemplateNode from "./utils/templateNode";
 import DataMapperNode from "./utils/dataMapperNode";
+import GuardrailProvenanceNode from "./utils/guardrailProvenanceNode";
+import GuardrailNliNode from "./utils/guardrailNliNode";
 import SetStateNode from "./chat/setStateNode";
 import SlackOutputNode from "./integrations/slackOutputNode";
 import ZendeskTicketNode from "./integrations/zendeskTicketNode";
@@ -104,6 +108,8 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(TOOL_BUILDER_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(DATA_MAPPER_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(GUARDRAIL_PROVENANCE_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(GUARDRAIL_NLI_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(SET_STATE_NODE_DEFINITION);
 
@@ -151,6 +157,8 @@ export const getNodeTypes = () => {
     routerNode: RouterNode,
     aggregatorNode: AggregatorNode,
     dataMapperNode: DataMapperNode,
+    guardrailProvenanceNode: GuardrailProvenanceNode,
+    guardrailNliNode: GuardrailNliNode,
     setStateNode: SetStateNode,
     calendarEventNode: CalendarEventNode,
     jiraNode: JiraNode,

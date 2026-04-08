@@ -3,6 +3,7 @@ import logging
 from langchain_core.language_models import BaseChatModel
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
+from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.agent_utils import (
     create_tool_descriptions,
     execute_tool_safely,
@@ -78,12 +79,17 @@ class ReActAgent(BaseToolAgent):
 
         reasoning_steps = []
         tools_used = []
+        llm_usage_entries = []
 
         for iteration in range(self.max_iterations):
             try:
                 response = await self.llm_model.ainvoke(
                     [{"role": "user", "content": current_prompt}])
                 response_content = self._extract_response_content(response)
+
+                usage = extract_usage_from_aimessage(response)
+                if usage:
+                    llm_usage_entries.append(usage)
 
                 if self.verbose:
                     logger.debug(
@@ -100,13 +106,16 @@ class ReActAgent(BaseToolAgent):
                 # Check for Final Answer
                 final_answer = extract_final_answer(response_content)
                 if final_answer:
-                    return create_success_response(
+                    result = create_success_response(
                         final_answer,
                         self._get_agent_name(),
                         iterations=iteration + 1,
                         reasoning_steps=reasoning_steps,
                         tools_used=tools_used
                     )
+                    if llm_usage_entries:
+                        result["llm_usage"] = llm_usage_entries
+                    return result
 
                 # Parse action
                 parsed = parse_react_action(response_content)
@@ -132,7 +141,7 @@ class ReActAgent(BaseToolAgent):
                     tool = self.tool_map[action]
                     if hasattr(tool, 'return_direct') and tool.return_direct:
                         # Return tool result directly, ending the ReAct cycle
-                        return create_success_response(
+                        result = create_success_response(
                             str(observation),
                             self._get_agent_name(),
                             iterations=iteration + 1,
@@ -141,6 +150,9 @@ class ReActAgent(BaseToolAgent):
                             return_direct=True,
                             tool=action
                         )
+                        if llm_usage_entries:
+                            result["llm_usage"] = llm_usage_entries
+                        return result
 
                 # Update prompt with observation
                 current_prompt += f"\n\n{response_content}\nObservation: {observation}\n"
@@ -148,20 +160,26 @@ class ReActAgent(BaseToolAgent):
             except Exception as e:
                 logger.error(
                     f"Error in ReAct cycle iteration {iteration}: {str(e)}")
-                return create_error_response(
+                result = create_error_response(
                     f"Error in iteration {iteration}: {str(e)}",
                     self._get_agent_name(),
                     reasoning_steps=reasoning_steps,
                     tools_used=tools_used
                 )
+                if llm_usage_entries:
+                    result["llm_usage"] = llm_usage_entries
+                return result
 
         # Max iterations reached
-        return create_error_response(
+        result = create_error_response(
             f"Max iterations ({self.max_iterations}) reached without final answer",
             self._get_agent_name(),
             reasoning_steps=reasoning_steps,
             tools_used=tools_used
         )
+        if llm_usage_entries:
+            result["llm_usage"] = llm_usage_entries
+        return result
 
     # ==================== PUBLIC API ====================
 

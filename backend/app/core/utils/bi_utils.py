@@ -209,6 +209,12 @@ async def validate_upload_file_size(
     return size
 
 
+def validate_bytes_size(data: bytes, max_size: int = 512 * 1024 * 1024) -> None:
+    """Raise AppException if data exceeds max_size bytes (default 512 MB)."""
+    if len(data) > max_size:
+        raise AppException(error_key=ErrorKey.ERROR_TRAINING_FILE_TOO_LARGE)
+
+
 def calculate_word_count(
     transcript_segments: list[TranscriptSegmentInput], target: str
 ) -> int:
@@ -439,7 +445,21 @@ def filter_conversation_messages_create_time(
     return query
 
 
-def increment_feedback(conversation: ConversationModel, transcript_feedback: TranscriptSegmentFeedback):
+def increment_feedback(
+    conversation: ConversationModel,
+    transcript_feedback: TranscriptSegmentFeedback,
+    previous_feedback: str | None = None,
+):
+    thumbs_up_values = {f.value for f in (Feedback.GOOD, Feedback.VERY_GOOD)}
+    thumbs_down_values = {f.value for f in (Feedback.BAD, Feedback.VERY_BAD)}
+
+    # Decrement the old count if this is an update (not a new vote)
+    if previous_feedback in thumbs_up_values:
+        conversation.thumbs_up_count = max(0, conversation.thumbs_up_count - 1)
+    elif previous_feedback in thumbs_down_values:
+        conversation.thumbs_down_count = max(0, conversation.thumbs_down_count - 1)
+
+    # Increment the new count
     if transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD):
         conversation.thumbs_up_count += 1
     elif transcript_feedback.feedback in (Feedback.BAD, Feedback.VERY_BAD):

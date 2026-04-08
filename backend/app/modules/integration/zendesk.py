@@ -1,6 +1,8 @@
-from typing import Dict, Any, Optional, List, Tuple
-from datetime import timedelta
+import asyncio
 import logging
+from datetime import timedelta
+from typing import Any, Dict, List, Optional, Tuple
+
 import httpx
 from fastapi import HTTPException
 
@@ -22,7 +24,15 @@ class ZendeskConnector:
         email: Optional[str] = None,
         api_token: Optional[str] = None,
     ):
-        self.subdomain = subdomain or settings.ZENDESK_SUBDOMAIN
+        raw = (subdomain or settings.ZENDESK_SUBDOMAIN or "").strip()
+        # Normalize subdomain: ensure it has .zendesk.com (matches connection_tester)
+        if not raw:
+            self.subdomain = ""
+        elif raw.endswith(".zendesk.com"):
+            self.subdomain = raw
+        else:
+            self.subdomain = f"{raw}.zendesk.com"
+
         self.email = email or settings.ZENDESK_EMAIL
         self.api_token = api_token or settings.ZENDESK_API_TOKEN
         self.base_url = f"https://{self.subdomain}/api/v2"
@@ -39,8 +49,15 @@ class ZendeskConnector:
         params: Optional[Dict[str, Any]] = None,
         timeout: float = 10.0,
     ) -> Dict[str, Any]:
-        """Internal method to make HTTP requests to Zendesk API."""
-        async with httpx.AsyncClient(auth=self._auth, timeout=timeout) as client:
+        """Internal method to make HTTP requests to Zendesk API.
+        Uses trust_env=True so HTTP_PROXY/HTTPS_PROXY from env are respected (e.g. in Celery worker).
+        """
+        async with httpx.AsyncClient(
+            auth=self._auth,
+            timeout=timeout,
+            trust_env=True,  # Use HTTP_PROXY/HTTPS_PROXY from environment
+            follow_redirects=True,
+        ) as client:
             try:
                 response = await client.request(method, url, json=json, params=params)
                 response.raise_for_status()
@@ -50,11 +67,19 @@ class ZendeskConnector:
                     f"Zendesk API error [{e.response.status_code}]: {e.response.text}"
                 )
                 raise HTTPException(
-                    status_code=e.response.status_code, detail="Zendesk API error"
+                    status_code=e.response.status_code,
+                    detail=e.response.text,
                 ) from e
             except httpx.RequestError as e:
-                logger.error(f"Network error during Zendesk API call: {e}")
-                raise HTTPException(status_code=500, detail="Zendesk API network error") from e
+                logger.error(
+                    "Zendesk network error (check worker outbound access, proxy, DNS): %s",
+                    e,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Zendesk API network error: {type(e).__name__}: {e}",
+                ) from e
 
     async def create_ticket(
         self,
@@ -261,54 +286,94 @@ class ZendeskConnector:
 
         return tickets_to_rate
 
+    @staticmethod
+    async def test_connection(cd: dict) -> dict:
+        """Test Zendesk connectivity using the /users/me endpoint."""
+        subdomain = cd.get("subdomain", "")
+        if not subdomain.endswith(".zendesk.com"):
+            subdomain = f"{subdomain}.zendesk.com"
+        connector = ZendeskConnector(
+            subdomain=subdomain,
+            email=cd.get("email"),
+            api_token=cd.get("api_token"),
+        )
+        await connector._make_request("GET", f"{connector.base_url}/users/me.json")
+        return {"success": True, "message": "Successfully connected to Zendesk."}
+
+    async def _fetch_articles_paginated(
+        self, start_url: str, params: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        all_articles: List[Dict[str, Any]] = []
+        url: Optional[str] = start_url
+        page_params = dict(params) if params else {}
+        while url:
+            try:
+                result = await self._make_request("GET", url, params=page_params, timeout=30.0)
+                articles = result.get("articles", [])
+                all_articles.extend(articles)
+                url = result.get("next_page")
+                if url:
+                    page_params = {}
+                logger.info(
+                    f"Fetched {len(all_articles)} articles from Zendesk (total: {len(all_articles)})"
+                )
+            except (httpx.HTTPStatusError, httpx.RequestError) as e:
+                logger.error(f"Error fetching articles: {e}")
+                break
+        return all_articles
+
     async def fetch_articles(
         self,
         locale: Optional[str] = None,
-        category_id: Optional[int] = None,
+        category_ids: Optional[List[int]] = None,
         section_id: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Fetch all articles from Zendesk Help Center.
         Args:
             locale: Optional locale filter (e.g., "en-us")
-            category_id: Optional category ID to filter articles
+            category_ids: Optional category IDs to filter articles (merged, de-duplicated by id)
             section_id: Optional section ID to filter articles
         Returns:
             List of article dictionaries
         """
-        all_articles = []
-        url: Optional[str] = f"{self.help_center_url}/articles.json"
 
-        if category_id:
-            url = f"{self.help_center_url}/categories/{category_id}/articles.json"
-            logger.info("Fetching articles from category ID", extra={"category_id": category_id})
+        base_url = f"{self.help_center_url}/{locale}" if locale else self.help_center_url
 
         if section_id:
-            url = f"{self.help_center_url}/sections/{section_id}/articles.json"
-            logger.info("Fetching articles from section ID", extra={"section_id": section_id})
+            start_url = f"{base_url}/sections/{section_id}/articles.json"
+            logger.debug("Fetching articles from section ID", {"section_id": section_id})
+            all_articles = await self._fetch_articles_paginated(start_url)
+        elif category_ids:
+            seen_ids: set[Any] = set()
+            all_articles = []
+            # Dedupe IDs; dict.fromkeys preserves first-seen order (set() does not).
+            unique_category_ids = list(dict.fromkeys(category_ids))
+            sem = asyncio.Semaphore(10)
 
-        params = {}
-        if locale:
-            params["locale"] = locale
+            # Fetch articles from one category
+            async def _fetch_one_category(cid: int) -> List[Dict[str, Any]]:
+                start_url = f"{base_url}/categories/{cid}/articles.json"
+                logger.info("Category Id: %s", cid)
+                logger.debug("Fetching articles from category ID", {"category_id": cid})
+                async with sem:
+                    return await self._fetch_articles_paginated(start_url)
 
-        while url:
-            try:
-                result = await self._make_request("GET", url, params=params, timeout=30.0)
-                articles = result.get("articles", [])
-                all_articles.extend(articles)
-
-                # Check for next page
-                url = result.get("next_page")
-                if url:
-                    # Remove params from next_page URL as it's already included
-                    params = {}
-
-                logger.info(
-                    f"Fetched {len(articles)} articles from Zendesk (total: {len(all_articles)})"
-                )
-            except (httpx.HTTPStatusError, httpx.RequestError) as e:
-                logger.error(f"Error fetching articles: {e}")
-                break
+            batches = await asyncio.gather(
+                *[_fetch_one_category(cid) for cid in unique_category_ids]
+            )
+            for batch in batches:
+                for article in batch:
+                    aid = article.get("id")
+                    if aid is not None:
+                        if aid in seen_ids:
+                            continue
+                        seen_ids.add(aid)
+                    all_articles.append(article)
+        else:
+            all_articles = await self._fetch_articles_paginated(
+                f"{self.help_center_url}/articles.json"
+            )
 
         logger.info(f"Total articles fetched: {len(all_articles)}")
         return all_articles

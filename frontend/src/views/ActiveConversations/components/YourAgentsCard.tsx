@@ -168,7 +168,7 @@ export function YourAgentsCard({ agents: propAgents, loading: propLoading, onVie
                     <div className="flex gap-1 items-center">
                       <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
                       <span className="text-xs text-muted-foreground">
-                        ${agent.costPerConversation.toFixed(2)}
+                        ${agent.costPerConversation.toFixed(4)}
                       </span>
                     </div>
                   )}

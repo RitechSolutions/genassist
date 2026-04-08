@@ -60,6 +60,24 @@ export interface AgentInfoResponse {
   agent_available_languages?: string[];
 }
 
+/** Per-locale agent strings (welcome, quick queries, thinking) from GET .../agent-chat-locales */
+export interface AgentChatLocaleContent {
+  welcome_message?: string | null;
+  welcome_title?: string | null;
+  input_disclaimer_html?: string | null;
+  possible_queries?: string[];
+  thinking_phrases?: string[];
+}
+
+export interface AgentChatLocalesResponse {
+  agent_id?: string;
+  agent_available_languages?: string[];
+  agent_thinking_phrase_delay?: number;
+  agent_chat_input_metadata?: Record<string, unknown>;
+  agent_has_welcome_image?: boolean;
+  locales: Record<string, AgentChatLocaleContent>;
+}
+
 // Agent welcome/config info
 export interface AgentWelcomeData {
   title?: string | null;
@@ -133,6 +151,8 @@ export interface GenAgentChatProps {
   agentName?: string; // Custom agent name to display instead of "Agent"
   logoUrl?: string; // Custom logo URL to display in header instead of default logo
   mode?: "embedded" | "floating" | "fullscreen";
+  /** Called when the user presses Escape in `mode="fullscreen"`. Use this to switch the parent back to floating/embedded. */
+  onExitFullscreen?: () => void;
   floatingConfig?: {
     position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
     offset?: { x?: number; y?: number };

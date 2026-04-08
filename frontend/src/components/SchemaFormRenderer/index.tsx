@@ -1,7 +1,10 @@
+import { Copy, Eraser } from "lucide-react";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import { FileUploader } from "@/components/FileUploader";
+import { TagsFieldInput } from "@/components/TagsFieldInput";
+import { cn } from "@/helpers/utils";
 import {
   Select,
   SelectContent,
@@ -10,14 +13,16 @@ import {
   SelectValue,
 } from "@/components/select";
 import {
-  DataSourceConfig,
+  ConnectionDataValue,
   DataSourceField,
 } from "@/interfaces/dataSource.interface";
+import toast from "react-hot-toast";
+import { Button } from "../button";
 
 interface SchemaFormRendererProps {
-  schema: DataSourceConfig;
-  connectionData: Record<string, string | number | boolean>;
-  onChange: (fieldName: string, value: string | number | boolean) => void;
+  schema: { fields: DataSourceField[] };
+  connectionData: Record<string, ConnectionDataValue>;
+  onChange: (fieldName: string, value: ConnectionDataValue) => void;
   showAdvanced: boolean;
   advancedOnly?: boolean;
 }
@@ -32,6 +37,38 @@ export function SchemaFormRenderer({
   const isFieldVisible = (field: DataSourceField): boolean => {
     if (!field.conditional) return true;
     return connectionData[field.conditional.field] === field.conditional.value;
+  };
+
+  const clearButton = (field: DataSourceField) => {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={(e) => {
+          onChange(field.name, "");
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      >
+        <Eraser className="w-4 h-4" />
+      </Button>
+    );
+  };
+
+  const copyButton = (field: DataSourceField, value: ConnectionDataValue) => {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+      >
+        <Copy className="w-4 h-4" onClick={(e) => {
+          navigator.clipboard.writeText(connectionData[field.name] as string);
+          toast.success("Copied to clipboard");
+          e.preventDefault();
+          e.stopPropagation();
+        }} />
+      </Button>
+    );
   };
 
   const renderField = (field: DataSourceField) => {
@@ -69,12 +106,16 @@ export function SchemaFormRenderer({
 
       case "password":
         return (
+          <div className="flex flex-row items-center gap-2">
           <Input
             type="password"
             value={value as string}
             onChange={(e) => onChange(field.name, e.target.value)}
             placeholder={field.label}
           />
+          {clearButton(field)}
+          {/* {copyButton(field, value)} */}
+          </div>
         );
 
       case "boolean":
@@ -82,6 +123,17 @@ export function SchemaFormRenderer({
           <Switch
             checked={Boolean(value)}
             onCheckedChange={(checked) => onChange(field.name, checked)}
+          />
+        );
+
+      case "tags":
+        return (
+          <TagsFieldInput
+            id={field.name}
+            value={connectionData[field.name]}
+            fieldDefault={field.default}
+            placeholder={field.placeholder || field.label}
+            onChange={(next) => onChange(field.name, next)}
           />
         );
 

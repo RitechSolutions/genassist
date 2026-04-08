@@ -126,6 +126,21 @@ class AgentExecutionDailyStatsModel(Base):
         default=0,
     )
 
+    total_input_tokens: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    total_output_tokens: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    total_cost_usd: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
     last_aggregated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

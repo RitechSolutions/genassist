@@ -3,10 +3,10 @@ from inspect import signature
 from typing import Any, Callable, cast
 from uuid import UUID
 
-from redis.asyncio import Redis
-from redis.exceptions import ResponseError
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
+from redis.asyncio import Redis
+from redis.exceptions import ResponseError
 from starlette.datastructures import State
 
 logger = logging.getLogger(__name__)
@@ -168,6 +168,9 @@ async def invalidate_agent_cache(agent_id: UUID, user_id: UUID):
     await invalidate_cache("agents:get_by_id_full", agent_id)
     await invalidate_cache("agents:get_by_user_id", user_id)
 
+async def invalidate_only_agent_cache(agent_id: UUID):
+    await invalidate_cache("agents:get_by_id_full", agent_id)
+
 async def clear_conversation_memory_cache(conversation_id: UUID) -> None:
     """
     Delete the Redis keys written by RedisConversationMemory for a conversation.
@@ -204,3 +207,6 @@ async def invalidate_llm_provider_cache(provider_id: UUID | None):
         await invalidate_cache("llm_providers:get_by_id", str(provider_id))
 
     await invalidate_cache("llm_providers:get_all", None)
+
+async def invalidate_user_cache(user_id: UUID):
+    await invalidate_cache("users:get_by_id_for_auth", user_id)

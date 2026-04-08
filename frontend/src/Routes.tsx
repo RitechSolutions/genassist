@@ -29,11 +29,13 @@ import FineTuneJobDetail from "@/views/FineTune/pages/FineTuneJobDetail";
 import Tools from "@/views/Tools/Index";
 import CreateTool from "@/views/Tools/pages/CreateTool";
 import KnowledgeBase from "@/views/KnowledgeBase/Index";
+import KnowledgeBaseForm from "@/views/KnowledgeBase/pages/KnowledgeBaseForm";
 import MLModels from "@/views/MLModels/Index";
 import MLModelDetail from "@/views/MLModels/components/MLModelDetail";
 import { FeatureFlags } from "./views/Settings/pages/FeatureFlags";
 import { Translations } from "./views/Settings/pages/Translations";
 import { Languages } from "./views/Settings/pages/Languages";
+import { FileManagerFiles } from "./views/Settings/pages/FileManagerFiles";
 import { useFeatureFlag } from "./context/FeatureFlagContext";
 import { GlobalChat } from "./components/GlobalChat";
 import ServerDownPage from "@/components/ServerDownPage";
@@ -42,6 +44,11 @@ import { GmailOAuthCallback } from "./views/DataSources/components/GmailOAuthCal
 import { Office365OAuthCallback  } from "./views/DataSources/components/Office365OAuthCallback";
 import WebhookListPage from "@/views/Webhooks/pages/Webhooks";
 import MCPServersPage from "@/views/MCPServers/pages/MCPServers";
+import TestSuitesIndex from "@/views/TestSuites/Index";
+import DatasetsPage from "@/views/TestSuites/pages/DatasetsPage";
+import EvaluationsPage from "@/views/TestSuites/pages/EvaluationsPage";
+import DatasetDetailPage from "@/views/TestSuites/pages/DatasetDetailPage";
+import EvaluationDetailPage from "@/views/TestSuites/pages/EvaluationDetailPage";
 import Privacy from "@/views/Privacy";
 import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
@@ -207,6 +214,14 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "settings/file-manager",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:file"]}>
+                  <FileManagerFiles />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "users",
               element: (
                 <ProtectedRoute requiredPermissions={["read:user"]}>
@@ -335,6 +350,22 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "knowledge-base/new",
+              element: (
+                <ProtectedRoute requiredPermissions={["*", "update:knowledge_base"]}>
+                  <KnowledgeBaseForm />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "knowledge-base/edit/:id",
+              element: (
+                <ProtectedRoute requiredPermissions={["*", "update:knowledge_base"]}>
+                  <KnowledgeBaseForm />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "ml-models",
               element: (
                 <ProtectedRoute requiredPermissions={["*", "update:ml_model"]}>
@@ -347,6 +378,46 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["*", "update:ml_model"]}>
                   <MLModelDetail />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tests",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <TestSuitesIndex />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tests/datasets",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <DatasetsPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tests/datasets/:datasetId",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <DatasetDetailPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tests/evaluations",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <EvaluationsPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tests/evaluations/:evaluationId",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <EvaluationDetailPage />
                 </ProtectedRoute>
               ),
             },

@@ -2,9 +2,11 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from injector import inject
+
 import jwt
+from injector import inject
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+
 from app.auth.utils import verify_password
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -12,7 +14,6 @@ from app.schemas.api_key import ApiKeyInternal
 from app.schemas.user import UserReadAuth
 from app.services.api_keys import ApiKeysService
 from app.services.users import UserService
-
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,6 @@ class AuthService:
 
     async def decode_jwt(self, token: str) -> UserReadAuth:
         try:
-            from app.core.tenant_scope import get_tenant_context
 
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             username = payload.get("sub")
@@ -122,15 +122,10 @@ class AuthService:
         from app.dependencies.injector import injector
 
         user_service = injector.get(UserService)
-        user = await user_service.get_by_username(
+        user = await user_service.get_by_username_or_email(
             username_or_email, throw_not_found=False
         )
         # Check by email if not found by username
-        if not user:
-            user = await user_service.get_user_by_email(
-                username_or_email, throw_not_found=False
-            )
-
         if not user:
             raise AppException(
                 error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD,

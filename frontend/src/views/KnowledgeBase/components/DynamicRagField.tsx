@@ -106,15 +106,17 @@ export const DynamicRagField: React.FC<DynamicRagFieldProps> = ({
   };
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={field.name} className="text-sm font-medium">
-        {field.label}
-        {field.required && <span className="text-red-500 ml-1">*</span>}
-      </Label>
-      {renderField()}
-      {field.description && (
-        <p className="text-xs text-gray-500">{field.description}</p>
+    <div>
+      {field.label && (
+        <div className="mb-1">
+          <Label htmlFor={field.name} className="text-sm font-medium">
+            {field.label}
+            {field.required && <span className="text-red-500 ml-1">*</span>}
+          </Label>
+        </div>
       )}
+      {renderField()}
+      {field.description && <p className="text-xs text-gray-500 mt-2">{field.description}</p>}
     </div>
   );
 };
