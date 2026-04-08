@@ -43,6 +43,7 @@ interface ParameterSectionProps {
   suggestParams?: boolean;
   listSuggestedParams?: NodeSchema;
   allowStateful?: boolean; // Only allow stateful parameters in chatInputNode
+  allowFilter?: boolean; // Show "Use in filter" checkbox for filtering & analytics
 }
 
 interface ParameterDialogProps {
@@ -56,6 +57,7 @@ interface ParameterDialogProps {
   totalParams: number;
   suggestedParams?: NodeSchema;
   allowStateful?: boolean; // Only allow stateful parameters in chatInputNode
+  allowFilter?: boolean; // Show "Use in filter" checkbox
 }
 
 interface ParameterBadgesProps {
@@ -112,6 +114,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
   mode,
   totalParams,
   allowStateful = false,
+  allowFilter = false,
 }) => {
   const [formData, setFormData] = useState<{
     name: string;
@@ -120,6 +123,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
     required: boolean;
     defaultValue?: string;
     stateful?: boolean;
+    useInFilter?: boolean;
   }>({
     name: "",
     type: "string",
@@ -127,6 +131,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
     required: false,
     defaultValue: "",
     stateful: false,
+    useInFilter: false,
   });
 
   useEffect(() => {
@@ -140,6 +145,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           defaultValue: param.defaultValue || "",
           // Only preserve stateful if allowStateful is true, otherwise reset to false
           stateful: allowStateful ? (param.stateful || false) : false,
+          useInFilter: allowFilter ? (param.useInFilter || false) : false,
         });
       } else {
         setFormData({
@@ -149,10 +155,11 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           required: false,
           defaultValue: "",
           stateful: false,
+          useInFilter: false,
         });
       }
     }
-  }, [isOpen, mode, paramName, param, allowStateful]);
+  }, [isOpen, mode, paramName, param, allowStateful, allowFilter]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,8 +168,8 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
       description: formData.description,
       required: formData.required,
       defaultValue: formData.defaultValue,
-      // Only save stateful if allowStateful is true
       stateful: allowStateful ? formData.stateful : false,
+      useInFilter: allowFilter ? formData.useInFilter : false,
     });
     onOpenChange(false);
   };
@@ -266,6 +273,25 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
               </p>
             </div>
           )}
+          {allowFilter && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="useInFilter"
+                  checked={formData.useInFilter || false}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, useInFilter: checked === true }))
+                  }
+                />
+                <label htmlFor="useInFilter" className="text-sm font-medium cursor-pointer">
+                  Use in filter (available for filtering & analytics)
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">
+                When enabled, this parameter will be stored as a custom attribute on conversations for filtering and analytics
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Default Value</label>
             <Input
@@ -310,6 +336,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
   suggestParams = false,
   listSuggestedParams = {},
   allowStateful = false,
+  allowFilter = false,
 }) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedParamName, setSelectedParamName] = useState<string | null>(
@@ -436,6 +463,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
         mode={dialogMode}
         totalParams={Object.keys(dynamicParams ?? {}).length}
         allowStateful={allowStateful}
+        allowFilter={allowFilter}
       />
     </div>
   );

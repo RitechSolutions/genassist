@@ -30,6 +30,9 @@ async def backfill_custom_attributes_async_with_scope(force: bool = False):
 async def backfill_custom_attributes_async(force: bool = False):
     """Backfill custom_attributes on conversations from agent_response_logs.
 
+    Only parameters marked as ``useInFilter`` in the workflow's chatInputNode
+    inputSchema are stored as custom attributes.
+
     Args:
         force: If True, re-process all conversations (even those with existing attributes).
                If False (default), only process conversations where custom_attributes IS NULL.
@@ -37,8 +40,11 @@ async def backfill_custom_attributes_async(force: bool = False):
     from sqlalchemy import select, update, func
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from app.db.models.agent import AgentModel
     from app.db.models.agent_response_log import AgentResponseLogModel
     from app.db.models.conversation import ConversationModel
+    from app.db.models.operator import OperatorModel
+    from app.db.models.workflow import WorkflowModel
     from app.dependencies.injector import injector
 
     db: AsyncSession = injector.get(AsyncSession)
@@ -49,8 +55,13 @@ async def backfill_custom_attributes_async(force: bool = False):
     logger.info(f"Backfill mode: {mode}")
 
     while True:
+        # Fetch conversations together with their workflow nodes
+        # conversation → operator → agent → workflow
         stmt = (
-            select(ConversationModel.id)
+            select(ConversationModel.id, WorkflowModel.nodes)
+            .join(OperatorModel, ConversationModel.operator_id == OperatorModel.id)
+            .join(AgentModel, AgentModel.operator_id == OperatorModel.id)
+            .outerjoin(WorkflowModel, AgentModel.workflow_id == WorkflowModel.id)
             .order_by(ConversationModel.id)
             .offset(offset)
             .limit(BATCH_SIZE)
@@ -58,10 +69,13 @@ async def backfill_custom_attributes_async(force: bool = False):
         if not force:
             stmt = stmt.where(ConversationModel.custom_attributes.is_(None))
         result = await db.execute(stmt)
-        conversation_ids = [row[0] for row in result.all()]
+        rows = result.all()
 
-        if not conversation_ids:
+        if not rows:
             break
+
+        conversation_ids = [row[0] for row in rows]
+        workflow_nodes_by_conv = {row[0]: row[1] for row in rows}
 
         # Batch-fetch the latest log per conversation (avoids N+1)
         latest_log_subq = (
@@ -104,7 +118,10 @@ async def backfill_custom_attributes_async(force: bool = False):
                     .get("state", {})
                     .get("nodeExecutionStatus", {})
                 )
-                attrs = extract_custom_attributes_from_state(node_statuses)
+                workflow_nodes = workflow_nodes_by_conv.get(conv_id)
+                attrs = extract_custom_attributes_from_state(
+                    node_statuses, workflow_nodes=workflow_nodes
+                )
 
                 if attrs:
                     await db.execute(
