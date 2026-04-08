@@ -17,14 +17,19 @@ import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import httpx
+import ipaddress
 import jwt
 from jwt import PyJWKClient, PyJWTError
+from urllib.parse import urlparse
+
+from app.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 _OPENID_DOC_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _JWKS_CLIENT_CACHE: Dict[str, Tuple[float, PyJWKClient]] = {}
 _CACHE_TTL_SEC = 3600
+_MAX_OIDC_DOC_BYTES = 1_048_576  # 1 MiB
 
 
 def normalize_issuer_url(url: str) -> str:
@@ -52,18 +57,81 @@ def resolve_oauth2_issuer_url(auth_values: Dict[str, Any]) -> str:
     return normalize_issuer_url_full(str(raw))
 
 
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_blocked_host(host: str) -> bool:
+    h = (host or "").strip().lower()
+    if not h:
+        return True
+    if h in {"localhost"}:
+        return True
+    if _is_ip_literal(h):
+        ip = ipaddress.ip_address(h)
+        return bool(
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+        )
+    return False
+
+
+def _validate_oidc_fetch_url(url: str) -> str:
+    """
+    Validate URLs used for inbound OIDC discovery / JWKS fetching (SSRF guardrails).
+
+    - Require HTTPS by default.
+    - Allow HTTP only for localhost / IP literals in DEBUG (local dev / tests).
+    - Block obvious private/localhost targets unless DEBUG.
+    """
+    raw = normalize_issuer_url_full(url)
+    if not raw:
+        raise ValueError("OIDC discovery URL is required")
+
+    parsed = urlparse(raw)
+    scheme = (parsed.scheme or "").lower()
+    host = parsed.hostname or ""
+
+    if scheme not in {"https", "http"}:
+        raise ValueError("OIDC discovery URL must be http(s)")
+
+    if scheme != "https":
+        if not settings.DEBUG:
+            raise ValueError("OIDC discovery URL must use https")
+        if host.lower() not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("Refusing insecure OIDC discovery URL outside localhost")
+
+    if _is_blocked_host(host) and not settings.DEBUG:
+        raise ValueError("Refusing to fetch OIDC discovery from private/localhost host")
+
+    return raw
+
+
+async def _fetch_json_limited(url: str, *, timeout: float) -> Dict[str, Any]:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        if len(resp.content or b"") > _MAX_OIDC_DOC_BYTES:
+            raise ValueError("OIDC discovery response too large")
+        return resp.json()
+
+
 async def fetch_openid_configuration_document(discovery_url: str) -> Dict[str, Any]:
     """Fetch OIDC discovery document from its full URL (cached)."""
-    url = normalize_issuer_url_full(discovery_url)
+    url = _validate_oidc_fetch_url(discovery_url)
     now = time.time()
     cached = _OPENID_DOC_CACHE.get(url)
     if cached and now - cached[0] < _CACHE_TTL_SEC:
         return cached[1]
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        doc = resp.json()
+    doc = await _fetch_json_limited(url, timeout=20.0)
 
     _OPENID_DOC_CACHE[url] = (now, doc)
     return doc
@@ -77,6 +145,8 @@ async def fetch_openid_configuration(issuer_url: str) -> Dict[str, Any]:
 
 
 def _jwks_client_for_uri(jwks_uri: str) -> PyJWKClient:
+    # Basic SSRF guardrail: jwks_uri comes from the discovery document (network-fetched).
+    _validate_oidc_fetch_url(str(jwks_uri))
     now = time.time()
     cached = _JWKS_CLIENT_CACHE.get(jwks_uri)
     if cached and now - cached[0] < _CACHE_TTL_SEC:

@@ -7,13 +7,96 @@ Supports:
 - In-memory token caching with automatic expiry
 """
 
+import ipaddress
 import logging
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import httpx
 
+from app.core.config.settings import settings
+
 logger = logging.getLogger(__name__)
+
+_MAX_OIDC_DOC_BYTES = 1_048_576  # 1 MiB
+
+
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_blocked_host(host: str) -> bool:
+    """
+    Return True if the host is an obvious SSRF target.
+
+    We block localhost and private/loopback/link-local IP literals. We *do not* resolve DNS
+    (hostnames can still point to private IPs); this is a best-effort guardrail.
+    """
+    h = (host or "").strip().lower()
+    if not h:
+        return True
+    if h in {"localhost"}:
+        return True
+    if _is_ip_literal(h):
+        ip = ipaddress.ip_address(h)
+        return bool(
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+        )
+    return False
+
+
+def _validate_oidc_fetch_url(url: str) -> str:
+    """
+    Validate URLs used for OIDC discovery / token endpoint fetches (SSRF guardrails).
+
+    - Require HTTPS by default.
+    - Allow HTTP only for localhost / IP literals in DEBUG (local dev / tests).
+    - Block obvious private/localhost targets unless DEBUG.
+    """
+    raw = (url or "").strip()
+    if not raw:
+        raise ValueError("OIDC discovery URL is required")
+
+    parsed = urlparse(raw)
+    scheme = (parsed.scheme or "").lower()
+    host = parsed.hostname or ""
+
+    if scheme not in {"https", "http"}:
+        raise ValueError("OIDC discovery URL must be http(s)")
+
+    if scheme != "https":
+        # Local dev / tests only.
+        if not settings.DEBUG:
+            raise ValueError("OIDC discovery URL must use https")
+        if host.lower() not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("Refusing insecure OIDC discovery URL outside localhost")
+
+    if _is_blocked_host(host) and not settings.DEBUG:
+        raise ValueError("Refusing to fetch OIDC discovery from private/localhost host")
+
+    return raw
+
+
+async def _fetch_json_limited(url: str, *, timeout: float) -> Dict[str, Any]:
+    """
+    Fetch JSON with a response size cap to reduce SSRF blast radius.
+    """
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        # Best-effort size cap: relies on content already buffered by httpx.
+        if len(resp.content or b"") > _MAX_OIDC_DOC_BYTES:
+            raise ValueError("OIDC discovery response too large")
+        return resp.json()
 
 
 class _TokenCache:
@@ -41,16 +124,13 @@ class _TokenCache:
 _cache = _TokenCache()
 
 
-async def _discover_token_url_from_document(discovery_url: str) -> str:
+async def _discover_token_url_from_document(issuer_url: str) -> str:
     """
-    Fetch the openid-configuration document at ``discovery_url`` and return token_endpoint.
+    Fetch the openid-configuration document at ``issuer_url`` and return token_endpoint.
     """
-    url = (discovery_url or "").strip()
+    url = _validate_oidc_fetch_url(issuer_url)
     logger.debug("OIDC discovery: fetching %s", url)
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        data = resp.json()
+    data = await _fetch_json_limited(url, timeout=10)
 
     token_url: Optional[str] = data.get("token_endpoint")
     if not token_url:
@@ -59,13 +139,6 @@ async def _discover_token_url_from_document(discovery_url: str) -> str:
         )
     logger.debug("OIDC discovery: resolved token_endpoint = %s", token_url)
     return token_url
-
-
-async def _discover_token_url(issuer_url: str) -> str:
-    """Legacy: discover token URL from issuer base (appends /.well-known/openid-configuration)."""
-    discovery_url = issuer_url.rstrip("/") + "/.well-known/openid-configuration"
-    return await _discover_token_url_from_document(discovery_url)
-
 
 async def _client_credentials(config: Dict[str, Any]) -> str:
     """
@@ -105,7 +178,9 @@ async def _client_credentials(config: Dict[str, Any]) -> str:
 
     # Check cache (audience affects token content for many providers, e.g. Auth0)
     aud_key = audience or ""
-    cache_key = f"cc:{client_id}:{token_url}:{' '.join(sorted(scopes))}:{aud_key}"
+    # Include issuer_url too (some deployments share token URLs across issuers/tenants).
+    iss_key = (issuer_url or "").strip()
+    cache_key = f"cc:{client_id}:{token_url}:{' '.join(sorted(scopes))}:{aud_key}:{iss_key}"
     cached = _cache.get(cache_key)
     if cached:
         logger.debug(f"OAuth2: using cached token for client_id={client_id}")

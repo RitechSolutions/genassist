@@ -24545,7 +24545,7 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Auth Values",
-            "description": "Stored auth for the UI (management API only): api_key \u2192 {api_key: '***'} when configured; oauth2 \u2192 issuer URL, optional issuer (legacy), scope, audience, decrypted oauth2_client_id, oauth2_client_secret_set (bool; secret is never returned)"
+            "description": "Stored auth for the UI (management API only): api_key \u2192 {api_key: '***'} when configured; oauth2 \u2192 issuer URL, optional scope, audience, decrypted oauth2_client_id, oauth2_client_secret_set (bool; secret is never returned)"
           },
           "workflows": {
             "items": {
