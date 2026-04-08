@@ -2,7 +2,8 @@ import datetime
 from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 from injector import inject
-from sqlalchemy import asc, cast, desc, func, and_, or_, nulls_last, String
+from sqlalchemy import asc, cast, desc, func, and_, or_, nulls_last, String, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import contains_eager, joinedload, selectinload
@@ -197,6 +198,18 @@ class ConversationRepository:
         await self.db.refresh(conversation)
         return conversation
 
+    async def update_custom_attributes(
+        self, conversation_id: UUID, custom_attributes: dict
+    ) -> None:
+        """Update only the custom_attributes column without touching ORM relationships."""
+        stmt = (
+            update(ConversationModel)
+            .where(ConversationModel.id == conversation_id)
+            .values(custom_attributes=custom_attributes)
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
+
     def _apply_base_filters(self, query, conversation_filter: ConversationFilter):
         """Apply all shared WHERE clauses so fetch and count stay in sync."""
         if conversation_filter.minimum_hostility_score:
@@ -242,6 +255,15 @@ class ConversationRepository:
         if conversation_filter.id_suffix:
             query = query.where(
                 cast(ConversationModel.id, String).like(f"%{conversation_filter.id_suffix.lower()}")
+            )
+
+        custom_attrs = conversation_filter.custom_attributes_dict
+        if custom_attrs:
+            # Use @> (contains) operator to leverage the GIN index
+            query = query.where(
+                ConversationModel.custom_attributes.op("@>")(
+                    cast(custom_attrs, JSONB)
+                )
             )
 
         # Conditional topic filtering

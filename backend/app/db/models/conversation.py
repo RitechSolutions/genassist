@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import datetime
@@ -88,6 +89,7 @@ class ConversationModel(Base):
     thumbs_down_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     thumbs_up_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     finalize_llm_analyst_id: Mapped[Optional[UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    custom_attributes: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # NEW: Add relationship to messages
     messages: Mapped[list["TranscriptMessageModel"]] = relationship(
