@@ -125,7 +125,7 @@ class ReActAgentLC(BaseToolAgent):
                 if required:
                     fields[param_name] = (
                         field_type,
-                        Field(default=param_default, description=param_description),
+                        Field(description=param_description),
                     )
                 else:
                     fields[param_name] = (

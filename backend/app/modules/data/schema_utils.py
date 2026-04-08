@@ -67,7 +67,7 @@ VECTOR_DEFAULTS = {
     "embedding_normalize_embeddings": get_vector_default(
         "embedding_normalize_embeddings", True
     ),
-    "vector_db_type": get_vector_default("vector_db_type", "chroma"),
+    "vector_db_type": get_vector_default("vector_db_type", "pgvector"),
     "vector_db_collection_name": get_vector_default(
         "vector_db_collection_name", "default"
     ),
