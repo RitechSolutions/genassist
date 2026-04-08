@@ -209,6 +209,12 @@ async def validate_upload_file_size(
     return size
 
 
+def validate_bytes_size(data: bytes, max_size: int = 512 * 1024 * 1024) -> None:
+    """Raise AppException if data exceeds max_size bytes (default 512 MB)."""
+    if len(data) > max_size:
+        raise AppException(error_key=ErrorKey.ERROR_TRAINING_FILE_TOO_LARGE)
+
+
 def calculate_word_count(
     transcript_segments: list[TranscriptSegmentInput], target: str
 ) -> int:

@@ -3,8 +3,8 @@ import { RagConfigValues } from "../types/ragSchema";
 // Default RAG configuration
 export const DEFAULT_RAG_CONFIG: RagConfigValues = {
   vector: {
-    enabled: false,
-    type: "chroma",
+    enabled: true,
+    type: "pgvector",
   },
   lightrag: {
     enabled: false,
@@ -34,10 +34,10 @@ export interface LegacyRagConfig {
 }
 
 export const DEFAULT_LEGACY_RAG_CONFIG: LegacyRagConfig = {
-  enabled: false,
+  enabled: true,
   vector: {
-    enabled: false,
-    type: "chroma",
+    enabled: true,
+    type: "pgvector",
   },
   lightrag: {
     enabled: false,

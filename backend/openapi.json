@@ -7161,6 +7161,34 @@
         ]
       }
     },
+    "/api/llm-cost-rates/export": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmCostRates"
+        ],
+        "summary": "Export Cost Rates Csv",
+        "operationId": "export_cost_rates_csv_api_llm_cost_rates_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/llm-cost-rates/{rate_id}": {
       "delete": {
         "tags": [
@@ -15948,6 +15976,56 @@
         }
       }
     },
+    "/api/openai/files/{file_id}/content": {
+      "get": {
+        "tags": [
+          "v1",
+          "OpenAI API"
+        ],
+        "summary": "Download File",
+        "description": "Download the raw content of an OpenAI file (e.g. training/validation JSONL).",
+        "operationId": "download_file_api_openai_files__file_id__content_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/openai/files/{file_id}": {
       "delete": {
         "tags": [
@@ -16075,6 +16153,55 @@
             }
           }
         }
+      }
+    },
+    "/api/openai/fine-tuning/generate-from-conversations": {
+      "post": {
+        "tags": [
+          "v1",
+          "OpenAI API"
+        ],
+        "summary": "Generate Training File From Conversations",
+        "description": "Generate a JSONL fine-tuning training file from past conversation logs.\n\nExtracts the system prompt and tool schemas from the specified agent's workflow,\nthen builds one training example per agent response found in each conversation.\n\nWhen upload_to_openai=false (default), returns the JSONL as a file download.\nWhen upload_to_openai=true, uploads to OpenAI and returns the file record.",
+        "operationId": "generate_training_file_from_conversations_api_openai_fine_tuning_generate_from_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateTrainingFileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/azure-blob-storage/list": {
@@ -22032,6 +22159,30 @@
           "folderpath"
         ],
         "title": "FolderRequest"
+      },
+      "GenerateTrainingFileRequest": {
+        "properties": {
+          "conversation_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Conversation Ids",
+            "description": "Conversation UUIDs to generate training data from"
+          },
+          "upload_to_openai": {
+            "type": "boolean",
+            "title": "Upload To Openai",
+            "description": "Upload generated file to OpenAI and return the file record",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_ids"
+        ],
+        "title": "GenerateTrainingFileRequest"
       },
       "GmailAuthRequest": {
         "properties": {

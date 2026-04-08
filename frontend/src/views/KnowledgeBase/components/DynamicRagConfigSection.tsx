@@ -8,7 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/collapsible";
-import { ChevronDown, ChevronRight, Settings } from "lucide-react";
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { getRagFromSchema } from "@/services/api";
 import { finalizeKnowledgeItem } from "@/services/api";
 import { toast } from "react-hot-toast";
@@ -58,7 +58,7 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
       Object.entries(schema).forEach(([ragType, typeSchema]) => {
         if (!initialConfig[ragType]) {
           initialConfig[ragType] = {
-            enabled: false,
+            enabled: ragType === 'vector' ? true : false,
           };
           hasChanges = true;
         }
@@ -97,6 +97,12 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
             }
           }
         });
+
+        if (ragType === 'vector' && initialConfig[ragType]?.enabled !== true) {
+          initialConfig[ragType].enabled = true;
+          initialConfig[ragType].vector_db_type = 'pgvector';
+          hasChanges = true;
+        }
       });
 
       if (hasChanges) {
@@ -238,9 +244,7 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold">RAG Configuration</h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Configure Retrieval Augmented Generation settings
-              </p>
+              <p className="text-sm text-gray-500 mt-1">Configure Retrieval Augmented Generation settings</p>
             </div>
             {/* <div className="flex items-center space-x-2 bg-gray-50 p-2 rounded-lg">
               <Settings className="h-4 w-4 text-gray-500" />
@@ -256,179 +260,236 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
           </div>
         </div>
 
-        <div className="col-span-2 space-y-4">
-          {Object.entries(schema).map(([ragType, typeSchema]) => {
-            const isEnabled = Boolean(ragConfig[ragType]?.enabled);
+        <div className="col-span-2 space-y-6">
+          {/* Vector Database */}
+          {schema['vector'] && (
+            <div className="space-y-6">
+              <div>
+                <div className="mb-1">Vector Database Type</div>
+                <DynamicRagField
+                  field={{
+                    ...schema['vector'].sections.flatMap((s) => s.fields).find((f) => f.name === 'vector_db_type')!,
+                    label: '',
+                  }}
+                  value={getFieldValue('vector', 'vector_db_type')}
+                  onChange={(fieldName, value) => handleFieldChange('vector', fieldName, value)}
+                />
+              </div>
 
-            return (
-              <Card key={ragType} className="w-full">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-base">
-                        {typeSchema.name}
-                      </CardTitle>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {typeSchema.description}
-                      </p>
+              {schema['vector'].sections
+                .filter((section) => showOptionalFields || section.fields.some((field) => field.required))
+                .filter((section) => !section.fields.some((f) => f.name === 'vector_db_type'))
+                .map((section) => {
+                  const sectionKey = `vector-${section.name}`;
+                  const isSectionOpen = openSections[sectionKey] ?? false;
+
+                  return (
+                    <Collapsible key={section.name} open={isSectionOpen} onOpenChange={() => toggleSection(sectionKey)}>
+                      <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                        <h4 className="text-sm font-medium">{section.label}</h4>
+                        {isSectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mt-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                          {section.fields
+                            .filter((field) => showOptionalFields || field.required)
+                            .map((field) => (
+                              <DynamicRagField
+                                key={field.name}
+                                field={field}
+                                value={getFieldValue('vector', field.name)}
+                                onChange={(fieldName, value) => handleFieldChange('vector', fieldName, value)}
+                              />
+                            ))}
+
+                          {section.conditional_fields &&
+                            (() => {
+                              const controllingField = section.fields.find((field) => {
+                                if (!field.options || !section.conditional_fields) return false;
+                                return field.options.some((option) =>
+                                  Object.keys(section.conditional_fields!).includes(option.value)
+                                );
+                              });
+
+                              if (!controllingField) return null;
+
+                              const controlValue = getFieldValue('vector', controllingField.name) as string;
+                              const conditionalFields = section.conditional_fields[controlValue];
+
+                              if (!conditionalFields) return null;
+
+                              return conditionalFields
+                                .filter((field) => showOptionalFields || field.required)
+                                .map((field) => (
+                                  <DynamicRagField
+                                    key={`conditional-${field.name}`}
+                                    field={field}
+                                    value={getFieldValue('vector', field.name)}
+                                    onChange={(fieldName, value) => handleFieldChange('vector', fieldName, value)}
+                                  />
+                                ));
+                            })()}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  );
+                })}
+            </div>
+          )}
+
+          {/* TODO: Other RAG types are not ready yet */}
+          {/* {Object.entries(schema)
+            .filter(([ragType]) => ragType !== 'vector')
+            .map(([ragType, typeSchema]) => {
+              const isEnabled = Boolean(ragConfig[ragType]?.enabled);
+
+              return (
+                <Card key={ragType} className="w-full">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-base">{typeSchema.name}</CardTitle>
+                        <p className="text-sm text-gray-500 mt-1">{typeSchema.description}</p>
+                      </div>
+                      <div className="flex items-center space-x-2 ml-4">
+                        <Label htmlFor={`${ragType}-enabled`} className="text-sm">
+                          Enable
+                        </Label>
+                        <Switch
+                          id={`${ragType}-enabled`}
+                          checked={isEnabled}
+                          onCheckedChange={(checked) => handleRagTypeToggle(ragType, checked)}
+                        />
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2 ml-4">
-                      <Label htmlFor={`${ragType}-enabled`} className="text-sm">
-                        Enable
-                      </Label>
-                      <Switch
-                        id={`${ragType}-enabled`}
-                        checked={isEnabled}
-                        onCheckedChange={(checked) =>
-                          handleRagTypeToggle(ragType, checked)
-                        }
-                      />
-                    </div>
-                  </div>
-                </CardHeader>
+                  </CardHeader>
 
-                {isEnabled && (
-                  <CardContent className="pt-0">
-                    <div className="space-y-4">
-                      {typeSchema.sections
-                        .filter(
-                          (section) =>
-                            showOptionalFields ||
-                            section.fields.some((field) => field.required)
-                        )
-                        .map((section) => {
-                          const sectionKey = `${ragType}-${section.name}`;
-                          const isSectionOpen =
-                            openSections[sectionKey] ?? false;
+                  {isEnabled && (
+                    <CardContent className="pt-0">
+                      <div className="space-y-4">
+                        {typeSchema.sections
+                          .filter((section) => showOptionalFields || section.fields.some((field) => field.required))
+                          .map((section) => {
+                            const sectionKey = `${ragType}-${section.name}`;
+                            const isSectionOpen = openSections[sectionKey] ?? false;
 
-                          return (
-                            <Collapsible
-                              key={section.name}
-                              open={isSectionOpen}
-                              onOpenChange={() => toggleSection(sectionKey)}
-                            >
-                              <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                                <h4 className="text-sm font-medium">
-                                  {section.label}
-                                </h4>
-                                {isSectionOpen ? (
-                                  <ChevronDown className="h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="h-4 w-4" />
-                                )}
-                              </CollapsibleTrigger>
-                              <CollapsibleContent className="mt-3">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
-                                  {/* Regular fields */}
-                                  {(() => {
-                                    const nodes: React.ReactNode[] = [];
-                                    section.fields
-                                      .filter((field) => showOptionalFields || field.required)
-                                      .forEach((field) => {
-                                        nodes.push(
-                                          <DynamicRagField
-                                            key={field.name}
-                                            field={field}
-                                            value={getFieldValue(ragType, field.name)}
-                                            onChange={(fieldName, value) =>
-                                              handleFieldChange(ragType, fieldName, value)
-                                            }
-                                          />
-                                        );
-
-                                        const isLegra = ragType.toLowerCase() === "legra" ||
-                                          (typeSchema?.name || "").toLowerCase().includes("legra");
-                                        const sectionLabelLc = (section.label || "").trim().toLowerCase();
-                                        const sectionNameLc = (section.name || "").trim().toLowerCase();
-                                        const isLegraEmbeddingSection =
-                                          sectionLabelLc === "embedding configuration" ||
-                                          sectionLabelLc.includes("embedding") ||
-                                          sectionNameLc.includes("embedding");
-                                        const isEmbeddingModelField =
-                                          field.name === "embedding_model" ||
-                                          (field.label || "").toLowerCase() === "embedding model";
-                                        if (isLegra && isLegraEmbeddingSection && isEmbeddingModelField) {
+                            return (
+                              <Collapsible
+                                key={section.name}
+                                open={isSectionOpen}
+                                onOpenChange={() => toggleSection(sectionKey)}
+                              >
+                                <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                                  <h4 className="text-sm font-medium">{section.label}</h4>
+                                  {isSectionOpen ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4" />
+                                  )}
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="mt-3">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                    {(() => {
+                                      const nodes: React.ReactNode[] = [];
+                                      section.fields
+                                        .filter((field) => showOptionalFields || field.required)
+                                        .forEach((field) => {
                                           nodes.push(
-                                            <div key="legra-embedding-finalize" className="space-y-2">
-                                              <Label htmlFor="legra-embedding-finalize" className="text-sm font-medium">
-                                                Finalize
-                                              </Label>
-                                              <div className="mt-2">
-                                                <div className="flex items-center gap-2">
-                                                  <Switch
-                                                    id="legra-embedding-finalize"
-                                                    checked={legraFinalize}
-                                                    disabled={isFinalizing || legraFinalize || !knowledgeId}
-                                                    onCheckedChange={handleLegraFinalizeToggle}
-                                                  />
-                                                  <span className="text-sm text-gray-500">
-                                                    {legraFinalize ? "Finalized" : (!knowledgeId ? "Save first to enable" : "Finalize to lock and build graph")}
-                                                  </span>
-                                                </div>
-                                                <p className="text-xs text-gray-500 mt-2">This action cannot be undone.</p>
-                                              </div>
-                                            </div>
+                                            <DynamicRagField
+                                              key={field.name}
+                                              field={field}
+                                              value={getFieldValue(ragType, field.name)}
+                                              onChange={(fieldName, value) =>
+                                                handleFieldChange(ragType, fieldName, value)
+                                              }
+                                            />
                                           );
-                                        }
-                                      });
-                                    return nodes;
-                                  })()}
-                                  
-                                  {/* Conditional fields */}
-                                  {section.conditional_fields && (() => {
-                                    // Find the controlling field value
-                                    const controllingField = section.fields.find(field => {
-                                      if (!field.options || !section.conditional_fields) return false;
-                                      return field.options.some(option => 
-                                        Object.keys(section.conditional_fields!).includes(option.value)
-                                      );
-                                    });
-                                    
-                                    if (!controllingField) return null;
-                                    
-                                    const controlValue = getFieldValue(
-                                      ragType,
-                                      controllingField.name
-                                    ) as string;
-                                    
-                                    const conditionalFields = section.conditional_fields[controlValue];
-                                    
-                                    if (!conditionalFields) return null;
-                                    
-                                    return conditionalFields
-                                      .filter(
-                                        (field) =>
-                                          showOptionalFields || field.required
-                                      )
-                                      .map((field) => (
-                                        <DynamicRagField
-                                          key={`conditional-${field.name}`}
-                                          field={field}
-                                          value={getFieldValue(
-                                            ragType,
-                                            field.name
-                                          )}
-                                          onChange={(fieldName, value) =>
-                                            handleFieldChange(
-                                              ragType,
-                                              fieldName,
-                                              value
-                                            )
+
+                                          const sectionLabelLc = (section.label || '').trim().toLowerCase();
+                                          const sectionNameLc = (section.name || '').trim().toLowerCase();
+                                          const isLegraEmbeddingSection =
+                                            sectionLabelLc === 'embedding configuration' ||
+                                            sectionLabelLc.includes('embedding') ||
+                                            sectionNameLc.includes('embedding');
+                                          const isEmbeddingModelField =
+                                            field.name === 'embedding_model' ||
+                                            (field.label || '').toLowerCase() === 'embedding model';
+                                          if (isLegraEmbeddingSection && isEmbeddingModelField) {
+                                            nodes.push(
+                                              <div key="legra-embedding-finalize" className="space-y-2">
+                                                <Label
+                                                  htmlFor="legra-embedding-finalize"
+                                                  className="text-sm font-medium"
+                                                >
+                                                  Finalize
+                                                </Label>
+                                                <div className="mt-2">
+                                                  <div className="flex items-center gap-2">
+                                                    <Switch
+                                                      id="legra-embedding-finalize"
+                                                      checked={legraFinalize}
+                                                      disabled={isFinalizing || legraFinalize || !knowledgeId}
+                                                      onCheckedChange={handleLegraFinalizeToggle}
+                                                    />
+                                                    <span className="text-sm text-gray-500">
+                                                      {legraFinalize
+                                                        ? 'Finalized'
+                                                        : !knowledgeId
+                                                          ? 'Save first to enable'
+                                                          : 'Finalize to lock and build graph'}
+                                                    </span>
+                                                  </div>
+                                                  <p className="text-xs text-gray-500 mt-2">
+                                                    This action cannot be undone.
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            );
                                           }
-                                        />
-                                      ));
-                                  })()}
-                                </div>
-                              </CollapsibleContent>
-                            </Collapsible>
-                          );
-                        })}
-                    </div>
-                  </CardContent>
-                )}
-              </Card>
-            );
-          })}
+                                        });
+                                      return nodes;
+                                    })()}
+
+                                    {section.conditional_fields &&
+                                      (() => {
+                                        const controllingField = section.fields.find((field) => {
+                                          if (!field.options || !section.conditional_fields) return false;
+                                          return field.options.some((option) =>
+                                            Object.keys(section.conditional_fields!).includes(option.value)
+                                          );
+                                        });
+
+                                        if (!controllingField) return null;
+
+                                        const controlValue = getFieldValue(ragType, controllingField.name) as string;
+                                        const conditionalFields = section.conditional_fields[controlValue];
+
+                                        if (!conditionalFields) return null;
+
+                                        return conditionalFields
+                                          .filter((field) => showOptionalFields || field.required)
+                                          .map((field) => (
+                                            <DynamicRagField
+                                              key={`conditional-${field.name}`}
+                                              field={field}
+                                              value={getFieldValue(ragType, field.name)}
+                                              onChange={(fieldName, value) =>
+                                                handleFieldChange(ragType, fieldName, value)
+                                              }
+                                            />
+                                          ));
+                                      })()}
+                                  </div>
+                                </CollapsibleContent>
+                              </Collapsible>
+                            );
+                          })}
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })} */}
         </div>
       </div>
     </div>
