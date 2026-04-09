@@ -29,8 +29,6 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
 ) => {
   const { isOpen, onClose, data, onUpdate } = props;
 
-  console.log("data", data);
-
   const [name, setName] = useState(data.name || "Train Data Source");
   // sourceType is the single source of truth for which mode we're in
   const [sourceType, setSourceType] = useState<"datasource" | "csv">(() => {
