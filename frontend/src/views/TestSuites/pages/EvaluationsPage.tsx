@@ -2,9 +2,9 @@ import React, {useEffect, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {PageLayout} from "@/components/PageLayout";
 import {PageHeader} from "@/components/PageHeader";
-import {getAllWorkflows} from "@/services/workflows";
-import {getTestRun, listTestSuites, startTestRun} from "@/services/testSuites";
-import {Workflow} from "@/interfaces/workflow.interface";
+import {getWorkflowsMinimal} from "@/services/workflows";
+import {getTestRun, getTestRunsBatch, listTestSuites, startTestRun} from "@/services/testSuites";
+import {WorkflowMinimal} from "@/interfaces/workflow.interface";
 import {TestRun, TestSuite} from "@/interfaces/testSuite.interface";
 import {Button} from "@/components/button";
 import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/ui/dialog";
@@ -17,8 +17,8 @@ import {
   updateTestEvaluation,
 } from "@/services/testEvaluations";
 import {TestEvaluationConfig} from "@/interfaces/testEvaluation.interface";
-import {getAllLLMProviders} from "@/services/llmProviders";
-import {LLMProvider} from "@/interfaces/llmProvider.interface";
+import {getLLMProvidersMinimal} from "@/services/llmProviders";
+import {LLMProviderMinimal} from "@/interfaces/llmProvider.interface";
 import {Skeleton} from "@/components/skeleton";
 import {Progress} from "@/components/progress";
 import {Badge} from "@/components/badge";
@@ -28,8 +28,8 @@ import toast from "react-hot-toast";
 const EvaluationsPage: React.FC = () => {
   const navigate = useNavigate();
   const [suites, setSuites] = useState<TestSuite[]>([]);
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowMinimal[]>([]);
+  const [providers, setProviders] = useState<LLMProviderMinimal[]>([]);
   const [evaluations, setEvaluations] = useState<TestEvaluationConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [runningEvalIds, setRunningEvalIds] = useState<Set<string>>(new Set());
@@ -45,16 +45,16 @@ const EvaluationsPage: React.FC = () => {
     const load = async () => {
       setIsLoading(true);
       try {
-        const [suiteData, workflowData, providersData] = await Promise.all([
+        const [suiteData, workflowData, providersData, evaluationData] = await Promise.all([
           listTestSuites(),
-          getAllWorkflows(),
-          getAllLLMProviders(),
+          getWorkflowsMinimal(),
+          getLLMProvidersMinimal(),
+          listTestEvaluations(),
         ]);
         setSuites(suiteData ?? []);
         setWorkflows(workflowData ?? []);
         const activeProviders = (providersData ?? []).filter((p) => p.is_active === 1);
         setProviders(activeProviders);
-        const evaluationData = await listTestEvaluations();
         setEvaluations(evaluationData ?? []);
       } finally {
         setIsLoading(false);
@@ -69,24 +69,36 @@ const EvaluationsPage: React.FC = () => {
         setLastRunsByEvaluationId({});
         return;
       }
-      const pairs = await Promise.all(
-        evaluations.map(async (evaluation) => {
-          const evalId = evaluation.id;
-          const lastRunId = evaluation.run_ids[0];
-          if (!evalId || !lastRunId) return [evalId ?? "", null] as const;
-          try {
-            const run = await getTestRun(lastRunId);
-            return [evalId, run] as const;
-          } catch {
-            return [evalId, null] as const;
-          }
-        }),
-      );
-      const mapping: Record<string, TestRun | null> = {};
-      pairs.forEach(([id, run]) => {
-        if (id) mapping[id] = run;
+      const runIdToEvalId: Record<string, string> = {};
+      evaluations.forEach((evaluation) => {
+        const evalId = evaluation.id;
+        const lastRunId = evaluation.run_ids?.[0];
+        if (evalId && lastRunId) {
+          runIdToEvalId[lastRunId] = evalId;
+        }
       });
-      setLastRunsByEvaluationId(mapping);
+      const runIds = Object.keys(runIdToEvalId);
+      if (!runIds.length) {
+        setLastRunsByEvaluationId({});
+        return;
+      }
+      try {
+        const runs = await getTestRunsBatch(runIds);
+        const mapping: Record<string, TestRun | null> = {};
+        (runs ?? []).forEach((run) => {
+          const evalId = run.id ? runIdToEvalId[run.id] : undefined;
+          if (evalId) mapping[evalId] = run;
+        });
+        // Fill nulls for evaluations whose run wasn't returned
+        evaluations.forEach((evaluation) => {
+          if (evaluation.id && !(evaluation.id in mapping)) {
+            mapping[evaluation.id] = null;
+          }
+        });
+        setLastRunsByEvaluationId(mapping);
+      } catch {
+        setLastRunsByEvaluationId({});
+      }
     };
     void loadLastRuns();
   }, [evaluations]);
