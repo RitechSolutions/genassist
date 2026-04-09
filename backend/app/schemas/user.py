@@ -59,6 +59,8 @@ class UserRead(BaseModel):
     api_keys: Optional[list[ApiKeyBase]] = []
     force_upd_pass_date: Optional[datetime] = Field(None,
                                                     description="Date when we force updating password date on login")
+    group_id: Optional[UUID] = None
+    supervised_group_ids: list[UUID] = Field([], description="Group IDs this user supervises")
 
     model_config = ConfigDict(
         from_attributes = True
@@ -67,8 +69,6 @@ class UserRead(BaseModel):
 class UserReadAuth(UserRead):
     permissions: Optional[list[str]] = Field([], description="Permissions needed for authorization")
     operator: Optional[OperatorAuth] = Field(None, description="Operator needed for authorization")
-    group_id: Optional[UUID] = Field(None, description="User group ID for row-level access control")
-    supervised_group_ids: list[UUID] = Field([], description="Group IDs this user supervises")
 
     model_config = ConfigDict(
         from_attributes = True
@@ -81,5 +81,6 @@ class UserUpdate(BaseModel):
     user_type_id: UUID | None = None
     role_ids: list[UUID] | None = None
     notes: str | None = None
+    group_id: UUID | None = None
 
 

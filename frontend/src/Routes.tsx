@@ -14,6 +14,7 @@ import Notifications from "@/views/Notifications";
 import Settings from "./views/Settings";
 import NotFound from "@/views/NotFound";
 import Roles from "@/views/Roles/pages/Roles";
+import UserGroups from "@/views/UserGroups/Index";
 import Users from "./views/Users/Index";
 import UserTypes from "./views/UserTypes/pages/UserTypes";
 import ApiKeys from "./views/ApiKeys/pages/ApiKeys";
@@ -234,6 +235,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:role"]}>
                   <Roles />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "user-groups",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:user_group"]}>
+                  <UserGroups />
                 </ProtectedRoute>
               ),
             },

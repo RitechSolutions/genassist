@@ -28701,6 +28701,30 @@
             "type": "string",
             "format": "uuid",
             "title": "Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           }
         },
         "type": "object",
@@ -28811,6 +28835,28 @@
             ],
             "title": "Force Upd Pass Date",
             "description": "Date when we force updating password date on login"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "supervised_group_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Supervised Group Ids",
+            "description": "Group IDs this user supervises",
+            "default": []
           }
         },
         "type": "object",
@@ -28999,6 +29045,18 @@
               }
             ],
             "title": "Notes"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
           }
         },
         "type": "object",

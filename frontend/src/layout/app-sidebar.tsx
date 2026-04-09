@@ -223,6 +223,11 @@ const mainMenuItems: MenuItem[] = [
         url: "/user-types",
         permissionsRequired: ["read:user_type"],
       },
+      {
+        title: "User Groups",
+        url: "/user-groups",
+        permissionsRequired: ["read:user_group"],
+      },
     ],
   },
 ];
