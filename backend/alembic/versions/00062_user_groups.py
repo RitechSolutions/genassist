@@ -23,7 +23,6 @@ def upgrade() -> None:
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("description", sa.String(length=500), nullable=True),
-        sa.Column("parent_group_id", sa.UUID(), nullable=True),
         sa.Column("created_by", sa.UUID(), nullable=True),
         sa.Column("updated_by", sa.UUID(), nullable=True),
         sa.Column(
@@ -39,7 +38,6 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column("is_deleted", sa.Integer(), nullable=False, server_default="0"),
-        sa.ForeignKeyConstraint(["parent_group_id"], ["user_groups.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
 
