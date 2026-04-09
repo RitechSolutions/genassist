@@ -93,14 +93,19 @@ export default function ChatAsCustomer() {
     (async () => {
       try {
         const apiUrl = await getApiUrl();
-        const baseUrl = new URL("..", apiUrl).toString();
-        setBaseUrl(baseUrl);
-
-        const websocketUrl = await getWsUrl();
-        setWebsocketUrl(websocketUrl);
 
         const key = await getAgentIntegrationKey(agentId);
         setApiKey(key);
+
+        const baseUrl = new URL("..", apiUrl).toString();
+        setBaseUrl(baseUrl);
+
+        await getWsUrl().catch(e => {
+          console.warn(e, "WebSocket is disabled (VITE_WS=false)");
+        }).then((websocketUrl?: string) => {
+          setWebsocketUrl(websocketUrl);
+        })
+
       } catch (err: any) {
         setError(err.message || "Failed to initialize chat");
         setTimeout(() => navigate("/ai-agents"), 2000);
