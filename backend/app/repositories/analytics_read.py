@@ -157,30 +157,32 @@ class AnalyticsReadRepository:
         self,
         agent_id: UUID | None = None,
     ) -> list[str]:
-        """Return distinct custom attribute keys for an agent's conversations."""
+        """Return custom attribute keys marked as useInFilter in the workflow.
+
+        Reads keys from the workflow definition (chatInputNode inputSchema)
+        rather than from stored conversation data, so the dropdown always
+        reflects the current workflow configuration.
+        """
+        from app.db.models.workflow import WorkflowModel
+        from app.core.utils.custom_attributes import get_filterable_keys
+
         if agent_id is not None:
-            raw = text(
-                "SELECT DISTINCT k "
-                "FROM conversations c "
-                "JOIN operators o ON c.operator_id = o.id "
-                "JOIN agents a ON a.operator_id = o.id AND a.id = :agent_id "
-                ", jsonb_object_keys(c.custom_attributes) AS k "
-                "WHERE c.custom_attributes IS NOT NULL "
-                "AND jsonb_typeof(c.custom_attributes) = 'object' "
-                "ORDER BY k"
+            stmt = (
+                select(WorkflowModel.nodes)
+                .join(AgentModel, AgentModel.workflow_id == WorkflowModel.id)
+                .where(AgentModel.id == agent_id)
             )
-            result = await self.db.execute(raw, {"agent_id": agent_id})
         else:
-            raw = text(
-                "SELECT DISTINCT k "
-                "FROM conversations c "
-                ", jsonb_object_keys(c.custom_attributes) AS k "
-                "WHERE c.custom_attributes IS NOT NULL "
-                "AND jsonb_typeof(c.custom_attributes) = 'object' "
-                "ORDER BY k"
-            )
-            result = await self.db.execute(raw)
-        return [row[0] for row in result.all()]
+            stmt = select(WorkflowModel.nodes)
+
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
+        keys: set[str] = set()
+        for (nodes,) in rows:
+            keys.update(get_filterable_keys(nodes))
+
+        return sorted(keys)
 
     async def get_custom_attribute_breakdown(
         self,
