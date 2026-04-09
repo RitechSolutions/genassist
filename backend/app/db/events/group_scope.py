@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, with_loader_criteria
 from starlette_context import context
 from starlette_context.errors import ContextDoesNotExistError
 
-from app.auth.utils import is_current_user_supervisor_or_admin
+from app.auth.utils import current_user_is_admin
 
 GROUP_SCOPE_BYPASS_FLAG = "bypass_group_scope"
 
@@ -27,10 +27,28 @@ class GroupScopedMixin:
     pass
 
 
+def _build_criteria(model_cls, group_id, supervised_group_ids, user_id):
+    """Build the WHERE clause for a given user context."""
+    from app.db.models.user import UserModel
+
+    if supervised_group_ids:
+        # Supervisor: records created by users in any of their supervised groups
+        return model_cls.created_by.in_(
+            select(UserModel.id).where(UserModel.group_id.in_(supervised_group_ids))
+        )
+    if group_id:
+        # Regular user in a group: records created by anyone in same group
+        return model_cls.created_by.in_(
+            select(UserModel.id).where(UserModel.group_id == group_id)
+        )
+    # No group: own records only
+    return model_cls.created_by == user_id
+
+
 def get_group_scope_clause(model_cls):
     """
     Return a SQLAlchemy WHERE clause for group-based row filtering, or ``None``
-    if no filtering should be applied (supervisor/admin, no auth context, etc.).
+    if no filtering should be applied (admin, no auth context, etc.).
 
     Use this for queries that select individual columns or aggregates rather than
     full ORM entities, since ``with_loader_criteria`` only fires for entity selects::
@@ -42,6 +60,7 @@ def get_group_scope_clause(model_cls):
     try:
         group_id = context.get("group_id")
         user_id = context.get("user_id")
+        supervised_group_ids = context.get("supervised_group_ids") or []
     except (LookupError, ContextDoesNotExistError):
         return None
 
@@ -49,18 +68,12 @@ def get_group_scope_clause(model_cls):
         return None
 
     try:
-        if is_current_user_supervisor_or_admin():
+        if current_user_is_admin():
             return None
     except Exception:
         return None
 
-    from app.db.models.user import UserModel
-
-    if group_id:
-        return model_cls.created_by.in_(
-            select(UserModel.id).where(UserModel.group_id == group_id)
-        )
-    return model_cls.created_by == user_id
+    return _build_criteria(model_cls, group_id, supervised_group_ids, user_id)
 
 
 @event.listens_for(Session, "do_orm_execute")
@@ -73,6 +86,7 @@ def _group_scope_filter(execute_state):
     try:
         group_id = context.get("group_id")
         user_id = context.get("user_id")
+        supervised_group_ids = context.get("supervised_group_ids") or []
     except (LookupError, ContextDoesNotExistError):
         # No request context — background tasks, startup, permission sync, etc.
         return
@@ -82,29 +96,29 @@ def _group_scope_filter(execute_state):
         return
 
     try:
-        if is_current_user_supervisor_or_admin():
+        if current_user_is_admin():
             return
     except Exception:
         # If role check fails for any reason, don't apply filter
         return
 
-    # Lazy import to avoid circular dependency at module load time
-    from app.db.models.user import UserModel
-
-    if group_id:
-        # User belongs to a group: show records created by any member of that group
+    # Build criteria using a lambda so SQLAlchemy can substitute the concrete
+    # model class. We use __subclasses__() because GroupScopedMixin has no
+    # columns — the lambda inspection requires `created_by` on the target class.
+    if supervised_group_ids:
+        from app.db.models.user import UserModel
+        _ids = tuple(supervised_group_ids)  # capture for closure
+        criteria = lambda cls: cls.created_by.in_(
+            select(UserModel.id).where(UserModel.group_id.in_(_ids))
+        )
+    elif group_id:
+        from app.db.models.user import UserModel
         criteria = lambda cls: cls.created_by.in_(
             select(UserModel.id).where(UserModel.group_id == group_id)
         )
     else:
-        # User has no group: show only their own records
         criteria = lambda cls: cls.created_by == user_id
 
-    # Apply filter to each concrete model that opted in via GroupScopedMixin.
-    # We use __subclasses__() instead of with_loader_criteria(GroupScopedMixin, ...)
-    # because GroupScopedMixin has no columns of its own — the lambda inspection
-    # requires `created_by` to be present on the target class, which it is on
-    # every concrete model (via AuditMixin / Base).
     for scoped_cls in GroupScopedMixin.__subclasses__():
         execute_state.statement = execute_state.statement.options(
             with_loader_criteria(scoped_cls, criteria, include_aliases=True)

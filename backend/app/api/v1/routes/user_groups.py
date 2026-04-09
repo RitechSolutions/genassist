@@ -62,3 +62,39 @@ async def delete(
     service: UserGroupService = Injected(UserGroupService),
 ):
     return await service.delete(group_id)
+
+
+@router.get(
+    "/{group_id}/supervisors",
+    response_model=list[UUID],
+    dependencies=[Depends(auth), Depends(require_admin_user)],
+)
+async def get_supervisors(
+    group_id: UUID,
+    service: UserGroupService = Injected(UserGroupService),
+):
+    return await service.get_supervisors(group_id)
+
+
+@router.post(
+    "/{group_id}/supervisors/{user_id}",
+    dependencies=[Depends(auth), Depends(require_admin_user)],
+)
+async def add_supervisor(
+    group_id: UUID,
+    user_id: UUID,
+    service: UserGroupService = Injected(UserGroupService),
+):
+    return await service.add_supervisor(group_id, user_id)
+
+
+@router.delete(
+    "/{group_id}/supervisors/{user_id}",
+    dependencies=[Depends(auth), Depends(require_admin_user)],
+)
+async def remove_supervisor(
+    group_id: UUID,
+    user_id: UUID,
+    service: UserGroupService = Injected(UserGroupService),
+):
+    return await service.remove_supervisor(group_id, user_id)

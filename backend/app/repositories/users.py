@@ -91,7 +91,10 @@ class UserRepository:
                     joinedload(UserModel.user_type),
 
                     # 4) Load Operator
-                    joinedload(UserModel.operator)
+                    joinedload(UserModel.operator),
+
+                    # 5) Load supervised groups (for group-scope filtering)
+                    selectinload(UserModel.supervised_group_memberships),
                     )
         )
         result = await self.db.execute(stmt)

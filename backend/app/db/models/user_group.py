@@ -17,6 +17,11 @@ class UserGroupModel(Base):
         back_populates="group",
         foreign_keys="[UserModel.group_id]",
     )
+    supervisors = relationship(
+        "UserSupervisedGroupModel",
+        back_populates="group",
+        foreign_keys="[UserSupervisedGroupModel.group_id]",
+    )
 
     def __repr__(self):
         return f"<UserGroup(id={self.id}, name={self.name})>"

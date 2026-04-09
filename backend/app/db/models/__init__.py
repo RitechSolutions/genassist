@@ -42,6 +42,7 @@ from .webhook import WebhookModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
 from .file import FileModel, StorageProvider
 from .user_group import UserGroupModel
+from .user_supervised_group import UserSupervisedGroupModel
 __all__ = [
     # Primary model class names
     "OperatorModel",
@@ -94,6 +95,7 @@ __all__ = [
     "FileModel",
     "StorageProvider",
     "UserGroupModel",
+    "UserSupervisedGroupModel",
 ]
 
 models = [
