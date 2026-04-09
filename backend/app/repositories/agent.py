@@ -4,7 +4,7 @@ from injector import inject
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
-from app.db.events.group_scope import get_group_scope_clause
+from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models import AgentModel, OperatorModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.filter import BaseFilterModel
@@ -21,15 +21,13 @@ class AgentRepository(DbRepository[AgentModel]):
         Return the Agent row with operator, workflow, and security_settings
         eagerly loaded.
         """
-        result = await self.db.execute(
-            select(AgentModel)
-            .options(
+        stmt = select(AgentModel).options(
                 joinedload(AgentModel.operator).joinedload(OperatorModel.user),
                 selectinload(AgentModel.workflow),  # separate query avoids cartesian product with other joins
                 joinedload(AgentModel.security_settings)
-            )
-            .where(AgentModel.id == agent_id)
-        )
+            ).where(AgentModel.id == agent_id)
+        stmt = stmt.execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+        result = await self.db.execute(stmt)
         return result.scalars().first()
 
 
@@ -67,6 +65,7 @@ class AgentRepository(DbRepository[AgentModel]):
             .where(OperatorModel.user_id == user_id)
             .options(*options)
         )
+        stmt = stmt.execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
