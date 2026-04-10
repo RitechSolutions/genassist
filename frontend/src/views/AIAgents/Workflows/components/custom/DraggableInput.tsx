@@ -37,7 +37,6 @@ export const DraggableInput: React.FC<DraggableInputProps> = ({
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [cursorPosition, setCursorPosition] = useState(0);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -56,51 +55,55 @@ export const DraggableInput: React.FC<DraggableInputProps> = ({
     e.stopPropagation();
     setIsDragOver(false);
 
+    const el = inputRef.current;
+    const insertPos =
+      el && document.activeElement === el
+        ? el.selectionStart ?? value.length
+        : value.length;
+
     try {
-      // Try to get JSON data first
       const jsonData = e.dataTransfer.getData("application/json");
 
       if (jsonData) {
         const { path, value: droppedValue } = JSON.parse(jsonData);
-
-        // Format the raw path as {{path}} for workflow variables
         const variableReference = path;
-        const newValue = insertAtPosition(
-          value,
-          variableReference,
-          cursorPosition
-        );
-        
-        // Create a synthetic event for the onChange callback
+        const newValue = insertAtPosition(value, variableReference, insertPos);
+        const cursorAfter = insertPos + variableReference.length;
+
         const syntheticEvent = {
           target: { value: newValue }
         } as React.ChangeEvent<HTMLInputElement>;
         onChange(syntheticEvent);
 
-        // Call the callback if provided
+        setTimeout(() => {
+          if (inputRef.current && document.activeElement === inputRef.current) {
+            inputRef.current.setSelectionRange(cursorAfter, cursorAfter);
+          }
+        }, 0);
+
         if (onVariableDrop) {
           onVariableDrop(path, droppedValue);
         }
         return;
       }
 
-      // Fallback to plain text
       const textData = e.dataTransfer.getData("text/plain");
 
       if (textData) {
-        // Format the raw path as {{path}} for workflow variables
         const variableReference = textData;
-        const newValue = insertAtPosition(
-          value,
-          variableReference,
-          cursorPosition
-        );
-        
-        // Create a synthetic event for the onChange callback
+        const newValue = insertAtPosition(value, variableReference, insertPos);
+        const cursorAfter = insertPos + variableReference.length;
+
         const syntheticEvent = {
           target: { value: newValue }
         } as React.ChangeEvent<HTMLInputElement>;
         onChange(syntheticEvent);
+
+        setTimeout(() => {
+          if (inputRef.current && document.activeElement === inputRef.current) {
+            inputRef.current.setSelectionRange(cursorAfter, cursorAfter);
+          }
+        }, 0);
       }
     } catch (error) {
       // ignore
@@ -139,29 +142,6 @@ export const DraggableInput: React.FC<DraggableInputProps> = ({
     return before + leadingSpace + newValue + trailingSpace + after;
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange(e);
-  };
-
-  // Track cursor position on input events
-  const handleInputSelect = () => {
-    if (inputRef.current) {
-      setCursorPosition(inputRef.current.selectionStart || 0);
-    }
-  };
-
-  const handleInputClick = () => {
-    if (inputRef.current) {
-      setCursorPosition(inputRef.current.selectionStart || 0);
-    }
-  };
-
-  const handleInputKeyUp = () => {
-    if (inputRef.current) {
-      setCursorPosition(inputRef.current.selectionStart || 0);
-    }
-  };
-
   return (
     <div className="space-y-2 w-full">
       {label && <Label htmlFor={id}>{label}</Label>}
@@ -175,10 +155,7 @@ export const DraggableInput: React.FC<DraggableInputProps> = ({
           ref={inputRef}
           id={id}
           value={value}
-          onChange={handleInputChange}
-          onSelect={handleInputSelect}
-          onClick={handleInputClick}
-          onKeyUp={handleInputKeyUp}
+          onChange={onChange}
           placeholder={placeholder}
           className={cn(
             "w-full transition-colors",

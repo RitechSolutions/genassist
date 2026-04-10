@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi_injector import Injected
@@ -8,11 +7,11 @@ from fastapi_injector import Injected
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
 from app.schemas.dashboard import (
-    DashboardSummaryStats,
     ActiveConversationsResponse,
     AgentStatsResponse,
-    IntegrationsResponse,
     DashboardResponse,
+    DashboardSummaryStats,
+    IntegrationsResponse,
 )
 from app.services.dashboard import DashboardService
 
@@ -78,6 +77,7 @@ async def get_summary_stats(
     - Number of active agents
     - Total workflow runs in the period
     - Average response time in milliseconds
+    - Total cost in USD
     """
     from_date, to_date = parse_date_range(days)
     return await dashboard_service.get_summary_stats(from_date, to_date)

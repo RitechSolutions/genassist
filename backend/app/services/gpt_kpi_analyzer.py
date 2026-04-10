@@ -24,13 +24,8 @@ logger = logging.getLogger(__name__)
 
 class GptKpiAnalyzer:
 
-    async def analyze_transcript(
-        self,
-        transcript: str,
-        llm_analyst: LlmAnalyst,
-        max_attempts=3,
-        conversation_id: Optional[UUID] = None,
-    ) -> AnalysisResult:
+    async def analyze_transcript(self, transcript: str, llm_analyst: LlmAnalyst, max_attempts=3,
+            conversation_id: Optional[UUID] = None, ) -> AnalysisResult:
         """Analyze transcript using ChatGPT (LangChain) with retry on failure."""
 
         from app.dependencies.injector import injector
@@ -39,12 +34,7 @@ class GptKpiAnalyzer:
         llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
         agent_logs_service = injector.get(AgentResponseLogService)
 
-        if (
-            transcript is None
-            or transcript.strip() == ""
-            or len(transcript) == 0
-            or transcript == "[]"
-        ):
+        if (transcript is None or transcript.strip() == "" or len(transcript) == 0 or transcript == "[]"):
             raise AppException(ErrorKey.TRANSCRIPT_NOT_FOUND)
         else:
             logger.debug(f"analyzing transcript: {transcript}")
@@ -53,11 +43,11 @@ class GptKpiAnalyzer:
         last_response = ""
         user_prompt = ""
 
-        system_msg = SystemMessage(content=self._build_system_prompt(llm_analyst.prompt))
+        system_prompt = self._build_system_prompt(llm_analyst.prompt, llm_analyst)
+        system_msg = SystemMessage(content=system_prompt)
 
-        enrichment_context = await agent_logs_service.build_enrichment_context(
-            conversation_id, llm_analyst.context_enrichments or []
-        )
+        enrichment_context = await agent_logs_service.build_enrichment_context(conversation_id,
+                llm_analyst.context_enrichments or [])
 
         for attempt in range(1, max_attempts + 1):
             try:
@@ -65,10 +55,8 @@ class GptKpiAnalyzer:
                 if attempt == 1:
                     user_prompt = self._create_user_prompt(transcript, enrichment_context=enrichment_context)
                 else:
-                    user_prompt = self._create_user_prompt(
-                        transcript, enrichment_context=enrichment_context,
-                        error_hint=last_error_msg, attempt=attempt
-                    )
+                    user_prompt = self._create_user_prompt(transcript, enrichment_context=enrichment_context,
+                            error_hint=last_error_msg, attempt=attempt)
 
                 user_msg = HumanMessage(content=user_prompt)
 
@@ -81,17 +69,8 @@ class GptKpiAnalyzer:
                 title = summary_data.get("title")
                 metrics = self._extract_metrics(response_text)
 
-                if (
-                    summary
-                    and title
-                    and isinstance(metrics, dict)
-                    and metrics
-                ):
-                    return AnalysisResult(
-                        summary=summary,
-                        title=title,
-                        kpi_metrics=metrics,
-                    )
+                if (summary and title and isinstance(metrics, dict) and metrics):
+                    return AnalysisResult(summary=summary, title=title, kpi_metrics=metrics, )
 
                 raise AppException(ErrorKey.TRANSCRIPT_PARSE_ERROR)
 
@@ -103,33 +82,38 @@ class GptKpiAnalyzer:
                 # If we reach here, it's a retryable error (e.g., parsing failure)
                 last_error_msg = str(e)
                 logger.error(
-                    f"Attempt {attempt}: Failed to parse GPT response as JSON. Error: {last_error_msg} - LastResponse: {last_response} - Prompt: {user_prompt}"
-                )
+                        f"Attempt {attempt}: Failed to parse GPT response as JSON. Error: {last_error_msg} - LastResponse: {last_response} - Prompt: {user_prompt}")
 
         # If we exhausted all retries without success, raise an appropriate exception
         logger.error(f"Failed to analyze transcript after {max_attempts} attempts. Last error: {last_error_msg}")
-        raise AppException(
-            error_key=ErrorKey.GPT_FAILED_JSON_PARSING,
-            status_code=500,
-            error_detail=f"Last error: {last_error_msg}. Last response: {last_response}"
-        )
+        raise AppException(error_key=ErrorKey.GPT_FAILED_JSON_PARSING, status_code=500,
+                error_detail=f"Last error: {last_error_msg}. Last response: {last_response}")
+
 
     def _format_transcript(self, segments: List[TranscriptSegment]) -> str:
         """Format transcript segments into a readable string."""
         return "\n".join(
-            f"Speaker {seg.speaker} ({seg.start_time:.2f}s - {seg.end_time:.2f}s):\n{seg.text}"
-            for seg in segments
-        )
+                f"Speaker {seg.speaker} ({seg.start_time:.2f}s - {seg.end_time:.2f}s):\n{seg.text}" for seg in segments)
 
-    def _build_system_prompt(self, base_prompt: str) -> str:
+
+    def _get_topics_csv(self, llm_analyst: LlmAnalyst) -> str:
+        """Return topics CSV from llm_analyst settings, falling back to the default enum."""
+        topics = (llm_analyst.settings or {}).get("topics")
+        if topics and isinstance(topics, list):
+            return ", ".join(str(t) for t in topics)
+        return ConversationTopic.as_csv()
+
+
+    def _build_system_prompt(self, base_prompt: str, llm_analyst: LlmAnalyst) -> str:
         """Combine the tenant-configured base prompt with the fixed analysis format instructions."""
+        topics_csv = self._get_topics_csv(llm_analyst)
         return f"""{base_prompt}
 
 You are a customer experience expert specializing in call center analysis.
 
 Always respond in exactly this format:
 
-**A) Title:** <one from: {ConversationTopic.as_csv()}>
+**A) Title:** <one from: {topics_csv}>
 
 **B) Summary:**
 - Operator performance assessment
@@ -158,10 +142,9 @@ Provide the following KPI metrics, overall tone, and sentiment percentages as a 
 
 The JSON metrics should be integers between 0 and 10, Tone must be one of the listed values, and sentiment percentages must sum up to 100%."""
 
-    def _create_user_prompt(
-        self, transcript_text: str, enrichment_context: str = "",
-        error_hint: str = None, attempt: int = 1
-    ) -> str:
+
+    def _create_user_prompt(self, transcript_text: str, enrichment_context: str = "", error_hint: str = None,
+            attempt: int = 1) -> str:
         """Create the user message for ChatGPT, optionally prepending enrichment context and retry hints."""
         context_block = f"Additional Context:\n{enrichment_context}\n\n" if enrichment_context else ""
         retry_instruction = ""
@@ -179,12 +162,9 @@ Please make sure your response strictly follows the requested format and especia
 
 {retry_instruction}"""
 
-    async def partial_hostility_analysis(
-        self,
-        transcript_segments: str,
-        llm_analyst: LlmAnalyst,
-        conversation_id: Optional[UUID] = None,
-    ) -> dict:
+
+    async def partial_hostility_analysis(self, transcript_segments: str, llm_analyst: LlmAnalyst,
+            conversation_id: Optional[UUID] = None, ) -> dict:
 
         from app.dependencies.injector import injector
 
@@ -194,9 +174,8 @@ Please make sure your response strictly follows the requested format and especia
 
         system_msg = SystemMessage(content=llm_analyst.prompt)
 
-        enrichment_context = await agent_logs_service.build_enrichment_context(
-            conversation_id, llm_analyst.context_enrichments or []
-        )
+        enrichment_context = await agent_logs_service.build_enrichment_context(conversation_id,
+                llm_analyst.context_enrichments or [])
         context_block = f"Additional Context:\n{enrichment_context}\n\n" if enrichment_context else ""
 
         user_prompt = f"""{context_block}
@@ -213,7 +192,7 @@ Please make sure your response strictly follows the requested format and especia
         YOU MUST ALWAYS RETURN ONE JSON OBJECT WITH EXACTLY THREE KEYS:
 
          1. "hostile_score" between 0 and 100.
-         2. "topic" string from this specific list: {ConversationTopic.as_csv()} based on the conversation 
+         2. "topic" string from this specific list: {self._get_topics_csv(llm_analyst)} based on the conversation
          transcript. Return "Other" if none of the other topics match the conversation or if there isn't enough 
          context to decide.
          3. "negative_reason" string from this specific list: {NegativeConversationReason.as_csv()} based on the 
@@ -268,17 +247,12 @@ Please make sure your response strictly follows the requested format and especia
 
             # Basic validation
             if (
-                "topic" in analysis_data
-                and "hostile_score" in analysis_data
-                and "negative_reason" in analysis_data
-                and isinstance(analysis_data["hostile_score"], int)
-            ):
+                    "topic" in analysis_data and "hostile_score" in analysis_data and "negative_reason" in analysis_data and isinstance(
+                    analysis_data["hostile_score"], int)):
                 return analysis_data
 
             # If the JSON doesn't match the expected structure
-            raise ValueError(
-                "partial_hostility_analysis: Missing or invalid fields in JSON output."
-            )
+            raise ValueError("partial_hostility_analysis: Missing or invalid fields in JSON output.")
 
         except Exception as e:
             logger.warning(f"Hostility analysis failed: {e}")
@@ -345,4 +319,3 @@ Please make sure your response strictly follows the requested format and especia
                 logger.warning("_extract_metrics: Failed to parse embedded JSON block.")
 
         return {}
-

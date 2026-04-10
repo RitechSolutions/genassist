@@ -1,23 +1,22 @@
+import hashlib
 import re
 import secrets
-import hashlib
 import string
 import unicodedata
+from contextvars import ContextVar
+from typing import Optional
+from uuid import UUID
 
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from passlib.context import CryptContext
-from uuid import UUID
 from starlette_context import context
-from contextvars import ContextVar
-from uuid import UUID
-from typing import Optional
 
 API_KEY_HEADER_NAME = "X-API-Key"
 
-api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)  
+api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)
 
 oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/token",
-                                     auto_error=False) 
+                                     auto_error=False)
 
 socket_user_id: ContextVar[Optional[UUID]] = ContextVar("socket_user_id", default=None)
 
@@ -26,7 +25,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def has_permission(available, *required:  str) -> bool:
-    return all([permission in available or "*" in available for permission in required])
+    if "*" in available:
+        return True
+
+    if not all([permission in available or "*" in available for permission in required]):
+        return False
+    return True
 
 
 def get_password_hash(password: str) -> str:
@@ -90,4 +94,7 @@ async def generate_unique_username(user_repository, first: str, last: str) -> st
 
 
 def is_current_user_supervisor_or_admin():
-    return current_user_is_supervisor() or current_user_is_admin()
+    current_user_roles = context.get("user_roles") if context.exists() else None
+    if current_user_roles:
+        return any(role.name in ["supervisor", "admin"] for role in current_user_roles)
+    return False

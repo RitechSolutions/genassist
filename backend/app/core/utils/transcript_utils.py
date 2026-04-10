@@ -93,6 +93,35 @@ def schema_to_transcript_message(
 
     return TranscriptMessageModel(**message_data)
 
+_CUSTOMER_SPEAKERS = {"customer", "user"}
+_AGENT_SPEAKERS = {"agent", "assistant", "bot"}
+
+
+def extract_qa_pairs(
+    messages: List[TranscriptMessageModel],
+) -> List[tuple[str, str]]:
+    """
+    Return (question, answer) pairs extracted from a conversation transcript.
+
+    A pair is formed when a customer message is immediately followed by an
+    agent message. If multiple customer messages appear before an agent
+    response, only the last one is used as the question.
+    """
+    ordered = sorted(messages, key=lambda m: m.sequence_number)
+    pairs: List[tuple[str, str]] = []
+    pending_customer: str | None = None
+
+    for msg in ordered:
+        speaker = (msg.speaker or "").lower()
+        if speaker in _CUSTOMER_SPEAKERS:
+            pending_customer = msg.text
+        elif speaker in _AGENT_SPEAKERS and pending_customer is not None:
+            pairs.append((pending_customer, msg.text))
+            pending_customer = None
+
+    return pairs
+
+
 def json_to_transcript_messages(
         transcript_json: str,
         conversation_id: UUID

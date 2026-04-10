@@ -1,16 +1,17 @@
-import { Bell, Lock, User, Globe } from "lucide-react";
-import { SettingSectionType } from "../../../interfaces/settings.interface";
+import { Bell, Lock, User, Globe } from 'lucide-react';
+import { SettingSectionType } from '../../../interfaces/settings.interface';
 
 export const settingSections: SettingSectionType[] = [
   {
-    title: "Profile Settings",
+    title: 'Profile Settings',
     icon: User,
-    description: "Manage your account information and preferences",
+    description: 'Manage your account information and preferences',
     fields: [
-      { label: "Username", type: "text", placeholder: "john23", valueKey: "username", readOnly: true },
-      { label: "Email", type: "email", placeholder: "john@example.com", valueKey: "email", readOnly: true },
-      { label: "Tenant", type: "text", placeholder: "genassist-support", valueKey: "tenant", readOnly: true }
-    ]
+      { label: 'Username', type: 'text', placeholder: 'john23', valueKey: 'username', readOnly: true },
+      { label: 'Email', type: 'email', placeholder: 'john@example.com', valueKey: 'email', readOnly: true },
+      { label: 'Roles', type: 'tags', options: ['admin', 'supervisor', 'user'], valueKey: 'roles', readOnly: true },
+      { label: 'Tenant', type: 'text', placeholder: 'genassist-support', valueKey: 'tenant', readOnly: true },
+    ],
   },
   // {
   //   title: "Notification Preferences",
@@ -40,4 +41,4 @@ export const settingSections: SettingSectionType[] = [
   //     { label: "Time Zone", type: "select", options: ["UTC", "UTC+1", "UTC-5"] }
   //   ]
   // }
-]; 
+];

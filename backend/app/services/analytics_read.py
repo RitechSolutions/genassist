@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from injector import inject
@@ -131,4 +131,21 @@ class AnalyticsReadService:
             from_date=from_date,
             to_date=to_date,
             items=items,
+        )
+
+    async def get_custom_attribute_keys(
+        self,
+        agent_id: UUID | None = None,
+    ) -> list[str]:
+        return await self.repo.get_custom_attribute_keys(agent_id=agent_id)
+
+    async def get_custom_attribute_breakdown(
+        self,
+        key: str,
+        agent_id: UUID | None = None,
+        from_date: date | datetime | None = None,
+        to_date: date | datetime | None = None,
+    ) -> list[dict]:
+        return await self.repo.get_custom_attribute_breakdown(
+            key=key, agent_id=agent_id, from_date=from_date, to_date=to_date
         )

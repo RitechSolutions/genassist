@@ -6,6 +6,7 @@ import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { AnalyticsMetricsSection } from "../components/AnalyticsMetricsSection";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { AttributeBreakdownChart } from "../components/reports/AttributeBreakdownChart";
 import { useAnalyticsData } from "../hooks/useAnalyticsData";
 import { useAgentsList } from "../hooks/useAgentsList";
 
@@ -16,8 +17,9 @@ const AnalyticsPage = () => {
     to: new Date(),
   });
   const [agentFilter, setAgentFilter] = useState("all");
+  const [compareDateRange, setCompareDateRange] = useState<DateRange | undefined>(undefined);
   const { agents } = useAgentsList();
-  const { metrics, deltas, loading, refreshing, error } = useAnalyticsData(dateRange, agentFilter);
+  const { metrics, deltas, loading, refreshing, error } = useAnalyticsData(dateRange, agentFilter, compareDateRange);
 
   return (
     <SidebarProvider>
@@ -38,6 +40,8 @@ const AnalyticsPage = () => {
                   onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
+                  compareDateRange={compareDateRange}
+                  onCompareDateRangeChange={setCompareDateRange}
                 />
               </header>
 
@@ -49,6 +53,12 @@ const AnalyticsPage = () => {
                 loading={loading}
                 refreshing={refreshing}
                 error={error}
+                compareDateRange={compareDateRange}
+              />
+
+              <AttributeBreakdownChart
+                agentId={agentFilter}
+                dateRange={dateRange}
               />
             </div>
           </div>

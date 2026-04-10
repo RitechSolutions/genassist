@@ -5,6 +5,7 @@ import uuid
 from typing import Any, Dict, Optional
 from uuid import UUID
 
+import httpx
 from injector import inject
 
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
@@ -26,6 +27,9 @@ class DataSourceService:
         "refresh_token",
         "password",
         "api_token",
+        "private_key_passphrase",
+        "smb_password",
+        "connectionstring",
     ]
 
     def __init__(self, repository: DataSourcesRepository):
@@ -167,8 +171,12 @@ class DataSourceService:
         return connection_data
 
     async def decrypt_connection_data_fields(
-        self, connection_data: Dict[str, Any], datasource_id: Optional[UUID] = None
-    ) -> Dict[str, Any]:
+        self,
+        connection_data: Optional[Dict[str, Any]],
+        datasource_id: Optional[UUID] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if connection_data is None:
+            return None
         for field_name in self.encrypted_fields:
             if field_name in connection_data and connection_data[field_name]:
                 try:
@@ -190,15 +198,16 @@ class DataSourceService:
         cd = dict(connection_data or {})
 
         if datasource_id:
-            stored_raw = await self.repository.get_by_id(datasource_id)
-            raw_conn = dict((stored_raw.connection_data if stored_raw else None) or {})
-            decrypted_conn = await self.decrypt_connection_data_fields(dict(raw_conn))
+            # stored_raw = await self.repository.get_by_id(datasource_id)
+            # raw_conn = dict((stored_raw.connection_data if stored_raw else None) or {})
+            # decrypted_conn = await self.decrypt_connection_data_fields(dict(raw_conn))
+            decrypted_conn = await self.decrypt_connection_data_fields(cd)
 
             base = dict(decrypted_conn)
             for k, v in cd.items():
                 if v is None or v == "":
                     continue
-                if k in self.encrypted_fields and v == raw_conn.get(k):
+                if k in self.encrypted_fields and v == cd.get(k):
                     pass  # unchanged encrypted field — keep stored decrypted value
                 else:
                     base[k] = v  # new plaintext value from user
@@ -223,8 +232,8 @@ class DataSourceService:
                 )
                 return await SnowflakeManager.test_connection(cd)
             elif source_type_lower == "zendesk":
-                from app.services.connection_tester import test_zendesk
-                return await test_zendesk(cd)
+                from app.modules.integration.zendesk import ZendeskConnector
+                return await ZendeskConnector.test_connection(cd)
             elif source_type_lower == "smb_share_folder":
                 from app.services.smb_share_service import SMBShareFSService
                 return await SMBShareFSService.test_connection(cd)
@@ -232,8 +241,10 @@ class DataSourceService:
                 from app.services.AzureStorageService import AzureStorageService
                 return AzureStorageService.test_connection(cd)
             elif source_type_lower == "url":
-                from app.services.connection_tester import test_url
-                return await test_url(cd)
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(cd["url"], timeout=10.0, follow_redirects=True)
+                    response.raise_for_status()
+                return {"success": True, "message": "URL is accessible."}
             else:
                 return {
                     "success": False,

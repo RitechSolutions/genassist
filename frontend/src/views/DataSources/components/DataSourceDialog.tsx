@@ -13,8 +13,8 @@ import {
   getDataSourceFormSchemas,
   updateDataSource,
   getDataSource,
-  testConnection,
-} from "@/services/dataSources";
+  testDataSourceConnection,
+} from '@/services/dataSources';
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import {
@@ -29,8 +29,9 @@ import { Loader2 } from "lucide-react";
 import { ConnectionTestPanel } from "@/components/ConnectionTestPanel";
 import type { ConnectionStatus } from "@/interfaces/connectionStatus.interface";
 import {
+  ConnectionDataValue,
   DataSource,
-  DataSourceConfig,
+  DataSourceField,
 } from "@/interfaces/dataSource.interface";
 import { useQuery } from "@tanstack/react-query";
 import { GmailConnection } from "./GmailConnection";
@@ -59,7 +60,7 @@ export function DataSourceDialog({
   const [name, setName] = useState("");
   const [sourceType, setSourceType] = useState("");
   const [connectionData, setConnectionData] = useState<
-    Record<string, string | number | boolean>
+    Record<string, ConnectionDataValue>
   >({});
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -70,6 +71,10 @@ export function DataSourceDialog({
   >();
   const [isTesting, setIsTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<ConnectionStatus | null>(null);
+  const [testedConnectionData, setTestedConnectionData] = useState<Record<
+    string,
+    ConnectionDataValue
+  > | null>(null);
 
   const { data, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["dataSourceSchemas"],
@@ -131,6 +136,7 @@ export function DataSourceDialog({
     setIsActive(true);
     setShowAdvanced(false);
     setTestStatus(null);
+    setTestedConnectionData(null);
   };
 
   const populateFormWithDataSource = (dataSource: DataSource) => {
@@ -140,14 +146,15 @@ export function DataSourceDialog({
     setConnectionData(dataSource.connection_data);
     setIsActive(dataSource.is_active === 1);
     setTestStatus(dataSource.connection_status ?? null);
+    setTestedConnectionData(dataSource.connection_status ? structuredClone(dataSource.connection_data) : null);
   };
 
   const getSchemaDefaults = (
     type: string,
-  ): Record<string, string | number | boolean> => {
+  ): Record<string, ConnectionDataValue> => {
     const schema = dataSourceSchemas[type];
     if (!schema) return {};
-    const defaults: Record<string, string | number | boolean> = {};
+    const defaults: Record<string, ConnectionDataValue> = {};
     for (const field of schema.fields) {
       if (field.default !== undefined && field.default !== null) {
         defaults[field.name] = field.default;
@@ -158,7 +165,7 @@ export function DataSourceDialog({
 
   const handleConnectionDataChange = (
     fieldName: string,
-    value: string | number | boolean,
+    value: ConnectionDataValue,
   ) => {
     setConnectionData((prev) => ({ ...prev, [fieldName]: value }));
   };
@@ -167,22 +174,20 @@ export function DataSourceDialog({
     setIsTesting(true);
     setTestStatus(null);
     try {
-      const result = await testConnection(
-        sourceType,
-        connectionData,
-        dataSourceId,
-      );
+      const result = await testDataSourceConnection(sourceType, connectionData, dataSourceId);
       setTestStatus({
         status: result.success ? "Connected" : "Error",
         last_tested_at: new Date().toISOString(),
         message: result.message,
       });
+      setTestedConnectionData(structuredClone(connectionData));
     } catch {
       setTestStatus({
         status: "Error",
         last_tested_at: new Date().toISOString(),
         message: "Test failed.",
       });
+      setTestedConnectionData(structuredClone(connectionData));
     } finally {
       setIsTesting(false);
     }
@@ -242,14 +247,23 @@ export function DataSourceDialog({
         );
       };
 
+      const isConnectionValueEmpty = (
+        field: DataSourceField,
+        v: ConnectionDataValue | undefined,
+      ): boolean => {
+        if (v === undefined || v === null || v === "") return true;
+        if (field.type === "tags" && Array.isArray(v) && v.length === 0) {
+          return true;
+        }
+        return false;
+      };
+
       const schemaMissing = schema.fields
         .filter(
           (field) =>
             field.required &&
             isFieldVisible(field) &&
-            (connectionData[field.name] === undefined ||
-              connectionData[field.name] === null ||
-              connectionData[field.name] === ""),
+            isConnectionValueEmpty(field, connectionData[field.name]),
         )
         .map((field) => field.label);
 
@@ -269,7 +283,7 @@ export function DataSourceDialog({
         name,
         source_type: sourceType,
         connection_data: connectionData,
-        connection_status: testStatus ?? undefined,
+        connection_status: hasChangedSinceTest ? undefined : (testStatus ?? undefined),
         is_active: isActive ? 1 : 0,
       };
 
@@ -301,31 +315,30 @@ export function DataSourceDialog({
 
   const isOAuthType = ["gmail", "o365"].includes(sourceType);
   const schema = dataSourceSchemas[sourceType];
-  const hasAdvancedFields = schema?.fields.some((f) => !f.required) ?? false;
+  const hasAdvancedFields =
+    schema?.fields.some((f) => {
+      if (f.required) return false;
+      if (!f.conditional) return true;
+      return connectionData[f.conditional.field] === f.conditional.value;
+    }) ?? false;
+  const hasChangedSinceTest =
+    testStatus !== null &&
+    testedConnectionData !== null &&
+    JSON.stringify(connectionData) !== JSON.stringify(testedConnectionData);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
-        <form
-          onSubmit={handleSubmit}
-          className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col"
-        >
+        <form onSubmit={handleSubmit} className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col">
           <DialogHeader className="p-6 pb-4">
-            <DialogTitle>
-              {mode === "create" ? "Create Data Source" : "Edit Data Source"}
-            </DialogTitle>
+            <DialogTitle>{mode === 'create' ? 'Create Data Source' : 'Edit Data Source'}</DialogTitle>
           </DialogHeader>
 
           <div className="px-6 pb-6 space-y-4">
             {/* Name & Source Type */}
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Name"
-              />
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
             </div>
 
             <div className="space-y-2">
@@ -341,13 +354,11 @@ export function DataSourceDialog({
                     setSourceType(value.toLowerCase() as string);
                     setConnectionData(getSchemaDefaults(value));
                     setTestStatus(null);
+                    setTestedConnectionData(null);
                     setShowAdvanced(false);
                   }}
                 >
-                  <SelectTrigger
-                    className="w-full"
-                    disabled={disableSourceType}
-                  >
+                  <SelectTrigger className="w-full" disabled={disableSourceType}>
                     <SelectValue placeholder="Select Source Type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -363,14 +374,14 @@ export function DataSourceDialog({
 
             {sourceType && (
               <>
-                {sourceType === "gmail" && (
+                {sourceType === 'gmail' && (
                   <GmailConnection
                     dataSource={
                       currentDataSource ||
                       (dataSourceId
                         ? ({
                             id: dataSourceId,
-                            oauth_status: "disconnected",
+                            oauth_status: 'disconnected',
                             name,
                             source_type: sourceType,
                             connection_data: connectionData,
@@ -383,14 +394,14 @@ export function DataSourceDialog({
                   />
                 )}
 
-                {sourceType === "o365" && (
+                {sourceType === 'o365' && (
                   <Office365Connection
                     dataSource={
                       currentDataSource ||
                       (dataSourceId
                         ? ({
                             id: dataSourceId,
-                            oauth_status: "disconnected",
+                            oauth_status: 'disconnected',
                             name,
                             source_type: sourceType,
                             connection_data: connectionData,
@@ -404,9 +415,9 @@ export function DataSourceDialog({
                 )}
 
                 {/* Required fields */}
-                {!isOAuthType && schema && (
+                {!isOAuthType && schema?.fields && (
                   <SchemaFormRenderer
-                    schema={schema}
+                    schema={{ fields: schema.fields }}
                     connectionData={connectionData}
                     onChange={handleConnectionDataChange}
                     showAdvanced={false}
@@ -417,21 +428,13 @@ export function DataSourceDialog({
                 <div className="flex items-center gap-2 border-t pt-4">
                   <div className="flex items-center gap-2">
                     <Label htmlFor="is_active">Active</Label>
-                    <Switch
-                      id="is_active"
-                      checked={isActive}
-                      onCheckedChange={setIsActive}
-                    />
+                    <Switch id="is_active" checked={isActive} onCheckedChange={setIsActive} />
                   </div>
                   <div className="flex-1" />
                   {!isOAuthType && hasAdvancedFields && (
                     <div className="flex items-center gap-2">
                       <Label htmlFor="show_advanced">Advanced</Label>
-                      <Switch
-                        id="show_advanced"
-                        checked={showAdvanced}
-                        onCheckedChange={setShowAdvanced}
-                      />
+                      <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
                     </div>
                   )}
                 </div>
@@ -439,7 +442,7 @@ export function DataSourceDialog({
                 {/* Advanced fields */}
                 {!isOAuthType && showAdvanced && schema?.fields && (
                   <SchemaFormRenderer
-                    schema={schema as DataSourceConfig}
+                    schema={{ fields: schema.fields }}
                     connectionData={connectionData}
                     onChange={handleConnectionDataChange}
                     showAdvanced={true}
@@ -452,6 +455,7 @@ export function DataSourceDialog({
                   <ConnectionTestPanel
                     isTesting={isTesting}
                     testStatus={testStatus}
+                    hasChangedSinceTest={hasChangedSinceTest}
                     onTest={handleTestConnection}
                   />
                 )}
@@ -461,19 +465,12 @@ export function DataSourceDialog({
 
           <DialogFooter className="px-6 py-4 border-t">
             <div className="flex justify-end gap-3 w-full">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
-              >
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                {mode === "create" ? "Create" : "Update"}
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {mode === 'create' ? 'Create' : 'Update'}
               </Button>
             </div>
           </DialogFooter>

@@ -39,7 +39,7 @@ async def create_ds(client, data):
 @pytest.mark.asyncio(scope="session")
 async def test_s3_sync_new_audio_files(
      authorized_client, new_datasource_data):
-    
+
     logger.info(f"Creating test audio datasource: {new_datasource_data}")
     new_datasource_data["connection_data"]["prefix"] = f"test-audio-sync-{random.randint(1000, 9999)}/"
     await create_ds(authorized_client, new_datasource_data)
@@ -51,7 +51,7 @@ async def test_s3_sync_new_audio_files(
     filename = parent_dir+'/audio/tech-support.mp3'
     logger.info("uploading test file:"+filename)
 
-    # Use the S3 client to upload sample audio files    
+    # Use the S3 client to upload sample audio files
     s3_client = S3Client(
         bucket_name=new_datasource_data["connection_data"]["bucket_name"],
         aws_access_key_id=new_datasource_data["connection_data"]["access_key"],

@@ -5,6 +5,7 @@ from langchain_core.language_models import BaseChatModel
 
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
+from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.agent_utils import (
     validate_tool_parameters,
     format_tool_parameters,
@@ -172,7 +173,7 @@ class ToolAgent(BaseToolAgent):
             # If it returns a string (even empty), use it as it was extracted from JSON
             final_response = direct_response if direct_response is not None else response_content
 
-            return create_success_response(
+            result = create_success_response(
                 final_response,
                 self._get_agent_name(),
                 steps=[{"step": 1, "response": response_content,
@@ -180,6 +181,10 @@ class ToolAgent(BaseToolAgent):
                 tools_used=[],
                 no_tools_available=True
             )
+            usage = extract_usage_from_aimessage(response)
+            if usage:
+                result["llm_usage"] = [usage]
+            return result
         except Exception as e:
             logger.error(f"Error generating direct response: {str(e)}")
             return create_error_response(
@@ -197,14 +202,17 @@ class ToolAgent(BaseToolAgent):
 
         workflow_steps: List[Dict[str, Any]] = []
         tools_used: List[Dict[str, Any]] = []
+        llm_usage_entries: List[Dict[str, Any]] = []
 
         for iteration in range(self.max_iterations):
             try:
                 result = await self._execute_workflow_iteration(
-                    prompt, iteration, workflow_steps, tools_used
+                    prompt, iteration, workflow_steps, tools_used, llm_usage_entries
                 )
 
                 if result is not None:
+                    if llm_usage_entries:
+                        result["llm_usage"] = llm_usage_entries
                     return result
 
                 # Update prompt for next iteration if needed
@@ -219,29 +227,41 @@ class ToolAgent(BaseToolAgent):
             except Exception as e:
                 logger.error(
                     f"Error in tool workflow iteration {iteration}: {str(e)}")
-                return create_error_response(
+                result = create_error_response(
                     f"Error in iteration {iteration}: {str(e)}",
                     self._get_agent_name(),
                     steps=workflow_steps
                 )
+                if llm_usage_entries:
+                    result["llm_usage"] = llm_usage_entries
+                return result
 
-        return create_error_response(
+        result = create_error_response(
             f"Max iterations ({self.max_iterations}) reached",
             self._get_agent_name(),
             steps=workflow_steps,
             tools_used=tools_used
         )
+        if llm_usage_entries:
+            result["llm_usage"] = llm_usage_entries
+        return result
 
     async def _execute_workflow_iteration(
         self,
         prompt: str,
         iteration: int,
         workflow_steps: List[Dict],
-        tools_used: List[Dict]
+        tools_used: List[Dict],
+        llm_usage_entries: List[Dict],
     ) -> Optional[Dict[str, Any]]:
         """Execute a single workflow iteration"""
         response = await self.llm_model.ainvoke([{"role": "user", "content": prompt}])
         response_content = self._extract_response_content(response)
+
+        usage = extract_usage_from_aimessage(response)
+        if usage:
+            llm_usage_entries.append(usage)
+
         workflow_steps.append(
             {"step": iteration + 1, "response": response_content})
 
@@ -266,14 +286,17 @@ class ToolAgent(BaseToolAgent):
             )
 
         # Execute the tool
-        return await self._execute_single_tool(tool_call, workflow_steps, tools_used, iteration)
+        return await self._execute_single_tool(
+            tool_call, workflow_steps, tools_used, iteration, llm_usage_entries
+        )
 
     async def _execute_single_tool(
         self,
         tool_call: Dict[str, Any],
         workflow_steps: List[Dict],
         tools_used: List[Dict],
-        iteration: int
+        iteration: int,
+        llm_usage_entries: Optional[List[Dict]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Execute a single tool and handle the result"""
         tool_name = tool_call["tool"]

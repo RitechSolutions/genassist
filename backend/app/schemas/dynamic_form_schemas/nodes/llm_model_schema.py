@@ -1,5 +1,6 @@
 from typing import List
-from ..base import FieldSchema, ConditionalField
+
+from ..base import ConditionalField, FieldSchema
 
 LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
     FieldSchema(
@@ -37,6 +38,17 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         type="boolean",
         label="Enable Memory",
         required=True
+    ),
+    FieldSchema(
+        name="piiMasking",
+        type="boolean",
+        label="Enable PII Masking",
+        required=False,
+        default=False,
+        description=(
+            "Mask PII (emails, phones, national IDs, credit cards, IPs) before "
+            "sending text to the LLM. Original values are restored in the response."
+        ),
     ),
     FieldSchema(
         name="memoryTrimmingMode",

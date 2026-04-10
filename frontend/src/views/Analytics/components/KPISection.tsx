@@ -81,7 +81,7 @@ export function KPISection({ timeFilter }: KPISectionProps) {
       ? [
           {
             label: "Usage",
-            value: "~$48.00",
+            value: `$${summaryStats?.total_cost_usd?.toFixed(4) || "0.00"}`,
             change: 16,
             changeType: "increase" as const,
           },

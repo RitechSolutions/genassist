@@ -228,13 +228,33 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
     path: string,
     value: unknown
   ) => {
-    // Set multiple data formats for better compatibility
+    // Set data for drop targets (avoid text/html — it can cause a second drag preview and overlapping text)
     e.dataTransfer.setData("application/json", JSON.stringify({ path, value }));
     e.dataTransfer.setData("text/plain", path);
-    e.dataTransfer.setData("text/html", `<span>${path}</span>`);
 
-    // Set the drag effect
     e.dataTransfer.effectAllowed = "copy";
+
+    // Use a single custom drag image so the cursor shows one clear pill instead of default + HTML
+    const dragImage = document.createElement("div");
+    dragImage.textContent = path;
+    Object.assign(dragImage.style, {
+      position: "absolute",
+      top: "-9999px",
+      left: "0",
+      padding: "6px 12px",
+      background: "#2563eb",
+      color: "white",
+      borderRadius: "9999px",
+      fontSize: "12px",
+      fontWeight: "500",
+      whiteSpace: "nowrap",
+      boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+      pointerEvents: "none",
+      fontFamily: "inherit",
+    });
+    document.body.appendChild(dragImage);
+    e.dataTransfer.setDragImage(dragImage, 0, 0);
+    requestAnimationFrame(() => dragImage.remove());
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {

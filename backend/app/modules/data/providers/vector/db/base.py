@@ -197,6 +197,19 @@ class BaseVectorDB(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def delete_vectors_by_metadata(self, filter_dict: Dict[str, Any]) -> bool:
+        """
+        Delete vectors by metadata filters (more efficient for bulk operations)
+
+        Args:
+            filter_dict: Dictionary of metadata field-value pairs to filter by
+
+        Returns:
+            Success status
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     async def search(
         self,
         query_vector: List[float],

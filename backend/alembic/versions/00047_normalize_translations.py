@@ -1,6 +1,6 @@
 """normalize_translations
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: d2e3f4a5b6c7
 Revises: 00044_disclaimer
 Create Date: 2026-03-09 12:00:00.000000
 

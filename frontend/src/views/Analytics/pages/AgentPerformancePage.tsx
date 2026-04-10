@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
-import { format, subDays } from "date-fns";
+import { subDays } from "date-fns";
+import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
 import { Settings2, TrendingDown, ShieldCheck, ThumbsUp, ThumbsDown } from "lucide-react";
 import { DateRange } from "react-day-picker";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
@@ -21,7 +22,7 @@ import { AgentNodeBreakdownDialog } from "../components/reports/AgentNodeBreakdo
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
 import { useAgentsList } from "../hooks/useAgentsList";
 import {
-  fetchAgentStatsSummaryWithComparison,
+  fetchAgentStatsSummary,
   fetchAgentDailyStats,
   fetchAgentNodeBreakdown,
 } from "@/services/analyticsReports";
@@ -70,6 +71,7 @@ const AgentPerformancePage = () => {
     to: new Date(),
   });
   const [agentFilter, setAgentFilter] = useState("all");
+  const [compareDateRange, setCompareDateRange] = useState<DateRange | undefined>(undefined);
 
   const { agents, agentNameMap } = useAgentsList();
   const [summary, setSummary] = useState<AgentStatsSummaryResponse | null>(null);
@@ -83,21 +85,35 @@ const AgentPerformancePage = () => {
   const [nodeBreakdown, setNodeBreakdown] = useState<NodeTypeBreakdownItem[]>([]);
   const [escalationNode, setEscalationNode] = useState<string>("");
 
-  const loadData = async (range: DateRange | undefined, agentId: string) => {
+  const loadData = async (
+    range: DateRange | undefined,
+    agentId: string,
+    compareRange: DateRange | undefined,
+  ) => {
     setLoading(true);
     setError(null);
     try {
+      const agentIdParam = agentId !== "all" ? agentId : undefined;
+      const { from_date, to_date } = toExpandedUTCDateRange(range);
       const params = {
-        from_date: range?.from ? format(range.from, "yyyy-MM-dd") : undefined,
-        to_date: range?.to ? format(range.to, "yyyy-MM-dd") : undefined,
-        agent_id: agentId !== "all" ? agentId : undefined,
+        from_date,
+        to_date,
+        agent_id: agentIdParam,
       };
-      const [comparisonData, dailyData] = await Promise.all([
-        fetchAgentStatsSummaryWithComparison(params),
+      const compareParams = compareRange?.from && compareRange?.to
+        ? {
+            ...toExpandedUTCDateRange(compareRange),
+            agent_id: agentIdParam,
+          }
+        : undefined;
+
+      const [currentData, previousData, dailyData] = await Promise.all([
+        fetchAgentStatsSummary(params),
+        compareParams ? fetchAgentStatsSummary(compareParams) : Promise.resolve(null),
         fetchAgentDailyStats(params),
       ]);
-      setSummary(comparisonData?.current ?? null);
-      setPreviousSummary(comparisonData?.previous ?? null);
+      setSummary(currentData);
+      setPreviousSummary(previousData);
       setItems(dailyData?.items ?? []);
     } catch {
       setError("Failed to load analytics data.");
@@ -107,21 +123,18 @@ const AgentPerformancePage = () => {
   };
 
   useEffect(() => {
-    loadData(dateRange, agentFilter);
+    loadData(dateRange, agentFilter, compareDateRange);
 
     if (agentFilter !== "all") {
       setEscalationNode(localStorage.getItem(LS_KEY(agentFilter)) ?? "");
-      fetchAgentNodeBreakdown(agentFilter, {
-        from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
-        to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
-      })
+      fetchAgentNodeBreakdown(agentFilter, toExpandedUTCDateRange(dateRange))
         .then((data) => setNodeBreakdown(data?.items ?? []))
         .catch(() => setNodeBreakdown([]));
     } else {
       setEscalationNode("");
       setNodeBreakdown([]);
     }
-  }, [dateRange, agentFilter]);
+  }, [dateRange, agentFilter, compareDateRange]);
 
   const handleEscalationNodeChange = (value: string) => {
     setEscalationNode(value);
@@ -292,8 +305,7 @@ const AgentPerformancePage = () => {
 
   const exportParams = {
     agent_id: agentFilter !== "all" ? agentFilter : undefined,
-    from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
-    to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+    ...toExpandedUTCDateRange(dateRange),
   };
 
   return (
@@ -323,6 +335,8 @@ const AgentPerformancePage = () => {
                   onAgentFilterChange={setAgentFilter}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
+                  compareDateRange={compareDateRange}
+                  onCompareDateRangeChange={setCompareDateRange}
                 >
                   <ExportButton
                     endpoint="/analytics/agents/export"
@@ -349,7 +363,7 @@ const AgentPerformancePage = () => {
               <SummaryStatsCards
                 summary={summary}
                 previousSummary={previousSummary}
-                dateRange={dateRange}
+                compareDateRange={compareDateRange}
                 loading={loading}
                 error={error}
                 containmentRate={containmentRate}
@@ -484,12 +498,8 @@ const AgentPerformancePage = () => {
           agentId={selectedItem.agent_id}
           agentName={agentNameMap[selectedItem.agent_id] ?? selectedItem.agent_id.slice(0, 8) + "…"}
           totalExecutions={selectedItem.execution_count}
-          fromDate={
-            dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined
-          }
-          toDate={
-            dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined
-          }
+          fromDate={toExpandedUTCDateRange(dateRange).from_date}
+          toDate={toExpandedUTCDateRange(dateRange).to_date}
         />
       )}
     </SidebarProvider>

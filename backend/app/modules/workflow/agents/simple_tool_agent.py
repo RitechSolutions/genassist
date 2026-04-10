@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from langchain_core.language_models import BaseChatModel
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
+from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.agent_utils import validate_tool_parameters, create_success_response, create_error_response, parse_json_response, create_tool_descriptions
 from app.modules.workflow.agents.agent_prompts import create_tool_agent_tools_available_prompt, create_tool_agent_tools_query_prompt, create_conversation_context, create_tool_agent_no_tools_prompt, create_tool_agent_no_tools_query_prompt
 
@@ -31,18 +32,31 @@ class SimpleToolAgent(BaseToolAgent):
         if not self.tools:
             return create_error_response("No tools available", self._get_agent_name())
         prompt = self._create_prompt(query, chat_history)
+        llm_usage_entries = []
         try:
             response = await self.llm_model.ainvoke(
                 [{"role": "user", "content": prompt}])
             response_content = self._extract_response_content(response)
+            usage = extract_usage_from_aimessage(response)
+            if usage:
+                llm_usage_entries.append(usage)
             logger.info(f"SimpleToolAgent LLM response: {response_content}")
             parsed = parse_json_response(response_content)
             if not parsed:
-                return create_error_response("LLM did not return a valid response", self._get_agent_name(), llm_response=response_content)
+                result = create_error_response("LLM did not return a valid response", self._get_agent_name(), llm_response=response_content)
+                if llm_usage_entries:
+                    result["llm_usage"] = llm_usage_entries
+                return result
             if parsed.get("action") == "direct_response":
-                return create_success_response(parsed.get("response", ""), self._get_agent_name(), no_tool_used=True, llm_reasoning=parsed.get("reasoning", ""))
+                result = create_success_response(parsed.get("response", ""), self._get_agent_name(), no_tool_used=True, llm_reasoning=parsed.get("reasoning", ""))
+                if llm_usage_entries:
+                    result["llm_usage"] = llm_usage_entries
+                return result
             if parsed.get("action") != "tool_call":
-                return create_error_response("LLM did not return a valid tool_call action", self._get_agent_name(), llm_response=response_content)
+                result = create_error_response("LLM did not return a valid tool_call action", self._get_agent_name(), llm_response=response_content)
+                if llm_usage_entries:
+                    result["llm_usage"] = llm_usage_entries
+                return result
             tool_name = parsed.get("tool_name")
             parameters = parsed.get("parameters", {})
             tool = self.tool_map.get(tool_name)
@@ -53,16 +67,22 @@ class SimpleToolAgent(BaseToolAgent):
                 direct_response = await self.llm_model.ainvoke(
                     [{"role": "user", "content": no_tools_prompt}])
                 direct_content = self._extract_response_content(direct_response)
+                usage2 = extract_usage_from_aimessage(direct_response)
+                if usage2:
+                    llm_usage_entries.append(usage2)
                 direct_parsed = parse_json_response(direct_content)
                 answer = direct_parsed.get(
                     "response", direct_content) if direct_parsed else direct_content
-                return create_success_response(
+                result = create_success_response(
                     answer,
                     self._get_agent_name(),
                     no_tool_used=True,
                     tool_not_found=tool_name,
                     llm_reasoning=parsed.get("reasoning", "")
                 )
+                if llm_usage_entries:
+                    result["llm_usage"] = llm_usage_entries
+                return result
             validated_params = validate_tool_parameters(tool, parameters)
             result = await tool.invoke(**validated_params)
             logger.debug(
@@ -71,13 +91,16 @@ class SimpleToolAgent(BaseToolAgent):
             # Check if tool has return_direct=True
             if hasattr(tool, 'return_direct') and tool.return_direct:
                 # Return tool result directly without processing
-                return create_success_response(
+                resp = create_success_response(
                     str(result),
                     self._get_agent_name(),
                     tool=tool.name,
                     parameters=validated_params,
                     return_direct=True
                 )
+                if llm_usage_entries:
+                    resp["llm_usage"] = llm_usage_entries
+                return resp
 
             # Normal processing for non-return_direct tools
             if isinstance(result, dict) and "result" in result:
@@ -86,15 +109,21 @@ class SimpleToolAgent(BaseToolAgent):
                 result = result["message"]
             else:
                 result = str(result)
-            return create_success_response(
+            resp = create_success_response(
                 result,
                 self._get_agent_name(),
                 tool=tool.name,
                 parameters=validated_params
             )
+            if llm_usage_entries:
+                resp["llm_usage"] = llm_usage_entries
+            return resp
         except Exception as e:
             logger.error(f"SimpleToolAgent error: {str(e)}")
-            return create_error_response(str(e), self._get_agent_name())
+            result = create_error_response(str(e), self._get_agent_name())
+            if llm_usage_entries:
+                result["llm_usage"] = llm_usage_entries
+            return result
 
     async def stream(self, query: str, chat_history: Optional[List[Dict[str, str]]] = None, **kwargs):
         """Stream the agent's tool selection and execution process"""
