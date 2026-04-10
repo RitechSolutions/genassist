@@ -61,5 +61,5 @@ services:
 
 networks:
   genassist-network-dev:
-    external: true
+    driver: bridge
 
