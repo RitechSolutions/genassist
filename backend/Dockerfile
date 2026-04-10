@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Builder (Compilers & Heavy Lifting)
 # ==========================================
-FROM python:3.12-slim-bookworm as builder
+FROM python:3.12-slim-bookworm AS builder
 
 WORKDIR /src
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -13,32 +13,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     git \
+    curl \
     && xargs -a packages.txt apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Create Virtual Environment
-RUN python -m venv /opt/venv
+# 2. Install uv
+RUN curl -LsSf https://astral.sh/uv/0.7.12/install.sh | sh && \
+    cp /root/.local/bin/uv /usr/local/bin/uv && \
+    cp /root/.local/bin/uvx /usr/local/bin/uvx
+
+# 3. Create Virtual Environment
+RUN uv venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# 3. Install Requirements (Optimized for CPU-only)
+# 4. Install Requirements (Aggressive Cleanup Mode)
 COPY requirements-main.txt .
 COPY requirements-rag.txt .
 COPY requirements-app.txt .
 
-# Install CPU-only PyTorch FIRST to prevent GPU version downloads
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip setuptools wheel && \
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-    pip install \
+RUN uv pip install --no-cache-dir \
+    --index-strategy unsafe-best-match \
     -r requirements-main.txt \
     -r requirements-rag.txt \
     -r requirements-app.txt \
-    --extra-index-url https://download.pytorch.org/whl/cpu
+    --extra-index-url https://download.pytorch.org/whl/cpu && \
+    # A. Uninstall Torch and NVIDIA bloat
+    uv pip uninstall torch torchvision torchaudio && \
+    uv pip freeze | grep nvidia | cut -d= -f1 | xargs -r uv pip uninstall && \
+    # B. Re-install strictly CPU-only versions
+    uv pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # ==========================================
 # Stage 2: Runtime (Minimal & Secure)
 # ==========================================
-FROM python:3.12-slim-bookworm as runtime
+FROM python:3.12-slim-bookworm AS runtime
 
 WORKDIR /src
 
