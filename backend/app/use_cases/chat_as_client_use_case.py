@@ -1,29 +1,29 @@
 import asyncio
-from datetime import datetime, timezone
 import json
+import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
-from app.dependencies.injector import injector
 from app.api.v1.routes.agents import run_query_agent_logic
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
+from app.db.base import generate_sequential_uuid
+from app.db.models.conversation import ConversationModel
+from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.modules.websockets.socket_room_enum import SocketRoomType
 from app.schemas.conversation import ConversationRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
     InProgConvTranscrUpdate,
     TranscriptSegmentInput,
 )
-from app.db.models.conversation import ConversationModel
 from app.services.agent_config import AgentConfigService
-from app.services.conversations import ConversationService
 from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import update_stats_incrementally
-from app.db.base import generate_sequential_uuid
+from app.services.conversations import ConversationService
+from app.core.utils.custom_attributes import extract_custom_attributes
 from app.services.file_manager import FileManagerService
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ async def send_message_to_socket(
         )
     )
 
+
 async def process_conversation_update_with_agent(
     conversation_id: UUID,
     model: InProgConvTranscrUpdate,
@@ -83,11 +84,7 @@ async def process_conversation_update_with_agent(
         raise AppException(ErrorKey.CONVERSATION_FINALIZED)
 
     if conversation.status == ConversationStatus.TAKE_OVER.value:
-        if any(
-            message
-            for message in model.messages
-            if message.speaker.lower() != "customer"
-        ):
+        if any(message for message in model.messages if message.speaker.lower() != "customer"):
             if current_user_id != conversation.supervisor_id:
                 raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER_OTHER)
 
@@ -97,10 +94,11 @@ async def process_conversation_update_with_agent(
 
     # Broadcast user message immediately with pre-generated ID
     user_message = model.messages[0]
+    # 1:1 chat: broadcast user message immediately with pre-generated ID
     await send_message_to_socket(user_message, conversation_id, current_user_id, tenant_id)
 
     if conversation.status == ConversationStatus.IN_PROGRESS.value:
-        agent = await agent_config_service.get_by_user_id(current_user_id)
+        agent = await agent_config_service.get_by_user_id(current_user_id, with_workflow=True)
 
         session_data = {"metadata": model.metadata if model.metadata else {}}
         session_data["thread_id"] = str(conversation_id)
@@ -148,29 +146,11 @@ async def process_conversation_update_with_agent(
 
         model.messages.append(transcript_object)
 
-        # Broadcast agent message immediately with pre-generated ID
-        _ = asyncio.create_task(
-            socket_connection_manager.broadcast(
-                msg_type="message",
-                payload={
-                    "id": str(transcript_object.id),
-                    "create_time": transcript_object.create_time.isoformat() if transcript_object.create_time else None,
-                    "start_time": transcript_object.start_time,
-                    "end_time": transcript_object.end_time,
-                    "speaker": transcript_object.speaker,
-                    "text": transcript_object.text,
-                    "type": transcript_object.type,
-                },
-                room_id=conversation_id,
-                current_user_id=current_user_id,
-                required_topic="message",
-                tenant_id=tenant_id,
-            )
-        )
+        # 1:1 chat: broadcast agent message immediately with pre-generated ID
+        await send_message_to_socket(transcript_object, conversation_id, current_user_id, tenant_id)
 
-    updated_conversation = await service.update_in_progress_conversation(
-        conversation_id, model
-    )
+    # update the conversation with the new messages
+    updated_conversation = await service.update_in_progress_conversation(conversation_id, model)
 
     # After messages are persisted, log the full agent response tied to the stored message id.
     if conversation.status == ConversationStatus.IN_PROGRESS.value:
@@ -184,12 +164,11 @@ async def process_conversation_update_with_agent(
                     agent_response=agent_response,
                 )
                 # Fire incremental analytics update in background
-                _ = asyncio.create_task(
-                    update_stats_incrementally(agent_response)
-                )
+                _ = asyncio.create_task(update_stats_incrementally(agent_response))
         except Exception as e:
             logger.warning(f"Failed to persist AgentResponseLog after update: {e}")
-    # Notify dashboard a conversation is updated
+
+    # 1:1 chat: notify dashboard a conversation is updated
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="update",
@@ -202,19 +181,18 @@ async def process_conversation_update_with_agent(
                 "topic": updated_conversation.topic,
                 "thumbs_up_count": updated_conversation.thumbs_up_count,
                 "thumbs_down_count": updated_conversation.thumbs_down_count,
+                "create_time": updated_conversation.created_at.isoformat() if updated_conversation.created_at else None,
             },
-            room_id=SocketRoomType.DASHBOARD,
+            room_id="DASHBOARD",
             current_user_id=current_user_id,
-            required_topic="hostile",
+            required_topic="update",
             tenant_id=tenant_id,
         )
     )
 
-    upd_conv_pyd: ConversationRead = ConversationRead.model_validate(
-        updated_conversation
-    )
+    upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
 
-    # broadcast statistics
+    # 1:1 chat: broadcast statistics
     _ = asyncio.create_task(
         socket_connection_manager.broadcast(
             msg_type="statistics",
@@ -226,7 +204,33 @@ async def process_conversation_update_with_agent(
         )
     )
 
+    # Persist custom workflow attributes
+    if conversation.status == ConversationStatus.IN_PROGRESS.value:
+        await _persist_custom_attributes(
+            service, agent, agent_response, updated_conversation
+        )
+
+    # return the updated conversation
     return updated_conversation
+
+
+async def _persist_custom_attributes(
+    service: ConversationService,
+    agent,
+    agent_response: dict,
+    conversation: ConversationModel,
+) -> None:
+    """Extract filterable workflow attributes and store them on the conversation."""
+    try:
+        workflow_nodes = agent.workflow.get("nodes") if agent.workflow else None
+        new_attrs = extract_custom_attributes(agent_response, workflow_nodes=workflow_nodes)
+        if new_attrs:
+            existing = conversation.custom_attributes or {}
+            existing.update(new_attrs)
+            await service.update_custom_attributes(conversation.id, existing)
+            conversation.custom_attributes = existing
+    except Exception as e:
+        logger.warning(f"Failed to persist custom_attributes: {e}")
 
 
 async def get_or_create_conversation(
@@ -234,14 +238,8 @@ async def get_or_create_conversation(
     operator_id: UUID,
 ) -> ConversationModel:
     service = injector.get(ConversationService)
-    existing_conversations = await service.get_conversations_by_customer_id(
-        customer_id, raise_not_found=False
-    )
-    open_conversations = [
-        conv
-        for conv in existing_conversations
-        if conv.status != ConversationStatus.FINALIZED.value
-    ]
+    existing_conversations = await service.get_conversations_by_customer_id(customer_id, raise_not_found=False)
+    open_conversations = [conv for conv in existing_conversations if conv.status != ConversationStatus.FINALIZED.value]
     open_conversation = open_conversations[0] if open_conversations else None
 
     if open_conversation:
@@ -252,11 +250,10 @@ async def get_or_create_conversation(
             messages=[],
             operator_id=operator_id,
         )
-        open_conversation = await service.start_in_progress_conversation(
-            new_conversation_model
-        )
+        open_conversation = await service.start_in_progress_conversation(new_conversation_model)
 
     return open_conversation
+
 
 async def process_attachments_from_metadata(
     base_url: str,
@@ -264,7 +261,7 @@ async def process_attachments_from_metadata(
     model: InProgConvTranscrUpdate,
     tenant_id: str,
     current_user_id: UUID,
-    file_manager_service: FileManagerService
+    file_manager_service: FileManagerService,
 ) -> None:
     """
     Process attachments from conversation metadata.
@@ -291,7 +288,7 @@ async def process_attachments_from_metadata(
                     # get the file url for local storage provider missing the base url
                     file_url = await file_manager_service.get_file_url(file)
                     chat_file_url = file_url
-                    
+
                     # add to attachments local path when the storage provider is local
                     if file.storage_provider == "local":
                         chat_file_url = f"{base_url}{file_url.rstrip('/')}"
@@ -300,25 +297,24 @@ async def process_attachments_from_metadata(
                     attachment["file_url"] = chat_file_url
                     attachment["file_mime_type"] = file.mime_type
                     attachment["file_storage_provider"] = file.storage_provider
-                    
+
                     # Check if file has OpenAI file_id stored or upload if needed
                     if not attachment.get("openai_file_id"):
                         # Get file extension from filename or file_extension attribute
                         file_extension = ""
-                        if hasattr(file, 'file_extension') and file.file_extension:
+                        if hasattr(file, "file_extension") and file.file_extension:
                             file_extension = file.file_extension.lower()
-                        elif file.name and '.' in file.name:
-                            file_extension = file.name.split('.')[-1].lower()
-                        
+                        elif file.name and "." in file.name:
+                            file_extension = file.name.split(".")[-1].lower()
+
                         # Optionally upload to OpenAI if it's a PDF, DOCX, or TXT and not already uploaded
                         if file_extension in supported_file_extensions:
                             try:
                                 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
+
                                 openai_service = injector.get(OpenAIFineTuningService)
                                 openai_file_id = await openai_service.upload_file_for_chat(
-                                    file_url=chat_file_url,
-                                    filename=file.name,
-                                    purpose="user_data"
+                                    file_url=chat_file_url, filename=file.name, purpose="user_data"
                                 )
                                 attachment["openai_file_id"] = openai_file_id
                                 logger.info(f"Uploaded file to OpenAI: {openai_file_id}")
@@ -347,13 +343,15 @@ async def process_file_upload_from_chat(
     current_user_id: UUID,
 ) -> ConversationModel:
     try:
-        file_data = json.dumps({
-            "type": file_type,
-            "url": file_url,
-            "name": file_name,
-        })
+        file_data = json.dumps(
+            {
+                "type": file_type,
+                "url": file_url,
+                "name": file_name,
+            }
+        )
 
-        message  = TranscriptSegmentInput(
+        message = TranscriptSegmentInput(
             create_time=datetime.now(),
             text=file_data,
             type="file",
@@ -378,7 +376,7 @@ async def process_file_upload_from_chat(
         # send the message to the socket
         await send_message_to_socket(message, conversation_id, current_user_id, tenant_id)
 
-        return conversation        
+        return conversation
     except Exception as e:
         logger.error(f"Error processing file upload from chat: {str(e)}")
         raise AppException(ErrorKey.ERROR_PROCESSING_FILE_UPLOAD_FROM_CHAT)

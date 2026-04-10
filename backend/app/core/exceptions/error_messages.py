@@ -1,12 +1,13 @@
 import logging
 from enum import Enum
+
 from fastapi import Request
 from torch.fx.immutable_collections import immutable_list
 
 from app.core.config.settings import settings
 
-
 logger = logging.getLogger(__name__)
+
 
 class ErrorKey(Enum):
     INTERNAL_ERROR = "error_500"
@@ -26,6 +27,7 @@ class ErrorKey(Enum):
     MISSING_FIELD_UPLOAD_AUDIO = "missing_field_upload_audio"
     USERNAME_ALREADY_EXISTS = "USERNAME_ALREADY_EXISTS"
     USER_NOT_FOUND = "USER_NOT_FOUND"
+    USER_CANNOT_DELETE_SELF = "USER_CANNOT_DELETE_SELF"
     TRANSCRIPT_PARSE_ERROR = "TRANSCRIPT_PARSE_ERROR"
     INVALID_USERNAME_OR_PASSWORD = "INVALID_USERNAME_OR_PASSWORD"
     INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS"
@@ -41,12 +43,13 @@ class ErrorKey(Enum):
     FILE_SIZE_TOO_LARGE = "FILE_SIZE_TOO_LARGE"
     MISSING_OPEN_AI_API_KEY = "MISSING_OPEN_AI_API_KEY"
     GPT_RETURNED_INCOMPLETE_RESULT = "GPT_RETURNED_INCOMPLETE_RESULT"
-    GPT_FAILED_JSON_PARSING = "GPT_FAILED_JSON_PARSING",
-    GPT_TRANSCRIPT_QUESTION_ERROR = "GPT_TRANSCRIPT_QUESTION_ERROR",
+    GPT_FAILED_JSON_PARSING = "GPT_FAILED_JSON_PARSING"
+    GPT_TRANSCRIPT_QUESTION_ERROR = "GPT_TRANSCRIPT_QUESTION_ERROR"
     USER_TYPE_NOT_FOUND = "USER_TYPE_NOT_FOUND"
-    ROLE_NOT_FOUND = "ROLE_NOT_FOUND",
-    INVALID_USER = "INVALID_USER",
-    API_KEY_NOT_FOUND = "API_KEY_NOT_FOUND",
+    ROLE_NOT_FOUND = "ROLE_NOT_FOUND"
+    ROLE_CANNOT_DELETE_IN_USE = "ROLE_CANNOT_DELETE_IN_USE"
+    INVALID_USER = "INVALID_USER"
+    API_KEY_NOT_FOUND = "API_KEY_NOT_FOUND"
     API_KEY_NAME_EXISTS = "API_KEY_NAME_EXISTS"
     NOT_AUTHORIZED_ACCESS_RESOURCE = "NOT_AUTHORIZED_ACCESS_RESOURCE"
     PERMISSION_NOT_FOUND = "PERMISSION_NOT_FOUND"
@@ -60,14 +63,14 @@ class ErrorKey(Enum):
     CONVERSATION_TAKEN_OVER_OTHER = "CONVERSATION_TAKEN_OVER_OTHER"
     DATASOURCE_NOT_FOUND = "DATASOURCE_NOT_FOUND"
     WEBHOOK_NOT_FOUND = "WEBHOOK_NOT_FOUND"
-    LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND",
+    LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND"
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
-    NOT_AUTHORIZED_TO_TAKE_OVER = "NOT_AUTHORIZED_TO_TAKE_OVER",
-    TOOL_NOT_FOUND = "TOOL_NOT_FOUND",
-    TOOL_CREATION_FAILED = "TOOL_CREATION_FAILED",
-    TOOL_UPDATE_FAILED = "TOOL_UPDATE_FAILED",
-    TOOL_DELETION_FAILED = "TOOL_DELETION_FAILED",
-    KB_NOT_FOUND = "KB_NOT_FOUND",
+    NOT_AUTHORIZED_TO_TAKE_OVER = "NOT_AUTHORIZED_TO_TAKE_OVER"
+    TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
+    TOOL_CREATION_FAILED = "TOOL_CREATION_FAILED"
+    TOOL_UPDATE_FAILED = "TOOL_UPDATE_FAILED"
+    TOOL_DELETION_FAILED = "TOOL_DELETION_FAILED"
+    KB_NOT_FOUND = "KB_NOT_FOUND"
     AGENT_NOT_ACTIVE = "AGENT_NOT_ACTIVE"
     # MISSING_API_KEY_LLM_PROVIDER = "MISSING_API_KEY_LLM_PROVIDER"
     EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS"
@@ -76,14 +79,14 @@ class ErrorKey(Enum):
     APP_SETTINGS_NOT_FOUND = "APP_SETTINGS_NOT_FOUND"
     FEATURE_FLAG_NOT_FOUND = "FEATURE_FLAG_NOT_FOUND"
     WORKFLOW_NOT_FOUND = "WORKFLOW_NOT_FOUND"
-    OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING",
+    OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING"
     CREATE_USER_TYPE_IN_MENU = "CREATE_USER_TYPE_IN_MENU"
     LOGIN_ERROR_CONSOLE_USER = "LOGIN_ERROR_CONSOLE_USER"
     INVALID_API_KEY_ENCRYPTION = "INVALID_API_KEY_ENCRYPTION"
     CONVERSATION_MUST_START_EMPTY = "CONVERSATION_MUST_START_EMPTY"
-    FORCE_PASSWORD_UPDATE = "FORCE_PASSWORD_UPDATE",
-    MISSING_URL = "MISSING_URL",
-    INVALID_USER_CONSOLE = "INVALID_USER_CONSOLE",
+    FORCE_PASSWORD_UPDATE = "FORCE_PASSWORD_UPDATE"
+    MISSING_URL = "MISSING_URL"
+    INVALID_USER_CONSOLE = "INVALID_USER_CONSOLE"
     FINALIZE_LEGRA_NOT_ENABLED = "FINALIZE_LEGRA_NOT_ENABLED"
     REQUIRED_INTERVAL_VALUES = "REQUIRED_INTERVAL_VALUES"
     FAIL_CREATE_EVENT_OFFICE_365 = "FAIL_EVENT_OFFICE_365"
@@ -115,13 +118,15 @@ class ErrorKey(Enum):
     ERROR_DELETE_FILE_OPEN_AI = "ERROR_DELETE_FILE_OPEN_AI"
     ERROR_CANCEL_JOB_OPEN_AI = "ERROR_CANCEL_JOB_OPEN_AI"
     ERROR_DELETE_MODEL = "ERROR_DELETE_MODEL"
-    ERROR_FETCH_FILES_OPEN_AI = "ERROR_FETCH_FILES_OPEN_AI",
+    ERROR_FETCH_FILES_OPEN_AI = "ERROR_FETCH_FILES_OPEN_AI"
     ERROR_JOB_OPEN_AI_EVENT = "ERROR_JOB_OPEN_AI_EVENT"
     ERROR_JOB_NOT_FOUND = "ERROR_JOB_NOT_FOUND"
     ERROR_JOB_EVENTS = "ERROR_JOB_EVENTS"
     ERROR_ACTIVE_JOB_EVENTS_SYNC = "ERROR_ACTIVE_JOB_EVENTS_SYNC"
     ERROR_JOB_EVENTS_SYNC = "ERROR_ERROR_JOB_EVENTS_SYNC"
     ERROR_JOB_EVENT_BY_ID = "ERROR_JOB_EVENT_BY_ID"
+    ERROR_GENERATE_TRAINING_FILE = "ERROR_GENERATE_TRAINING_FILE"
+    ERROR_TRAINING_FILE_TOO_LARGE = "ERROR_TRAINING_FILE_TOO_LARGE"
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
     CUSTOMER_ALREADY_EXISTS = "CUSTOMER_ALREADY_EXISTS"
     RECAPTCHA_VERIFICATION_FAILED = "RECAPTCHA_VERIFICATION_FAILED"
@@ -136,11 +141,15 @@ class ErrorKey(Enum):
     FILE_MANAGER_INITIALIZATION_FAILED = "FILE_MANAGER_INITIALIZATION_FAILED"
     TRANSLATION_ALREADY_EXISTS = "TRANSLATION_ALREADY_EXISTS"
     LANGUAGE_ALREADY_EXISTS = "LANGUAGE_ALREADY_EXISTS"
+    INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
+    EMPTY_MESSAGES_FOR_CONVERSATION = "EMPTY_MESSAGES"
+    TEST_CASES_HAVE_RESULTS = "TEST_CASES_HAVE_RESULTS"
+
 
 ERROR_MESSAGES = {
-    'en': {
-        ErrorKey.INTERNAL_ERROR: 'An internal server error occurred. Please try again later.',
-        ErrorKey.NOT_FOUND: 'The requested resource was not found.',
+    "en": {
+        ErrorKey.INTERNAL_ERROR: "An internal server error occurred. Please try again later.",
+        ErrorKey.NOT_FOUND: "The requested resource was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",
@@ -155,6 +164,7 @@ ERROR_MESSAGES = {
         ErrorKey.MISSING_FIELD_UPLOAD_AUDIO: "Missing file, agent_id, or recorded_at.",
         ErrorKey.USERNAME_ALREADY_EXISTS: "Username already exists.",
         ErrorKey.USER_NOT_FOUND: "User not found.",
+        ErrorKey.USER_CANNOT_DELETE_SELF: "You cannot delete your own account.",
         ErrorKey.OPERATOR_NOT_FOUND: "Operator not found.",
         ErrorKey.TRANSCRIPT_PARSE_ERROR: "There was an error parsing the transcript. Summary, title or metrics may be missing.",
         ErrorKey.INVALID_USERNAME_OR_PASSWORD: "Invalid username or password.",
@@ -175,6 +185,10 @@ ERROR_MESSAGES = {
         ErrorKey.GPT_TRANSCRIPT_QUESTION_ERROR: "Error while calling GPT for question answering.",
         ErrorKey.USER_TYPE_NOT_FOUND: "User type not found.",
         ErrorKey.ROLE_NOT_FOUND: "Role not found.",
+        ErrorKey.ROLE_CANNOT_DELETE_IN_USE: (
+            "This role cannot be deleted while it is assigned to users or API keys. "
+            "Remove those assignments first."
+        ),
         ErrorKey.INVALID_USER: "Invalid user.",
         ErrorKey.API_KEY_NOT_FOUND: "Api key not found.",
         ErrorKey.API_KEY_NAME_EXISTS: "An API key with this name already exists.",
@@ -213,7 +227,7 @@ ERROR_MESSAGES = {
         ErrorKey.INVALID_USER_CONSOLE: "Invalid user console type.",
         ErrorKey.FINALIZE_LEGRA_NOT_ENABLED: "Cannot finalize knowledge base with legra disabled.",
         ErrorKey.REQUIRED_INTERVAL_VALUES: "The fields hostility_neutral_max and hostility_positive_max are required "
-                                           "when filtering by sentiment.",
+        "when filtering by sentiment.",
         ErrorKey.FAIL_CREATE_EVENT_OFFICE_365: "Failed to create event with office 365.",
         ErrorKey.MISSING_DATA_SOURCE_ID: "Missing data source ID.",
         ErrorKey.TOO_MANY_RESULTS: "Too many results requested, maximum is 100.",
@@ -249,6 +263,8 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_JOB_EVENTS: "There was an error fetching job events.",
         ErrorKey.ERROR_ACTIVE_JOB_EVENTS_SYNC: "There was an error syncing active job events.",
         ErrorKey.ERROR_JOB_EVENTS_SYNC: "There was an error syncing job events.",
+        ErrorKey.ERROR_GENERATE_TRAINING_FILE: "Failed to generate training file from conversations.",
+        ErrorKey.ERROR_TRAINING_FILE_TOO_LARGE: "Generated training file exceeds the 512 MB limit. Select fewer conversations.",
         ErrorKey.ERROR_JOB_EVENT_BY_ID: "There was an error fetching job events for this job id.",
         ErrorKey.CUSTOMER_NOT_FOUND: "Customer not found.",
         ErrorKey.CUSTOMER_ALREADY_EXISTS: "A customer with this external ID already exists.",
@@ -264,16 +280,22 @@ ERROR_MESSAGES = {
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Failed to initialize file manager service.",
         ErrorKey.TRANSLATION_ALREADY_EXISTS: "A translation with this key already exists.",
         ErrorKey.LANGUAGE_ALREADY_EXISTS: "A language with this code already exists.",
-},
-    'fr': {
-        ErrorKey.INTERNAL_ERROR: 'Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.',
+        ErrorKey.INTERNAL_SERVER_ERROR: "An internal server error occurred. Please try again later.",
+        ErrorKey.EMPTY_MESSAGES_FOR_CONVERSATION: "No messages were found for this conversation.",
+        ErrorKey.TEST_CASES_HAVE_RESULTS: "This dataset has cases with existing evaluation results. "
+                                          "Delete the related evaluations first, then try again.",
+        },
+    "fr": {
+        ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
-    }
+        ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
+    },
 }
 
 
-def get_error_message(error_key: ErrorKey, request: Request = None, lang: str = 'en', error_variables: list[str] =
-                        immutable_list()):
+def get_error_message(
+    error_key: ErrorKey, request: Request = None, lang: str = "en", error_variables: list[str] = immutable_list()
+):
     """
     Retrieves an error message dynamically based on the user's language preference.
     Falls back to DEFAULT_LANGUAGE if no valid language is found.
@@ -283,25 +305,24 @@ def get_error_message(error_key: ErrorKey, request: Request = None, lang: str = 
         raise ValueError(f"Invalid error key: {error_key}")
 
     # Fetch language from request (query param or header)
-    user_lang = ((request.query_params.get("lang") or request.headers.get("Accept-Language")) if request else
-                  lang)
+    user_lang = (request.query_params.get("lang") or request.headers.get("Accept-Language")) if request else lang
 
     # Use default language if unsupported
     lang = user_lang if user_lang in settings.SUPPORTED_LANGUAGES else settings.DEFAULT_LANGUAGE
 
-    return ((ERROR_MESSAGES.get(lang, ERROR_MESSAGES[lang]).get(error_key, error_key.value))
-            .format(*error_variables))
+    return (ERROR_MESSAGES.get(lang, ERROR_MESSAGES[lang]).get(error_key, error_key.value)).format(*error_variables)
 
 
 def validate_error_messages():
     """Logs a warning if a language is missing keys instead of failing."""
-    base_lang = 'en'
+    base_lang = "en"
     base_keys = set(ERROR_MESSAGES[base_lang].keys())
 
     for lang, messages in ERROR_MESSAGES.items():
         missing_keys = base_keys - set(messages.keys())
         if missing_keys:
             logger.warning(f"Warning: Missing keys in '{lang}': {missing_keys}")
+
 
 # TODO uncomment in case we add other languages in the future and want warnings about missing keys
 # validate_error_messages()

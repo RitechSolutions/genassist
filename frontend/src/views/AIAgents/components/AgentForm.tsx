@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import {
@@ -9,6 +9,8 @@ import {
   getWelcomeImage,
   deleteWelcomeImage,
 } from "@/services/api";
+import { getAllLLMAnalysts } from "@/services/llmAnalyst";
+import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
@@ -21,6 +23,9 @@ import {
   MessageSquare,
   X,
   Languages,
+  Bot,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   Sheet,
@@ -33,8 +38,10 @@ import {
 import { Textarea } from "@/components/textarea";
 import { TranslationDialog } from "@/views/Settings/components/TranslationDialog";
 import { DisclaimerEditor } from "@/components/DisclaimerEditor";
-import { getTranslationByKey } from "@/services/translations";
+import { getTranslationByKey, getLanguages } from "@/services/translations";
+import { Language, Translation } from "@/interfaces/translation.interface";
 import { getTranslationCount } from "../utils";
+import { Toggle } from "@/components/toggle";
 
 interface AgentFormData {
   id?: string;
@@ -49,6 +56,11 @@ interface AgentFormData {
   is_active?: boolean;
   workflow_id?: string;
   has_welcome_image?: boolean;
+  llm_analyst_id?: string | null;
+}
+
+function omitEmptyStrings(items: string[] | undefined): string[] {
+  return (items ?? []).map((s) => s.trim()).filter((s) => s !== "");
 }
 
 interface AgentFormProps {
@@ -69,11 +81,17 @@ interface AgentFormProps {
 interface TranslationTriggerProps {
   translationKey: string;
   currentValue: string;
+  /** Shared list from the form so each dialog does not call getLanguages. */
+  languages: Language[];
+  /** Sync parent field to the saved translation default. */
+  onTranslationDefaultSaved?: (defaultText: string) => void;
 }
 
 const TranslationTrigger: React.FC<TranslationTriggerProps> = ({
   translationKey,
   currentValue,
+  languages,
+  onTranslationDefaultSaved,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
@@ -106,9 +124,9 @@ const TranslationTrigger: React.FC<TranslationTriggerProps> = ({
     setIsOpen(true);
   };
 
-  const handleSaved = () => {
-    // trigger any external refresh logic in future if needed
+  const handleSaved = (translation: Translation) => {
     setRefreshCounter((prev) => prev + 1);
+    onTranslationDefaultSaved?.(translation.default ?? "");
   };
 
   const hasTranslations = translationCount > 0;
@@ -146,6 +164,7 @@ const TranslationTrigger: React.FC<TranslationTriggerProps> = ({
         initialKey={translationKey}
         initialDefaultValue={currentValue}
         onTranslationSaved={handleSaved}
+        languages={languages}
       />
     </>
   );
@@ -179,11 +198,29 @@ const AgentForm: React.FC<AgentFormProps> = ({
       thinking_phrase_delay: 0,
       possible_queries: [],
       thinking_phrases: [],
+      has_welcome_image: data?.has_welcome_image || false,
+      llm_analyst_id: null,
     }),
     possible_queries: cleanedQueries.length > 0 ? cleanedQueries : [],
     thinking_phrases:
       cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
   });
+
+  const [llmAnalysts, setLlmAnalysts] = useState<LLMAnalyst[]>([]);
+  const [editFormLanguages, setEditFormLanguages] = useState<Language[]>([]);
+
+  useEffect(() => {
+    getAllLLMAnalysts()
+      .then(setLlmAnalysts)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!isEditMode || !id) return;
+    getLanguages()
+      .then(setEditFormLanguages)
+      .catch(() => toast.error("Failed to load languages."));
+  }, [isEditMode, id]);
 
   const [loading, setLoading] = useState<boolean>(false);
   const [success, setSuccess] = useState<boolean>(false);
@@ -192,32 +229,58 @@ const AgentForm: React.FC<AgentFormProps> = ({
   const [imageLoading, setImageLoading] = useState<boolean>(false);
   const [imageDeleting, setImageDeleting] = useState<boolean>(false);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(data?.llm_analyst_id ? true : false);
+
+  /** Avoids a slow GET welcome-image finishing after the user picked a replacement and overwriting preview/state. */
+  const imageFileRef = useRef<File | null>(null);
+  useEffect(() => {
+    imageFileRef.current = imageFile;
+  }, [imageFile]);
 
   // Load existing image when editing (only if agent has one)
-  React.useEffect(() => {
+  useEffect(() => {
     let objectUrl: string | null = null;
+    let cancelled = false;
 
     const loadExistingImage = async () => {
-      // Only fetch if agent has a welcome image
-      if (isEditMode && id && data?.has_welcome_image) {
-        try {
-          const imageBlob = await getWelcomeImage(id);
-          objectUrl = URL.createObjectURL(imageBlob);
-          setImagePreview(objectUrl);
-        } catch (error) {
-          // Image failed to load
+      // In many edit-entry points we don't have an accurate has_welcome_image flag.
+      // Attempt to load and simply no-op if the server says "not found".
+      if (!(isEditMode && id)) return;
+      try {
+        const imageBlob = await getWelcomeImage(id);
+        if (cancelled) return;
+        const newUrl = URL.createObjectURL(imageBlob);
+        if (cancelled) {
+          URL.revokeObjectURL(newUrl);
+          return;
         }
+        if (imageFileRef.current) {
+          URL.revokeObjectURL(newUrl);
+          return;
+        }
+        objectUrl = newUrl;
+        setImagePreview(newUrl);
+      } catch (error) {
+        // Image failed to load
       }
     };
 
-    loadExistingImage();
+    void loadExistingImage();
 
     return () => {
+      cancelled = true;
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [isEditMode, id, data?.has_welcome_image]);
+  }, [isEditMode, id]);
+
+  // Auto-expand advanced section when editing agents that already use an analyst.
+  useEffect(() => {
+    if (isEditMode && !!formData.llm_analyst_id) {
+      setShowAdvanced(true);
+    }
+  }, [isEditMode, formData.llm_analyst_id]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -292,6 +355,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
     if (file) {
       processFile(file);
     }
+    e.target.value = "";
   };
 
   const handleRemoveImage = async () => {
@@ -383,14 +447,32 @@ const AgentForm: React.FC<AgentFormProps> = ({
       let agentId: string;
 
       if (isEditMode) {
-        const { id: _, ...dataToSubmit } = formData;
+        if (imageFile) {
+          setImageLoading(true);
+          try {
+            await uploadWelcomeImage(id, imageFile);
+            toast.success("Welcome image uploaded successfully.");
+          } catch (error) {
+            toast.error("Failed to upload welcome image.");
+          } finally {
+            setImageLoading(false);
+          }
+        }
+        const { id: _, ...rest } = formData;
+        const dataToSubmit = {
+          ...rest,
+          possible_queries: omitEmptyStrings(rest.possible_queries),
+          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
+        };
         await updateAgentConfig(id, dataToSubmit);
         agentId = id;
-        setSuccess(true);
-        onSaved?.();
-        onClose?.();
       } else {
-        const { id: _, ...dataToSubmit } = formData;
+        const { id: _, has_welcome_image, ...rest } = formData;
+        const dataToSubmit = {
+          ...rest,
+          possible_queries: omitEmptyStrings(rest.possible_queries),
+          thinking_phrases: omitEmptyStrings(rest.thinking_phrases),
+        };
         const agentConfig = await createAgentConfig({
           ...dataToSubmit,
         });
@@ -398,19 +480,10 @@ const AgentForm: React.FC<AgentFormProps> = ({
 
         // Notify parent about the newly created agent
         onCreated?.(agentId);
-
-        if (redirectOnCreate) {
-          navigate(`/ai-agents/workflow/${agentConfig.id}`);
-        } else {
-          // When redirect is disabled, mark success and let the parent handle next steps.
-          setSuccess(true);
-          onSaved?.();
-          onClose?.();
-        }
       }
 
-      // Upload image if provided
-      if (imageFile && agentId) {
+      // Create flow: upload after we have an id. Edit flow uploads above before PUT.
+      if (!isEditMode && imageFile && agentId) {
         setImageLoading(true);
         try {
           await uploadWelcomeImage(agentId, imageFile);
@@ -420,6 +493,14 @@ const AgentForm: React.FC<AgentFormProps> = ({
         } finally {
           setImageLoading(false);
         }
+      }
+
+      if (!isEditMode && redirectOnCreate) {
+        navigate(`/ai-agents/workflow/${agentId}`);
+      } else {
+        setSuccess(true);
+        onSaved?.();
+        onClose?.();
       }
 
       toast.success(
@@ -479,6 +560,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
                   placeholder="Enter agent description"
                 />
               </div>
+
               <div className="space-y-2">
                 <Label>Welcome Image</Label>
                 <div className="space-y-3">
@@ -678,6 +760,10 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     <TranslationTrigger
                       translationKey={`agent.${id}.welcome_title`}
                       currentValue={formData.welcome_title || ""}
+                      languages={editFormLanguages}
+                      onTranslationDefaultSaved={(text) =>
+                        setFormData((prev) => ({ ...prev, welcome_title: text }))
+                      }
                     />
                   )}
                 </div>
@@ -696,6 +782,13 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     <TranslationTrigger
                       translationKey={`agent.${id}.welcome_message`}
                       currentValue={formData.welcome_message || ""}
+                      languages={editFormLanguages}
+                      onTranslationDefaultSaved={(text) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          welcome_message: text,
+                        }))
+                      }
                     />
                   )}
                 </div>
@@ -744,12 +837,16 @@ const AgentForm: React.FC<AgentFormProps> = ({
                             handlePossibleQueryChange(index, e.target.value)
                           }
                           placeholder="Enter a sample query"
-                          className="flex-1"
+                          className="flex-1 placeholder:text-muted-foreground"
                         />
                         {isEditMode && (
                           <TranslationTrigger
                             translationKey={`agent.${id}.possible_queries.${index}`}
                             currentValue={query}
+                            languages={editFormLanguages}
+                            onTranslationDefaultSaved={(text) =>
+                              handlePossibleQueryChange(index, text)
+                            }
                           />
                         )}
                         <Button
@@ -813,13 +910,17 @@ const AgentForm: React.FC<AgentFormProps> = ({
                           onChange={(e) =>
                             handleThinkingPhraseChange(index, e.target.value)
                           }
-                          placeholder="I think...|Getting the data..."
-                          className="flex-1"
+                          placeholder='e.g. Thinking...|Processing...'
+                          className="flex-1 placeholder:text-muted-foreground"
                         />
                         {isEditMode && (
                           <TranslationTrigger
                             translationKey={`agent.${id}.thinking_phrases.${index}`}
                             currentValue={phrase}
+                            languages={editFormLanguages}
+                            onTranslationDefaultSaved={(text) =>
+                              handleThinkingPhraseChange(index, text)
+                            }
                           />
                         )}
                         <Button
@@ -868,6 +969,13 @@ const AgentForm: React.FC<AgentFormProps> = ({
                     <TranslationTrigger
                       translationKey={`agent.${id}.input_disclaimer_html`}
                       currentValue={formData.input_disclaimer_html || ""}
+                      languages={editFormLanguages}
+                      onTranslationDefaultSaved={(text) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          input_disclaimer_html: text,
+                        }))
+                      }
                     />
                   )}
                 </div>
@@ -880,6 +988,49 @@ const AgentForm: React.FC<AgentFormProps> = ({
                 <p className="text-xs text-muted-foreground">
                   Supports text, bold, font size, and links.
                 </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center cursor-pointer" onClick={() => setShowAdvanced(!showAdvanced)}>
+                  <Toggle pressed={showAdvanced}>
+                    {showAdvanced ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </Toggle>
+                  <Label className="text-sm font-medium cursor-pointer" htmlFor="show_advanced">Advanced Configurations</Label>
+                </div>
+                {showAdvanced && (
+                  <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+                    <div className="flex items-center gap-2">
+                      <Bot className="h-4 w-4 text-muted-foreground" />
+                      <Label htmlFor="llm_analyst_id">Conversation Analyst</Label>
+                    </div>
+                    <select
+                      id="llm_analyst_id"
+                      name="llm_analyst_id"
+                      value={formData.llm_analyst_id ?? ""}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          llm_analyst_id: e.target.value || null,
+                        }))
+                      }
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      <option value="">Default analyst</option>
+                      {llmAnalysts.map((analyst) => (
+                        <option key={analyst.id} value={analyst.id}>
+                          {analyst.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      The LLM analyst used to analyze conversations from this agent. Defaults to the system analyst if not set.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -918,6 +1069,7 @@ export const AgentFormPage: React.FC = () => {
   const id = agentId;
   const navigate = useNavigate();
   const isEditMode = !!id;
+
   const [formData, setFormData] = useState<AgentFormData>({
     id: isEditMode ? id : undefined,
     name: "",
@@ -963,6 +1115,7 @@ export const AgentFormPage: React.FC = () => {
       fetchAgentConfig();
     }
   }, [id, isEditMode]);
+
   if (!agentId) {
     return (
       <div className="dashboard max-w-7xl mx-auto space-y-6 pt-8">
@@ -1023,7 +1176,7 @@ export const AgentFormDialog = ({
   }, [isOpen]);
 
   return (
-    <Sheet open={isOpen}>
+    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent hideOverlay={false} hideDefaultClose={true} className="sm:max-w-lg w-full flex flex-col p-0 top-2 right-2 h-[calc(100vh-1rem)] rounded-2xl border-2 shadow-2xl data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full">
         <SheetHeader className="p-6 pb-4 border-b shrink-0 flex flex-row">
           <SheetTitle className="text-xl font-semibold truncate">

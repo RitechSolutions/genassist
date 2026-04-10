@@ -19,8 +19,8 @@ import { GenAgentChat } from 'genassist-chat-react';
 function App() {
   return (
     <div style={{ height: '600px', width: '400px' }}>
-      <GenAgentChat 
-        baseUrl="https://your-api-base-url.com" 
+      <GenAgentChat
+        baseUrl="https://your-api-base-url.com"
         apiKey="your-api-key"
         tenant="your-tenant-id"
       />
@@ -56,8 +56,8 @@ function App() {
 
   return (
     <div style={{ height: '600px', width: '400px' }}>
-      <GenAgentChat 
-        baseUrl="https://your-api-base-url.com" 
+      <GenAgentChat
+        baseUrl="https://your-api-base-url.com"
         apiKey="your-api-key"
         tenant="your-tenant-id"
         userData={userData}
@@ -122,12 +122,34 @@ The component interacts with the following endpoints:
 
 1. Start Conversation: `POST /api/conversations/in-progress/start`
 2. Update Conversation: `POST /api/conversations/in-progress/update/{conversation_id}`
-3. WebSocket: `/api/conversations/ws/{conversation_id}?access_token={token}&lang=en&topics=message&topics=takeover`
+3. WebSocket:  `WS /conversations/{conversation_id}?access_token={token}&lang=en&topics=message&topics=takeover`
 
-## Run
-./
-yarn run build
+## Development
 
+From the package root:
+
+```bash
+npm run build
+```
+
+Run the example app:
+
+```bash
 cd example-app
+npm run dev
+```
 
-yarn run dev
+## Publishing (npm release scripts)
+
+These scripts bump the package version, run `build`, and publish to the npm registry. Use from a clean working tree with registry credentials configured.
+
+| Command | What it does |
+|---------|----------------|
+| `npm run release:patch` | Patch release: `npm version patch`, build, `npm publish` (latest tag). |
+| `npm run release:candidate` | `npm version prerelease --preid=rc` (next RC on the current release line), build, `npm publish --tag beta`. |
+| `npm run release:candidate:prepatch` | Prepatch RC (e.g. `1.0.0` → `1.0.1-rc.0`), build, publish with `beta` tag. |
+| `npm run release:candidate:preminor` | Preminor RC (e.g. `1.0.0` → `1.1.0-rc.0`), build, publish with `beta` tag. |
+
+RC prerelease versions use the `rc` prerelease id (`--preid=rc`). Beta-tagged publishes let consumers install with `npm install genassist-chat-react@beta`.
+
+Version-only bumps without build or publish: `npm run bump:patch`, `npm run bump:minor`, `npm run bump:major`.

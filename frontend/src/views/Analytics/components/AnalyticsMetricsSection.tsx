@@ -11,7 +11,7 @@ import {
   TrendingDown,
   type LucideIcon,
 } from "lucide-react";
-import { subDays, differenceInCalendarDays, format } from "date-fns";
+import { format } from "date-fns";
 import type { FetchedMetricsData, MetricsDeltas } from "@/services/metrics";
 import type { DateRange } from "react-day-picker";
 
@@ -34,6 +34,7 @@ interface AnalyticsMetricsSectionProps {
   loading: boolean;
   refreshing?: boolean;
   error: Error | null;
+  compareDateRange?: DateRange;
 }
 
 /** Return a Tailwind text color class based on score percentage. */
@@ -47,14 +48,6 @@ function getScoreColor(value: number, hasData: boolean): string {
 function parsePercent(str: string): number {
   const n = parseFloat(str);
   return isNaN(n) ? 0 : n;
-}
-
-function getComparisonLabel(dateRange?: DateRange): string | null {
-  if (!dateRange?.from || !dateRange?.to) return null;
-  const days = differenceInCalendarDays(dateRange.to, dateRange.from);
-  const prevTo = subDays(dateRange.from, 1);
-  const prevFrom = subDays(prevTo, days);
-  return `vs ${format(prevFrom, "MMM d")} – ${format(prevTo, "MMM d")}`;
 }
 
 function DeltaBadge({ delta }: { delta: number | undefined | null }) {
@@ -80,6 +73,7 @@ export const AnalyticsMetricsSection = ({
   loading,
   refreshing,
   error,
+  compareDateRange,
 }: AnalyticsMetricsSectionProps) => {
   const defaultMetrics: FetchedMetricsData = {
     "Customer Satisfaction": "0%",
@@ -193,9 +187,9 @@ export const AnalyticsMetricsSection = ({
             {analyzedCount > 0 && (
               <>Based on {analyzedCount.toLocaleString()} analyzed conversation{analyzedCount !== 1 ? "s" : ""}</>
             )}
-            {deltas && getComparisonLabel(dateRange) && (
+            {deltas && compareDateRange?.from && compareDateRange?.to && (
               <span className="text-muted-foreground/60">
-                {analyzedCount > 0 ? " · " : ""}{getComparisonLabel(dateRange)}
+                {analyzedCount > 0 ? " · " : ""}vs {format(compareDateRange.from, "MMM d")} – {format(compareDateRange.to, "MMM d")}
               </span>
             )}
           </p>

@@ -99,3 +99,45 @@ export const fetchAgentNodeBreakdown = async (
     return null;
   }
 };
+
+export interface CustomAttributeBreakdownItem {
+  value: string;
+  conversation_count: number;
+  avg_satisfaction: number | null;
+  avg_resolution_rate: number | null;
+  avg_efficiency: number | null;
+  avg_quality: number | null;
+}
+
+export const fetchCustomAttributeKeys = async (
+  agentId?: string
+): Promise<string[]> => {
+  try {
+    const qs = buildQueryString({ agent_id: agentId });
+    return (await apiRequest<string[]>("get", `/analytics/custom-attributes/keys${qs}`)) ?? [];
+  } catch (error) {
+    console.error("Error fetching custom attribute keys:", error);
+    return [];
+  }
+};
+
+export const fetchCustomAttributeBreakdown = async (
+  key: string,
+  params?: Pick<AnalyticsFilterParams, "agent_id" | "from_date" | "to_date">
+): Promise<CustomAttributeBreakdownItem[]> => {
+  try {
+    const qs = buildQueryString({
+      key,
+      agent_id: params?.agent_id,
+      from_date: params?.from_date,
+      to_date: params?.to_date,
+    });
+    return (await apiRequest<CustomAttributeBreakdownItem[]>(
+      "get",
+      `/analytics/custom-attributes/breakdown${qs}`
+    )) ?? [];
+  } catch (error) {
+    console.error("Error fetching custom attribute breakdown:", error);
+    return [];
+  }
+};

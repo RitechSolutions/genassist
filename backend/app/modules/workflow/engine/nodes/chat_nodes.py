@@ -2,9 +2,10 @@
 Chat node implementations using the BaseNode class.
 """
 
-from typing import Any, Dict
 import logging
+from typing import Any, Dict
 
+from app.core.config.settings import settings
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.utils import validate_input_schema
 
@@ -45,13 +46,12 @@ class ChatInputNode(BaseNode):
                 conversation_history = session.get("conversation_history", None)
                 if conversation_history is None or conversation_history == "":
                     conversation_history = await self.get_memory().get_chat_history(
-                        as_string=True
+                        as_string=True,
+                        max_messages=settings.CONVERSATION_HISTORY_NODE_MAX_MESSAGES,
                     )
                     session["conversation_history"] = conversation_history
                     validated_data["conversation_history"] = conversation_history
-                    self.get_state().update_session_value(
-                        "conversation_history", conversation_history
-                    )
+                    self.get_state().update_session_value("conversation_history", conversation_history)
 
             # Handle stateful parameters
             memory = self.get_memory()
@@ -95,9 +95,7 @@ class ChatOutputNode(BaseNode):
     using the BaseNode class.
     """
 
-    async def process(
-        self, config: Dict[str, Any]
-    ) -> Dict[str, Any]:  # pylint: disable=unused-argument
+    async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:  # pylint: disable=unused-argument
         """
         Process the chat output by forwarding the input from the last connected node.
 
@@ -109,9 +107,7 @@ class ChatOutputNode(BaseNode):
         """
         # source_output = self.get_last_node_output()
         source_output = self.get_input_from_source()
-        logger.debug(
-            "ChatOutputNode %s forwarding output: %s", self.node_id, source_output
-        )
+        logger.debug("ChatOutputNode %s forwarding output: %s", self.node_id, source_output)
 
         # Simply forward the source output
         return source_output

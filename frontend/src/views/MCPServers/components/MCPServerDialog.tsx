@@ -149,34 +149,45 @@ export function MCPServerDialog({
 
     setIsSubmitting(true);
     try {
-      const payload: MCPServerCreatePayload | MCPServerUpdatePayload = {
-        name,
-        description: description || undefined,
-        is_active: isActive ? 1 : 0,
-        workflows: selectedWorkflows,
-      };
-
-      if (mode === "create") {
-        (payload as MCPServerCreatePayload).api_key = apiKey;
-        await createMCPServer(payload as MCPServerCreatePayload);
-        toast.success("MCP server created successfully.");
+      if (mode === 'create') {
+        const payload: MCPServerCreatePayload = {
+          name,
+          description: description || undefined,
+          is_active: isActive ? 1 : 0,
+          workflows: selectedWorkflows,
+          api_key: apiKey,
+        };
+        await createMCPServer(payload);
+        toast.success('MCP server created successfully.');
         // Reset API key state after saving
         setIsApiKeyGenerated(false);
         setIsApiKeyCopied(false);
         onServerSaved?.();
         onOpenChange(false);
       } else if (serverToEdit) {
-        // Only update API key if provided
-        if (apiKey.trim()) {
-          (payload as MCPServerUpdatePayload).api_key = apiKey;
-        }
-        await updateMCPServer(serverToEdit.id, payload as MCPServerUpdatePayload);
-        toast.success("MCP server updated successfully.");
+        const updatePayload: MCPServerUpdatePayload = {};
+
+        if (name !== serverToEdit.name) updatePayload.name = name;
+        if ((description || undefined) !== (serverToEdit.description || undefined))
+          updatePayload.description = description || undefined;
+        if ((isActive ? 1 : 0) !== serverToEdit.is_active) updatePayload.is_active = isActive ? 1 : 0;
+        if (apiKey.trim()) updatePayload.api_key = apiKey;
+
+        const workflowsChanged =
+          selectedWorkflows.length !== (serverToEdit.workflows || []).length ||
+          selectedWorkflows.some((sw) => {
+            const orig = (serverToEdit.workflows || []).find((w) => w.workflow_id === sw.workflow_id);
+            return !orig || orig.tool_name !== sw.tool_name || orig.tool_description !== sw.tool_description;
+          });
+        if (workflowsChanged) updatePayload.workflows = selectedWorkflows;
+
+        await updateMCPServer(serverToEdit.id, updatePayload);
+        toast.success('MCP server updated successfully.');
 
         if (onServerUpdated) {
           const updatedServer: MCPServer = {
             ...serverToEdit,
-            ...payload,
+            ...updatePayload,
             workflows: selectedWorkflows,
           };
           onServerUpdated(updatedServer);

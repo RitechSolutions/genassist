@@ -2,20 +2,20 @@ import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
+
 from injector import inject
 
 from app.repositories.dashboard import DashboardRepository
 from app.schemas.dashboard import (
-    DashboardSummaryStats,
     ActiveConversationItem,
     ActiveConversationsResponse,
     AgentStatsItem,
     AgentStatsResponse,
+    DashboardResponse,
+    DashboardSummaryStats,
     IntegrationItem,
     IntegrationsResponse,
-    DashboardResponse,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,27 @@ class DashboardService:
         from_date = to_date - timedelta(days=days)
         return from_date, to_date
 
+    def to_active_conversation_dict(self, item: ActiveConversationItem) -> dict:
+        """Map dashboard ActiveConversationItem to frontend ActiveConversation format."""
+        sentiment = "neutral"
+        if item.feedback and item.feedback.lower() == "good":
+            sentiment = "positive"
+        elif item.feedback and item.feedback.lower() == "bad":
+            sentiment = "negative"
+        status = "in-progress" if item.status == "in_progress" else "takeover"
+        return {
+            "id": str(item.id),
+            "type": "chat",
+            "status": status,
+            "transcript": item.last_message or "",
+            "sentiment": sentiment,
+            "timestamp": item.created_at.isoformat() if item.created_at else "",
+            "in_progress_hostility_score": item.in_progress_hostility_score or 0,
+            "duration": item.duration or 0,
+            "topic": item.topic,
+            "negative_reason": item.negative_reason,
+        }
+
     async def get_summary_stats(
         self,
         from_date: Optional[datetime] = None,
@@ -53,11 +74,13 @@ class DashboardService:
         active_agents = await self.dashboard_repo.get_active_agents_count()
         workflow_runs = await self.dashboard_repo.get_workflow_runs_count(from_date, to_date)
         avg_response_time = await self.dashboard_repo.get_avg_response_time(from_date, to_date)
+        total_cost_usd = await self.dashboard_repo.get_total_cost_usd(from_date, to_date)
 
         return DashboardSummaryStats(
             active_agents=active_agents,
             workflow_runs=workflow_runs,
-            avg_response_time_ms=avg_response_time
+            avg_response_time_ms=avg_response_time,
+            total_cost_usd=total_cost_usd
         )
 
     async def get_active_conversations(
@@ -145,7 +168,7 @@ class DashboardService:
                 conversations_today=agent["conversations_today"],
                 resolution_rate=Decimal(str(agent["resolution_rate"])) if agent["resolution_rate"] else Decimal("0.00"),
                 avg_response_time_ms=agent["avg_response_time_ms"],
-                cost=Decimal(str(agent["cost"])) if agent["cost"] else Decimal("0.00"),
+                cost=float(str(agent["cost"])) if agent["cost"] else 0.0,
                 is_active=agent["is_active"]
             )
             for agent in agent_stats

@@ -4,53 +4,57 @@ from app.api.v1.routes import (
     agent_config,
     agent_knowledge,
     agents,
+    analytics,
     api_keys,
+    app_settings,
     audit_logs,
     auth,
+    azure_blob_router,
     conversations,
+    customers,
     dashboard,
     datasources,
+    feature_flags,
+    file_manager,
+    gmail,
+    internal,
     llm_analysts,
+    llm_cost_rates,
     llm_providers,
+    mcp,
+    mcp_servers,
+    ml_model_pipeline,
+    ml_models,
+    office365,
     open_ai_fine_tuning,
     operators,
     permissions,
+    playground,
+    public_registration,
     recordings,
+    reports,
     role_permissions,
     roles,
+    smb_share_router,
+    tenants,
+    translations,
     twilio_agents,
+    test_cases,
+    test_evaluations,
+    test_runs,
+    test_suites,
     user_types,
     users,
     voice,
-    app_settings,
-    feature_flags,
     webhook,
     webhook_execute,
-    workflows,
-    reports,
-    zendesk,
-    gmail,
-    office365,
-    ml_models,
-    ml_model_pipeline,
-    playground,
-    smb_share_router,
-    tenants,
-    azure_blob_router,
-    public_registration,
     workflow_manager,
-    mcp,
-    mcp_servers,
-    customers,
-    file_manager,
-    translations,
-    analytics
+    workflows,
+    zendesk,
 )
 
 # Disable redirect slashes for all routes
-default_router_options = {
-    "redirect_slashes": False
-}
+default_router_options = {"redirect_slashes": False}
 
 router = APIRouter(**default_router_options)
 
@@ -83,9 +87,8 @@ router.include_router(voice.router, prefix="/voice", tags=["Voice"])
 
 # router.include_router(conversation_analysis.router, prefix="/conversation-analysis", tags=["ConversationAnalysisRead"])
 
-router.include_router(
-    llm_providers.router, prefix="/llm-providers", tags=["LlmProviders"]
-)
+router.include_router(llm_providers.router, prefix="/llm-providers", tags=["LlmProviders"])
+router.include_router(llm_cost_rates.router, prefix="/llm-cost-rates", tags=["LlmCostRates"])
 router.include_router(llm_analysts.router, prefix="/llm-analyst", tags=["LlmAnalyst"])
 
 router.include_router(agents.router, prefix="/genagent/agents", tags=["agents"])
@@ -108,14 +111,19 @@ router.include_router(
 router.include_router(
     webhook_execute.router, prefix="/webhook/execute", tags=["Webhook Execution"]
 )
-router.include_router(
-    file_manager.router, prefix="/file-manager", tags=["FileManager"]
-)
+router.include_router(file_manager.router, prefix="/file-manager", tags=["FileManager"])
 router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+
+router.include_router(test_suites.router, prefix="/genagent/eval", tags=["Test Suites"])
+router.include_router(test_cases.router, prefix="/genagent/eval", tags=["Test Cases"])
+router.include_router(test_runs.router, prefix="/genagent/eval", tags=["Test Runs"])
+router.include_router(test_evaluations.router, prefix="/genagent/eval", tags=["Test Evaluations"])
 
 
 router.include_router(ml_models.router, prefix="/ml-models", tags=["ML Models"])
-router.include_router(ml_model_pipeline.router, prefix="/ml-models", tags=["ML Model Pipelines"])
+router.include_router(
+    ml_model_pipeline.router, prefix="/ml-models", tags=["ML Model Pipelines"]
+)
 router.include_router(playground.router, prefix="/playground", tags=["Playground"])
 
 router.include_router(
@@ -128,10 +136,19 @@ router.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])
 
 router.include_router(open_ai_fine_tuning.router, prefix="/openai", tags=["OpenAI API"])
 
-router.include_router(azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"])
+router.include_router(
+    azure_blob_router.router, prefix="/azure-blob-storage", tags=["Azure Blob Storage"]
+)
 
-router.include_router(public_registration.router, prefix="/public-registration", tags=["Public Registration"])
-router.include_router(workflow_manager.router, prefix="/workflow-manager", tags=["Workflow Manager"])
+router.include_router(
+    public_registration.router,
+    prefix="/public-registration",
+    tags=["Public Registration"],
+)
+router.include_router(
+    workflow_manager.router, prefix="/workflow-manager", tags=["Workflow Manager"]
+)
 router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP Servers"])
 router.include_router(customers.router, prefix="/customers", tags=["Customers"])
+router.include_router(internal.router, prefix="/internal", tags=["Internal"])

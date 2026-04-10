@@ -4,21 +4,20 @@ Train Model node implementation using the BaseNode class.
 This node trains ML models on CSV data and saves them as .pkl files.
 """
 
-from typing import Dict, Any, Optional
 import logging
 import pickle
-import uuid
-from pathlib import Path
+from typing import Any, Dict, Optional
+
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 
-from app.modules.workflow.engine.base_node import BaseNode
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import ml_utils
 
 logger = logging.getLogger(__name__)
@@ -51,7 +50,7 @@ class TrainModelNode(BaseNode):
         Args:
             config: The resolved configuration for the node containing:
                 - name: Model name (required)
-                - modelType: Type of model - "xgboost", "random_forest", "linear_regression", 
+                - modelType: Type of model - "xgboost", "random_forest", "linear_regression",
                             "logistic_regression", "neural_network" (required)
                 - fileUrl: Path to CSV file with training data (required)
                 - targetColumn: Name of the target column (required)
@@ -123,14 +122,14 @@ class TrainModelNode(BaseNode):
             # Validate columns exist
             all_columns = list(df.columns)
             missing_columns = []
-            
+
             if target_column not in all_columns:
                 missing_columns.append(target_column)
-            
+
             for col in feature_columns:
                 if col not in all_columns:
                     missing_columns.append(col)
-            
+
             if missing_columns:
                 logger.error(f"Columns not found in data: {missing_columns}. Available columns: {all_columns}")
                 return {
@@ -204,15 +203,28 @@ class TrainModelNode(BaseNode):
                 metrics = self._evaluate_model(model, X_val, y_val, is_classification)
                 logger.info(f"Validation metrics: {metrics}")
 
-            # Save model to .pkl file
-            pkl_file_path = await self._save_model(model, name, self.state.thread_id)
+            # Save model to .pkl file (model + metadata payload)
+            model_artifact = await self._save_model(
+                model=model,
+                name=name,
+                thread_id=self.state.thread_id,
+                metadata={
+                    # Marker used to distinguish "new payload PKL" vs legacy "raw model PKL"
+                    "metadata_schema_version": 1,
+                    # Three core fields inference can rely on:
+                    "feature_columns": feature_columns,
+                    "target_column": target_column,
+                    "model_type": model_type,
+                },
+            )
 
             # Prepare response
             result = {
                 "success": True,
                 "model_name": name,
                 "model_type": model_type,
-                "model_file_path": pkl_file_path,
+                "model_file_path": model_artifact["model_file_path"],
+                "model_version": model_artifact["model_version"],
                 "target_column": target_column,
                 "feature_columns": feature_columns,
                 "training_samples": len(X_train),
@@ -220,7 +232,7 @@ class TrainModelNode(BaseNode):
                 "metrics": metrics,
             }
 
-            logger.info(f"Model training completed successfully: {pkl_file_path}")
+            logger.info(f"Model training completed successfully: {model_artifact['model_file_path']}")
             return result
 
         except AppException:
@@ -429,8 +441,13 @@ class TrainModelNode(BaseNode):
             Dictionary with evaluation metrics
         """
         from sklearn.metrics import (
-            accuracy_score, precision_score, recall_score, f1_score,
-            mean_squared_error, mean_absolute_error, r2_score
+            accuracy_score,
+            f1_score,
+            mean_absolute_error,
+            mean_squared_error,
+            precision_score,
+            r2_score,
+            recall_score,
         )
 
         y_pred = model.predict(X_val)
@@ -451,7 +468,9 @@ class TrainModelNode(BaseNode):
 
         return metrics
 
-    async def _save_model(self, model: Any, name: str, thread_id: str) -> str:
+    async def _save_model(
+        self, model: Any, name: str, thread_id: str, metadata: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Save trained model to a .pkl file.
 
@@ -461,25 +480,28 @@ class TrainModelNode(BaseNode):
             thread_id: Thread ID for directory organization
 
         Returns:
-            Path to saved .pkl file
+            Dictionary with:
+                - model_file_path: Path to saved .pkl file
+                - model_version: Generated version identifier for this artifact
         """
         try:
             # Create models directory within the project's data volume
             models_dir = DATA_VOLUME / "ml_models" / thread_id
             models_dir.mkdir(parents=True, exist_ok=True)
+            model_version = "v2.0"
 
             # Generate unique filename
-            unique_id = str(uuid.uuid4())
-            safe_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in name)
-            filename = f"{safe_name}_{unique_id}.pkl"
+            safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name)
+            filename = f"{safe_name}_{model_version}.pkl"
             file_path = models_dir / filename
 
-            # Save model using pickle
+            # Save model + metadata using pickle
+            payload = {"model": model, "metadata": metadata, "version": model_version}
             with open(file_path, "wb") as f:
-                pickle.dump(model, f)
+                pickle.dump(payload, f)
 
             logger.info(f"Saved model to: {file_path}")
-            return str(file_path)
+            return {"model_file_path": str(file_path), "model_version": model_version}
 
         except Exception as e:
             logger.error(f"Error saving model: {str(e)}", exc_info=True)

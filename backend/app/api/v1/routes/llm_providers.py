@@ -1,15 +1,15 @@
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from fastapi_injector import Injected
 
+from app.auth.dependencies import auth, permissions
 from app.cache.redis_cache import invalidate_llm_provider_cache
 from app.core.permissions.constants import Permissions as P
-from app.auth.dependencies import auth, permissions
 from app.modules.workflow.llm.provider import LLMProvider
-from app.schemas.llm import LlmProviderCreate, LlmProviderRead, LlmProviderUpdate
+from app.schemas.llm import LlmProviderBase, LlmProviderCreate, LlmProviderRead, LlmProviderUpdate
 from app.services.llm_providers import LlmProviderService
-
 
 router = APIRouter()
 
@@ -84,3 +84,14 @@ async def delete(
     res = await service.delete(llm_provider_id)
     await invalidate_llm_provider_cache(provider_id=llm_provider_id)
     return res
+
+
+@router.post("/test-connection", dependencies=[Depends(auth)])
+async def test_connection(
+    llm_provider: LlmProviderBase,
+    provider_id: Optional[UUID] = None,
+    service: LlmProviderService = Injected(LlmProviderService),
+):
+    return await service.test_connection(
+        llm_provider.llm_model_provider, llm_provider.connection_data, provider_id
+    )

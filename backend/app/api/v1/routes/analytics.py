@@ -248,6 +248,42 @@ async def get_metrics_daily(
         return {"items": []}
 
 
+
+@router.get(
+    "/custom-attributes/keys",
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Dashboard.READ)),
+    ],
+    summary="Get available custom attribute keys",
+)
+async def get_custom_attribute_keys(
+    agent_id: UUID | None = Query(default=None),
+    service: AnalyticsReadService = Injected(AnalyticsReadService),
+) -> list[str]:
+    return await service.get_custom_attribute_keys(agent_id=agent_id)
+
+
+@router.get(
+    "/custom-attributes/breakdown",
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Dashboard.READ)),
+    ],
+    summary="Get conversation breakdown by custom attribute value",
+)
+async def get_custom_attribute_breakdown(
+    key: str = Query(..., description="Custom attribute key to group by"),
+    agent_id: UUID | None = Query(default=None),
+    from_date: datetime | None = Query(default=None),
+    to_date: datetime | None = Query(default=None),
+    service: AnalyticsReadService = Injected(AnalyticsReadService),
+) -> list[dict]:
+    return await service.get_custom_attribute_breakdown(
+        key=key, agent_id=agent_id, from_date=from_date, to_date=to_date
+    )
+
+
 def _build_streaming_response(content: bytes, media_type: str, filename_base: str, fmt: str) -> StreamingResponse:
     filename = f"{filename_base}.{EXTENSIONS[fmt]}"
     return StreamingResponse(

@@ -1,30 +1,22 @@
 import asyncio
-import io
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
-from queue import Full
-from typing import Optional
+from typing import List, Optional
 
 from aiohttp import ClientError
-from app.modules.data.providers.vector.chunking.base import ChunkConfig
-from app.modules.data.manager import AgentRAGServiceManager
 from celery import shared_task
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import null, true
 
-from app.db.seed.seed_data_config import SeedTestData
 from app.dependencies.injector import injector
-from app.modules.data.providers.vector.chunking.recursive import RecursiveChunker
+from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.data.utils.file_extractor import FileTextExtractor
-from app.schemas.recording import RecordingCreate
 from app.services.agent_knowledge import KnowledgeBaseService
-from app.services.audio import AudioService
-from app.services.datasources import DataSourceService
-from app.services.app_settings import AppSettingsService
-from app.services.llm_analysts import LlmAnalystService
 from app.services.AzureStorageService import AzureStorageService
+from app.services.datasources import DataSourceService
+from app.services.llm_analysts import LlmAnalystService
 from app.services.transcription import transcribe_audio_whisper
+from app.tasks.zendesk_article_sync_tasks import import_zendesk_articles_to_kb_async
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +26,34 @@ def batch_process_files_kb(kb_id: Optional[str] = None):
     """
     Celery task entry point.
     Runs async summary pipeline for Azure blob files.
+    Accepts kb_id (single) - dispatches to appropriate Celery tasks by KB type.
     """
     loop = asyncio.get_event_loop()
-    return loop.run_until_complete(batch_process_files_kb_async_with_scope(kb_id))
+    return loop.run_until_complete(batch_process_files_kb_async_with_scope(kb_id=kb_id))
 
 
-async def batch_process_files_kb_async_with_scope(kb_id: Optional[str] = None):
-    """Wrapper to run KB batch processing for all tenants"""
+async def batch_process_files_kb_async_with_scope(
+    kb_id: Optional[str] = None,
+    tenant_id: Optional[str] = None
+):
+    """
+    Wrapper to run KB batch processing.
+
+    Args:
+        kb_id: Specific KB ID to process.
+        tenant_id: Tenant context for manual sync. If provided with kb_id,
+            processing runs only for that tenant.
+    """
+    from app.core.tenant_scope import clear_tenant_context, set_tenant_context
     from app.tasks.base import run_task_with_tenant_support
+
+    if kb_id and tenant_id:
+        try:
+            set_tenant_context(tenant_id)
+            return await batch_process_files_kb_async(kb_id=kb_id)
+        finally:
+            clear_tenant_context()
+
     return await run_task_with_tenant_support(
         batch_process_files_kb_async,
         "KB batch processing",
@@ -49,28 +61,52 @@ async def batch_process_files_kb_async_with_scope(kb_id: Optional[str] = None):
     )
 
 
-async def batch_process_files_kb_async(kb_id: Optional[str] = None):
+async def batch_process_files_kb_async(
+    kb_id: Optional[str] = None
+):
     dsService = injector.get(DataSourceService)
     llmService = injector.get(LlmAnalystService)
     kbService = injector.get(KnowledgeBaseService)
     agentRAGServiceManager = injector.get(AgentRAGServiceManager)
-    # If kb_id is provided, process only that KB's datasource; otherwise, process all active Azure Blob datasources
-    kb_items = []
-    if kb_id:
-        kb_item = await kbService.get_by_id(kb_id)
-        kb_items = [kb_item]
-    else:
-        # kb_items = await kbService.get_all()
-        pass # For now, only support single KB processing via kb_id since it is locking celery jobs. 
-        # in frontend of KB has ven added buton Sync Now to manually triger this task
-        # Full batch processing will be implemented in the future.
 
+    # Resolve list of kb_ids to process
+    ids_to_process: List[str] = [kb_id] if kb_id else []
+
+    # Dispatch KBs by type: Zendesk runs inline in this async context so the caller
+    # (API or Celery worker) gets results and we respect the current tenant context.
+    # Queuing import_zendesk_articles_to_kb.delay() here duplicated work and ran
+    # run_task_with_tenant_support in the worker (master + all tenants) for one KB.
+    zendesk_sync_results: list = []
+    kb_items = []
+    for kid in ids_to_process:
+        try:
+            kb_item = await kbService.get_by_id(kid)
+
+            # used for sync now on Zendesk KBs
+            if kb_item.type.lower() == "zendesk":
+                logger.info(f"Running Zendesk article import inline for KB {kb_item.id}")
+                zres = await import_zendesk_articles_to_kb_async(
+                    kb_id=kb_item.id, sync_now=True
+                )
+                zendesk_sync_results.append(
+                    {"kb_id": str(kb_item.id), "type": "zendesk", "result": zres}
+                )
+            else:
+                # Queue regular KB batch processing task
+                kb_items.append(kb_item)
+        except Exception as e:
+            logger.warning(f"Could not fetch KB {kid}: {e}")
+            continue
+
+    # Inline processing for non-zendesk types (s3, azure_blob, etc.)
     count_kbs = len(kb_items)
     count_success = 0
     count_skipped = 0
     count_fail = 0
     files_processed = []
+    count_zendesk_syncs = len(zendesk_sync_results)
 
+    # Process KBs
     for kb_item in kb_items:
         if kb_item.type not in ["s3", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket"]:
             # Only process KBs with folder structured sources for this task
@@ -107,7 +143,6 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
         embedding_normalize_embeddings = vector_config.get("embedding_normalize_embeddings", True)
 
 
-        
         # Get datasource details
         ds_item = await dsService.get_by_id(kb_item.sync_source_id, True)
 
@@ -133,12 +168,12 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
         ##############################################
         # Process S3 Datasource/KB
         if ds_item.source_type.lower() == "s3":
-            keyid_username = conn.get("access_key") 
-            secret_password = conn.get("secret_key") 
-            bucket_server = conn.get("bucket_name") 
-            prefix_input_folder = conn.get("prefix", "") 
+            keyid_username = conn.get("access_key")
+            secret_password = conn.get("secret_key")
+            bucket_server = conn.get("bucket_name")
+            prefix_input_folder = conn.get("prefix", "")
             filter_pattern = processing_filter # filter defined in KB not DS
-            region = conn.get("region", "us-east-1")  
+            region = conn.get("region", "us-east-1")
 
             s3_files = await s3_list_source(
                 api_key = keyid_username,
@@ -155,10 +190,10 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
                     count_skipped += 1
                     continue
                 file_content = await s3_download_file(
-                    api_key = keyid_username, 
-                    api_secret = secret_password, 
-                    region = region, 
-                    bucket_name = bucket_server, 
+                    api_key = keyid_username,
+                    api_secret = secret_password,
+                    region = region,
+                    bucket_name = bucket_server,
                     item = s3_file["key"]
                 )
                 count_success += 1
@@ -182,9 +217,9 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
 
                     # Add to knowledge base using simplified manager
                     res = await rag_service.add_document(
-                        # kb_item, 
-                        rag_doc_id, 
-                        extracted_content["content"], 
+                        # kb_item,
+                        rag_doc_id,
+                        extracted_content["content"],
                         rag_doc_metadata,
                     )
                     logger.info(f"Document {extracted_content.get('file_name', 'unknown_file')} processed with result: {res}")
@@ -202,12 +237,12 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
                         item = s3_file["key"],
                         destination = destination_key
                     )
-                 
+
             logger.info(f"Finished processing S3 datasource {ds_item.name} for KB {kb_item.name}\n - {count_success} files processed, \n - {count_skipped} files skipped, and \n - {count_fail} failures.")
 
 
 
-        elif ds_item.type == "azure_blob":
+        elif ds_item.type.lower() == "azure_blob":
             # # Required connection details stored in datasource connection_data
             container = conn.get("container_name")
             prefix = conn.get("input_prefix", "incoming")
@@ -248,20 +283,24 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
                         prefix=summary_prefix
                     )
 
-                    processed.append({"file": filename, "summary": summary_filename})
+                    files_processed.append({"file": filename, "summary": summary_filename})
                     count_success += 1
 
                 except Exception as e:
                     count_fail += 1
                     logger.error(f"Failed to summarize {filename}: {str(e)}")
 
-    return {
+    result = {
         "total_kbs": count_kbs,
         "processed_kbs": count_success,
         "failed_kb": count_fail,
         "skipped_kbs": count_skipped,
-        "files": files_processed
+        "files": files_processed,
+        "zendesk_sync_results": zendesk_sync_results,
+        "zendesk_kbs_synced": count_zendesk_syncs,
     }
+
+    return result
 
 
 
@@ -269,8 +308,11 @@ async def batch_process_files_kb_async(kb_id: Optional[str] = None):
 ############################################
 #  S3 Helper  FUnctions (to be moved to a separate module)
 ############################################
-import boto3
 import fnmatch
+
+import boto3
+
+
 async def s3_list_source(
     api_key: str,
     api_secret: str,
@@ -343,7 +385,7 @@ async def s3_download_file(
             region_name=region
         )
 
-        # Get object metadata 
+        # Get object metadata
         metadata = s3_client.head_object(
             Bucket=bucket_name,
             Key=item
@@ -351,7 +393,7 @@ async def s3_download_file(
 
         file_size = metadata["ContentLength"]
         last_modified = metadata["LastModified"]
-        # Create in-memory file object 
+        # Create in-memory file object
         file_object = BytesIO()
 
         s3_client.download_fileobj(
@@ -372,14 +414,14 @@ async def s3_download_file(
 
     except ClientError as e:
         raise Exception(f"S3 download failed: {str(e)}")
-    
+
 #####################
 async def s3_move_file(
     api_key: str,
     api_secret: str,
     region: str,
     bucket_name: str,
-    item: str, 
+    item: str,
     destination: str
 ):
     try:
@@ -404,7 +446,7 @@ async def s3_move_file(
 
 ############################################
 #  Helper that returns content from the file based on processing mode (none, extract, transcribe, etc.)
-############################################    
+############################################
 
 async def get_content_from_file(mode: str, file):
     """
@@ -455,7 +497,7 @@ async def get_content_from_file(mode: str, file):
 
         # MODE: TRANSCRIBE
         elif mode == "transcribe":
-            # whisper.transcribe 
+            # whisper.transcribe
             the_file = UploadFile(
                 filename=file.filename,
                 file=file,
@@ -463,7 +505,7 @@ async def get_content_from_file(mode: str, file):
                 headers={"content-type": "application/octet-stream"}
             )
             transcribed_recording = await transcribe_audio_whisper(the_file)
-           
+
             result["content"] = transcribed_recording.get("text", "")
             result["file_name"] = file.filename
             result["file_size"] = file.length

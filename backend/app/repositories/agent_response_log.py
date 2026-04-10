@@ -24,6 +24,10 @@ class AgentResponseLogRepository:
         conversation_id: UUID,
         transcript_message_id: UUID,
         raw_response: Dict[str, Any],
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        total_tokens: int | None = None,
+        cost_usd: float | None = None,
     ) -> AgentResponseLogModel:
         """
         Create a log entry for a given transcript message with the full agent response.
@@ -32,6 +36,10 @@ class AgentResponseLogRepository:
             conversation_id=conversation_id,
             transcript_message_id=transcript_message_id,
             raw_response=json.dumps(raw_response),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cost_usd=cost_usd,
         )
         self.db.add(entry)
         await self.db.commit()
@@ -50,6 +58,17 @@ class AgentResponseLogRepository:
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
+
+    async def get_by_conversation_ids(
+        self,
+        conversation_ids: List[UUID],
+    ) -> List[AgentResponseLogModel]:
+        """Fetch all agent response logs for a list of conversation IDs in a single query."""
+        stmt = select(AgentResponseLogModel).where(
+            AgentResponseLogModel.conversation_id.in_(conversation_ids)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
 
     async def get_by_filter(
         self,

@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
+from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,6 +38,11 @@ class AgentResponseLogModel(Base):
         nullable=False,
         doc="Full JSON-serialized agent_response as returned from the agent.",
     )
+
+    input_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     logged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

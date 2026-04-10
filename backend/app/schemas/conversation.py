@@ -1,7 +1,7 @@
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from app.schemas.conversation_analysis import ConversationAnalysisRead
 from app.schemas.recording import RecordingRead
@@ -57,6 +57,7 @@ class ConversationBase(BaseModel):
     duration: Optional[int] = None
     status: Optional[str] = None
     conversation_type: Optional[str] = None
+    finalize_llm_analyst_id: Optional[UUID] = None
 
     model_config = ConfigDict(
         from_attributes = True
@@ -65,6 +66,7 @@ class ConversationBase(BaseModel):
 
 class ConversationCreate(ConversationBase):
     id: Optional[UUID] = None
+    custom_attributes: Optional[dict[str, Any]] = None
 
 class ConversationRead(ConversationBase):
     id: UUID
@@ -80,8 +82,7 @@ class ConversationRead(ConversationBase):
     messages: Optional[list[TranscriptMessageRead]] = None
     thumbs_down_count: int = 0
     thumbs_up_count: int = 0
-
-
+    custom_attributes: Optional[dict[str, Any]] = None
 
     model_config = ConfigDict(
         from_attributes = True

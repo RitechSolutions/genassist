@@ -1,9 +1,10 @@
 from typing import Optional
-from sqlalchemy import ForeignKey, UUID, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.db.base import Base
-from sqlalchemy.dialects.postgresql import JSONB
 
+from sqlalchemy import UUID, ForeignKey, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
 
 
 class LlmAnalystModel(Base):
@@ -18,6 +19,7 @@ class LlmAnalystModel(Base):
     prompt: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     context_enrichments: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    settings: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     llm_provider = relationship('LlmProvidersModel', back_populates="llm_analysts", foreign_keys=[llm_provider_id],
                                 uselist=False)
@@ -32,6 +34,7 @@ class LlmProvidersModel(Base):
     name: Mapped[Optional[str]] = mapped_column(String(255))
     llm_model_provider: Mapped[Optional[str]] = mapped_column(String)
     connection_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    connection_status: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     is_default: Mapped[Optional[int]] = mapped_column(Integer)
 

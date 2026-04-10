@@ -40,7 +40,11 @@ export function MessageFeedbackPopover({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 z-50" side="bottom" align="start">
+      <PopoverContent
+        className="w-80 z-[1401]"
+        side="bottom"
+        align="start"
+      >
         <div className="grid gap-4">
           <div className="space-y-2">
             <h4 className="font-medium leading-none">
