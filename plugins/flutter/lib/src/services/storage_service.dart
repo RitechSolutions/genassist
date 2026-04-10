@@ -9,13 +9,25 @@ import '../models/api_responses.dart';
 class StorageService {
   static const _storageKeyBase = 'genassist_conversation';
   final String apiKey;
+  /// Optional tenant id; when set, keys are namespaced like iOS
+  /// `keySuffix` (`_tenant_<id>`) so conversations do not collide across tenants.
+  final String? tenant;
 
-  StorageService({required this.apiKey});
+  StorageService({required this.apiKey, this.tenant});
 
-  String get _storageKey => '$_storageKeyBase:$apiKey';
+  /// Suffix appended to storage keys, matching [GenassistChatIOS/ChatService.keySuffix].
+  String get _keySuffix {
+    final t = tenant;
+    if (t == null || t.trim().isEmpty) return '';
+    return '_tenant_${t.trim()}';
+  }
+
+  bool get _scopedByTenant => _keySuffix.isNotEmpty;
+
+  String get _storageKey => '$_storageKeyBase:$apiKey$_keySuffix';
 
   String _messagesKey(String conversationId) =>
-      'genassist_conversation_messages:$apiKey:$conversationId';
+      'genassist_conversation_messages:$apiKey$_keySuffix:$conversationId';
 
   /// Save the current conversation metadata to SharedPreferences.
   Future<void> saveConversation({
@@ -58,8 +70,8 @@ class StorageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       String? raw = prefs.getString(_storageKey);
-      // Backward-compat: check old unscoped key if scoped one missing.
-      if (raw == null) {
+      // Backward-compat: legacy keys without apiKey/tenant scope only when not tenant-scoped.
+      if (raw == null && !_scopedByTenant) {
         raw = prefs.getString(_storageKeyBase);
       }
       if (raw == null) return null;

@@ -65,7 +65,7 @@ class ChatService {
     this.usePoll = false,
     http.Client? httpClient,
   })  : baseUrl = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl,
-        _storage = StorageService(apiKey: apiKey),
+        _storage = StorageService(apiKey: apiKey, tenant: tenant),
         _httpClient = httpClient ?? http.Client() {
     if (websocketUrl != null) {
       _wsVersion = 2;

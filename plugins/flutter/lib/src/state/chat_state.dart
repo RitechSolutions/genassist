@@ -141,7 +141,7 @@ class ChatState extends ChangeNotifier {
     this.onConfigLoaded,
   }) {
     _language = language ?? 'en';
-    _storageService = StorageService(apiKey: apiKey);
+    _storageService = StorageService(apiKey: apiKey, tenant: tenant);
 
     _chatService = ChatService(
       baseUrl: baseUrl,

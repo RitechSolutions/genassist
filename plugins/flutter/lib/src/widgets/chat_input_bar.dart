@@ -185,7 +185,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
           ),
           child: SafeArea(
             top: false,
-            bottom: false,
+            bottom: chatState.inputDisclaimerHtml == null,
+            minimum: chatState.inputDisclaimerHtml == null
+                ? const EdgeInsets.only(bottom: 6)
+                : EdgeInsets.zero,
             child: Row(
               children: [
                 if (widget.useFile)

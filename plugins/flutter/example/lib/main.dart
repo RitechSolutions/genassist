@@ -80,6 +80,7 @@ class _ChatExamplePageState extends State<ChatExamplePage> {
     return GenAgentChat(
       url: 'http://localhost:8000/',
       apiKey: 'your-api-key',
+      tenant: 'your-tenant-id',
       mode: _selectedMode,
       theme: const GenAgentChatTheme(
         primaryColor: Color(0xFF6CC24A),
