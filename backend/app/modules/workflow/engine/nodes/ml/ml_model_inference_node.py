@@ -183,9 +183,24 @@ class MLModelInferenceNode(BaseNode):
                     # Wrap single value in list to treat as batch of 1
                     normalized_inputs[key] = [value]
 
-            model = model_response.get("model", {})
-            metadata = model_response.get("metadata", {})
-            feature_names = metadata.get("feature_columns", [])
+            # normalized model response
+            # {
+            #     "model": {
+            #         "model": model,
+            #         "metadata": metadata
+            #     }
+            # }
+            # legacy model response
+            # model response is the raw model object
+            # check if model_response has a "version" key or is a dictionary with a "version" key
+            if "version" in model_response and model_response["version"] == "v2.0":
+                model = model_response.get("model", {})
+                metadata = model_response.get("metadata", {})
+                feature_names = metadata.get("feature_columns", [])
+            else:
+                # legacy model response is the raw model object
+                model = model_response.get("model", {})
+                feature_names = model.feature_names_in_ if hasattr(model, "feature_names_in_") else []
 
             # Prepare DataFrame for prediction (always batch format)
             try:
