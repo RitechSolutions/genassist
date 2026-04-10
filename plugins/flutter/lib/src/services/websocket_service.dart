@@ -165,8 +165,15 @@ class WebSocketService {
   }
 
   void _onData(dynamic rawData) {
+    final text = _decodeSocketFrame(rawData);
+    if (text == null) return;
+
     try {
-      final data = jsonDecode(rawData as String) as Map<String, dynamic>;
+      final decoded = jsonDecode(text);
+      if (decoded is! Map) return;
+      final data = decoded is Map<String, dynamic>
+          ? decoded
+          : Map<String, dynamic>.from(decoded as Map);
 
       // Respond to server ping with pong (keep-alive).
       if (data['type'] == 'ping') {
@@ -180,6 +187,18 @@ class WebSocketService {
     } catch (_) {
       // Ignore parse errors
     }
+  }
+
+  String? _decodeSocketFrame(dynamic rawData) {
+    if (rawData is String) return rawData;
+    if (rawData is List<int>) {
+      try {
+        return utf8.decode(rawData);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
   }
 
   void _sendPong() {

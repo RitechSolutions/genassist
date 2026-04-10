@@ -79,28 +79,18 @@ class _ChatExamplePageState extends State<ChatExamplePage> {
   Widget _buildChat() {
     return GenAgentChat(
       url: 'http://localhost:8000/',
-      apiKey: 'KHDPIvKbP8EXruNwLiBmu679hp0tM4XZxNrYKRyWdxZTQx4GVTFCKw',
-      metadata: const {
-        'id': 'user-123',
-        'name': 'John Doe',
-        'email': 'john@example.com',
-      },
+      apiKey: 'your-api-key',
       mode: _selectedMode,
       theme: const GenAgentChatTheme(
-        primaryColor: Color(0xFF6366F1),
-        secondaryColor: Color(0xFF818CF8),
+        primaryColor: Color(0xFF6CC24A),
+        secondaryColor: Color(0xFF6CC24A),
       ),
       headerTitle: 'Support',
-      logoUrl: 'https://example.webp',
-      useWs: false,
-      usePoll: true,
+      logoUrl: 'https://example.com/logo.png',
+      useWs: true,
+      usePoll: false,
       useFile: true,
-      useAudio: false,
-      language: 'en',
-      showWelcomeBeforeStart: true,
-      onError: (error) => debugPrint('Chat error: $error'),
-      onTakeover: () => debugPrint('Chat taken over by human'),
-      onFinalize: () => debugPrint('Chat finalized'),
+      useAudio: true,
     );
   }
 }

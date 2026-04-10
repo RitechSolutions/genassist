@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
 import '../state/chat_state.dart';
 import '../models/chat_config.dart';
 import 'markdown_message.dart';
@@ -37,13 +38,7 @@ class WelcomeCard extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 12),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  imageUrl!,
-                  height: 120,
-                  fit: BoxFit.contain,
-                  alignment: Alignment.centerLeft,
-                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                ),
+                child: _buildWelcomeImage(imageUrl!),
               ),
             ),
           if (title != null && title!.isNotEmpty)
@@ -107,6 +102,36 @@ class WelcomeCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildWelcomeImage(String source) {
+    // Support both regular URLs and data URIs returned by fetchWelcomeImage().
+    if (source.startsWith('data:image/')) {
+      try {
+        final commaIdx = source.indexOf(',');
+        if (commaIdx > -1 && commaIdx < source.length - 1) {
+          final base64Payload = source.substring(commaIdx + 1);
+          final bytes = base64Decode(base64Payload);
+          return Image.memory(
+            bytes,
+            height: 120,
+            fit: BoxFit.contain,
+            alignment: Alignment.centerLeft,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          );
+        }
+      } catch (_) {
+        return const SizedBox.shrink();
+      }
+    }
+
+    return Image.network(
+      source,
+      height: 120,
+      fit: BoxFit.contain,
+      alignment: Alignment.centerLeft,
+      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
     );
   }
 }

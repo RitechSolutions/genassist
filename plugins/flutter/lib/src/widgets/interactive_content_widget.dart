@@ -10,11 +10,15 @@ import 'file_type_icon.dart';
 class InteractiveContentWidget extends StatelessWidget {
   final List<ChatContentBlock> blocks;
   final GenAgentChatTheme? theme;
+  final bool hideOptions;
+  final void Function(String option)? onOptionTap;
 
   const InteractiveContentWidget({
     super.key,
     required this.blocks,
     this.theme,
+    this.hideOptions = false,
+    this.onOptionTap,
   });
 
   @override
@@ -33,6 +37,7 @@ class InteractiveContentWidget extends StatelessWidget {
           child: MarkdownMessage(text: text, theme: theme),
         );
       case OptionsBlock(:final options):
+        if (hideOptions) return const SizedBox.shrink();
         return _buildOptions(context, options);
       case ItemsBlock(:final items):
         return _buildItems(context, items);
@@ -48,26 +53,36 @@ class InteractiveContentWidget extends StatelessWidget {
     final primaryColor = theme?.primaryColor ?? GenAgentChatTheme.defaultPrimaryColor;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
       child: Wrap(
         spacing: 8,
-        runSpacing: 8,
+        runSpacing: 10,
         children: options.map((option) {
-          return OutlinedButton(
-            onPressed: () => chatState.sendMessage(option),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: primaryColor,
-              side: BorderSide(color: primaryColor.withOpacity(0.4)),
+          return ElevatedButton(
+            onPressed: () {
+              if (onOptionTap != null) {
+                onOptionTap!(option);
+              } else {
+                chatState.sendMessage(option);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              foregroundColor: Colors.white,
+              elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(12),
               ),
               padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              minimumSize: const Size(0, 0),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: Text(
               option,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
                 fontFamily: theme?.fontFamily,
               ),
             ),

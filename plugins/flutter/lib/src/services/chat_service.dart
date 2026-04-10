@@ -625,27 +625,16 @@ class ChatService {
     if (data['type'] == 'message' && messageHandler != null) {
       final payload = data['payload'];
       if (payload is List) {
-        final adjustedMessages = payload
-            .whereType<Map<String, dynamic>>()
-            .map((msg) {
-              final adjusted = _adjustMessageTimestampsFromMap(msg);
-              if (adjusted.messageId == null && msg['id'] != null) {
-                return adjusted.copyWith(messageId: msg['id'] as String);
-              }
-              return adjusted;
-            })
-            .where((msg) => msg.speaker != Speaker.customer)
-            .toList();
-        for (final m in adjustedMessages) {
-          messageHandler!(m);
+        for (final item in payload) {
+          final msg = _normalizeMessageMap(item);
+          if (msg != null) {
+            _deliverWebSocketAgentMessage(msg);
+          }
         }
-      } else if (payload is Map<String, dynamic>) {
-        final adjusted = _adjustMessageTimestampsFromMap(payload);
-        final withId = adjusted.messageId == null && payload['id'] != null
-            ? adjusted.copyWith(messageId: payload['id'] as String)
-            : adjusted;
-        if (withId.speaker != Speaker.customer) {
-          messageHandler!(withId);
+      } else {
+        final msg = _normalizeMessageMap(payload);
+        if (msg != null) {
+          _deliverWebSocketAgentMessage(msg);
         }
       }
     } else if (data['type'] == 'takeover') {
@@ -653,6 +642,100 @@ class ChatService {
     } else if (data['type'] == 'finalize') {
       handleConversationFinalized();
     }
+  }
+
+  void _deliverWebSocketAgentMessage(Map<String, dynamic> msg) {
+    try {
+      var adjusted = _adjustMessageTimestampsFromMap(msg);
+      final idRaw = msg['message_id'] ?? msg['id'];
+      if (adjusted.messageId == null && idRaw != null) {
+        adjusted =
+            adjusted.copyWith(messageId: _coerceOptionalStringId(idRaw));
+      }
+      if (adjusted.speaker != Speaker.customer) {
+        messageHandler!(adjusted);
+      }
+    } catch (_) {
+      // Malformed WS payloads must not tear down the app.
+    }
+  }
+
+  static Map<String, dynamic>? _normalizeMessageMap(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) {
+      try {
+        return Map<String, dynamic>.from(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  static String? _coerceOptionalStringId(dynamic v) {
+    if (v == null) return null;
+    if (v is String) return v;
+    return v.toString();
+  }
+
+  static String _coerceSpeakerValue(dynamic v) {
+    if (v is String && v.isNotEmpty) return v;
+    if (v == null) return 'agent';
+    return v.toString();
+  }
+
+  /// Inbound WS payloads may use odd speaker values; default unknown to agent
+  /// so messages are not mistaken for customer (and skipped).
+  static Speaker _speakerFromWebSocketField(dynamic v) {
+    final s = _coerceSpeakerValue(v).toLowerCase();
+    switch (s) {
+      case 'customer':
+        return Speaker.customer;
+      case 'special':
+        return Speaker.special;
+      case 'agent':
+      default:
+        return Speaker.agent;
+    }
+  }
+
+  static double _coerceTimestampField(dynamic v) {
+    if (v == null) return 0;
+    if (v is num) return v.toDouble();
+    if (v is String) {
+      try {
+        return DateTime.parse(v).millisecondsSinceEpoch / 1000.0;
+      } catch (_) {
+        return 0;
+      }
+    }
+    return 0;
+  }
+
+  static List<Attachment>? _attachmentsFromPayload(dynamic raw) {
+    if (raw is! List) return null;
+    final out = <Attachment>[];
+    for (final e in raw) {
+      final m = _normalizeMessageMap(e);
+      if (m == null) continue;
+      try {
+        out.add(Attachment.fromJson(m));
+      } catch (_) {}
+    }
+    return out.isEmpty ? null : out;
+  }
+
+  static List<MessageFeedback>? _feedbackFromPayload(dynamic raw) {
+    if (raw is! List) return null;
+    final out = <MessageFeedback>[];
+    for (final e in raw) {
+      final m = _normalizeMessageMap(e);
+      if (m == null) continue;
+      try {
+        out.add(MessageFeedback.fromJson(m));
+      } catch (_) {}
+    }
+    return out.isEmpty ? null : out;
   }
 
   /// Adjust message timestamps relative to conversation start.
@@ -665,35 +748,29 @@ class ChatService {
   }
 
   ChatMessage _adjustMessageTimestampsFromMap(Map<String, dynamic> msg) {
-    final createTime = (msg['create_time'] as num?)?.toDouble() ?? 0;
-    var startTime = (msg['start_time'] as num?)?.toDouble() ?? 0;
-    var endTime = (msg['end_time'] as num?)?.toDouble() ?? 0;
+    var createTime = _coerceTimestampField(msg['create_time']);
+    var startTime = _coerceTimestampField(msg['start_time']);
+    var endTime = _coerceTimestampField(msg['end_time']);
 
     if (_conversationCreateTime != null) {
       startTime -= _conversationCreateTime!;
       endTime -= _conversationCreateTime!;
     }
 
+    final idRaw = msg['message_id'] ?? msg['id'];
+
     return ChatMessage(
       createTime: createTime,
       startTime: startTime,
       endTime: endTime,
-      speaker: SpeakerExtension.fromJson(msg['speaker'] as String? ?? 'agent'),
-      text: msg['text'] as String? ?? '',
-      messageId: (msg['message_id'] ?? msg['id']) as String?,
-      type: msg['type'] as String?,
-      attachments: msg['attachments'] != null
-          ? (msg['attachments'] as List<dynamic>)
-              .map((e) => Attachment.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : null,
-      feedback: msg['feedback'] != null
-          ? (msg['feedback'] as List<dynamic>)
-              .map((e) => MessageFeedback.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : null,
-      linkUrl: msg['linkUrl'] as String?,
-      linkLabel: msg['linkLabel'] as String?,
+      speaker: _speakerFromWebSocketField(msg['speaker']),
+      text: msg['text'] == null ? '' : msg['text'].toString(),
+      messageId: _coerceOptionalStringId(idRaw),
+      type: msg['type'] == null ? null : msg['type'].toString(),
+      attachments: _attachmentsFromPayload(msg['attachments']),
+      feedback: _feedbackFromPayload(msg['feedback']),
+      linkUrl: msg['linkUrl'] == null ? null : msg['linkUrl'].toString(),
+      linkLabel: msg['linkLabel'] == null ? null : msg['linkLabel'].toString(),
     );
   }
 

@@ -76,6 +76,15 @@ class ChatState extends ChangeNotifier {
   List<Attachment> _preloadedAttachments = [];
   String _language = 'en';
 
+  /// When true, [notifyListeners] is skipped (e.g. after [dispose]) so async
+  /// [init] cannot fire notifications on a disposed notifier.
+  bool _notificationsMuted = false;
+
+  void _notify() {
+    if (_notificationsMuted) return;
+    notifyListeners();
+  }
+
   // ── Heartbeat polling state ────────────────────────────────────────
   Timer? _heartbeatTimer;
   int _heartbeatFailureCount = 0;
@@ -212,7 +221,7 @@ class ChatState extends ChangeNotifier {
       _startHeartbeatPolling();
     }
 
-    notifyListeners();
+    _notify();
   }
 
   // ── Chat service handler setup ─────────────────────────────────────
@@ -224,14 +233,14 @@ class ChatState extends ChangeNotifier {
       _isTakenOver = true;
       _isAgentTyping = false;
       onTakeover?.call();
-      notifyListeners();
+      _notify();
     };
 
     _chatService.finalizedHandler = () {
       _isFinalized = true;
       _isAgentTyping = false;
       onFinalize?.call();
-      notifyListeners();
+      _notify();
     };
 
     _chatService.connectionStateHandler = (state) {
@@ -246,7 +255,7 @@ class ChatState extends ChangeNotifier {
           _connectionState = ConnectionState.disconnected;
           _isAgentTyping = false;
       }
-      notifyListeners();
+      _notify();
     };
 
     _chatService.welcomeDataHandler = (data) {
@@ -257,13 +266,17 @@ class ChatState extends ChangeNotifier {
       if (data.possibleQueries.isNotEmpty) {
         _possibleQueries = data.possibleQueries;
       }
-      notifyListeners();
+      _notify();
     };
   }
 
   void _setupWebSocketListeners() {
     _wsMessageSub = _wsService.messageStream.listen((data) {
-      _chatService.processWebSocketMessage(data);
+      try {
+        _chatService.processWebSocketMessage(data);
+      } catch (e, _) {
+        onError?.call(e);
+      }
     });
 
     _wsStateSub = _wsService.connectionStateStream.listen((state) {
@@ -271,7 +284,7 @@ class ChatState extends ChangeNotifier {
       if (state != ConnectionState.connected) {
         _isAgentTyping = false;
       }
-      notifyListeners();
+      _notify();
     });
   }
 
@@ -323,7 +336,7 @@ class ChatState extends ChangeNotifier {
 
     _validateMessages();
     _persistMessages();
-    notifyListeners();
+    _notify();
   }
 
   /// Detect takeover / finalized from message list.
@@ -386,7 +399,7 @@ class ChatState extends ChangeNotifier {
     _preloadedAttachments = [];
     _stopHeartbeatPolling();
     _wsService.disconnect();
-    notifyListeners();
+    _notify();
   }
 
   // ── Public actions ─────────────────────────────────────────────────
@@ -408,7 +421,7 @@ class ChatState extends ChangeNotifier {
     _isTakenOver = false;
     _isAgentTyping = false;
     _preloadedAttachments = [];
-    notifyListeners();
+    _notify();
 
     try {
       _stopHeartbeatPolling();
@@ -445,7 +458,7 @@ class ChatState extends ChangeNotifier {
       }
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -462,29 +475,36 @@ class ChatState extends ChangeNotifier {
     String? reCaptchaToken,
   }) async {
     // Prevent concurrent sends while agent is still responding.
-    if (_isAgentTyping || _isLoading || _isFinalized || _isTakenOver) {
+    if (_isAgentTyping || _isLoading || _isFinalized) {
       return;
     }
     try {
       _isLoading = true;
-      notifyListeners();
+      _notify();
 
       // Match pre-uploaded attachments by name/size
       final newAttachments = <Attachment>[];
       if (files != null && files.isNotEmpty) {
         for (final f in files) {
-          // files may be File objects or just identifiers for preloaded attachments
+          // files may be File / PlatformFile / identifiers.
+          // Match against both path basename and explicit file name.
+          final candidates = _fileNames(f);
           final match = _preloadedAttachments.cast<Attachment?>().firstWhere(
-                (pa) => pa != null && pa.name == _fileName(f),
+                (pa) => pa != null && candidates.contains(pa.name),
                 orElse: () => null,
               );
           if (match != null) newAttachments.add(match);
+        }
+        // Fallback: if uploads exist but strict matching failed, attach all
+        // preloaded files to avoid empty message bubbles.
+        if (newAttachments.isEmpty && _preloadedAttachments.isNotEmpty) {
+          newAttachments.addAll(_preloadedAttachments);
         }
       }
 
       if (!_isTakenOver) {
         _isAgentTyping = true;
-        notifyListeners();
+        _notify();
       }
 
       await _chatService.sendMessage(
@@ -513,7 +533,7 @@ class ChatState extends ChangeNotifier {
       }
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -537,7 +557,7 @@ class ChatState extends ChangeNotifier {
       );
 
       _preloadedAttachments = [..._preloadedAttachments, attachment];
-      notifyListeners();
+      _notify();
       return attachment;
     } catch (error) {
       if (_isTokenExpired(error)) {
@@ -580,7 +600,7 @@ class ChatState extends ChangeNotifier {
       }).toList();
 
       _persistMessages();
-      notifyListeners();
+      _notify();
     } catch (error) {
       onError?.call(error);
     }
@@ -711,7 +731,7 @@ class ChatState extends ChangeNotifier {
         }
       }
 
-      notifyListeners();
+      _notify();
 
       if (result.status == 'finalized') return; // Stop polling
 
@@ -750,24 +770,37 @@ class ChatState extends ChangeNotifier {
 
     _messages = [..._messages, msg];
     _persistMessages();
-    notifyListeners();
+    _notify();
   }
 
-  /// Extract a file name from a dynamic file object (dart:io File or similar).
-  String _fileName(dynamic file) {
-    if (file is String) return file;
+  /// Extract possible file names from a dynamic file object.
+  List<String> _fileNames(dynamic file) {
+    if (file is String) return [file];
+    final names = <String>{};
     try {
-      // dart:io File has a path property
-      return (file as dynamic).path.toString().split('/').last as String;
+      final name = (file as dynamic).name;
+      if (name != null && name.toString().isNotEmpty) {
+        names.add(name.toString());
+      }
     } catch (_) {
-      return '';
+      // ignore
     }
+    try {
+      final path = (file as dynamic).path;
+      if (path != null && path.toString().isNotEmpty) {
+        names.add(path.toString().split('/').last);
+      }
+    } catch (_) {
+      // ignore
+    }
+    return names.toList();
   }
 
   // ── Dispose ────────────────────────────────────────────────────────
 
   @override
   void dispose() {
+    _notificationsMuted = true;
     _stopHeartbeatPolling();
     _wsMessageSub?.cancel();
     _wsStateSub?.cancel();
