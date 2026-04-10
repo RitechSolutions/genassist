@@ -243,7 +243,9 @@ const AgentForm: React.FC<AgentFormProps> = ({
     let cancelled = false;
 
     const loadExistingImage = async () => {
-      if (!(isEditMode && id && data?.has_welcome_image)) return;
+      // In many edit-entry points we don't have an accurate has_welcome_image flag.
+      // Attempt to load and simply no-op if the server says "not found".
+      if (!(isEditMode && id)) return;
       try {
         const imageBlob = await getWelcomeImage(id);
         if (cancelled) return;
@@ -265,18 +267,20 @@ const AgentForm: React.FC<AgentFormProps> = ({
 
     void loadExistingImage();
 
-    // load advanced settings
-    if (isEditMode && !!formData.llm_analyst_id) {
-      setShowAdvanced(true);
-    }
-
     return () => {
       cancelled = true;
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [isEditMode, id, data?.has_welcome_image]);
+  }, [isEditMode, id]);
+
+  // Auto-expand advanced section when editing agents that already use an analyst.
+  useEffect(() => {
+    if (isEditMode && !!formData.llm_analyst_id) {
+      setShowAdvanced(true);
+    }
+  }, [isEditMode, formData.llm_analyst_id]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -463,7 +467,7 @@ const AgentForm: React.FC<AgentFormProps> = ({
         await updateAgentConfig(id, dataToSubmit);
         agentId = id;
       } else {
-        const { id: _, ...rest } = formData;
+        const { id: _, has_welcome_image, ...rest } = formData;
         const dataToSubmit = {
           ...rest,
           possible_queries: omitEmptyStrings(rest.possible_queries),
@@ -1110,7 +1114,7 @@ export const AgentFormPage: React.FC = () => {
 
       fetchAgentConfig();
     }
-  }, [id, isEditMode, formData]);
+  }, [id, isEditMode]);
 
   if (!agentId) {
     return (

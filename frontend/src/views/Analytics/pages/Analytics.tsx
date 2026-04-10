@@ -6,6 +6,7 @@ import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { AnalyticsMetricsSection } from "../components/AnalyticsMetricsSection";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
+import { AttributeBreakdownChart } from "../components/reports/AttributeBreakdownChart";
 import { useAnalyticsData } from "../hooks/useAnalyticsData";
 import { useAgentsList } from "../hooks/useAgentsList";
 
@@ -53,6 +54,11 @@ const AnalyticsPage = () => {
                 refreshing={refreshing}
                 error={error}
                 compareDateRange={compareDateRange}
+              />
+
+              <AttributeBreakdownChart
+                agentId={agentFilter}
+                dateRange={dateRange}
               />
             </div>
           </div>
