@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,10 @@ import {
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Button } from "@/components/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
+import { ScrollArea } from "@/components/scroll-area";
 import { Loader2, ChevronDown, ChevronUp, Download, FileText } from "lucide-react";
+import { cn } from "@/helpers/utils";
 import { toast } from "react-hot-toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
@@ -34,6 +37,7 @@ import {
 
 const SUPPORTED_MODELS_PAGE_SIZE = 10;
 const TRAINING_FILES_PAGE_SIZE = 10;
+const FINE_TUNE_FILE_TAG = "fine-tune";
 
 function fileManagerDisplayName(file: {
   original_filename?: string | null;
@@ -69,9 +73,14 @@ export function LocalFineTuneJobDialog({
   const [supportedModels, setSupportedModels] = useState<LocalFineTuneSupportedModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState("");
-  const [trainingFilePage, setTrainingFilePage] = useState(0);
   const [managerFiles, setManagerFiles] = useState<FileManagerFileRecord[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
+  const [filesLoadingMore, setFilesLoadingMore] = useState(false);
+  const [hasMoreFiles, setHasMoreFiles] = useState(true);
+  const [trainingFilePickerOpen, setTrainingFilePickerOpen] = useState(false);
+  const [trainingMenuWidth, setTrainingMenuWidth] = useState<number | null>(null);
+  const trainingFilesBlockRef = useRef<HTMLDivElement>(null);
+  const fetchMoreLock = useRef(false);
   const [selectedTrainingFile, setSelectedTrainingFile] = useState<{
     id: string;
     name: string;
@@ -79,6 +88,7 @@ export function LocalFineTuneJobDialog({
   const [submitting, setSubmitting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
+  const [suffix, setSuffix] = useState("");
 
   const [hyperparams, setHyperparams] = useState<LocalFineTuneHyperparameters>({
     ...DEFAULT_HYPERPARAMETERS,
@@ -113,20 +123,29 @@ export function LocalFineTuneJobDialog({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setManagerFiles([]);
+      setHasMoreFiles(true);
+      setTrainingFilePickerOpen(false);
+      fetchMoreLock.current = false;
+      return;
+    }
     let cancelled = false;
     (async () => {
       setFilesLoading(true);
       try {
         const list = await listFileManagerFiles({
           limit: TRAINING_FILES_PAGE_SIZE,
-          offset: trainingFilePage * TRAINING_FILES_PAGE_SIZE,
+          offset: 0,
+          tag: FINE_TUNE_FILE_TAG,
         });
         if (cancelled) return;
         setManagerFiles(list);
+        setHasMoreFiles(list.length === TRAINING_FILES_PAGE_SIZE);
       } catch {
         if (!cancelled) {
           setManagerFiles([]);
+          setHasMoreFiles(false);
           toast.error("Could not load files from File Manager");
         }
       } finally {
@@ -136,7 +155,50 @@ export function LocalFineTuneJobDialog({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, trainingFilePage]);
+  }, [isOpen]);
+
+  const loadMoreTrainingFiles = useCallback(async () => {
+    if (!hasMoreFiles || filesLoading || fetchMoreLock.current) return;
+    fetchMoreLock.current = true;
+    setFilesLoadingMore(true);
+    try {
+      const offset = managerFiles.length;
+      const list = await listFileManagerFiles({
+        limit: TRAINING_FILES_PAGE_SIZE,
+        offset,
+        tag: FINE_TUNE_FILE_TAG,
+      });
+      setManagerFiles((prev) => {
+        const seen = new Set(prev.map((f) => f.id));
+        const next = [...prev];
+        for (const f of list) {
+          if (!seen.has(f.id)) {
+            seen.add(f.id);
+            next.push(f);
+          }
+        }
+        return next;
+      });
+      setHasMoreFiles(list.length === TRAINING_FILES_PAGE_SIZE);
+    } catch {
+      toast.error("Could not load more files");
+    } finally {
+      fetchMoreLock.current = false;
+      setFilesLoadingMore(false);
+    }
+  }, [hasMoreFiles, filesLoading, managerFiles.length]);
+
+  useLayoutEffect(() => {
+    if (trainingFilePickerOpen && trainingFilesBlockRef.current) {
+      setTrainingMenuWidth(trainingFilesBlockRef.current.offsetWidth);
+    }
+  }, [trainingFilePickerOpen]);
+
+  const onTrainingFilesScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 48) return;
+    void loadMoreTrainingFiles();
+  };
 
   const toggleAdvanced = () => setShowAdvanced((v) => !v);
   const handleAdvancedKeyDown = (e: React.KeyboardEvent) => {
@@ -170,8 +232,9 @@ export function LocalFineTuneJobDialog({
   const resetForm = () => {
     setSelectedModelId(supportedModels[0]?.id ?? "");
     setSelectedTrainingFile(null);
-    setTrainingFilePage(0);
+    setTrainingFilePickerOpen(false);
     setShowAdvanced(false);
+    setSuffix("");
     setHyperparams({ ...DEFAULT_HYPERPARAMETERS });
   };
 
@@ -191,10 +254,13 @@ export function LocalFineTuneJobDialog({
       return;
     }
 
+    const trimmedSuffix = suffix.trim();
+
     const payload: CreateLocalFineTuneJobRequest = {
       training_file: selectedTrainingFile.id,
       file_token: token,
       model_id: selectedModelId.trim(),
+      suffix: trimmedSuffix || null,
       tool_training_mode: "assistant_and_tools",
       remote_files: true,
       cleanup_files: false,
@@ -227,14 +293,15 @@ export function LocalFineTuneJobDialog({
     }
   };
 
-  const hasTrainingFileChoice = Boolean(selectedTrainingFile);
+  const hasFormContent =
+    Boolean(selectedTrainingFile) || Boolean(suffix.trim());
 
   const handleDialogOpenChange = (open: boolean) => {
     if (open) {
       onOpenChange(true);
       return;
     }
-    if (hasTrainingFileChoice) {
+    if (hasFormContent) {
       setIsCloseConfirmOpen(true);
       return;
     }
@@ -258,6 +325,18 @@ export function LocalFineTuneJobDialog({
             </DialogHeader>
 
             <div className="px-6 pb-6 space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="local-ft-suffix">Job name</Label>
+                <Input
+                  id="local-ft-suffix"
+                  placeholder="Job name"
+                  value={suffix}
+                  onChange={(e) => setSuffix(e.target.value)}
+                  className="rounded-lg"
+                  autoComplete="off"
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label>Model</Label>
                 {modelsLoading ? (
@@ -288,7 +367,7 @@ export function LocalFineTuneJobDialog({
                 )}
               </div>
 
-              <div className="space-y-2">
+              <div ref={trainingFilesBlockRef} className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <Label>Training file</Label>
                   <a
@@ -300,72 +379,102 @@ export function LocalFineTuneJobDialog({
                     <span>Download Sample File</span>
                   </a>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Only files tagged{" "}
+                  <span className="font-mono">{FINE_TUNE_FILE_TAG}</span> in File Manager appear here.
+                </p>
                 {filesLoading ? (
                   <div className="text-sm text-muted-foreground flex items-center gap-2 h-10">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Loading files…
                   </div>
                 ) : trainingFileSelectItems.length === 0 ? (
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    No files in File Manager for this page. Upload files under Knowledge Base / File
-                    Manager or change page.
-                  </p>
+                  <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/25 py-8 px-4">
+                    <FileText className="w-4 h-4 text-muted-foreground/70 shrink-0" />
+                    <p className="text-sm text-muted-foreground">No files</p>
+                  </div>
                 ) : (
-                  <Select
-                    value={selectedTrainingFile?.id}
-                    onValueChange={(id) => {
-                      const f = trainingFileSelectItems.find((row) => row.id === id);
-                      setSelectedTrainingFile(
-                        f
-                          ? { id: f.id, name: fileManagerDisplayName(f) }
-                          : null
-                      );
-                    }}
+                  <Popover
+                    open={trainingFilePickerOpen}
+                    onOpenChange={setTrainingFilePickerOpen}
                   >
-                    <SelectTrigger className="rounded-lg">
-                      <SelectValue placeholder="Select a training file" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {trainingFileSelectItems.map((f) => (
-                        <SelectItem key={f.id} value={f.id}>
-                          <span className="truncate">
-                            {fileManagerDisplayName(f)}
-                            {f.file_extension ? (
-                              <span className="text-muted-foreground"> ({f.file_extension})</span>
-                            ) : null}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={trainingFilePickerOpen}
+                        className={cn(
+                          "h-10 w-full justify-between rounded-lg border-input bg-background px-3 py-2 text-sm font-normal shadow-sm hover:bg-accent/50"
+                        )}
+                      >
+                        <span className="truncate text-left">
+                          {selectedTrainingFile
+                            ? selectedTrainingFile.name
+                            : "Select a training file"}
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      sideOffset={4}
+                      className="z-[1400] w-auto max-w-[calc(100vw-2rem)] p-0"
+                      style={
+                        trainingMenuWidth != null
+                          ? { width: trainingMenuWidth }
+                          : undefined
+                      }
+                      onOpenAutoFocus={(ev) => ev.preventDefault()}
+                      onWheel={(e) => e.stopPropagation()}
+                    >
+                      <ScrollArea
+                        className="h-[min(320px,50vh)] w-full"
+                        viewportProps={{
+                          onScroll: onTrainingFilesScroll,
+                          onWheel: (e) => e.stopPropagation(),
+                          className: "touch-pan-y overscroll-contain max-h-[min(320px,50vh)]",
+                        }}
+                      >
+                        <div className="p-1">
+                          {trainingFileSelectItems.map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              className={cn(
+                                "relative flex w-full cursor-pointer select-none items-center rounded-sm py-2 px-3 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground",
+                                selectedTrainingFile?.id === f.id &&
+                                  "bg-accent/70 text-accent-foreground"
+                              )}
+                              onClick={() => {
+                                setSelectedTrainingFile({
+                                  id: f.id,
+                                  name: fileManagerDisplayName(f),
+                                });
+                                setTrainingFilePickerOpen(false);
+                              }}
+                            >
+                              <span className="truncate">
+                                {fileManagerDisplayName(f)}
+                                {f.file_extension ? (
+                                  <span className="text-muted-foreground">
+                                    {" "}
+                                    ({f.file_extension})
+                                  </span>
+                                ) : null}
+                              </span>
+                            </button>
+                          ))}
+                          {filesLoadingMore ? (
+                            <div className="flex justify-center py-3 text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            </div>
+                          ) : null}
+                        </div>
+                      </ScrollArea>
+                    </PopoverContent>
+                  </Popover>
                 )}
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={filesLoading || trainingFilePage === 0}
-                    onClick={() => setTrainingFilePage((p) => Math.max(0, p - 1))}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    Page {trainingFilePage + 1}
-                    {managerFiles.length === TRAINING_FILES_PAGE_SIZE ? " · more may exist" : ""}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={
-                      filesLoading || managerFiles.length < TRAINING_FILES_PAGE_SIZE
-                    }
-                    onClick={() => setTrainingFilePage((p) => p + 1)}
-                  >
-                    Next
-                  </Button>
-                </div>
                 {selectedTrainingFile && (
                   <div className="text-sm text-green-700">
                     Selected: {selectedTrainingFile.name}{" "}
@@ -532,7 +641,7 @@ export function LocalFineTuneJobDialog({
         primaryButtonText="Save"
         secondaryButtonText="Discard"
         title="Save changes before closing?"
-        description="You have selected a training file. Save to keep your selection or discard to reset the form."
+        description="You have entered a job name and/or selected a training file. Save to keep your work or discard to reset the form."
       />
     </>
   );

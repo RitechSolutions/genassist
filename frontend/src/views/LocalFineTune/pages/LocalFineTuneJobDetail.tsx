@@ -1,40 +1,100 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2 } from "lucide-react";
-import { Card } from "@/components/card";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Info,
+  Loader2,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
 import { Button } from "@/components/button";
-import { getLocalFineTuneJob } from "@/services/localFineTune";
-import type { LocalFineTuneJob } from "@/interfaces/localFineTune.interface";
+import { Badge } from "@/components/badge";
+import { ScrollArea } from "@/components/scroll-area";
+import {
+  getLocalFineTuneJob,
+  listLocalFineTuneJobEvents,
+} from "@/services/localFineTune";
+import type {
+  LocalFineTuneJob,
+  LocalFineTuneJobEvent,
+} from "@/interfaces/localFineTune.interface";
 import { PageLayout } from "@/components/PageLayout";
-import { formatStatusLabel } from "@/views/FineTune/utils/utils";
-import { formatDate, formatNumber } from "@/views/FineTune/utils/utils";
-import { StatItem, DetailItem } from "@/views/FineTune/components/FineTuneStatItems";
-import { inProgressStatuses } from "@/views/FineTune/utils/utils";
+import {
+  formatStatusLabel,
+  formatDate,
+  formatNumber,
+  inProgressStatuses,
+} from "@/views/FineTune/utils/utils";
+import { DetailItem } from "@/views/FineTune/components/FineTuneStatItems";
+import { JobSummaryStatsCard } from "@/views/FineTune/components/JobSummaryStatsCard";
+import { JobProfileCard } from "@/views/FineTune/components/JobProfileCard";
+import { AccuracyOverStepsChart } from "@/views/FineTune/components/AccuracyOverStepsChart";
+import {
+  buildLossSeriesFromEvents,
+  parseFinalTrainLoss,
+  parseTrainSampleCount,
+} from "@/views/LocalFineTune/utils/trainingEvents";
+import { getLocalFineTuneJobDisplayName } from "@/views/LocalFineTune/utils/jobDisplayName";
+
+function formatLearningRate(value: unknown): string {
+  if (value === undefined || value === null) return "—";
+  const n = Number(value);
+  if (!isFinite(n)) return "—";
+  if (n === 0) return "0";
+  if (Math.abs(n) < 0.001) return n.toExponential(2);
+  return String(n);
+}
+
+function levelBadgeVariant(
+  level: string
+): "default" | "secondary" | "destructive" | "outline" {
+  const l = level.toLowerCase();
+  if (l === "error" || l === "critical") return "destructive";
+  if (l === "warn" || l === "warning") return "secondary";
+  return "outline";
+}
 
 export default function LocalFineTuneJobDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [job, setJob] = useState<LocalFineTuneJob | null>(null);
+  const [events, setEvents] = useState<LocalFineTuneJobEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    const fetchJob = async () => {
+    let cancelled = false;
+    const load = async () => {
       try {
         setLoading(true);
-        const data = await getLocalFineTuneJob(id);
-        setJob(data ?? null);
-        setError(data ? null : "Job not found");
+        const [jobData, eventList] = await Promise.all([
+          getLocalFineTuneJob(id),
+          listLocalFineTuneJobEvents(id),
+        ]);
+        if (cancelled) return;
+        setJob(jobData ?? null);
+        setEvents(eventList);
+        setError(jobData ? null : "Job not found");
       } catch {
-        setError("Failed to load job");
-        setJob(null);
+        if (!cancelled) {
+          setError("Failed to load job");
+          setJob(null);
+          setEvents([]);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    fetchJob();
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
+
+  const lossSeries = useMemo(() => buildLossSeriesFromEvents(events), [events]);
+  const trainSamples = useMemo(() => parseTrainSampleCount(events), [events]);
+  const finalLoss = useMemo(() => parseFinalTrainLoss(events), [events]);
 
   const normalizedStatus = String(job?.status ?? "").toLowerCase();
   const isInProgress = inProgressStatuses.has(normalizedStatus);
@@ -48,14 +108,48 @@ export default function LocalFineTuneJobDetail() {
     ([_, v]) => v !== undefined && v !== null && v !== ""
   );
 
-  const detailTitle =
-    job?.fine_tuned_model?.split("/").pop() ?? job?.model ?? job?.id ?? "Local Fine-Tune Job";
+  const detailTitle = job ? getLocalFineTuneJobDisplayName(job) : "Local Fine-Tune Job";
+
+  const summaryItems = job
+    ? [
+        {
+          label: "Model",
+          value: (
+            <span className="break-all text-base sm:text-lg">{job.model || "—"}</span>
+          ),
+        },
+        {
+          label: "Status",
+          value: (
+            <div className="flex items-center gap-2">
+              {isInProgress && (
+                <Loader2 className="h-4 w-4 text-primary animate-spin shrink-0" />
+              )}
+              <span>{statusLabel}</span>
+            </div>
+          ),
+        },
+        {
+          label: "Learning rate",
+          value: formatLearningRate(hyper.learning_rate),
+        },
+        {
+          label: "Train samples",
+          value:
+            trainSamples != null ? (
+              formatNumber(trainSamples)
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            ),
+        },
+      ]
+    : [];
 
   return (
     <PageLayout>
       {loading ? (
         <div className="p-6 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin" />
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : error || !job ? (
         <div className="p-6 flex flex-col items-center gap-3">
@@ -71,69 +165,197 @@ export default function LocalFineTuneJobDetail() {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={() => navigate("/local-fine-tune")}>
+          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => navigate("/local-fine-tune")}
+              >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              <h1 className="text-2xl font-semibold">{detailTitle}</h1>
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-bold mb-1 animate-fade-down truncate">
+                  {detailTitle}
+                </h1>
+                <p className="text-sm text-muted-foreground animate-fade-up">
+                  Local training run · job{" "}
+                  <span className="font-mono text-xs">{job.id}</span>
+                </p>
+              </div>
             </div>
+          </header>
+
+          {normalizedStatus === "failed" && job.error?.message && (
+            <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="space-y-0.5 min-w-0">
+                <p className="font-medium break-words">{job.error.message}</p>
+                {job.error.code && (
+                  <p className="text-xs text-destructive/70 font-mono">{job.error.code}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <JobSummaryStatsCard loading={false} items={summaryItems} />
+
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-4">
+            <JobProfileCard
+              pairRows={[
+                {
+                  label: "Epochs",
+                  value:
+                    hyper.num_train_epochs != null
+                      ? formatNumber(hyper.num_train_epochs)
+                      : "—",
+                },
+                {
+                  label: "Batch size",
+                  value:
+                    hyper.per_device_train_batch_size != null
+                      ? formatNumber(hyper.per_device_train_batch_size)
+                      : "—",
+                },
+              ]}
+              rows={[
+                {
+                  label: "Job name (suffix)",
+                  value: job.suffix?.trim() || (
+                    <span className="text-muted-foreground">—</span>
+                  ),
+                },
+                { label: "Created at", value: formatDate(job.created_at) },
+                { label: "Finished at", value: formatDate(job.finished_at) },
+                {
+                  label: "Final train loss",
+                  value:
+                    finalLoss != null ? (
+                      <span className="font-mono text-sm">{finalLoss.toFixed(4)}</span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    ),
+                },
+                {
+                  label: "Training file ID",
+                  value: (
+                    <span className="font-mono text-xs break-all">
+                      {job.training_file ?? "—"}
+                    </span>
+                  ),
+                },
+                {
+                  label: "Validation file ID",
+                  value: (
+                    <span className="font-mono text-xs break-all">
+                      {job.validation_file ?? "—"}
+                    </span>
+                  ),
+                },
+                ...(job.fine_tuned_model
+                  ? [
+                      {
+                        label: "Fine-tuned model path",
+                        value: (
+                          <span className="font-mono text-xs break-all">
+                            {job.fine_tuned_model}
+                          </span>
+                        ),
+                      } as const,
+                    ]
+                  : []),
+              ]}
+            />
+            <AccuracyOverStepsChart
+              data={lossSeries}
+              loading={false}
+              title="Training loss (logged steps)"
+              valueLabel="Loss"
+              valueMode="number"
+            />
           </div>
 
-          <Card className="rounded-lg border text-card-foreground w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-              <StatItem label="Model" value={job.model || "—"} />
-              <StatItem
-                label="Status"
-                value={
-                  <div className="flex items-center gap-2">
-                    {isInProgress && <Loader2 className="h-4 w-4 text-primary animate-spin" />}
-                    <span>{statusLabel}</span>
-                  </div>
-                }
-              />
-              <StatItem label="Created at" value={formatDate(job.created_at)} />
-              <StatItem label="Finished at" value={formatDate(job.finished_at)} />
-            </div>
-
-            <div className="border-t border-border mt-4 pt-4" />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <DetailItem label="Job ID" value={job.id} />
-              <DetailItem label="Training file" value={job.training_file ?? "—"} />
-              <DetailItem
-                label="Validation file"
-                value={job.validation_file ?? "—"}
-              />
-              {job.fine_tuned_model && (
-                <div className="sm:col-span-2 lg:col-span-3">
-                  <DetailItem label="Fine-tuned model path" value={job.fine_tuned_model} />
+          <Card className="rounded-lg border bg-white shadow-sm overflow-hidden animate-fade-up">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-zinc-700">
+                Job events
+              </CardTitle>
+              <p className="text-xs text-muted-foreground font-normal">
+                Live log from the local trainer ({events.length}{" "}
+                {events.length === 1 ? "entry" : "entries"})
+              </p>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {events.length === 0 ? (
+                <div className="flex items-start gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-4 text-sm text-muted-foreground">
+                  <Info className="h-4 w-4 shrink-0 mt-0.5" />
+                  <p>
+                    No event stream returned for this job. If your API exposes{" "}
+                    <code className="text-xs bg-muted px-1 rounded">
+                      GET …/fine-tuning/jobs/{`{id}`}/events
+                    </code>
+                    , events will appear here automatically.
+                  </p>
                 </div>
+              ) : (
+                <ScrollArea className="h-[min(420px,50vh)] pr-3">
+                  <ul className="space-y-3 pr-2 pb-2">
+                    {events.map((ev, i) => (
+                      <li
+                        key={`${ev.timestamp}-${i}`}
+                        className="rounded-lg border border-border bg-zinc-50/80 px-3 py-2.5 text-sm"
+                      >
+                        <div className="flex flex-wrap items-center gap-2 gap-y-1 mb-1">
+                          <Badge
+                            variant={levelBadgeVariant(ev.level)}
+                            className="text-[10px] uppercase tracking-wide"
+                          >
+                            {ev.level}
+                          </Badge>
+                          <time
+                            className="text-xs text-muted-foreground tabular-nums"
+                            dateTime={ev.timestamp}
+                          >
+                            {formatDate(ev.timestamp)}
+                          </time>
+                        </div>
+                        <p className="text-foreground leading-snug">{ev.message}</p>
+                        {ev.data && Object.keys(ev.data).length > 0 ? (
+                          <pre className="mt-2 max-h-36 overflow-auto rounded-md bg-white border border-border p-2 text-[11px] leading-relaxed font-mono text-zinc-700">
+                            {JSON.stringify(ev.data, null, 2)}
+                          </pre>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
               )}
-              {job.error?.message && (
-                <div className="sm:col-span-2 lg:col-span-3">
-                  <DetailItem label="Error" value={job.error.message} />
-                </div>
-              )}
-            </div>
+            </CardContent>
           </Card>
 
           {hyperEntries.length > 0 && (
-            <Card className="rounded-lg border text-card-foreground w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up">
-              <h2 className="text-lg font-semibold mb-4">Hyperparameters</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {hyperEntries.map(([key]) => (
-                  <DetailItem
-                    key={key}
-                    label={key.replace(/_/g, " ")}
-                    value={
-                      typeof hyper[key] === "number"
-                        ? formatNumber(hyper[key])
-                        : String(hyper[key] ?? "—")
-                    }
-                  />
-                ))}
-              </div>
+            <Card className="rounded-lg border text-card-foreground w-full shadow-sm bg-white animate-fade-up">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold text-zinc-700">
+                  Hyperparameters
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {hyperEntries.map(([key]) => (
+                    <DetailItem
+                      key={key}
+                      label={key.replace(/_/g, " ")}
+                      value={
+                        typeof hyper[key] === "number"
+                          ? formatNumber(hyper[key])
+                          : String(hyper[key] ?? "—")
+                      }
+                    />
+                  ))}
+                </div>
+              </CardContent>
             </Card>
           )}
         </div>

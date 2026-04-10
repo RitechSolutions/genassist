@@ -4,6 +4,7 @@ import { getAccessToken, getTenantId } from "@/services/auth";
 import type {
   CreateLocalFineTuneJobRequest,
   LocalFineTuneJob,
+  LocalFineTuneJobEvent,
   LocalFineTuneSupportedModel,
 } from "@/interfaces/localFineTune.interface";
 
@@ -111,6 +112,20 @@ export async function getLocalFineTuneJob(id: string): Promise<LocalFineTuneJob 
     );
   } catch {
     return null;
+  }
+}
+
+export async function listLocalFineTuneJobEvents(
+  jobId: string
+): Promise<LocalFineTuneJobEvent[]> {
+  try {
+    const res = await localFineTuneRequest<LocalFineTuneJobEvent[]>(
+      "GET",
+      `api/v1/fine-tuning/jobs/${jobId}/events`
+    );
+    return Array.isArray(res) ? res : [];
+  } catch {
+    return [];
   }
 }
 

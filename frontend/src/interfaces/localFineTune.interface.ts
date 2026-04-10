@@ -22,6 +22,7 @@ export interface CreateLocalFineTuneJobRequest {
   training_file: string;
   file_token: string;
   model_id: string;
+  suffix?: string | null;
   tool_training_mode?: string;
   remote_files: boolean;
   cleanup_files?: boolean;
@@ -32,9 +33,18 @@ export type LocalFineTuneJobStatus =
   | "validating_files"
   | "queued"
   | "running"
+  | "saving_model"
   | "succeeded"
   | "failed"
   | "cancelled";
+
+export interface LocalFineTuneJobEvent {
+  job_id: string;
+  level: string;
+  message: string;
+  data: Record<string, unknown> | null;
+  timestamp: string;
+}
 
 export interface LocalFineTuneJobError {
   message?: string;
