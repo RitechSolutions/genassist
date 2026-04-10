@@ -69,6 +69,7 @@ export interface BackendTranscript {
   feedback?: string | ConversationFeedbackEntry[] | null;
   thumbs_up_count?: number;
   thumbs_down_count?: number;
+  custom_attributes?: Record<string, string> | null;
 }
 
 export interface TranscriptMetrics {
@@ -125,4 +126,5 @@ export interface Transcript {
   transcript?: TranscriptEntry[] | string | null;
   thumbs_up_count?: number;
   thumbs_down_count?: number;
+  custom_attributes?: Record<string, string> | null;
 }

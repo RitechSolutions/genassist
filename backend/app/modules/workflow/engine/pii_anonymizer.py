@@ -6,6 +6,23 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Realistic fake value generators per entity type.
+# These produce values that look natural to an LLM while being clearly fake
+# (using reserved/fictional ranges where possible).
+_FAKE_VALUE_TEMPLATES: dict[str, Any] = {
+    "EMAIL_ADDRESS": lambda n: f"johndoe{n}@example.com",
+    "PHONE_NUMBER": lambda n: f"(555) 010-{n:04d}",  # 555 is reserved for fiction
+    "CREDIT_CARD": lambda n: f"4111-1111-1111-{n:04d}",
+    "IP_ADDRESS": lambda n: f"192.0.2.{n}",  # TEST-NET-1, reserved for docs
+    "IBAN_CODE": lambda n: f"DE00000000000000000{n:03d}",
+    "US_SSN": lambda n: f"000-00-{n:04d}",
+    "US_ITIN": lambda n: f"900-00-{n:04d}",
+    "US_PASSPORT": lambda n: f"A{n:08d}",
+    "US_DRIVER_LICENSE": lambda n: f"D000-{n:04d}",
+    "UK_NHS": lambda n: f"000 000 {n:04d}",
+    "MEDICAL_LICENSE": lambda n: f"MED-{n:04d}",
+}
+
 # Only entities with built-in regex recognizers in Presidio's default "en"
 # registry are listed. Language-specific IDs (IT/ES/PL) and identifiers
 # without built-in recognizers (CA_SIN, AU_*, IN_*, SG_*) are excluded —
@@ -126,7 +143,9 @@ class PIIAnonymizer:
 
         for result in sorted(deduplicated, key=lambda r: r.start, reverse=True):
             entity_counters[result.entity_type] = entity_counters.get(result.entity_type, 0) + 1
-            token = f"<{result.entity_type}_{entity_counters[result.entity_type]}>"
+            counter = entity_counters[result.entity_type]
+            generator = _FAKE_VALUE_TEMPLATES.get(result.entity_type)
+            token = generator(counter) if generator else f"<{result.entity_type}_{counter}>"
             original = text[result.start:result.end]
             masked = masked[:result.start] + token + masked[result.end:]
             items.append({"token": token, "original": original, "entity_type": result.entity_type})

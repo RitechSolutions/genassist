@@ -87,6 +87,8 @@ class ConversationService:
     async def update_conversation(self, conversation: ConversationModel):
         return await self.conversation_repo.update_conversation(conversation)
 
+    async def update_custom_attributes(self, conversation_id: UUID, custom_attributes: dict):
+        return await self.conversation_repo.update_custom_attributes(conversation_id, custom_attributes)
 
     async def get_conversation_by_id(self, conversation_id: UUID, raise_not_found: bool = True,
             include_messages: bool = False, ):
