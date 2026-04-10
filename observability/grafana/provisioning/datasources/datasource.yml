@@ -1,0 +1,9 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus-otel
+    type: prometheus
+    access: proxy
+    url: http://otel-prometheus:9090
+    isDefault: true
+    editable: false

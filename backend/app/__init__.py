@@ -53,6 +53,10 @@ def create_app() -> FastAPI:
 
     register_routers(app)
 
+    from app.core.observability.otel import init_opentelemetry
+
+    init_opentelemetry(app)
+
     return app
 
 
@@ -221,6 +225,10 @@ async def _lifespan(app: FastAPI):
     try:
         yield  # Application runs here
     finally:
+        from app.core.observability.otel import shutdown_opentelemetry
+
+        shutdown_opentelemetry()
+
         logger.info("Starting application shutdown...")
 
         # Clean up services in reverse dependency order

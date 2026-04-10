@@ -39,11 +39,16 @@ from app.modules.workflow.engine.nodes import (
     GuardrailProvenanceNode,
     GuardrailNliNode,
 )
+from contextlib import nullcontext
 from typing import Dict, Any, List, Optional, Set
 import logging
 import asyncio
 from collections import defaultdict
 import uuid
+
+from opentelemetry import trace
+
+from app.core.observability.otel import is_otel_runtime_enabled
 from fastapi_injector import RequestScopeFactory
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.injector import injector
@@ -246,52 +251,66 @@ class WorkflowEngine:
 
         initial_values = process_path_based_input_data(input_data)
 
-        # Create execution state
-        state = WorkflowState(
-            workflow=self.workflow,
-            thread_id=thread_id or str(uuid.uuid4()),
-            initial_values=initial_values,
+        span_cm = (
+            trace.get_tracer(__name__).start_as_current_span(
+                "workflow.run",
+                attributes={
+                    "genassist.workflow.id": str(self.workflow_id),
+                    "genassist.workflow.thread_id": thread_id,
+                    "genassist.workflow.start_node_id": start_node_id or "",
+                },
+            )
+            if is_otel_runtime_enabled()
+            else nullcontext()
         )
 
-        try:
-            state.start_execution()
-            state.total_steps = len(self.workflow["nodes"])
+        with span_cm:
+            # Create execution state
+            state = WorkflowState(
+                workflow=self.workflow,
+                thread_id=thread_id or str(uuid.uuid4()),
+                initial_values=initial_values,
+            )
 
-            # Execute from the specified node
             try:
-                await self._execute_from_node_recursive(
-                    start_node_id, state, set(),
-                    skip_requirement_check=True,
-                )
+                state.start_execution()
+                state.total_steps = len(self.workflow["nodes"])
 
-                state.complete_execution()
-
-            except WorkflowPausedException as e:
-                # Workflow paused (e.g. HumanInTheLoop needs user input)
-                state.output = e.pause_data
-                state.status = "completed"
-                state.is_executing = False
-
-            except ValueError as e:
-                state.fail_execution(str(e))
-
-        except WorkflowPausedException:
-            pass  # Already handled above
-        except Exception as e:
-            state.fail_execution(str(e))
-            raise
-
-        try:
-            if initial_values.get("message") and persist:
-                asyncio.create_task(
-                    state.get_memory().add_input_output(
-                        initial_values.get("message", ""),
-                        state.output
+                # Execute from the specified node
+                try:
+                    await self._execute_from_node_recursive(
+                        start_node_id, state, set(),
+                        skip_requirement_check=True,
                     )
-                )
-        except Exception as e:
-            logger.error(f"Error adding message to memory: {e}")
-        return state
+
+                    state.complete_execution()
+
+                except WorkflowPausedException as e:
+                    # Workflow paused (e.g. HumanInTheLoop needs user input)
+                    state.output = e.pause_data
+                    state.status = "completed"
+                    state.is_executing = False
+
+                except ValueError as e:
+                    state.fail_execution(str(e))
+
+            except WorkflowPausedException:
+                pass  # Already handled above
+            except Exception as e:
+                state.fail_execution(str(e))
+                raise
+
+            try:
+                if initial_values.get("message") and persist:
+                    asyncio.create_task(
+                        state.get_memory().add_input_output(
+                            initial_values.get("message", ""),
+                            state.output
+                        )
+                    )
+            except Exception as e:
+                logger.error(f"Error adding message to memory: {e}")
+            return state
 
     def _find_starting_nodes(self) -> List[str]:
         """Find nodes with no incoming edges (starting nodes)."""
