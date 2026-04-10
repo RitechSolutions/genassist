@@ -48,6 +48,8 @@ import {
   Download,
   FileText,
   ImageIcon,
+  LayoutGrid,
+  List,
   Loader2,
   Plus,
   Trash2,
@@ -56,6 +58,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/helpers/utils";
+import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group";
 
 const PERM_READ = "read:file";
 const PERM_CREATE = "create:file";
@@ -136,9 +139,11 @@ function FileExtensionPlaceholder({ extension }: { extension: string }) {
 function FileThumb({
   fileId,
   mimeType,
+  compact = false,
 }: {
   fileId: string;
   mimeType?: string | null;
+  compact?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [src, setSrc] = useState<string | null>(null);
@@ -175,8 +180,20 @@ function FileThumb({
 
   if (!mimeType?.startsWith("image/")) {
     return (
-      <div className="flex h-28 w-full items-center justify-center rounded-lg bg-muted/80">
-        <FileText className="h-12 w-12 text-muted-foreground/80" />
+      <div
+        className={cn(
+          "flex items-center justify-center rounded-lg bg-muted/80",
+          compact
+            ? "h-12 w-12 shrink-0"
+            : "h-28 w-full",
+        )}
+      >
+        <FileText
+          className={cn(
+            "text-muted-foreground/80",
+            compact ? "h-6 w-6" : "h-12 w-12",
+          )}
+        />
       </div>
     );
   }
@@ -184,18 +201,176 @@ function FileThumb({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-28 w-full items-center justify-center overflow-hidden rounded-lg bg-muted/50"
+      className={cn(
+        "relative flex items-center justify-center overflow-hidden rounded-lg bg-muted/50",
+        compact ? "h-12 w-12 shrink-0" : "h-28 w-full",
+      )}
     >
       {loading && !src && (
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loader2
+          className={cn(
+            "animate-spin text-muted-foreground",
+            compact ? "h-5 w-5" : "h-8 w-8",
+          )}
+        />
       )}
       {err && !src && !loading && (
-        <ImageIcon className="h-10 w-10 text-muted-foreground" />
+        <ImageIcon
+          className={cn("text-muted-foreground", compact ? "h-5 w-5" : "h-10 w-10")}
+        />
       )}
       {src && (
         <img src={src} alt="" className="h-full w-full object-cover" />
       )}
     </div>
+  );
+}
+
+function FileManagerFileBlock({
+  f,
+  layout,
+  canDelete,
+  downloading,
+  onDownload,
+  onDeleteRequest,
+}: {
+  f: FileRecord;
+  layout: "thumbnails" | "list";
+  canDelete: boolean;
+  downloading: boolean;
+  onDownload: (file: FileRecord) => void;
+  onDeleteRequest: (file: FileRecord) => void;
+}) {
+  const metaBlock =
+    f.file_metadata && Object.keys(f.file_metadata).length > 0 ? (
+      <details className="text-xs">
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          Metadata ({Object.keys(f.file_metadata).length} keys)
+        </summary>
+        <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-muted/50 p-2 text-[10px] leading-relaxed">
+          {JSON.stringify(f.file_metadata, null, 2)}
+        </pre>
+      </details>
+    ) : null;
+
+  const actions = (
+    <div
+      className={cn(
+        "flex gap-2",
+        layout === "thumbnails"
+          ? "flex-wrap border-t pt-3"
+          : "w-full shrink-0 flex-nowrap sm:w-auto sm:justify-end",
+      )}
+    >
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1 shrink-0 rounded-full"
+        loading={downloading}
+        icon={<Download className="h-3.5 w-3.5" />}
+        onClick={() => onDownload(f)}
+      >
+        Download
+      </Button>
+      {canDelete && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="gap-1 shrink-0 rounded-full text-destructive hover:text-destructive"
+          onClick={() => onDeleteRequest(f)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
+        </Button>
+      )}
+    </div>
+  );
+
+  const details = (
+    <div className="space-y-3">
+      <div
+        className={cn(
+          "flex justify-between gap-2",
+          layout === "list" ? "items-center" : "items-start",
+        )}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-sm" title={f.name}>
+            {f.name}
+          </p>
+          {f.path && layout === "list" && (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground" title={f.path}>
+              {f.path}
+            </p>
+          )}
+          {f.description && (
+            <p
+              className={cn(
+                "mt-1 text-xs text-muted-foreground",
+                layout === "list" ? "line-clamp-1" : "line-clamp-2",
+              )}
+            >
+              {f.description}
+            </p>
+          )}
+        </div>
+        <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">
+          .{extensionOf(f).toLowerCase()}
+        </Badge>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">
+          {formatBytes(f.size ?? undefined)}
+        </span>
+        {f.mime_type && (
+          <span className="truncate max-w-[180px]" title={f.mime_type}>
+            {f.mime_type}
+          </span>
+        )}
+      </div>
+
+      {f.tags && f.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {f.tags.slice(0, layout === "list" ? 4 : 6).map((t) => (
+            <Badge key={t} variant="outline" className="text-[10px] font-normal">
+              {t}
+            </Badge>
+          ))}
+          {f.tags.length > (layout === "list" ? 4 : 6) && (
+            <span className="text-[10px] text-muted-foreground">
+              +{f.tags.length - (layout === "list" ? 4 : 6)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {metaBlock}
+      {layout === "thumbnails" && actions}
+    </div>
+  );
+
+  if (layout === "thumbnails") {
+    return (
+      <Card className="overflow-hidden border bg-white shadow-sm transition-shadow hover:shadow-md">
+        <FileThumb fileId={f.id} mimeType={f.mime_type} />
+        <div className="p-4">{details}</div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="overflow-hidden border bg-white shadow-sm transition-shadow hover:shadow-md">
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+        <FileThumb compact fileId={f.id} mimeType={f.mime_type} />
+        <div className="min-w-0 flex-1">{details}</div>
+        <div className="flex border-t pt-3 sm:shrink-0 sm:border-t-0 sm:border-l sm:pl-6 sm:pt-0">
+          {actions}
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -224,6 +399,8 @@ export function FileManagerFiles() {
   const [metadataInput, setMetadataInput] = useState("{}");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [viewMode, setViewMode] = useState<"thumbnails" | "list">("thumbnails");
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
 
   const fmEnabled =
     settings?.values.file_manager_enabled === true && settings.is_active === 1;
@@ -396,10 +573,13 @@ export function FileManagerFiles() {
   };
 
   const handleDownload = async (f: FileRecord) => {
+    setDownloadingFileId(f.id);
     try {
       await downloadFileRecord(f.id, f.name);
     } catch {
-      toast.error("Download failed.");
+      toast.error("Failed to download file");
+    } finally {
+      setDownloadingFileId(null);
     }
   };
 
@@ -437,6 +617,32 @@ export function FileManagerFiles() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+          <ToggleGroup
+            type="single"
+            value={viewMode}
+            onValueChange={(v) => {
+              if (v === "thumbnails" || v === "list") setViewMode(v);
+            }}
+            variant="outline"
+            size="sm"
+            className="shrink-0 justify-start rounded-full border border-input bg-background p-0.5"
+            aria-label="File layout"
+          >
+            <ToggleGroupItem
+              value="thumbnails"
+              className="rounded-full px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              aria-label="Thumbnails"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="list"
+              className="rounded-full px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              aria-label="List"
+            >
+              <List className="h-4 w-4" />
+            </ToggleGroupItem>
+          </ToggleGroup>
           <SearchInput
             value={searchQuery}
             onChange={setSearchQuery}
@@ -460,97 +666,32 @@ export function FileManagerFiles() {
         <div className="flex justify-center py-20">
           <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
         </div>
-      ) : (
+      ) : viewMode === "thumbnails" ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((f) => (
-            <Card
+            <FileManagerFileBlock
               key={f.id}
-              className="overflow-hidden border bg-white shadow-sm transition-shadow hover:shadow-md"
-            >
-              <FileThumb fileId={f.id} mimeType={f.mime_type} />
-              <div className="space-y-3 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p
-                      className="truncate font-medium text-sm"
-                      title={f.name}
-                    >
-                      {f.name}
-                    </p>
-                    {f.description && (
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                        {f.description}
-                      </p>
-                    )}
-                  </div>
-                  <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">
-                    .{extensionOf(f).toLowerCase()}
-                  </Badge>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">
-                    {formatBytes(f.size ?? undefined)}
-                  </span>
-                  {f.mime_type && (
-                    <span className="truncate max-w-[180px]" title={f.mime_type}>
-                      {f.mime_type}
-                    </span>
-                  )}
-                </div>
-
-                {f.tags && f.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {f.tags.slice(0, 6).map((t) => (
-                      <Badge key={t} variant="outline" className="text-[10px] font-normal">
-                        {t}
-                      </Badge>
-                    ))}
-                    {f.tags.length > 6 && (
-                      <span className="text-[10px] text-muted-foreground">
-                        +{f.tags.length - 6}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {f.file_metadata && Object.keys(f.file_metadata).length > 0 && (
-                  <details className="text-xs">
-                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                      Metadata ({Object.keys(f.file_metadata).length} keys)
-                    </summary>
-                    <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-muted/50 p-2 text-[10px] leading-relaxed">
-                      {JSON.stringify(f.file_metadata, null, 2)}
-                    </pre>
-                  </details>
-                )}
-
-                <div className="flex flex-wrap gap-2 border-t pt-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1 rounded-full"
-                    onClick={() => handleDownload(f)}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    Download
-                  </Button>
-                  {canDelete && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="gap-1 rounded-full text-destructive hover:text-destructive"
-                      onClick={() => setDeleteTarget(f)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Delete
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </Card>
+              f={f}
+              layout="thumbnails"
+              canDelete={canDelete}
+              downloading={downloadingFileId === f.id}
+              onDownload={handleDownload}
+              onDeleteRequest={setDeleteTarget}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {filtered.map((f) => (
+            <FileManagerFileBlock
+              key={f.id}
+              f={f}
+              layout="list"
+              canDelete={canDelete}
+              downloading={downloadingFileId === f.id}
+              onDownload={handleDownload}
+              onDeleteRequest={setDeleteTarget}
+            />
           ))}
         </div>
       )}
