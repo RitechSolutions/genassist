@@ -150,6 +150,14 @@ class UserPermissions:
     DELETE = "delete:user"
 
 
+class UserGroupPermissions:
+    """User group CRUD permissions"""
+    CREATE = "create:user_group"
+    READ = "read:user_group"
+    UPDATE = "update:user_group"
+    DELETE = "delete:user_group"
+
+
 class UserTypePermissions:
     """User type CRUD permissions"""
     CREATE = "create:user_type"
@@ -235,6 +243,7 @@ class Permissions:
     RolePermission = RolePermissionPermissions
     Tenant = TenantPermissions
     User = UserPermissions
+    UserGroup = UserGroupPermissions
     UserType = UserTypePermissions
     Workflow = WorkflowPermissions
     Evaluation = EvaluationPermissions
@@ -267,7 +276,7 @@ def get_all_permission_constants() -> set[str]:
         LlmProviderPermissions, MlModelPermissions, OperatorPermissions,
         PermissionPermissions, RecordingPermissions, RolePermissions,
         RolePermissionPermissions, TenantPermissions, UserPermissions,
-        UserTypePermissions, WorkflowPermissions, OpenAIPermissions,
+        UserGroupPermissions, UserTypePermissions, WorkflowPermissions, OpenAIPermissions,
         CustomerPermissions, DashboardPermissions, LegacyPermissions, FileManagerPermissions,
         EvaluationPermissions
     ]

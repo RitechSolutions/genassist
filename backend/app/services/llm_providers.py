@@ -12,7 +12,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.utils.bi_utils import get_masked_api_key
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
 from app.repositories.llm_providers import LlmProviderRepository
-from app.schemas.llm import LlmProviderCreate, LlmProviderRead, LlmProviderUpdate
+from app.schemas.llm import LlmProviderCreate, LlmProviderMinimal, LlmProviderRead, LlmProviderUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,10 @@ class LlmProviderService:
         models = await self.repository.get_all()
         models = [LlmProviderRead.model_validate(obj) for obj in models]
         return models
+
+    async def get_all_minimal(self) -> list[LlmProviderMinimal]:
+        rows = await self.repository.get_all_minimal()
+        return [LlmProviderMinimal.model_validate(r, from_attributes=True) for r in rows]
 
     async def update(self, llm_provider_id: UUID, data: LlmProviderUpdate):
         obj = await self.repository.get_by_id(llm_provider_id)
