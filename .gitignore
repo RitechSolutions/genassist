@@ -8,6 +8,9 @@ frontend/.claude/skills/ui-skills/SKILL.md
 # venv
 genassist_env/
 
+# cursor
+.cursor/
+
 # Flutter/Dart
 .dart_tool/
 .flutter-plugins

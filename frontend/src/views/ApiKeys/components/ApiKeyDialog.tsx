@@ -15,6 +15,14 @@ import { ApiKey } from "@/interfaces/api-key.interface";
 import { ApiRoleSelection } from "./ApiRoleSelection";
 import { Switch } from "@/components/switch";
 import { maskInput } from "@/helpers/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { API_KEY_EXPIRY_PRESET_VALUES } from "@/components/api-keys/apiKeyExpiryPresets";
 
 interface ApiKeyDialogProps {
   isOpen: boolean;
@@ -50,6 +58,8 @@ export function ApiKeyDialog({
     handleSubmit,
     copyToClipboard,
     dialogMode,
+    expiryPreset,
+    setExpiryPreset,
   } = ApiKeyDialogLogic({
     isOpen,
     mode,
@@ -98,6 +108,27 @@ export function ApiKeyDialog({
                 onCheckedChange={setIsActive}
               />
             </div>
+
+            {dialogMode === "create" && !hasGeneratedKey ? (
+              <div className="space-y-2">
+                <Label htmlFor="credential-expiry">Credential expires</Label>
+                <Select value={expiryPreset} onValueChange={setExpiryPreset}>
+                  <SelectTrigger id="credential-expiry">
+                    <SelectValue placeholder="Expiry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {API_KEY_EXPIRY_PRESET_VALUES.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Key stops working after this unless rotated earlier.
+                </p>
+              </div>
+            ) : null}
 
             {hasGeneratedKey && generatedKey && (
               <div className="space-y-2 mt-4">
