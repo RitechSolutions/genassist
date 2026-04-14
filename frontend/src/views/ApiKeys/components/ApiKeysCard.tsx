@@ -3,7 +3,12 @@ import { DataTable } from "@/components/DataTable";
 import { TableCell, TableRow } from "@/components/table";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
-import { Pencil } from "lucide-react";
+import { Pencil, RefreshCw } from "lucide-react";
+import { ApiKeyExpiryLines } from "@/components/api-keys/ApiKeyExpiryLines";
+import {
+  RotateApiKeyDialog,
+  type RotateApiKeyTarget,
+} from "@/components/api-keys/RotateApiKeyDialog";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import { getAllApiKeys } from "@/services/apiKeys";
 import { getAllUsers } from "@/services/users";
@@ -16,6 +21,7 @@ interface ApiKeysCardProps {
   refreshKey?: number;
   onEditApiKey: (apiKey: ApiKey) => void;
   updatedApiKey?: ApiKey | null;
+  onApiKeyRotated?: (apiKey: ApiKey) => void;
 }
 
 export function ApiKeysCard({
@@ -23,11 +29,15 @@ export function ApiKeysCard({
   refreshKey = 0,
   onEditApiKey,
   updatedApiKey = null,
+  onApiKeyRotated,
 }: ApiKeysCardProps) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rotateTarget, setRotateTarget] = useState<RotateApiKeyTarget | null>(
+    null
+  );
 
   useEffect(() => {
     fetchData();
@@ -65,16 +75,11 @@ export function ApiKeysCard({
     apiKey.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const headers = ["Name", "Status", "Roles", "Created", "Actions"];
+  const headers = ["Name", "Roles", "Created", "Status", "Validity", "Actions"];
 
   const renderRow = (apiKey: ApiKey) => (
     <TableRow key={apiKey.id}>
       <TableCell className="font-medium break-all">{apiKey.name}</TableCell>
-      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-        <Badge variant={apiKey.is_active === 1 ? "default" : "secondary"}>
-          {apiKey.is_active === 1 ? "Active" : "Revoked"}
-        </Badge>
-      </TableCell>
       <TableCell className="overflow-hidden whitespace-nowrap text-clip">
         <div className="flex flex-wrap gap-1">
           {apiKey.roles && apiKey.roles.length > 0 ? (
@@ -91,7 +96,23 @@ export function ApiKeysCard({
       <TableCell className="truncate">
         {apiKey.created_at ? formatDate(apiKey.created_at) : "No date"}
       </TableCell>
-      <TableCell>
+      <TableCell className="overflow-hidden whitespace-nowrap text-clip">
+        <Badge variant={apiKey.is_active === 1 ? "default" : "secondary"}>
+          {apiKey.is_active === 1 ? "Active" : "Revoked"}
+        </Badge>
+      </TableCell>
+      <TableCell className="max-w-[220px]">
+        <ApiKeyExpiryLines apiKey={apiKey} />
+      </TableCell>
+      <TableCell className="space-x-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Rotate secret"
+          onClick={() => setRotateTarget({ key: apiKey, overlap: "0" })}
+        >
+          <RefreshCw className="w-4 h-4 text-black" />
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -105,15 +126,29 @@ export function ApiKeysCard({
   );
 
   return (
-    <DataTable
-      data={filteredApiKeys}
-      loading={loading}
-      error={error}
-      searchQuery={searchQuery}
-      headers={headers}
-      renderRow={renderRow}
-      emptyMessage="No API keys found"
-      searchEmptyMessage="No API keys found matching your search"
-    />
+    <>
+      <DataTable
+        data={filteredApiKeys}
+        loading={loading}
+        error={error}
+        searchQuery={searchQuery}
+        headers={headers}
+        renderRow={renderRow}
+        emptyMessage="No API keys found"
+        searchEmptyMessage="No API keys found matching your search"
+      />
+      <RotateApiKeyDialog
+        open={rotateTarget !== null}
+        target={rotateTarget}
+        onOpenChange={(open) => {
+          if (!open) setRotateTarget(null);
+        }}
+        onRotated={(saved) => {
+          setApiKeys((rows) => rows.map((x) => (x.id === saved.id ? saved : x)));
+          onApiKeyRotated?.(saved);
+          setRotateTarget(null);
+        }}
+      />
+    </>
   );
 }

@@ -4,7 +4,7 @@ from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
-from app.schemas.api_key import ApiKeyRead, ApiKeyRead, ApiKeyCreate, ApiKeyUpdate
+from app.schemas.api_key import ApiKeyRead, ApiKeyCreate, ApiKeyRotate, ApiKeyUpdate
 from app.schemas.filter import ApiKeysFilter
 from app.services.api_keys import ApiKeysService
 
@@ -50,3 +50,23 @@ async def delete(api_key_id: UUID, service: ApiKeysService = Injected(ApiKeysSer
 async def update(request: Request, api_key_id: UUID, api_key_data: ApiKeyUpdate, service: ApiKeysService =
                 Injected(ApiKeysService)):
     return await service.update(api_key_id, api_key_data)
+
+
+@router.post(
+    "/{api_key_id}/rotate",
+    response_model=ApiKeyRead,
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.ApiKey.UPDATE)),
+    ],
+)
+async def rotate_api_key(
+    api_key_id: UUID,
+    body: ApiKeyRotate,
+    service: ApiKeysService = Injected(ApiKeysService),
+):
+    """
+    Issue a new secret for this API key. The previous secret can remain valid for a bounded
+    overlap window to support agent and integration cutovers.
+    """
+    return await service.rotate(api_key_id, body)

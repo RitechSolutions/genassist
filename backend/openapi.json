@@ -1561,6 +1561,69 @@
         }
       }
     },
+    "/api/api-keys/{api_key_id}/rotate": {
+      "post": {
+        "tags": [
+          "v1",
+          "ApiKeys"
+        ],
+        "summary": "Rotate Api Key",
+        "description": "Issue a new secret for this API key. The previous secret can remain valid for a bounded\noverlap window to support agent and integration cutovers.",
+        "operationId": "rotate_api_key_api_api_keys__api_key_id__rotate_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Api Key Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyRotate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/permissions": {
       "post": {
         "tags": [
@@ -19495,6 +19558,20 @@
             ],
             "title": "Agent Id",
             "description": "Filed used to determine if api key is being created for agent to assign agent permission."
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 730.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days",
+            "description": "If set, the key stops authenticating after this many days from creation (UTC). Omit for no expiry."
           }
         },
         "type": "object",
@@ -19570,6 +19647,32 @@
           "key_val": {
             "type": "string",
             "title": "Key Val"
+          },
+          "previous_hashed_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Hashed Expires At",
+            "description": "When set, the prior secret is accepted for API auth until this time (UTC)."
+          },
+          "credential_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Expires At",
+            "description": "When set, this key record (current secret) is not accepted for API auth at or after this instant (UTC)."
           }
         },
         "type": "object",
@@ -19582,6 +19685,21 @@
           "key_val"
         ],
         "title": "ApiKeyRead"
+      },
+      "ApiKeyRotate": {
+        "properties": {
+          "overlap_seconds": {
+            "type": "integer",
+            "maximum": 604800.0,
+            "minimum": 0.0,
+            "title": "Overlap Seconds",
+            "description": "How long the previous secret remains valid (max 7 days). 0 = immediate cutover.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ApiKeyRotate",
+        "description": "Rotate the raw secret. The new value is returned once in `key_val` (same as create).\n\nIf overlap_seconds > 0, the previous secret remains valid until that instant (UTC),\nso integrations can be updated without a hard cutover."
       },
       "ApiKeyUpdate": {
         "properties": {
