@@ -52,6 +52,7 @@ export interface FetchTranscriptsParams {
   efficiency_max?: number;
   id_suffix?: string;
   custom_attributes?: Record<string, string>;
+  search?: string;
 }
 
 export const fetchTranscripts = async (
@@ -67,7 +68,7 @@ export const fetchTranscripts = async (
       limit, skip, sentiment, hostility_neutral_max, hostility_positive_max,
       include_feedback, conversation_status, order_by, sort_direction,
       agent_id, workflow_id, scoreFilters, from_date, to_date, exclude_empty, id_suffix,
-      custom_attributes,
+      custom_attributes, search,
     } = params;
 
     let url = "conversations/";
@@ -101,6 +102,7 @@ export const fetchTranscripts = async (
     if (to_date) queryParams.append("to_date", to_date);
     if (exclude_empty) queryParams.append("exclude_empty", "true");
     if (id_suffix) queryParams.append("id_suffix", id_suffix);
+    if (search) queryParams.append("search", search);
     if (scoreFilters) {
       Object.entries(scoreFilters).forEach(([key, val]) => {
         if (val !== undefined) queryParams.append(key, String(val));

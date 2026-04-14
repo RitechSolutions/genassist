@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import UUID
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text, Integer, UUID as SQLAlchemyUUID
+from sqlalchemy import Computed, DateTime, Float, ForeignKey, String, Text, Integer, UUID as SQLAlchemyUUID
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -24,6 +25,13 @@ class TranscriptMessageModel(Base):
 
     # Sequence number for ordering messages within a conversation
     sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Full-text search column (generated, stored)
+    text_search = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('english', coalesce(text, ''))", persisted=True),
+        nullable=True,
+    )
 
     # Relationships
     conversation: Mapped["ConversationModel"] = relationship(

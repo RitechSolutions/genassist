@@ -268,6 +268,25 @@ class ConversationRepository:
         if conversation_filter.exclude_empty:
             query = query.where(ConversationModel.word_count > 0)
 
+        if conversation_filter.search:
+            search_term = f"%{conversation_filter.search}%"
+            ts_query = func.plainto_tsquery("english", conversation_filter.search)
+            message_exists = select(TranscriptMessageModel.id).where(
+                TranscriptMessageModel.conversation_id == ConversationModel.id,
+                TranscriptMessageModel.text_search.op("@@")(ts_query),
+            ).exists()
+            analysis_match = select(ConversationAnalysisModel.id).where(
+                ConversationAnalysisModel.conversation_id == ConversationModel.id,
+                ConversationAnalysisModel.summary.ilike(search_term),
+            ).exists()
+            query = query.where(
+                or_(
+                    ConversationModel.topic.ilike(search_term),
+                    analysis_match,
+                    message_exists,
+                )
+            )
+
         if conversation_filter.id_suffix:
             query = query.where(
                 cast(ConversationModel.id, String).like(f"%{conversation_filter.id_suffix.lower()}")
