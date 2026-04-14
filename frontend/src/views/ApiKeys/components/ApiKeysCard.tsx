@@ -1,20 +1,19 @@
-import { useEffect, useState } from "react";
-import { DataTable } from "@/components/DataTable";
-import { TableCell, TableRow } from "@/components/table";
-import { Button } from "@/components/button";
-import { Badge } from "@/components/badge";
-import { Pencil, RefreshCw } from "lucide-react";
-import { ApiKeyExpiryLines } from "@/components/api-keys/ApiKeyExpiryLines";
-import {
-  RotateApiKeyDialog,
-  type RotateApiKeyTarget,
-} from "@/components/api-keys/RotateApiKeyDialog";
-import { ApiKey } from "@/interfaces/api-key.interface";
-import { getAllApiKeys } from "@/services/apiKeys";
-import { getAllUsers } from "@/services/users";
-import { toast } from "react-hot-toast";
-import { formatDate } from "@/helpers/utils";
-import { User } from "@/interfaces/user.interface";
+import { useEffect, useState } from 'react';
+import { DataTable } from '@/components/DataTable';
+import { TableCell, TableRow } from '@/components/table';
+import { Button } from '@/components/button';
+import { Badge } from '@/components/badge';
+import { Pencil, RefreshCw } from 'lucide-react';
+import { ApiKeyExpiryLines } from '@/components/api-keys/ApiKeyExpiryLines';
+import { RotateApiKeyDialog, type RotateApiKeyTarget } from '@/components/api-keys/RotateApiKeyDialog';
+import { ApiKey } from '@/interfaces/api-key.interface';
+import { getAllApiKeys } from '@/services/apiKeys';
+import { getAllUsers } from '@/services/users';
+import { toast } from 'react-hot-toast';
+import { formatDate } from '@/helpers/utils';
+import { User } from '@/interfaces/user.interface';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/RadixTooltip';
+import { TooltipButton } from '@/components/tooltip-button';
 
 interface ApiKeysCardProps {
   searchQuery: string;
@@ -35,9 +34,7 @@ export function ApiKeysCard({
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [rotateTarget, setRotateTarget] = useState<RotateApiKeyTarget | null>(
-    null
-  );
+  const [rotateTarget, setRotateTarget] = useState<RotateApiKeyTarget | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -45,37 +42,28 @@ export function ApiKeysCard({
 
   useEffect(() => {
     if (updatedApiKey) {
-      setApiKeys((prevKeys) =>
-        prevKeys.map((key) =>
-          key.id === updatedApiKey.id ? updatedApiKey : key
-        )
-      );
+      setApiKeys((prevKeys) => prevKeys.map((key) => (key.id === updatedApiKey.id ? updatedApiKey : key)));
     }
   }, [updatedApiKey]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [keysData, usersData] = await Promise.all([
-        getAllApiKeys(),
-        getAllUsers(),
-      ]);
+      const [keysData, usersData] = await Promise.all([getAllApiKeys(), getAllUsers()]);
       setApiKeys(keysData);
       setUsers(usersData);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch data");
-      toast.error("Failed to fetch data.");
+      setError(err instanceof Error ? err.message : 'Failed to fetch data');
+      toast.error('Failed to fetch data.');
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredApiKeys = apiKeys.filter((apiKey) =>
-    apiKey.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredApiKeys = apiKeys.filter((apiKey) => apiKey.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  const headers = ["Name", "Roles", "Created", "Status", "Validity", "Actions"];
+  const headers = ['Name', 'Roles', 'Created', 'Status', 'Validity', 'Actions'];
 
   const renderRow = (apiKey: ApiKey) => (
     <TableRow key={apiKey.id}>
@@ -93,34 +81,30 @@ export function ApiKeysCard({
           )}
         </div>
       </TableCell>
-      <TableCell className="truncate">
-        {apiKey.created_at ? formatDate(apiKey.created_at) : "No date"}
-      </TableCell>
+      <TableCell className="truncate">{apiKey.created_at ? formatDate(apiKey.created_at) : 'No date'}</TableCell>
       <TableCell className="overflow-hidden whitespace-nowrap text-clip">
-        <Badge variant={apiKey.is_active === 1 ? "default" : "secondary"}>
-          {apiKey.is_active === 1 ? "Active" : "Revoked"}
+        <Badge variant={apiKey.is_active === 1 ? 'default' : 'secondary'}>
+          {apiKey.is_active === 1 ? 'Active' : 'Revoked'}
         </Badge>
       </TableCell>
       <TableCell className="max-w-[220px]">
         <ApiKeyExpiryLines apiKey={apiKey} />
       </TableCell>
       <TableCell className="space-x-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          title="Rotate secret"
-          onClick={() => setRotateTarget({ key: apiKey, overlap: "0" })}
-        >
-          <RefreshCw className="w-4 h-4 text-black" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onEditApiKey(apiKey)}
-          title="Edit API Key"
-        >
-          <Pencil className="w-4 h-4 text-black" />
-        </Button>
+        <TooltipButton
+          button={
+            <Button variant="ghost" size="sm" onClick={() => setRotateTarget({ key: apiKey, overlap: '0' })}>
+              <RefreshCw className="w-4 h-4 text-black" />
+            </Button>
+          }
+          tooltipContent={{ side: 'top', align: 'center', children: <p>Rotate secret</p> }}
+        />
+        <TooltipButton
+          button={<Button variant="ghost" size="sm" onClick={() => onEditApiKey(apiKey)} title="Edit API Key">
+            <Pencil className="w-4 h-4 text-black" />
+          </Button>}
+          tooltipContent={{ side: 'top', align: 'center', children: <p>Edit API Key</p> }}
+        />
       </TableCell>
     </TableRow>
   );

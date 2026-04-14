@@ -21,6 +21,8 @@ class ApiKeyModel(Base):
     credential_expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Stores the selected expiration option (e.g. 30/90/180/365). Null means "Never".
+    credential_expiry_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     user_id: Mapped[UUID] = mapped_column(UUID, ForeignKey("users.id"), nullable=False)
 

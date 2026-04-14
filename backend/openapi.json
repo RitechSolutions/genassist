@@ -20233,6 +20233,18 @@
             ],
             "title": "Credential Expires At",
             "description": "When set, this key record (current secret) is not accepted for API auth at or after this instant (UTC)."
+          },
+          "credential_expiry_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Expiry Days",
+            "description": "Stored expiry selection in days (30/90/180/365). Null means Never."
           }
         },
         "type": "object",
@@ -20301,6 +20313,20 @@
               }
             ],
             "title": "Role Ids"
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 730.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days",
+            "description": "If set: 0 clears expiry (Never); otherwise sets/overwrites credential expiry to now + this many days (UTC). Omit to leave unchanged."
           }
         },
         "type": "object",

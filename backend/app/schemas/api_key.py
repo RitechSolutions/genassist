@@ -30,6 +30,12 @@ class ApiKeyUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=4, max_length=255)
     is_active: Optional[int] = None
     role_ids: Optional[list[UUID]] = None
+    expires_in_days: Optional[int] = Field(
+        None,
+        ge=0,
+        le=730,
+        description="If set: 0 clears expiry (Never); otherwise sets/overwrites credential expiry to now + this many days (UTC). Omit to leave unchanged.",
+    )
 
 
 class ApiKeyRotate(BaseModel):
@@ -62,6 +68,10 @@ class ApiKeyRead(ApiKeyBase):
     credential_expires_at: Optional[datetime] = Field(
         None,
         description="When set, this key record (current secret) is not accepted for API auth at or after this instant (UTC).",
+    )
+    credential_expiry_days: Optional[int] = Field(
+        None,
+        description="Stored expiry selection in days (30/90/180/365). Null means Never.",
     )
 
     model_config = ConfigDict(
