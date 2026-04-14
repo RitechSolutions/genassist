@@ -160,16 +160,13 @@ export function useCanvasAssistant({
     chat.setMessageHandler((message: ChatMessage) => {
       if (!isMountedRef.current) return;
 
-      // Always clear thinking for any non-customer message (agent, special, etc.)
-      if (message.speaker !== "customer") {
-        setIsThinking(false);
-      }
-
       if (message.speaker === "agent") {
         if (suppressWelcomeRef.current) {
           suppressWelcomeRef.current = false;
           return;
         }
+
+        setIsThinking(false);
         const { cleanText, actions } = parseAgentActions(message.text);
 
         // Update or add the latest agent message
@@ -192,6 +189,7 @@ export function useCanvasAssistant({
           executeActions(actions);
         }
       } else if (message.speaker === "special") {
+        setIsThinking(false);
         // Show error/finalized/takeover messages to the user
         setMessages((prev) => [
           ...prev,

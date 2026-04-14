@@ -16,6 +16,7 @@ import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
 import type { AssistantMessage } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
 import { getActionLabel } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
+import FormattedText from "@/components/FormattedText";
 
 interface NodePanelProps {
   isOpen: boolean;
@@ -322,8 +323,8 @@ const NodePanel: React.FC<NodePanelProps> = ({
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                                  {msg.text}
+                                <div className="text-sm text-gray-700 leading-relaxed">
+                                  <FormattedText text={msg.text} />
                                 </div>
                                 {msg.actions && msg.actions.length > 0 && (
                                   <div className="mt-2 flex flex-wrap gap-1.5">

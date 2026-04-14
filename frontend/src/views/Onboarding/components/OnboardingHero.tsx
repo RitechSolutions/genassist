@@ -1,72 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Sparkles, User } from "lucide-react";
 import { type OnboardingMessage } from "@/views/Onboarding/hooks/useOnboardingChat";
-
-/** Escape HTML entities to prevent XSS. */
-const escapeHtml = (str: string): string =>
-  str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-/** Lightweight markdown-ish renderer for agent messages (bold, numbered lists, bullet lists). */
-const FormattedText = ({ text }: { text: string }) => {
-  const lines = text.split("\n");
-
-  const renderInline = (line: string, key: number) => {
-    const safe = escapeHtml(line);
-    // Split on **bold** markers
-    const parts = safe.split(/(\*\*[^*]+\*\*)/g);
-    return (
-      <span key={key}>
-        {parts.map((part, i) => {
-          if (part.startsWith("**") && part.endsWith("**")) {
-            return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
-          }
-          return <span key={i}>{part}</span>;
-        })}
-      </span>
-    );
-  };
-
-  // Group consecutive list lines into <ol> or <ul>
-  const elements: React.ReactNode[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const orderedMatch = line.match(/^\d+\.\s+(.*)/);
-    const bulletMatch = line.match(/^[-•]\s+(.*)/);
-
-    if (orderedMatch) {
-      const items: string[] = [];
-      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\d+\.\s+/, ""));
-        i++;
-      }
-      elements.push(
-        <ol key={elements.length} className="list-decimal list-inside space-y-1 my-1">
-          {items.map((item, j) => <li key={j}>{renderInline(item, j)}</li>)}
-        </ol>
-      );
-    } else if (bulletMatch) {
-      const items: string[] = [];
-      while (i < lines.length && /^[-•]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^[-•]\s+/, ""));
-        i++;
-      }
-      elements.push(
-        <ul key={elements.length} className="list-disc list-inside space-y-1 my-1">
-          {items.map((item, j) => <li key={j}>{renderInline(item, j)}</li>)}
-        </ul>
-      );
-    } else if (line.trim() === "") {
-      elements.push(<br key={elements.length} />);
-      i++;
-    } else {
-      elements.push(<p key={elements.length} className="my-0.5">{renderInline(line, 0)}</p>);
-      i++;
-    }
-  }
-
-  return <div className="space-y-0.5">{elements}</div>;
-};
+import FormattedText from "@/components/FormattedText";
 
 interface OnboardingHeroProps {
   showCongrats: boolean;
