@@ -27,6 +27,8 @@ import LlmAnalyst from "@/views/LlmAnalyst/Index";
 import LLMProviders from "@/views/LlmProviders/Index";
 import FineTune from "@/views/FineTune/Index";
 import FineTuneJobDetail from "@/views/FineTune/pages/FineTuneJobDetail";
+import LocalFineTune from "@/views/LocalFineTune/Index";
+import LocalFineTuneJobDetail from "@/views/LocalFineTune/pages/LocalFineTuneJobDetail";
 import Tools from "@/views/Tools/Index";
 import CreateTool from "@/views/Tools/pages/CreateTool";
 import KnowledgeBase from "@/views/KnowledgeBase/Index";
@@ -275,6 +277,22 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
                   <FineTuneJobDetail />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "local-fine-tune",
+              element: (
+                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <LocalFineTune />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "local-fine-tune/:id",
+              element: (
+                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <LocalFineTuneJobDetail />
                 </ProtectedRoute>
               ),
             },
