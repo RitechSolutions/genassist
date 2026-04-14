@@ -47,7 +47,7 @@
     "@types/react-dom": ">=16.8.0"
   },
   "dependencies": {
-    "axios": "^1.13.5",
+    "axios": "^1.15.0",
     "lucide-react": "^0.511.0",
     "react-google-recaptcha-v3": "^1.11.0",
     "react-markdown": "^10.1.0",
