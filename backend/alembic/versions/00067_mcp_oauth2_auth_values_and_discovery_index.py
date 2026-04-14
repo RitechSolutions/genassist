@@ -1,7 +1,7 @@
 """mcp oauth2: auth_values JSONB + issuer URL index
 
 Revision ID: b2c3d4e5f6a8
-Revises: a2b3c4d5e6f7
+Revises: b1a3ac1f5fe2
 Create Date: 2026-04-08 12:00:00.000000
 """
 
@@ -13,7 +13,7 @@ from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "b2c3d4e5f6a8"
-down_revision: Union[str, None] = "a2b3c4d5e6f7"
+down_revision: Union[str, None] = "b1a3ac1f5fe2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -60,6 +60,13 @@ def upgrade() -> None:
                 server_default=sa.text("'{}'::jsonb"),
             ),
         )
+
+    # Legacy columns from 00030: now that auth material lives in auth_values (and oauth2 rows are valid),
+    # these must be nullable or inserts/updates can fail on NOT NULL constraints.
+    if "api_key_encrypted" in cols:
+        op.alter_column("mcp_servers", "api_key_encrypted", nullable=True)
+    if "api_key_hash" in cols:
+        op.alter_column("mcp_servers", "api_key_hash", nullable=True)
 
     # Backfill auth_values from legacy api_key columns (00030) when present.
     #
