@@ -11141,6 +11141,24 @@
               ],
               "title": "Offset"
             }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, only files whose `tags` (JSON array of strings, see FileBase.tags) include this value (exact string match).",
+              "title": "Tag"
+            },
+            "description": "If set, only files whose `tags` (JSON array of strings, see FileBase.tags) include this value (exact string match)."
           }
         ],
         "responses": {

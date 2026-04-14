@@ -4,12 +4,8 @@ Combines optional previous-hash overlap (rotation) and optional credential
 lifetime (`credential_expires_at` / `expires_in_days` on create).
 
 Revision ID: b3c4d5e6f7a8
-Revises: a2b3c4d5e6f7
-Create Date: 2026-04-11 12:00:00.000000
-
-If your database was stamped with revision ``c4d5e6f7a8b9`` from the removed
-follow-up migration, update ``alembic_version`` to ``b3c4d5e6f7a8`` (this
-revision) once—schema is unchanged from that two-step sequence.
+Revises: 30f4c089509b
+Create Date: 2026-04-14 09:00:00.000000
 
 """
 
@@ -19,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "b3c4d5e6f7a8"
-down_revision: Union[str, None] = "a2b3c4d5e6f7"
+down_revision: Union[str, None] = "30f4c089509b"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
