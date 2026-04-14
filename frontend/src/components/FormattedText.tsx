@@ -1,14 +1,9 @@
 import React from "react";
 
-/** Escape HTML entities to prevent XSS. */
-const escapeHtml = (str: string): string =>
-  str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
 /** Render inline formatting: **bold** and `code`. */
 const renderInline = (line: string, key: number) => {
-  const safe = escapeHtml(line);
-  // Split on **bold** and `code` markers
-  const parts = safe.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  // React JSX handles XSS escaping automatically — no manual escapeHtml needed.
+  const parts = line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return (
     <span key={key}>
       {parts.map((part, i) => {

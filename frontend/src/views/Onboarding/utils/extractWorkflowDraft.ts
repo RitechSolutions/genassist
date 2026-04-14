@@ -1,3 +1,10 @@
+import {
+  tryParseJson,
+  findCodeFenceBlocks,
+  findBalancedJsonCandidate,
+  isRecord,
+} from "@/helpers/llmTextParser";
+
 export interface WorkflowDraftNode {
   uniqueId: string;
   node_name: string;
@@ -20,9 +27,6 @@ export interface WorkflowDraft {
   [key: string]: unknown;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
-
 const isWorkflowDraftNode = (value: unknown): value is WorkflowDraftNode => {
   if (!isRecord(value)) return false;
   if (typeof value.uniqueId !== "string" || value.uniqueId.trim().length === 0) return false;
@@ -33,7 +37,7 @@ const isWorkflowDraftNode = (value: unknown): value is WorkflowDraftNode => {
   return true;
 };
 
-export const normalizeWorkflowDraft = (value: unknown): WorkflowDraft | null => {
+const normalizeWorkflowDraft = (value: unknown): WorkflowDraft | null => {
   // Supported shapes:
   // 1. { workflow: [...] }
   // 2. [ ... ] (array of workflow nodes)
@@ -53,24 +57,6 @@ export const normalizeWorkflowDraft = (value: unknown): WorkflowDraft | null => 
 
 export const isWorkflowDraft = (value: unknown): value is WorkflowDraft => normalizeWorkflowDraft(value) !== null;
 
-const tryParseJson = (text: string): unknown | null => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-};
-
-const findCodeFenceBlocks = (text: string): string[] => {
-  const blocks: string[] = [];
-  const re = /```(?:json)?\s*([\s\S]*?)\s*```/gi;
-  let match: RegExpExecArray | null = null;
-  while ((match = re.exec(text))) {
-    if (match[1]) blocks.push(match[1].trim());
-  }
-  return blocks;
-};
-
 const findTaggedBlocks = (text: string): string[] => {
   const blocks: string[] = [];
   const re = /<WORKFLOW_JSON>\s*([\s\S]*?)\s*<\/WORKFLOW_JSON>/gi;
@@ -79,66 +65,6 @@ const findTaggedBlocks = (text: string): string[] => {
     if (match[1]) blocks.push(match[1].trim());
   }
   return blocks;
-};
-
-const findBalancedJsonCandidate = (text: string, startIndex: number): string | null => {
-  let braceDepth = 0;
-  let bracketDepth = 0;
-  let inString = false;
-  let isEscaping = false;
-
-  for (let i = startIndex; i < text.length; i += 1) {
-    const ch = text[i];
-
-    if (inString) {
-      if (isEscaping) {
-        isEscaping = false;
-        continue;
-      }
-      if (ch === "\\") {
-        isEscaping = true;
-        continue;
-      }
-      if (ch === "\"") {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === "\"") {
-      inString = true;
-      continue;
-    }
-
-    if (ch === "{") {
-      braceDepth += 1;
-      continue;
-    }
-
-    if (ch === "}") {
-      braceDepth -= 1;
-      if (braceDepth < 0) return null;
-      if (braceDepth === 0 && bracketDepth === 0) {
-        return text.slice(startIndex, i + 1);
-      }
-      continue;
-    }
-
-    if (ch === "[") {
-      bracketDepth += 1;
-      continue;
-    }
-
-    if (ch === "]") {
-      bracketDepth -= 1;
-      if (bracketDepth < 0) return null;
-      if (braceDepth === 0 && bracketDepth === 0) {
-        return text.slice(startIndex, i + 1);
-      }
-    }
-  }
-
-  return null;
 };
 
 export interface ExtractedWorkflowDraft {

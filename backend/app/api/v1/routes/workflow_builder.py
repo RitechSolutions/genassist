@@ -7,8 +7,6 @@ branching, tool connections, and config overrides).
 
 import json
 import logging
-from typing import Optional
-
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from fastapi_injector import Injected
 
@@ -16,7 +14,6 @@ from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
 from app.modules.workflow.builder.build import build_workflow_from_spec
 from app.schemas.agent import AgentCreate
-from app.schemas.workflow import WorkflowUpdate
 from app.services.agent_config import AgentConfigService
 from app.services.workflow import WorkflowService
 

@@ -7,14 +7,13 @@ and should be placed above its target agentNode.
 """
 
 from collections import defaultdict, deque
-from typing import Dict, List, Any, Optional, Set, Tuple
+from typing import Dict, List, Any, Set, Tuple
 
 # Layout constants
 X_SPACING = 500  # horizontal distance between layers
 Y_SPACING = 300  # vertical distance between nodes in the same layer
 X_OFFSET = 50    # left margin
 Y_OFFSET = 150   # top margin
-TOOL_Y_OFFSET = -350  # place tool nodes above the agent they connect to
 
 
 def auto_layout(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -33,7 +32,6 @@ def auto_layout(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> Lis
         return nodes
 
     node_ids = {n["id"] for n in nodes}
-    node_map = {n["id"]: n for n in nodes}
 
     # Build adjacency (only for main flow edges, not tool edges)
     main_children: Dict[str, List[str]] = defaultdict(list)

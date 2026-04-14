@@ -13,15 +13,15 @@ export const OnboardingFooter = () => {
   }, []);
 
   return (
-    <footer className="flex items-center justify-between px-8 pb-6 text-xs text-[#94a3b8]">
+    <footer className="flex items-center justify-between px-8 pb-6 text-xs text-slate-400">
       <div className="flex items-center gap-3">
-        <a href="/terms" className="hover:text-[#64748b] transition-colors">Terms and Conditions</a>
+        <a href="/terms" className="hover:text-slate-500 transition-colors">Terms and Conditions</a>
         <span>·</span>
-        <a href="/privacy" className="hover:text-[#64748b] transition-colors">Privacy Policy</a>
+        <a href="/privacy" className="hover:text-slate-500 transition-colors">Privacy Policy</a>
       </div>
       <button
         onClick={handleSkip}
-        className="text-[#64748b] font-medium hover:text-[#5b4bff] transition-colors"
+        className="text-slate-500 font-medium hover:text-ai-brand transition-colors"
       >
         Skip to Login
       </button>

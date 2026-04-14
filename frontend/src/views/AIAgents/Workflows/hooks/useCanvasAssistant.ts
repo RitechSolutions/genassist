@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChatService, type ChatMessage } from "genassist-chat-react";
+import { type ChatMessage } from "genassist-chat-react";
 import { Node, Edge } from "reactflow";
 import { v4 as uuidv4 } from "uuid";
+import { useChatService } from "@/hooks/useChatService";
 import {
   serializeCanvasContext,
   parseAgentActions,
@@ -34,9 +35,6 @@ export function useCanvasAssistant({
 }: UseCanvasAssistantArgs) {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
-  const chatRef = useRef<ChatService | null>(null);
-  const isMountedRef = useRef(true);
-  const isStartingRef = useRef(false);
   const suppressWelcomeRef = useRef(false);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -45,13 +43,6 @@ export function useCanvasAssistant({
   // Keep refs in sync so callbacks always see current canvas state
   nodesRef.current = nodes;
   edgesRef.current = edges;
-
-  const baseUrl = (import.meta.env.VITE_ONBOARDING_API_URL as string) || "";
-  const apiKey = (import.meta.env.VITE_ONBOARDING_CHAT_APIKEY as string) || "";
-  const tenant =
-    (localStorage.getItem("tenant_id") as string | null) || undefined;
-
-  const hasConfig = Boolean(baseUrl && apiKey);
 
   // Restore node functions after adding to canvas
   const restoreNode = useCallback(
@@ -147,19 +138,9 @@ export function useCanvasAssistant({
     [restoreNode, setNodes, setEdges],
   );
 
-  // Initialize ChatService
-  useEffect(() => {
-    if (!hasConfig) return;
-
-    const chat = new ChatService(baseUrl, undefined, apiKey, undefined, tenant, undefined, false, false);
-    chatRef.current = chat;
-
-    // Always start fresh on mount — clear any persisted conversation from a previous session
-    chat.resetChatConversation();
-
-    chat.setMessageHandler((message: ChatMessage) => {
-      if (!isMountedRef.current) return;
-
+  // ── Message handler ──
+  const handleMessage = useCallback(
+    (message: ChatMessage) => {
       if (message.speaker === "agent") {
         if (suppressWelcomeRef.current) {
           suppressWelcomeRef.current = false;
@@ -173,7 +154,6 @@ export function useCanvasAssistant({
         setMessages((prev) => {
           const lastMsg = prev[prev.length - 1];
           if (lastMsg?.speaker === "agent") {
-            // Replace streaming message
             return [
               ...prev.slice(0, -1),
               { ...lastMsg, text: cleanText, actions },
@@ -190,70 +170,40 @@ export function useCanvasAssistant({
         }
       } else if (message.speaker === "special") {
         setIsThinking(false);
-        // Show error/finalized/takeover messages to the user
         setMessages((prev) => [
           ...prev,
           { id: uuidv4(), speaker: "agent", text: message.text },
         ]);
       }
-    });
+    },
+    [executeActions],
+  );
 
-    return () => {
-      chat.disconnect();
-      chatRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseUrl, apiKey, tenant, hasConfig]);
+  const { sendMessage: chatSend, resetConversation, hasConfig, chatRef } = useChatService({
+    onMessage: handleMessage,
+    scopeId: workflowScopeId,
+  });
 
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-      executedActionsRef.current.clear();
-    };
-  }, []);
-
-  // Reset conversation when the workflow scope changes (e.g. switching agents/workflows)
+  // Reset local state when scope changes
   const prevScopeRef = useRef(workflowScopeId);
   useEffect(() => {
     if (prevScopeRef.current !== undefined && workflowScopeId !== prevScopeRef.current) {
       setMessages([]);
       executedActionsRef.current.clear();
-      const chat = chatRef.current;
-      if (chat) {
-        chat.resetChatConversation();
-      }
     }
     prevScopeRef.current = workflowScopeId;
   }, [workflowScopeId]);
 
-  const startConversationIfNeeded = useCallback(async () => {
-    const chat = chatRef.current;
-    if (!chat || isStartingRef.current) return;
-
-    const existing = chat.getConversationId?.();
-    if (existing) return;
-
-    isStartingRef.current = true;
-    suppressWelcomeRef.current = true;
-    try {
-      await chat.startConversation(undefined);
-    } finally {
-      isStartingRef.current = false;
-    }
-  }, []);
-
   const sendMessage = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || !chatRef.current) return;
+      if (!trimmed) return;
 
-      // Add user message to chat
       setMessages((prev) => [
         ...prev,
         { id: uuidv4(), speaker: "customer", text: trimmed },
       ]);
       setIsThinking(true);
-      // Reset executed actions for this new exchange
       executedActionsRef.current.clear();
 
       // Build context prefix
@@ -264,8 +214,12 @@ export function useCanvasAssistant({
       const fullMessage = `${context}\n\n${trimmed}`;
 
       try {
-        await startConversationIfNeeded();
-        await chatRef.current.sendMessage(fullMessage);
+        // Only suppress the welcome message when we're actually starting a new conversation;
+        // otherwise the first real agent response would be swallowed.
+        if (!chatRef.current?.getConversationId?.()) {
+          suppressWelcomeRef.current = true;
+        }
+        await chatSend(fullMessage);
       } catch (err) {
         setIsThinking(false);
         const errMsg =
@@ -276,16 +230,13 @@ export function useCanvasAssistant({
         ]);
       }
     },
-    [startConversationIfNeeded],
+    [chatSend],
   );
 
   const clearHistory = useCallback(() => {
     setMessages([]);
-    const chat = chatRef.current;
-    if (chat) {
-      chat.resetChatConversation();
-    }
-  }, []);
+    resetConversation();
+  }, [resetConversation]);
 
   return {
     messages,

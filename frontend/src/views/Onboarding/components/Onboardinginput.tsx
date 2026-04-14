@@ -12,10 +12,10 @@ export const OnboardingInput = ({ value, disabled, onChange, onSubmit }: Onboard
     onSubmit={onSubmit}
     className="w-full max-w-2xl relative"
   >
-    <div className="rounded-2xl border border-[#e2e8f0] bg-white shadow-sm focus-within:border-[#5b4bff]/30 focus-within:shadow-md focus-within:shadow-[#5b4bff]/5 transition-all duration-200">
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm focus-within:border-ai-brand/30 focus-within:shadow-md focus-within:shadow-ai-brand/5 transition-all duration-200">
       <textarea
         rows={1}
-        className="w-full min-h-[100px] bg-transparent outline-none text-sm text-[#0f172a] placeholder:text-[#94a3b8] px-5 pt-4 pb-14 resize-none leading-relaxed"
+        className="w-full min-h-[100px] bg-transparent outline-none text-sm text-slate-900 placeholder:text-slate-400 px-5 pt-4 pb-14 resize-none leading-relaxed"
         placeholder="Describe what you want your agent to do..."
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -32,7 +32,7 @@ export const OnboardingInput = ({ value, disabled, onChange, onSubmit }: Onboard
           type="submit"
           aria-label="Send"
           disabled={disabled || !value.trim()}
-          className="h-9 w-9 rounded-xl bg-[#5b4bff] text-white grid place-items-center shadow-lg shadow-[#5b4bff]/25 transition-all duration-150 hover:bg-[#4f46e5] hover:shadow-xl hover:shadow-[#5b4bff]/30 disabled:opacity-40 disabled:shadow-none disabled:bg-[#94a3b8]"
+          className="h-9 w-9 rounded-xl bg-ai-brand text-white grid place-items-center shadow-lg shadow-ai-brand/25 transition-all duration-150 hover:bg-ai-brand-hover hover:shadow-xl hover:shadow-ai-brand/30 disabled:opacity-40 disabled:shadow-none disabled:bg-slate-400"
         >
           <ArrowUp size={16} strokeWidth={2.5} />
         </button>

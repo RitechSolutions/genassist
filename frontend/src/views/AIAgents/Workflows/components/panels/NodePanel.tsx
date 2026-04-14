@@ -1,12 +1,5 @@
 import React, { useState, useRef, useMemo } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp } from "lucide-react";
 import { Input } from "@/components/input";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
