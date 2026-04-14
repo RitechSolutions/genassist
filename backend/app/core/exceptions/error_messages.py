@@ -33,6 +33,7 @@ class ErrorKey(Enum):
     INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS"
     API_KEY_MISSING = "API_KEY_MISSING"
     INVALID_API_KEY = "INVALID_API_KEY"
+    API_KEY_EXPIRED = "API_KEY_EXPIRED"
     COULD_NOT_VALIDATE_CREDENTIALS = "COULD_NOT_VALIDATE_CREDENTIALS"
     EXPIRED_TOKEN = "EXPIRED_TOKEN"
     NOT_AUTHENTICATED = "NOT_AUTHENTICATED"
@@ -171,6 +172,7 @@ ERROR_MESSAGES = {
         ErrorKey.INSUFFICIENT_PERMISSIONS: "Insufficient permissions for this action.",
         ErrorKey.API_KEY_MISSING: "Api key is required.",
         ErrorKey.INVALID_API_KEY: "Invalid API key.",
+        ErrorKey.API_KEY_EXPIRED: "This API key has expired.",
         ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS: "Could not validate credentials.",
         ErrorKey.EXPIRED_TOKEN: "Token has expired.",
         ErrorKey.NOT_AUTHENTICATED: "Not authenticated. Provide API Key or Login.",

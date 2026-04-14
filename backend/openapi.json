@@ -577,6 +577,423 @@
         }
       }
     },
+    "/api/user-groups": {
+      "get": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Get All",
+        "operationId": "get_all_api_user_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserGroupRead"
+                  },
+                  "type": "array",
+                  "title": "Response Get All Api User Groups Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_user_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserGroupCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserGroupRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/user-groups/{group_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Get",
+        "operationId": "get_api_user_groups__group_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserGroupRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Update",
+        "operationId": "update_api_user_groups__group_id__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserGroupUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserGroupRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Delete",
+        "operationId": "delete_api_user_groups__group_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/user-groups/{group_id}/supervisors": {
+      "get": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Get Supervisors",
+        "operationId": "get_supervisors_api_user_groups__group_id__supervisors_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": "Response Get Supervisors Api User Groups  Group Id  Supervisors Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/user-groups/{group_id}/supervisors/{user_id}": {
+      "post": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Add Supervisor",
+        "operationId": "add_supervisor_api_user_groups__group_id__supervisors__user_id__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Remove Supervisor",
+        "operationId": "remove_supervisor_api_user_groups__group_id__supervisors__user_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/user-type/{user_type_id}": {
       "get": {
         "tags": [
@@ -1533,6 +1950,69 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ApiKeyUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/api-keys/{api_key_id}/rotate": {
+      "post": {
+        "tags": [
+          "v1",
+          "ApiKeys"
+        ],
+        "summary": "Rotate Api Key",
+        "description": "Issue a new secret for this API key. The previous secret can remain valid for a bounded\noverlap window to support agent and integration cutovers.",
+        "operationId": "rotate_api_key_api_api_keys__api_key_id__rotate_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Api Key Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyRotate"
               }
             }
           }
@@ -6870,6 +7350,41 @@
         ]
       }
     },
+    "/api/llm-providers/minimal": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmProviders"
+        ],
+        "summary": "Get All Minimal",
+        "description": "Get a lightweight list of all LLM providers (no connection_data or connection_status).",
+        "operationId": "get_all_minimal_api_llm_providers_minimal_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LlmProviderMinimal"
+                  },
+                  "type": "array",
+                  "title": "Response Get All Minimal Api Llm Providers Minimal Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/llm-providers/form_schemas": {
       "get": {
         "tags": [
@@ -9260,6 +9775,41 @@
         ]
       }
     },
+    "/api/genagent/workflow/minimal": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflows"
+        ],
+        "summary": "Get Workflows Minimal",
+        "description": "Get a lightweight list of all workflows (id, name, version only).",
+        "operationId": "get_workflows_minimal_api_genagent_workflow_minimal_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowMinimal"
+                  },
+                  "type": "array",
+                  "title": "Response Get Workflows Minimal Api Genagent Workflow Minimal Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/genagent/workflow/{workflow_id}": {
       "put": {
         "tags": [
@@ -10661,6 +11211,24 @@
               ],
               "title": "Offset"
             }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, only files whose `tags` (JSON array of strings, see FileBase.tags) include this value (exact string match).",
+              "title": "Tag"
+            },
+            "description": "If set, only files whose `tags` (JSON array of strings, see FileBase.tags) include this value (exact string match)."
           }
         ],
         "responses": {
@@ -12611,6 +13179,61 @@
             }
           }
         }
+      }
+    },
+    "/api/genagent/eval/runs/batch": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Runs"
+        ],
+        "summary": "Get Runs Batch",
+        "description": "Fetch multiple test runs by their IDs in a single request.",
+        "operationId": "get_runs_batch_api_genagent_eval_runs_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRunsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TestRun"
+                  },
+                  "type": "array",
+                  "title": "Response Get Runs Batch Api Genagent Eval Runs Batch Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/genagent/eval/runs/{run_id}": {
@@ -19495,6 +20118,20 @@
             ],
             "title": "Agent Id",
             "description": "Filed used to determine if api key is being created for agent to assign agent permission."
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 730.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days",
+            "description": "If set, the key stops authenticating after this many days from creation (UTC). Omit for no expiry."
           }
         },
         "type": "object",
@@ -19570,6 +20207,32 @@
           "key_val": {
             "type": "string",
             "title": "Key Val"
+          },
+          "previous_hashed_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Hashed Expires At",
+            "description": "When set, the prior secret is accepted for API auth until this time (UTC)."
+          },
+          "credential_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Expires At",
+            "description": "When set, this key record (current secret) is not accepted for API auth at or after this instant (UTC)."
           }
         },
         "type": "object",
@@ -19582,6 +20245,21 @@
           "key_val"
         ],
         "title": "ApiKeyRead"
+      },
+      "ApiKeyRotate": {
+        "properties": {
+          "overlap_seconds": {
+            "type": "integer",
+            "maximum": 604800.0,
+            "minimum": 0.0,
+            "title": "Overlap Seconds",
+            "description": "How long the previous secret remains valid (max 7 days). 0 = immediate cutover.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ApiKeyRotate",
+        "description": "Rotate the raw secret. The new value is returned once in `key_val` (same as create).\n\nIf overlap_seconds > 0, the previous secret remains valid until that instant (UTC),\nso integrations can be updated without a hard cutover."
       },
       "ApiKeyUpdate": {
         "properties": {
@@ -19935,6 +20613,23 @@
         ],
         "title": "AuditLogSearchResult",
         "description": "Schema for audit log search results - excludes json_changes."
+      },
+      "BatchRunsRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ids",
+            "description": "List of test run UUIDs to fetch."
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "title": "BatchRunsRequest"
       },
       "Body_add_conversation_feedback_api_conversations_feedback__conversation_id__patch": {
         "properties": {
@@ -24186,6 +24881,65 @@
           "connection_data"
         ],
         "title": "LlmProviderCreate"
+      },
+      "LlmProviderMinimal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "llm_model_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model Provider"
+          },
+          "llm_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "LlmProviderMinimal"
       },
       "LlmProviderRead": {
         "properties": {
@@ -28465,6 +29219,121 @@
         ],
         "title": "UserCreateMinimal"
       },
+      "UserGroupCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "UserGroupCreate"
+      },
+      "UserGroupRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id"
+        ],
+        "title": "UserGroupRead"
+      },
+      "UserGroupUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "UserGroupUpdate"
+      },
       "UserRead": {
         "properties": {
           "id": {
@@ -28535,6 +29404,28 @@
             ],
             "title": "Force Upd Pass Date",
             "description": "Date when we force updating password date on login"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "supervised_group_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Supervised Group Ids",
+            "description": "Group IDs this user supervises",
+            "default": []
           }
         },
         "type": "object",
@@ -28723,6 +29614,18 @@
               }
             ],
             "title": "Notes"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
           }
         },
         "type": "object",
@@ -29438,6 +30341,30 @@
           "version"
         ],
         "title": "WorkflowCreate"
+      },
+      "WorkflowMinimal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version"
+        ],
+        "title": "WorkflowMinimal"
       },
       "WorkflowUpdate": {
         "properties": {

@@ -1,16 +1,23 @@
 import { ReactNode } from "react";
 import { Card } from "@/components/card";
 
+export interface JobSummaryStatItem {
+  label: string;
+  value: ReactNode;
+}
+
 interface JobSummaryStatsCardProps {
   loading?: boolean;
-  model: string;
-  status: ReactNode;
-  accuracy: ReactNode;
-  trainedTokens: ReactNode;
+  items?: JobSummaryStatItem[];
+  model?: string;
+  status?: ReactNode;
+  accuracy?: ReactNode;
+  trainedTokens?: ReactNode;
 }
 
 export function JobSummaryStatsCard({
   loading = false,
+  items: customItems,
   model,
   status,
   accuracy,
@@ -31,12 +38,15 @@ export function JobSummaryStatsCard({
     );
   }
 
-  const metrics = [
-    { label: "Model", value: model },
-    { label: "Status", value: status },
-    { label: "Accuracy", value: accuracy },
-    { label: "# of trained tokens", value: trainedTokens },
-  ];
+  const metrics =
+    customItems && customItems.length > 0
+      ? customItems
+      : [
+          { label: "Model", value: model as ReactNode },
+          { label: "Status", value: status as ReactNode },
+          { label: "Accuracy", value: accuracy as ReactNode },
+          { label: "# of trained tokens", value: trainedTokens as ReactNode },
+        ];
 
   return (
     <Card className="w-full px-4 py-4 sm:px-6 sm:py-6 shadow-sm bg-white animate-fade-up rounded-lg border text-card-foreground">
