@@ -123,6 +123,7 @@ const Transcripts = () => {
   const [activeTab, setActiveTab] = useState(searchParams.get("sentiment") || "all");
   const [supportType, setSupportType] = useState(searchParams.get("type") || "all");
   const [searchQuery, setSearchQuery] = useState(searchParams.get("query") || "");
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
   const [currentPage, setCurrentPage] = useState(
     Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1)
   );
@@ -197,6 +198,12 @@ const Transcripts = () => {
     fetchCustomAttributeKeys(agentId).then(setAvailableAttrKeys);
   }, [selectedAgentId]);
 
+  // Debounce search query to avoid API call on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const {
     conversations: wsConversations,
     resyncHint,
@@ -217,6 +224,7 @@ const Transcripts = () => {
     to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd 23:59:59") : undefined,
     exclude_empty: hideEmpty || undefined,
     custom_attributes: activeCustomAttrCount > 0 ? customAttrFilters : undefined,
+    search: debouncedSearch.trim() || undefined,
   });
 
   const isMobile = useIsMobile();
@@ -425,19 +433,12 @@ const Transcripts = () => {
   };
 
   const filteredTranscripts = transcripts.filter((transcript) => {
-    const title = transcript?.metadata?.title?.toLowerCase() || "";
     const topic = transcript?.metadata?.topic?.toLowerCase() || "";
-    const searchLower = searchQuery.toLowerCase().trim();
-
-    const matchesSearch =
-      searchQuery.trim() === "" ||
-      title.includes(searchLower) ||
-      topic.includes(searchLower);
 
     const matchesSupportType =
       supportType === "all" || topic.includes(supportType.toLowerCase());
 
-    return matchesSearch && matchesSupportType;
+    return matchesSupportType;
   });
 
   const pagination = getPaginationMeta(
