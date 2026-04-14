@@ -10,3 +10,16 @@ genassist_env/
 
 # cursor
 .cursor/
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+pubspec.lock
+*.g.dart
+*.freezed.dart
+*.mocks.dart
