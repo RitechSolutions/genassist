@@ -78,7 +78,8 @@ class FileManagerRepository:
         user_id: Optional[UUID] = None,
         storage_provider: Optional[str] = None,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
+        offset: Optional[int] = None,
+        tag: Optional[str] = None,
     ) -> List[FileModel]:
         """List files with optional filtering."""
         query = select(FileModel).where(FileModel.is_deleted == 0)
@@ -87,6 +88,15 @@ class FileManagerRepository:
             query = query.where(FileModel.created_by == user_id)
         if storage_provider:
             query = query.where(FileModel.storage_provider == storage_provider)
+        tag_trimmed = tag.strip() if isinstance(tag, str) else ""
+        if tag_trimmed:
+            # tags is JSONB array of strings (see FileBase.tags); @> ['x'] semantics
+            query = query.where(
+                and_(
+                    FileModel.tags.isnot(None),
+                    FileModel.tags.contains([tag_trimmed]),
+                )
+            )
 
         query = query.order_by(FileModel.created_at.desc())
 

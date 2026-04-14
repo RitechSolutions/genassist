@@ -184,6 +184,11 @@ const menuItems: MenuItem[] = [
         url: "/fine-tune",
         permissionsRequired: ["*", "update:llm_provider"],
       },
+      {
+        title: "Local Fine-Tune",
+        url: "/local-fine-tune",
+        permissionsRequired: ["*", "update:llm_provider"],
+      },
     ],
   },
   {
