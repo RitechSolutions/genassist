@@ -16,6 +16,8 @@ export interface User {
 
     role_ids?: string[];
     user_type_id?: string;
+    group_id?: string | null;
+    supervised_group_ids?: string[];
 
     created_at?: string;
     updated_at?: string;

@@ -4,6 +4,7 @@ import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
 import {
   Workflow,
   WorkflowCreatePayload,
+  WorkflowMinimal,
   WorkflowUpdatePayload,
 } from "@/interfaces/workflow.interface";
 import { NodeData } from "@/views/AIAgents/Workflows/types/nodes";
@@ -12,6 +13,10 @@ const BASE = "genagent/workflow";
 
 // Get all workflows
 export const getAllWorkflows = () => apiRequest<Workflow[]>("GET", `${BASE}/`);
+
+// Get lightweight workflow list (id, name, version only)
+export const getWorkflowsMinimal = () =>
+  apiRequest<WorkflowMinimal[]>("GET", `${BASE}/minimal`);
 
 // Get workflow by ID
 export const getWorkflowById = (id: string) =>

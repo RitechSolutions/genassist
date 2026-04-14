@@ -14,6 +14,7 @@ import Notifications from "@/views/Notifications";
 import Settings from "./views/Settings";
 import NotFound from "@/views/NotFound";
 import Roles from "@/views/Roles/pages/Roles";
+import UserGroups from "@/views/UserGroups/Index";
 import Users from "./views/Users/Index";
 import UserTypes from "./views/UserTypes/pages/UserTypes";
 import ApiKeys from "./views/ApiKeys/pages/ApiKeys";
@@ -26,6 +27,8 @@ import LlmAnalyst from "@/views/LlmAnalyst/Index";
 import LLMProviders from "@/views/LlmProviders/Index";
 import FineTune from "@/views/FineTune/Index";
 import FineTuneJobDetail from "@/views/FineTune/pages/FineTuneJobDetail";
+import LocalFineTune from "@/views/LocalFineTune/Index";
+import LocalFineTuneJobDetail from "@/views/LocalFineTune/pages/LocalFineTuneJobDetail";
 import Tools from "@/views/Tools/Index";
 import CreateTool from "@/views/Tools/pages/CreateTool";
 import KnowledgeBase from "@/views/KnowledgeBase/Index";
@@ -238,6 +241,14 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "user-groups",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:user_group"]}>
+                  <UserGroups />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "llm-analyst",
               element: (
                 <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
@@ -266,6 +277,22 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
                   <FineTuneJobDetail />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "local-fine-tune",
+              element: (
+                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <LocalFineTune />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "local-fine-tune/:id",
+              element: (
+                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                  <LocalFineTuneJobDetail />
                 </ProtectedRoute>
               ),
             },
