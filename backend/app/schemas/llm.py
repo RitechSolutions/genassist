@@ -21,6 +21,18 @@ class LlmProviderBase(BaseModel):
 
 
 
+class LlmProviderMinimal(BaseModel):
+    id: UUID
+    name: Optional[str] = None
+    llm_model_provider: Optional[str] = None
+    llm_model: Optional[str] = None
+    is_active: Optional[int] = 1
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+
 class LlmProviderCreate(LlmProviderBase):
     name: str
     llm_model_provider: str

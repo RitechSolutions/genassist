@@ -6,7 +6,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.workflow import WorkflowModel
 from app.repositories.workflow import WorkflowRepository
-from app.schemas.workflow import WorkflowCreate, WorkflowInDB, WorkflowUpdate
+from app.schemas.workflow import WorkflowCreate, WorkflowInDB, WorkflowMinimal, WorkflowUpdate
 
 @inject
 class WorkflowService:
@@ -20,6 +20,10 @@ class WorkflowService:
         self.repository = repository
 
     # ---------- READ ----------
+    async def get_all_minimal(self) -> List[WorkflowMinimal]:
+        rows = await self.repository.get_all_minimal()
+        return [WorkflowMinimal.model_validate(r, from_attributes=True) for r in rows]
+
     async def get_all(self) -> List[WorkflowInDB]:
         orm_objs = await self.repository.get_all()
         return [WorkflowInDB.model_validate(o, from_attributes=True) for o in orm_objs]

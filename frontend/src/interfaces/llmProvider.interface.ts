@@ -12,3 +12,11 @@ export interface LLMProvider {
   created_at: string;
   updated_at: string;
 }
+
+export interface LLMProviderMinimal {
+  id: string;
+  name: string;
+  llm_model_provider: string;
+  llm_model: string;
+  is_active: number;
+}

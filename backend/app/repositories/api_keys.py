@@ -1,8 +1,9 @@
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, update
+from sqlalchemy import and_, or_, select, delete, update
 from sqlalchemy.orm import selectinload
 from app.auth.utils import get_current_user_id
 from app.cache.redis_cache import make_key_builder
@@ -29,13 +30,22 @@ class ApiKeysRepository:
 
 
     async def get_by_hashed_value(self, hashed_value: str) -> Optional[ApiKeyModel | None]:
-        query = (select(ApiKeyModel).where(ApiKeyModel.hashed_value == hashed_value)
-        .options(
+        now = datetime.now(timezone.utc)
+        overlap_match = and_(
+            ApiKeyModel.previous_hashed_value == hashed_value,
+            ApiKeyModel.previous_hashed_expires_at.is_not(None),
+            ApiKeyModel.previous_hashed_expires_at > now,
+        )
+        query = (
+            select(ApiKeyModel)
+            .where(or_(ApiKeyModel.hashed_value == hashed_value, overlap_match))
+            .options(
                 selectinload(ApiKeyModel.user).selectinload(UserModel.operator),
                 selectinload(ApiKeyModel.api_key_roles)
                 .selectinload(ApiKeyRoleModel.role)
                 .selectinload(RoleModel.role_permissions)
-                .selectinload(RolePermissionModel.permission))
+                .selectinload(RolePermissionModel.permission),
+            )
         )
 
         result = await self.db.execute(query)
@@ -43,7 +53,13 @@ class ApiKeysRepository:
 
 
 
-    async def create(self, api_key_create: ApiKeyCreate, encrypted_api_key: str, hashed_value: str) -> ApiKeyModel:
+    async def create(
+        self,
+        api_key_create: ApiKeyCreate,
+        encrypted_api_key: str,
+        hashed_value: str,
+        credential_expires_at: Optional[datetime] = None,
+    ) -> ApiKeyModel:
         api_key = await self._get_by_name(api_key_create.name)
         if api_key:
             raise AppException(ErrorKey.API_KEY_NAME_EXISTS)
@@ -54,6 +70,7 @@ class ApiKeysRepository:
                               user_id= api_key_create.assigned_user_id if api_key_create.assigned_user_id else get_current_user_id(),
                               key_val=encrypted_api_key,
                               hashed_value=hashed_value,
+                              credential_expires_at=credential_expires_at,
                               )
         self.db.add(new_key)
         await self.db.flush()
@@ -135,6 +152,36 @@ class ApiKeysRepository:
         await self.db.commit()
         await self.db.refresh(api_key)
         return api_key
+
+    async def rotate_credentials(
+        self,
+        user_id: UUID,
+        api_key_id: UUID,
+        encrypted_api_key: str,
+        hashed_value: str,
+        overlap_seconds: int,
+    ) -> ApiKeyModel:
+        api_key = await self.get_by_id(api_key_id)
+        if not api_key:
+            raise AppException(ErrorKey.API_KEY_NOT_FOUND, status_code=404)
+
+        if overlap_seconds > 0:
+            api_key.previous_hashed_value = api_key.hashed_value
+            api_key.previous_hashed_expires_at = datetime.now(timezone.utc) + timedelta(
+                seconds=overlap_seconds
+            )
+        else:
+            api_key.previous_hashed_value = None
+            api_key.previous_hashed_expires_at = None
+
+        api_key.key_val = encrypted_api_key
+        api_key.hashed_value = hashed_value
+        api_key.updated_by = user_id
+
+        self.db.add(api_key)
+        await self.db.commit()
+        await self.db.refresh(api_key)
+        return await self.get_by_id(api_key_id)
 
     async def soft_delete(self, obj: ApiKeyModel) -> None:
         await self.db.execute(

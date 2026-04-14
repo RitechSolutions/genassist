@@ -13,5 +13,11 @@ export interface ApiKey {
   role_ids?: string[];
   masked_value?: string;
   key_val?: string;
-  agent_id: string; 
+  agent_id: string;
+  /** When set, the previous raw secret is still accepted by the API until this instant (ISO UTC). */
+  previous_hashed_expires_at?: string | null;
+  /** When set, API auth rejects this key at or after this instant (ISO UTC). */
+  credential_expires_at?: string | null;
+  /** Only used when creating a key (days until credential_expires_at). */
+  expires_in_days?: number;
 }

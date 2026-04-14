@@ -24,8 +24,10 @@ import { Loader2 } from "lucide-react";
 import { Role } from "@/interfaces/role.interface";
 import { UserType } from "@/interfaces/userType.interface";
 import { User } from "@/interfaces/user.interface";
+import { UserGroup } from "@/interfaces/userGroup.interface";
 import { getAllUserTypes } from "@/services/userTypes";
 import { getAllRoles } from "@/services/roles";
+import { getAllUserGroups, addGroupSupervisor, removeGroupSupervisor } from "@/services/userGroups";
 
 interface UserDialogProps {
   isOpen: boolean;
@@ -53,6 +55,9 @@ export function UserDialog({
   const [userTypeId, setUserTypeId] = useState<string>("");
   const [roles, setRoles] = useState<Role[]>([]);
   const [userTypes, setUserTypes] = useState<UserType[]>([]);
+  const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
+  const [groupId, setGroupId] = useState<string>("");
+  const [supervisedGroupIds, setSupervisedGroupIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | undefined>("");
@@ -85,12 +90,14 @@ export function UserDialog({
     setSelectedRoleIds(
       user.role_ids || user.roles?.map((role) => role.id) || []
     );
+    setGroupId(user.group_id ?? "");
+    setSupervisedGroupIds(user.supervised_group_ids ?? []);
   };
 
   const loadFormData = async () => {
     setIsLoading(true);
     try {
-      const [rolesData, userTypesData] = await Promise.all([
+      const [rolesData, userTypesData, groupsData] = await Promise.all([
         getAllRoles().catch((error) => {
           toast.error("Failed to fetch roles.");
           return [];
@@ -99,10 +106,12 @@ export function UserDialog({
           toast.error("Failed to fetch user types.");
           return [];
         }),
+        getAllUserGroups().catch(() => []),
       ]);
 
       setRoles(rolesData);
       setUserTypes(userTypesData);
+      setUserGroups(groupsData);
     } catch (error) {
       toast.error("Failed to fetch data.");
     } finally {
@@ -148,6 +157,7 @@ export function UserDialog({
         is_active: isActive ? 1 : 0,
         user_type_id: userTypeId,
         role_ids: selectedRoleIds,
+        group_id: groupId || null,
       };
 
       if (dialogMode === "create" || password) {
@@ -164,6 +174,16 @@ export function UserDialog({
           return;
         }
         await updateUser(userId, userData);
+
+        // Sync supervised groups: add newly selected, remove deselected
+        const previousIds = userToEdit?.supervised_group_ids ?? [];
+        const toAdd = supervisedGroupIds.filter((id) => !previousIds.includes(id));
+        const toRemove = previousIds.filter((id) => !supervisedGroupIds.includes(id));
+        await Promise.all([
+          ...toAdd.map((gid) => addGroupSupervisor(gid, userId)),
+          ...toRemove.map((gid) => removeGroupSupervisor(gid, userId)),
+        ]);
+
         toast.success("User updated successfully.");
 
         // Call onUserUpdated for edit mode with userData
@@ -175,6 +195,7 @@ export function UserDialog({
               userTypes.find((type) => type.id === userTypeId) ||
               userToEdit.user_type,
             roles: roles.filter((role) => selectedRoleIds.includes(role.id)),
+            supervised_group_ids: supervisedGroupIds,
           };
           onUserUpdated(updatedUser);
         }
@@ -218,6 +239,8 @@ export function UserDialog({
       setIsActive(true);
       setSelectedRoleIds([]);
       setUserTypeId("");
+      setGroupId("");
+      setSupervisedGroupIds([]);
     }
   };
 
@@ -233,6 +256,12 @@ export function UserDialog({
     const selectedUserType = userTypes.find((type) => type.id === userTypeId);
     return selectedUserType?.name?.toLowerCase() === "console";
   }, [userTypes, userTypeId]);
+
+  const isSupervisor = useMemo(() => {
+    return roles.some(
+      (r) => selectedRoleIds.includes(r.id) && r.name?.toLowerCase() === "supervisor"
+    );
+  }, [roles, selectedRoleIds]);
 
   if (isLoading) {
     return (
@@ -367,6 +396,52 @@ export function UserDialog({
                   })}
               </div>
             </div>
+
+            {userGroups.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="group">Group</Label>
+                <Select value={groupId} onValueChange={setGroupId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select group (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {userGroups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {userGroups.length > 0 && isSupervisor && (
+              <div className="space-y-2">
+                <Label>Supervised Groups</Label>
+                <div className="grid grid-cols-2 gap-2 border rounded-lg p-4">
+                  {userGroups.map((g) => (
+                    <div key={g.id} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`sg-${g.id}`}
+                        checked={supervisedGroupIds.includes(g.id)}
+                        onChange={() =>
+                          setSupervisedGroupIds((prev) =>
+                            prev.includes(g.id)
+                              ? prev.filter((id) => id !== g.id)
+                              : [...prev, g.id]
+                          )
+                        }
+                        className="form-checkbox accent-primary w-4 h-4"
+                      />
+                      <Label htmlFor={`sg-${g.id}`} className="cursor-pointer">
+                        {g.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="px-6 py-4 border-t">

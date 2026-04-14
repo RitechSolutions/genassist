@@ -1,0 +1,22 @@
+name: gen_agent_chat_example
+description: Example app demonstrating GenAssist Chat Flutter plugin.
+
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  gen_agent_chat:
+    path: ../
+
+flutter:
+  uses-material-design: true
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0

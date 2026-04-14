@@ -184,6 +184,11 @@ const menuItems: MenuItem[] = [
         url: "/fine-tune",
         permissionsRequired: ["*", "update:llm_provider"],
       },
+      {
+        title: "Local Fine-Tune",
+        url: "/local-fine-tune",
+        permissionsRequired: ["*", "update:llm_provider"],
+      },
     ],
   },
   {
@@ -205,6 +210,11 @@ const menuItems: MenuItem[] = [
         title: "User Types",
         url: "/user-types",
         permissionsRequired: ["read:user_type"],
+      },
+      {
+        title: "User Groups",
+        url: "/user-groups",
+        permissionsRequired: ["read:user_group"],
       },
     ],
   },

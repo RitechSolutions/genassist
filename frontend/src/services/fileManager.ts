@@ -1,6 +1,36 @@
 import { api, apiRequest, getApiUrl } from "@/config/api";
 import { setServerUp } from "@/config/serverStatus";
+import { FileManagerFileRecord } from "@/interfaces/file-manager.interface";
 import { AxiosError } from "axios";
+
+export interface ListFileManagerFilesParams {
+  storage_provider?: string;
+  limit?: number;
+  offset?: number;
+  tag?: string;
+}
+
+export const listFileManagerFiles = async (
+  params: ListFileManagerFilesParams = {}
+): Promise<FileManagerFileRecord[]> => {
+  const search = new URLSearchParams();
+  if (params.storage_provider != null && params.storage_provider !== "") {
+    search.set("storage_provider", params.storage_provider);
+  }
+  if (params.limit != null) {
+    search.set("limit", String(params.limit));
+  }
+  if (params.offset != null) {
+    search.set("offset", String(params.offset));
+  }
+  if (params.tag != null && params.tag !== "") {
+    search.set("tag", params.tag);
+  }
+  const qs = search.toString();
+  const path = qs ? `file-manager/files?${qs}` : "file-manager/files";
+  const data = await apiRequest<FileManagerFileRecord[]>("GET", path);
+  return data ?? [];
+};
 
 export interface FileManagerSettings {
   id?: string;
@@ -49,6 +79,7 @@ export interface ListFilesParams {
   storage_provider?: string;
   limit?: number;
   offset?: number;
+  tag?: string;
 }
 
 export const getFileManagerSettings = async (): Promise<FileManagerSettings | null> => {
@@ -73,6 +104,7 @@ export const listFiles = async (
   if (params?.storage_provider) search.set("storage_provider", params.storage_provider);
   if (params?.limit != null) search.set("limit", String(params.limit));
   if (params?.offset != null) search.set("offset", String(params.offset));
+  if (params?.tag != null && params.tag !== "") search.set("tag", params.tag);
   const q = search.toString();
   return apiRequest<FileRecord[]>("GET", `file-manager/files${q ? `?${q}` : ""}`);
 };
