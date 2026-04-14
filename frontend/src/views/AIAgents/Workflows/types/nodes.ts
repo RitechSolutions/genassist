@@ -388,6 +388,14 @@ export interface GuardrailNliNodeData extends BaseNodeData {
   nli_model_name?: string;
 }
 
+// File Reader Node Data
+export interface FileReaderNodeData extends BaseNodeData {
+  fileName?: string;
+  filePath?: string;
+  fileUrl?: string;
+  fileId?: string;
+}
+
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
@@ -417,7 +425,8 @@ export type NodeData =
   | HumanInTheLoopNodeData
   | SetStateNodeData
   | GuardrailProvenanceNodeData
-  | GuardrailNliNodeData;
+  | GuardrailNliNodeData
+  | FileReaderNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
