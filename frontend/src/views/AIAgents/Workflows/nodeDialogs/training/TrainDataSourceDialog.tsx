@@ -138,7 +138,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         return;
       }
     } else if (sourceType === "csv") {
-      if (!csvFileName && !csvFilePath && !csvFileId) {
+      if (!csvFileName && !csvFilePath && !csvFileId && !csvFileUrl) {
         toast({
           title: "Validation Error",
           description: "Please upload a CSV file",
@@ -246,6 +246,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
             label="Training File"
             acceptedFileTypes={[".csv"]}
             initialServerFilePath={csvFilePath ?? ""}
+            initialServerFileUrl={csvFileUrl ?? ""}
             initialOriginalFileName={csvFileName ?? ""}
             onUploadComplete={(result) => {
               setCsvFileName(result.original_filename);
@@ -256,6 +257,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
             onRemove={() => {
               setCsvFileName(null);
               setCsvFilePath(null);
+              setCsvFileId(null);
+              setCsvFileUrl(null);
             }}
             placeholder="Select a CSV file to upload"
           />

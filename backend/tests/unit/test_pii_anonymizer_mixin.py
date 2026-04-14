@@ -56,7 +56,7 @@ class _DictNode(PIIAnonymizerMixin, _FakeBaseNode):
 
 def _passthrough_mask(text):
     if "alice@example.com" in text:
-        token = "<EMAIL_ADDRESS_1>"
+        token = "johndoe1@example.com"
         masked = text.replace("alice@example.com", token)
         token_map = {
             "items": [
@@ -114,7 +114,7 @@ class TestEnabledPath:
 
         called_prompt = node._inner.call_args[0][0]["userPrompt"]
         assert "alice@example.com" not in called_prompt
-        assert "<EMAIL_ADDRESS_1>" in called_prompt
+        assert "johndoe1@example.com" in called_prompt
 
     @pytest.mark.asyncio
     async def test_system_prompt_is_never_masked(self):
@@ -136,7 +136,7 @@ class TestEnabledPath:
 
     @pytest.mark.asyncio
     async def test_str_result_is_unmasked(self):
-        node = _StringNode(return_value="Email <EMAIL_ADDRESS_1> is on file.")
+        node = _StringNode(return_value="Email johndoe1@example.com is on file.")
         mock_service = MagicMock()
         mock_service.mask.side_effect = _passthrough_mask
         mock_service.unmask.side_effect = _passthrough_unmask
@@ -147,11 +147,11 @@ class TestEnabledPath:
             result = await node.run_with_config(config)
 
         assert "alice@example.com" in result
-        assert "<EMAIL_ADDRESS_1>" not in result
+        assert "johndoe1@example.com" not in result
 
     @pytest.mark.asyncio
     async def test_dict_result_message_is_unmasked(self):
-        node = _DictNode(message="Hi <EMAIL_ADDRESS_1>!", steps=["step1"])
+        node = _DictNode(message="Hi johndoe1@example.com!", steps=["step1"])
         mock_service = MagicMock()
         mock_service.mask.side_effect = _passthrough_mask
         mock_service.unmask.side_effect = _passthrough_unmask
@@ -162,7 +162,7 @@ class TestEnabledPath:
             result = await node.run_with_config(config)
 
         assert "alice@example.com" in result["message"]
-        assert "<EMAIL_ADDRESS_1>" not in result["message"]
+        assert "johndoe1@example.com" not in result["message"]
         assert result["steps"] == ["step1"]
 
     @pytest.mark.asyncio
@@ -310,7 +310,7 @@ class TestChatHistoryMasking:
 
         assert node._last_chat_history is not None
         assert isinstance(node._last_chat_history, list)
-        assert "<EMAIL_ADDRESS_1>" in node._last_chat_history[0]["content"]
+        assert "johndoe1@example.com" in node._last_chat_history[0]["content"]
         assert "alice@example.com" not in node._last_chat_history[0]["content"]
 
     @pytest.mark.asyncio
@@ -336,7 +336,7 @@ class TestChatHistoryMasking:
 
         assert node._last_chat_history is not None
         assert isinstance(node._last_chat_history, str)
-        assert "<EMAIL_ADDRESS_1>" in node._last_chat_history
+        assert "johndoe1@example.com" in node._last_chat_history
         assert "alice@example.com" not in node._last_chat_history
 
     @pytest.mark.asyncio
@@ -348,11 +348,11 @@ class TestChatHistoryMasking:
 
         def multi_mask(text):
             if "alice@example.com" in text:
-                token = "<EMAIL_ADDRESS_1>"
+                token = "johndoe1@example.com"
                 masked = text.replace("alice@example.com", token)
                 return masked, {"items": [{"entity_type": "EMAIL_ADDRESS", "token": token, "original": "alice@example.com"}]}
             if "bob@test.com" in text:
-                token = "<EMAIL_ADDRESS_2>"
+                token = "johndoe2@example.com"
                 masked = text.replace("bob@test.com", token)
                 return masked, {"items": [{"entity_type": "EMAIL_ADDRESS", "token": token, "original": "bob@test.com"}]}
             return text, {}
@@ -362,7 +362,7 @@ class TestChatHistoryMasking:
         mock_service.unmask.side_effect = _passthrough_unmask
 
         # Response contains both tokens
-        node._inner.return_value = {"message": "<EMAIL_ADDRESS_1> and <EMAIL_ADDRESS_2>", "steps": []}
+        node._inner.return_value = {"message": "johndoe1@example.com and johndoe2@example.com", "steps": []}
 
         config = {
             "piiMasking": True,

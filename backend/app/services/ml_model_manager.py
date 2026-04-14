@@ -139,7 +139,11 @@ class MLModelManager:
             updated_at: Last update timestamp from database
 
         Returns:
-            Loaded model object
+            Normalized model payload:
+                {
+                    "model": <loaded model>,
+                    "metadata": <dict>
+                }
         """
         model_id_str = str(model_id)
 
@@ -178,15 +182,38 @@ class MLModelManager:
 
             # Load the model
             logger.info(f"Loading ML model {model_id_str} from {pkl_file} and pkl_file_id: {pkl_file_id}")
-            model = await self._load_model_from_file(pkl_file)
+            loaded = await self._load_model_from_file(pkl_file)
+            model_payload = self._normalize_loaded_model(loaded)
 
             # Cache the model
             self._cached_models[model_id_str] = CachedMLModel(
-                model=model, model_id=model_id, updated_at=updated_at, pkl_file=pkl_file, pkl_file_id=pkl_file_id
+                model=model_payload,
+                model_id=model_id,
+                updated_at=updated_at,
+                pkl_file=pkl_file,
+                pkl_file_id=pkl_file_id,
             )
 
             logger.info(f"Cached ML model {model_id_str}")
-            return model
+            return model_payload
+
+    @staticmethod
+    def _normalize_loaded_model(loaded: Any) -> Dict[str, Any]:
+        """
+        Normalize different PKL formats into a single shape:
+            {"model": <model>, "metadata": <dict>}
+
+        Supported:
+        - Legacy: raw model object
+        - v1: raw model object without "model" and "metadata" keys
+        - v2: {"model": <model>, "metadata": {...}, "version": "v2.0"}
+        """
+        # v1: raw model object without "model" and "metadata" keys
+        if isinstance(loaded, dict):
+            return {"model": loaded.get("model", {}), "metadata": loaded.get("metadata", {}), "version": loaded.get("version", "v2.0")}
+
+        # Legacy: raw model pickled directly
+        return {"model": loaded }
 
     async def _validate_model_safe(self, pkl_file: str) -> None:
         """

@@ -91,7 +91,10 @@ class UserRepository:
                     joinedload(UserModel.user_type),
 
                     # 4) Load Operator
-                    joinedload(UserModel.operator)
+                    joinedload(UserModel.operator),
+
+                    # 5) Load supervised groups (for group-scope filtering)
+                    selectinload(UserModel.supervised_group_memberships),
                     )
         )
         result = await self.db.execute(stmt)
@@ -134,7 +137,8 @@ class UserRepository:
             .options(
                 selectinload(UserModel.user_roles).selectinload(UserRoleModel.role),
                 selectinload(UserModel.api_keys).selectinload(ApiKeyModel.api_key_roles).selectinload(ApiKeyRoleModel.role),
-                joinedload(UserModel.user_type)
+                joinedload(UserModel.user_type),
+                selectinload(UserModel.supervised_group_memberships),
             )
         )
         deleted_only = getattr(filter, "deleted_only", False)
@@ -173,6 +177,10 @@ class UserRepository:
             if not user_type:
                 raise AppException(error_key=ErrorKey.USER_TYPE_NOT_FOUND)
             user.user_type_id = data.user_type_id
+
+        # Update group
+        if hasattr(data, 'group_id'):
+            user.group_id = data.group_id
 
         # Update roles
         if data.role_ids is not None:

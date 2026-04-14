@@ -8,9 +8,11 @@ import { Badge } from "@/components/badge";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import { deleteUser, getAllUsers, restoreUser } from "@/services/users";
+import { getAllUserGroups } from "@/services/userGroups";
 import { currentUserIsAdmin, getCurrentUserId } from "@/services/auth";
 import { toast } from "react-hot-toast";
 import { User } from "@/interfaces/user.interface";
+import { UserGroup } from "@/interfaces/userGroup.interface";
 import { getPaginationMeta } from "@/helpers/pagination";
 import { PaginationBar } from "@/components/PaginationBar";
 
@@ -30,6 +32,7 @@ export function UsersCard({
   const PAGE_SIZE = 10;
   const isAdmin = currentUserIsAdmin();
   const [users, setUsers] = useState<User[]>([]);
+  const [groupMap, setGroupMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -50,8 +53,12 @@ export function UsersCard({
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const userData = await getAllUsers({ deletedOnly: showDeleted });
+      const [userData, groupsData] = await Promise.all([
+        getAllUsers({ deletedOnly: showDeleted }),
+        getAllUserGroups().catch(() => [] as UserGroup[]),
+      ]);
       setUsers(userData);
+      setGroupMap(Object.fromEntries(groupsData.map((g) => [g.id, g.name])));
       setError(null);
     } catch (err) {
       const axiosError = err as AxiosError<{ error?: string }>;
@@ -87,11 +94,17 @@ export function UsersCard({
     setCurrentPage(1);
   }, [searchQuery, showDeleted]);
 
-  const filteredUsers = users.filter(
-    (user) =>
-      user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredUsers = users.filter((user) => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    const groupName = user.group_id ? (groupMap[user.group_id] ?? "") : "";
+    return (
+      user.username.toLowerCase().includes(q) ||
+      user.email.toLowerCase().includes(q) ||
+      (user.roles ?? []).some((r) => r.name?.toLowerCase().includes(q)) ||
+      groupName.toLowerCase().includes(q)
+    );
+  });
 
   const pagination = getPaginationMeta(filteredUsers.length, PAGE_SIZE, currentPage);
   const paginatedUsers = filteredUsers.slice(pagination.startIndex, pagination.endIndex);
@@ -154,6 +167,7 @@ export function UsersCard({
     "Status",
     "User Type",
     "Roles",
+    "Group",
     "Action",
   ];
 
@@ -193,6 +207,9 @@ export function UsersCard({
               <span className="text-gray-400">—</span>
             )}
           </div>
+        </TableCell>
+        <TableCell className="truncate">
+          {user.group_id ? (groupMap[user.group_id] ?? "—") : "—"}
         </TableCell>
         <TableCell>
           <ActionButtons

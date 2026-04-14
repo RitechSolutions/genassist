@@ -1,0 +1,35 @@
+name: gen_agent_chat
+description: A Flutter chat widget for GenAssist AI agents with WebSocket, file uploads, voice input, and internationalization.
+version: 1.0.0
+homepage: https://github.com/genassist
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  web_socket_channel: ^3.0.0
+  shared_preferences: ^2.2.0
+  provider: ^6.1.0
+  flutter_markdown: ^0.7.0
+  file_picker: ^8.0.0
+  speech_to_text: ^7.0.0
+  flutter_tts: ^4.0.0
+  mime: ^2.0.0
+  path: ^1.9.0
+  url_launcher: ^6.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  mockito: ^5.4.0
+  build_runner: ^2.4.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - lib/src/l10n/

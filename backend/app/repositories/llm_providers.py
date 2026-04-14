@@ -35,3 +35,17 @@ class LlmProviderRepository:
             .order_by(LlmProvidersModel.created_at.asc())
         )
         return result.scalars().all()
+
+    async def get_all_minimal(self):
+        stmt = select(
+            LlmProvidersModel.id,
+            LlmProvidersModel.name,
+            LlmProvidersModel.llm_model_provider,
+            LlmProvidersModel.llm_model,
+            LlmProvidersModel.is_active,
+        )
+        if hasattr(LlmProvidersModel, "is_deleted"):
+            stmt = stmt.where(LlmProvidersModel.is_deleted == 0)
+        stmt = stmt.order_by(LlmProvidersModel.created_at.asc())
+        result = await self.db.execute(stmt)
+        return result.all()

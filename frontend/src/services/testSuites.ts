@@ -77,6 +77,11 @@ export const listTestRunsForSuite = (suiteId: string) =>
 export const getTestRun = (runId: string) =>
   apiRequest<TestRun>("GET", `${BASE}/runs/${runId}`);
 
+export const getTestRunsBatch = (ids: string[]) =>
+  apiRequest<TestRun[]>("POST", `${BASE}/runs/batch`, {
+    ids,
+  } as unknown as Record<string, unknown>);
+
 export const listResultsForRun = (runId: string) =>
   apiRequest<TestResult[]>("GET", `${BASE}/runs/${runId}/results`);
 

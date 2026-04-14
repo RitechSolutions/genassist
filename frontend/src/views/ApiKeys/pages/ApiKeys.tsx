@@ -50,6 +50,7 @@ export default function ApiKeys() {
         refreshKey={refreshKey}
         onEditApiKey={handleEditApiKey}
         updatedApiKey={updatedApiKey}
+        onApiKeyRotated={handleApiKeyUpdated}
       />
 
       <ApiKeyDialog

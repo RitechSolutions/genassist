@@ -13,7 +13,10 @@ from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
 from app.core.utils.enums.sort_direction_enum import SortDirection
 from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination
+from app.db.events.group_scope import get_group_scope_clause
 from app.db.models.conversation import ConversationModel
+from starlette_context import context
+from starlette_context.errors import ContextDoesNotExistError
 from app.db.models.message_model import TranscriptMessageModel
 from app.schemas.conversation import ConversationCreate
 from app.schemas.filter import ConversationFilter
@@ -197,6 +200,19 @@ class ConversationRepository:
         await self.db.commit()
         await self.db.refresh(conversation)
         return conversation
+
+    def _get_conversation_group_clause(self):
+        """Return a group-scope WHERE clause only when the current user has a group or
+        supervised groups. No-group users fall back to the operator_id filter set by the
+        service layer, so we must not apply the created_by==user_id fallback here."""
+        try:
+            group_id = context.get("group_id")
+            supervised_group_ids = context.get("supervised_group_ids") or []
+        except (LookupError, ContextDoesNotExistError):
+            return None
+        if not (group_id or supervised_group_ids):
+            return None
+        return get_group_scope_clause(ConversationModel)  # returns None
 
     async def update_custom_attributes(
         self, conversation_id: UUID, custom_attributes: dict
@@ -440,6 +456,10 @@ class ConversationRepository:
         """
         query = select(func.count(ConversationModel.id))
         query = self._apply_base_filters(query, conversation_filter)
+
+        group_clause = self._get_conversation_group_clause()
+        if group_clause is not None:
+            query = query.where(group_clause)
 
         # Sentiment and score range filters need the analysis join
         needs_join = self._needs_analysis_join(conversation_filter)
