@@ -7350,6 +7350,41 @@
         ]
       }
     },
+    "/api/llm-providers/minimal": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmProviders"
+        ],
+        "summary": "Get All Minimal",
+        "description": "Get a lightweight list of all LLM providers (no connection_data or connection_status).",
+        "operationId": "get_all_minimal_api_llm_providers_minimal_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LlmProviderMinimal"
+                  },
+                  "type": "array",
+                  "title": "Response Get All Minimal Api Llm Providers Minimal Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/llm-providers/form_schemas": {
       "get": {
         "tags": [
@@ -9726,6 +9761,41 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/workflow/minimal": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflows"
+        ],
+        "summary": "Get Workflows Minimal",
+        "description": "Get a lightweight list of all workflows (id, name, version only).",
+        "operationId": "get_workflows_minimal_api_genagent_workflow_minimal_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowMinimal"
+                  },
+                  "type": "array",
+                  "title": "Response Get Workflows Minimal Api Genagent Workflow Minimal Get"
+                }
               }
             }
           }
@@ -13109,6 +13179,61 @@
             }
           }
         }
+      }
+    },
+    "/api/genagent/eval/runs/batch": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Runs"
+        ],
+        "summary": "Get Runs Batch",
+        "description": "Fetch multiple test runs by their IDs in a single request.",
+        "operationId": "get_runs_batch_api_genagent_eval_runs_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRunsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TestRun"
+                  },
+                  "type": "array",
+                  "title": "Response Get Runs Batch Api Genagent Eval Runs Batch Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/genagent/eval/runs/{run_id}": {
@@ -20489,6 +20614,23 @@
         "title": "AuditLogSearchResult",
         "description": "Schema for audit log search results - excludes json_changes."
       },
+      "BatchRunsRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ids",
+            "description": "List of test run UUIDs to fetch."
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "title": "BatchRunsRequest"
+      },
       "Body_add_conversation_feedback_api_conversations_feedback__conversation_id__patch": {
         "properties": {
           "feedback": {
@@ -24739,6 +24881,65 @@
           "connection_data"
         ],
         "title": "LlmProviderCreate"
+      },
+      "LlmProviderMinimal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "llm_model_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model Provider"
+          },
+          "llm_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "LlmProviderMinimal"
       },
       "LlmProviderRead": {
         "properties": {
@@ -30140,6 +30341,30 @@
           "version"
         ],
         "title": "WorkflowCreate"
+      },
+      "WorkflowMinimal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version"
+        ],
+        "title": "WorkflowMinimal"
       },
       "WorkflowUpdate": {
         "properties": {

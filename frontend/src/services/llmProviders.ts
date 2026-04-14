@@ -1,10 +1,18 @@
 import { apiRequest } from "@/config/api";
-import { LLMProvider } from "@/interfaces/llmProvider.interface";
+import { LLMProvider, LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import { DynamicFormSchema } from "@/interfaces/dynamicFormSchemas.interface";
 
 export const getAllLLMProviders = async (): Promise<LLMProvider[]> => {
   try {
     return await apiRequest<LLMProvider[]>("GET", "llm-providers/");
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getLLMProvidersMinimal = async (): Promise<LLMProviderMinimal[]> => {
+  try {
+    return await apiRequest<LLMProviderMinimal[]>("GET", "llm-providers/minimal");
   } catch (error) {
     throw error;
   }
