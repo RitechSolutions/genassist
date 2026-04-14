@@ -57,6 +57,8 @@ async def auth(
         context["auth_mode"] = "api_key"
         context["user_roles"] = request.state.api_key.roles
         context["operator_id"] = user.operator.id if user and user.operator else None
+        context["group_id"] = (user.group_id if user and hasattr(user, "group_id") else None)
+        context["supervised_group_ids"] = list(user.supervised_group_ids) if user and hasattr(user, "supervised_group_ids") else []
     elif user:
         request.state.user = user  # Attach user to the state
         context["auth_mode"] = "token"
@@ -64,6 +66,8 @@ async def auth(
         context["user_roles"] = user.roles
         # store in context
         context["operator_id"] = user.operator.id if user.operator else None
+        context["group_id"] = user.group_id if hasattr(user, "group_id") else None
+        context["supervised_group_ids"] = list(user.supervised_group_ids) if hasattr(user, "supervised_group_ids") else []
     else:
         raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
 

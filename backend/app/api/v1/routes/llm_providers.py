@@ -8,7 +8,7 @@ from app.auth.dependencies import auth, permissions
 from app.cache.redis_cache import invalidate_llm_provider_cache
 from app.core.permissions.constants import Permissions as P
 from app.modules.workflow.llm.provider import LLMProvider
-from app.schemas.llm import LlmProviderBase, LlmProviderCreate, LlmProviderRead, LlmProviderUpdate
+from app.schemas.llm import LlmProviderBase, LlmProviderCreate, LlmProviderMinimal, LlmProviderRead, LlmProviderUpdate
 from app.services.llm_providers import LlmProviderService
 
 router = APIRouter()
@@ -21,6 +21,18 @@ router = APIRouter()
 )
 async def get_all(service: LlmProviderService = Injected(LlmProviderService)):
     return await service.get_all()
+
+
+@router.get(
+    "/minimal",
+    response_model=list[LlmProviderMinimal],
+    dependencies=[Depends(auth), Depends(permissions(P.LlmProvider.READ))],
+)
+async def get_all_minimal(service: LlmProviderService = Injected(LlmProviderService)):
+    """
+    Get a lightweight list of all LLM providers (no connection_data or connection_status).
+    """
+    return await service.get_all_minimal()
 
 
 @router.get(

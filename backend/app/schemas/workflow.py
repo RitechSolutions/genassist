@@ -33,6 +33,16 @@ class WorkflowUpdate(BaseModel):
     agent_id: Optional[UUID] = None
 
 
+class WorkflowMinimal(BaseModel):
+    id: UUID
+    name: str
+    version: str
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+
 class WorkflowInDB(WorkflowBase):
     id: UUID
     user_id: Optional[UUID] = None

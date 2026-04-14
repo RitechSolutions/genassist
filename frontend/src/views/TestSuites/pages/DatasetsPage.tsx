@@ -21,8 +21,8 @@ import {ChevronDown, ChevronRight, Clock, Database, Import, Pencil, Plus, Trash2
 import {ConfirmDialog} from "@/components/ConfirmDialog";
 import {fetchConversationById, fetchTranscripts} from "@/services/transcripts";
 import type {BackendTranscript, TranscriptEntry} from "@/interfaces/transcript.interface";
-import {getAllWorkflows} from "@/services/workflows";
-import type {Workflow} from "@/interfaces/workflow.interface";
+import {getWorkflowsMinimal} from "@/services/workflows";
+import type {WorkflowMinimal} from "@/interfaces/workflow.interface";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/components/select";
 import {Skeleton} from "@/components/skeleton";
 
@@ -60,7 +60,7 @@ const DatasetsPage: React.FC = () => {
   // Import from conversation state
   const [importTargetSuite, setImportTargetSuite] = useState<TestSuite | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowMinimal[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
   const [convIdSuffix, setConvIdSuffix] = useState("");
   const [conversations, setConversations] = useState<BackendTranscript[]>([]);
@@ -176,7 +176,7 @@ const DatasetsPage: React.FC = () => {
     setExpandedConvId(null);
     setExpandedMessages([]);
     setIsImportDialogOpen(true);
-    const wfs = await getAllWorkflows();
+    const wfs = await getWorkflowsMinimal();
     setWorkflows(wfs ?? []);
     loadConversations(0, "", "");
   };

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi_injector import Injected
 from app.modules.workflow.utils import generate_python_function_template
 from app.core.permissions.constants import Permissions as P
-from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowUpdate
+from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
 from app.auth.dependencies import auth, permissions
 from app.services.llm_providers import LlmProviderService
 
@@ -109,6 +109,18 @@ async def get_workflows(service: WorkflowService = Injected(WorkflowService)):
     """
     workflows = await service.get_all()
     return workflows
+
+
+@router.get(
+    "/minimal",
+    response_model=List[WorkflowMinimal],
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+)
+async def get_workflows_minimal(service: WorkflowService = Injected(WorkflowService)):
+    """
+    Get a lightweight list of all workflows (id, name, version only).
+    """
+    return await service.get_all_minimal()
 
 
 @router.put(

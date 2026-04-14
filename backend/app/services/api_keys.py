@@ -1,18 +1,18 @@
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
 from injector import inject
 from starlette_context import context
 from uuid import UUID
-from fastapi import Depends
-from app.auth.utils import current_user_is_admin, generate_api_key, hash_api_key, is_current_user_supervisor_or_admin
+from app.auth.utils import current_user_is_admin, generate_api_key, hash_api_key
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
 from app.db.models import ApiKeyModel
 from app.repositories.roles import RolesRepository
-from app.schemas.api_key import ApiKeyCreate, ApiKeyInternal, ApiKeyUpdate
+from app.schemas.api_key import ApiKeyCreate, ApiKeyInternal, ApiKeyRotate, ApiKeyUpdate
 from app.repositories.api_keys import ApiKeysRepository, api_key_key_builder
 from app.schemas.filter import ApiKeysFilter
 from app.schemas.role import RoleRead
@@ -41,6 +41,17 @@ class ApiKeysService:
         if not api_key_model:
             raise AppException(status_code=401, error_key=ErrorKey.INVALID_API_KEY)
 
+        if api_key_model.is_active == 0:
+            raise AppException(status_code=401, error_key=ErrorKey.INVALID_API_KEY)
+
+        now = datetime.now(timezone.utc)
+        if api_key_model.credential_expires_at is not None:
+            exp = api_key_model.credential_expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if now >= exp:
+                raise AppException(status_code=401, error_key=ErrorKey.API_KEY_EXPIRED)
+
         api_key_read = ApiKeyInternal.model_validate(api_key_model)
         return api_key_read
 
@@ -61,7 +72,13 @@ class ApiKeysService:
         encrypted_api_key = encrypt_key(generated_api_key)
         hashed_value = hash_api_key(generated_api_key)
 
-        api_key_pyd_model = await self.repository.create(data, encrypted_api_key, hashed_value)
+        credential_expires_at: Optional[datetime] = None
+        if data.expires_in_days is not None:
+            credential_expires_at = datetime.now(timezone.utc) + timedelta(days=data.expires_in_days)
+
+        api_key_pyd_model = await self.repository.create(
+            data, encrypted_api_key, hashed_value, credential_expires_at=credential_expires_at
+        )
 
         # Build the pydantic return object, including the 'key_val'
         api_key_pyd_model.key_val = generated_api_key
@@ -105,6 +122,28 @@ class ApiKeysService:
         model = await self.repository.update(context["user_id"], api_key_id, data)
         return model
 
+    async def rotate(self, api_key_id: UUID, data: ApiKeyRotate):
+        """
+        Replace the API key secret. Optionally keep the old hash valid for overlap_seconds
+        so agent integrations can switch without downtime.
+        """
+        existing = await self.repository.get_by_id(api_key_id)
+        if not existing:
+            raise AppException(error_key=ErrorKey.API_KEY_NOT_FOUND, status_code=404)
+
+        generated_api_key = generate_api_key()
+        encrypted_api_key = encrypt_key(generated_api_key)
+        hashed_value = hash_api_key(generated_api_key)
+
+        model = await self.repository.rotate_credentials(
+            context["user_id"],
+            api_key_id,
+            encrypted_api_key,
+            hashed_value,
+            data.overlap_seconds,
+        )
+        model.key_val = generated_api_key
+        return model
 
     def _validate_role_ids(self, user_roles: list[RoleRead], requested_role_ids: list[UUID]) -> None:
         """

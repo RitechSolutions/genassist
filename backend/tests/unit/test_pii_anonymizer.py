@@ -8,11 +8,12 @@ from unittest.mock import MagicMock, patch
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 
 
-def _make_analyzer_result(start: int, end: int, entity_type: str):
+def _make_analyzer_result(start: int, end: int, entity_type: str, score: float = 1.0):
     r = MagicMock()
     r.start = start
     r.end = end
     r.entity_type = entity_type
+    r.score = score
     return r
 
 
@@ -51,9 +52,9 @@ class TestMask:
         ):
             masked, token_map = svc.mask(original)
 
-        assert masked == "My email is <EMAIL_ADDRESS_1>"
+        assert masked == "My email is johndoe1@example.com"
         assert len(token_map["items"]) == 1
-        assert token_map["items"][0]["token"] == "<EMAIL_ADDRESS_1>"
+        assert token_map["items"][0]["token"] == "johndoe1@example.com"
         assert token_map["items"][0]["original"] == "alice@example.com"
         assert token_map["items"][0]["entity_type"] == "EMAIL_ADDRESS"
 
@@ -72,8 +73,8 @@ class TestMask:
         ):
             masked, token_map = svc.mask(original)
 
-        assert "<EMAIL_ADDRESS_1>" in masked
-        assert "<PHONE_NUMBER_1>" in masked
+        assert "johndoe1@example.com" in masked
+        assert "(555) 010-0001" in masked
         assert "bob@example.com" not in masked
         assert "555-867-5309" not in masked
         assert len(token_map["items"]) == 2
@@ -95,8 +96,8 @@ class TestMask:
 
         tokens = [item["token"] for item in token_map["items"]]
         assert len(set(tokens)) == 2, "each occurrence must get a unique token"
-        assert "<EMAIL_ADDRESS_1>" in masked
-        assert "<EMAIL_ADDRESS_2>" in masked
+        assert "johndoe1@example.com" in masked
+        assert "johndoe2@example.com" in masked
 
     def test_token_map_is_json_serializable(self):
         original = "IBAN: DE89370400440532013000"
@@ -126,22 +127,22 @@ class TestUnmask:
         svc = PIIAnonymizer()
         token_map = {
             "items": [
-                {"token": "<EMAIL_ADDRESS_1>", "original": "alice@example.com", "entity_type": "EMAIL_ADDRESS"}
+                {"token": "johndoe1@example.com", "original": "alice@example.com", "entity_type": "EMAIL_ADDRESS"}
             ]
         }
-        result = svc.unmask("Your email <EMAIL_ADDRESS_1> is on file.", token_map)
+        result = svc.unmask("Your email johndoe1@example.com is on file.", token_map)
         assert result == "Your email alice@example.com is on file."
 
     def test_restores_two_different_emails(self):
         svc = PIIAnonymizer()
         token_map = {
             "items": [
-                {"token": "<EMAIL_ADDRESS_1>", "original": "alice@example.com", "entity_type": "EMAIL_ADDRESS"},
-                {"token": "<EMAIL_ADDRESS_2>", "original": "bob@example.com", "entity_type": "EMAIL_ADDRESS"},
+                {"token": "johndoe1@example.com", "original": "alice@example.com", "entity_type": "EMAIL_ADDRESS"},
+                {"token": "johndoe2@example.com", "original": "bob@example.com", "entity_type": "EMAIL_ADDRESS"},
             ]
         }
         result = svc.unmask(
-            "From <EMAIL_ADDRESS_1> to <EMAIL_ADDRESS_2>.",
+            "From johndoe1@example.com to johndoe2@example.com.",
             token_map,
         )
         assert result == "From alice@example.com to bob@example.com."
@@ -149,7 +150,7 @@ class TestUnmask:
     def test_returns_intact_when_token_absent_from_response(self):
         svc = PIIAnonymizer()
         token_map = {
-            "items": [{"token": "<EMAIL_ADDRESS_1>", "original": "bob@example.com", "entity_type": "EMAIL_ADDRESS"}]
+            "items": [{"token": "johndoe1@example.com", "original": "bob@example.com", "entity_type": "EMAIL_ADDRESS"}]
         }
         result = svc.unmask("I cannot find any email address in your message.", token_map)
         assert "bob@example.com" not in result
