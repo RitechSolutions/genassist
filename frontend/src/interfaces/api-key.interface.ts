@@ -18,6 +18,8 @@ export interface ApiKey {
   previous_hashed_expires_at?: string | null;
   /** When set, API auth rejects this key at or after this instant (ISO UTC). */
   credential_expires_at?: string | null;
+  /** Stored expiry selection in days (30/90/180/365). Null/undefined means Never. */
+  credential_expiry_days?: number | null;
   /** Only used when creating a key (days until credential_expires_at). */
   expires_in_days?: number;
 }

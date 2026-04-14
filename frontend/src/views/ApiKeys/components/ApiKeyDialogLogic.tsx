@@ -7,6 +7,27 @@ import { Role } from "@/interfaces/role.interface";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import { presetToExpiresInDays } from "@/components/api-keys/apiKeyExpiryPresets";
 
+const PRESET_DAY_VALUES = new Set([30, 90, 180, 365]);
+
+function inferPresetFromApiKey(apiKey: ApiKey): string {
+  if (typeof apiKey.credential_expiry_days === "number") {
+    if (apiKey.credential_expiry_days <= 0) return "never";
+    return String(apiKey.credential_expiry_days);
+  }
+
+  // Legacy fallback: try to infer from created_at -> credential_expires_at (if present).
+  if (apiKey.created_at && apiKey.credential_expires_at) {
+    const createdMs = new Date(apiKey.created_at).getTime();
+    const expMs = new Date(apiKey.credential_expires_at).getTime();
+    if (!Number.isNaN(createdMs) && !Number.isNaN(expMs) && expMs > createdMs) {
+      const days = Math.round((expMs - createdMs) / (24 * 60 * 60 * 1000));
+      if (PRESET_DAY_VALUES.has(days)) return String(days);
+    }
+  }
+
+  return "never";
+}
+
 export function ApiKeyDialogLogic({
   isOpen,
   mode = "create",
@@ -52,6 +73,7 @@ export function ApiKeyDialogLogic({
           );
           setGeneratedKey(apiKeyToEdit.key_val);
           setHasGeneratedKey(true);
+          setExpiryPreset(inferPresetFromApiKey(apiKeyToEdit));
         } else {
           setDialogMode("create");
           setName("");
@@ -135,18 +157,17 @@ export function ApiKeyDialogLogic({
           role_ids: selectedRoles,
         };
 
-        await updateApiKey(apiKeyToEdit.id, updateData);
+        const expiresInDays = presetToExpiresInDays(expiryPreset);
+        // Persist the user's selection on the record.
+        // - undefined => "never" => backend expects 0 to clear/store Never
+        // - number => set/store that many days
+        updateData.expires_in_days = expiresInDays ?? 0;
+
+        const updatedFromApi = await updateApiKey(apiKeyToEdit.id, updateData);
         toast.success("API key updated successfully.");
 
         if (onApiKeyUpdated) {
-          const updatedKey: ApiKey = {
-            ...apiKeyToEdit,
-            ...commonFields,
-            roles: availableRoles.filter((role) =>
-              selectedRoles.includes(role.id)
-            ),
-          };
-          onApiKeyUpdated(updatedKey);
+          onApiKeyUpdated(updatedFromApi);
         }
 
         onOpenChange(false);

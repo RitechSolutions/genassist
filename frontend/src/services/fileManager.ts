@@ -185,16 +185,20 @@ export const deleteFileRecord = async (fileId: string): Promise<void> => {
   }
 };
 
-/** Authenticated download via axios (Bearer); triggers browser save. */
+/**
+ * Trigger a browser download without XHR.
+ *
+ * NOTE: The backend download endpoint may redirect to object storage (e.g. S3 presigned URL).
+ * Fetching that URL via XHR can fail due to storage CORS configuration, so we intentionally
+ * use a normal navigation/anchor click here.
+ */
 export const downloadFileRecord = async (fileId: string, filename: string): Promise<void> => {
   const url = await buildUrl(`file-manager/files/${fileId}/download`);
-  const response = await api.get(url, { responseType: "blob" });
   setServerUp();
-  const blob = new Blob([response.data]);
-  const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = objectUrl;
-  a.download = filename || "download";
+  a.href = url;
+  // `download` is intentionally omitted: it is ignored for cross-origin redirects,
+  // and the server should provide Content-Disposition with the right filename.
+  void filename;
   a.click();
-  URL.revokeObjectURL(objectUrl);
 };
