@@ -133,7 +133,11 @@ export function AppSettingDialog({
     if (type !== 'Other' && appSettingSchemas[type]) {
       const schema = appSettingSchemas[type];
       const schemaMissing = schema.fields
-        .filter((field) => field.required && !values[field.name])
+        .filter((field) => {
+          if (!field.required) return false;
+          const value = values[field.name];
+          return value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
+        })
         .map((field) => field.label);
 
       if (schemaMissing.length > 0) {
