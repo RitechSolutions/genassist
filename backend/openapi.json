@@ -12587,6 +12587,565 @@
         }
       }
     },
+    "/api/genagent/prompt-editor/versions/{workflow_id}/{node_id}/{prompt_field}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "List Versions",
+        "operationId": "list_versions_api_genagent_prompt_editor_versions__workflow_id___node_id___prompt_field__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PromptVersionRead"
+                  },
+                  "title": "Response List Versions Api Genagent Prompt Editor Versions  Workflow Id   Node Id   Prompt Field  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Create Version",
+        "operationId": "create_version_api_genagent_prompt_editor_versions__workflow_id___node_id___prompt_field__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptVersionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptVersionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/versions/{version_id}/restore": {
+      "post": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Restore Version",
+        "operationId": "restore_version_api_genagent_prompt_editor_versions__version_id__restore_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptVersionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/versions/{version_id}": {
+      "delete": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Delete Version",
+        "operationId": "delete_version_api_genagent_prompt_editor_versions__version_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/config/{workflow_id}/{node_id}/{prompt_field}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Get Config",
+        "operationId": "get_config_api_genagent_prompt_editor_config__workflow_id___node_id___prompt_field__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptConfigRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/config/{workflow_id}/{node_id}/{prompt_field}/gold-suite": {
+      "put": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Link Gold Suite",
+        "operationId": "link_gold_suite_api_genagent_prompt_editor_config__workflow_id___node_id___prompt_field__gold_suite_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoldSuiteLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptConfigRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/evaluate/{workflow_id}/{node_id}/{prompt_field}": {
+      "post": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Evaluate Prompt",
+        "operationId": "evaluate_prompt_api_genagent_prompt_editor_evaluate__workflow_id___node_id___prompt_field__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptEvalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptEvalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/optimize/{workflow_id}/{node_id}/{prompt_field}": {
+      "post": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Optimize Prompt",
+        "operationId": "optimize_prompt_api_genagent_prompt_editor_optimize__workflow_id___node_id___prompt_field__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptOptimizeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptOptimizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/eval/suites": {
       "get": {
         "tags": [
@@ -23226,6 +23785,38 @@
         ],
         "title": "GmailAuthResponse"
       },
+      "GoldSuiteLinkRequest": {
+        "properties": {
+          "suite_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suite Id",
+            "description": "ID of an existing test suite to link. If omitted a new suite is created."
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Name for the new gold suite (used only when suite_id is omitted)."
+          }
+        },
+        "type": "object",
+        "title": "GoldSuiteLinkRequest",
+        "description": "Link an existing suite or create a new one."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -27382,6 +27973,333 @@
           "cancelled"
         ],
         "title": "PipelineRunStatus"
+      },
+      "PromptConfigRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workflow Id"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "prompt_field": {
+            "type": "string",
+            "title": "Prompt Field"
+          },
+          "gold_suite_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Suite Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "workflow_id",
+          "node_id",
+          "prompt_field",
+          "created_at"
+        ],
+        "title": "PromptConfigRead"
+      },
+      "PromptEvalCaseResult": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "input": {
+            "type": "string",
+            "title": "Input"
+          },
+          "expected": {
+            "type": "string",
+            "title": "Expected"
+          },
+          "actual": {
+            "type": "string",
+            "title": "Actual"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metrics"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "input",
+          "expected",
+          "actual"
+        ],
+        "title": "PromptEvalCaseResult"
+      },
+      "PromptEvalRequest": {
+        "properties": {
+          "prompt_content": {
+            "type": "string",
+            "title": "Prompt Content",
+            "description": "The system prompt to evaluate."
+          },
+          "techniques": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Techniques",
+            "description": "Evaluator technique identifiers."
+          },
+          "provider_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Provider Id",
+            "description": "LLM provider to run the prompt against."
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt_content",
+          "provider_id"
+        ],
+        "title": "PromptEvalRequest"
+      },
+      "PromptEvalResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/PromptEvalCaseResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PromptEvalSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "summary"
+        ],
+        "title": "PromptEvalResponse"
+      },
+      "PromptEvalSummary": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "passed": {
+            "type": "integer",
+            "title": "Passed"
+          },
+          "avg_score": {
+            "type": "number",
+            "title": "Avg Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "passed",
+          "avg_score"
+        ],
+        "title": "PromptEvalSummary"
+      },
+      "PromptOptimizeRequest": {
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Provider Id",
+            "description": "LLM provider for generating the optimized prompt."
+          },
+          "current_prompt": {
+            "type": "string",
+            "title": "Current Prompt",
+            "description": "The current system prompt to improve."
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions",
+            "description": "Optional extra instructions to guide optimization."
+          },
+          "failed_cases": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Cases",
+            "description": "Recent failed evaluation cases for context."
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "current_prompt"
+        ],
+        "title": "PromptOptimizeRequest"
+      },
+      "PromptOptimizeResponse": {
+        "properties": {
+          "suggested_prompt": {
+            "type": "string",
+            "title": "Suggested Prompt"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "suggested_prompt",
+          "explanation"
+        ],
+        "title": "PromptOptimizeResponse"
+      },
+      "PromptVersionCreate": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "The prompt text."
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Optional human-readable label."
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "PromptVersionCreate"
+      },
+      "PromptVersionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workflow Id"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "prompt_field": {
+            "type": "string",
+            "title": "Prompt Field"
+          },
+          "version_number": {
+            "type": "integer",
+            "title": "Version Number"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "workflow_id",
+          "node_id",
+          "prompt_field",
+          "version_number",
+          "content",
+          "is_active",
+          "created_at"
+        ],
+        "title": "PromptVersionRead"
       },
       "QueryRequest": {
         "properties": {

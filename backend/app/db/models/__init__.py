@@ -43,6 +43,7 @@ from .mcp_server import MCPServerModel, MCPServerWorkflowModel
 from .file import FileModel, StorageProvider
 from .user_group import UserGroupModel
 from .user_supervised_group import UserSupervisedGroupModel
+from .prompt_editor import PromptVersionModel, PromptConfigModel
 __all__ = [
     # Primary model class names
     "OperatorModel",
@@ -96,6 +97,8 @@ __all__ = [
     "StorageProvider",
     "UserGroupModel",
     "UserSupervisedGroupModel",
+    "PromptVersionModel",
+    "PromptConfigModel",
 ]
 
 models = [
@@ -141,6 +144,8 @@ models = [
     MCPServerWorkflowModel,
     FileModel,
     LlmCostRateModel,
+    PromptVersionModel,
+    PromptConfigModel,
 ]
 
 auto_register_updated_by(models)
