@@ -59,7 +59,7 @@ export function FormFieldRenderer({
       case "select":
         return (
           <Select
-            value={value as string}
+            value={(value ?? "") as string}
             onValueChange={(val) => onChange(field.name, val)}
             disabled={disabled}
           >
@@ -81,7 +81,7 @@ export function FormFieldRenderer({
           <Input
             type="number"
             value={value as number}
-            onChange={(e) => onChange(field.name, parseFloat(e.target.value))}
+            onChange={(e) => onChange(field.name, e.target.value === "" ? undefined : parseFloat(e.target.value))}
             min={field.min}
             max={field.max}
             step={field.step}
