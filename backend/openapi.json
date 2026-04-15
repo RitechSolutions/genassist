@@ -29267,6 +29267,18 @@
             "type": "string",
             "format": "uuid",
             "title": "User Type Id"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
           }
         },
         "type": "object",
