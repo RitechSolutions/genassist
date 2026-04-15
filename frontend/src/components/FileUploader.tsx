@@ -1,10 +1,12 @@
-import React, { useState } from "react";
-import { Button } from "@/components/button";
-import { Label } from "@/components/label";
-import { FileText, Upload, X, Download } from "lucide-react";
-import { useToast } from "@/hooks/useToast";
-import { uploadFiles } from "@/services/api";
-import { UploadFileResponse } from "@/interfaces/file-manager.interface";
+import React, { useState } from 'react';
+import { Button } from '@/components/button';
+import { Label } from '@/components/label';
+import { FileText, Upload, X, Download } from 'lucide-react';
+import { uploadFiles } from '@/services/api';
+import { UploadFileResponse } from '@/interfaces/file-manager.interface';
+import { downloadFile, getFileDownloadUrl } from '@/helpers/utils';
+import { getApiUrlString } from '@/config/api';
+import toast from "react-hot-toast";
 
 export interface FileUploaderProps {
   label: string;
@@ -20,65 +22,81 @@ export interface FileUploaderProps {
 export const FileUploader: React.FC<FileUploaderProps> = ({
   label,
   acceptedFileTypes,
-  initialOriginalFileName = "",
+  initialOriginalFileName = '',
   initialServerFilePath,
   initialServerFileUrl,
   onUploadComplete,
   onRemove,
-  placeholder = "Select a file to upload",
+  placeholder = 'Select a file to upload',
 }) => {
   const [file, setFile] = useState<File | null>(null);
-  const [originalFileName, setOriginalFileName] = useState(
-    initialOriginalFileName,
-  );
-  const [serverFilePath, setServerFilePath] = useState<string | undefined>(
-    initialServerFilePath,
-  );
-  const [serverFileUrl, setServerFileUrl] = useState<string | undefined>(
-    initialServerFileUrl,
-  );
+  const [originalFileName, setOriginalFileName] = useState(initialOriginalFileName);
+  const [serverFilePath, setServerFilePath] = useState<string | undefined>(initialServerFilePath);
+  const [serverFileUrl, setServerFileUrl] = useState<string | undefined>(initialServerFileUrl);
   const [isUploading, setIsUploading] = useState(false);
-  const { toast } = useToast();
+
+  const handleDownload = (e: React.MouseEvent, isFileUrl: boolean = false) => {
+    e.stopPropagation();
+
+    // show error toast
+    const showError = (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to download file');
+    };
+
+    if (isFileUrl) {
+      // Use the tenant-aware download behavior
+      try {
+        const match = serverFileUrl.match(/file-manager\/files\/([^/]+)/);
+        if (match?.[1]) {
+          const tenantId = localStorage.getItem('tenant_id') || '';
+          const fileUrl = getFileDownloadUrl(match[1], getApiUrlString, tenantId, 'source');
+          downloadFile(fileUrl, originalFileName || 'file');
+        }
+      } catch (err) {
+        showError(err);
+      }
+    } else {
+      try {
+        downloadFile(serverFilePath, originalFileName || 'file');
+      } catch (err) {
+        showError(err);
+      }
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
     if (acceptedFileTypes && acceptedFileTypes.length > 0) {
-      const fileExtension =
-        "." + selectedFile.name.split(".").pop()?.toLowerCase();
-      const isValidExtension = acceptedFileTypes.some(
-        (ext) => fileExtension === ext.toLowerCase(),
-      );
+      const fileExtension = '.' + selectedFile.name.split('.').pop()?.toLowerCase();
+      const isValidExtension = acceptedFileTypes.some((ext) => fileExtension === ext.toLowerCase());
 
       if (!isValidExtension) {
-        toast({
-          title: "Invalid file type",
-          description: `Please upload a file with one of these extensions: ${acceptedFileTypes.join(
-            ", ",
-          )}`,
-          variant: "destructive",
+        toast.error(`Please upload a file with one of these extensions: ${acceptedFileTypes.join(', ')}`, {
+          duration: 5000,
+          position: 'top-center',
         });
-        e.target.value = ""; // Reset input
+        e.target.value = ''; // Reset input
         return;
       }
     }
 
     setFile(selectedFile);
     uploadFile(selectedFile);
-    e.target.value = ""; // Reset input to allow selecting the same file again or different files
+    e.target.value = ''; // Reset input to allow selecting the same file again or different files
   };
 
   const handleRemoveFile = () => {
     setFile(null);
-    setOriginalFileName("");
-    setServerFilePath("");
-    setServerFileUrl("");
+    setOriginalFileName('');
+    setServerFilePath('');
+    setServerFileUrl('');
     onRemove?.();
   };
 
   const uploadFile = async (
-    fileToUpload?: File,
+    fileToUpload?: File
   ): Promise<
     | ({
         file_path?: string;
@@ -106,14 +124,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
     } catch (error) {
       // Clear the failed file from state
       setFile(null);
-
-      toast({
-        title: "Upload Error",
-        description: `Failed to upload file: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        variant: "destructive",
-      });
+      toast.error(` Failed to upload file: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     } finally {
       setIsUploading(false);
@@ -131,17 +142,13 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           <div className="flex flex-col items-center gap-2">
             <Upload className="h-10 w-10 text-muted-foreground" />
             <span className="text-sm font-medium text-muted-foreground">
-              {file
-                ? file.name
-                : serverFileUrl || serverFilePath
-                  ? "Replace file"
-                  : placeholder}
+              {file ? file.name : serverFileUrl || serverFilePath ? 'Replace file' : placeholder}
             </span>
           </div>
           <input
             id="file"
             type="file"
-            accept={acceptedFileTypes?.join(",")}
+            accept={acceptedFileTypes?.join(',')}
             onChange={handleFileChange}
             disabled={isUploading}
             className="hidden"
@@ -173,19 +180,17 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           <div className="flex items-center justify-between p-2 bg-muted rounded-md">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              <span className="text-sm">
-                {originalFileName || "File uploaded"}
-              </span>
+              <span className="text-sm">{originalFileName || 'File uploaded'}</span>
             </div>
             <div className="flex items-center gap-2">
-              <a
-                href={serverFileUrl}
-                download={originalFileName || "file"}
+              <button
+                type="button"
                 className="text-primary hover:text-primary/80"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => handleDownload(e, true)}
+                disabled={isUploading}
               >
                 <Download className="h-4 w-4" />
-              </a>
+              </button>
               <Button
                 type="button"
                 variant="ghost"
@@ -204,28 +209,33 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           <div className="flex items-center justify-between p-2 bg-muted rounded-md">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              <span className="text-sm">
-                File: {originalFileName || "File uploaded"}
-              </span>
+              <span className="text-sm">File: {originalFileName || 'File uploaded'}</span>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={handleRemoveFile}
-              className="h-8 w-8"
-              disabled={isUploading}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="text-primary hover:text-primary/80"
+                onClick={(e) => handleDownload(e)}
+                disabled={isUploading}
+                aria-label="Download file"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleRemoveFile}
+                className="h-8 w-8"
+                disabled={isUploading}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         )}
 
-        {isUploading && (
-          <div className="p-2 text-sm text-muted-foreground">
-            Uploading file... Please wait.
-          </div>
-        )}
+        {isUploading && <div className="p-2 text-sm text-muted-foreground">Uploading file... Please wait.</div>}
       </div>
     </div>
   );
