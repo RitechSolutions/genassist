@@ -1,7 +1,7 @@
 """mcp oauth2: auth_values JSONB + issuer URL index
 
-Revision ID: b2c3d4e5f6a8
-Revises: b1a3ac1f5fe2
+Revision ID: a9d1c4e2b7f0
+Revises: f7e2b1c3d4a5
 Create Date: 2026-04-08 12:00:00.000000
 """
 
@@ -12,8 +12,8 @@ from alembic import op
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision: str = "b2c3d4e5f6a8"
-down_revision: Union[str, None] = "b1a3ac1f5fe2"
+revision: str = "a9d1c4e2b7f0"
+down_revision: Union[str, None] = "f7e2b1c3d4a5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -116,3 +116,4 @@ def downgrade() -> None:
         op.drop_column("mcp_servers", "auth_values")
     if "auth_type" in cols:
         op.drop_column("mcp_servers", "auth_type")
+
