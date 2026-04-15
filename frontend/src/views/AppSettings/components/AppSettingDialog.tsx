@@ -35,7 +35,7 @@ export function AppSettingDialog({
 }: AppSettingDialogProps) {
   const [name, setName] = useState('');
   const [type, setType] = useState<AppSetting['type']>('Other');
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, FieldValue>>({});
   const [description, setDescription] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -92,7 +92,7 @@ export function AppSettingDialog({
   const handleValuesChange = (fieldName: string, value: FieldValue) => {
     setValues((prev) => ({
       ...prev,
-      [fieldName]: value as string,
+      [fieldName]: value,
     }));
   };
 
