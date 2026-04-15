@@ -1,10 +1,13 @@
+import asyncio
 import logging
 import aiofiles
 import httpx
 import mimetypes
-from typing import Any, Dict, Optional, Union
+import tempfile
+from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 from starlette.datastructures import UploadFile
+from pydub import AudioSegment
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -14,14 +17,6 @@ logger = logging.getLogger(__name__)
 
 
 def _guess_mime(path: str) -> str:
-    """Guess MIME type for a file path.
-
-    Args:
-        path: File path to guess MIME type for
-
-    Returns:
-        MIME type string, defaults to application/octet-stream if unknown
-    """
     mt, _ = mimetypes.guess_type(path)
     return mt or "application/octet-stream"
 
@@ -32,25 +27,9 @@ async def _post_with_file(
         form_fields: Dict[str, Any],
         client: httpx.AsyncClient,
         ) -> httpx.Response:
-    """Post a file to a URL with form fields.
-
-    Args:
-        url: Target URL
-        file_source: Path to file to upload or UploadFile object
-        form_fields: Additional form data
-        client: HTTP client to use
-
-    Returns:
-        HTTP response
-
-    Raises:
-        FileNotFoundError: If file doesn't exist (for file paths)
-        httpx.HTTPError: If HTTP request fails
-    """
     try:
         if isinstance(file_source, UploadFile):
-            # Handle UploadFile - stream directly to httpx
-            await file_source.seek(0)  # Reset file pointer to beginning
+            await file_source.seek(0)
             filename = file_source.filename or "upload"
             mime = file_source.content_type or _guess_mime(filename)
 
@@ -60,7 +39,6 @@ async def _post_with_file(
             return await client.post(url, data=form_fields, files=files)
 
         else:
-            # Handle file path string
             file_path = file_source
             file_path_obj = Path(file_path)
 
@@ -86,6 +64,122 @@ async def _post_with_file(
         raise
 
 
+async def _transcribe_single_chunk(
+        chunk_path: str,
+        form_fields: Dict[str, Any],
+        client: httpx.AsyncClient,
+        ) -> Dict[str, Any]:
+    """Send a single audio chunk to the Whisper service and return the result."""
+    resp = await _post_with_file(
+        settings.WHISPER_TRANSCRIBE_SERVICE,
+        chunk_path,
+        form_fields,
+        client,
+    )
+    resp.raise_for_status()
+
+    result = resp.json()
+    if not isinstance(result, dict):
+        raise AppException(ErrorKey.ERROR_RESPONSE_FORMAT)
+    if result.get("error"):
+        logger.error(f"Error in whisper result for chunk {chunk_path}: {result['error']}")
+        raise AppException(ErrorKey.ERROR_RETURN_WHISPER_SERVICE)
+
+    return result
+
+
+def _split_audio_to_chunks(audio_path: str, chunk_duration_ms: int) -> List[str]:
+    """Split an audio file into chunks and return list of temp file paths."""
+    audio = AudioSegment.from_file(audio_path)
+    audio = audio.set_channels(1).set_frame_rate(16000)
+
+    if len(audio) <= chunk_duration_ms:
+        return []  # No splitting needed
+
+    file_ext = Path(audio_path).suffix.lstrip(".") or "wav"
+    chunk_paths = []
+
+    for i in range(0, len(audio), chunk_duration_ms):
+        chunk = audio[i:i + chunk_duration_ms]
+        chunk_file = tempfile.NamedTemporaryFile(
+            delete=False, suffix=f".{file_ext}", prefix="whisper_chunk_"
+        )
+        chunk_path = chunk_file.name
+        chunk_file.close()
+        chunk.export(chunk_path, format=file_ext)
+        chunk_paths.append(chunk_path)
+
+    return chunk_paths
+
+
+def _merge_chunk_results(
+        chunk_results: List[Dict[str, Any]],
+        chunk_duration_ms: int,
+        ) -> Dict[str, Any]:
+    """Merge results from multiple chunk transcriptions with adjusted timestamps."""
+    full_text_parts = []
+    all_segments = []
+
+    for idx, result in enumerate(chunk_results):
+        offset_seconds = (idx * chunk_duration_ms) / 1000.0
+        text = result.get("text", "")
+        if text:
+            full_text_parts.append(text.strip())
+
+        for segment in result.get("segments", []):
+            adjusted_segment = {
+                "start": segment["start"] + offset_seconds,
+                "end": segment["end"] + offset_seconds,
+                "text": segment["text"],
+            }
+            all_segments.append(adjusted_segment)
+
+    merged = {
+        "text": " ".join(full_text_parts),
+        "segments": all_segments,
+    }
+
+    # Preserve extra fields from the last chunk result
+    last = chunk_results[-1] if chunk_results else {}
+    for key in ("model_name", "device"):
+        if key in last:
+            merged[key] = last[key]
+
+    # Sum up processing times and audio durations
+    total_processing = sum(r.get("processing_time", 0) for r in chunk_results if r.get("processing_time"))
+    total_duration = sum(r.get("audio_duration", 0) for r in chunk_results if r.get("audio_duration"))
+    if total_processing:
+        merged["processing_time"] = total_processing
+    if total_duration:
+        merged["audio_duration"] = total_duration
+
+    return merged
+
+
+def _cleanup_temp_files(paths: List[str]) -> None:
+    """Remove temporary chunk files."""
+    for path in paths:
+        try:
+            p = Path(path)
+            if p.exists():
+                p.unlink()
+        except Exception as e:
+            logger.warning(f"Failed to remove temp file {path}: {e}")
+
+
+async def _save_source_to_temp(recording_source: Union[str, UploadFile]) -> str:
+    """Save the recording source to a temp file and return its path. Caller must clean up."""
+    if isinstance(recording_source, UploadFile):
+        await recording_source.seek(0)
+        suffix = Path(recording_source.filename or "upload.wav").suffix or ".wav"
+        async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            while chunk := await recording_source.read(1024 * 1024):
+                await tmp.write(chunk)
+            return tmp.name
+    else:
+        return recording_source  # Already a file path on disk
+
+
 async def transcribe_audio_whisper(
         recording_source: Union[str, UploadFile],
         whisper_model: Optional[str] = settings.DEFAULT_WHISPER_MODEL,
@@ -93,19 +187,91 @@ async def transcribe_audio_whisper(
         ) -> Dict[str, Any]:
     """Transcribe audio using Whisper service.
 
-    Args:
-        recording_source: Path to audio file or UploadFile object to transcribe
-        whisper_model: Whisper model to use (defaults to 'small')
-        whisper_options: Additional options for Whisper
-
-    Returns:
-        Dictionary containing transcription result or error information
+    For audio longer than WHISPER_CHUNK_DURATION_MS (default 5 minutes),
+    splits into chunks and transcribes them in parallel for faster responses.
     """
     if whisper_model is None:
         whisper_model = settings.DEFAULT_WHISPER_MODEL
 
     source_info = recording_source.filename if isinstance(recording_source, UploadFile) else recording_source
-    logger.info(f"Starting transcription for {source_info} using model {whisper_model}, with options {whisper_options}")
+    logger.info(f"Starting transcription for {source_info} using model {whisper_model}")
+
+    temp_audio_path = None
+    chunk_paths = []
+    is_temp_source = isinstance(recording_source, UploadFile)
+
+    try:
+        # Save to temp file if needed (for UploadFile or to probe duration)
+        temp_audio_path = await _save_source_to_temp(recording_source)
+
+        # Try splitting into chunks (requires ffprobe)
+        try:
+            chunk_paths = await asyncio.to_thread(
+                _split_audio_to_chunks,
+                temp_audio_path,
+                settings.WHISPER_CHUNK_DURATION_MS,
+            )
+        except FileNotFoundError:
+            logger.warning("ffprobe/ffmpeg not found locally — skipping client-side chunking, sending whole file to Whisper service")
+            chunk_paths = []
+
+        if not chunk_paths:
+            # Audio is short enough or ffprobe unavailable — send as-is
+            return await _transcribe_single_file(recording_source, whisper_model, whisper_options)
+
+        logger.info(
+            f"Split {source_info} into {len(chunk_paths)} chunks "
+            f"({settings.WHISPER_CHUNK_DURATION_MS // 1000}s each), transcribing in parallel"
+        )
+
+        form_fields = {"model": whisper_model, "whisper_options": whisper_options}
+
+        async with httpx.AsyncClient(
+                timeout=httpx.Timeout(settings.DEFAULT_TIMEOUT, connect=settings.CONNECT_TIMEOUT),
+                limits=httpx.Limits(
+                    max_connections=settings.MAX_CONNECTIONS,
+                    max_keepalive_connections=settings.MAX_KEEPALIVE_CONNECTIONS,
+                ),
+        ) as client:
+            # Transcribe chunks in parallel with concurrency limit
+            semaphore = asyncio.Semaphore(settings.WHISPER_MAX_PARALLEL_CHUNKS)
+
+            async def _transcribe_with_limit(chunk_path: str) -> Dict[str, Any]:
+                async with semaphore:
+                    return await _transcribe_single_chunk(chunk_path, form_fields, client)
+
+            chunk_results = await asyncio.gather(
+                *[_transcribe_with_limit(cp) for cp in chunk_paths]
+            )
+
+        merged = _merge_chunk_results(list(chunk_results), settings.WHISPER_CHUNK_DURATION_MS)
+        logger.info(f"Successfully transcribed {source_info} ({len(chunk_paths)} chunks merged)")
+        return merged
+
+    except AppException:
+        raise
+
+    except FileNotFoundError as e:
+        logger.error(f"Audio file not found: {e}")
+        raise AppException(ErrorKey.FILE_NOT_FOUND)
+
+    except Exception as e:
+        logger.error(f"Unexpected error during chunked transcription: {e}")
+        raise AppException(ErrorKey.INTERNAL_ERROR, status_code=500)
+
+    finally:
+        _cleanup_temp_files(chunk_paths)
+        if is_temp_source and temp_audio_path:
+            _cleanup_temp_files([temp_audio_path])
+
+
+async def _transcribe_single_file(
+        recording_source: Union[str, UploadFile],
+        whisper_model: str,
+        whisper_options: Optional[str],
+        ) -> Dict[str, Any]:
+    """Original single-file transcription for short audio."""
+    source_info = recording_source.filename if isinstance(recording_source, UploadFile) else recording_source
 
     try:
         async with httpx.AsyncClient(
@@ -115,9 +281,7 @@ async def transcribe_audio_whisper(
                         max_keepalive_connections=settings.MAX_KEEPALIVE_CONNECTIONS
                         ),
                 ) as client:
-            # Normalize options (model, language, etc.)
             form_fields = {"model": whisper_model, "whisper_options": whisper_options}
-            logger.debug(f"Request parameters: {form_fields}")
 
             try:
                 resp = await _post_with_file(
@@ -128,11 +292,9 @@ async def transcribe_audio_whisper(
                         )
                 resp.raise_for_status()
 
-                # Validate and parse response
                 try:
                     result = resp.json()
                     if not isinstance(result, dict):
-                        logger.warning(f"Unexpected response format: {type(result)}")
                         raise AppException(ErrorKey.ERROR_RESPONSE_FORMAT)
                     elif result.get("error"):
                         logger.error(f"Error in whisper result: {result['error']}")
@@ -156,10 +318,6 @@ async def transcribe_audio_whisper(
             except httpx.ConnectError:
                 logger.error(f"Failed to connect to Whisper service at {settings.WHISPER_TRANSCRIBE_SERVICE}")
                 raise AppException(ErrorKey.ERROR_CONNECTING_WHISPER_SERVICE)
-
-    except FileNotFoundError as e:
-        logger.error(f"Audio file not found: {e}")
-        raise AppException(ErrorKey.FILE_NOT_FOUND)
 
     except AppException:
         raise
