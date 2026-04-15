@@ -46,6 +46,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     role_ids: list[UUID] = Field(..., description="Roles IDs")
     user_type_id: UUID
+    group_id: UUID | None = None
 
 
 class UserRead(BaseModel):
