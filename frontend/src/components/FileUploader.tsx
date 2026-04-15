@@ -47,11 +47,14 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
       // Use the tenant-aware download behavior
       try {
         const match = serverFileUrl.match(/file-manager\/files\/([^/]+)/);
-        if (match?.[1]) {
-          const tenantId = localStorage.getItem('tenant_id') || '';
-          const fileUrl = getFileDownloadUrl(match[1], getApiUrlString, tenantId, 'source');
-          downloadFile(fileUrl, originalFileName || 'file');
+        const fileId = match?.[1];
+        if (!fileId) {
+          showError(new Error('Invalid file URL'));
+          return;
         }
+        const tenantId = localStorage.getItem('tenant_id') || '';
+        const fileUrl = getFileDownloadUrl(fileId, getApiUrlString, tenantId);
+        downloadFile(fileUrl, originalFileName || 'file');
       } catch (err) {
         showError(err);
       }
