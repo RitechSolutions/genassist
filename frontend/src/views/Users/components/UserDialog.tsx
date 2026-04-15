@@ -136,6 +136,12 @@ export function UserDialog({
       );
     }
 
+    if (dialogMode !== "create") {
+      requiredFields = requiredFields.filter(
+        (field) => field.label !== "Roles"
+      );
+    }
+
     const missingFields = requiredFields
       .filter((field) => field.isEmpty)
       .map((field) => field.label);
