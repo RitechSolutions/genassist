@@ -36,7 +36,6 @@ import {
 import { usePermissions } from "@/context/PermissionContext";
 import {
   deleteFileRecord,
-  downloadFileRecord,
   getFileBase64,
   getFileManagerSettings,
   listFiles,
@@ -44,6 +43,8 @@ import {
   type FileManagerSettings,
   type FileRecord,
 } from "@/services/fileManager";
+import { downloadFile, getFileDownloadUrl } from "@/helpers/utils";
+import { getApiUrlString } from "@/config/api";
 import {
   Download,
   FileText,
@@ -59,6 +60,9 @@ import {
 import toast from "react-hot-toast";
 import { cn } from "@/helpers/utils";
 import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group";
+import { formatDateTime } from "@/views/ActiveConversations/helpers/format";
+import { Clock } from "lucide-react";
+import { TooltipButton } from "@/components/tooltip-button";
 
 const PERM_READ = "read:file";
 const PERM_CREATE = "create:file";
@@ -316,9 +320,6 @@ function FileManagerFileBlock({
             </p>
           )}
         </div>
-        <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">
-          .{extensionOf(f).toLowerCase()}
-        </Badge>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -330,6 +331,22 @@ function FileManagerFileBlock({
             {f.mime_type}
           </span>
         )}
+      </div>
+
+
+      <div className="flex row-span-2 items-center gap-2 text-xs text-muted-foreground justify-between">
+        <div className="flex items-center gap-2">
+          <TooltipButton
+            button={<Clock className="w-3 h-3 text-muted-foreground" />}
+            tooltipContent={{ side: 'top', align: 'center', children: <p>Updated at {formatDateTime(f.updated_at)}</p> }}
+          />
+
+          <span>{formatDateTime(f.updated_at)}</span>
+        </div>
+
+        <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">
+          .{extensionOf(f).toLowerCase()}
+        </Badge>
       </div>
 
       {f.tags && f.tags.length > 0 && (
@@ -575,7 +592,9 @@ export function FileManagerFiles() {
   const handleDownload = async (f: FileRecord) => {
     setDownloadingFileId(f.id);
     try {
-      await downloadFileRecord(f.id, f.name);
+      const tenantId = localStorage.getItem("tenant_id");
+      const fileUrl = getFileDownloadUrl(f.id, getApiUrlString, tenantId || "");
+      await downloadFile(fileUrl, f.name);
     } catch {
       toast.error("Failed to download file");
     } finally {

@@ -73,6 +73,10 @@ export const updateApiKey = async (
     requestData.agent_id = apiKeyData.agent_id;
   }
 
+  if (typeof apiKeyData.expires_in_days === "number") {
+    requestData.expires_in_days = apiKeyData.expires_in_days;
+  }
+
   const response = await apiRequest<ApiKey>(
     "PATCH",
     `api-keys/${id}/`,

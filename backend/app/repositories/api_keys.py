@@ -1,23 +1,23 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
+
 from injector import inject
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, or_, select, delete, update
 from sqlalchemy.orm import selectinload
+
 from app.auth.utils import get_current_user_id
 from app.cache.redis_cache import make_key_builder
-from app.db.models import UserModel
-from app.db.models.api_key_role import ApiKeyRoleModel
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-
+from app.db.models import UserModel
 from app.db.models.api_key import ApiKeyModel
+from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
 from app.schemas.api_key import ApiKeyCreate, ApiKeyUpdate
 from app.schemas.filter import ApiKeysFilter
-
 
 api_key_key_builder  = make_key_builder("api_key")
 
@@ -71,6 +71,7 @@ class ApiKeysRepository:
                               key_val=encrypted_api_key,
                               hashed_value=hashed_value,
                               credential_expires_at=credential_expires_at,
+                              credential_expiry_days=api_key_create.expires_in_days,
                               )
         self.db.add(new_key)
         await self.db.flush()
@@ -134,6 +135,15 @@ class ApiKeysRepository:
             api_key.name = data.name
         if data.is_active is not None:
             api_key.is_active = data.is_active
+        if data.expires_in_days is not None:
+            if data.expires_in_days == 0:
+                api_key.credential_expiry_days = None
+                api_key.credential_expires_at = None
+            else:
+                api_key.credential_expiry_days = data.expires_in_days
+                api_key.credential_expires_at = datetime.now(timezone.utc) + timedelta(
+                    days=data.expires_in_days
+                )
 
         if data.role_ids is not None:
             await self.db.execute(
@@ -145,7 +155,7 @@ class ApiKeysRepository:
 
             for role_id in data.role_ids:
                 self.db.add(ApiKeyRoleModel(api_key_id=api_key.id, role_id=role_id))
-                
+
         api_key.updated_by = user_id
 
         self.db.add(api_key)
@@ -164,6 +174,27 @@ class ApiKeysRepository:
         api_key = await self.get_by_id(api_key_id)
         if not api_key:
             raise AppException(ErrorKey.API_KEY_NOT_FOUND, status_code=404)
+
+        # If this key has an expiry policy, restart the timer on rotation from "now".
+        if api_key.credential_expiry_days is None and api_key.credential_expires_at is not None and getattr(api_key, "created_at", None) is not None:
+            # Best-effort backfill for legacy keys created before `credential_expiry_days` existed.
+            created_at = api_key.created_at
+            exp = api_key.credential_expires_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            lifetime_days = int(round((exp - created_at).total_seconds() / 86400))
+            if lifetime_days in (30, 90, 180, 365):
+                api_key.credential_expiry_days = lifetime_days
+
+        if api_key.credential_expiry_days is not None:
+            if api_key.credential_expiry_days > 0:
+                api_key.credential_expires_at = datetime.now(timezone.utc) + timedelta(
+                    days=api_key.credential_expiry_days
+                )
+            else:
+                api_key.credential_expires_at = None
 
         if overlap_seconds > 0:
             api_key.previous_hashed_value = api_key.hashed_value
