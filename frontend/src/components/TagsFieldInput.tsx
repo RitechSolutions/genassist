@@ -4,7 +4,7 @@ import { Badge } from "@/components/badge";
 import { cn } from "@/helpers/utils";
 import type { FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
 
-function normalizeTagsValue(value: FieldValue | undefined, fallback: FieldValue | undefined): string[] {
+function normalizeTagsValue(value: FieldValue, fallback: FieldValue): string[] {
   const v = value ?? fallback;
   if (Array.isArray(v)) {
     return v.map((x) => String(x).trim()).filter(Boolean);
@@ -29,8 +29,8 @@ export function TagsFieldInput({
   onChange,
 }: {
   id: string;
-  value: FieldValue | undefined;
-  fieldDefault?: FieldValue | undefined;
+  value: FieldValue;
+  fieldDefault?: FieldValue;
   placeholder?: string;
   onChange: (next: string[]) => void;
 }) {

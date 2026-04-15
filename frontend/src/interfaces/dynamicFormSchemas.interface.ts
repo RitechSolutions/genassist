@@ -9,7 +9,7 @@
 export type FieldType = 'text' | 'number' | 'password' | 'select' | 'boolean' | 'tags' | 'files';
 
 // The set of values a form field can hold.
-export type FieldValue = string | number | boolean | string[];
+export type FieldValue = string | number | boolean | string[] | undefined;
 
 /**
  * Conditional field definition for showing/hiding fields based on other field values.
