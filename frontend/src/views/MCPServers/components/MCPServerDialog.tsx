@@ -55,6 +55,7 @@ export function MCPServerDialog({
   const [oauth2ClientSecret, setOauth2ClientSecret] = useState("");
   const [oauth2IssuerUrl, setOauth2IssuerUrl] = useState("");
   const [oauth2Scope, setOauth2Scope] = useState("");
+  const [oauth2Audience, setOauth2Audience] = useState("");
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -95,6 +96,9 @@ export function MCPServerDialog({
           typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.trim() : ""
         );
         setOauth2Scope(typeof av.oauth2_scope === "string" ? av.oauth2_scope : "");
+        setOauth2Audience(
+          typeof av.oauth2_audience === "string" ? av.oauth2_audience.trim() : ""
+        );
         setDescription(serverToEdit.description || "");
         setIsActive(serverToEdit.is_active === 1);
         setSelectedWorkflows(serverToEdit.workflows || []);
@@ -108,6 +112,7 @@ export function MCPServerDialog({
         setOauth2ClientSecret("");
         setOauth2IssuerUrl("");
         setOauth2Scope("");
+        setOauth2Audience("");
         setDescription("");
         setIsActive(true);
         setSelectedWorkflows([]);
@@ -208,6 +213,9 @@ export function MCPServerDialog({
                 oauth2_client_secret: oauth2ClientSecret.trim(),
                 oauth2_issuer_url: oauth2IssuerUrl.trim(),
                 ...(oauth2Scope.trim() ? { oauth2_scope: oauth2Scope.trim() } : {}),
+                ...(oauth2Audience.trim()
+                  ? { oauth2_audience: oauth2Audience.trim() }
+                  : {}),
               }),
         };
         await createMCPServer(payload);
@@ -245,6 +253,14 @@ export function MCPServerDialog({
           const nextScope = oauth2Scope.trim();
           if (nextScope !== prevScope) {
             updatePayload.oauth2_scope = nextScope || "";
+          }
+          const prevAudience =
+            typeof prevAv.oauth2_audience === "string"
+              ? prevAv.oauth2_audience.trim()
+              : "";
+          const nextAudience = oauth2Audience.trim();
+          if (nextAudience !== prevAudience) {
+            updatePayload.oauth2_audience = nextAudience || "";
           }
           const prevCid =
             typeof prevAv.oauth2_client_id === "string" ? prevAv.oauth2_client_id : "";
@@ -687,6 +703,22 @@ export function MCPServerDialog({
                     Optional. Space-separated values that must all appear in the token&apos;s{" "}
                     <code className="text-xs">scope</code> or <code className="text-xs">scp</code> claims. Leave
                     empty to skip scope checks (signature and issuer are still validated).
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="oauth-audience">Audience</Label>
+                  <Input
+                    id="oauth-audience"
+                    value={oauth2Audience}
+                    onChange={(e) => setOauth2Audience(e.target.value)}
+                    placeholder="api://your-api-id, https://api.example.com"
+                    className="font-mono text-sm"
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-gray-500">
+                    Optional. Comma-separated allowlist for JWT <code className="text-xs">aud</code>. Leave
+                    empty to skip audience checks.
                   </p>
                 </div>
               </div>

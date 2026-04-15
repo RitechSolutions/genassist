@@ -118,6 +118,11 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
       ? (connectionConfig.oauth2_scopes || []).join(" ")
       : ""
   );
+  const [oauth2Audience, setOauth2Audience] = useState(
+    (connectionType === "http" || connectionType === "sse") && "oauth2_audience" in connectionConfig
+      ? connectionConfig.oauth2_audience || ""
+      : ""
+  );
   const [httpTimeout, setHttpTimeout] = useState(
     (connectionType === "http" || connectionType === "sse") && "timeout" in connectionConfig
       ? connectionConfig.timeout?.toString() || "30"
@@ -150,6 +155,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           setOauth2ClientSecret(data.connectionConfig.oauth2_client_secret || "");
           setOauth2DiscoveryUrl(initialDiscovery(data.connectionConfig));
           setOauth2Scopes((data.connectionConfig.oauth2_scopes || []).join(" "));
+          setOauth2Audience(data.connectionConfig.oauth2_audience || "");
           setHttpTimeout(data.connectionConfig.timeout?.toString() || "30");
           setHttpHeaders(JSON.stringify(data.connectionConfig.headers || {}, null, 2));
         }
@@ -168,6 +174,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
           setOauth2ClientSecret("");
           setOauth2DiscoveryUrl("");
           setOauth2Scopes("");
+          setOauth2Audience("");
           setHttpTimeout("30");
           setHttpHeaders("{}");
         }
@@ -206,13 +213,14 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
         cfg.oauth2_scopes = oauth2Scopes
           ? oauth2Scopes.split(/\s+/).filter(Boolean)
           : undefined;
+        cfg.oauth2_audience = oauth2Audience.trim() ? oauth2Audience.trim() : undefined;
       }
       setConnectionConfig(cfg);
     }
   }, [
     connectionType, stdioCommand, stdioArgs, stdioEnv,
     httpUrl, authType, httpApiKey,
-    oauth2ClientId, oauth2ClientSecret, oauth2DiscoveryUrl, oauth2Scopes,
+    oauth2ClientId, oauth2ClientSecret, oauth2DiscoveryUrl, oauth2Scopes, oauth2Audience,
     httpTimeout, httpHeaders,
   ]);
 
@@ -607,6 +615,21 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
                   Space-separated; sent as the <code className="text-xs">scope</code> parameter on the token
                   request. Many MCP / OIDC setups use something like{" "}
                   <code className="text-xs">openid mcp</code>.
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="oauth2Audience">Audience</Label>
+                <DraggableInput
+                  id="oauth2Audience"
+                  value={oauth2Audience}
+                  onChange={(e) => setOauth2Audience(e.target.value)}
+                  placeholder="https://api.example.com"
+                  className="w-full"
+                />
+                <div className="text-xs text-gray-500 break-words">
+                  Optional. Some providers require an <code className="text-xs">audience</code> parameter on
+                  the token request (e.g., Auth0). Leave empty if your IdP does not use it.
                 </div>
               </div>
             </div>
