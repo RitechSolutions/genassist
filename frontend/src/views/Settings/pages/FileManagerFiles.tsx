@@ -36,7 +36,6 @@ import {
 import { usePermissions } from "@/context/PermissionContext";
 import {
   deleteFileRecord,
-  downloadFileRecord,
   getFileBase64,
   getFileManagerSettings,
   listFiles,
@@ -44,6 +43,8 @@ import {
   type FileManagerSettings,
   type FileRecord,
 } from "@/services/fileManager";
+import { downloadFile, getFileDownloadUrl } from "@/helpers/utils";
+import { getApiUrlString } from "@/config/api";
 import {
   Download,
   FileText,
@@ -591,7 +592,9 @@ export function FileManagerFiles() {
   const handleDownload = async (f: FileRecord) => {
     setDownloadingFileId(f.id);
     try {
-      await downloadFileRecord(f.id, f.name);
+      const tenantId = localStorage.getItem("tenant_id");
+      const fileUrl = getFileDownloadUrl(f.id, getApiUrlString, tenantId || "");
+      await downloadFile(fileUrl, f.name);
     } catch {
       toast.error("Failed to download file");
     } finally {
