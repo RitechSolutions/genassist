@@ -50,11 +50,13 @@ class S3Client:
         """
         try:
             # Prepare list_objects_v2 parameters
+            cleaned_prefix = (prefix or "").lstrip("/").strip()
             params = {
                 'Bucket': self.bucket_name,
-                'Prefix': prefix,
                 'MaxKeys': max_keys
             }
+            if cleaned_prefix:
+                params['Prefix'] = cleaned_prefix
 
             if continuation_token:
                 params['ContinuationToken'] = continuation_token
