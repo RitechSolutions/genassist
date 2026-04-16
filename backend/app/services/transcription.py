@@ -7,7 +7,6 @@ import tempfile
 from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 from starlette.datastructures import UploadFile
-from pydub import AudioSegment
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -89,7 +88,13 @@ async def _transcribe_single_chunk(
 
 
 def _split_audio_to_chunks(audio_path: str, chunk_duration_ms: int) -> List[str]:
-    """Split an audio file into chunks and return list of temp file paths."""
+    """Split an audio file into chunks and return list of temp file paths.
+
+    Raises FileNotFoundError if ffmpeg/ffprobe is not available,
+    or any pydub/decode error if the audio cannot be processed.
+    """
+    from pydub import AudioSegment
+
     audio = AudioSegment.from_file(audio_path)
     audio = audio.set_channels(1).set_frame_rate(16000)
 
@@ -204,19 +209,22 @@ async def transcribe_audio_whisper(
         # Save to temp file if needed (for UploadFile or to probe duration)
         temp_audio_path = await _save_source_to_temp(recording_source)
 
-        # Try splitting into chunks (requires ffprobe)
+        # Try splitting into chunks (requires ffmpeg/ffprobe + decodable audio)
         try:
             chunk_paths = await asyncio.to_thread(
                 _split_audio_to_chunks,
                 temp_audio_path,
                 settings.WHISPER_CHUNK_DURATION_MS,
             )
-        except FileNotFoundError:
-            logger.warning("ffprobe/ffmpeg not found locally — skipping client-side chunking, sending whole file to Whisper service")
+        except Exception as chunk_err:
+            logger.warning(
+                f"Client-side audio chunking failed ({type(chunk_err).__name__}: {chunk_err}) "
+                "— falling back to single-file transcription via Whisper service"
+            )
             chunk_paths = []
 
         if not chunk_paths:
-            # Audio is short enough or ffprobe unavailable — send as-is
+            # Audio is short enough or chunking unavailable — send as-is
             return await _transcribe_single_file(recording_source, whisper_model, whisper_options)
 
         logger.info(

@@ -85,7 +85,7 @@ class ProjectSettings(BaseSettings):
     )
     WHISPER_TRANSCRIBE_SERVICE: str = "http://localhost:8001/transcribe"
     WHISPER_CHUNK_DURATION_MS: int = 5 * 60 * 1000  # 5 minutes in milliseconds
-    WHISPER_MAX_PARALLEL_CHUNKS: int = 4  # Max concurrent chunk transcriptions
+    WHISPER_MAX_PARALLEL_CHUNKS: int = 2  # Max concurrent chunk transcriptions
 
     # === File Storage ===
     UPLOAD_FOLDER: str = str(DATA_VOLUME / "uploads")
