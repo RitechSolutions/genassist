@@ -11,6 +11,10 @@ import TemplateNode from "./templateNode";
 import DataMapperNode from "./dataMapperNode";
 import GuardrailProvenanceNode from "./guardrailProvenanceNode";
 import GuardrailNliNode from "./guardrailNliNode";
+import {
+  DATA_TRANSFORMER_HELP_CONTENT,
+  TEXT_TEMPLATE_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const TEMPLATE_NODE_DEFINITION: NodeTypeDefinition<TemplateNodeData> = {
   type: "templateNode",
@@ -18,6 +22,7 @@ export const TEMPLATE_NODE_DEFINITION: NodeTypeDefinition<TemplateNodeData> = {
   description:
     "Generates formatted text using a configurable template with dynamic variables.",
   shortDescription: "Generate text from a template",
+  helpContent: TEXT_TEMPLATE_HELP_CONTENT,
   configSubtitle: "Configure the text template and its dynamic variables.",
   category: "formatting",
   icon: "FileText",
@@ -58,6 +63,7 @@ export const DATA_MAPPER_NODE_DEFINITION: NodeTypeDefinition<DataMapperNodeData>
     description:
       "Transforms data using mapping rules or custom Python scripts.",
     shortDescription: "Transform data",
+    helpContent: DATA_TRANSFORMER_HELP_CONTENT,
     configSubtitle:
       "Configure data transformation rules, including mapping logic and Python script.",
     category: "formatting",
