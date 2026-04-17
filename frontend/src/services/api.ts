@@ -1,4 +1,16 @@
-import { apiRequest, getApiUrl, api } from "@/config/api";
+import {
+  apiRequest,
+  getApiUrl,
+  api,
+  formatUploadOrNetworkError,
+  API_UPLOAD_TIMEOUT_MS,
+  API_DEFAULT_TIMEOUT_MS,
+} from "@/config/api";
+import {
+  FILES_UPLOAD_CHUNK_SIZE,
+  FILES_UPLOAD_SESSION_THRESHOLD_BYTES,
+} from "@/config/uploadConstants";
+import type { AxiosRequestConfig } from "axios";
 import { DynamicFormSchema } from "@/interfaces/dynamicFormSchemas.interface";
 import {
   AgentConfig,
@@ -51,7 +63,7 @@ async function apiRequestWithFormData<T>(
   method: "GET" | "POST" | "PUT" | "DELETE",
   endpoint: string,
   formData?: FormData,
-  config: Record<string, unknown> = {}
+  config: AxiosRequestConfig = {}
 ): Promise<T> {
   const baseURL = await getApiUrl();
   const fullUrl = `${baseURL}genagent/${endpoint.replace(/^\//, "")}`;
@@ -61,19 +73,12 @@ async function apiRequestWithFormData<T>(
       method,
       url: fullUrl,
       data: formData,
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
+      timeout: config.timeout ?? API_UPLOAD_TIMEOUT_MS,
       ...config,
     });
     return response.data;
   } catch (error: unknown) {
-    const axiosError = error as AxiosError;
-    const errorData = (axiosError.response?.data as { detail?: string }) || {};
-    throw new Error(
-      errorData.detail ||
-        `API error: ${axiosError.response?.status || axiosError.message}`
-    );
+    throw new Error(formatUploadOrNetworkError(error));
   }
 }
 
@@ -163,7 +168,8 @@ export async function uploadWelcomeImage(
   return apiRequestWithFormData<{ status: string; message: string }>(
     "POST",
     `agents/configs/${agentId}/welcome-image`,
-    formData
+    formData,
+    { timeout: API_DEFAULT_TIMEOUT_MS }
   );
 }
 
@@ -253,13 +259,126 @@ export async function finalizeKnowledgeItem(id: string) {
   return apiRequest("POST", `genagent/knowledge/finalize/${id}`);
 }
 
-export const uploadFiles = async (files: File[]): Promise<UploadFileResponse[]> => {
-  const formData = new FormData();
-  files.forEach((file) => {
-    formData.append("files", file);
-  });
+export type UploadKnowledgeFilesOptions = {
+  onProgress?: (percent: number) => void;
+};
 
-  return apiRequestWithFormData<UploadFileResponse[]>("POST", "knowledge/upload", formData);
+/** Never show 100% until the server response completes. */
+const capClientProgress = (pct: number): number => Math.min(95, Math.max(0, pct));
+
+async function uploadFilesMultipartViaFileManager(
+  files: File[],
+  options?: UploadKnowledgeFilesOptions
+): Promise<UploadFileResponse[]> {
+  const baseURL = await getApiUrl();
+  const url = `${baseURL}file-manager/upload`;
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  try {
+    const response = await api.post<UploadFileResponse[]>(url, formData, {
+      timeout: API_UPLOAD_TIMEOUT_MS,
+      onUploadProgress: (ev) => {
+        if (!ev.total || !options?.onProgress) return;
+        options.onProgress(
+          capClientProgress(Math.round((ev.loaded * 100) / ev.total))
+        );
+      },
+    });
+    options?.onProgress?.(100);
+    return response.data;
+  } catch (error: unknown) {
+    throw new Error(formatUploadOrNetworkError(error));
+  }
+}
+
+interface KbUploadSessionCreateResponse {
+  session_id: string;
+  max_chunk_bytes: number;
+}
+
+async function uploadKnowledgeFileViaSession(
+  file: File,
+  options?: UploadKnowledgeFilesOptions
+): Promise<UploadFileResponse[]> {
+  const baseURL = await getApiUrl();
+  const createUrl = `${baseURL}file-manager/upload-session`;
+  const { data: session } = await api.post<KbUploadSessionCreateResponse>(
+    createUrl,
+    {
+      original_filename: file.name,
+      expected_size: file.size,
+      content_type: file.type || undefined,
+    },
+    { timeout: API_UPLOAD_TIMEOUT_MS }
+  );
+  const sessionId = session.session_id;
+  const chunkSize = Math.min(FILES_UPLOAD_CHUNK_SIZE, session.max_chunk_bytes);
+
+  let offset = 0;
+  let chunkIndex = 0;
+  while (offset < file.size) {
+    const end = Math.min(offset + chunkSize, file.size);
+    const blob = file.slice(offset, end);
+    const fd = new FormData();
+    fd.append("chunk", blob, "chunk.bin");
+    fd.append("chunk_index", String(chunkIndex));
+    fd.append("is_last", end >= file.size ? "true" : "false");
+    const chunkUrl = `${baseURL}file-manager/upload-session/${sessionId}/chunk`;
+    await api.post(chunkUrl, fd, {
+      timeout: API_UPLOAD_TIMEOUT_MS,
+      onUploadProgress: (ev) => {
+        if (!options?.onProgress) return;
+        const loaded = offset + (ev.loaded ?? 0);
+        const pct = Math.min(100, Math.round((loaded * 100) / Math.max(file.size, 1)));
+        options.onProgress(capClientProgress(pct));
+      },
+    });
+    offset = end;
+    chunkIndex += 1;
+  }
+
+  // Upload is fully sent; the server may still need time to assemble/commit.
+  options?.onProgress?.(95);
+  const completeUrl = `${baseURL}file-manager/upload-session/${sessionId}/complete`;
+  const { data: one } = await api.post<UploadFileResponse>(completeUrl, {}, {
+    timeout: API_UPLOAD_TIMEOUT_MS,
+  });
+  options?.onProgress?.(100);
+  return [one];
+}
+
+/**
+ * Upload knowledge files. Uses chunked session upload for files larger than
+ * FILES_UPLOAD_SESSION_THRESHOLD_BYTES; otherwise one multipart request.
+ */
+export const uploadFiles = async (
+  files: File[],
+  options?: UploadKnowledgeFilesOptions
+): Promise<UploadFileResponse[]> => {
+  if (files.length === 0) return [];
+  const allSmall = files.every(
+    (f) => f.size <= FILES_UPLOAD_SESSION_THRESHOLD_BYTES
+  );
+  if (allSmall) {
+    return uploadFilesMultipartViaFileManager(files, options);
+  }
+  const results: UploadFileResponse[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const wrapProgress = (p: number) => {
+      if (!options?.onProgress) return;
+      const totalPct = ((i + p / 100) / files.length) * 100;
+      options.onProgress(Math.min(100, Math.round(totalPct)));
+    };
+    if (f.size > FILES_UPLOAD_SESSION_THRESHOLD_BYTES) {
+      const part = await uploadKnowledgeFileViaSession(f, { onProgress: wrapProgress });
+      results.push(...part);
+    } else {
+      const part = await uploadFilesMultipartViaFileManager([f], { onProgress: wrapProgress });
+      results.push(...part);
+    }
+  }
+  return results;
 };
 
 // Endpoint to trigger KB synchronization execution MANUALLY
