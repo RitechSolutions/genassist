@@ -23,8 +23,8 @@ import {
 import { ChevronLeft, ChevronRight, Check, Database, Workflow, Settings, ClipboardCheck } from "lucide-react";
 import { cn } from "@/helpers/utils";
 import type { TestSuite } from "@/interfaces/testSuite.interface";
-import type { Workflow as WorkflowType } from "@/interfaces/workflow.interface";
-import type { LLMProvider } from "@/interfaces/llmProvider.interface";
+import type { WorkflowMinimal } from "@/interfaces/workflow.interface";
+import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 
 const METRICS = [
   { value: "exact_match", label: "Exact Match", description: "Checks if output exactly matches expected" },
@@ -73,8 +73,8 @@ interface EvaluationWizardProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: EvaluationWizardData) => Promise<void>;
   suites: TestSuite[];
-  workflows: WorkflowType[];
-  providers: LLMProvider[];
+  workflows: WorkflowMinimal[];
+  providers: LLMProviderMinimal[];
   initialData?: Partial<EvaluationWizardData>;
   mode?: "create" | "edit";
 }
@@ -284,7 +284,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 <SelectContent>
                   <SelectItem value="none">Use dataset default workflow</SelectItem>
                   {workflows
-                    .filter((wf): wf is WorkflowType & { id: string } => Boolean(wf.id))
+                    .filter((wf): wf is WorkflowMinimal => Boolean(wf.id))
                     .map((wf) => (
                       <SelectItem key={wf.id} value={wf.id}>
                         {wf.name} (v{wf.version})

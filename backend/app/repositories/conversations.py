@@ -2,7 +2,8 @@ import datetime
 from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 from injector import inject
-from sqlalchemy import asc, cast, desc, func, and_, or_, nulls_last, String
+from sqlalchemy import asc, cast, desc, func, and_, or_, nulls_last, String, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import contains_eager, joinedload, selectinload
@@ -12,7 +13,10 @@ from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
 from app.core.utils.enums.sort_direction_enum import SortDirection
 from app.core.utils.sql_alchemy_utils import add_dynamic_ordering, add_pagination
+from app.db.events.group_scope import get_group_scope_clause
 from app.db.models.conversation import ConversationModel
+from starlette_context import context
+from starlette_context.errors import ContextDoesNotExistError
 from app.db.models.message_model import TranscriptMessageModel
 from app.schemas.conversation import ConversationCreate
 from app.schemas.filter import ConversationFilter
@@ -197,6 +201,31 @@ class ConversationRepository:
         await self.db.refresh(conversation)
         return conversation
 
+    def _get_conversation_group_clause(self):
+        """Return a group-scope WHERE clause only when the current user has a group or
+        supervised groups. No-group users fall back to the operator_id filter set by the
+        service layer, so we must not apply the created_by==user_id fallback here."""
+        try:
+            group_id = context.get("group_id")
+            supervised_group_ids = context.get("supervised_group_ids") or []
+        except (LookupError, ContextDoesNotExistError):
+            return None
+        if not (group_id or supervised_group_ids):
+            return None
+        return get_group_scope_clause(ConversationModel)  # returns None
+
+    async def update_custom_attributes(
+        self, conversation_id: UUID, custom_attributes: dict
+    ) -> None:
+        """Update only the custom_attributes column without touching ORM relationships."""
+        stmt = (
+            update(ConversationModel)
+            .where(ConversationModel.id == conversation_id)
+            .values(custom_attributes=custom_attributes)
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
+
     def _apply_base_filters(self, query, conversation_filter: ConversationFilter):
         """Apply all shared WHERE clauses so fetch and count stay in sync."""
         if conversation_filter.minimum_hostility_score:
@@ -239,9 +268,37 @@ class ConversationRepository:
         if conversation_filter.exclude_empty:
             query = query.where(ConversationModel.word_count > 0)
 
+        if conversation_filter.search:
+            search_term = f"%{conversation_filter.search}%"
+            ts_query = func.plainto_tsquery("english", conversation_filter.search)
+            message_exists = select(TranscriptMessageModel.id).where(
+                TranscriptMessageModel.conversation_id == ConversationModel.id,
+                TranscriptMessageModel.text_search.op("@@")(ts_query),
+            ).exists()
+            analysis_match = select(ConversationAnalysisModel.id).where(
+                ConversationAnalysisModel.conversation_id == ConversationModel.id,
+                ConversationAnalysisModel.summary.ilike(search_term),
+            ).exists()
+            query = query.where(
+                or_(
+                    ConversationModel.topic.ilike(search_term),
+                    analysis_match,
+                    message_exists,
+                )
+            )
+
         if conversation_filter.id_suffix:
             query = query.where(
                 cast(ConversationModel.id, String).like(f"%{conversation_filter.id_suffix.lower()}")
+            )
+
+        custom_attrs = conversation_filter.custom_attributes_dict
+        if custom_attrs:
+            # Use @> (contains) operator to leverage the GIN index
+            query = query.where(
+                ConversationModel.custom_attributes.op("@>")(
+                    cast(custom_attrs, JSONB)
+                )
             )
 
         # Conditional topic filtering
@@ -418,6 +475,10 @@ class ConversationRepository:
         """
         query = select(func.count(ConversationModel.id))
         query = self._apply_base_filters(query, conversation_filter)
+
+        group_clause = self._get_conversation_group_clause()
+        if group_clause is not None:
+            query = query.where(group_clause)
 
         # Sentiment and score range filters need the analysis join
         needs_join = self._needs_analysis_join(conversation_filter)

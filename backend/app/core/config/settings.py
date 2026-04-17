@@ -52,6 +52,7 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_CHECK_SCHEDULED_PIPELINE_RUNS_TASK: bool = True
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
+    CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
 
     # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
     # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
@@ -83,6 +84,8 @@ class ProjectSettings(BaseSettings):
         "webm",
     )
     WHISPER_TRANSCRIBE_SERVICE: str = "http://localhost:8001/transcribe"
+    WHISPER_CHUNK_DURATION_MS: int = 5 * 60 * 1000  # 5 minutes in milliseconds
+    WHISPER_MAX_PARALLEL_CHUNKS: int = 2  # Max concurrent chunk transcriptions
 
     # === File Storage ===
     UPLOAD_FOLDER: str = str(DATA_VOLUME / "uploads")

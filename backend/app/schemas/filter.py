@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
@@ -66,7 +67,22 @@ class ConversationFilter(BaseFilterModel):
     from_create_datetime_messages: Optional[datetime] = Field(None, description="Start datetime message was created")
     to_create_datetime_messages: Optional[datetime] = Field(None, description="End datetime message was created")
     workflow_id: Optional[UUID] = Field(None, description="Filter conversations by the workflow used by the agent")
+    search: Optional[str] = Field(None, description="Search conversations by topic or message (case-insensitive)")
     id_suffix: Optional[str] = Field(None, description="Filter conversations by the last N characters of the UUID")
+    custom_attributes: Optional[str] = Field(
+        None,
+        description='JSON-encoded custom attribute filters, e.g. {"region": "Germany"}',
+    )
+
+    @property
+    def custom_attributes_dict(self) -> dict[str, str] | None:
+        if not self.custom_attributes:
+            return None
+        try:
+            parsed = json.loads(self.custom_attributes)
+            return parsed if isinstance(parsed, dict) else None
+        except (json.JSONDecodeError, TypeError):
+            return None
 
 
 class ApiKeysFilter(BaseFilterModel):

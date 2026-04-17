@@ -283,7 +283,8 @@ class FileManagerService:
         user_id: Optional[UUID] = None,
         storage_provider: Optional[str] = None,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
+        offset: Optional[int] = None,
+        tag: Optional[str] = None,
     ) -> list[FileModel]:
         """List files with optional filtering."""
         return await self.repository.list_files(
@@ -291,7 +292,8 @@ class FileManagerService:
             storage_provider=storage_provider,
             user_id=user_id,
             limit=limit,
-            offset=offset
+            offset=offset,
+            tag=tag,
         )
 
     async def update_file(self, file_id: UUID, file: UploadFile, file_base: FileBase) -> FileModel:

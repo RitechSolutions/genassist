@@ -673,6 +673,10 @@ class TestSuiteService:
         run.summary_metrics = summary
         await self.run_repo.update(run)
 
+    async def get_runs_by_ids(self, ids: List[str]) -> List[TestRunInDB]:
+        rows = await self.run_repo.get_by_ids(ids)
+        return [TestRunInDB.model_validate(r, from_attributes=True) for r in rows]
+
     async def get_run(self, run_id: UUID) -> TestRun:
         run = await self.run_repo.get_by_id(run_id)
         if not run:

@@ -7,6 +7,11 @@ import {
 } from "@/components/dialog";
 import { Button } from "@/components/button";
 import { getApiKeys, revokeApiKey } from "@/services/apiKeys";
+import { ApiKeyExpiryLines } from "@/components/api-keys/ApiKeyExpiryLines";
+import {
+  RotateApiKeyDialog,
+  type RotateApiKeyTarget,
+} from "@/components/api-keys/RotateApiKeyDialog";
 import ApiKeyForm from "./ApiKeyForm";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import {
@@ -28,8 +33,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/alert-dialog";
-import { PlusCircle, Pencil, Trash2, Copy, Eye, EyeOff } from "lucide-react";
-import { Input } from "@/components/input";
+import { PlusCircle, Pencil, Trash2, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/badge";
 import toast from "react-hot-toast";
 import { SecretInput } from "@/components/SecretInput";
@@ -53,9 +57,9 @@ export default function ManageApiKeysModal({
 
   const [secrets, setSecrets] = useState<Record<string, string>>({});
 
-  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
-  const toggleVisibility = (id: string) =>
-    setVisibleKeys((v) => ({ ...v, [id]: !v[id] }));
+  const [rotateTarget, setRotateTarget] = useState<RotateApiKeyTarget | null>(
+    null
+  );
 
   async function load() {
     const data = await getApiKeys(userId);
@@ -66,8 +70,6 @@ export default function ManageApiKeysModal({
       if (k.key_val) seeded[k.id] = k.key_val;
     });
     setSecrets(seeded);
-
-    setVisibleKeys(data.reduce((acc, k) => ({ ...acc, [k.id]: false }), {}));
   }
 
   useEffect(() => {
@@ -94,16 +96,10 @@ export default function ManageApiKeysModal({
     await load();
   }
 
-  const copyKey = (keyId: string) => {
-    const txt = secrets[keyId] ?? "";
-    navigator.clipboard.writeText(txt);
-    toast.success("API key copied to clipboard.");
-  };
-
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-4xl overflow-hidden">
+        <DialogContent className="sm:max-w-5xl overflow-hidden">
           <DialogHeader className="flex flex-row items-center justify-between">
             <DialogTitle className="text-xl font-semibold">
               Manage API Keys
@@ -132,7 +128,12 @@ export default function ManageApiKeysModal({
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead className="text-left">API Key</TableHead>
-                    <TableHead className="text-left">Status</TableHead>
+                    <TableHead className="text-left whitespace-nowrap">
+                      Status
+                    </TableHead>
+                    <TableHead className="text-left min-w-[200px]">
+                      Validity
+                    </TableHead>
                     <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -140,7 +141,6 @@ export default function ManageApiKeysModal({
                 <TableBody>
                   {keys.map((k) => {
                     const secret = secrets[k.id] || "";
-                    const isVisible = visibleKeys[k.id];
                     return (
                       <TableRow key={k.id}>
                         <TableCell className="font-medium">{k.name}</TableCell>
@@ -149,7 +149,7 @@ export default function ManageApiKeysModal({
                           <SecretInput value={secret} className="w-full" />
                         </TableCell>
 
-                        <TableCell>
+                        <TableCell className="align-top">
                           <Badge
                             variant={
                               k.is_active === 1 ? "default" : "secondary"
@@ -159,7 +159,22 @@ export default function ManageApiKeysModal({
                           </Badge>
                         </TableCell>
 
+                        <TableCell className="align-top max-w-[260px]">
+                          <ApiKeyExpiryLines apiKey={k} />
+                        </TableCell>
+
                         <TableCell className="text-right space-x-2 flex">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Rotate secret"
+                            onClick={() =>
+                              setRotateTarget({ key: k, overlap: "0" })
+                            }
+                            className="h-8 px-2 inline-flex items-center"
+                          >
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -221,6 +236,21 @@ export default function ManageApiKeysModal({
         open={formOpen}
         onClose={() => setFormOpen(false)}
         onSaved={handleSave}
+      />
+
+      <RotateApiKeyDialog
+        open={rotateTarget !== null}
+        target={rotateTarget}
+        onOpenChange={(open) => {
+          if (!open) setRotateTarget(null);
+        }}
+        onRotated={(saved) => {
+          setKeys((rows) => rows.map((x) => (x.id === saved.id ? saved : x)));
+          if (saved.key_val) {
+            setSecrets((s) => ({ ...s, [saved.id]: saved.key_val! }));
+          }
+          setRotateTarget(null);
+        }}
       />
     </>
   );

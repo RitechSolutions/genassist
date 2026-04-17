@@ -22,6 +22,7 @@ from app.services.agent_config import AgentConfigService
 from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import update_stats_incrementally
 from app.services.conversations import ConversationService
+from app.core.utils.custom_attributes import extract_custom_attributes
 from app.services.file_manager import FileManagerService
 
 logger = logging.getLogger(__name__)
@@ -97,7 +98,7 @@ async def process_conversation_update_with_agent(
     await send_message_to_socket(user_message, conversation_id, current_user_id, tenant_id)
 
     if conversation.status == ConversationStatus.IN_PROGRESS.value:
-        agent = await agent_config_service.get_by_user_id(current_user_id)
+        agent = await agent_config_service.get_by_user_id(current_user_id, with_workflow=True)
 
         session_data = {"metadata": model.metadata if model.metadata else {}}
         session_data["thread_id"] = str(conversation_id)
@@ -203,8 +204,33 @@ async def process_conversation_update_with_agent(
         )
     )
 
+    # Persist custom workflow attributes
+    if conversation.status == ConversationStatus.IN_PROGRESS.value:
+        await _persist_custom_attributes(
+            service, agent, agent_response, updated_conversation
+        )
+
     # return the updated conversation
     return updated_conversation
+
+
+async def _persist_custom_attributes(
+    service: ConversationService,
+    agent,
+    agent_response: dict,
+    conversation: ConversationModel,
+) -> None:
+    """Extract filterable workflow attributes and store them on the conversation."""
+    try:
+        workflow_nodes = agent.workflow.get("nodes") if agent.workflow else None
+        new_attrs = extract_custom_attributes(agent_response, workflow_nodes=workflow_nodes)
+        if new_attrs:
+            existing = conversation.custom_attributes or {}
+            existing.update(new_attrs)
+            await service.update_custom_attributes(conversation.id, existing)
+            conversation.custom_attributes = existing
+    except Exception as e:
+        logger.warning(f"Failed to persist custom_attributes: {e}")
 
 
 async def get_or_create_conversation(
