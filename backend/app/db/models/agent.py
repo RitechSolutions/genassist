@@ -6,9 +6,10 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.events.group_scope import GroupScopedMixin
 
 
-class AgentModel(Base):
+class AgentModel(Base, GroupScopedMixin):
     __tablename__ = "agents"
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)

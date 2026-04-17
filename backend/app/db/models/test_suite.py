@@ -53,13 +53,13 @@ class TestSuiteModel(Base):
         "TestCaseModel",
         back_populates="suite",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
     )
     runs: Mapped[List["TestRunModel"]] = relationship(
         "TestRunModel",
         back_populates="suite",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
     )
 
 
@@ -89,7 +89,7 @@ class TestCaseModel(Base):
         "TestResultModel",
         back_populates="case",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
     )
 
 
@@ -126,7 +126,7 @@ class TestRunModel(Base):
         "TestResultModel",
         back_populates="run",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
     )
 
 

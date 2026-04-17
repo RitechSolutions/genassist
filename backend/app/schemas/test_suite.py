@@ -184,6 +184,13 @@ class TestRun(TestRunInDB):
 # TestEvaluation
 # ---------------------------------------------------------------------------
 
+class BatchRunsRequest(BaseModel):
+    ids: List[str] = Field(
+        ...,
+        description="List of test run UUIDs to fetch.",
+    )
+
+
 class TestEvaluationBase(BaseModel):
     name: str
     description: Optional[str] = None

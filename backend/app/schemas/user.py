@@ -46,6 +46,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     role_ids: list[UUID] = Field(..., description="Roles IDs")
     user_type_id: UUID
+    group_id: UUID | None = None
 
 
 class UserRead(BaseModel):
@@ -59,6 +60,8 @@ class UserRead(BaseModel):
     api_keys: Optional[list[ApiKeyBase]] = []
     force_upd_pass_date: Optional[datetime] = Field(None,
                                                     description="Date when we force updating password date on login")
+    group_id: Optional[UUID] = None
+    supervised_group_ids: list[UUID] = Field([], description="Group IDs this user supervises")
 
     model_config = ConfigDict(
         from_attributes = True
@@ -79,5 +82,6 @@ class UserUpdate(BaseModel):
     user_type_id: UUID | None = None
     role_ids: list[UUID] | None = None
     notes: str | None = None
+    group_id: UUID | None = None
 
 

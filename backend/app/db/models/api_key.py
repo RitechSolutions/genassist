@@ -1,5 +1,6 @@
+from datetime import datetime
 from typing import Optional
-from sqlalchemy import UUID, Integer, PrimaryKeyConstraint, String,UniqueConstraint, ForeignKey
+from sqlalchemy import UUID, DateTime, Integer, PrimaryKeyConstraint, String, UniqueConstraint, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -13,6 +14,15 @@ class ApiKeyModel(Base):
     name: Mapped[Optional[str]] = mapped_column(String(255))
     key_val: Mapped[Optional[str]] = mapped_column(String(255))
     hashed_value: Mapped[Optional[str]] = mapped_column(String(255))
+    previous_hashed_value: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    previous_hashed_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    credential_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Stores the selected expiration option (e.g. 30/90/180/365). Null means "Never".
+    credential_expiry_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     is_active: Mapped[Optional[int]] = mapped_column(Integer)
     user_id: Mapped[UUID] = mapped_column(UUID, ForeignKey("users.id"), nullable=False)
 

@@ -34,7 +34,8 @@ export const createUser = async (userData: User): Promise<User> => {
       password: userData.password,
       is_active: userData.is_active,
       user_type_id: userData.user_type_id,
-      role_ids: userData.role_ids
+      role_ids: userData.role_ids,
+      group_id: userData.group_id ?? null,
     };
     
     const response = await apiRequest<User>("POST", "user", requestData);

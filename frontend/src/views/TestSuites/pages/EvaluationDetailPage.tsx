@@ -7,18 +7,19 @@ import { Badge } from "@/components/badge";
 import { ChevronLeft, Play, CheckCircle2, XCircle, ChevronDown, ChevronRight, AlertCircle, Loader2 } from "lucide-react";
 import {
   getTestRun,
+  getTestRunsBatch,
   listTestCases,
   listResultsForRun,
   listTestSuites,
   startTestRun,
 } from "@/services/testSuites";
-import { getAllWorkflows } from "@/services/workflows";
+import { getWorkflowsMinimal } from "@/services/workflows";
 import {
   getTestEvaluationById,
   appendRunToEvaluation,
 } from "@/services/testEvaluations";
 import { TestResult, TestRun, TestSuite } from "@/interfaces/testSuite.interface";
-import { Workflow } from "@/interfaces/workflow.interface";
+import { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import {
   Dialog,
   DialogContent,
@@ -77,12 +78,12 @@ const EvaluationDetailPage: React.FC = () => {
       if (!evaluation) return;
       const [suites, workflows] = await Promise.all([
         listTestSuites(),
-        getAllWorkflows(),
+        getWorkflowsMinimal(),
       ]);
       const suiteData = (suites ?? []).find((item) => item.id === evaluation.suite_id);
       setSuite(suiteData ?? null);
       const workflowData = (workflows ?? []).find(
-        (item: Workflow) => item.id === evaluation.workflow_id,
+        (item: WorkflowMinimal) => item.id === evaluation.workflow_id,
       );
       setWorkflowName(workflowData?.name ?? "Dataset default");
     };
@@ -118,11 +119,9 @@ const EvaluationDetailPage: React.FC = () => {
           setRuns([]);
           return;
         }
-        const runData = await Promise.all(
-          evaluation.run_ids.map((runId) => getTestRun(runId)),
-        );
+        const runData = await getTestRunsBatch(evaluation.run_ids);
         setRuns(
-          runData
+          (runData ?? [])
             .filter(Boolean)
             .sort(
               (a, b) =>

@@ -48,7 +48,10 @@ class ConversationAnalysisModel(Base):
     )
 
 
-class ConversationModel(Base):
+from app.db.events.group_scope import GroupScopedMixin  # noqa: E402
+
+
+class ConversationModel(Base, GroupScopedMixin):
     __tablename__ = "conversations"
     __table_args__ = (
         ForeignKeyConstraint(["operator_id"], ["operators.id"], name="operator_id_fk"),

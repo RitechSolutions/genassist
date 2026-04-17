@@ -17,6 +17,13 @@ export interface Workflow {
   executionState?: WorkflowExecutionState;
 }
 
+// Lightweight workflow data (id, name, version only)
+export interface WorkflowMinimal {
+  id: string;
+  name: string;
+  version: string;
+}
+
 // Payload for creating a new workflow
 export interface WorkflowCreatePayload {
   name: string;

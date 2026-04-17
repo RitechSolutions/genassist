@@ -43,6 +43,7 @@ from app.api.v1.routes import (
     test_evaluations,
     test_runs,
     test_suites,
+    user_groups,
     user_types,
     users,
     voice,
@@ -60,6 +61,7 @@ router = APIRouter(**default_router_options)
 
 router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 router.include_router(users.router, prefix="/user", tags=["User"])
+router.include_router(user_groups.router, prefix="/user-groups", tags=["User Groups"])
 router.include_router(user_types.router, prefix="/user-type", tags=["UserTypes"])
 router.include_router(roles.router, prefix="/roles", tags=["Roles"])
 router.include_router(api_keys.router, prefix="/api-keys", tags=["ApiKeys"])

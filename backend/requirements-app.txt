@@ -18,6 +18,7 @@ openpyxl==3.1.5
 readability-lxml==0.8.4.1
 html2text==2025.4.15
 aiofiles==24.1.0
+pydub==0.25.1
 aiomysql==0.3.2
 aiosqlite==0.20.0
 xgboost==1.7.4

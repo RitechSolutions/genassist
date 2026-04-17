@@ -12,6 +12,7 @@ from app.services.tenant import TenantService
 from app.services.transcript_message_service import TranscriptMessageService
 from app.services.workflow import WorkflowService
 from app.services.users import UserService
+from app.services.user_groups import UserGroupService
 from app.services.user_types import UserTypesService
 from app.services.roles import RolesService
 from app.services.role_permissions import RolePermissionsService
@@ -40,6 +41,7 @@ from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.agent_config import AgentConfigService
 from app.repositories.workflow import WorkflowRepository
 from app.repositories.users import UserRepository
+from app.repositories.user_groups import UserGroupRepository
 from app.repositories.user_types import UserTypesRepository
 from app.repositories.roles import RolesRepository
 from app.repositories.role_permissions import RolePermissionsRepository
@@ -196,6 +198,9 @@ class Dependencies(Module):
 
         binder.bind(UserService, scope=request_scope)
         binder.bind(UserRepository, scope=request_scope)
+
+        binder.bind(UserGroupService, scope=request_scope)
+        binder.bind(UserGroupRepository, scope=request_scope)
 
         binder.bind(UserTypesService, scope=request_scope)
         binder.bind(UserTypesRepository, scope=request_scope)
