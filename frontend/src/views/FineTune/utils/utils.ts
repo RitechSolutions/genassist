@@ -1,7 +1,12 @@
 import type { FineTuneJob } from "@/interfaces/fineTune.interface";
 import type { AccuracyPoint } from "@/views/FineTune/types";
 
-export const inProgressStatuses = new Set(["running", "queued", "validating_files"]);
+export const inProgressStatuses = new Set([
+  "running",
+  "queued",
+  "validating_files",
+  "saving_model",
+]);
 
 export const formatStatusLabel = (status: string) => {
   if (!status) return "Unknown";

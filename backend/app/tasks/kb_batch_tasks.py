@@ -171,7 +171,7 @@ async def batch_process_files_kb_async(
             keyid_username = conn.get("access_key")
             secret_password = conn.get("secret_key")
             bucket_server = conn.get("bucket_name")
-            prefix_input_folder = conn.get("prefix", "")
+            prefix_input_folder = (conn.get("prefix") or "").lstrip("/").strip()
             filter_pattern = processing_filter # filter defined in KB not DS
             region = conn.get("region", "us-east-1")
 
@@ -336,8 +336,9 @@ async def s3_list_source(
             "Bucket": bucket_name
         }
 
-        if prefix:
-            list_params["Prefix"] = prefix
+        cleaned_prefix = (prefix or "").lstrip("/").strip()
+        if cleaned_prefix:
+            list_params["Prefix"] = cleaned_prefix
 
         # Call S3
         response = s3_client.list_objects_v2(**list_params)

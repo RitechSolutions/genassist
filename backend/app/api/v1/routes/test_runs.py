@@ -8,6 +8,7 @@ from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.schemas.test_suite import (
+    BatchRunsRequest,
     TestResult,
     TestRun,
     TestRunCreate,
@@ -54,6 +55,21 @@ async def list_runs_for_suite(
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     return await service.list_runs_for_suite(suite_id)
+
+
+@router.post(
+    "/runs/batch",
+    response_model=List[TestRun],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def get_runs_batch(
+    data: BatchRunsRequest,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """
+    Fetch multiple test runs by their IDs in a single request.
+    """
+    return await service.get_runs_by_ids(data.ids)
 
 
 @router.get(

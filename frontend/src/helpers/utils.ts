@@ -69,8 +69,16 @@ export function downloadFile(fileUrl: string, filename: string) {
   }
 }
 
-export function getFileDownloadUrl(fileId: string, baseUrl: string, tenantId: string): string {
-  let url = new URL(`file-manager/files/${fileId}/source`, baseUrl).toString();
+export type FileManagerFileUrlKind = "source" | "download";
+
+export function getFileDownloadUrl(
+  fileId: string,
+  baseUrl: string,
+  tenantId: string,
+  kind: FileManagerFileUrlKind = "source"
+): string {
+  const segment = kind === "download" ? "download" : "source";
+  let url = new URL(`file-manager/files/${fileId}/${segment}`, baseUrl).toString();
 
   if (tenantId) {
     url = url.includes("?") ? `${url}&X-Tenant-Id=${tenantId}` : `${url}?X-Tenant-Id=${tenantId}`;
