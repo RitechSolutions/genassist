@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import datetime
@@ -47,7 +48,10 @@ class ConversationAnalysisModel(Base):
     )
 
 
-class ConversationModel(Base):
+from app.db.events.group_scope import GroupScopedMixin  # noqa: E402
+
+
+class ConversationModel(Base, GroupScopedMixin):
     __tablename__ = "conversations"
     __table_args__ = (
         ForeignKeyConstraint(["operator_id"], ["operators.id"], name="operator_id_fk"),
@@ -88,6 +92,7 @@ class ConversationModel(Base):
     thumbs_down_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     thumbs_up_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     finalize_llm_analyst_id: Mapped[Optional[UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    custom_attributes: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # NEW: Add relationship to messages
     messages: Mapped[list["TranscriptMessageModel"]] = relationship(

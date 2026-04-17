@@ -65,7 +65,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
         conn_data = ds_item.connection_data
         logger.info(f"Processing S3 Datasource: {conn_data}")
 
-        prefix = conn_data["prefix"]
+        prefix = conn_data.get("prefix", "").lstrip("/").strip() or ""
         bucket = conn_data["bucket_name"]
         access_key = conn_data["access_key"]
         secret_key = conn_data["secret_key"]

@@ -2,7 +2,7 @@ import base64
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from fastapi_injector import Injected
 
@@ -180,6 +180,13 @@ async def list_files(
     storage_provider: Optional[str] = None,
     limit: Optional[int] = None,
     offset: Optional[int] = None,
+    tag: Optional[str] = Query(
+        None,
+        description=(
+            "If set, only files whose `tags` (JSON array of strings, see FileBase.tags) "
+            "include this value (exact string match)."
+        ),
+    ),
     service: FileManagerService = Injected(FileManagerService),
 ):
     """List files with optional filtering."""
@@ -187,7 +194,8 @@ async def list_files(
         files = await service.list_files(
             storage_provider=storage_provider,
             limit=limit,
-            offset=offset
+            offset=offset,
+            tag=tag,
         )
         return files
     except Exception as e:

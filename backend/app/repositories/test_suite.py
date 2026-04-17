@@ -61,6 +61,13 @@ class TestRunRepository(DbRepository[TestRunModel]):
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
+    async def get_by_ids(self, ids: List[str]) -> List[TestRunModel]:
+        if not ids:
+            return []
+        stmt = select(TestRunModel).where(TestRunModel.id.in_(ids))
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
     async def soft_delete_all_by_ids(self, run_ids: List[str]) -> None:
         if not run_ids:
             return

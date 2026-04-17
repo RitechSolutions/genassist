@@ -79,7 +79,7 @@ async def verify_ws_token(
     _perm_without_wildcard = [p for p in required_permissions if p != "*"]
 
     # check if the user permissions are subset of the required permissions
-    if not ("*" in user_permissions) and not set(_perm_without_wildcard).issubset(set(user_permissions)):
+    if "*" not in user_permissions and not set(_perm_without_wildcard).issubset(set(user_permissions)):
         raise AppException(status_code=403, error_key=ErrorKey.INSUFFICIENT_PERMISSIONS, error_detail="Insufficient permissions")
 
     return VerifyTokenResponse(
