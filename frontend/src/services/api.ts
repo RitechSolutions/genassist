@@ -274,13 +274,16 @@ async function uploadFilesMultipartViaFileManager(
   const url = `${baseURL}file-manager/upload`;
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
+  const fallbackTotalBytes = files.reduce((acc, f) => acc + (f.size ?? 0), 0);
   try {
     const response = await api.post<UploadFileResponse[]>(url, formData, {
       timeout: API_UPLOAD_TIMEOUT_MS,
       onUploadProgress: (ev) => {
-        if (!ev.total || !options?.onProgress) return;
+        if (!options?.onProgress) return;
+        const total = ev.total ?? fallbackTotalBytes;
+        if (!total) return;
         options.onProgress(
-          capClientProgress(Math.round((ev.loaded * 100) / ev.total))
+          capClientProgress(Math.round((ev.loaded * 100) / total))
         );
       },
     });
