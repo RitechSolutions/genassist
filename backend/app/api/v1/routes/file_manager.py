@@ -97,24 +97,24 @@ async def download_file(
 ):
     """Download a file by ID."""
     try:
-        # download the file
-        file, content = await service.download_file(file_id)
+        file = await service.get_file_by_id(file_id)
 
-        # get the file url if the service is using s3
+        # For S3-backed files, redirect to a presigned URL to avoid proxying large payloads
+        # through the API process (CPU/memory bottleneck).
         if file.storage_provider == "s3":
-            # get the file url
             file_url = await service.get_file_url(file)
             safe_url = validate_s3_download_redirect_url(
                 file_url, file_storage_settings.AWS_S3_ENDPOINT_URL
             )
-            # Use Response + Location instead of RedirectResponse so redirect
-            # sinks that only match RedirectResponse(url=...) do not fire; behavior is equivalent.
             return Response(
                 status_code=status.HTTP_302_FOUND,
                 headers={"Location": safe_url},
             )
 
-        headers, media_type = service.build_file_headers(file, content=content, disposition_type="attachment")
+        _file, content = await service.download_file(file_id)
+        headers, media_type = service.build_file_headers(
+            file, content=content, disposition_type="attachment"
+        )
 
         return Response(
             content=content,
@@ -130,6 +130,7 @@ async def get_file_source(
     file_id: UUID,
     request: Request,
     service: FileManagerService = Injected(FileManagerService),
+    force_proxy: bool = False,
 ):
     """Get file source content for inline display."""
     try:
@@ -145,9 +146,20 @@ async def get_file_source(
                 headers=headers
             )
 
-        # if the service is not using s3, download the file content
-        # For GET requests, download the file content
-        file, content = await service.download_file(file_id)
+        # Default behavior: for S3-backed files, redirect to presigned URL instead of
+        # proxying bytes through the API process. `force_proxy=true` keeps legacy behavior.
+        if file.storage_provider == "s3" and not force_proxy:
+            file_url = await service.get_file_url(file)
+            safe_url = validate_s3_download_redirect_url(
+                file_url, file_storage_settings.AWS_S3_ENDPOINT_URL
+            )
+            return Response(
+                status_code=status.HTTP_302_FOUND,
+                headers={"Location": safe_url},
+            )
+
+        # Legacy / non-S3 behavior: download and return bytes inline.
+        _file, content = await service.download_file(file_id)
         headers, media_type = service.build_file_headers(file, content=content, disposition_type="inline")
 
         return Response(
