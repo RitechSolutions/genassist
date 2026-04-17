@@ -11760,6 +11760,16 @@
               "format": "uuid",
               "title": "File Id"
             }
+          },
+          {
+            "name": "force_proxy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force Proxy"
+            }
           }
         ],
         "responses": {
