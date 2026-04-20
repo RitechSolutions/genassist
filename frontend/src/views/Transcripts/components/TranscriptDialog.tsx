@@ -34,6 +34,7 @@ import { ConversationEntryWrapper } from '@/views/ActiveConversations/common/Con
 import { AgentResponseLogDialog } from '@/components/AgentResponseLogDialog';
 import { Switch } from '@/components/switch';
 import { DollarSign } from 'lucide-react';
+import { formatFeedbackDate } from '@/helpers/utils';
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
@@ -371,15 +372,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
       setFeedbackMessage(userFeedback.feedback_message);
       setIsEditing(true);
     }
-  };
-
-  const formatFeedbackDate = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const month = date.toLocaleDateString('en-US', { month: 'long' });
-    const day = date.getDate();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${month} ${day}, ${hours}:${minutes}`;
   };
 
   const handleMessageFeedback = async (messageId: string, feedback: 'good' | 'bad') => {

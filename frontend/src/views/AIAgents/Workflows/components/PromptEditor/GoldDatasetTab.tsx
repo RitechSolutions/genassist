@@ -169,7 +169,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
         </div>
       )}
       {/* Add new case form */}
-      <div className="border rounded-lg p-4 space-y-3 bg-gray-50">
+      <div className="p-4 space-y-3 bg-gray-50">
         <p className="text-sm font-medium">Add Gold Case</p>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
