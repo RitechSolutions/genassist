@@ -9,9 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/badge';
 import { Switch } from '@/components/switch';
 import { getAllLLMProviders } from '@/services/llmProviders';
-import { createPromptVersion, evaluatePrompt, optimizePrompt } from '@/services/promptEditor';
+import { createPromptVersion, evaluatePrompt, getPromptConfig, optimizePrompt } from '@/services/promptEditor';
+import { listTestCases } from '@/services/testSuites';
 import type { LLMProvider } from '@/interfaces/llmProvider.interface';
 import type { PromptEvalResponse, PromptOptimizeResponse } from '@/interfaces/promptEditor.interface';
+import type { TestCase } from '@/interfaces/testSuite.interface';
 
 interface EditorTabProps {
   workflowId: string;
@@ -33,6 +35,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   const queryClient = useQueryClient();
 
   const [error, setError] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedProviderId, setSelectedProviderId] = useState(defaultProviderId || '');
   const [selectedTechniques, setSelectedTechniques] = useState<string[]>(['contains']);
@@ -53,6 +56,20 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     select: (data: LLMProvider[]) => data.filter((p) => p.is_active === 1),
   });
 
+  const { data: promptConfig } = useQuery({
+    queryKey: ['promptConfig', workflowId, nodeId, promptField],
+    queryFn: () => getPromptConfig(workflowId, nodeId, promptField),
+  });
+
+  const goldSuiteId = promptConfig?.gold_suite_id;
+
+  const { data: goldCases = [] } = useQuery({
+    queryKey: ['goldCases', goldSuiteId],
+    queryFn: () => listTestCases(goldSuiteId!),
+    enabled: !!goldSuiteId,
+    select: (data) => (data ?? []) as TestCase[],
+  });
+
   const toggleTechnique = (key: string) => {
     setSelectedTechniques((prev) => (prev.includes(key) ? prev.filter((t) => t !== key) : [...prev, key]));
   };
@@ -60,6 +77,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   const showError = (action: string, err: unknown) => {
     const message = err instanceof Error ? err.message : 'Request failed';
     setError(`Failed to ${action}: ${message}`);
+    setWarningMessage(null);
     setSuccessMessage(null);
   };
 
@@ -145,12 +163,18 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
   return (
     <div className="space-y-4 pt-4 px-2">
-      {(error || successMessage) && (
+      {(error || warningMessage || successMessage) && (
         <div className="space-y-2">
           {error && (
             <div className="flex items-center gap-2 text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+          {warningMessage && (
+            <div className="flex items-center gap-2 text-amber-700 text-sm bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{warningMessage}</span>
             </div>
           )}
           {successMessage && (
@@ -365,7 +389,16 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                   <Button
                     size="sm"
                     variant="default"
-                    onClick={() => evalMutation.mutate()}
+                    onClick={() => {
+                      setWarningMessage(null);
+                      if (!goldSuiteId || goldCases.length === 0) {
+                        setWarningMessage(
+                          'Missing Gold Dataset. Create a Gold Dataset and add at least one test case before running evaluation.',
+                        );
+                        return;
+                      }
+                      evalMutation.mutate();
+                    }}
                     disabled={
                       !selectedProviderId || selectedTechniques.length === 0 || !value.trim() || evalMutation.isPending
                     }
