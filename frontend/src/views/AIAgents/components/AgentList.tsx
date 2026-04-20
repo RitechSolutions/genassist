@@ -24,7 +24,9 @@ import {
 } from "@/components/dropdown-menu";
 import { AgentFormDialog } from "./AgentForm";
 import { SearchInput } from "@/components/SearchInput";
+import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { getAgentConfig } from "@/services/api";
+import { currentUserIsAdmin } from "@/services/auth";
 import { toast } from "react-hot-toast";
 
 interface AgentListProps {
@@ -38,6 +40,8 @@ interface AgentListProps {
   loadMore: () => void;
   hasMore: boolean;
   loadingMore: boolean;
+  activeTab: string;
+  onTabChange: (value: string) => void;
 }
 
 const AgentList: React.FC<AgentListProps> = ({
@@ -51,10 +55,13 @@ const AgentList: React.FC<AgentListProps> = ({
   loadMore,
   hasMore,
   loadingMore,
+  activeTab,
+  onTabChange,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const isAdmin = useMemo(() => currentUserIsAdmin(), []);
 
   // Infinite scroll using IntersectionObserver
   useEffect(() => {
@@ -192,6 +199,11 @@ const AgentList: React.FC<AgentListProps> = ({
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
               <h4 className="text-base font-semibold">{agentName}</h4>
+              {agent.is_system && (
+                <span className="inline-flex items-center text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                  System
+                </span>
+              )}
               {!isActive && (
                 <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
                   <AlertCircle className="h-3 w-3" />
@@ -228,12 +240,14 @@ const AgentList: React.FC<AgentListProps> = ({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem asChild>
-                    <Link to={`/ai-agents/workflow/${agent.id}`}>
-                      <Workflow className="mr-2 h-4 w-4" />
-                      <span>Edit Workflow</span>
-                    </Link>
-                  </DropdownMenuItem>
+                  {(!agent.is_system || isAdmin) && (
+                    <DropdownMenuItem asChild>
+                      <Link to={`/ai-agents/workflow/${agent.id}`}>
+                        <Workflow className="mr-2 h-4 w-4" />
+                        <span>Edit Workflow</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
                     className="text-black"
                     onClick={() => onManageKeys(agent.id)}
@@ -255,29 +269,33 @@ const AgentList: React.FC<AgentListProps> = ({
                       <span>Security</span>
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleOpenAgentSettings(agent.id);
-                    }}
-                    disabled={settingsLoadingAgentId === agent.id}
-                  >
-                    {settingsLoadingAgentId === agent.id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Pencil className="mr-2 h-4 w-4" />
-                    )}
-                    <span>Edit Agent</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => onDelete(agent.id)}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    <span>Delete</span>
-                  </DropdownMenuItem>
+                  {(!agent.is_system || isAdmin) && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleOpenAgentSettings(agent.id);
+                        }}
+                        disabled={settingsLoadingAgentId === agent.id}
+                      >
+                        {settingsLoadingAgentId === agent.id ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Pencil className="mr-2 h-4 w-4" />
+                        )}
+                        <span>Edit Agent</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => onDelete(agent.id)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        <span>Delete</span>
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -318,6 +336,14 @@ const AgentList: React.FC<AgentListProps> = ({
           </Button>
         </div>
       </div>
+
+      <Tabs value={activeTab} onValueChange={onTabChange}>
+        <TabsList>
+          <TabsTrigger value="all">All</TabsTrigger>
+          <TabsTrigger value="user">My Agents</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       <div className="rounded-md border bg-card">
         <div className="divide-y">
