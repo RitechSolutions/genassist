@@ -6,6 +6,7 @@ import { EditorTab } from "./EditorTab";
 import { VersionsTab } from "./VersionsTab";
 import { GoldDatasetTab } from "./GoldDatasetTab";
 import { EvaluateOptimizeTab } from "./EvaluateOptimizeTab";
+import { Badge } from "@/components/badge";
 
 interface PromptEditorDialogProps {
   isOpen: boolean;
@@ -82,8 +83,8 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
           <div className="flex flex-col space-y-1.5 px-6 pt-6 pb-2">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold leading-none tracking-tight">
-                  Prompt Editor
+                <h2 className="text-lg font-semibold leading-none tracking-tight flex items-center gap-2">
+                  Prompt Editor <Badge variant="default">Beta</Badge>
                 </h2>
                 <p className="text-sm text-gray-500 mt-1.5">
                   Edit, version, evaluate, and optimize your prompt
