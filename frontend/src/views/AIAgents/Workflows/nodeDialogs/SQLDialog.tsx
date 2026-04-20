@@ -23,6 +23,8 @@ import { DraggableInput } from "../components/custom/DraggableInput";
 import { LLMProviderDialog } from "@/views/LlmProviders/components/LLMProviderDialog";
 import { DataSourceDialog } from "@/views/DataSources/components/DataSourceDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
+import { useWorkflow } from "../context/WorkflowContext";
+import { PromptEditorButton } from "../components/PromptEditor/PromptEditorButton";
 
 type SQLDialogProps = BaseNodeDialogProps<SQLNodeData, SQLNodeData>;
 
@@ -48,6 +50,7 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
   const { toast } = useToast();
   const [isCreateProviderOpen, setIsCreateProviderOpen] = useState(false);
   const [isCreateDataSourceOpen, setIsCreateDataSourceOpen] = useState(false);
+  const { workflow } = useWorkflow();
 
   useEffect(() => {
     if (isOpen) {
@@ -256,7 +259,19 @@ export const SQLDialog: React.FC<SQLDialogProps> = (props) => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="systemPrompt">System Prompt</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="systemPrompt">System Prompt</Label>
+                  {workflow?.id && props.nodeId && (
+                    <PromptEditorButton
+                      workflowId={workflow.id}
+                      nodeId={props.nodeId}
+                      promptField="systemPrompt"
+                      currentValue={systemPrompt}
+                      onPromptChange={(val) => setSystemPrompt(val)}
+                      defaultProviderId={providerId}
+                    />
+                  )}
+                </div>
                 <DraggableTextArea
                   id="systemPrompt"
                   value={systemPrompt}

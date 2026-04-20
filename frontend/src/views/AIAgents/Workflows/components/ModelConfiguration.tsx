@@ -25,6 +25,8 @@ import {
 } from "@/components/RadixTooltip";
 import { Badge } from "@/components/badge";
 import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
+import { useWorkflow } from "../context/WorkflowContext";
+import { PromptEditorButton } from "./PromptEditor/PromptEditorButton";
 
 export interface ModelConfigurationProps {
   id: string;
@@ -44,6 +46,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   const [isCreateProviderOpen, setIsCreateProviderOpen] = useState(false);
   const [entityInput, setEntityInput] = useState("");
   const queryClient = useQueryClient();
+  const { workflow } = useWorkflow();
 
   const { data: providers = [] } = useQuery({
     queryKey: ["llmProviders"],
@@ -268,7 +271,22 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
         </Select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor={`system-prompt-input-${id}`}>System Prompt</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor={`system-prompt-input-${id}`}>System Prompt</Label>
+          {workflow?.id && (
+            <PromptEditorButton
+              workflowId={workflow.id}
+              nodeId={id}
+              promptField="systemPrompt"
+              currentValue={systemPrompt || ""}
+              onPromptChange={(val) => {
+                setSystemPrompt(val);
+                onConfigChange({ ...config, systemPrompt: val });
+              }}
+              defaultProviderId={config.providerId}
+            />
+          )}
+        </div>
         <DraggableTextArea
           id={`system-prompt-input-${id}`}
           value={systemPrompt}
@@ -277,7 +295,22 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor={`user-prompt-input-${id}`}>User Prompt</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor={`user-prompt-input-${id}`}>User Prompt</Label>
+          {workflow?.id && (
+            <PromptEditorButton
+              workflowId={workflow.id}
+              nodeId={id}
+              promptField="userPrompt"
+              currentValue={userPrompt || ""}
+              onPromptChange={(val) => {
+                setUserPrompt(val);
+                onConfigChange({ ...config, userPrompt: val });
+              }}
+              defaultProviderId={config.providerId}
+            />
+          )}
+        </div>
         <DraggableTextArea
           id={`user-prompt-input-${id}`}
           value={userPrompt}
