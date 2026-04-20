@@ -78,6 +78,18 @@ async def delete_version(
     await service.delete_version(version_id)
 
 
+@router.delete(
+    "/versions/{version_id}/hard",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
+)
+async def hard_delete_version(
+    version_id: UUID,
+    service: PromptEditorService = Injected(PromptEditorService),
+):
+    await service.hard_delete_version(version_id)
+
+
 # ---- Config / Gold Suite -----------------------------------------------------
 
 
