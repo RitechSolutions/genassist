@@ -321,3 +321,11 @@ class Dependencies(Module):
         binder.bind(AnalyticsAggregationService, scope=request_scope)
         binder.bind(AnalyticsReadRepository, scope=request_scope)
         binder.bind(AnalyticsReadService, scope=request_scope)
+
+        # Prompt Editor services
+        from app.repositories.prompt_editor import PromptConfigRepository, PromptVersionRepository
+        from app.services.prompt_editor import PromptEditorService
+
+        binder.bind(PromptVersionRepository, scope=request_scope)
+        binder.bind(PromptConfigRepository, scope=request_scope)
+        binder.bind(PromptEditorService, scope=request_scope)
