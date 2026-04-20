@@ -1,9 +1,15 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { History } from "lucide-react";
+import { History, Trash2 } from "lucide-react";
 import { Badge } from "@/components/badge";
+import { Button } from "@/components/button";
+import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { cn } from "@/lib/utils";
-import { listPromptVersions, restorePromptVersion } from "@/services/promptEditor";
+import {
+  deletePromptVersion,
+  listPromptVersions,
+  restorePromptVersion,
+} from "@/services/promptEditor";
 import type { PromptVersion } from "@/interfaces/promptEditor.interface";
 import { formatFeedbackDate } from "@/helpers/utils";
 
@@ -26,6 +32,8 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
 }) => {
   const queryClient = useQueryClient();
   const queryKey = ["promptVersions", workflowId, nodeId, promptField];
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const { data: versions = [], isLoading } = useQuery({
     queryKey,
@@ -50,6 +58,18 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (versionId: string) => deletePromptVersion(versionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey });
+    },
+  });
+
+  const deleteTarget = useMemo(() => {
+    if (!deleteTargetId) return null;
+    return versions.find((v) => v.id === deleteTargetId) ?? null;
+  }, [deleteTargetId, versions]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
@@ -71,38 +91,49 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
   }
 
   return (
-    <div className="space-y-1">
+    <>
+      <div className="space-y-1 p-1">
       {versions.map((version) => {
         const isSelected =
           selectedVersionId === version.id ||
           (!selectedVersionId && version.is_active);
 
         return (
-          <button
+          <div
             key={version.id}
-            type="button"
             className={cn(
-              "w-full text-left rounded-md border px-3 py-2 transition-colors",
+              "w-full rounded-md border px-3 py-2 transition-colors",
               "hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-ring",
               isSelected ? "bg-blue-50 border-blue-200" : "bg-white",
             )}
-            onClick={() => {
+            aria-current={isSelected ? "true" : "false"}
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              if (deleteMutation.isPending) {
+                e.preventDefault();
+                return;
+              }
               onSelectedVersionIdChange(version.id);
-              if (!version.is_active) {
-                restoreMutation.mutate(version.id);
+              if (!version.is_active) restoreMutation.mutate(version.id);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                if (deleteMutation.isPending) return;
+                onSelectedVersionIdChange(version.id);
+                if (!version.is_active) restoreMutation.mutate(version.id);
               }
             }}
-            disabled={restoreMutation.isPending && selectedVersionId !== version.id}
-            aria-current={isSelected ? "true" : "false"}
           >
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">
                     v{version.version_number}
                   </span>
                   {version.is_active && (
-                    <Badge variant="default" className="text-[10px] px-1.5">
+                    <Badge variant="outline" className="text-[9px] px-1.5">
                       Active
                     </Badge>
                   )}
@@ -111,14 +142,59 @@ export const VersionsSidebar: React.FC<VersionsSidebarProps> = ({
                   {version.label || formatFeedbackDate(version.created_at)}
                 </div>
               </div>
-              <div className="text-xs text-muted-foreground shrink-0">
-                {formatFeedbackDate(version.created_at)}
+
+              <div className="flex items-center gap-1 shrink-0">
+                <div className="text-xs text-muted-foreground">
+                  {formatFeedbackDate(version.created_at)}
+                </div>
+                {isSelected && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDeleteTargetId(version.id);
+                      setIsDeleteDialogOpen(true);
+                    }}
+                    disabled={deleteMutation.isPending}
+                    title="Delete version"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
-          </button>
+          </div>
         );
       })}
-    </div>
+      </div>
+
+      <DeleteConfirmationDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsDeleteDialogOpen(open);
+          if (!open) setDeleteTargetId(null);
+        }}
+        title="Delete version?"
+        itemName={
+          deleteTarget
+            ? `v${deleteTarget.version_number}${
+                deleteTarget.label ? ` — ${deleteTarget.label}` : ""
+              }`
+            : undefined
+        }
+        onConfirm={async () => {
+          if (!deleteTargetId) return;
+          await deleteMutation.mutateAsync(deleteTargetId);
+          setIsDeleteDialogOpen(false);
+          setDeleteTargetId(null);
+        }}
+        isDeleting={deleteMutation.isPending}
+      />
+    </>
   );
 };
 

@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft, ChevronRight, Save, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EditorTab } from "./EditorTab";
 import { VersionsSidebar } from "./VersionsSidebar";
 import { GoldDatasetTab } from "./GoldDatasetTab";
-import { EvaluateOptimizeTab } from "./EvaluateOptimizeTab";
 import { Badge } from "@/components/badge";
+import { Button } from "@/components/button";
+import { Input } from "@/components/input";
+import { createPromptVersion } from "@/services/promptEditor";
 
 interface PromptEditorDialogProps {
   isOpen: boolean;
@@ -29,24 +32,69 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
   onPromptChange,
   defaultProviderId,
 }) => {
+  const queryClient = useQueryClient();
+  const wasOpenRef = useRef(false);
   const [activeTab, setActiveTab] = useState("editor");
   const [localPrompt, setLocalPrompt] = useState(currentValue);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [isVersionsPanelOpen, setIsVersionsPanelOpen] = useState(true);
+  const [isSaveLabelOpen, setIsSaveLabelOpen] = useState(false);
+  const [saveLabelDraft, setSaveLabelDraft] = useState("");
+  const saveLabelInputRef = useRef<HTMLInputElement | null>(null);
+  const [saveVersionStatus, setSaveVersionStatus] = useState<
+    { type: "success" | "error"; message: string } | null
+  >(null);
+
+  const saveVersionMutation = useMutation({
+    mutationFn: async (label: string | undefined) => {
+      setSaveVersionStatus(null);
+      const result = await createPromptVersion(workflowId, nodeId, promptField, {
+        content: localPrompt,
+        label,
+      });
+      if (!result) {
+        throw new Error("Server returned empty response — check permissions.");
+      }
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["promptVersions", workflowId, nodeId, promptField],
+      });
+      setSaveVersionStatus({ type: "success", message: "Version saved" });
+    },
+    onError: (err) => {
+      setSaveVersionStatus({
+        type: "error",
+        message: `Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`,
+      });
+    },
+  });
 
   const handleApplyPrompt = (newPrompt: string) => {
     setLocalPrompt(newPrompt);
     onPromptChange(newPrompt);
   };
 
-  // Sync local prompt when dialog opens with new value
+  // Sync local prompt only when dialog opens.
+  // (Avoid resetting selection while restoring versions inside the dialog.)
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpenRef.current) {
       setLocalPrompt(currentValue);
       setSelectedVersionId(null);
       setIsVersionsPanelOpen(true);
+      setSaveVersionStatus(null);
+      setIsSaveLabelOpen(false);
+      setSaveLabelDraft("");
     }
+    wasOpenRef.current = isOpen;
   }, [isOpen, currentValue]);
+
+  useEffect(() => {
+    if (isSaveLabelOpen) {
+      window.requestAnimationFrame(() => saveLabelInputRef.current?.focus());
+    }
+  }, [isSaveLabelOpen]);
 
   // Close on Escape
   const handleKeyDown = useCallback(
@@ -109,17 +157,16 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
             className="flex-1 flex flex-col overflow-hidden min-h-0"
           >
             <div className="px-6">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="editor">Editor</TabsTrigger>
                 <TabsTrigger value="gold-dataset">Gold Dataset</TabsTrigger>
-                <TabsTrigger value="evaluate">Evaluate & Optimize</TabsTrigger>
               </TabsList>
             </div>
 
             <div className="flex-1 min-h-0 overflow-hidden px-6 pb-6 pt-4">
               <div className="flex h-full min-h-0 gap-4">
                 {isVersionsPanelOpen ? (
-                  <aside className="w-64 shrink-0 px-2 pr-4 border-r overflow-y-auto min-h-0">
+                  <aside className="w-64 shrink-0 px-2 pr-4 border-r min-h-0 flex flex-col">
                     <div className="flex items-center justify-between mb-2">
                       <div className="text-xs font-medium text-muted-foreground">
                         Versions
@@ -134,14 +181,104 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                         Hide
                       </button>
                     </div>
-                    <VersionsSidebar
-                      workflowId={workflowId}
-                      nodeId={nodeId}
-                      promptField={promptField}
-                      selectedVersionId={selectedVersionId}
-                      onSelectedVersionIdChange={setSelectedVersionId}
-                      onRestore={handleApplyPrompt}
-                    />
+                    <div className="flex-1 min-h-0 overflow-y-auto pb-3">
+                      <VersionsSidebar
+                        workflowId={workflowId}
+                        nodeId={nodeId}
+                        promptField={promptField}
+                        selectedVersionId={selectedVersionId}
+                        onSelectedVersionIdChange={setSelectedVersionId}
+                        onRestore={handleApplyPrompt}
+                      />
+                    </div>
+
+                    <div className="sticky bottom-0 z-20 bg-white border-t pt-3 pb-2">
+                      {saveVersionStatus && (
+                        <div
+                          className={`text-xs mb-2 rounded-md px-2 py-1 ${
+                            saveVersionStatus.type === "error"
+                              ? "text-destructive bg-destructive/10 border border-destructive/20"
+                              : "text-green-700 bg-green-50 border border-green-200"
+                          }`}
+                        >
+                          {saveVersionStatus.message}
+                        </div>
+                      )}
+
+                      {isSaveLabelOpen && (
+                        <>
+                          <button
+                            type="button"
+                            className="fixed inset-0 cursor-default"
+                            style={{ zIndex: 60 }}
+                            aria-label="Close label prompt"
+                            onClick={() => setIsSaveLabelOpen(false)}
+                          />
+                          <div
+                            className="absolute left-0 right-0 -top-2 translate-y-[-100%] z-[70] rounded-md border bg-white shadow-lg p-3"
+                            role="dialog"
+                            aria-label="Save version label"
+                          >
+                            <div className="text-xs font-medium mb-2">
+                              Version label (optional)
+                            </div>
+                            <Input
+                              ref={saveLabelInputRef}
+                              value={saveLabelDraft}
+                              onChange={(e) => setSaveLabelDraft(e.target.value)}
+                              placeholder="e.g., Added tone instructions"
+                              onKeyDown={(e) => {
+                                if (e.key === "Escape") {
+                                  setIsSaveLabelOpen(false);
+                                }
+                                if (e.key === "Enter") {
+                                  const trimmed = saveLabelDraft.trim();
+                                  saveVersionMutation.mutate(
+                                    trimmed ? trimmed : undefined,
+                                  );
+                                  setIsSaveLabelOpen(false);
+                                  setSaveLabelDraft("");
+                                }
+                              }}
+                            />
+                            <div className="flex justify-end gap-2 mt-3">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setIsSaveLabelOpen(false)}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => {
+                                  const trimmed = saveLabelDraft.trim();
+                                  saveVersionMutation.mutate(
+                                    trimmed ? trimmed : undefined,
+                                  );
+                                  setIsSaveLabelOpen(false);
+                                  setSaveLabelDraft("");
+                                }}
+                                disabled={saveVersionMutation.isPending}
+                              >
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      <Button
+                        className="w-full"
+                        onClick={() => setIsSaveLabelOpen(true)}
+                        disabled={!localPrompt.trim() || saveVersionMutation.isPending}
+                      >
+                        <Save className="h-4 w-4 mr-2" />
+                        {saveVersionMutation.isPending ? "Saving..." : "Save Version"}
+                      </Button>
+                    </div>
                   </aside>
                 ) : (
                   <div className="shrink-0">
@@ -168,6 +305,7 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                       promptField={promptField}
                       value={localPrompt}
                       onChange={handleApplyPrompt}
+                      defaultProviderId={defaultProviderId}
                     />
                   </TabsContent>
 
@@ -179,16 +317,6 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                     />
                   </TabsContent>
 
-                  <TabsContent value="evaluate" className="mt-0">
-                    <EvaluateOptimizeTab
-                      workflowId={workflowId}
-                      nodeId={nodeId}
-                      promptField={promptField}
-                      currentPrompt={localPrompt}
-                      onAcceptOptimized={handleApplyPrompt}
-                      defaultProviderId={defaultProviderId}
-                    />
-                  </TabsContent>
                 </div>
               </div>
             </div>
