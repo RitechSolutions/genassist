@@ -1,0 +1,56 @@
+# OpenTelemetry Collector (dev) — used by docker-compose.otel.yml
+# Receives OTLP from the backend (gRPC 4317 / HTTP 4318) and exposes app metrics for Prometheus scrape on 8889.
+#
+# There is no HTML "dashboard" on the collector root URL. Useful endpoints:
+#   - zpages:     http://localhost:55679/debug/tracez  (and /debug/servicez, /debug/pipelinez)
+#   - health:     http://localhost:13133/
+#   - metrics:    http://localhost:8889/metrics  (Prometheus text; app OTLP metrics)
+#   - Grafana:    http://localhost:3010  (after docker compose — Explore → Prometheus)
+#   - Prometheus: http://localhost:9090
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+exporters:
+  debug:
+    verbosity: normal
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1888
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+  telemetry:
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+

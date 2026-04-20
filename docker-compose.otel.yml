@@ -1,0 +1,65 @@
+name: genassist_dev
+
+services:
+  # OpenTelemetry Collector (OTLP in; Prometheus scrape on 8889 for exported metrics; collector self-metrics on 8888)
+  # Uses contrib image so the prometheus exporter is available (not in the core otelcol image).
+  # UI: there is no "home page" on 55679 — use zpages at http://localhost:55679/debug/tracez
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: genassist-otel-collector-dev
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "1888:1888" # pprof extension
+      - "8888:8888" # Prometheus metrics (collector process telemetry)
+      - "8889:8889" # Prometheus exporter (pipelined OTLP metrics)
+      - "13133:13133" # health_check extension
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
+      - "55679:55679" # zpages extension
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+  # Prometheus + Grafana: dashboards for OTEL metrics scraped from the collector (:8889 / :8888)
+  otel-prometheus:
+    image: prom/prometheus:v2.53.3
+    container_name: genassist-prometheus-otel-dev
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus-otel.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+  otel-grafana:
+    image: grafana/grafana:11.3.1
+    container_name: genassist-grafana-otel-dev
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      # Editor so anonymous users can use Explore (Viewer cannot in default Grafana)
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Editor
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3010:3000"
+    depends_on:
+      - otel-prometheus
+    networks:
+      - genassist-network-dev
+    restart: unless-stopped
+
+networks:
+  genassist-network-dev:
+    driver: bridge
+

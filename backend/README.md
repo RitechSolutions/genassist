@@ -127,6 +127,27 @@ Services started:
 - node-exporter (host metrics)
 - Grafana (dashboards)
 
+### OpenTelemetry and Opik (application traces)
+
+With `USE_OTEL=true`, the backend registers the OpenTelemetry SDK, instruments FastAPI/ASGI, and records spans for each workflow run (`workflow.run`) and workflow node (`workflow.node.execute`). See `backend/.env.example` for variables.
+
+- **Opik (Comet)**: Set `OPIK_OTEL_EXPORT=true` and `OPIK_API_KEY`, `OPIK_WORKSPACE`, `OPIK_PROJECT_NAME`, and usually `OPIK_URL_OVERRIDE` (traces POST to `{OPIK_URL_OVERRIDE}/v1/private/otel/v1/traces`). Alternatively set `OTEL_EXPORTER_OTLP_HEADERS` with `Authorization`, `projectName`, and `Comet-Workspace`. This path uses **OTLP HTTP/protobuf**, as in the [Opik OpenTelemetry docs](https://www.comet.com/docs/opik/integrations/opentelemetry). `USE_OPIK` remains the switch for LangChain `OpikTracer` on `QuestionAnswerer`; platform spans and LLM spans can share one trace when both are enabled and context is preserved.
+
+- **OTLP gRPC**: Set `OTEL_EXPORTER_OTLP_GRPC_ENDPOINT` (for example `localhost:4317`) to send traces to an OpenTelemetry Collector, Tempo, or similar. For a **single** gRPC ingress and export to Opik over HTTP, configure a collector (gRPC receiver, `otlphttp` exporter) instead of duplicating exporters in the app.
+
+- **Node duration metrics**: Histogram `genassist.workflow.node.duration_seconds` is emitted via OTLP gRPC when `OTEL_EXPORTER_OTLP_GRPC_ENDPOINT` is set and `OTEL_METRICS_VIA_GRPC=true`.
+
+- **Local docker compose (OTEL optional)**: Bring up the main dev stack, and add the OTEL stack only when needed:
+
+  ```bash
+  docker compose -f docker-compose.dev.yml up -d
+  docker compose -f docker-compose.dev.yml -f docker-compose.otel.yml up -d
+  ```
+
+  There is **no** collector home page: open **Grafana** at [http://localhost:3010](http://localhost:3010) → **Explore** → data source **Prometheus** → run e.g. `genassist_workflow_node_duration_seconds_bucket` or use **Prometheus UI** at [http://localhost:9090](http://localhost:9090). Collector **zpages** (debug): [http://localhost:55679/debug/tracez](http://localhost:55679/debug/tracez) (not `http://localhost:55679/` alone). For **histogram panels** in Grafana, see [observability/README.md](../observability/README.md).
+
+- **Celery**: Workers do not call `init_opentelemetry()` unless you add it; use Flower for task monitoring until worker bootstrap and trace-context propagation are in place.
+
 ### Centralized Logging (ELK Stack)
 
 ```bash
