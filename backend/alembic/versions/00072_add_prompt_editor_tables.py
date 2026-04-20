@@ -1,7 +1,7 @@
 """add prompt_versions and prompt_configs tables
 
-Revision ID: a1b2c3d4e5f6
-Revises: f7e2b1c3d4a5
+Revision ID: pe0069a1b2c3
+Revises: a9d1c4e2b7f0
 Create Date: 2026-04-02 00:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "pe0069a1b2c3"
-down_revision: Union[str, None] = "f7e2b1c3d4a5"
+down_revision: Union[str, None] = "a9d1c4e2b7f0"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
