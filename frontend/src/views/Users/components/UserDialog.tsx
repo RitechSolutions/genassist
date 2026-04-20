@@ -20,7 +20,7 @@ import { Label } from "@/components/label";
 import { createUser, updateUser, getUser } from "@/services/users";
 import { useEffect } from "react";
 import { toast } from "react-hot-toast";
-import { Loader2 } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
 import { Role } from "@/interfaces/role.interface";
 import { UserType } from "@/interfaces/userType.interface";
 import { User } from "@/interfaces/user.interface";
@@ -28,6 +28,8 @@ import { UserGroup } from "@/interfaces/userGroup.interface";
 import { getAllUserTypes } from "@/services/userTypes";
 import { getAllRoles } from "@/services/roles";
 import { getAllUserGroups, addGroupSupervisor, removeGroupSupervisor } from "@/services/userGroups";
+import { Badge } from "@/components/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixTooltip";
 
 interface UserDialogProps {
   isOpen: boolean;
@@ -133,6 +135,12 @@ export function UserDialog({
     if (dialogMode !== "create" || apiKey || isConsoleUserType) {
       requiredFields = requiredFields.filter(
         (field) => field.label !== "Password"
+      );
+    }
+
+    if (dialogMode !== "create") {
+      requiredFields = requiredFields.filter(
+        (field) => field.label !== "Roles"
       );
     }
 
@@ -262,6 +270,10 @@ export function UserDialog({
       (r) => selectedRoleIds.includes(r.id) && r.name?.toLowerCase() === "supervisor"
     );
   }, [roles, selectedRoleIds]);
+
+  useEffect(() => {
+    setSupervisedGroupIds((prev) => prev.filter((id) => id !== groupId));
+  }, [groupId]);
 
   if (isLoading) {
     return (
@@ -417,29 +429,69 @@ export function UserDialog({
 
             {userGroups.length > 0 && isSupervisor && (
               <div className="space-y-2">
-                <Label>Supervised Groups</Label>
+                <div className="flex items-center gap-2">
+                  <Label>Supervise Other Groups</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        aria-label="Supervise Other Groups info"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-balance">
+                      This user will be part of the selected group, and can
+                      supervise other groups (optional).
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <div className="grid grid-cols-2 gap-2 border rounded-lg p-4">
-                  {userGroups.map((g) => (
+                  {userGroups.map((g) => {
+                    const isCurrentGroup = g.id === groupId;
+                    const isLockedByMissingGroup = !groupId;
+                    return (
                     <div key={g.id} className="flex items-center space-x-2">
                       <input
                         type="checkbox"
                         id={`sg-${g.id}`}
-                        checked={supervisedGroupIds.includes(g.id)}
+                        checked={isCurrentGroup || supervisedGroupIds.includes(g.id)}
+                        disabled={isLockedByMissingGroup}
+                        aria-disabled={isLockedByMissingGroup || isCurrentGroup}
+                        tabIndex={isCurrentGroup ? -1 : undefined}
                         onChange={() =>
+                          isCurrentGroup
+                            ? null
+                            :
                           setSupervisedGroupIds((prev) =>
                             prev.includes(g.id)
                               ? prev.filter((id) => id !== g.id)
                               : [...prev, g.id]
                           )
                         }
-                        className="form-checkbox accent-primary w-4 h-4"
+                        className={`form-checkbox accent-primary w-4 h-4 disabled:opacity-40 ${
+                          isCurrentGroup ? "opacity-60 cursor-not-allowed pointer-events-none" : ""
+                        }`}
                       />
-                      <Label htmlFor={`sg-${g.id}`} className="cursor-pointer">
-                        {g.name}
-                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor={`sg-${g.id}`} className={!groupId ? "text-muted-foreground" : "cursor-pointer"}>
+                          {g.name}
+                        </Label>
+                        {isCurrentGroup && (
+                          <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+                            Current
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
+                {!groupId && (
+                  <p className="text-xs text-muted-foreground">
+                    Select a group first to enable supervision options.
+                  </p>
+                )}
               </div>
             )}
           </div>
