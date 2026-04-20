@@ -18182,6 +18182,55 @@
         ]
       }
     },
+    "/api/workflow-builder/config/from-builder": {
+      "post": {
+        "tags": [
+          "v1",
+          "Workflow Builder"
+        ],
+        "summary": "Create Workflow From Builder",
+        "description": "Create a new Agent + Workflow from a structured builder specification.\n\nThe builder format extends the wizard format with:\n- Explicit edges (supporting branching, tool connections)\n- Config overrides per node\n- Non-default sourceHandle/targetHandle for special ports\n\nFalls back to linear chain if edges are not provided.",
+        "operationId": "create_workflow_from_builder_api_workflow_builder_config_from_builder_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_workflow_from_builder_api_workflow_builder_config_from_builder_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/mcp/discover-tools": {
       "post": {
         "tags": [
@@ -18409,7 +18458,7 @@
           "MCP"
         ],
         "summary": "List Mcp Tools Get",
-        "description": "List available tools from active MCP servers (MCP Protocol endpoint - GET).\n\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - GET).\n\nAuthenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)\nand returns all tools exposed by the authenticated MCP server.",
         "operationId": "list_mcp_tools_get_api_mcp_tools_get",
         "parameters": [
           {
@@ -18462,7 +18511,7 @@
           "MCP"
         ],
         "summary": "List Mcp Tools Post",
-        "description": "List available tools from active MCP servers (MCP Protocol endpoint - POST).\n\nThis endpoint matches the MCP client's expected format for tool discovery.\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - POST).\n\nThis endpoint matches the MCP client's expected format for tool discovery.\nAuthenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)\nand returns all tools exposed by the authenticated MCP server.",
         "operationId": "list_mcp_tools_post_api_mcp_tools_list_post",
         "parameters": [
           {
@@ -18515,7 +18564,7 @@
           "MCP"
         ],
         "summary": "Execute Mcp Tool",
-        "description": "Execute a workflow as an MCP tool (MCP Protocol endpoint).\n\nAuthenticates using API key, finds the tool in the server's workflows,\nvalidates arguments, and executes the workflow.",
+        "description": "Execute a workflow as an MCP tool (MCP Protocol endpoint).\n\nAuthenticates with a static MCP API key or OAuth 2.0 access token, finds the tool\nin the server's workflows, validates arguments, and executes the workflow.",
         "operationId": "execute_mcp_tool_api_mcp_tools_call_post",
         "parameters": [
           {
@@ -21530,6 +21579,29 @@
           "storage_path"
         ],
         "title": "Body_create_file_api_file_manager_files_post"
+      },
+      "Body_create_workflow_from_builder_api_workflow_builder_config_from_builder_post": {
+        "properties": {
+          "workflow_name": {
+            "type": "string",
+            "title": "Workflow Name"
+          },
+          "workflow_json": {
+            "type": "string",
+            "title": "Workflow Json"
+          },
+          "workflow_description": {
+            "type": "string",
+            "title": "Workflow Description",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_name",
+          "workflow_json"
+        ],
+        "title": "Body_create_workflow_from_builder_api_workflow_builder_config_from_builder_post"
       },
       "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post": {
         "properties": {
@@ -26002,11 +26074,86 @@
             "minLength": 1,
             "title": "Name"
           },
-          "api_key": {
+          "auth_type": {
             "type": "string",
-            "minLength": 32,
+            "enum": [
+              "api_key",
+              "oauth2"
+            ],
+            "title": "Auth Type",
+            "default": "api_key"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Api Key",
-            "description": "API key for authentication (minimum 32 characters)"
+            "description": "Required when auth_type is api_key (minimum 32 characters)"
+          },
+          "oauth2_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Client Id",
+            "description": "Required when auth_type is oauth2 (M2M client id)"
+          },
+          "oauth2_client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Client Secret",
+            "description": "Required when auth_type is oauth2"
+          },
+          "oauth2_issuer_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Issuer Url",
+            "description": "When auth_type is oauth2 \u2014 full URL to openid-configuration (token/JWKS endpoints discovered from this document)"
+          },
+          "oauth2_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Scope",
+            "description": "Space-separated scopes \u2014 token request (outbound) or optional JWT scope/scp check (inbound)"
+          },
+          "oauth2_audience": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Audience",
+            "description": "Optional expected JWT audience (aud) \u2014 comma-separated allowlist; omit to skip aud check"
           },
           "workflows": {
             "items": {
@@ -26039,7 +26186,6 @@
         "type": "object",
         "required": [
           "name",
-          "api_key",
           "workflows"
         ],
         "title": "MCPServerCreate",
@@ -26088,10 +26234,17 @@
             "title": "Url",
             "description": "MCP server URL (generated by backend)"
           },
-          "api_key": {
+          "auth_type": {
             "type": "string",
-            "title": "Api Key",
-            "description": "Masked API key (***)"
+            "title": "Auth Type",
+            "description": "api_key or oauth2",
+            "default": "api_key"
+          },
+          "auth_values": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Auth Values",
+            "description": "Stored auth for the UI (management API only): api_key \u2192 {api_key: '***'} when configured; oauth2 \u2192 issuer URL, optional scope, audience, decrypted oauth2_client_id, oauth2_client_secret_set (bool; secret is never returned)"
           },
           "workflows": {
             "items": {
@@ -26124,7 +26277,6 @@
         "required": [
           "name",
           "id",
-          "api_key",
           "workflows",
           "is_deleted",
           "user_id",
@@ -26149,18 +26301,87 @@
             ],
             "title": "Name"
           },
-          "api_key": {
+          "auth_type": {
             "anyOf": [
               {
                 "type": "string",
-                "minLength": 32
+                "enum": [
+                  "api_key",
+                  "oauth2"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Type"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Api Key",
-            "description": "API key for authentication (minimum 32 characters)"
+            "description": "If set, must be at least 32 characters (api_key auth)"
+          },
+          "oauth2_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Client Id"
+          },
+          "oauth2_client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Client Secret"
+          },
+          "oauth2_issuer_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Issuer Url"
+          },
+          "oauth2_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Scope"
+          },
+          "oauth2_audience": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Audience"
           },
           "workflows": {
             "anyOf": [
