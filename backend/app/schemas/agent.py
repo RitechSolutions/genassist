@@ -76,6 +76,7 @@ class AgentRead(AgentBase):
     welcome_image: Optional[bytes] = Field(None, exclude=True)
     # Flag to indicate if agent has a welcome image (avoids unnecessary fetch)
     has_welcome_image: bool = False
+    is_system: bool = False
 
     model_config = ConfigDict(extra='ignore')  # shared rules
 
@@ -169,6 +170,7 @@ class AgentListItem(BaseModel):
     workflow_id: Optional[UUID] = None
     possible_queries: List[str] = Field(default_factory=list, description="FAQ queries")
     is_active: bool = False
+    is_system: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

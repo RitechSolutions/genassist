@@ -70,7 +70,7 @@ class AgentRepository(DbRepository[AgentModel]):
         return result.scalars().first()
 
     async def get_list_paginated(
-        self, filter_obj: BaseFilterModel
+        self, filter_obj: BaseFilterModel, is_system: bool | None = None
     ) -> Tuple[list[AgentModel], int]:
         """
         Return minimal agent data for list view with pagination.
@@ -83,6 +83,8 @@ class AgentRepository(DbRepository[AgentModel]):
         count_stmt = select(func.count(AgentModel.id)).where(AgentModel.is_deleted == 0)
         if group_clause is not None:
             count_stmt = count_stmt.where(group_clause)
+        if is_system is not None:
+            count_stmt = count_stmt.where(AgentModel.is_system == is_system)
         count_result = await self.db.execute(count_stmt)
         total = count_result.scalar() or 0
 
@@ -93,11 +95,15 @@ class AgentRepository(DbRepository[AgentModel]):
             AgentModel.workflow_id,
             AgentModel.possible_queries,
             AgentModel.is_active,
+            AgentModel.is_system,
         ).where(AgentModel.is_deleted == 0)
         if group_clause is not None:
             data_stmt = data_stmt.where(group_clause)
+        if is_system is not None:
+            data_stmt = data_stmt.where(AgentModel.is_system == is_system)
 
-        # Apply sorting using base repository method
+        # System agents first, then apply user-requested sorting
+        data_stmt = data_stmt.order_by(AgentModel.is_system.desc())
         data_stmt = self._apply_sorting(data_stmt, filter_obj)
 
         # Apply pagination using base repository method
