@@ -84,6 +84,8 @@ class ProjectSettings(BaseSettings):
         "webm",
     )
     WHISPER_TRANSCRIBE_SERVICE: str = "http://localhost:8001/transcribe"
+    WHISPER_CHUNK_DURATION_MS: int = 5 * 60 * 1000  # 5 minutes in milliseconds
+    WHISPER_MAX_PARALLEL_CHUNKS: int = 2  # Max concurrent chunk transcriptions
 
     # === File Storage ===
     UPLOAD_FOLDER: str = str(DATA_VOLUME / "uploads")
@@ -91,7 +93,14 @@ class ProjectSettings(BaseSettings):
     RECORDINGS_DIR: str = str(DATA_VOLUME / "recordings")
 
     # === Limits ===
-    MAX_CONTENT_LENGTH: int = 50 * 1024 * 1024  # 50MB
+    # Canonical max request body / upload size (aligned with frontend nginx client_max_body_size).
+    MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 100MB
+    # Knowledge-base uploads (legacy /upload and chunked /upload-session).
+    KNOWLEDGE_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
+    KNOWLEDGE_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
+    # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
+    FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
+    FILES_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
     DEFAULT_WINDOW_SECONDS: int = 60
 
     # === Language ===

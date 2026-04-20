@@ -26,6 +26,9 @@
     --ring: 229 86% 51%;
     --brand-600: 229 86% 51%;
     --brand-50: 229 86% 98%;
+    --ai-brand: 245 100% 65%;
+    --ai-brand-hover: 243 75% 59%;
+    --ai-brand-light: 258 90% 66%;
     --radius: 0.75rem;
     --handler-diameter: 14;
   }

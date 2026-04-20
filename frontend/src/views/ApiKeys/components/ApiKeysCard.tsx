@@ -3,7 +3,7 @@ import { DataTable } from '@/components/DataTable';
 import { TableCell, TableRow } from '@/components/table';
 import { Button } from '@/components/button';
 import { Badge } from '@/components/badge';
-import { Pencil, RefreshCw } from 'lucide-react';
+import { Pencil, RefreshCw, Trash } from 'lucide-react';
 import { ApiKeyExpiryLines } from '@/components/api-keys/ApiKeyExpiryLines';
 import { RotateApiKeyDialog, type RotateApiKeyTarget } from '@/components/api-keys/RotateApiKeyDialog';
 import { ApiKey } from '@/interfaces/api-key.interface';
@@ -21,6 +21,7 @@ interface ApiKeysCardProps {
   onEditApiKey: (apiKey: ApiKey) => void;
   updatedApiKey?: ApiKey | null;
   onApiKeyRotated?: (apiKey: ApiKey) => void;
+  onDeleteApiKey: (apiKey: ApiKey) => void;
 }
 
 export function ApiKeysCard({
@@ -29,6 +30,7 @@ export function ApiKeysCard({
   onEditApiKey,
   updatedApiKey = null,
   onApiKeyRotated,
+  onDeleteApiKey,
 }: ApiKeysCardProps) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -104,6 +106,12 @@ export function ApiKeysCard({
             <Pencil className="w-4 h-4 text-black" />
           </Button>}
           tooltipContent={{ side: 'top', align: 'center', children: <p>Edit API Key</p> }}
+        />
+        <TooltipButton
+          button={<Button variant="ghost" size="sm" onClick={() => onDeleteApiKey(apiKey)} title="Delete API Key">
+            <Trash className="w-4 h-4 text-red-500" />
+          </Button>}
+          tooltipContent={{ side: 'top', align: 'center', children: <p>Delete API Key</p> }}
         />
       </TableCell>
     </TableRow>
