@@ -1,12 +1,15 @@
 import React, { useState, useRef, useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { HelpCircle, Search } from "lucide-react";
+import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp } from "lucide-react";
 import { Input } from "@/components/input";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
 import { renderIcon } from "@/views/AIAgents/Workflows/utils/iconUtils";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import type { AssistantMessage } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
+import { getActionLabel } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
+import FormattedText from "@/components/FormattedText";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import {
@@ -38,6 +41,10 @@ interface NodePanelProps {
   isOpen: boolean;
   onClose: () => void;
   onAddNode: (nodeType: string) => void;
+  messages?: AssistantMessage[];
+  isThinking?: boolean;
+  activeConversationalTab?: boolean;
+  onSendMessage?: (message: string) => void;
 }
 
 interface HelpDialogState {
@@ -52,6 +59,10 @@ const NodePanel: React.FC<NodePanelProps> = ({
   isOpen,
   onClose,
   onAddNode,
+  messages = [],
+  isThinking = false,
+  activeConversationalTab = false,
+  onSendMessage,
 }) => {
   const nodeCategories = nodeRegistry.getAllCategories();
   const [draggingNodeType, setDraggingNodeType] = useState<string | null>(null);
@@ -59,8 +70,38 @@ const NodePanel: React.FC<NodePanelProps> = ({
   const [activeTab, setActiveTab] = useState<string>("available");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedHelp, setSelectedHelp] = useState<HelpDialogState | null>(null);
+  const [inputMessage, setInputMessage] = useState<string>("");
+  const conversationScrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll conversation to bottom
+  React.useEffect(() => {
+    if (conversationScrollRef.current) {
+      conversationScrollRef.current.scrollTop = conversationScrollRef.current.scrollHeight;
+    }
+  }, [messages, isThinking]);
+
+  // Auto-switch to conversational tab when messages arrive
+  React.useEffect(() => {
+    if (activeConversationalTab) {
+      setActiveTab("conversational");
+    }
+  }, [activeConversationalTab]);
 
   const showConversationalTab = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CONVERSATIONAL_TAB);
+
+  const handleSend = () => {
+    if (inputMessage.trim() && onSendMessage && !isThinking) {
+      onSendMessage(inputMessage.trim());
+      setInputMessage("");
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
   // Handle drag start
   const onDragStart = (event: React.DragEvent, nodeType: string) => {
@@ -123,7 +164,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     }
 
     const query = searchQuery.toLowerCase();
-    const filtered: Record<string, NodeTypeDefinition<NodeData>[]> = {};
+    const filtered: Record<string, ReturnType<typeof nodeRegistry.getNodeTypesByCategory>> = {};
 
     nodeCategories.forEach((category) => {
       const nodesInCategory = nodeRegistry.getNodeTypesByCategory(category);
@@ -355,12 +396,14 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 <TabsList className="w-full h-10 bg-muted p-1 rounded-full">
                   <TabsTrigger
                     value="available"
+                    aria-label="Available Nodes"
                     className="flex-1 text-sm font-medium rounded-full"
                   >
                     Available Nodes
                   </TabsTrigger>
                   <TabsTrigger
                     value="conversational"
+                    aria-label="Conversational AI"
                     className="flex-1 text-sm font-medium rounded-full"
                   >
                     Conversational
@@ -393,10 +436,106 @@ const NodePanel: React.FC<NodePanelProps> = ({
               </div>
             )}
             {showConversationalTab && activeTab === "conversational" && (
-              <div className="p-4">
-                <p className="text-sm text-muted-foreground">
-                  Conversational nodes coming soon...
-                </p>
+              <div className="flex flex-col h-full">
+                {/* Messages area */}
+                <div ref={conversationScrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                  {messages.length === 0 && !isThinking ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-2 text-center py-12">
+                      <Sparkles className="h-8 w-8 text-[hsl(var(--brand-300))]" />
+                      <p className="text-sm text-muted-foreground">
+                        Ask the AI to help build your workflow.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {messages.map((msg) => (
+                        <div key={msg.id}>
+                          {msg.speaker === "customer" ? (
+                            <div className="flex justify-end">
+                              <div className="max-w-[80%] bg-blue-600 text-white text-sm rounded-2xl rounded-br-md px-4 py-2.5">
+                                {msg.text}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex gap-2.5">
+                              <div className="flex-shrink-0 mt-1">
+                                <div className="h-6 w-6 rounded-full bg-[hsl(var(--brand-50))] flex items-center justify-center">
+                                  <Sparkles className="h-3.5 w-3.5 text-[hsl(var(--brand-600))]" />
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm text-gray-700 leading-relaxed">
+                                  <FormattedText text={msg.text} />
+                                </div>
+                                {msg.actions && msg.actions.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    {msg.actions.map((action) => {
+                                      const isAdd = action.type === "add_node";
+                                      const isUpdate = action.type === "update_node";
+                                      const Icon = isAdd ? Plus : isUpdate ? Pencil : Trash2;
+                                      const colorClass = isAdd
+                                        ? "bg-green-50 text-green-700 border-green-200"
+                                        : isUpdate
+                                        ? "bg-blue-50 text-blue-700 border-blue-200"
+                                        : "bg-red-50 text-red-700 border-red-200";
+                                      const actionKey = `${action.type}-${getActionLabel(action)}`;
+                                      return (
+                                        <span
+                                          key={actionKey}
+                                          className={`inline-flex items-center gap-1 text-xs border rounded-full px-2.5 py-1 ${colorClass}`}
+                                        >
+                                          <Icon className="h-3 w-3" />
+                                          {getActionLabel(action)}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {isThinking && (
+                        <div className="flex gap-2.5">
+                          <div className="flex-shrink-0 mt-1">
+                            <div className="h-6 w-6 rounded-full bg-[hsl(var(--brand-50))] flex items-center justify-center">
+                              <Sparkles className="h-3.5 w-3.5 text-[hsl(var(--brand-600))] animate-pulse" />
+                            </div>
+                          </div>
+                          <div className="text-sm text-gray-400 flex items-center gap-1">
+                            <span className="animate-pulse">Thinking</span>
+                            <span className="animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
+                            <span className="animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
+                            <span className="animate-bounce" style={{ animationDelay: "300ms" }}>.</span>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                {/* Input bar */}
+                <div className="p-3 border-t border-border">
+                  <div className="relative flex items-center">
+                    <Sparkles className="absolute left-3 h-4 w-4 text-[hsl(var(--brand-600))] pointer-events-none" />
+                    <input
+                      type="text"
+                      value={inputMessage}
+                      onChange={(e) => setInputMessage(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Ask AI to update your workflow..."
+                      disabled={isThinking}
+                      className="w-full h-10 bg-white rounded-full pl-9 pr-11 text-sm placeholder:text-gray-400 border border-[hsl(var(--brand-600))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--brand-600))]/30 disabled:opacity-50 transition-all"
+                    />
+                    <button
+                      onClick={handleSend}
+                      disabled={isThinking || !inputMessage.trim()}
+                      className="absolute right-1.5 rounded-full bg-[hsl(var(--brand-600))] hover:opacity-90 disabled:bg-gray-200 disabled:opacity-100 disabled:cursor-not-allowed h-7 w-7 flex items-center justify-center transition-opacity"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5 text-white" />
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
