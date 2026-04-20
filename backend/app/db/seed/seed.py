@@ -662,6 +662,7 @@ async def seed_demo_agent(session: AsyncSession, agent_role: RoleModel,  injecto
     config_service = injector.get(AgentConfigService)
     # Create the agent configuration
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
+    agent_model.is_system = True
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
     workflow_update_data = WorkflowUpdate(name=workflow_model.name,
@@ -736,6 +737,7 @@ async def seed_gen_agent(session: AsyncSession, agent_role: RoleModel, injector:
     config_service = injector.get(AgentConfigService)
     # Create the agent configuration
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
+    agent_model.is_system = True
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
     workflow_update_data = WorkflowUpdate(name=workflow_model.name,
@@ -1518,6 +1520,7 @@ async def seed_workflow_builder_agent(
 
     config_service = injector.get(AgentConfigService)
     agent_model = await config_service.create(builder_agent, user_id=owner_user_id)
+    agent_model.is_system = True
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
     workflow_update_data = WorkflowUpdate(

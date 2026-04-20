@@ -8290,6 +8290,24 @@
         ],
         "parameters": [
           {
+            "name": "is_system",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by system (true) or user (false) agents",
+              "title": "Is System"
+            },
+            "description": "Filter by system (true) or user (false) agents"
+          },
+          {
             "name": "skip",
             "in": "query",
             "required": false,
@@ -20319,6 +20337,11 @@
             "type": "boolean",
             "title": "Is Active",
             "default": false
+          },
+          "is_system": {
+            "type": "boolean",
+            "title": "Is System",
+            "default": false
           }
         },
         "type": "object",
@@ -20498,6 +20521,11 @@
           "has_welcome_image": {
             "type": "boolean",
             "title": "Has Welcome Image",
+            "default": false
+          },
+          "is_system": {
+            "type": "boolean",
+            "title": "Is System",
             "default": false
           }
         },

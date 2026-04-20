@@ -52,6 +52,7 @@ export interface AgentConfig {
   llm_analyst_id?: string | null;
   security_settings?: AgentSecuritySettings | null;
   has_welcome_image?: boolean;
+  is_system?: boolean;
   [key: string]: unknown;
 }
 
@@ -64,6 +65,7 @@ export interface AgentListItem {
   workflow_id: string | null;
   possible_queries: string[];
   is_active: boolean;
+  is_system: boolean;
 }
 
 export type AgentConfigCreate = Omit<AgentConfig, "id" | "user_id" | "workflow_id">;
