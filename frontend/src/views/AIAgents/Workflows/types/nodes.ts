@@ -371,6 +371,18 @@ export interface MCPNodeData extends ToolBaseNodeData {
   whitelistedTools: string[]; // Array of tool names to expose
 }
 
+export interface NodeHelpSection {
+  title: string;
+  body?: string;
+  bullets?: string[];
+  steps?: string[];
+}
+
+export interface NodeHelpContent {
+  intro: string;
+  sections?: NodeHelpSection[];
+}
+
 // Workflow Executor Node Data
 export interface WorkflowExecutorNodeData extends BaseNodeData {
   workflowId?: string; // ID of the selected workflow to execute
@@ -450,6 +462,7 @@ export interface NodeTypeDefinition<T extends NodeData> {
   label: string;
   description: string;
   shortDescription?: string;
+  helpContent?: NodeHelpContent;
   configSubtitle?: string;
   category:
     | "io"

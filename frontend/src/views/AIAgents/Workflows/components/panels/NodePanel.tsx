@@ -3,13 +3,42 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp } from "lucide-react";
 import { Input } from "@/components/input";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
-import { getNodeColor, getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
+import { getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
 import { renderIcon } from "@/views/AIAgents/Workflows/utils/iconUtils";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
 import type { AssistantMessage } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
 import { getActionLabel } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
 import FormattedText from "@/components/FormattedText";
+import { Button } from "@/components/button";
+import { Badge } from "@/components/badge";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type {
+  NodeData,
+  NodeHelpContent,
+  NodeTypeDefinition,
+} from "@/views/AIAgents/Workflows/types/nodes";
+import { AI_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/llm/helperDefinition";
+import { IO_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/io/helperDefinition";
+import { ROUTING_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/router/helperDefinition";
+import { TOOLS_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/tools/helperDefinition";
+import { TRAINING_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/training/helperDefinition";
+import {
+  FORMATTING_NODES_HELP_CONTENT,
+  UTILS_NODES_HELP_CONTENT,
+} from "@/views/AIAgents/Workflows/nodeTypes/utils/helperDefinition";
+import { INTEGRATION_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/integrations/helperDefinition";
+import {
+  defaultHelpHeaderGradient,
+  helpHeaderGradientByCategory,
+} from "@/views/AIAgents/Workflows/utils/helpHeaderGradients";
 
 interface NodePanelProps {
   isOpen: boolean;
@@ -19,6 +48,14 @@ interface NodePanelProps {
   isThinking?: boolean;
   activeConversationalTab?: boolean;
   onSendMessage?: (message: string) => void;
+}
+
+interface HelpDialogState {
+  title: string;
+  badgeLabel: string;
+  icon: string;
+  category: string;
+  helpContent: NodeHelpContent;
 }
 
 const NodePanel: React.FC<NodePanelProps> = ({
@@ -35,6 +72,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
   const dragPreviewContainerRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<string>("available");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedHelp, setSelectedHelp] = useState<HelpDialogState | null>(null);
   const [inputMessage, setInputMessage] = useState<string>("");
   const conversationScrollRef = useRef<HTMLDivElement>(null);
 
@@ -101,7 +139,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     setDraggingNodeType(null);
   };
 
-  const categoryLabel = {
+  const categoryLabel: Record<string, string> = {
     io: "I/O",
     ai: "AI",
     routing: "Routing",
@@ -109,6 +147,18 @@ const NodePanel: React.FC<NodePanelProps> = ({
     formatting: "Formatting",
     tools: "Tools",
     training: "Training",
+    utils: "Utils",
+  };
+
+  const categoryHelpContent: Record<string, NodeHelpContent | undefined> = {
+    io: IO_NODES_HELP_CONTENT,
+    ai: AI_NODES_HELP_CONTENT,
+    routing: ROUTING_NODES_HELP_CONTENT,
+    formatting: FORMATTING_NODES_HELP_CONTENT,
+    utils: UTILS_NODES_HELP_CONTENT,
+    tools: TOOLS_NODES_HELP_CONTENT,
+    training: TRAINING_NODES_HELP_CONTENT,
+    integrations: INTEGRATION_NODES_HELP_CONTENT,
   };
 
   // Filter nodes based on search query
@@ -173,18 +223,42 @@ const NodePanel: React.FC<NodePanelProps> = ({
   };
 
   // Render a single category section
-  const renderCategorySection = (category: string, nodesInCategory: ReturnType<typeof nodeRegistry.getNodeTypesByCategory>) => {
+  const renderCategorySection = (
+    category: string,
+    nodesInCategory: NodeTypeDefinition<NodeData>[]
+  ) => {
     return (
       <div key={category} className="px-4 py-2">
-        <div className="flex items-center py-3">
+        <div className="flex items-center gap-2 py-3">
           <p className="text-xs font-semibold text-muted-foreground uppercase">
             {categoryLabel[category] ? categoryLabel[category] : category}
           </p>
+          {categoryHelpContent[category] && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground hover:bg-background/90"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setSelectedHelp({
+                  title: `${categoryLabel[category] ?? category} Nodes`,
+                  badgeLabel: "Category",
+                  icon: "Sparkles",
+                  category,
+                  helpContent: categoryHelpContent[category] as NodeHelpContent,
+                });
+              }}
+              aria-label={`Show details for ${categoryLabel[category] ?? category}`}
+            >
+              <HelpCircle className="h-4 w-4" />
+            </Button>
+          )}
         </div>
         <div className="flex flex-col gap-2">
           {nodesInCategory.map((nodeType) => {
             const isDragging = draggingNodeType === nodeType.type;
-            const color = getNodeColor(category);
             const bgColor = getNodeBgColor(category);
             const iconColor = getNodeIconColor(category);
 
@@ -208,7 +282,45 @@ const NodePanel: React.FC<NodePanelProps> = ({
                   <p className="flex-1 text-sm font-semibold text-accent-foreground min-w-0">
                     {nodeType.label}
                   </p>
-                  <HelpCircle className="shrink-0 h-4 w-4 text-muted-foreground" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-background/90"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setSelectedHelp({
+                        title: nodeType.label,
+                        badgeLabel:
+                          categoryLabel[nodeType.category] ?? nodeType.category,
+                        icon: nodeType.icon,
+                        category: nodeType.category,
+                        helpContent: nodeType.helpContent ?? {
+                          intro: nodeType.description,
+                          sections: nodeType.shortDescription
+                            ? [
+                                {
+                                  title: "Quick Overview",
+                                  body: nodeType.shortDescription,
+                                },
+                              ]
+                            : [],
+                        },
+                      });
+                    }}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onDragStart={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    aria-label={`Show details for ${nodeType.label}`}
+                  >
+                    <HelpCircle className="h-4 w-4" />
+                  </Button>
                 </div>
                 <div className="bg-background rounded-md px-4 py-2">
                   <p className="text-sm text-muted-foreground">
@@ -223,6 +335,44 @@ const NodePanel: React.FC<NodePanelProps> = ({
     );
   };
 
+  const renderHelpContent = (helpContent: NodeHelpContent) => {
+    return (
+      <div className="space-y-8">
+        <DialogDescription className="text-[18px] leading-8 text-foreground">
+          {helpContent.intro}
+        </DialogDescription>
+
+        {helpContent.sections?.map((section) => (
+          <section key={section.title} className="space-y-3">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {section.title}
+            </h3>
+
+            {section.body && (
+              <p className="text-base leading-7 text-foreground">{section.body}</p>
+            )}
+
+            {section.bullets && section.bullets.length > 0 && (
+              <ul className="space-y-2 pl-5 text-base leading-7 text-foreground list-disc">
+                {section.bullets.map((bullet) => (
+                  <li key={bullet}>{bullet}</li>
+                ))}
+              </ul>
+            )}
+
+            {section.steps && section.steps.length > 0 && (
+              <ol className="space-y-2 pl-5 text-base leading-7 text-foreground list-decimal">
+                {section.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            )}
+          </section>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <>
       <div
@@ -232,7 +382,9 @@ const NodePanel: React.FC<NodePanelProps> = ({
       ></div>
 
       <div
-        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-[360px] bg-primary-foreground shadow-lg rounded-xl transition-transform duration-300 border z-[1001] ${
+        className={`fixed top-2 right-2 h-[calc(100vh-1rem)] w-[360px] bg-primary-foreground shadow-lg rounded-xl transition-transform duration-300 border ${
+          selectedHelp ? "z-40" : "z-[1001]"
+        } ${
           isOpen ? "translate-x-0" : "translate-x-[calc(100%+0.5rem)]"
         }`}
       >
@@ -393,6 +545,68 @@ const NodePanel: React.FC<NodePanelProps> = ({
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={Boolean(selectedHelp)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setSelectedHelp(null);
+          }
+        }}
+      >
+        <DialogContent className="w-[min(92vw,860px)] max-w-[860px] min-h-[420px] max-h-[90vh] p-0 overflow-hidden rounded-xl border border-gray-200 shadow-2xl">
+          {selectedHelp && (
+            <div className="flex min-h-[420px] max-h-[90vh] flex-col bg-white">
+              <div
+                className={`px-10 pt-10 pb-6 ${
+                  helpHeaderGradientByCategory[selectedHelp.category] ??
+                    defaultHelpHeaderGradient
+                }`}
+              >
+                <div className="flex items-start gap-4">
+                  <div
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${getNodeBgColor(
+                      selectedHelp.category
+                    )}`}
+                  >
+                    {renderIcon(
+                      selectedHelp.icon,
+                      `h-5 w-5 ${getNodeIconColor(selectedHelp.category)}`
+                    )}
+                  </div>
+                  <DialogHeader className="m-0 flex-1 space-y-3 text-left">
+                    <div className="flex items-center gap-3">
+                      <DialogTitle className="text-[32px] font-semibold leading-tight text-foreground">
+                        {selectedHelp.title} Help
+                      </DialogTitle>
+                      <Badge
+                        variant="secondary"
+                        className="rounded-md px-2.5 py-1 text-[11px] uppercase tracking-[0.14em]"
+                      >
+                        {selectedHelp.badgeLabel}
+                      </Badge>
+                    </div>
+                  </DialogHeader>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-8 pt-8">
+                {renderHelpContent(selectedHelp.helpContent)}
+              </div>
+              <div className="flex justify-end px-10 pb-10">
+                <DialogClose asChild>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-11 rounded-full px-7 text-base font-medium shadow-sm"
+                  >
+                    Close
+                  </Button>
+                </DialogClose>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

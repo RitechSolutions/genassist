@@ -69,7 +69,7 @@ const menuItems: MenuItem[] = [
     children: [
       {
         title: "AI Insights",
-        url: "/analytics",
+        url: "/analytics/ai-insights",
         permissionsRequired: ["read:dashboard"],
       },
       {

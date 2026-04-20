@@ -17,12 +17,22 @@ import WhatsAppNode from "./whatsappNode";
 import CalendarEventNode from "./calendarEventNode";
 import ReadMailsNode from "./readMailsNode";
 import JiraNode from "./jiraNode";
+import {
+  CALENDAR_SCHEDULER_HELP_CONTENT,
+  EMAIL_READER_HELP_CONTENT,
+  EMAIL_SENDER_HELP_CONTENT,
+  JIRA_TASK_CREATOR_HELP_CONTENT,
+  SLACK_MESSENGER_HELP_CONTENT,
+  WHATSAPP_MESSENGER_HELP_CONTENT,
+  ZENDESK_TICKET_CREATOR_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const GMAIL_NODE_DEFINITION: NodeTypeDefinition<GmailNodeData> = {
   type: "gmailNode",
   label: "Email Sender",
   description: "Sends an email using a connected Gmail account.",
   shortDescription: "Send email via Gmail",
+  helpContent: EMAIL_SENDER_HELP_CONTENT,
   configSubtitle:
     "Configure email settings, including recipients, subject, and body.",
   category: "integrations",
@@ -70,6 +80,7 @@ export const ZENDESK_TICKET_NODE_DEFINITION: NodeTypeDefinition<ZendeskTicketNod
     description:
       "Creates a new ticket in Zendesk with specified requester and ticket details.",
     shortDescription: "Create a Zendesk ticket",
+    helpContent: ZENDESK_TICKET_CREATOR_HELP_CONTENT,
     configSubtitle:
       "Configure Zendesk ticket fields, including requester details and tags.",
     category: "integrations",
@@ -116,6 +127,7 @@ export const SLACK_OUTPUT_NODE_DEFINITION: NodeTypeDefinition<SlackOutputNodeDat
     label: "Slack Messenger",
     description: "Sends a message to a Slack user or channel.",
     shortDescription: "Send a Slack message",
+    helpContent: SLACK_MESSENGER_HELP_CONTENT,
     configSubtitle:
       "Configure Slack messaging settings, including channel and message content.",
     category: "integrations",
@@ -156,6 +168,7 @@ export const WHATSAPP_NODE_DEFINITION: NodeTypeDefinition<WhatsappNodeData> = {
   label: "WhatsApp Messenger",
   description: "Sends a WhatsApp message to a specified phone number.",
   shortDescription: "Send a WhatsApp message",
+  helpContent: WHATSAPP_MESSENGER_HELP_CONTENT,
   configSubtitle:
     "Configure WhatsApp message settings, including recipient and content.",
   category: "integrations",
@@ -198,6 +211,7 @@ export const READ_MAILS_NODE_DEFINITION: NodeTypeDefinition<ReadMailsNodeData> =
     description:
       "Retrieves emails using customizable search filters from a connected email account.",
     shortDescription: "Retrieve emails",
+    helpContent: EMAIL_READER_HELP_CONTENT,
     configSubtitle:
       "Configure email search filters, data source, and retrieval parameters.",
     category: "integrations",
@@ -249,6 +263,7 @@ export const CALENDAR_EVENT_NODE_DEFINITION: NodeTypeDefinition<CalendarEventToo
     description:
       "Creates calendar events using extracted or user-provided scheduling details.",
     shortDescription: "Schedule a calendar event",
+    helpContent: CALENDAR_SCHEDULER_HELP_CONTENT,
     configSubtitle:
       "Configure calendar event details, including timing, summary, and data source.",
     category: "integrations",
@@ -296,6 +311,7 @@ export const JIRA_NODE_DEFINITION: NodeTypeDefinition<JiraNodeData> = {
   description:
     "Creates a new task in a Jira project space with configurable fields and metadata.",
   shortDescription: "Create a Jira task",
+  helpContent: JIRA_TASK_CREATOR_HELP_CONTENT,
   configSubtitle:
     "Configure Jira task settings, including project space, name, and description.",
   category: "integrations",

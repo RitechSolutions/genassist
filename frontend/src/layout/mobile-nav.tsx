@@ -10,7 +10,7 @@ export function MobileNav() {
   const items = [
     { icon: Home, label: "Home", path: "/" },
     { icon: FileText, label: "Transcripts", path: "/transcripts" },
-    { icon: BarChart2, label: "Analytics", path: "/analytics" },
+    { icon: BarChart2, label: "Analytics", path: "/analytics/ai-insights" },
     { icon: Settings, label: "Settings", path: "/settings" }
   ];
 

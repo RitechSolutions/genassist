@@ -13,6 +13,13 @@ import DataMapperNode from "./dataMapperNode";
 import GuardrailProvenanceNode from "./guardrailProvenanceNode";
 import GuardrailNliNode from "./guardrailNliNode";
 import FileReaderNode from './fileReaderNode';
+import {
+  DATA_TRANSFORMER_HELP_CONTENT,
+  FILE_READER_HELP_CONTENT,
+  GUARDRAIL_NLI_HELP_CONTENT,
+  GUARDRAIL_PROVENANCE_HELP_CONTENT,
+  TEXT_TEMPLATE_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const TEMPLATE_NODE_DEFINITION: NodeTypeDefinition<TemplateNodeData> = {
   type: "templateNode",
@@ -20,6 +27,7 @@ export const TEMPLATE_NODE_DEFINITION: NodeTypeDefinition<TemplateNodeData> = {
   description:
     "Generates formatted text using a configurable template with dynamic variables.",
   shortDescription: "Generate text from a template",
+  helpContent: TEXT_TEMPLATE_HELP_CONTENT,
   configSubtitle: "Configure the text template and its dynamic variables.",
   category: "formatting",
   icon: "FileText",
@@ -60,6 +68,7 @@ export const DATA_MAPPER_NODE_DEFINITION: NodeTypeDefinition<DataMapperNodeData>
     description:
       "Transforms data using mapping rules or custom Python scripts.",
     shortDescription: "Transform data",
+    helpContent: DATA_TRANSFORMER_HELP_CONTENT,
     configSubtitle:
       "Configure data transformation rules, including mapping logic and Python script.",
     category: "formatting",
@@ -114,6 +123,7 @@ export const GUARDRAIL_PROVENANCE_NODE_DEFINITION: NodeTypeDefinition<GuardrailP
     description:
       "Checks whether the model answer is grounded in the provided context.",
     shortDescription: "Check answer provenance",
+    helpContent: GUARDRAIL_PROVENANCE_HELP_CONTENT,
     configSubtitle:
       "Configure which fields contain the answer and context, and the minimum provenance score.",
     category: "utils",
@@ -163,6 +173,7 @@ export const GUARDRAIL_NLI_NODE_DEFINITION: NodeTypeDefinition<GuardrailNliNodeD
     description:
       "Runs a simple NLI-style fact-check between the answer and evidence.",
     shortDescription: "NLI fact-check answer",
+    helpContent: GUARDRAIL_NLI_HELP_CONTENT,
     configSubtitle:
       "Configure which fields contain the answer and evidence, and the minimum entailment score.",
     category: "utils",
@@ -204,6 +215,7 @@ export const FILE_READER_NODE_DEFINITION: NodeTypeDefinition<FileReaderNodeData>
   label: 'File Reader',
   description: 'Reads the content of an uploaded file and outputs it as text.',
   shortDescription: 'Extract content of a file',
+  helpContent: FILE_READER_HELP_CONTENT,
   configSubtitle: 'Upload a file whose content will be extracted.',
   category: 'utils',
   icon: 'FileText',
