@@ -15,6 +15,7 @@ import GuardrailNliNode from "./guardrailNliNode";
 import FileReaderNode from './fileReaderNode';
 import {
   DATA_TRANSFORMER_HELP_CONTENT,
+  FILE_READER_HELP_CONTENT,
   GUARDRAIL_NLI_HELP_CONTENT,
   GUARDRAIL_PROVENANCE_HELP_CONTENT,
   TEXT_TEMPLATE_HELP_CONTENT,
@@ -214,6 +215,7 @@ export const FILE_READER_NODE_DEFINITION: NodeTypeDefinition<FileReaderNodeData>
   label: 'File Reader',
   description: 'Reads the content of an uploaded file and outputs it as text.',
   shortDescription: 'Extract content of a file',
+  helpContent: FILE_READER_HELP_CONTENT,
   configSubtitle: 'Upload a file whose content will be extracted.',
   category: 'utils',
   icon: 'FileText',

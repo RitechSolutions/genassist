@@ -149,3 +149,31 @@ export const GUARDRAIL_NLI_HELP_CONTENT: NodeHelpContent = {
     },
   ],
 };
+
+export const FILE_READER_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The File Reader node uploads a file and extracts its content for use in later workflow steps. It is useful when your flow needs to read documents or file-based inputs before processing, analysis, or generation.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the File Reader node when you need to:",
+      bullets: [
+        "Extract text from an uploaded file",
+        "Pass file content into an AI or utility node",
+        "Start a workflow from a document input",
+        "Prepare uploaded content for downstream processing",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "The Configure File Reader dialog will open.",
+        "Enter the Node Name.",
+        "Upload the File whose content should be extracted.",
+        "Review the selected file.",
+        "Click Save Changes.",
+      ],
+    },
+  ],
+};
