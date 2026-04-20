@@ -90,14 +90,19 @@ export async function getAllAgentConfigs(): Promise<AgentConfig[]> {
 // Paginated list endpoint - optimized for performance
 export async function getAgentConfigsList(
   page: number = 1,
-  pageSize: number = 20
+  pageSize: number = 20,
+  isSystem?: boolean | null
 ): Promise<PaginatedResponse<AgentListItem>> {
 
   const skip = (page - 1) * pageSize;
   const limit = pageSize;
+  const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
+  if (isSystem !== undefined && isSystem !== null) {
+    params.set("is_system", String(isSystem));
+  }
   return apiRequest<PaginatedResponse<AgentListItem>>(
     "GET",
-    `genagent/agents/configs/list?skip=${skip}&limit=${limit}`
+    `genagent/agents/configs/list?${params.toString()}`
   );
 }
 
