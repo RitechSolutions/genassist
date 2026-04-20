@@ -1,7 +1,7 @@
 from typing import Tuple
 from uuid import UUID
 from injector import inject
-from sqlalchemy import select, func
+from sqlalchemy import select, func, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
@@ -104,7 +104,16 @@ class AgentRepository(DbRepository[AgentModel]):
 
         # System agents first, then apply user-requested sorting
         data_stmt = data_stmt.order_by(AgentModel.is_system.desc())
-        data_stmt = self._apply_sorting(data_stmt, filter_obj)
+        sort_column = self._resolve_sort_column(filter_obj.order_by) if filter_obj.order_by else AgentModel.created_at
+        sort_direction = getattr(filter_obj.sort_direction, "value", filter_obj.sort_direction) or "desc"
+        sort_direction = sort_direction.lower() if isinstance(sort_direction, str) else "desc"
+
+        if sort_column is not None:
+            order_clause = desc(sort_column) if sort_direction == "desc" else asc(sort_column)
+            data_stmt = data_stmt.order_by(order_clause)
+
+        # Stable fallback for equal timestamps to keep latest-created rows first.
+        data_stmt = data_stmt.order_by(AgentModel.id.desc())
 
         # Apply pagination using base repository method
         data_stmt = self._apply_pagination(data_stmt, filter_obj)
