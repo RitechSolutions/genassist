@@ -4,6 +4,7 @@ AWS S3 Storage Provider (Stub Implementation)
 TODO: Implement full S3 storage operations using boto3.
 """
 
+import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 from app.core.utils.s3_utils import S3Client
@@ -54,6 +55,19 @@ class S3StorageProvider(BaseStorageProvider):
     def get_base_path(self) -> str:
         """Get the base path of the storage provider."""
         return self.aws_bucket_name
+
+    async def upload_file_from_local_path(
+        self,
+        local_path: str,
+        file_path: str,
+        file_metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Upload a local file to S3 using the boto3 multipart-capable upload_file API."""
+
+        def _upload() -> bool:
+            return self.s3_client.upload_file(local_path, self.aws_bucket_name, file_path)
+
+        return await asyncio.to_thread(_upload)
 
     async def upload_file(
         self,

@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import os
+import tempfile
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -196,12 +198,24 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                 current_file += 1
                 logger.info(f"Processing file {current_file} of {len(s3_new_files)}")
 
-                # Download file content
-                file_content = s3_client.get_file_content(file_info["key"])
-                logger.info(f"Extracting text from {file_info}...")
-                extracted_text = FileTextExtractor().extract(
-                    filename=file_info["key"], content=file_content
-                )
+                # Download to disk and extract from path to avoid reading large objects into memory.
+                tmp_path: str | None = None
+                try:
+                    suffix = os.path.splitext(file_info["key"])[1] or ".bin"
+                    fd, tmp_path = tempfile.mkstemp(prefix="s3_", suffix=suffix)
+                    os.close(fd)
+                    ok = s3_client.download_file(file_info["key"], tmp_path)
+                    if not ok:
+                        raise Exception(f"Failed to download S3 object: {file_info['key']}")
+
+                    logger.info(f"Extracting text from {file_info}...")
+                    extracted_text = FileTextExtractor().extract(path=tmp_path)
+                finally:
+                    if tmp_path and os.path.exists(tmp_path):
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
 
                 # Create knowledge base item
                 last_file_date = datetime.strptime(

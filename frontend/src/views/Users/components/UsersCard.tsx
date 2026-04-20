@@ -174,6 +174,9 @@ export function UsersCard({
   const renderRow = (user: User, index: number) => {
     const isDeleted = user.is_deleted === 1;
     const isSelf = Boolean(currentUserId && user.id === currentUserId);
+    const additionalGroupCount = new Set(
+      (user.supervised_group_ids ?? []).filter((id) => id && id !== user.group_id)
+    ).size;
 
     return (
       <TableRow key={user.id}>
@@ -209,7 +212,18 @@ export function UsersCard({
           </div>
         </TableCell>
         <TableCell className="truncate">
-          {user.group_id ? (groupMap[user.group_id] ?? "—") : "—"}
+          {user.group_id ? (
+            <div className="inline-flex items-center gap-1">
+              <span>{groupMap[user.group_id] ?? "—"}</span>
+              {additionalGroupCount > 0 && (
+                <Badge variant="outline" className="px-1.5 py-0 text-[10px] leading-4">
+                  +{additionalGroupCount}
+                </Badge>
+              )}
+            </div>
+          ) : (
+            "—"
+          )}
         </TableCell>
         <TableCell>
           <ActionButtons

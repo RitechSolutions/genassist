@@ -41,6 +41,24 @@ async def get_current_user(
 
 
 # Checks for api key header or user JWT token
+def _set_user_context(user, roles) -> None:
+    """Populate starlette context with user identity and group info.
+
+    Centralised so HTTP auth (auth()) and WebSocket auth (socket_auth) stay in sync.
+    ``roles`` is passed separately because API-key auth takes roles from the key
+    object, not directly from the user.
+    """
+    context["user_id"] = user.id if user else None
+    context["user_roles"] = roles
+    context["operator_id"] = user.operator.id if user and user.operator else None
+    context["group_id"] = user.group_id if user and hasattr(user, "group_id") else None
+    context["supervised_group_ids"] = (
+        list(user.supervised_group_ids)
+        if user and hasattr(user, "supervised_group_ids")
+        else []
+    )
+
+
 async def auth(
     request: Request,
     api_key: Optional[str] = Depends(api_key_header),
@@ -51,23 +69,12 @@ async def auth(
     """
     if getattr(request.state, "api_key", None):
         # Authenticate API Key if provided
-        # logger.debug(f"[auth] api key {api_key}")
-
-        context["user_id"] = user.id if user else None  # store in context
         context["auth_mode"] = "api_key"
-        context["user_roles"] = request.state.api_key.roles
-        context["operator_id"] = user.operator.id if user and user.operator else None
-        context["group_id"] = (user.group_id if user and hasattr(user, "group_id") else None)
-        context["supervised_group_ids"] = list(user.supervised_group_ids) if user and hasattr(user, "supervised_group_ids") else []
+        _set_user_context(user, request.state.api_key.roles)
     elif user:
         request.state.user = user  # Attach user to the state
         context["auth_mode"] = "token"
-        context["user_id"] = user.id  # store in context
-        context["user_roles"] = user.roles
-        # store in context
-        context["operator_id"] = user.operator.id if user.operator else None
-        context["group_id"] = user.group_id if hasattr(user, "group_id") else None
-        context["supervised_group_ids"] = list(user.supervised_group_ids) if hasattr(user, "supervised_group_ids") else []
+        _set_user_context(user, user.roles)
     else:
         raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)
 
@@ -169,6 +176,7 @@ def socket_auth(required_permissions: list[str]):
             if access_token:
                 user = await auth_service.decode_jwt(access_token)
                 principal, user_id, perms = user, user.id, user.permissions
+                _set_user_context(user, user.roles)
             elif api_key:
                 key_obj = await auth_service.authenticate_api_key(api_key)
                 principal, user_id, perms = (
@@ -176,6 +184,7 @@ def socket_auth(required_permissions: list[str]):
                     key_obj.user.id,
                     key_obj.permissions,
                 )
+                _set_user_context(key_obj.user, key_obj.roles)
             else:
                 raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Missing credentials")
 

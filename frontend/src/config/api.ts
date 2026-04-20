@@ -34,12 +34,17 @@ const processQueue = (error: unknown, token: string | null = null) => {
 const ensureTrailingSlash = (url: string): string =>
   url.endsWith("/") ? url : `${url}/`;
 
+/** Default HTTP client timeout for JSON/API calls (not used for large file uploads — see uploadConstants). */
+export const API_DEFAULT_TIMEOUT_MS = 120000;
+
 const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 120000, // Increased to 2 minutes for SQL operations
+  timeout: API_DEFAULT_TIMEOUT_MS,
 });
+
+export { API_UPLOAD_TIMEOUT_MS } from "@/config/uploadConstants";
 
 // Interceptor: Request
 api.interceptors.request.use(
@@ -236,6 +241,39 @@ export const apiRequest = async <T>(
 export { api };
 
 // Simple connectivity probe used by Retry buttons
+/** User-facing message for failed uploads (timeout vs HTTP vs network). */
+export function formatUploadOrNetworkError(err: unknown): string {
+  if (!(err instanceof AxiosError)) {
+    return err instanceof Error ? err.message : String(err);
+  }
+  const code = err.code;
+  const status = err.response?.status;
+  const detail = (err.response?.data as { detail?: unknown } | undefined)?.detail;
+  const detailStr =
+    typeof detail === "string"
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((d) => (typeof d === "object" && d && "msg" in d ? String((d as { msg: string }).msg) : String(d))).join("; ")
+        : undefined;
+
+  if (code === "ECONNABORTED") {
+    return "Upload timed out or was cancelled. Try again, or use a smaller file / faster connection.";
+  }
+  if (!err.response && (code === "ERR_NETWORK" || code === "ECONNRESET")) {
+    return "Network error during upload. Check your connection and try again.";
+  }
+  if (status === 413) {
+    return "File is too large for the server. Reduce file size or ask an admin to raise upload limits.";
+  }
+  if (status === 400 && detailStr) {
+    return detailStr;
+  }
+  if (status && detailStr) {
+    return detailStr;
+  }
+  return err.message || "Upload failed.";
+}
+
 export const probeApiHealth = async (): Promise<boolean> => {
   const baseURL = await getApiUrl();
   const candidates = [

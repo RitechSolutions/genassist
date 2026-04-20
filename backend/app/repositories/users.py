@@ -51,6 +51,7 @@ class UserRepository:
                 email=user.email,
                 is_active=user.is_active,
                 user_type_id=user.user_type_id,
+                group_id=user.group_id,
                 )
         self.db.add(new_user)
         await self.db.flush()

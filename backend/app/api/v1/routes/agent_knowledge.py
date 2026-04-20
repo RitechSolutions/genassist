@@ -1,17 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form, Request
-from typing import List, Dict, Optional
+import logging
 import os
-import uuid
 import shutil
+import uuid
+from typing import Dict, List, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi_injector import Injected
+
 from app.auth.dependencies import auth, permissions
-from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.exception_classes import AppException
+from app.core.config.settings import file_storage_settings
+from app.core.config.settings import settings as project_settings
+from app.core.project_path import DATA_VOLUME
+from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import set_url_content_if_no_rag
 from app.modules.data.manager import AgentRAGServiceManager
-from app.modules.data.utils import FileExtractor, FileTextExtractor
-import logging
-from uuid import UUID
 from app.modules.data.providers.legra import (
     FaissFlatIndexer,
     HuggingFaceGenerator,
@@ -20,26 +23,30 @@ from app.modules.data.providers.legra import (
     SemanticChunker,
     SentenceTransformerEmbedder,
 )
+from app.modules.data.utils import FileExtractor, FileTextExtractor
+from app.modules.workflow.agents.rag import ThreadScopedRAG
 from app.schemas.agent_knowledge import KBBase, KBCreate, KBListItem, KBRead
 from app.schemas.common import PaginatedResponse
+from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
+from app.schemas.file import FileBase, FileUploadResponse
 from app.schemas.filter import BaseFilterModel
+from app.schemas.knowledge_upload import (
+    KbUploadSessionCreate,
+    KbUploadSessionCreateResponse,
+    KbUploadSessionStatusResponse,
+)
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.agent_knowledge_utils import (
     populate_remote_file_metadata,
     schedule_rag_load,
 )
-from app.core.tenant_scope import get_tenant_context
-from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
-from app.tasks.s3_tasks import import_s3_files_to_kb_async
-from app.core.project_path import DATA_VOLUME
-from app.modules.workflow.agents.rag import ThreadScopedRAG
-from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
+from app.services.app_settings import AppSettingsService
+
 # File manager service
 from app.services.file_manager import FileManagerService
-from app.schemas.file import FileBase, FileUploadResponse
-from app.core.config.settings import file_storage_settings
-from app.services.app_settings import AppSettingsService
-from app.db.models.file import StorageProvider
+from app.services.file_upload_session import FileUploadSessionService
+from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
+from app.tasks.s3_tasks import import_s3_files_to_kb_async
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -246,11 +253,31 @@ async def upload_file(
     results = []
     logger.info(f"Starting upload of {len(files)} files.")
 
+    max_kb = project_settings.KNOWLEDGE_MAX_UPLOAD_BYTES
+    use_file_manager = file_storage_settings.FILE_MANAGER_ENABLED
+    storage_provider = None
+    app_settings_config = None
+    if use_file_manager:
+        app_settings_config = await app_settings_svc.get_by_type_and_name(
+            "FileManagerSettings", "File Manager Settings"
+        )
+        storage_provider = await file_manager_service.initialize(
+            base_url=str(request.base_url).rstrip("/"),
+            base_path=str(DATA_VOLUME),
+            app_settings=app_settings_config,
+        )
+
     for file in files:
         try:
             logger.info(
                 f"Received file upload: {file.filename}, size: {file.size}, content_type: {file.content_type}"
             )
+
+            if file.size is not None and file.size > max_kb:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File exceeds maximum allowed size ({max_kb} bytes).",
+                )
 
             # Generate a unique filename
             file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
@@ -262,17 +289,8 @@ async def upload_file(
                 "original_filename": file.filename,
             }
 
-            # check if the file manager is enabled
-            use_file_manager = file_storage_settings.FILE_MANAGER_ENABLED
-
-            if use_file_manager:
-                # subdir
-                sub_folder = f"agents_config/uploads"
-
-                # initialize the file manager service
-                app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
-                storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings = app_settings_config)
-
+            if use_file_manager and storage_provider:
+                sub_folder = "agents_config/uploads"
                 file_base = FileBase(
                     name=unique_filename,
                     storage_path=storage_provider.get_base_path(),
@@ -281,18 +299,18 @@ async def upload_file(
                     file_extension=file_extension,
                 )
 
-                # use file manager service to upload the file
-                created_file = await file_manager_service.create_file(file, file_base=file_base)
+                created_file = await file_manager_service.create_file(
+                    file=file,
+                    file_base=file_base,
+                    max_file_size=max_kb,
+                )
                 file_id = str(created_file.id)
-
-                # await file_manager_service.download_file_to_path(file_id, file_path)
                 file_url = await file_manager_service.get_file_source_url(created_file.id)
 
                 result["file_type"] = "url"
                 result["file_url"] = file_url
                 result["file_id"] = file_id
 
-                # if the file is stored locally, add the file path to the result
                 if created_file.storage_provider == "local":
                     result["file_path"] = f"{created_file.storage_path}/{created_file.path}"
             else:
@@ -312,6 +330,8 @@ async def upload_file(
 
             logger.info(f"Upload successful: {result}")
             results.append(result)
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error uploading file: {str(e)}")
             raise HTTPException(
@@ -319,6 +339,97 @@ async def upload_file(
 
     logger.info(f"All uploads successful: {results}")
     return results
+
+
+@router.post(
+    "/upload-session",
+    response_model=KbUploadSessionCreateResponse,
+    dependencies=[Depends(auth)],
+)
+async def create_kb_upload_session(
+    payload: KbUploadSessionCreate,
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+):
+    """Start a chunked upload for a single large file (backward compatible with /upload)."""
+    try:
+        created = await svc.create_session(
+            payload.original_filename,
+            payload.expected_size,
+            payload.content_type,
+        )
+        return KbUploadSessionCreateResponse(
+            session_id=created.session_id,
+            max_chunk_bytes=created.max_chunk_bytes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/upload-session/{session_id}/chunk",
+    dependencies=[Depends(auth)],
+)
+async def kb_upload_session_chunk(
+    session_id: UUID,
+    chunk: UploadFile = File(...),
+    chunk_index: int = Form(0),
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+):
+    """Append one chunk to a staged upload session."""
+    try:
+        data = await chunk.read()
+        total = await svc.append_chunk(session_id, data, chunk_index)
+        return {"status": "ok", "bytes_received": total}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/upload-session/{session_id}/complete",
+    response_model=Dict[str, str],
+    dependencies=[Depends(auth)],
+)
+async def kb_upload_session_complete(
+    session_id: UUID,
+    request: Request,
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Finalize staged bytes into storage + files row (same shape as one legacy /upload item)."""
+    try:
+        return await svc.complete_session(
+            session_id,
+            request,
+            file_manager_service,
+            app_settings_svc,
+            sub_folder="agents_config/uploads",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/upload-session/{session_id}",
+    response_model=KbUploadSessionStatusResponse,
+    dependencies=[Depends(auth)],
+)
+async def kb_upload_session_status(
+    session_id: UUID,
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+):
+    try:
+        s = await svc.get_status(session_id)
+        return KbUploadSessionStatusResponse(
+            id=s.id,
+            status=s.status,
+            bytes_received=s.bytes_received,
+            expected_bytes=s.expected_bytes,
+            error_message=s.error_message,
+            result=s.result,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post(
@@ -369,7 +480,7 @@ async def upload_file_to_chat(
         except Exception as e:
             logger.error(f"Error creating file: {str(e)}")
             raise HTTPException(
-                status_code=400, detail=f"Unsupported file type. Only PDF, DOCX, TXT, JPG, JPEG, and PNG are allowed.") from e
+                status_code=400, detail="Unsupported file type. Only PDF, DOCX, TXT, JPG, JPEG, and PNG are allowed.") from e
 
         # get file id from created file
         file_id = created_file.id

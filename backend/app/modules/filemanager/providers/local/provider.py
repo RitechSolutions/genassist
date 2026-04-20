@@ -75,6 +75,30 @@ class LocalFileSystemProvider(BaseStorageProvider):
         return (self.base_path / Path(file_path)).resolve()
 
 
+    async def upload_file_from_local_path(
+        self,
+        local_path: str,
+        file_path: str,
+        file_metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Copy from a temp/local path into storage without loading entire file into RAM."""
+        import asyncio
+        import shutil
+
+        try:
+            full_path = self._resolve_path(file_path)
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+
+            def _copy() -> None:
+                shutil.copy2(local_path, full_path)
+
+            await asyncio.to_thread(_copy)
+            logger.debug(f"Uploaded file from {local_path} to {full_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to upload file from local path {local_path}: {e}")
+            return False
+
     async def upload_file(
         self,
         file_content: bytes,

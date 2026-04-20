@@ -41,6 +41,7 @@ from .app_settings import AppSettingsModel
 from .webhook import WebhookModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
 from .file import FileModel, StorageProvider
+from .files_upload_session import FilesUploadSessionModel
 from .user_group import UserGroupModel
 from .user_supervised_group import UserSupervisedGroupModel
 __all__ = [
@@ -96,6 +97,7 @@ __all__ = [
     "StorageProvider",
     "UserGroupModel",
     "UserSupervisedGroupModel",
+    "FilesUploadSessionModel",
 ]
 
 models = [

@@ -1,17 +1,19 @@
 import asyncio
 import logging
+import os
+import tempfile
 from datetime import datetime, timezone
 from typing import Optional
-from app.dependencies.injector import injector
-from app.core.utils.s3_utils import S3Client
-from app.services.datasources import DataSourceService
-from celery import shared_task
-from io import BytesIO
-from app.services.audio import AudioService
-from app.db.seed.seed_data_config import SeedTestData
-from app.schemas.recording import RecordingCreate
 
+from celery import shared_task
 from fastapi import UploadFile
+
+from app.core.utils.s3_utils import S3Client
+from app.db.seed.seed_data_config import SeedTestData
+from app.dependencies.injector import injector
+from app.schemas.recording import RecordingCreate
+from app.services.audio import AudioService
+from app.services.datasources import DataSourceService
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +67,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
         conn_data = ds_item.connection_data
         logger.info(f"Processing S3 Datasource: {conn_data}")
 
-        prefix = conn_data["prefix"]
+        prefix = conn_data.get("prefix", "").lstrip("/").strip() or ""
         bucket = conn_data["bucket_name"]
         access_key = conn_data["access_key"]
         secret_key = conn_data["secret_key"]
@@ -109,32 +111,50 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
                     count_files_skipped += 1
                     continue
 
-                content = s3_client.get_file_content(file_info["key"])
+                # Download to disk to avoid loading large objects into memory.
+                tmp_path: str | None = None
+                tmp_fh = None
+                try:
+                    suffix = os.path.splitext(file_info["key"])[1] or ".bin"
+                    fd, tmp_path = tempfile.mkstemp(prefix="s3_audio_", suffix=suffix)
+                    os.close(fd)
+                    ok = s3_client.download_file(file_info["key"], tmp_path)
+                    if not ok:
+                        raise Exception(f"Failed to download S3 object: {file_info['key']}")
 
-                # Convert to UploadFile
-                upload_file = UploadFile(
-                    file=BytesIO(content),  # in-memory stream
-                    filename=file_info["key"],  # ,
-                    # content_type="application/octet-stream"
-                )
+                    tmp_fh = open(tmp_path, "rb")
+                    upload_file = UploadFile(
+                        file=tmp_fh,
+                        filename=file_info["key"],
+                    )
 
-                logger.info(
-                    f"Transcribing file: {file_info['key']} of Datasource {ds_item.name}"
-                )
-                # transcript = await transcribe_audio_whisper_no_save(upload_file)
+                    logger.info(
+                        f"Transcribing file: {file_info['key']} of Datasource {ds_item.name}"
+                    )
+                    # transcript = await transcribe_audio_whisper_no_save(upload_file)
 
-                transcribed_recording = await audioService.process_recording(
-                    upload_file, metadata
-                )
+                    transcribed_recording = await audioService.process_recording(
+                        upload_file, metadata
+                    )
 
-                logger.info(f"Transcription for {file_info['key']}: completed")
+                    logger.info(f"Transcription for {file_info['key']}: completed")
 
-                # TODO: save it in Recording
+                    # TODO: save it in Recording
 
-                transcribed.append(
-                    {"file": file_info["key"], "timestamp": datetime.now().isoformat()}
-                )
-                count_transctibed_sucess += 1
+                    transcribed.append(
+                        {"file": file_info["key"], "timestamp": datetime.now().isoformat()}
+                    )
+                    count_transctibed_sucess += 1
+                finally:
+                    try:
+                        if tmp_fh:
+                            tmp_fh.close()
+                    finally:
+                        if tmp_path and os.path.exists(tmp_path):
+                            try:
+                                os.unlink(tmp_path)
+                            except OSError:
+                                pass
             except Exception as e:
                 count_transcribed_fail += 1
                 logger.error(f"Failed to transcribe {file_info['key']}: {str(e)}")

@@ -47,6 +47,7 @@ import { KnowledgeItem, UrlHeaderRow, UploadResult, FileItem } from '../types/kn
 import { SidebarProvider, SidebarTrigger } from '@/components/sidebar';
 import { AppSidebar } from '@/layout/app-sidebar';
 import { useIsMobile } from '@/hooks/useMobile';
+import { Progress } from '@/components/progress';
 
 const DEFAULT_FORM_DATA: KnowledgeItem = {
   id: uuidv4(),
@@ -128,6 +129,7 @@ const KnowledgeBaseForm: React.FC = () => {
   const [dynamicRagConfig, setDynamicRagConfig] = useState<RagConfigValues>({});
   const [loading, setLoading] = useState<boolean>(isEditMode);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [urls, setUrls] = useState<string[]>(['']);
   const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
@@ -319,14 +321,18 @@ const KnowledgeBaseForm: React.FC = () => {
   const uploadFiles = async (): Promise<UploadResult[] | null> => {
     if (selectedFiles.length === 0) return null;
     setIsUploading(true);
+    setUploadProgress(0);
     try {
-      const result = await apiUploadFiles(selectedFiles);
+      const result = await apiUploadFiles(selectedFiles, {
+        onProgress: (pct) => setUploadProgress(pct),
+      });
       return result as unknown as UploadResult[];
     } catch (err) {
       setError(`Failed to upload files: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     } finally {
       setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -959,8 +965,11 @@ const KnowledgeBaseForm: React.FC = () => {
                                   </div>
                                 )}
                                 {isUploading && (
-                                  <div className="p-2 text-sm text-muted-foreground">
-                                    Uploading files... Please wait.
+                                  <div className="p-2 space-y-2">
+                                    <div className="text-sm text-muted-foreground">
+                                      Uploading files... {uploadProgress > 0 ? `${uploadProgress}%` : 'Please wait.'}
+                                    </div>
+                                    <Progress value={uploadProgress} className="h-2" />
                                   </div>
                                 )}
                               </div>
