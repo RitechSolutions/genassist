@@ -37,10 +37,10 @@ export default function MCPServersPage() {
     <PageLayout>
       <PageHeader
         title="MCP Servers"
-        subtitle="Manage MCP servers and expose workflows as tools"
+        subtitle="Manage MCP servers and expose workflows as tools."
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        searchPlaceholder="Search MCP servers..."
+        searchPlaceholder="Search by name, issuer URL, client id, or scope…"
         actionButtonText="Add New MCP Server"
         onActionClick={handleCreateServer}
       />

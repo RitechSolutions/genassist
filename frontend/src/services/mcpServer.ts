@@ -7,13 +7,22 @@ import {
 
 const BASE = "mcp-servers";
 
+function normalizeMCPServer(s: MCPServer): MCPServer {
+  const raw = s as MCPServer & { auth_values?: MCPServer["auth_values"] };
+  return {
+    ...raw,
+    auth_values: raw.auth_values ?? {},
+    auth_type: raw.auth_type === "oauth2" ? "oauth2" : "api_key",
+  };
+}
+
 export const getAllMCPServers = async (): Promise<MCPServer[]> => {
   try {
     const data = await apiRequest<MCPServer[]>("GET", `${BASE}`);
     if (!data || !Array.isArray(data)) {
       return [];
     }
-    return data;
+    return data.map(normalizeMCPServer);
   } catch (error) {
     throw error;
   }
@@ -22,7 +31,7 @@ export const getAllMCPServers = async (): Promise<MCPServer[]> => {
 export const getMCPServer = async (id: string): Promise<MCPServer | null> => {
   try {
     const data = await apiRequest<MCPServer>("GET", `${BASE}/${id}`);
-    return data ?? null;
+    return data ? normalizeMCPServer(data) : null;
   } catch (error) {
     throw error;
   }
@@ -38,7 +47,7 @@ export const createMCPServer = async (
       serverData as unknown as Record<string, unknown>
     );
     if (!response) throw new Error("Failed to create MCP server");
-    return response;
+    return normalizeMCPServer(response);
   } catch (error) {
     throw error;
   }
@@ -55,7 +64,7 @@ export const updateMCPServer = async (
       serverData as unknown as Record<string, unknown>
     );
     if (!response) throw new Error("Failed to update MCP server");
-    return response;
+    return normalizeMCPServer(response);
   } catch (error) {
     throw error;
   }

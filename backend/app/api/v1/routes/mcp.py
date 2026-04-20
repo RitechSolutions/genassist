@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi_injector import Injected
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
+from mcp.shared.exceptions import McpError
 from mcp.types import TextContent
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import Response as StarletteResponse
@@ -25,6 +26,25 @@ from app.services.mcp_server import MCPServerService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _first_mcp_error_or_leaf(exc: BaseException) -> BaseException:
+    """
+    The MCP Python SDK runs the session inside an anyio TaskGroup. Failures such as
+    ``McpError`` are often wrapped in ``ExceptionGroup``, which is not a subclass of
+    ``Exception`` — plain ``except Exception`` will not catch it.
+    """
+    if isinstance(exc, McpError):
+        return exc
+    if isinstance(exc, BaseExceptionGroup):
+        for sub in exc.exceptions:
+            got = _first_mcp_error_or_leaf(sub)
+            if isinstance(got, McpError):
+                return got
+        if exc.exceptions:
+            return _first_mcp_error_or_leaf(exc.exceptions[0])
+        return exc
+    return exc
 
 
 class _TransportAlreadyResponded(StarletteResponse):
@@ -118,29 +138,74 @@ async def discover_mcp_tools(request: DiscoverToolsRequest) -> DiscoverToolsResp
         return DiscoverToolsResponse(tools=tools)
 
     except ValueError as e:
-        # Validation errors (e.g., invalid URL, authentication failure)
-        logger.error(f"MCP tool discovery failed: {str(e)}")
+        logger.warning("MCP discover-tools validation error: %s", e)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail=str(e),
+        ) from e
+    except McpError as e:
+        logger.warning("MCP discover-tools remote error: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+    except BaseExceptionGroup as eg:
+        inner = _first_mcp_error_or_leaf(eg)
+        if isinstance(inner, McpError):
+            logger.warning("MCP discover-tools remote error (TaskGroup): %s", inner)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(inner),
+            ) from eg
+        if isinstance(inner, ValueError):
+            logger.warning("MCP discover-tools validation error (TaskGroup): %s", inner)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(inner),
+            ) from eg
+        logger.error(
+            "MCP discover-tools failed (ExceptionGroup): %s",
+            inner,
+            exc_info=True,
         )
-    except Exception as e:
-        # Connection errors, timeouts, etc.
-        logger.error(f"Error discovering MCP tools: {str(e)}", exc_info=True)
-        error_message = f"Failed to connect to MCP server: {str(e)}"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_message
-        )
+            detail=f"Failed to connect to MCP server: {inner}",
+        ) from eg
+    except Exception as e:
+        logger.error("Error discovering MCP tools: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect to MCP server: {e}",
+        ) from e
 
 
 def extract_bearer_token(authorization: Optional[str] = Header(None)) -> Optional[str]:
-    """Extract Bearer token from Authorization header."""
+    """
+    Extract the secret from ``Authorization`` (case-insensitive ``Bearer`` prefix).
+
+    Strips surrounding whitespace so pasted API keys / JWTs match stored hashes and JWKS checks.
+    """
     if not authorization:
         return None
-    if authorization.startswith("Bearer "):
-        return authorization[7:]
-    return authorization
+    auth = authorization.strip()
+    if len(auth) >= 7 and auth[:7].lower() == "bearer ":
+        raw = auth[7:].lstrip()
+    else:
+        raw = auth
+    raw = raw.strip()
+    return raw or None
+
+
+# ``Authorization: Bearer`` carries either a static MCP API key or an OAuth 2.0 access token (JWT)
+# when the MCP server is configured with ``auth_type`` oauth2 (verified via JWKS / ``mcp_oauth_inbound``).
+_MCP_MISSING_BEARER = (
+    "Missing Authorization bearer token. Use a static MCP API key or an OAuth 2.0 access token "
+    "from the IdP configured for this MCP server."
+)
+_MCP_INVALID_BEARER = (
+    "Invalid or unauthorized bearer token (API key or OAuth 2.0 access token)."
+)
 
 
 class JSONRPCRequest(BaseModel):
@@ -184,26 +249,26 @@ async def _handle_jsonrpc_internal(
     """
     Internal handler for JSON-RPC requests.
 
+    Authenticates with ``MCPServerService.authenticate_mcp_bearer`` (static API key or OAuth 2.0 JWT + JWKS).
+
     Supports:
     - tools/list: List available tools
     - tools/call: Execute a tool
     """
     try:
-        # Extract API key from Authorization header
-        api_key = extract_bearer_token(authorization)
-        if not api_key:
+        bearer = extract_bearer_token(authorization)
+        if not bearer:
             return JSONRPCResponse(
                 jsonrpc="2.0",
                 id=request.id,
                 result=None,
                 error={
                     "code": -32001,
-                    "message": "Missing API key in Authorization header"
+                    "message": _MCP_MISSING_BEARER,
                 }
             )
 
-        # Validate API key and get MCP server
-        mcp_server = await mcp_server_service.validate_api_key(api_key)
+        mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
         if not mcp_server:
             return JSONRPCResponse(
                 jsonrpc="2.0",
@@ -211,7 +276,7 @@ async def _handle_jsonrpc_internal(
                 result=None,
                 error={
                     "code": -32001,
-                    "message": "Invalid API key"
+                    "message": _MCP_INVALID_BEARER,
                 }
             )
 
@@ -464,20 +529,18 @@ async def handle_sse(
     Note: The SSE transport sends the HTTP response via ASGI ``send``; the return
     value must not trigger a second response (see ``_TransportAlreadyResponded``).
     """
-    # Extract API key from Authorization header
-    api_key = extract_bearer_token(authorization)
-    if not api_key:
+    bearer = extract_bearer_token(authorization)
+    if not bearer:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key in Authorization header"
+            detail=_MCP_MISSING_BEARER,
         )
 
-    # Validate API key and get MCP server
-    mcp_server = await mcp_server_service.validate_api_key(api_key)
+    mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
     if not mcp_server:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
+            detail=_MCP_INVALID_BEARER,
         )
 
     # Check if server is active
@@ -543,20 +606,18 @@ async def handle_sse_messages(
     This endpoint receives client messages that link to a previously-established SSE session.
     Note: This endpoint uses an ASGI app that handles the response directly.
     """
-    # Extract API key from Authorization header
-    api_key = extract_bearer_token(authorization)
-    if not api_key:
+    bearer = extract_bearer_token(authorization)
+    if not bearer:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key in Authorization header"
+            detail=_MCP_MISSING_BEARER,
         )
 
-    # Validate API key and get MCP server
-    mcp_server = await mcp_server_service.validate_api_key(api_key)
+    mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
     if not mcp_server:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
+            detail=_MCP_INVALID_BEARER,
         )
 
     # Check if server is active
@@ -600,20 +661,18 @@ async def _list_mcp_tools_internal(
     Internal function to list MCP tools.
     Used by both GET /tools and POST /tools/list endpoints.
     """
-    # Extract API key from Authorization header
-    api_key = extract_bearer_token(authorization)
-    if not api_key:
+    bearer = extract_bearer_token(authorization)
+    if not bearer:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key in Authorization header"
+            detail=_MCP_MISSING_BEARER,
         )
 
-    # Validate API key and get MCP server
-    mcp_server = await mcp_server_service.validate_api_key(api_key)
+    mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
     if not mcp_server:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
+            detail=_MCP_INVALID_BEARER,
         )
 
     # Check if server is active
@@ -651,8 +710,8 @@ async def list_mcp_tools_get(
     """
     List available tools from active MCP servers (MCP Protocol endpoint - GET).
 
-    Authenticates using API key from Authorization header and returns all tools
-    exposed by the authenticated MCP server.
+    Authenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)
+    and returns all tools exposed by the authenticated MCP server.
     """
     return await _list_mcp_tools_internal(authorization, mcp_server_service)
 
@@ -666,8 +725,8 @@ async def list_mcp_tools_post(
     List available tools from active MCP servers (MCP Protocol endpoint - POST).
 
     This endpoint matches the MCP client's expected format for tool discovery.
-    Authenticates using API key from Authorization header and returns all tools
-    exposed by the authenticated MCP server.
+    Authenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)
+    and returns all tools exposed by the authenticated MCP server.
     """
     return await _list_mcp_tools_internal(authorization, mcp_server_service)
 
@@ -681,23 +740,21 @@ async def execute_mcp_tool(
     """
     Execute a workflow as an MCP tool (MCP Protocol endpoint).
 
-    Authenticates using API key, finds the tool in the server's workflows,
-    validates arguments, and executes the workflow.
+    Authenticates with a static MCP API key or OAuth 2.0 access token, finds the tool
+    in the server's workflows, validates arguments, and executes the workflow.
     """
-    # Extract API key from Authorization header
-    api_key = extract_bearer_token(authorization)
-    if not api_key:
+    bearer = extract_bearer_token(authorization)
+    if not bearer:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key in Authorization header"
+            detail=_MCP_MISSING_BEARER,
         )
 
-    # Validate API key and get MCP server
-    mcp_server = await mcp_server_service.validate_api_key(api_key)
+    mcp_server = await mcp_server_service.authenticate_mcp_bearer(bearer)
     if not mcp_server:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key"
+            detail=_MCP_INVALID_BEARER,
         )
 
     # Check if server is active

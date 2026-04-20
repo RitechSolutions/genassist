@@ -72,13 +72,25 @@ export function MCPServerCard({
     }
   };
 
-  const filtered = servers.filter(
-    (s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.description && s.description.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filtered = servers.filter((s) => {
+    const q = searchQuery.toLowerCase();
+    const av = s.auth_values ?? {};
+    const issuer =
+      typeof av.oauth2_issuer_url === "string" ? av.oauth2_issuer_url.toLowerCase() : "";
+    const scope =
+      typeof av.oauth2_scope === "string" ? av.oauth2_scope.toLowerCase() : "";
+    const cid =
+      typeof av.oauth2_client_id === "string" ? av.oauth2_client_id.toLowerCase() : "";
+    return (
+      s.name.toLowerCase().includes(q) ||
+      (s.description && s.description.toLowerCase().includes(q)) ||
+      (issuer && issuer.includes(q)) ||
+      (scope && scope.includes(q)) ||
+      (cid && cid.includes(q))
+    );
+  });
 
-  const headers = ["Name", "Workflows", "Status", "Created", "Actions"];
+  const headers = ["Name", "Auth", "Workflows", "Status", "Created", "Actions"];
 
   const handleRowClick = (server: MCPServer) => {
     setSelectedServerId(server.id);
@@ -92,6 +104,11 @@ export function MCPServerCard({
       onClick={() => handleRowClick(s)}
     >
       <TableCell className="font-medium break-all">{s.name}</TableCell>
+      <TableCell className="whitespace-nowrap">
+        <Badge variant="outline" className="font-normal">
+          {s.auth_type === "oauth2" ? "OAuth 2.0 / OIDC" : "API key"}
+        </Badge>
+      </TableCell>
       <TableCell className="truncate">
         {s.workflows.length === 0
           ? "No workflows"
