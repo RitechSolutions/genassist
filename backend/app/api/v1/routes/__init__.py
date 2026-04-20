@@ -39,6 +39,7 @@ from app.api.v1.routes import (
     tenants,
     translations,
     twilio_agents,
+    prompt_editor,
     test_cases,
     test_evaluations,
     test_runs,
@@ -117,6 +118,7 @@ router.include_router(
 router.include_router(file_manager.router, prefix="/file-manager", tags=["FileManager"])
 router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 
+router.include_router(prompt_editor.router, prefix="/genagent/prompt-editor", tags=["Prompt Editor"])
 router.include_router(test_suites.router, prefix="/genagent/eval", tags=["Test Suites"])
 router.include_router(test_cases.router, prefix="/genagent/eval", tags=["Test Cases"])
 router.include_router(test_runs.router, prefix="/genagent/eval", tags=["Test Runs"])
