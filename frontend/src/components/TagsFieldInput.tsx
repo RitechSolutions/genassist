@@ -2,22 +2,19 @@ import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Badge } from "@/components/badge";
 import { cn } from "@/helpers/utils";
-import type { ConnectionDataValue } from "@/interfaces/dataSource.interface";
+import type { FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
 
-function normalizeTagsValue(
-  value: ConnectionDataValue | undefined,
-  fallback: ConnectionDataValue | undefined,
-): string[] {
+function normalizeTagsValue(value: FieldValue, fallback: FieldValue): string[] {
   const v = value ?? fallback;
   if (Array.isArray(v)) {
     return v.map((x) => String(x).trim()).filter(Boolean);
   }
-  if (v === undefined || v === null || v === "") {
+  if (v === undefined || v === null || v === '') {
     return [];
   }
-  if (typeof v === "string") {
+  if (typeof v === 'string') {
     return v
-      .split(",")
+      .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
   }
@@ -32,18 +29,18 @@ export function TagsFieldInput({
   onChange,
 }: {
   id: string;
-  value: ConnectionDataValue | undefined;
-  fieldDefault?: ConnectionDataValue | undefined;
+  value: FieldValue;
+  fieldDefault?: FieldValue;
   placeholder?: string;
   onChange: (next: string[]) => void;
 }) {
   const tags = normalizeTagsValue(value, fieldDefault);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const pushTokens = (raw: string) => {
     const parts = raw
-      .split(",")
+      .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
     if (parts.length === 0) return;
@@ -62,16 +59,16 @@ export function TagsFieldInput({
     const t = draft.trim();
     if (t) {
       pushTokens(t);
-      setDraft("");
+      setDraft('');
     }
   };
 
   return (
     <div
       className={cn(
-        "flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-full border border-input bg-transparent px-2 py-1.5 text-base ring-offset-background",
-        "focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
-        "md:text-sm",
+        'flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-full border border-input bg-transparent px-2 py-1.5 text-base ring-offset-background',
+        'focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
+        'md:text-sm'
       )}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) {
@@ -105,12 +102,12 @@ export function TagsFieldInput({
         placeholder={tags.length === 0 ? placeholder : undefined}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === ",") {
+          if (e.key === 'Enter' || e.key === ',') {
             e.preventDefault();
             commitDraft();
             return;
           }
-          if (e.key === "Backspace" && draft === "" && tags.length > 0) {
+          if (e.key === 'Backspace' && draft === '' && tags.length > 0) {
             e.preventDefault();
             onChange(tags.slice(0, -1));
           }
@@ -119,11 +116,11 @@ export function TagsFieldInput({
           commitDraft();
         }}
         onPaste={(e) => {
-          const text = e.clipboardData.getData("text");
-          if (text.includes(",")) {
+          const text = e.clipboardData.getData('text');
+          if (text.includes(',')) {
             e.preventDefault();
             pushTokens(text);
-            setDraft("");
+            setDraft('');
           }
         }}
       />

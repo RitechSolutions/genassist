@@ -6,7 +6,10 @@
  */
 
 // Field types supported across all schemas
-export type FieldType = "text" | "number" | "password" | "select" | "boolean" | "tags";
+export type FieldType = 'text' | 'number' | 'password' | 'select' | 'boolean' | 'tags' | 'files';
+
+// The set of values a form field can hold.
+export type FieldValue = string | number | boolean | string[] | undefined;
 
 /**
  * Conditional field definition for showing/hiding fields based on other field values.
@@ -26,7 +29,7 @@ export interface FieldSchema {
   required: boolean; // Whether field is required (default: false)
   description?: string; // Field description
   placeholder?: string; // Placeholder text
-  default?: string | number | boolean; // Default value
+  default?: FieldValue; // Default value
 
   // For select fields
   options?: Array<{ value: string; label: string }>; // Options for select fields
