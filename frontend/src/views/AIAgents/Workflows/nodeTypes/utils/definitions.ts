@@ -15,6 +15,8 @@ import GuardrailNliNode from "./guardrailNliNode";
 import FileReaderNode from './fileReaderNode';
 import {
   DATA_TRANSFORMER_HELP_CONTENT,
+  GUARDRAIL_NLI_HELP_CONTENT,
+  GUARDRAIL_PROVENANCE_HELP_CONTENT,
   TEXT_TEMPLATE_HELP_CONTENT,
 } from "./helperDefinition";
 
@@ -120,6 +122,7 @@ export const GUARDRAIL_PROVENANCE_NODE_DEFINITION: NodeTypeDefinition<GuardrailP
     description:
       "Checks whether the model answer is grounded in the provided context.",
     shortDescription: "Check answer provenance",
+    helpContent: GUARDRAIL_PROVENANCE_HELP_CONTENT,
     configSubtitle:
       "Configure which fields contain the answer and context, and the minimum provenance score.",
     category: "utils",
@@ -169,6 +172,7 @@ export const GUARDRAIL_NLI_NODE_DEFINITION: NodeTypeDefinition<GuardrailNliNodeD
     description:
       "Runs a simple NLI-style fact-check between the answer and evidence.",
     shortDescription: "NLI fact-check answer",
+    helpContent: GUARDRAIL_NLI_HELP_CONTENT,
     configSubtitle:
       "Configure which fields contain the answer and evidence, and the minimum entailment score.",
     category: "utils",

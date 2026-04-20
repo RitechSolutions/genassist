@@ -30,7 +30,10 @@ import { IO_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/io/h
 import { ROUTING_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/router/helperDefinition";
 import { TOOLS_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/tools/helperDefinition";
 import { TRAINING_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/training/helperDefinition";
-import { FORMATTING_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/utils/helperDefinition";
+import {
+  FORMATTING_NODES_HELP_CONTENT,
+  UTILS_NODES_HELP_CONTENT,
+} from "@/views/AIAgents/Workflows/nodeTypes/utils/helperDefinition";
 import { INTEGRATION_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/integrations/helperDefinition";
 import {
   defaultHelpHeaderGradient,
@@ -152,6 +155,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     ai: AI_NODES_HELP_CONTENT,
     routing: ROUTING_NODES_HELP_CONTENT,
     formatting: FORMATTING_NODES_HELP_CONTENT,
+    utils: UTILS_NODES_HELP_CONTENT,
     tools: TOOLS_NODES_HELP_CONTENT,
     training: TRAINING_NODES_HELP_CONTENT,
     integrations: INTEGRATION_NODES_HELP_CONTENT,
