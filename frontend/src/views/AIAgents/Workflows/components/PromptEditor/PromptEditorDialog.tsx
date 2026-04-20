@@ -10,6 +10,7 @@ import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { createPromptVersion } from "@/services/promptEditor";
+import { AxiosError } from "axios";
 
 interface PromptEditorDialogProps {
   isOpen: boolean;
@@ -46,10 +47,16 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
   >(null);
 
   const saveVersionMutation = useMutation({
-    mutationFn: async (label: string | undefined) => {
+    mutationFn: async ({
+      content,
+      label,
+    }: {
+      content: string;
+      label: string | undefined;
+    }) => {
       setSaveVersionStatus(null);
       const result = await createPromptVersion(workflowId, nodeId, promptField, {
-        content: localPrompt,
+        content,
         label,
       });
       if (!result) {
@@ -64,9 +71,16 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
       setSaveVersionStatus({ type: "success", message: "Version saved" });
     },
     onError: (err) => {
+      const detail =
+        err instanceof AxiosError
+          ? (err.response?.data as { detail?: unknown } | undefined)?.detail
+          : undefined;
+      const detailStr = typeof detail === "string" ? detail : undefined;
       setSaveVersionStatus({
         type: "error",
-        message: `Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`,
+        message: `Failed to save: ${
+          detailStr || (err instanceof Error ? err.message : "Unknown error")
+        }`,
       });
     },
   });
@@ -227,15 +241,17 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                               value={saveLabelDraft}
                               onChange={(e) => setSaveLabelDraft(e.target.value)}
                               placeholder="e.g., Added tone instructions"
+                              maxLength={200}
                               onKeyDown={(e) => {
                                 if (e.key === "Escape") {
                                   setIsSaveLabelOpen(false);
                                 }
                                 if (e.key === "Enter") {
                                   const trimmed = saveLabelDraft.trim();
-                                  saveVersionMutation.mutate(
-                                    trimmed ? trimmed : undefined,
-                                  );
+                                  saveVersionMutation.mutate({
+                                    content: localPrompt,
+                                    label: trimmed ? trimmed : undefined,
+                                  });
                                   setIsSaveLabelOpen(false);
                                   setSaveLabelDraft("");
                                 }
@@ -255,9 +271,10 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                                 size="sm"
                                 onClick={() => {
                                   const trimmed = saveLabelDraft.trim();
-                                  saveVersionMutation.mutate(
-                                    trimmed ? trimmed : undefined,
-                                  );
+                                  saveVersionMutation.mutate({
+                                    content: localPrompt,
+                                    label: trimmed ? trimmed : undefined,
+                                  });
                                   setIsSaveLabelOpen(false);
                                   setSaveLabelDraft("");
                                 }}
