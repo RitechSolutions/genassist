@@ -1,7 +1,7 @@
 """mcp oauth2: auth_values JSONB + issuer URL index
 
 Revision ID: a9d1c4e2b7f0
-Revises: f7e2b1c3d4a5
+Revises: 6ef6b6d3a473
 Create Date: 2026-04-08 12:00:00.000000
 """
 
@@ -13,7 +13,7 @@ from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "a9d1c4e2b7f0"
-down_revision: Union[str, None] = "f7e2b1c3d4a5"
+down_revision: Union[str, None] = "6ef6b6d3a473"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
