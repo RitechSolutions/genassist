@@ -4,19 +4,34 @@ MCP Client using the official MCP Python SDK.
 Supports multiple connection types:
 - STDIO: For local MCP servers running as processes
 - HTTP/SSE: For remote MCP servers over HTTP/HTTPS
+
+Authentication (HTTP/SSE only):
+- api_key  : static Bearer token  (auth_type="api_key" or omitted)
+- oauth2   : OAuth2 Client Credentials / OIDC  (auth_type="oauth2")
 """
 
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Literal, Optional
 
+import httpx
 from mcp import ClientSession as MCPClientSession
 from mcp.client.sse import sse_client as mcp_sse_client
 from mcp.client.stdio import stdio_client as mcp_stdio_client
 from mcp.client.streamable_http import streamable_http_client as mcp_streamablehttp_client
 from mcp.types import TextContent as MCPTextContent
 
+from app.modules.workflow.mcp.oauth2_client import get_oauth2_token
+
 logger = logging.getLogger(__name__)
+
+
+def _normalize_bearer_secret(value: str) -> str:
+    """Strip whitespace and a single leading 'Bearer ' prefix (common paste mistake)."""
+    raw = (value or "").strip()
+    if raw.lower().startswith("bearer "):
+        raw = raw[7:].lstrip()
+    return raw
 
 
 class MCPConnectionManager:
@@ -80,19 +95,95 @@ class MCPConnectionManager:
                 await session.initialize()
                 yield session
 
+    async def _resolve_auth_header(self) -> Optional[str]:
+        """
+        Return the value for the Authorization header based on auth_type.
+
+        - auth_type "api_key" (or absent): use api_key field as Bearer token
+        - auth_type "oauth2" (and common aliases like "oauth2.0", "oidc"):
+            fetch token via OAuth2/OIDC (client credentials)
+        - auth_type "none"               : no Authorization header
+        """
+        def _coerce_auth_type(value: Any) -> str:
+            raw = str(value or "").strip().lower()
+            if not raw:
+                return "api_key"
+            # Accept common variants that show up in UIs / configs.
+            if raw in {"oauth2.0", "oauth2_0", "oauth2-0", "oauth2"}:
+                return "oauth2"
+            if raw in {"oidc", "openid", "openidconnect", "open_id_connect", "open-id-connect"}:
+                return "oauth2"
+            if raw in {"apikey", "api-key", "api_key"}:
+                return "api_key"
+            return raw
+
+        def _merged_oauth2_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+            """
+            Normalize OAuth2 config shape for get_oauth2_token().
+
+            Supports:
+            - top-level oauth2_* keys (used by MCP node dialog)
+            - nested auth_values.oauth2_* (used by some persisted configs)
+            - camelCase keys from some clients
+            """
+            merged: Dict[str, Any] = dict(cfg)
+
+            av = merged.get("auth_values")
+            if isinstance(av, dict):
+                # Only merge non-empty values to avoid clobbering explicit top-level settings.
+                for k, v in av.items():
+                    if k not in merged and v is not None:
+                        merged[k] = v
+
+            # camelCase → snake_case aliases
+            alias_map = {
+                "oauth2ClientId": "oauth2_client_id",
+                "oauth2ClientSecret": "oauth2_client_secret",
+                "oauth2TokenUrl": "oauth2_token_url",
+                "oauth2IssuerUrl": "oauth2_issuer_url",
+                "oauth2Scopes": "oauth2_scopes",
+                "oauth2Audience": "oauth2_audience",
+                "oauth2Flow": "oauth2_flow",
+            }
+            for src, dst in alias_map.items():
+                if dst not in merged and src in merged:
+                    merged[dst] = merged.get(src)
+
+            return merged
+
+        auth_type = _coerce_auth_type(self.connection_config.get("auth_type", "api_key"))
+
+        if auth_type == "none":
+            return None
+
+        if auth_type == "oauth2":
+            oauth_cfg = _merged_oauth2_config(self.connection_config)
+            token = await get_oauth2_token(oauth_cfg)
+            token_norm = _normalize_bearer_secret(token)
+            if not token_norm:
+                raise ValueError("OAuth2 token response was empty")
+            return f"Bearer {token_norm}"
+
+        # Default: static api_key
+        api_key: Optional[str] = self.connection_config.get("api_key")
+        if api_key:
+            key_norm = _normalize_bearer_secret(api_key)
+            if key_norm:
+                return f"Bearer {key_norm}"
+        return None
+
     @asynccontextmanager
     async def _create_sse_session(self):
         """Create SSE-based MCP session"""
         url = self.connection_config.get("url")
-        headers = self.connection_config.get("headers", {})
-        api_key = self.connection_config.get("api_key")
+        headers: Dict[str, Any] = dict(self.connection_config.get("headers") or {})
 
         if not url:
             raise ValueError("SSE connection requires 'url' in connection_config")
 
-        # Add authentication header if API key provided
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        auth_header = await self._resolve_auth_header()
+        if auth_header:
+            headers["Authorization"] = auth_header
 
         # Create SSE client
         async with mcp_sse_client(url, headers=headers) as (read, write):
@@ -108,20 +199,23 @@ class MCPConnectionManager:
         Streamable HTTP transport (as opposed to the older SSE transport).
         """
         url = self.connection_config.get("url")
-        headers = self.connection_config.get("headers", {})
-        api_key = self.connection_config.get("api_key")
+        headers: Dict[str, Any] = dict(self.connection_config.get("headers") or {})
 
         if not url:
             raise ValueError("HTTP connection requires 'url' in connection_config")
 
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        auth_header = await self._resolve_auth_header()
+        if auth_header:
+            headers["Authorization"] = auth_header
 
-        import httpx
-        async with mcp_streamablehttp_client(url, http_client=httpx.AsyncClient(headers=headers)) as (read, write, _):
-            async with MCPClientSession(read, write) as session:
-                await session.initialize()
-                yield session
+        # Use AsyncClient as a context manager so the transport opens correctly; the MCP SDK
+        # does not enter a caller-provided client (see streamable_http_client client_provided).
+        timeout = httpx.Timeout(30.0, read=300.0)
+        async with httpx.AsyncClient(headers=headers, timeout=timeout, follow_redirects=True) as http_client:
+            async with mcp_streamablehttp_client(url, http_client=http_client) as (read, write, _):
+                async with MCPClientSession(read, write) as session:
+                    await session.initialize()
+                    yield session
 
     async def discover_tools(self) -> List[Dict[str, Any]]:
         """
