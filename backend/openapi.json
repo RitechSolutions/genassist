@@ -5431,6 +5431,22 @@
             }
           },
           {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
             "name": "id_suffix",
             "in": "query",
             "required": false,
@@ -6320,6 +6336,22 @@
             }
           },
           {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
             "name": "id_suffix",
             "in": "query",
             "required": false,
@@ -6869,6 +6901,22 @@
                 }
               ],
               "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
             }
           },
           {
@@ -9307,6 +9355,227 @@
         ]
       }
     },
+    "/api/genagent/knowledge/upload-session": {
+      "post": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Create Kb Upload Session",
+        "description": "Start a chunked upload for a single large file (backward compatible with /upload).",
+        "operationId": "create_kb_upload_session_api_genagent_knowledge_upload_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KbUploadSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbUploadSessionCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/knowledge/upload-session/{session_id}/chunk": {
+      "post": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Kb Upload Session Chunk",
+        "description": "Append one chunk to a staged upload session.",
+        "operationId": "kb_upload_session_chunk_api_genagent_knowledge_upload_session__session_id__chunk_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_kb_upload_session_chunk_api_genagent_knowledge_upload_session__session_id__chunk_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/knowledge/upload-session/{session_id}/complete": {
+      "post": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Kb Upload Session Complete",
+        "description": "Finalize staged bytes into storage + files row (same shape as one legacy /upload item).",
+        "operationId": "kb_upload_session_complete_api_genagent_knowledge_upload_session__session_id__complete_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Kb Upload Session Complete Api Genagent Knowledge Upload Session  Session Id  Complete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/knowledge/upload-session/{session_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Kb Upload Session Status",
+        "operationId": "kb_upload_session_status_api_genagent_knowledge_upload_session__session_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbUploadSessionStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/knowledge/upload-chat-file": {
       "post": {
         "tags": [
@@ -11491,6 +11760,16 @@
               "format": "uuid",
               "title": "File Id"
             }
+          },
+          {
+            "name": "force_proxy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force Proxy"
+            }
           }
         ],
         "responses": {
@@ -11552,6 +11831,292 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/upload": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Upload Files",
+        "description": "Upload multiple files and return UploadFileResponse-compatible dicts.\n\nThis endpoint mirrors the legacy `genagent/knowledge/upload` response shape,\nbut is owned by file-manager.",
+        "operationId": "upload_files_api_file_manager_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_files_api_file_manager_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Upload Files Api File Manager Upload Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/file-manager/upload-session": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Create Files Upload Session",
+        "operationId": "create_files_upload_session_api_file_manager_upload_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilesUploadSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesUploadSessionCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/file-manager/upload-session/{session_id}/chunk": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Files Upload Session Chunk",
+        "operationId": "files_upload_session_chunk_api_file_manager_upload_session__session_id__chunk_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "chunk_index",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Chunk Index"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_files_upload_session_chunk_api_file_manager_upload_session__session_id__chunk_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/upload-session/{session_id}/complete": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Files Upload Session Complete",
+        "operationId": "files_upload_session_complete_api_file_manager_upload_session__session_id__complete_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Files Upload Session Complete Api File Manager Upload Session  Session Id  Complete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/upload-session/{session_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Files Upload Session Status",
+        "operationId": "files_upload_session_status_api_file_manager_upload_session__session_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesUploadSessionStatusResponse"
+                }
               }
             }
           },
@@ -21056,6 +21621,20 @@
         ],
         "title": "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
       },
+      "Body_files_upload_session_chunk_api_file_manager_upload_session__session_id__chunk_post": {
+        "properties": {
+          "chunk": {
+            "type": "string",
+            "format": "binary",
+            "title": "Chunk"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk"
+        ],
+        "title": "Body_files_upload_session_chunk_api_file_manager_upload_session__session_id__chunk_post"
+      },
       "Body_import_cost_rates_csv_api_llm_cost_rates_import_post": {
         "properties": {
           "file": {
@@ -21069,6 +21648,25 @@
           "file"
         ],
         "title": "Body_import_cost_rates_csv_api_llm_cost_rates_import_post"
+      },
+      "Body_kb_upload_session_chunk_api_genagent_knowledge_upload_session__session_id__chunk_post": {
+        "properties": {
+          "chunk": {
+            "type": "string",
+            "format": "binary",
+            "title": "Chunk"
+          },
+          "chunk_index": {
+            "type": "integer",
+            "title": "Chunk Index",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk"
+        ],
+        "title": "Body_kb_upload_session_chunk_api_genagent_knowledge_upload_session__session_id__chunk_post"
       },
       "Body_process_files_api_genagent_knowledge_process_files_post": {
         "properties": {
@@ -21318,6 +21916,23 @@
           "purpose"
         ],
         "title": "Body_upload_file_to_openai_api_openai_upload_post"
+      },
+      "Body_upload_files_api_file_manager_upload_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "format": "binary"
+            },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_upload_files_api_file_manager_upload_post"
       },
       "Body_upload_pkl_file_api_ml_models_upload_post": {
         "properties": {
@@ -23088,6 +23703,122 @@
         ],
         "title": "FileUploadResponse"
       },
+      "FilesUploadSessionCreate": {
+        "properties": {
+          "original_filename": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Original Filename"
+          },
+          "expected_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Size",
+            "description": "Optional declared total size in bytes for validation on complete"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "original_filename"
+        ],
+        "title": "FilesUploadSessionCreate"
+      },
+      "FilesUploadSessionCreateResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "max_chunk_bytes": {
+            "type": "integer",
+            "title": "Max Chunk Bytes",
+            "description": "Maximum bytes accepted per /chunk request"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "max_chunk_bytes"
+        ],
+        "title": "FilesUploadSessionCreateResponse"
+      },
+      "FilesUploadSessionStatusResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "bytes_received": {
+            "type": "integer",
+            "title": "Bytes Received"
+          },
+          "expected_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Bytes"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "bytes_received"
+        ],
+        "title": "FilesUploadSessionStatusResponse"
+      },
       "FolderRequest": {
         "properties": {
           "smb_host": {
@@ -24445,6 +25176,122 @@
         ],
         "title": "KBRead",
         "description": "Response model"
+      },
+      "KbUploadSessionCreate": {
+        "properties": {
+          "original_filename": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Original Filename"
+          },
+          "expected_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Size",
+            "description": "Optional declared total size in bytes for validation on complete"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "original_filename"
+        ],
+        "title": "KbUploadSessionCreate"
+      },
+      "KbUploadSessionCreateResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "max_chunk_bytes": {
+            "type": "integer",
+            "title": "Max Chunk Bytes",
+            "description": "Maximum bytes accepted per /chunk request"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "max_chunk_bytes"
+        ],
+        "title": "KbUploadSessionCreateResponse"
+      },
+      "KbUploadSessionStatusResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "bytes_received": {
+            "type": "integer",
+            "title": "Bytes Received"
+          },
+          "expected_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Bytes"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "bytes_received"
+        ],
+        "title": "KbUploadSessionStatusResponse"
       },
       "LanguageCreate": {
         "properties": {
@@ -29291,6 +30138,18 @@
             "type": "string",
             "format": "uuid",
             "title": "User Type Id"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
           }
         },
         "type": "object",
