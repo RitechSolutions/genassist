@@ -161,7 +161,7 @@ export const RoutesProvider = () => {
               ),
             },
             {
-              path: "analytics",
+              path: "analytics/ai-insights",
               element: (
                 <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
                   <Analytics />
