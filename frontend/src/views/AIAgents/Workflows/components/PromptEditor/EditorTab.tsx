@@ -52,7 +52,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   });
 
   return (
-    <div className="space-y-4 pt-4">
+    <div className="space-y-4 pt-4 px-2">
       <div className="space-y-2">
         <Label>Prompt Content</Label>
         <Textarea
