@@ -63,11 +63,32 @@ class PromptEditorService:
         prompt_field: str,
         data: PromptVersionCreate,
     ) -> PromptVersionRead:
-        version_number = await self.version_repo.get_next_version_number(
+        # Backward-compatible behavior: create a new version.
+        #
+        # Override behavior: if a version with the same label already exists in this
+        # context, update (override) its content instead of creating a new version.
+        #
+        # This is especially useful when the UI re-saves a "named" version.
+        existing: Optional[PromptVersionModel] = None
+        if data.label:
+            versions = await self.version_repo.get_versions_for_context(
+                workflow_id, node_id, prompt_field
+            )
+            existing = next((v for v in versions if v.label == data.label), None)
+
+        # Deactivate previous versions (we want exactly one active)
+        await self.version_repo.deactivate_all_for_context(
             workflow_id, node_id, prompt_field
         )
-        # Deactivate previous versions
-        await self.version_repo.deactivate_all_for_context(
+
+        if existing:
+            existing.content = data.content
+            existing.label = data.label
+            existing.is_active = True
+            updated = await self.version_repo.update(existing)
+            return PromptVersionRead.model_validate(updated, from_attributes=True)
+
+        version_number = await self.version_repo.get_next_version_number(
             workflow_id, node_id, prompt_field
         )
         orm = PromptVersionModel(
@@ -98,6 +119,12 @@ class PromptEditorService:
         if not version:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.version_repo.soft_delete(version)
+
+    async def hard_delete_version(self, version_id: UUID) -> None:
+        version = await self.version_repo.get_by_id(version_id)
+        if not version:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        await self.version_repo.delete(version)
 
     # ---- Config / Gold Suite -------------------------------------------------
 

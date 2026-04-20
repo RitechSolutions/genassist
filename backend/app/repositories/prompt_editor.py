@@ -23,7 +23,7 @@ class PromptVersionRepository(DbRepository[PromptVersionModel]):
         stmt = (
             select(PromptVersionModel)
             .where(
-                PromptVersionModel.workflow_id == str(workflow_id),
+                PromptVersionModel.workflow_id == workflow_id,
                 PromptVersionModel.node_id == node_id,
                 PromptVersionModel.prompt_field == prompt_field,
                 PromptVersionModel.is_deleted == 0,
@@ -40,7 +40,7 @@ class PromptVersionRepository(DbRepository[PromptVersionModel]):
         prompt_field: str,
     ) -> int:
         stmt = select(func.max(PromptVersionModel.version_number)).where(
-            PromptVersionModel.workflow_id == str(workflow_id),
+            PromptVersionModel.workflow_id == workflow_id,
             PromptVersionModel.node_id == node_id,
             PromptVersionModel.prompt_field == prompt_field,
             PromptVersionModel.is_deleted == 0,
@@ -73,7 +73,7 @@ class PromptConfigRepository(DbRepository[PromptConfigModel]):
         prompt_field: str,
     ) -> Optional[PromptConfigModel]:
         stmt = select(PromptConfigModel).where(
-            PromptConfigModel.workflow_id == str(workflow_id),
+            PromptConfigModel.workflow_id == workflow_id,
             PromptConfigModel.node_id == node_id,
             PromptConfigModel.prompt_field == prompt_field,
             PromptConfigModel.is_deleted == 0,
