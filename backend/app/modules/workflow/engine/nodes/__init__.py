@@ -2,39 +2,40 @@
 Node implementations for the workflow engine.
 """
 
+from .agent_node import AgentNode
+from .aggregator_node import AggregatorNode
+from .api_tool_node import ApiToolNode
+from .calendar_events_node import CalendarEventsNode
+from .chat_nodes import ChatInputNode, ChatOutputNode
+from .data_mapper_node import DataMapperNode
+from .file_reader_node import FileReaderNode
+from .gmail_tool_node import GmailToolNode
+from .guardrail_nli_node import GuardrailNliNode
+from .guardrail_provenance_node import GuardrailProvenanceNode
+from .human_in_the_loop_node import HumanInTheLoopNode
+from .jira_node import JiraNode
+from .knowledge_tool_node import KnowledgeToolNode
+from .llm_model_node import LLMModelNode
+from .mcp_node import MCPNode
 from .ml import (
     MLModelInferenceNode,
     TrainDataSourceNode,
-    TrainPreprocessNode,
     TrainModelNode,
+    TrainPreprocessNode,
 )
-from .jira_node import JiraNode
-from .chat_nodes import ChatInputNode, ChatOutputNode
-from .router_node import RouterNode
-from .agent_node import AgentNode
-from .api_tool_node import ApiToolNode
 from .open_api_node import OpenAPINode
 from .prompt_node import TemplateNode
-from .llm_model_node import LLMModelNode
-from .knowledge_tool_node import KnowledgeToolNode
 from .python_tool_node import PythonToolNode
-from .data_mapper_node import DataMapperNode
-from .tool_builder_node import ToolBuilderNode
-from .slack_tool_node import SlackToolNode
-from .calendar_events_node import CalendarEventsNode
 from .read_mails_tool_node import ReadMailsToolNode
-from .gmail_tool_node import GmailToolNode
-from .whatsapp_tool_node import WhatsAppToolNode
-from .zendesk_tool_node import ZendeskToolNode
-from .sql_node import SQLNode
-from .aggregator_node import AggregatorNode
-from .thread_rag_node import ThreadRAGNode
-from .mcp_node import MCPNode
-from .workflow_executor_node import WorkflowExecutorNode
-from .human_in_the_loop_node import HumanInTheLoopNode
+from .router_node import RouterNode
 from .set_state_node import SetStateNode
-from .guardrail_provenance_node import GuardrailProvenanceNode
-from .guardrail_nli_node import GuardrailNliNode
+from .slack_tool_node import SlackToolNode
+from .sql_node import SQLNode
+from .thread_rag_node import ThreadRAGNode
+from .tool_builder_node import ToolBuilderNode
+from .whatsapp_tool_node import WhatsAppToolNode
+from .workflow_executor_node import WorkflowExecutorNode
+from .zendesk_tool_node import ZendeskToolNode
 
 __all__ = [
     "ChatInputNode",
@@ -69,4 +70,5 @@ __all__ = [
     "SetStateNode",
     "GuardrailProvenanceNode",
     "GuardrailNliNode",
+    "FileReaderNode",
 ]

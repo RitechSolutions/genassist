@@ -6,11 +6,13 @@ import {
   DataMapperNodeData,
   GuardrailProvenanceNodeData,
   GuardrailNliNodeData,
-} from "../../types/nodes";
+  FileReaderNodeData,
+} from '../../types/nodes';
 import TemplateNode from "./templateNode";
 import DataMapperNode from "./dataMapperNode";
 import GuardrailProvenanceNode from "./guardrailProvenanceNode";
 import GuardrailNliNode from "./guardrailNliNode";
+import FileReaderNode from './fileReaderNode';
 
 export const TEMPLATE_NODE_DEFINITION: NodeTypeDefinition<TemplateNodeData> = {
   type: "templateNode",
@@ -197,4 +199,39 @@ export const GUARDRAIL_NLI_NODE_DEFINITION: NodeTypeDefinition<GuardrailNliNodeD
     }),
   };
 
+export const FILE_READER_NODE_DEFINITION: NodeTypeDefinition<FileReaderNodeData> = {
+  type: 'fileReaderNode',
+  label: 'File Reader',
+  description: 'Reads the content of an uploaded file and outputs it as text.',
+  shortDescription: 'Extract content of a file',
+  configSubtitle: 'Upload a file whose content will be extracted.',
+  category: 'utils',
+  icon: 'FileText',
+  defaultData: {
+    name: 'File Reader',
+    handlers: [
+      {
+        id: 'input',
+        type: 'target',
+        compatibility: 'any',
+        position: 'left',
+      },
+      {
+        id: 'output',
+        type: 'source',
+        compatibility: 'any',
+        position: 'right',
+      },
+    ],
+  },
+  component: FileReaderNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: 'fileReaderNode',
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
 

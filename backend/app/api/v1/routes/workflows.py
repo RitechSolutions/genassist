@@ -1,24 +1,22 @@
-import time
 import logging
+import time
 import uuid
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi_injector import Injected
-from app.modules.workflow.utils import generate_python_function_template
-from app.core.permissions.constants import Permissions as P
-from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
+
 from app.auth.dependencies import auth, permissions
-from app.services.llm_providers import LlmProviderService
-
-from app.services.workflow import WorkflowService
+from app.core.permissions.constants import Permissions as P
 from app.dependencies.injector import injector
-from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
-
+from app.modules.workflow.llm.provider import LLMProvider
+from app.modules.workflow.utils import generate_python_function_template
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
-
-
+from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
+from app.services.llm_providers import LlmProviderService
+from app.services.workflow import WorkflowService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -58,6 +56,7 @@ SUPPORTED_NODE_TYPES = [
     "setStateNode",
     "guardrailProvenanceNode",
     "guardrailNliNode",
+    "fileReaderNode",
 ]
 
 

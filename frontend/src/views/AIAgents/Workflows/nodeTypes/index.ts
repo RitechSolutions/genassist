@@ -40,11 +40,13 @@ import {
   TEMPLATE_NODE_DEFINITION,
   GUARDRAIL_PROVENANCE_NODE_DEFINITION,
   GUARDRAIL_NLI_NODE_DEFINITION,
-} from "./utils/definitions";
+  FILE_READER_NODE_DEFINITION,
+} from './utils/definitions';
 import TemplateNode from "./utils/templateNode";
 import DataMapperNode from "./utils/dataMapperNode";
 import GuardrailProvenanceNode from "./utils/guardrailProvenanceNode";
 import GuardrailNliNode from "./utils/guardrailNliNode";
+import FileReaderNode from './utils/fileReaderNode';
 import SetStateNode from "./chat/setStateNode";
 import SlackOutputNode from "./integrations/slackOutputNode";
 import ZendeskTicketNode from "./integrations/zendeskTicketNode";
@@ -130,6 +132,8 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(WORKFLOW_EXECUTOR_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(HUMAN_IN_THE_LOOP_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(FILE_READER_NODE_DEFINITION);
 };
 
 // Get node types for React Flow
@@ -168,5 +172,6 @@ export const getNodeTypes = () => {
     mcpNode: MCPNode,
     workflowExecutorNode: WorkflowExecutorNode,
     humanInTheLoopNode: HumanInTheLoopNode,
+    fileReaderNode: FileReaderNode,
   };
 };
