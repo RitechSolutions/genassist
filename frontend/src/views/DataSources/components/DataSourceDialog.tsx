@@ -37,6 +37,7 @@ import { useQuery } from "@tanstack/react-query";
 import { GmailConnection } from "./GmailConnection";
 import { Office365Connection } from "./Office365Connection";
 import { SchemaFormRenderer } from "@/components/SchemaFormRenderer";
+import type { FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
 
 interface DataSourceDialogProps {
   isOpen: boolean;
@@ -46,6 +47,26 @@ interface DataSourceDialogProps {
   mode?: "create" | "edit";
   defaultSourceType?: string;
   disableSourceType?: boolean;
+}
+
+function hasAdvancedFieldChanges(
+  schema: { fields?: DataSourceField[] } | undefined,
+  data: Record<string, FieldValue>
+): boolean {
+  return (
+    schema?.fields
+      .filter((f) => {
+        if (f.required) return false;
+        if (!f.conditional) return true;
+        return data[f.conditional.field] === f.conditional.value;
+      })
+      .some((f) => {
+        const val = data[f.name];
+        if (val === undefined || val === null || val === '') return false;
+        if (Array.isArray(val) && val.length === 0) return false;
+        return val !== (f.default ?? null);
+      }) ?? false
+  );
 }
 
 export function DataSourceDialog({
@@ -140,11 +161,15 @@ export function DataSourceDialog({
   };
 
   const populateFormWithDataSource = (dataSource: DataSource) => {
+    const type = dataSource.source_type.toLowerCase();
+    const schemaForType = dataSourceSchemas[type];
+    const hasAdvancedChanges = hasAdvancedFieldChanges(schemaForType, dataSource.connection_data);
     setDataSourceId(dataSource.id);
     setName(dataSource.name);
-    setSourceType(dataSource.source_type.toLowerCase() as string);
+    setSourceType(type);
     setConnectionData(dataSource.connection_data);
     setIsActive(dataSource.is_active === 1);
+    setShowAdvanced(hasAdvancedChanges);
     setTestStatus(dataSource.connection_status ?? null);
     setTestedConnectionData(dataSource.connection_status ? structuredClone(dataSource.connection_data) : null);
   };
@@ -321,6 +346,13 @@ export function DataSourceDialog({
       if (!f.conditional) return true;
       return connectionData[f.conditional.field] === f.conditional.value;
     }) ?? false;
+
+  const hasAdvancedChanges = hasAdvancedFieldChanges(schema, connectionData);
+
+  useEffect(() => {
+    if (hasAdvancedChanges) setShowAdvanced(true);
+  }, [hasAdvancedChanges]);
+
   const hasChangedSinceTest =
     testStatus !== null &&
     testedConnectionData !== null &&
