@@ -1,9 +1,8 @@
 import os
-import re
-from fastapi import APIRouter, Query, Depends, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional, List, Union
 from pydantic import BaseModel
-from app.auth.dependencies import auth, permissions
+from app.auth.dependencies import auth
 
 from app.services.smb_share_service import SMBShareFSService
 from app.tasks.share_folder_tasks import transcribe_audio_files_async_with_scope
@@ -224,8 +223,8 @@ async def create_folder(req: FolderRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/folder")
-async def delete_folder(req: FolderRequest, dependencies=[Depends(auth)]):
+@router.delete("/folder", dependencies=[Depends(auth)])
+async def delete_folder(req: FolderRequest):
     """Delete a folder and its contents."""
     # Sanitize folderpath to prevent path traversal attacks
     safe_folderpath = get_safe_path(req.folderpath)
