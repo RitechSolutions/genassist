@@ -1,16 +1,16 @@
 import logging
 from typing import Dict
+
+from sqlalchemy import NullPool, create_engine, text
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     async_sessionmaker,
     create_async_engine,
-    AsyncEngine,
 )
-from sqlalchemy import NullPool, create_engine, text
+
 from app.core.config.settings import settings
-from app.db.base import Base
-
-
 from app.db import models  # noqa: F401
+from app.db.base import Base
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +128,10 @@ class MultiTenantSessionManager:
 
             # Stamp the database at head to mark it as fully migrated
             # We don't run actual migrations because Base.metadata.create_all() creates tables with current schema
-            from alembic.config import Config
-            from alembic import command
             import os
+
+            from alembic import command
+            from alembic.config import Config
 
             # Point Alembic at our alembic.ini configurations (same pattern as migrations.py)
             # Get the project root relative to this file
@@ -169,16 +170,17 @@ class MultiTenantSessionManager:
         """Seed a tenant database with initial data"""
         try:
             # Set tenant context so that dependency injection uses the tenant session
-            from app.core.tenant_scope import set_tenant_context, clear_tenant_context
+            from app.core.tenant_scope import clear_tenant_context, set_tenant_context
 
             set_tenant_context(tenant)
 
             try:
                 # Import and run the seed function inside a request scope so DI shares the same session
-                from app.db.seed.seed import seed_data
-                from app.dependencies.injector import injector
                 from fastapi_injector import RequestScopeFactory
                 from sqlalchemy.ext.asyncio import AsyncSession
+
+                from app.db.seed.seed import seed_data
+                from app.dependencies.injector import injector
 
                 request_scope_factory = injector.get(RequestScopeFactory)
                 async with request_scope_factory.create_scope():
@@ -249,23 +251,8 @@ class MultiTenantSessionManager:
         all_table_names = await self.get_all_table_names_async(tenant)
         logger.info(f"Detected tables: {tenant} : {all_table_names}")
 
-        # Safety: never auto-drop/recreate the *master* database based on missing tables.
-        # Missing tables on master should be handled by migrations, not destructive resets.
-        if tenant == "master":
-            if settings.CREATE_DB:
-                logger.info("Cold starting master DB (CREATE_DB=true)...")
-                await self.cold_start_db(tenant)
-            elif "users" not in all_table_names:
-                logger.warning(
-                    "Master DB is missing expected tables (e.g. 'users'), but CREATE_DB=false; "
-                    "skipping cold start to avoid destructive data loss."
-                )
-            return
-
-        # Legacy behavior for tenant databases: in dev/test environments we may want to
-        # bootstrap an empty tenant DB automatically when core tables are missing.
         if settings.CREATE_DB or "users" not in all_table_names:
-            logger.info("Cold starting tenant DB...")
+            logger.info("Cold starting DB...")
             await self.cold_start_db(tenant)
 
 
