@@ -1,48 +1,31 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/dialog";
-import { Input } from "@/components/input";
-import { Label } from "@/components/label";
-import { Button } from "@/components/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
-import { ScrollArea } from "@/components/scroll-area";
-import { Loader2, ChevronDown, ChevronUp, Download, FileText } from "lucide-react";
-import { cn } from "@/helpers/utils";
-import { toast } from "react-hot-toast";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
-import {
-  createLocalFineTuneJob,
-  listLocalFineTuneSupportedModels,
-} from "@/services/localFineTune";
-import { getAccessToken } from "@/services/auth";
-import { listFileManagerFiles } from "@/services/fileManager";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/dialog';
+import { Input } from '@/components/input';
+import { Label } from '@/components/label';
+import { Button } from '@/components/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/popover';
+import { ScrollArea } from '@/components/scroll-area';
+import { Loader2, ChevronDown, Download, FileText } from 'lucide-react';
+import { Switch } from '@/components/switch';
+import { cn } from '@/helpers/utils';
+import { toast } from 'react-hot-toast';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { createLocalFineTuneJob, listLocalFineTuneSupportedModels } from '@/services/localFineTune';
+import { getAccessToken } from '@/services/auth';
+import { listFileManagerFiles } from '@/services/fileManager';
 import type {
   CreateLocalFineTuneJobRequest,
   LocalFineTuneHyperparameters,
   LocalFineTuneSupportedModel,
-} from "@/interfaces/localFineTune.interface";
-import type { FileManagerFileRecord } from "@/interfaces/file-manager.interface";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
+} from '@/interfaces/localFineTune.interface';
+import type { FileManagerFileRecord } from '@/interfaces/file-manager.interface';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/select';
 
 const SUPPORTED_MODELS_PAGE_SIZE = 10;
 const TRAINING_FILES_PAGE_SIZE = 10;
-const FINE_TUNE_FILE_TAG = "fine-tune";
+const FINE_TUNE_FILE_TAG = 'fine-tune';
 
-function fileManagerDisplayName(file: {
-  original_filename?: string | null;
-  name: string;
-}): string {
+function fileManagerDisplayName(file: { original_filename?: string | null; name: string }): string {
   return file.original_filename?.trim() || file.name;
 }
 const DEFAULT_HYPERPARAMETERS: LocalFineTuneHyperparameters = {
@@ -65,14 +48,10 @@ interface LocalFineTuneJobDialogProps {
   onJobCreated: () => void;
 }
 
-export function LocalFineTuneJobDialog({
-  isOpen,
-  onOpenChange,
-  onJobCreated,
-}: LocalFineTuneJobDialogProps) {
+export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: LocalFineTuneJobDialogProps) {
   const [supportedModels, setSupportedModels] = useState<LocalFineTuneSupportedModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [selectedModelId, setSelectedModelId] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState('');
   const [managerFiles, setManagerFiles] = useState<FileManagerFileRecord[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesLoadingMore, setFilesLoadingMore] = useState(false);
@@ -88,11 +67,11 @@ export function LocalFineTuneJobDialog({
   const [submitting, setSubmitting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
-  const [suffix, setSuffix] = useState("");
+  const [suffix, setSuffix] = useState('');
 
-  const [hyperparams, setHyperparams] = useState<LocalFineTuneHyperparameters>({
+  const [hyperparams, setHyperparams] = useState<Record<keyof LocalFineTuneHyperparameters, number | ''>>({
     ...DEFAULT_HYPERPARAMETERS,
-  });
+  } as Record<keyof LocalFineTuneHyperparameters, number | ''>);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -105,13 +84,13 @@ export function LocalFineTuneJobDialog({
         setSupportedModels(list);
         setSelectedModelId((prev) => {
           if (prev && list.some((m) => m.id === prev)) return prev;
-          return list[0]?.id ?? "";
+          return list[0]?.id ?? '';
         });
       } catch {
         if (!cancelled) {
           setSupportedModels([]);
-          setSelectedModelId("");
-          toast.error("Could not load supported models");
+          setSelectedModelId('');
+          toast.error('Could not load supported models');
         }
       } finally {
         if (!cancelled) setModelsLoading(false);
@@ -146,7 +125,7 @@ export function LocalFineTuneJobDialog({
         if (!cancelled) {
           setManagerFiles([]);
           setHasMoreFiles(false);
-          toast.error("Could not load files from File Manager");
+          toast.error('Could not load files from File Manager');
         }
       } finally {
         if (!cancelled) setFilesLoading(false);
@@ -181,7 +160,7 @@ export function LocalFineTuneJobDialog({
       });
       setHasMoreFiles(list.length === TRAINING_FILES_PAGE_SIZE);
     } catch {
-      toast.error("Could not load more files");
+      toast.error('Could not load more files');
     } finally {
       fetchMoreLock.current = false;
       setFilesLoadingMore(false);
@@ -200,29 +179,26 @@ export function LocalFineTuneJobDialog({
     void loadMoreTrainingFiles();
   };
 
-  const toggleAdvanced = () => setShowAdvanced((v) => !v);
-  const handleAdvancedKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      toggleAdvanced();
-    }
-  };
+  const hasAdvancedChanges = (Object.keys(DEFAULT_HYPERPARAMETERS) as (keyof LocalFineTuneHyperparameters)[]).some(
+    (key) => hyperparams[key] !== '' && hyperparams[key] !== DEFAULT_HYPERPARAMETERS[key]
+  );
+
+  useEffect(() => {
+    if (hasAdvancedChanges) setShowAdvanced(true);
+  }, [hasAdvancedChanges]);
 
   const trainingFileSelectItems = (() => {
     const rows = [...managerFiles];
-    if (
-      selectedTrainingFile &&
-      !rows.some((f) => f.id === selectedTrainingFile.id)
-    ) {
+    if (selectedTrainingFile && !rows.some((f) => f.id === selectedTrainingFile.id)) {
       rows.unshift({
         id: selectedTrainingFile.id,
         name: selectedTrainingFile.name,
         original_filename: selectedTrainingFile.name,
-        path: "",
-        storage_path: "",
-        storage_provider: "local",
-        created_at: "",
-        updated_at: "",
+        path: '',
+        storage_path: '',
+        storage_provider: 'local',
+        created_at: '',
+        updated_at: '',
         is_deleted: 0,
       });
     }
@@ -230,27 +206,27 @@ export function LocalFineTuneJobDialog({
   })();
 
   const resetForm = () => {
-    setSelectedModelId(supportedModels[0]?.id ?? "");
+    setSelectedModelId(supportedModels[0]?.id ?? '');
     setSelectedTrainingFile(null);
     setTrainingFilePickerOpen(false);
     setShowAdvanced(false);
-    setSuffix("");
-    setHyperparams({ ...DEFAULT_HYPERPARAMETERS });
+    setSuffix('');
+    setHyperparams({ ...DEFAULT_HYPERPARAMETERS } as Record<keyof LocalFineTuneHyperparameters, number | ''>);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = getAccessToken();
     if (!token) {
-      toast.error("You must be logged in to create a job");
+      toast.error('You must be logged in to create a job');
       return;
     }
     if (!selectedTrainingFile?.id) {
-      toast.error("Please select a training file");
+      toast.error('Please select a training file');
       return;
     }
     if (!selectedModelId?.trim()) {
-      toast.error("Please select a model");
+      toast.error('Please select a model');
       return;
     }
 
@@ -261,40 +237,41 @@ export function LocalFineTuneJobDialog({
       file_token: token,
       model_id: selectedModelId.trim(),
       suffix: trimmedSuffix || null,
-      tool_training_mode: "assistant_and_tools",
+      tool_training_mode: 'assistant_and_tools',
       remote_files: true,
       cleanup_files: false,
       hyperparameters: {
-        num_train_epochs: hyperparams.num_train_epochs ?? 1,
-        per_device_train_batch_size: hyperparams.per_device_train_batch_size ?? 2,
-        gradient_accumulation_steps: hyperparams.gradient_accumulation_steps ?? 4,
-        learning_rate: hyperparams.learning_rate ?? 2e-4,
-        lora_r: hyperparams.lora_r ?? 16,
-        lora_alpha: hyperparams.lora_alpha ?? 16,
-        max_seq_length: hyperparams.max_seq_length ?? 2048,
-        logging_steps: hyperparams.logging_steps ?? 1,
-        save_steps: hyperparams.save_steps ?? 1,
-        eval_steps: hyperparams.eval_steps ?? 1,
-        warmup_steps: hyperparams.warmup_steps ?? 10,
+        num_train_epochs: Number(hyperparams.num_train_epochs) || DEFAULT_HYPERPARAMETERS.num_train_epochs,
+        per_device_train_batch_size:
+          Number(hyperparams.per_device_train_batch_size) || DEFAULT_HYPERPARAMETERS.per_device_train_batch_size,
+        gradient_accumulation_steps:
+          Number(hyperparams.gradient_accumulation_steps) || DEFAULT_HYPERPARAMETERS.gradient_accumulation_steps,
+        learning_rate: Number(hyperparams.learning_rate) || DEFAULT_HYPERPARAMETERS.learning_rate,
+        lora_r: Number(hyperparams.lora_r) || DEFAULT_HYPERPARAMETERS.lora_r,
+        lora_alpha: Number(hyperparams.lora_alpha) || DEFAULT_HYPERPARAMETERS.lora_alpha,
+        max_seq_length: Number(hyperparams.max_seq_length) || DEFAULT_HYPERPARAMETERS.max_seq_length,
+        logging_steps: Number(hyperparams.logging_steps) || DEFAULT_HYPERPARAMETERS.logging_steps,
+        save_steps: Number(hyperparams.save_steps) || DEFAULT_HYPERPARAMETERS.save_steps,
+        eval_steps: Number(hyperparams.eval_steps) || DEFAULT_HYPERPARAMETERS.eval_steps,
+        warmup_steps: Number(hyperparams.warmup_steps) || DEFAULT_HYPERPARAMETERS.warmup_steps,
       },
     };
 
     setSubmitting(true);
     try {
       await createLocalFineTuneJob(payload);
-      toast.success("Local fine-tune job created");
+      toast.success('Local fine-tune job created');
       onJobCreated();
       onOpenChange(false);
       resetForm();
     } catch (err) {
-      toast.error("Failed to create job");
+      toast.error('Failed to create job');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const hasFormContent =
-    Boolean(selectedTrainingFile) || Boolean(suffix.trim());
+  const hasFormContent = Boolean(selectedTrainingFile) || Boolean(suffix.trim());
 
   const handleDialogOpenChange = (open: boolean) => {
     if (open) {
@@ -349,10 +326,7 @@ export function LocalFineTuneJobDialog({
                     No models available. Check the local fine-tune service and try again.
                   </p>
                 ) : (
-                  <Select
-                    value={selectedModelId}
-                    onValueChange={setSelectedModelId}
-                  >
+                  <Select value={selectedModelId} onValueChange={setSelectedModelId}>
                     <SelectTrigger className="rounded-lg">
                       <SelectValue placeholder="Select a model" />
                     </SelectTrigger>
@@ -380,8 +354,7 @@ export function LocalFineTuneJobDialog({
                   </a>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Only files tagged{" "}
-                  <span className="font-mono">{FINE_TUNE_FILE_TAG}</span> in File Manager appear here.
+                  Only files tagged <span className="font-mono">{FINE_TUNE_FILE_TAG}</span> in File Manager appear here.
                 </p>
                 {filesLoading ? (
                   <div className="text-sm text-muted-foreground flex items-center gap-2 h-10">
@@ -394,10 +367,7 @@ export function LocalFineTuneJobDialog({
                     <p className="text-sm text-muted-foreground">No files</p>
                   </div>
                 ) : (
-                  <Popover
-                    open={trainingFilePickerOpen}
-                    onOpenChange={setTrainingFilePickerOpen}
-                  >
+                  <Popover open={trainingFilePickerOpen} onOpenChange={setTrainingFilePickerOpen}>
                     <PopoverTrigger asChild>
                       <Button
                         type="button"
@@ -405,13 +375,11 @@ export function LocalFineTuneJobDialog({
                         role="combobox"
                         aria-expanded={trainingFilePickerOpen}
                         className={cn(
-                          "h-10 w-full justify-between rounded-lg border-input bg-background px-3 py-2 text-sm font-normal shadow-sm hover:bg-accent/50"
+                          'h-10 w-full justify-between rounded-lg border-input bg-background px-3 py-2 text-sm font-normal shadow-sm hover:bg-accent/50'
                         )}
                       >
                         <span className="truncate text-left">
-                          {selectedTrainingFile
-                            ? selectedTrainingFile.name
-                            : "Select a training file"}
+                          {selectedTrainingFile ? selectedTrainingFile.name : 'Select a training file'}
                         </span>
                         <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
                       </Button>
@@ -420,11 +388,7 @@ export function LocalFineTuneJobDialog({
                       align="start"
                       sideOffset={4}
                       className="z-[1400] w-auto max-w-[calc(100vw-2rem)] p-0"
-                      style={
-                        trainingMenuWidth != null
-                          ? { width: trainingMenuWidth }
-                          : undefined
-                      }
+                      style={trainingMenuWidth != null ? { width: trainingMenuWidth } : undefined}
                       onOpenAutoFocus={(ev) => ev.preventDefault()}
                       onWheel={(e) => e.stopPropagation()}
                     >
@@ -433,7 +397,7 @@ export function LocalFineTuneJobDialog({
                         viewportProps={{
                           onScroll: onTrainingFilesScroll,
                           onWheel: (e) => e.stopPropagation(),
-                          className: "touch-pan-y overscroll-contain max-h-[min(320px,50vh)]",
+                          className: 'touch-pan-y overscroll-contain max-h-[min(320px,50vh)]',
                         }}
                       >
                         <div className="p-1">
@@ -442,9 +406,8 @@ export function LocalFineTuneJobDialog({
                               key={f.id}
                               type="button"
                               className={cn(
-                                "relative flex w-full cursor-pointer select-none items-center rounded-sm py-2 px-3 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground",
-                                selectedTrainingFile?.id === f.id &&
-                                  "bg-accent/70 text-accent-foreground"
+                                'relative flex w-full cursor-pointer select-none items-center rounded-sm py-2 px-3 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground',
+                                selectedTrainingFile?.id === f.id && 'bg-accent/70 text-accent-foreground'
                               )}
                               onClick={() => {
                                 setSelectedTrainingFile({
@@ -457,10 +420,7 @@ export function LocalFineTuneJobDialog({
                               <span className="truncate">
                                 {fileManagerDisplayName(f)}
                                 {f.file_extension ? (
-                                  <span className="text-muted-foreground">
-                                    {" "}
-                                    ({f.file_extension})
-                                  </span>
+                                  <span className="text-muted-foreground"> ({f.file_extension})</span>
                                 ) : null}
                               </span>
                             </button>
@@ -477,132 +437,136 @@ export function LocalFineTuneJobDialog({
                 )}
                 {selectedTrainingFile && (
                   <div className="text-sm text-green-700">
-                    Selected: {selectedTrainingFile.name}{" "}
-                    <span className="text-muted-foreground font-mono text-xs">
-                      ({selectedTrainingFile.id})
-                    </span>
+                    Selected: {selectedTrainingFile.name}{' '}
+                    <span className="text-muted-foreground font-mono text-xs">({selectedTrainingFile.id})</span>
                   </div>
                 )}
               </div>
 
-              <div className="space-y-2">
-                <div
-                  className="flex items-center justify-between cursor-pointer select-none"
-                  onClick={toggleAdvanced}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={handleAdvancedKeyDown}
-                >
-                  <span className="text-sm font-semibold">Advanced (hyperparameters)</span>
-                  <span className="h-8 w-8 flex items-center justify-center text-muted-foreground">
-                    {showAdvanced ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronUp className="h-4 w-4" />
-                    )}
-                  </span>
+              <div className="flex items-center gap-2 border-t pt-4">
+                <div className="flex-1" />
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="show_advanced">Advanced</Label>
+                  <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
                 </div>
+              </div>
+
+              <div className="space-y-2">
                 {showAdvanced && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>num_train_epochs</Label>
+                      <Label>Training Epochs</Label>
                       <Input
                         type="number"
                         min={1}
-                        value={hyperparams.num_train_epochs ?? 1}
-                        onChange={(e) =>
-                          setHyperparams((p) => ({ ...p, num_train_epochs: Number(e.target.value) }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>per_device_train_batch_size</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={hyperparams.per_device_train_batch_size ?? 2}
+                        placeholder={String(DEFAULT_HYPERPARAMETERS.num_train_epochs)}
+                        value={hyperparams.num_train_epochs}
                         onChange={(e) =>
                           setHyperparams((p) => ({
                             ...p,
-                            per_device_train_batch_size: Number(e.target.value),
+                            num_train_epochs: e.target.value === '' ? '' : Number(e.target.value),
                           }))
                         }
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>gradient_accumulation_steps</Label>
+                      <Label>Batch Size (per device)</Label>
                       <Input
                         type="number"
                         min={1}
-                        value={hyperparams.gradient_accumulation_steps ?? 4}
+                        placeholder={String(DEFAULT_HYPERPARAMETERS.per_device_train_batch_size)}
+                        value={hyperparams.per_device_train_batch_size}
                         onChange={(e) =>
                           setHyperparams((p) => ({
                             ...p,
-                            gradient_accumulation_steps: Number(e.target.value),
+                            per_device_train_batch_size: e.target.value === '' ? '' : Number(e.target.value),
                           }))
                         }
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>learning_rate</Label>
+                      <Label>Gradient Accumulation Steps</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        placeholder={String(DEFAULT_HYPERPARAMETERS.gradient_accumulation_steps)}
+                        value={hyperparams.gradient_accumulation_steps}
+                        onChange={(e) =>
+                          setHyperparams((p) => ({
+                            ...p,
+                            gradient_accumulation_steps: e.target.value === '' ? '' : Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Learning Rate</Label>
                       <Input
                         type="number"
                         step="any"
-                        value={hyperparams.learning_rate ?? 2e-4}
+                        placeholder={String(DEFAULT_HYPERPARAMETERS.learning_rate)}
+                        value={hyperparams.learning_rate}
                         onChange={(e) =>
                           setHyperparams((p) => ({
                             ...p,
-                            learning_rate: Number(e.target.value),
+                            learning_rate: e.target.value === '' ? '' : Number(e.target.value),
                           }))
                         }
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>lora_r</Label>
+                      <Label>LoRA Rank</Label>
                       <Input
                         type="number"
                         min={1}
-                        value={hyperparams.lora_r ?? 16}
+                        placeholder={String(DEFAULT_HYPERPARAMETERS.lora_r)}
+                        value={hyperparams.lora_r}
                         onChange={(e) =>
-                          setHyperparams((p) => ({ ...p, lora_r: Number(e.target.value) }))
+                          setHyperparams((p) => ({ ...p, lora_r: e.target.value === '' ? '' : Number(e.target.value) }))
                         }
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>lora_alpha</Label>
+                      <Label>LoRA Alpha</Label>
                       <Input
                         type="number"
                         min={1}
-                        value={hyperparams.lora_alpha ?? 16}
-                        onChange={(e) =>
-                          setHyperparams((p) => ({ ...p, lora_alpha: Number(e.target.value) }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>max_seq_length</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={hyperparams.max_seq_length ?? 2048}
+                        placeholder={String(DEFAULT_HYPERPARAMETERS.lora_alpha)}
+                        value={hyperparams.lora_alpha}
                         onChange={(e) =>
                           setHyperparams((p) => ({
                             ...p,
-                            max_seq_length: Number(e.target.value),
+                            lora_alpha: e.target.value === '' ? '' : Number(e.target.value),
                           }))
                         }
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>warmup_steps</Label>
+                      <Label>Max Sequence Length</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        placeholder={String(DEFAULT_HYPERPARAMETERS.max_seq_length)}
+                        value={hyperparams.max_seq_length}
+                        onChange={(e) =>
+                          setHyperparams((p) => ({
+                            ...p,
+                            max_seq_length: e.target.value === '' ? '' : Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Warmup Steps</Label>
                       <Input
                         type="number"
                         min={0}
-                        value={hyperparams.warmup_steps ?? 10}
+                        placeholder={String(DEFAULT_HYPERPARAMETERS.warmup_steps)}
+                        value={hyperparams.warmup_steps}
                         onChange={(e) =>
                           setHyperparams((p) => ({
                             ...p,
-                            warmup_steps: Number(e.target.value),
+                            warmup_steps: e.target.value === '' ? '' : Number(e.target.value),
                           }))
                         }
                       />
@@ -632,7 +596,7 @@ export function LocalFineTuneJobDialog({
       <ConfirmDialog
         isOpen={isCloseConfirmOpen}
         onOpenChange={setIsCloseConfirmOpen}
-        onConfirm={() => {
+        onConfirm={async () => {
           setIsCloseConfirmOpen(false);
           onOpenChange(false);
         }}
