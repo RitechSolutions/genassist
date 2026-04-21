@@ -35,11 +35,12 @@ import KnowledgeBase from "@/views/KnowledgeBase/Index";
 import KnowledgeBaseForm from "@/views/KnowledgeBase/pages/KnowledgeBaseForm";
 import MLModels from "@/views/MLModels/Index";
 import MLModelDetail from "@/views/MLModels/components/MLModelDetail";
-import { FeatureFlags } from "./views/Settings/pages/FeatureFlags";
+import { FeatureFlags as FeatureFlagsPage } from "./views/Settings/pages/FeatureFlags";
 import { Translations } from "./views/Settings/pages/Translations";
 import { Languages } from "./views/Settings/pages/Languages";
 import { FileManagerFiles } from "./views/Settings/pages/FileManagerFiles";
-import { useFeatureFlag } from "./context/FeatureFlagContext";
+import { FeatureFlags as FeatureFlagKeys } from "@/config/featureFlags";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { GlobalChat } from "./components/GlobalChat";
 import ServerDownPage from "@/components/ServerDownPage";
 import { useServerStatus } from "@/context/ServerStatusContext";
@@ -89,7 +90,9 @@ const ProtectedLayout = () => {
 export type RegistrationStatus = "loading" | "new" | "existing";
 
 export const RoutesProvider = () => {
-  const { isEnabled } = useFeatureFlag();
+  const showLocalFineTune = useFeatureFlagVisible(
+    FeatureFlagKeys.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE
+  );
 
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("loading");
   const [skipOnboarding, setSkipOnboarding] = useState(false);
@@ -196,7 +199,7 @@ export const RoutesProvider = () => {
               path: "settings/feature-flags",
               element: (
                 <ProtectedRoute requiredPermissions={["read:feature_flag"]}>
-                  <FeatureFlags />
+                  <FeatureFlagsPage />
                 </ProtectedRoute>
               ),
             },
@@ -283,17 +286,25 @@ export const RoutesProvider = () => {
             {
               path: "local-fine-tune",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
-                  <LocalFineTune />
-                </ProtectedRoute>
+                showLocalFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                    <LocalFineTune />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
               path: "local-fine-tune/:id",
               element: (
-                <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
-                  <LocalFineTuneJobDetail />
-                </ProtectedRoute>
+                showLocalFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                    <LocalFineTuneJobDetail />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
@@ -491,7 +502,7 @@ export const RoutesProvider = () => {
         { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
         { path: "*", element: <NotFound /> }
       ]),
-    [isEnabled],
+    [showLocalFineTune],
   );
 
   const organizationRouter = useMemo(
