@@ -16,6 +16,7 @@ from starlette.responses import Response as StarletteResponse
 from starlette.types import Receive, Scope, Send
 
 from app.auth.dependencies import auth, permissions
+from app.core.config.settings import settings
 from app.core.permissions.constants import Permissions as P
 from app.dependencies.injector import injector
 from app.modules.workflow.mcp.mcp_client import MCPClientV2
@@ -45,6 +46,25 @@ def _first_mcp_error_or_leaf(exc: BaseException) -> BaseException:
             return _first_mcp_error_or_leaf(exc.exceptions[0])
         return exc
     return exc
+
+
+def _require_tenant_id(request: Request) -> str:
+    """
+    Resolve tenant for MCP protocol endpoints.
+
+    Legacy/backward-compatible behavior: if multi-tenancy is enabled but the tenant is omitted
+    (no ``X-Tenant-ID`` header and no query param resolved by upstream middleware), we fall back
+    to ``master`` instead of returning 400.
+    """
+    if not settings.MULTI_TENANT_ENABLED:
+        return "master"
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if not tenant_id:
+        # If upstream tenant resolution didn't run (or no tenant provided), default to master.
+        # This keeps hosted MCP endpoints usable without explicit tenant selection.
+        request.state.tenant_id = "master"
+        return "master"
+    return str(tenant_id)
 
 
 class _TransportAlreadyResponded(StarletteResponse):
@@ -82,7 +102,7 @@ class DiscoverToolsResponse(BaseModel):
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))],
 )
-async def discover_mcp_tools(request: DiscoverToolsRequest) -> DiscoverToolsResponse:
+async def discover_mcp_tools(request: DiscoverToolsRequest, http_request: Request) -> DiscoverToolsResponse:
     """
     Discover available tools from an MCP server using the official MCP SDK.
 
@@ -99,6 +119,8 @@ async def discover_mcp_tools(request: DiscoverToolsRequest) -> DiscoverToolsResp
         HTTPException: If tool discovery fails
     """
     try:
+        _require_tenant_id(http_request)
+
         # Validate connection type and create client
         connection_type_raw = request.connection_type
         if connection_type_raw not in ("stdio", "sse", "http"):
@@ -242,6 +264,7 @@ class MCPToolCallResponse(BaseModel):
 
 
 async def _handle_jsonrpc_internal(
+    http_request: Request,
     request: JSONRPCRequest,
     authorization: Optional[str],
     mcp_server_service: MCPServerService,
@@ -256,6 +279,8 @@ async def _handle_jsonrpc_internal(
     - tools/call: Execute a tool
     """
     try:
+        _require_tenant_id(http_request)
+
         bearer = extract_bearer_token(authorization)
         if not bearer:
             return JSONRPCResponse(
@@ -443,6 +468,7 @@ async def _handle_jsonrpc_internal(
 
 @router.post("/jsonrpc", response_model=JSONRPCResponse)
 async def handle_jsonrpc_jsonrpc(
+    http_request: Request,
     request: JSONRPCRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     mcp_server_service: MCPServerService = Injected(MCPServerService),
@@ -450,7 +476,7 @@ async def handle_jsonrpc_jsonrpc(
     """
     Handle JSON-RPC requests at /jsonrpc endpoint.
     """
-    return await _handle_jsonrpc_internal(request, authorization, mcp_server_service)
+    return await _handle_jsonrpc_internal(http_request, request, authorization, mcp_server_service)
 
 
 @router.get("")
@@ -479,6 +505,7 @@ async def handle_root_get(
 
 @router.post("", response_model=JSONRPCResponse)
 async def handle_jsonrpc_root(
+    http_request: Request,
     request: JSONRPCRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     mcp_server_service: MCPServerService = Injected(MCPServerService),
@@ -486,7 +513,7 @@ async def handle_jsonrpc_root(
     """
     Handle JSON-RPC requests at root endpoint.
     """
-    return await _handle_jsonrpc_internal(request, authorization, mcp_server_service)
+    return await _handle_jsonrpc_internal(http_request, request, authorization, mcp_server_service)
 
 
 # SSE transport instance (shared across requests)
@@ -529,6 +556,8 @@ async def handle_sse(
     Note: The SSE transport sends the HTTP response via ASGI ``send``; the return
     value must not trigger a second response (see ``_TransportAlreadyResponded``).
     """
+    _require_tenant_id(request)
+
     bearer = extract_bearer_token(authorization)
     if not bearer:
         raise HTTPException(
@@ -606,6 +635,8 @@ async def handle_sse_messages(
     This endpoint receives client messages that link to a previously-established SSE session.
     Note: This endpoint uses an ASGI app that handles the response directly.
     """
+    _require_tenant_id(request)
+
     bearer = extract_bearer_token(authorization)
     if not bearer:
         raise HTTPException(
@@ -654,6 +685,7 @@ async def handle_sse_messages(
 
 
 async def _list_mcp_tools_internal(
+    http_request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     mcp_server_service: MCPServerService = Injected(MCPServerService),
 ) -> Dict[str, Any]:
@@ -661,6 +693,8 @@ async def _list_mcp_tools_internal(
     Internal function to list MCP tools.
     Used by both GET /tools and POST /tools/list endpoints.
     """
+    _require_tenant_id(http_request)
+
     bearer = extract_bearer_token(authorization)
     if not bearer:
         raise HTTPException(
@@ -704,6 +738,7 @@ async def _list_mcp_tools_internal(
 
 @router.get("/tools", response_model=Dict[str, Any])
 async def list_mcp_tools_get(
+    http_request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     mcp_server_service: MCPServerService = Injected(MCPServerService),
 ):
@@ -713,11 +748,12 @@ async def list_mcp_tools_get(
     Authenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)
     and returns all tools exposed by the authenticated MCP server.
     """
-    return await _list_mcp_tools_internal(authorization, mcp_server_service)
+    return await _list_mcp_tools_internal(http_request, authorization, mcp_server_service)
 
 
 @router.post("/tools/list", response_model=Dict[str, Any])
 async def list_mcp_tools_post(
+    http_request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     mcp_server_service: MCPServerService = Injected(MCPServerService),
 ):
@@ -728,12 +764,13 @@ async def list_mcp_tools_post(
     Authenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)
     and returns all tools exposed by the authenticated MCP server.
     """
-    return await _list_mcp_tools_internal(authorization, mcp_server_service)
+    return await _list_mcp_tools_internal(http_request, authorization, mcp_server_service)
 
 
 @router.post("/tools/call", response_model=MCPToolCallResponse)
 async def execute_mcp_tool(
     request: MCPToolCallRequest,
+    http_request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     mcp_server_service: MCPServerService = Injected(MCPServerService),
 ):
@@ -743,6 +780,8 @@ async def execute_mcp_tool(
     Authenticates with a static MCP API key or OAuth 2.0 access token, finds the tool
     in the server's workflows, validates arguments, and executes the workflow.
     """
+    _require_tenant_id(http_request)
+
     bearer = extract_bearer_token(authorization)
     if not bearer:
         raise HTTPException(

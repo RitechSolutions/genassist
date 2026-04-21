@@ -13371,6 +13371,51 @@
         }
       }
     },
+    "/api/genagent/prompt-editor/versions/{version_id}/hard": {
+      "delete": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Hard Delete Version",
+        "operationId": "hard_delete_version_api_genagent_prompt_editor_versions__version_id__hard_delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/prompt-editor/config/{workflow_id}/{node_id}/{prompt_field}": {
       "get": {
         "tags": [
