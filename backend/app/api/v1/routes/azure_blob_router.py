@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, Form, UploadFile, HTTPException
 from typing import Optional, List
 from pydantic import BaseModel
 import tempfile
@@ -54,49 +54,33 @@ def get_service(req: AzureConnection) -> AzureStorageService:
 # API Endpoints
 # -----------------------------------------------------------------------------
 
-@router.get("/list", response_model=List[str], dependencies=[
-        Depends(auth),
-    ])
-async def list_files(
-    connectionstring: str,
-    container: str,
-    prefix: Optional[str] = None
-):
+@router.post("/list", response_model=List[str])
+async def list_files(req: ListRequest):
     """List blobs in a container with optional prefix"""
     try:
-        svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
-        return svc.file_list(prefix=prefix)
+        svc = get_service(req)
+        return svc.file_list(prefix=req.prefix)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/exists", dependencies=[
-        Depends(auth),
-    ])
-async def file_exists(
-    connectionstring: str,
-    container: str,
-    filename: str,
-    prefix: Optional[str] = None,
-
-):
+@router.post("/exists")
+async def file_exists(req: FileRequest):
     """Check if a blob exists"""
     try:
-        svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
-        return {"exists": svc.file_exists(filename, prefix=prefix)}
+        svc = get_service(req)
+        return {"exists": svc.file_exists(req.filename, prefix=req.prefix)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/upload", dependencies=[
-        Depends(auth),
-    ])
+@router.post("/upload")
 async def upload_file(
-    connectionstring: str,
-    container: str,
-    destination_name: str,
     file: UploadFile,
-    prefix: Optional[str] = None
+    connectionstring: str = Form(...),
+    container: str = Form(...),
+    destination_name: str = Form(...),
+    prefix: Optional[str] = Form(None),
 ):
     """Upload a file stream to Azure Blob"""
     try:
@@ -167,13 +151,11 @@ async def move_file(req: MoveRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/bucket-exists", dependencies=[
-        Depends(auth),
-    ])
-async def bucket_exists(connectionstring: str, container: str):
+@router.post("/bucket-exists")
+async def bucket_exists(req: AzureConnection):
     """Check if container exists"""
     try:
-        svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
+        svc = get_service(req)
         return {"exists": svc.bucket_exists()}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
