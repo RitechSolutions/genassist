@@ -249,8 +249,23 @@ class MultiTenantSessionManager:
         all_table_names = await self.get_all_table_names_async(tenant)
         logger.info(f"Detected tables: {tenant} : {all_table_names}")
 
+        # Safety: never auto-drop/recreate the *master* database based on missing tables.
+        # Missing tables on master should be handled by migrations, not destructive resets.
+        if tenant == "master":
+            if settings.CREATE_DB:
+                logger.info("Cold starting master DB (CREATE_DB=true)...")
+                await self.cold_start_db(tenant)
+            elif "users" not in all_table_names:
+                logger.warning(
+                    "Master DB is missing expected tables (e.g. 'users'), but CREATE_DB=false; "
+                    "skipping cold start to avoid destructive data loss."
+                )
+            return
+
+        # Legacy behavior for tenant databases: in dev/test environments we may want to
+        # bootstrap an empty tenant DB automatically when core tables are missing.
         if settings.CREATE_DB or "users" not in all_table_names:
-            logger.info("Cold starting DB...")
+            logger.info("Cold starting tenant DB...")
             await self.cold_start_db(tenant)
 
 
