@@ -89,7 +89,7 @@ class FolderRequest(PathRequest):
 # API Endpoints
 # -----------------------------------------------------------------------------
 
-@router.get("/list", response_model=List[str])
+@router.get("/list", response_model=List[str], )
 async def list_dir(
     smb_host: Optional[str] = None,
     smb_share: Optional[str] = None,
@@ -104,7 +104,6 @@ async def list_dir(
     extension: Optional[str] = None,
     name_contains: Optional[str] = None,
     pattern: Optional[str] = None,
-    dependencies=[Depends(auth)]
 ):
     """List directory contents with optional filters."""
     try:
@@ -129,7 +128,7 @@ async def list_dir(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/read")
+@router.get("/read", dependencies=[Depends(auth)])
 async def read_file(
     smb_host: Optional[str] = None,
     smb_share: Optional[str] = None,
@@ -140,7 +139,6 @@ async def read_file(
     local_root: Optional[str] = None,
     filepath: str = "",
     binary: bool = False,
-    dependencies=[Depends(auth)]
 ):
     """Read file content."""
     # Sanitize filepath to prevent path traversal attacks
@@ -161,8 +159,8 @@ async def read_file(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/write")
-async def write_file(req: FileRequest, dependencies=[Depends(auth)]):
+@router.post("/write", dependencies=[Depends(auth)])
+async def write_file(req: FileRequest):
     """Write or update a file."""
     # Sanitize filepath to prevent path traversal attacks
     safe_filepath = get_safe_path(req.filepath)
@@ -188,8 +186,8 @@ async def write_file(req: FileRequest, dependencies=[Depends(auth)]):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/file")
-async def delete_file(req: FileRequest, dependencies=[Depends(auth)]):
+@router.delete("/file", dependencies=[Depends(auth)])
+async def delete_file(req: FileRequest):
     """Delete a file."""
     try:
         async with SMBShareFSService(
@@ -207,8 +205,8 @@ async def delete_file(req: FileRequest, dependencies=[Depends(auth)]):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/folder")
-async def create_folder(req: FolderRequest, dependencies=[Depends(auth)]):
+@router.post("/folder", dependencies=[Depends(auth)])
+async def create_folder(req: FolderRequest):
     """Create a new folder (recursively)."""
     try:
         async with SMBShareFSService(
@@ -248,7 +246,7 @@ async def delete_folder(req: FolderRequest, dependencies=[Depends(auth)]):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/exists")
+@router.get("/exists", dependencies=[Depends(auth)])
 async def exists(
     smb_host: Optional[str] = None,
     smb_share: Optional[str] = None,
@@ -257,8 +255,7 @@ async def exists(
     smb_port: Optional[int] = None,
     use_local_fs: bool = False,
     local_root: Optional[str] = None,
-    path: str = "",
-    dependencies=[Depends(auth)]
+    path: str = ""
 ):
     """Check if a path exists."""
     try:

@@ -353,14 +353,17 @@ async def transcribe_audio_whisper_chunked(
         end_time = time.perf_counter()
 
         processing_time = end_time - start_time
+        language_code = info.language if info and hasattr(info, "language") else None
         return {
             "text": full_text.strip(),
             "segments": all_segments,
             # "info": info,
-            "audio_duration": info.duration if info else None,
+            "audio_duration": info.duration if info and hasattr(info, "duration") else None,
             "processing_time": processing_time,
             "model_name": selected_model,
             "device": cuda_cpu_used,
+            "language_code": language_code,
+            "language": language_code,
         }
 
     except Exception as e:
