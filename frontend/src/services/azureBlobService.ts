@@ -44,13 +44,7 @@ export interface AzureMoveRequest extends AzureConnection {
  */
 export const listBlobs = async (params: AzureListRequest): Promise<string[]> => {
   try {
-    const query = new URLSearchParams(
-      Object.entries(params)
-        .filter(([_, v]) => v != null)
-        .map(([k, v]) => [k, String(v)])
-    ).toString();
-
-    const data = await apiRequest<string[]>("GET", `azure-blob-storage/list?${query}`);
+    const data = await apiRequest<string[]>("POST", "azure-blob-storage/list", params as unknown as Record<string, unknown>);
     return data ?? [];
   } catch (error) {
     throw error;
@@ -64,13 +58,7 @@ export const blobExists = async (
   params: AzureConnection & { filename: string; prefix?: string }
 ): Promise<boolean> => {
   try {
-    const query = new URLSearchParams(
-      Object.entries(params)
-        .filter(([_, v]) => v != null)
-        .map(([k, v]) => [k, String(v)])
-    ).toString();
-
-    const data = await apiRequest<{ exists: boolean }>("GET", `azure-blob-storage/exists?${query}`);
+    const data = await apiRequest<{ exists: boolean }>("POST", "azure-blob-storage/exists", params as unknown as Record<string, unknown>);
     return data?.exists ?? false;
   } catch (error) {
     throw error;
@@ -82,7 +70,14 @@ export const blobExists = async (
  */
 export const uploadFile = async (payload: AzureUploadRequest): Promise<string> => {
   try {
-    const response = await apiRequest<{ url: string }>("POST", "azure-blob-storage/upload", payload as unknown as Record<string, unknown>);
+    const formData = new FormData();
+    formData.append("file", payload.file);
+    formData.append("connectionstring", payload.connectionstring ?? "");
+    formData.append("container", payload.container ?? "");
+    formData.append("destination_name", payload.destination_name);
+    if (payload.prefix != null) formData.append("prefix", payload.prefix);
+
+    const response = await apiRequest<{ url: string }>("POST", "azure-blob-storage/upload", formData);
     if (!response?.url) throw new Error("Upload failed.");
     return response.url;
   } catch (error) {
@@ -147,13 +142,7 @@ export const bucketExists = async (
   params: AzureConnection
 ): Promise<boolean> => {
   try {
-    const query = new URLSearchParams(
-      Object.entries(params)
-        .filter(([_, v]) => v != null)
-        .map(([k, v]) => [k, String(v)])
-    ).toString();
-
-    const data = await apiRequest<{ exists: boolean }>("GET", `azure-blob-storage/bucket-exists?${query}`);
+    const data = await apiRequest<{ exists: boolean }>("POST", "azure-blob-storage/bucket-exists", params as unknown as Record<string, unknown>);
     return data?.exists ?? false;
   } catch (error) {
     throw error;
