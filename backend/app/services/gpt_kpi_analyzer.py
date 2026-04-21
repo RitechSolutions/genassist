@@ -87,7 +87,7 @@ class GptKpiAnalyzer:
         # If we exhausted all retries without success, raise an appropriate exception
         logger.error(f"Failed to analyze transcript after {max_attempts} attempts. Last error: {last_error_msg}")
         raise AppException(error_key=ErrorKey.GPT_FAILED_JSON_PARSING, status_code=500,
-                error_detail=f"Last error: {last_error_msg}. Last response: {last_response}")
+                           )
 
 
     def _format_transcript(self, segments: List[TranscriptSegment]) -> str:
