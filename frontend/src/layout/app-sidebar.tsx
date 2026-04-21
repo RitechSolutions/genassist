@@ -189,6 +189,7 @@ const menuItems: MenuItem[] = [
         title: "Local Fine-Tune",
         url: "/local-fine-tune",
         permissionsRequired: ["*", "update:llm_provider"],
+        feature_flag: FeatureFlags.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE,
       },
     ],
   },
@@ -452,7 +453,7 @@ function UserFooter({
 export function AppSidebar() {
   const [username, setUsername] = useState<string>("");
   const [tenantId, setTenantId] = useState<string>("");
-  const { isEnabled } = useFeatureFlag();
+  const { getFeatureItem } = useFeatureFlag();
 
   const location = useLocation();
   const currentPath = location.pathname;
@@ -536,7 +537,11 @@ export function AppSidebar() {
       return items.reduce<MenuItem[]>((acc, item) => {
         if (item.permissionsRequired && !hasAnyPermission(item.permissionsRequired))
           return acc;
-        if (item.feature_flag && !isEnabled(item.feature_flag)) return acc;
+        if (item.feature_flag) {
+          // Feature-flagged navigation items should only render when the exact flag exists and is visible.
+          const featureItem = getFeatureItem(item.feature_flag);
+          if (featureItem?.visible !== true) return acc;
+        }
         if (item.children) {
           const filteredChildren = filterItems(item.children);
           if (filteredChildren.length === 0) return acc;
@@ -547,7 +552,7 @@ export function AppSidebar() {
         return acc;
       }, []);
     },
-    [isEnabled]
+    [getFeatureItem]
   );
 
   const filteredMenuItems = filterItems(menuItems);
