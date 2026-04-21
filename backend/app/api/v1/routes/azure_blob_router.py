@@ -60,8 +60,7 @@ def get_service(req: AzureConnection) -> AzureStorageService:
 async def list_files(
     connectionstring: str,
     container: str,
-    prefix: Optional[str] = None,
-    dependencies=[Depends(auth)]
+    prefix: Optional[str] = None
 ):
     """List blobs in a container with optional prefix"""
     try:
