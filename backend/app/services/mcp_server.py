@@ -179,6 +179,14 @@ def _extract_input_schema_from_chat_input_node(workflow_model) -> Dict[str, Any]
     return input_schema
 
 
+def _add_tenant_id_to_url(url: Optional[str], request: Optional[Request] = None) -> Optional[str]:
+    if not request:
+        return url
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if not tenant_id:
+        return url
+    return f"{url}?x-tenant-id={tenant_id}" if url else None
+
 @inject
 class MCPServerService:
     """Service for managing MCP servers."""
@@ -307,7 +315,9 @@ class MCPServerService:
             )
 
         base_url = str(request.base_url).rstrip("/") if request else None
-        return await self._to_response(mcp_server, base_url=base_url)
+        response = await self._to_response(mcp_server, base_url=base_url)
+        response.url = _add_tenant_id_to_url(response.url, request)
+        return response
 
     async def get_all(
         self, request: Optional[Request] = None
@@ -323,6 +333,9 @@ class MCPServerService:
         responses = []
         for server in mcp_servers:
             response = await self._to_response(server, base_url=base_url)
+
+            # when logged user context is a tenant we need to add tenant id on the url as query param
+            response.url = _add_tenant_id_to_url(response.url, request)
             responses.append(response)
         return responses
 

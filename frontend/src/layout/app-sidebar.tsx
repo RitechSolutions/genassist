@@ -36,6 +36,7 @@ import {
   logout,
   hasAnyPermission,
   getAuthMe,
+  getTenantId,
 } from "@/services/auth";
 import toast from "react-hot-toast";
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -380,9 +381,11 @@ function CollapsibleMenuItem({
 
 function UserFooter({
   username,
+  tenantId,
   onLogout,
 }: {
   username: string;
+  tenantId?: string;
   onLogout: () => void;
 }) {
   const initials = username
@@ -405,9 +408,16 @@ function UserFooter({
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold text-zinc-600">
               {initials || "U"}
             </div>
-            <span className="truncate text-[13px] font-medium text-zinc-600">
-              {username}
-            </span>
+            <div className="min-w-0">
+              <div className="truncate text-[13px] font-medium text-zinc-600">
+                {username}
+              </div>
+              {tenantId ? (
+                <div className="truncate text-[11px] text-zinc-400">
+                 Tenant: <span className="font-medium">{tenantId}</span>
+                </div>
+              ) : null}
+            </div>
             <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-zinc-300" />
           </button>
         </DropdownMenuTrigger>
@@ -441,6 +451,7 @@ function UserFooter({
 
 export function AppSidebar() {
   const [username, setUsername] = useState<string>("");
+  const [tenantId, setTenantId] = useState<string>("");
   const { isEnabled } = useFeatureFlag();
 
   const location = useLocation();
@@ -484,10 +495,12 @@ export function AppSidebar() {
     const cached = localStorage.getItem("auth_username");
     if (cached) {
       setUsername(cached);
+      setTenantId(getTenantId() ?? "");
       return;
     }
     const loadUser = async () => {
       try {
+        setTenantId(getTenantId() ?? "");
         const me = await getAuthMe();
         if (me?.username) {
           setUsername(me.username);
@@ -495,6 +508,7 @@ export function AppSidebar() {
         }
       } catch {
         setUsername("");
+        setTenantId(getTenantId() ?? "");
       }
     };
     loadUser();
@@ -582,7 +596,11 @@ export function AppSidebar() {
 
         {/* Pinned footer */}
         {username && (
-          <UserFooter username={username} onLogout={handleLogout} />
+          <UserFooter
+            username={username}
+            tenantId={tenantId}
+            onLogout={handleLogout}
+          />
         )}
       </SidebarContent>
     </Sidebar>
