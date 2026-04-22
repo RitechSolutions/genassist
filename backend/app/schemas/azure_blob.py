@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 
 class AzureConnection(BaseModel):
-    connectionstring: Optional[str] = None
+    connection_string: Optional[str] = None
     container: Optional[str] = None
 
 

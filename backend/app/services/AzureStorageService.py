@@ -2,9 +2,16 @@
 # !pip install azure-storage-blob
 ###############################################
 
+import logging
 import os
 from typing import Optional, List
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
+from app.schemas.azure_blob import AzureConnection
+
+logger = logging.getLogger(__name__)
 
 
 class AzureStorageService:
@@ -53,6 +60,14 @@ class AzureStorageService:
             raise ValueError("No container name provided.")
         self._container_name = name
         return self._service.get_container_client(name)
+
+    @classmethod
+    def from_request(cls, req: AzureConnection) -> "AzureStorageService":
+        try:
+            return cls(connection_string=req.connection_string, container_name=req.container)
+        except Exception as e:
+            logger.error(e)
+            raise AppException(error_key=ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED)
 
     @staticmethod
     def test_connection(cd: dict) -> dict:

@@ -6,7 +6,7 @@ import { apiRequest } from "@/config/api";
 // Types
 // -----------------------------------------------------------------------------
 export interface AzureConnection {
-  connectionstring?: string;
+  connection_string?: string;
   container?: string;
 }
 
@@ -54,7 +54,7 @@ export const blobExists = async (
 export const uploadFile = async (payload: AzureUploadRequest): Promise<string> => {
   const formData = new FormData();
   formData.append("file", payload.file);
-  formData.append("connectionstring", payload.connectionstring ?? "");
+  formData.append("connection_string", payload.connection_string ?? "");
   formData.append("container", payload.container ?? "");
   formData.append("destination_name", payload.destination_name);
   if (payload.prefix != null) formData.append("prefix", payload.prefix);
