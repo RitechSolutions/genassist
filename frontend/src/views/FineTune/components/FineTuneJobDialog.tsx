@@ -9,7 +9,8 @@ import {
 import { Input } from "@/components/input";
 import { Label } from "@/components/label";
 import { Button } from "@/components/button";
-import { Loader2, Upload, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { Loader2, Upload, Download } from 'lucide-react';
+import { Switch } from '@/components/switch';
 import { toast } from "react-hot-toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
@@ -26,6 +27,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
+
+const DEFAULT_N_EPOCHS = 1;
+const DEFAULT_BATCH_SIZE = 4;
 
 interface FineTuneJobDialogProps {
   isOpen: boolean;
@@ -53,8 +57,8 @@ export function FineTuneJobDialog({
 
   const [model, setModel] = useState<string>("");
   const [suffix, setSuffix] = useState<string>("");
-  const [nEpochs, setNEpochs] = useState<number>(1);
-  const [batchSize, setBatchSize] = useState<number>(4);
+  const [nEpochs, setNEpochs] = useState<number | ''>(DEFAULT_N_EPOCHS);
+  const [batchSize, setBatchSize] = useState<number | ''>(DEFAULT_BATCH_SIZE);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [modelTouched, setModelTouched] = useState(false);
 
@@ -62,13 +66,13 @@ export function FineTuneJobDialog({
   const [uploadingValidation, setUploadingValidation] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
-  const toggleAdvanced = () => setShowAdvanced((v) => !v);
-  const handleAdvancedKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      toggleAdvanced();
-    }
-  };
+
+  useEffect(() => {
+    const epochs = nEpochs === '' ? DEFAULT_N_EPOCHS : nEpochs;
+    const batch = batchSize === '' ? DEFAULT_BATCH_SIZE : batchSize;
+    if (epochs !== DEFAULT_N_EPOCHS || batch !== DEFAULT_BATCH_SIZE) setShowAdvanced(true);
+  }, [nEpochs, batchSize]);
+
 
   useEffect(() => {
     if (isOpen) {
@@ -113,8 +117,8 @@ export function FineTuneJobDialog({
   const resetForm = () => {
     setModel("");
     setSuffix("");
-    setNEpochs(1);
-    setBatchSize(4);
+    setNEpochs(DEFAULT_N_EPOCHS);
+    setBatchSize(DEFAULT_BATCH_SIZE);
     setShowAdvanced(false);
     setModelTouched(false);
     onSetFile("training", null);
@@ -140,8 +144,8 @@ export function FineTuneJobDialog({
       validation_file: validationFile!.id,
       suffix,
       hyperparameters: {
-        n_epochs: Number(nEpochs) || 1,
-        batch_size: Number(batchSize) || 4,
+        n_epochs: Number(nEpochs) || DEFAULT_N_EPOCHS,
+        batch_size: Number(batchSize) || DEFAULT_BATCH_SIZE,
       },
     };
 
@@ -197,190 +201,176 @@ export function FineTuneJobDialog({
               <DialogTitle className="text-xl">New Fine-Tune</DialogTitle>
             </DialogHeader>
 
-          <div className="px-6 pb-6 space-y-6">
-            <div className="space-y-2">
-              <Label>Model</Label>
-              {loadingModels ? (
-                <div className="flex items-center justify-center p-4">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                </div>
-              ) : (
-                <Select
-                  value={model}
-                  onValueChange={(v) => {
-                    setModel(v);
-                    setModelTouched(true);
-                  }}
-                >
-                  <SelectTrigger
-                    className="w-full"
-                    onFocus={() => setModelTouched(true)}
-                    onClick={() => setModelTouched(true)}
+            <div className="px-6 pb-6 space-y-6">
+              <div className="space-y-2">
+                <Label>Model</Label>
+                {loadingModels ? (
+                  <div className="flex items-center justify-center p-4">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  </div>
+                ) : (
+                  <Select
+                    value={model}
+                    onValueChange={(v) => {
+                      setModel(v);
+                      setModelTouched(true);
+                    }}
                   >
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {models.map((m) => (
-                      <SelectItem key={m} value={m}>
-                        {m}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label>Name</Label>
-              <Input
-                type="text"
-                placeholder={suffixPlaceholder}
-                value={suffix}
-                onChange={(e) => setSuffix(e.target.value)}
-              />
-              {modelTouched && model && (
-                <div className="text-sm text-muted-foreground">{derivedNamePreview}</div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Label>Training file</Label>
-                  <Tooltip
-                    content="The dataset used to teach the model desired behavior. Must be properly formatted (JSONL) and representative of real usage"
-                    contentClassName="w-48"
-                    iconClassName="h-4 w-4"
-                  />
-                </div>
-                <a
-                  href="/sample-files/traning_sample.jsonl"
-                  download="training_sample.jsonl"
-                  className="flex items-center gap-1 text-xs hover:text-foreground"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Download Sample File</span>
-                </a>
+                    <SelectTrigger
+                      className="w-full"
+                      onFocus={() => setModelTouched(true)}
+                      onClick={() => setModelTouched(true)}
+                    >
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
-              <label className="border border-dashed border-muted-foreground/40 rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-muted-foreground/70 transition">
-                <Upload className="w-5 h-5 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Select file to upload</span>
+
+              <div className="space-y-2">
+                <Label>Name</Label>
                 <Input
-                  type="file"
-                  accept=".json,.jsonl,application/json"
-                  className="hidden"
-                  onChange={(e) => handleUpload(e, "training")}
+                  type="text"
+                  placeholder={suffixPlaceholder}
+                  value={suffix}
+                  onChange={(e) => setSuffix(e.target.value)}
                 />
-              </label>
-              {uploadingTraining && (
-                <div className="text-sm text-muted-foreground flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Uploading training file...
-                </div>
-              )}
-              {trainingFile && (
-                <div className="text-sm text-green-700">Uploaded: {trainingFile.name}</div>
-              )}
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
-                  onClick={() => onOpenGenerate("training")}
-                >
-                  Generate from conversations
-                </button>
-                <span className="text-xs text-muted-foreground">·</span>
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
-                  onClick={() => onOpenSelectFile("training")}
-                >
-                  Select from uploaded files
-                </button>
+                {modelTouched && model && <div className="text-sm text-muted-foreground">{derivedNamePreview}</div>}
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Label>Validation file</Label>
-                  <Tooltip
-                    content="A separate dataset used to evaluate model performance during training and detect overfitting"
-                    contentClassName="w-48"
-                    iconClassName="h-4 w-4"
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Label>Training file</Label>
+                    <Tooltip
+                      content="The dataset used to teach the model desired behavior. Must be properly formatted (JSONL) and representative of real usage"
+                      contentClassName="w-48"
+                      iconClassName="h-4 w-4"
+                    />
+                  </div>
+                  <a
+                    href="/sample-files/traning_sample.jsonl"
+                    download="training_sample.jsonl"
+                    className="flex items-center gap-1 text-xs hover:text-foreground"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download Sample File</span>
+                  </a>
+                </div>
+                <label className="border border-dashed border-muted-foreground/40 rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-muted-foreground/70 transition">
+                  <Upload className="w-5 h-5 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Select file to upload</span>
+                  <Input
+                    type="file"
+                    accept=".json,.jsonl,application/json"
+                    className="hidden"
+                    onChange={(e) => handleUpload(e, 'training')}
                   />
+                </label>
+                {uploadingTraining && (
+                  <div className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Uploading training file...
+                  </div>
+                )}
+                {trainingFile && <div className="text-sm text-green-700">Uploaded: {trainingFile.name}</div>}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                    onClick={() => onOpenGenerate('training')}
+                  >
+                    Generate from conversations
+                  </button>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                    onClick={() => onOpenSelectFile('training')}
+                  >
+                    Select from uploaded files
+                  </button>
                 </div>
-                <a
-                  href="/sample-files/validation_sample.jsonl"
-                  download="validation_sample.jsonl"
-                  className="flex items-center gap-1 text-xs hover:text-foreground"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Download Sample File</span>
-                </a>
               </div>
-              <label className="border border-dashed border-muted-foreground/40 rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-muted-foreground/70 transition">
-                <Upload className="w-5 h-5 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Select file to upload</span>
-                <Input
-                  type="file"
-                  accept=".json,.jsonl,application/json"
-                  className="hidden"
-                  onChange={(e) => handleUpload(e, "validation")}
-                />
-              </label>
-              {uploadingValidation && (
-                <div className="text-sm text-muted-foreground flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Uploading validation file...
-                </div>
-              )}
-              {validationFile && (
-                <div className="text-sm text-green-700">Uploaded: {validationFile.name}</div>
-              )}
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
-                  onClick={() => onOpenGenerate("validation")}
-                >
-                  Generate from conversations
-                </button>
-                <span className="text-xs text-muted-foreground">·</span>
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
-                  onClick={() => onOpenSelectFile("validation")}
-                >
-                  Select from uploaded files
-                </button>
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <div
-                className="flex items-center justify-between cursor-pointer select-none"
-                onClick={toggleAdvanced}
-                role="button"
-                tabIndex={0}
-                onKeyDown={handleAdvancedKeyDown}
-              >
-                <span className="text-sm font-semibold">Advanced</span>
-                <span className="h-8 w-8 flex items-center justify-center text-muted-foreground">
-                  {showAdvanced ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronUp className="h-4 w-4" />
-                  )}
-                </span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Label>Validation file</Label>
+                    <Tooltip
+                      content="A separate dataset used to evaluate model performance during training and detect overfitting"
+                      contentClassName="w-48"
+                      iconClassName="h-4 w-4"
+                    />
+                  </div>
+                  <a
+                    href="/sample-files/validation_sample.jsonl"
+                    download="validation_sample.jsonl"
+                    className="flex items-center gap-1 text-xs hover:text-foreground"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download Sample File</span>
+                  </a>
+                </div>
+                <label className="border border-dashed border-muted-foreground/40 rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-muted-foreground/70 transition">
+                  <Upload className="w-5 h-5 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Select file to upload</span>
+                  <Input
+                    type="file"
+                    accept=".json,.jsonl,application/json"
+                    className="hidden"
+                    onChange={(e) => handleUpload(e, 'validation')}
+                  />
+                </label>
+                {uploadingValidation && (
+                  <div className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Uploading validation file...
+                  </div>
+                )}
+                {validationFile && <div className="text-sm text-green-700">Uploaded: {validationFile.name}</div>}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                    onClick={() => onOpenGenerate('validation')}
+                  >
+                    Generate from conversations
+                  </button>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 w-fit"
+                    onClick={() => onOpenSelectFile('validation')}
+                  >
+                    Select from uploaded files
+                  </button>
+                </div>
               </div>
+
+              <div className="flex items-center gap-2 border-t pt-4">
+                <div className="flex-1" />
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="show_advanced">Advanced</Label>
+                  <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
+                </div>
+              </div>
+
               {showAdvanced && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>n_epochs</Label>
+                    <Label>Training Epochs</Label>
                     <Input
                       type="number"
                       min={1}
+                      placeholder={String(DEFAULT_N_EPOCHS)}
                       value={nEpochs}
-                      onChange={(e) => setNEpochs(Number(e.target.value))}
+                      onChange={(e) => setNEpochs(e.target.value === '' ? '' : Number(e.target.value))}
                     />
                   </div>
                   <div className="space-y-2">
@@ -389,30 +379,26 @@ export function FineTuneJobDialog({
                       type="number"
                       min={1}
                       value={batchSize}
-                      onChange={(e) => setBatchSize(Number(e.target.value))}
+                      placeholder={String(DEFAULT_BATCH_SIZE)}
+                      onChange={(e) => setBatchSize(e.target.value === '' ? '' : Number(e.target.value))}
                     />
                   </div>
                 </div>
               )}
             </div>
-          </div>
 
-          <DialogFooter className="px-6 py-4 border-t flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleDialogOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Create
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            <DialogFooter className="px-6 py-4 border-t flex items-center justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Create
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <ConfirmDialog
         isOpen={isCloseConfirmOpen}
         onOpenChange={setIsCloseConfirmOpen}
