@@ -242,7 +242,7 @@ async def batch_process_files_kb_async(
 
 
 
-        elif ds_item.type.lower() == "azure_blob":
+        elif ds_item.source_type.lower() == "azure_blob":
             # # Required connection details stored in datasource connection_data
             container = conn.get("container_name")
             prefix = conn.get("input_prefix", "incoming")
