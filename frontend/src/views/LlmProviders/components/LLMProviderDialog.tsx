@@ -30,6 +30,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ConnectionTestPanel } from '@/components/ConnectionTestPanel';
 import type { ConnectionStatus } from '@/interfaces/connectionStatus.interface';
 import { SchemaFormRenderer } from '@/components/SchemaFormRenderer';
+import type { FieldSchema, FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
+
+function hasAdvancedFieldChanges(fields: FieldSchema[], data: Record<string, FieldValue>): boolean {
+  return fields
+    .filter((f) => !f.required)
+    .some((f) => {
+      const val = data[f.name];
+      if (val === undefined || val === null || val === '') return false;
+      if (Array.isArray(val) && val.length === 0) return false;
+      return val !== (f.default ?? null);
+    });
+}
 
 interface LLMProviderDialogProps {
   isOpen: boolean;
@@ -85,7 +97,12 @@ export function LLMProviderDialog({
         setLlmModel(providerToEdit.llm_model);
         setConnectionData(providerToEdit.connection_data);
         setIsActive(providerToEdit.is_active === 1);
-        setShowAdvanced(false);
+        setShowAdvanced(
+          hasAdvancedFieldChanges(
+            supportedModels[providerToEdit.llm_model_provider]?.fields ?? [],
+            providerToEdit.connection_data
+          )
+        );
         setTestStatus(providerToEdit.connection_status ?? null);
         setTestedConnectionData(
           providerToEdit.connection_status ? structuredClone(providerToEdit.connection_data) : null
@@ -239,6 +256,13 @@ export function LLMProviderDialog({
   };
 
   const hasOptionalFields = (supportedModels[llmType]?.fields.filter((f) => !f.required) ?? []).length > 0;
+
+  const hasAdvancedChanges = hasAdvancedFieldChanges(supportedModels[llmType]?.fields ?? [], connectionData);
+
+  useEffect(() => {
+    if (hasAdvancedChanges) setShowAdvanced(true);
+  }, [hasAdvancedChanges]);
+
   const hasChangedSinceTest =
     testStatus !== null &&
     testedConnectionData !== null &&

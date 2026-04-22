@@ -124,10 +124,7 @@ async def update_config(
     if agent.is_system and not current_user_is_admin():
         raise HTTPException(status_code=403, detail="Only admins can modify system agents")
 
-    await agent_config_service.update(agent_id, agent_update)
-    # Fetch the updated agent with all relationships to ensure security_settings is included
-    agent_read = await agent_config_service.get_by_id_full(agent_id)
-    return agent_read
+    return await agent_config_service.update(agent_id, agent_update)
 
 
 @router.delete(
