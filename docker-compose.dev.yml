@@ -302,6 +302,7 @@ services:
     build:
       context: ./websocket
       dockerfile: Dockerfile
+    image: genassist-ws-image
     container_name: genassist-ws-dev
     ports:
       - "8002:8002"
