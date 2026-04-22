@@ -16604,6 +16604,14 @@
         "summary": "List Dir",
         "description": "List directory contents with optional filters.",
         "operationId": "list_dir_api_smb_share_smb_list_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "smb_host",

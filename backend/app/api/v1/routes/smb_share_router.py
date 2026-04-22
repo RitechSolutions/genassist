@@ -1,11 +1,47 @@
 import os
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional, List, Union
 from pydantic import BaseModel
-from app.auth.dependencies import auth
 
+from app.auth.dependencies import auth
+from app.core.project_path import DATA_VOLUME
 from app.services.smb_share_service import SMBShareFSService
 from app.tasks.share_folder_tasks import transcribe_audio_files_async_with_scope
+
+# Allowed root directories for local filesystem mode.
+# local_root must resolve to a path under one of these.
+_ALLOWED_LOCAL_ROOTS: list[Path] = [
+    DATA_VOLUME.resolve(),
+]
+
+
+def _validate_local_root(local_root: Optional[str]) -> Optional[str]:
+    """Validate that local_root is under an allowed directory.
+
+    Returns the value unchanged when valid, or raises HTTPException 400.
+    When local_root is None (SMB mode), it is passed through unchanged.
+    """
+    if local_root is None:
+        return None
+
+    try:
+        resolved = Path(local_root).resolve()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid local_root path")
+
+    for allowed in _ALLOWED_LOCAL_ROOTS:
+        try:
+            resolved.relative_to(allowed)
+            return local_root
+        except ValueError:
+            continue
+
+    raise HTTPException(
+        status_code=400,
+        detail="local_root must be within the allowed data directory",
+    )
 
 
 def get_safe_path(user_path: str) -> str:
@@ -88,7 +124,7 @@ class FolderRequest(PathRequest):
 # API Endpoints
 # -----------------------------------------------------------------------------
 
-@router.get("/list", response_model=List[str], )
+@router.get("/list", response_model=List[str], dependencies=[Depends(auth)])
 async def list_dir(
     smb_host: Optional[str] = None,
     smb_share: Optional[str] = None,
@@ -105,6 +141,8 @@ async def list_dir(
     pattern: Optional[str] = None,
 ):
     """List directory contents with optional filters."""
+    safe_local_root = _validate_local_root(local_root)
+    safe_subpath = get_safe_path(subpath)
     try:
         async with SMBShareFSService(
             smb_host=smb_host,
@@ -113,10 +151,10 @@ async def list_dir(
             smb_pass=smb_pass,
             smb_port=smb_port,
             use_local_fs=use_local_fs,
-            local_root=local_root,
+            local_root=safe_local_root,
         ) as svc:
             return await svc.list_dir(
-                subpath=subpath,
+                subpath=safe_subpath,
                 only_files=only_files,
                 only_dirs=only_dirs,
                 extension=extension,
@@ -140,7 +178,7 @@ async def read_file(
     binary: bool = False,
 ):
     """Read file content."""
-    # Sanitize filepath to prevent path traversal attacks
+    safe_local_root = _validate_local_root(local_root)
     safe_filepath = get_safe_path(filepath)
 
     try:
@@ -151,7 +189,7 @@ async def read_file(
             smb_pass=smb_pass,
             smb_port=smb_port,
             use_local_fs=use_local_fs,
-            local_root=local_root,
+            local_root=safe_local_root,
         ) as svc:
             return await svc.read_file(safe_filepath, binary=binary)
     except Exception as e:
@@ -161,7 +199,7 @@ async def read_file(
 @router.post("/write", dependencies=[Depends(auth)])
 async def write_file(req: FileRequest):
     """Write or update a file."""
-    # Sanitize filepath to prevent path traversal attacks
+    safe_local_root = _validate_local_root(req.local_root)
     safe_filepath = get_safe_path(req.filepath)
 
     try:
@@ -172,7 +210,7 @@ async def write_file(req: FileRequest):
             smb_pass=req.smb_pass,
             smb_port=req.smb_port,
             use_local_fs=req.use_local_fs,
-            local_root=req.local_root,
+            local_root=safe_local_root,
         ) as svc:
             await svc.write_file(
                 filepath=safe_filepath,
@@ -188,6 +226,9 @@ async def write_file(req: FileRequest):
 @router.delete("/file", dependencies=[Depends(auth)])
 async def delete_file(req: FileRequest):
     """Delete a file."""
+    safe_local_root = _validate_local_root(req.local_root)
+    safe_filepath = get_safe_path(req.filepath)
+
     try:
         async with SMBShareFSService(
             smb_host=req.smb_host,
@@ -196,10 +237,10 @@ async def delete_file(req: FileRequest):
             smb_pass=req.smb_pass,
             smb_port=req.smb_port,
             use_local_fs=req.use_local_fs,
-            local_root=req.local_root, 
+            local_root=safe_local_root,
         ) as svc:
-            await svc.delete_file(req.filepath)
-        return {"status": "success", "message": f"File '{req.filepath}' deleted."}
+            await svc.delete_file(safe_filepath)
+        return {"status": "success", "message": f"File '{safe_filepath}' deleted."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -207,26 +248,7 @@ async def delete_file(req: FileRequest):
 @router.post("/folder", dependencies=[Depends(auth)])
 async def create_folder(req: FolderRequest):
     """Create a new folder (recursively)."""
-    try:
-        async with SMBShareFSService(
-            smb_host=req.smb_host,
-            smb_share=req.smb_share,
-            smb_user=req.smb_user,
-            smb_pass=req.smb_pass,
-            smb_port=req.smb_port,
-            use_local_fs=req.use_local_fs,
-            local_root=req.local_root, 
-        ) as svc:
-            await svc.create_folder(req.folderpath)
-        return {"status": "success", "message": f"Folder '{req.folderpath}' created."}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.delete("/folder", dependencies=[Depends(auth)])
-async def delete_folder(req: FolderRequest):
-    """Delete a folder and its contents."""
-    # Sanitize folderpath to prevent path traversal attacks
+    safe_local_root = _validate_local_root(req.local_root)
     safe_folderpath = get_safe_path(req.folderpath)
 
     try:
@@ -237,7 +259,29 @@ async def delete_folder(req: FolderRequest):
             smb_pass=req.smb_pass,
             smb_port=req.smb_port,
             use_local_fs=req.use_local_fs,
-            local_root=req.local_root,
+            local_root=safe_local_root,
+        ) as svc:
+            await svc.create_folder(safe_folderpath)
+        return {"status": "success", "message": f"Folder '{safe_folderpath}' created."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/folder", dependencies=[Depends(auth)])
+async def delete_folder(req: FolderRequest):
+    """Delete a folder and its contents."""
+    safe_local_root = _validate_local_root(req.local_root)
+    safe_folderpath = get_safe_path(req.folderpath)
+
+    try:
+        async with SMBShareFSService(
+            smb_host=req.smb_host,
+            smb_share=req.smb_share,
+            smb_user=req.smb_user,
+            smb_pass=req.smb_pass,
+            smb_port=req.smb_port,
+            use_local_fs=req.use_local_fs,
+            local_root=safe_local_root,
         ) as svc:
             await svc.delete_folder(safe_folderpath)
         return {"status": "success", "message": f"Folder '{safe_folderpath}' deleted."}
@@ -257,6 +301,9 @@ async def exists(
     path: str = ""
 ):
     """Check if a path exists."""
+    safe_local_root = _validate_local_root(local_root)
+    safe_path = get_safe_path(path)
+
     try:
         async with SMBShareFSService(
             smb_host=smb_host,
@@ -265,9 +312,9 @@ async def exists(
             smb_pass=smb_pass,
             smb_port=smb_port,
             use_local_fs=use_local_fs,
-            local_root=local_root, 
+            local_root=safe_local_root,
         ) as svc:
-            return {"exists": await svc.exists(path)}
+            return {"exists": await svc.exists(safe_path)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     
