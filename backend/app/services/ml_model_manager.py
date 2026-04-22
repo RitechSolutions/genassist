@@ -8,7 +8,6 @@ avoiding repeated file I/O and deserialization overhead.
 import asyncio
 import logging
 import os
-import pickle
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -17,6 +16,7 @@ from uuid import UUID
 from injector import inject
 
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.safe_pickle import safe_pickle_load
 
 logger = logging.getLogger(__name__)
 
@@ -34,44 +34,33 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     Synchronous function to load pickle file.
     This will be executed in a thread pool to avoid blocking the event loop.
     """
-    # Try multiple loading methods
+    # Try multiple loading methods — all use RestrictedUnpickler to block
+    # arbitrary code execution via __reduce__ in crafted pickle files.
     load_errors = []
 
-    # Method 1: Try pickle with default encoding (works best for XGBoost in thread pool)
+    # Method 1: Safe pickle with default encoding (works best for XGBoost in thread pool)
     try:
         with open(pkl_file, "rb") as f:
-            model = pickle.load(f)
-        logger.info(f"Loaded model using pickle (default) from {pkl_file}")
+            model = safe_pickle_load(f)
+        logger.info("Loaded model using safe pickle (default) from %s", pkl_file)
         return model
     except Exception as e:
-        load_errors.append(f"pickle (default) failed: {str(e)}")
+        load_errors.append(f"safe pickle (default) failed: {type(e).__name__}")
 
-    # Method 2: Try pickle with latin1 encoding
+    # Method 2: Safe pickle with latin1 encoding
     try:
         with open(pkl_file, "rb") as f:
-            model = pickle.load(f, encoding="latin1")
-        logger.info(f"Loaded model using pickle (latin1) from {pkl_file}")
+            model = safe_pickle_load(f, encoding="latin1")
+        logger.info("Loaded model using safe pickle (latin1) from %s", pkl_file)
         return model
     except Exception as e:
-        load_errors.append(f"pickle (latin1) failed: {str(e)}")
-
-    # Method 3: Try joblib (may have threading issues with XGBoost)
-    try:
-        import joblib  # type: ignore
-
-        model = joblib.load(pkl_file)
-        logger.info(f"Loaded model using joblib from {pkl_file}")
-        return model
-    except ImportError:
-        load_errors.append("joblib not available")
-    except Exception as e:
-        load_errors.append(f"joblib failed: {str(e)}")
+        load_errors.append(f"safe pickle (latin1) failed: {type(e).__name__}")
 
     # If all methods failed, raise error
     error_details = "; ".join(load_errors)
     raise Exception(
         f"Could not load model file. Tried multiple methods: {error_details}. "
-        f"Ensure the model was saved with pickle/joblib and all dependencies are installed."
+        f"Ensure the model was saved with pickle and all dependencies are installed."
     )
 
 
