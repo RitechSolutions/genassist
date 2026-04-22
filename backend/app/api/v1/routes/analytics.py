@@ -19,6 +19,7 @@ from app.schemas.analytics import (
 from app.services.analytics_export import EXTENSIONS, VALID_FORMATS, export_agent_stats, export_node_stats, get_agent_names
 from app.services.analytics_read import AnalyticsReadService
 from app.services.audio import AudioService
+from app.core.utils.cache_headers import no_store_headers
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +290,10 @@ def _build_streaming_response(content: bytes, media_type: str, filename_base: st
     return StreamingResponse(
         io.BytesIO(content),
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            **no_store_headers(),
+        },
     )
 
 

@@ -23,6 +23,7 @@ from app.core.config.settings import file_storage_settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.app_settings import AppSettingsRead
+from app.core.utils.cache_headers import no_store_headers
 from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
 
 logger = logging.getLogger(__name__)
@@ -95,13 +96,13 @@ class FileManagerService:
         # Build Content-Disposition header with both ASCII fallback and UTF-8 version
         content_disposition = f'{disposition_type};filename="{filename_encoded}";filename*=UTF-8\'\'{filename_utf8_encoded}'
 
-        headers = {
+        # NOTE: Do not set CORS headers here; they should be handled centrally by CORSMiddleware.
+        # Also, never mark these responses as publicly cacheable: file bytes can be user/tenant scoped.
+        headers: dict[str, str] = {
             "content-type": media_type,
             "content-disposition": content_disposition,
             "x-content-type-options": "nosniff",
-            "access-control-allow-origin": "*",
-            "access-control-expose-headers": "Age, Date, Content-Length, Content-Range, X-Content-Duration, X-Cache",
-            "cache-control": "public, max-age=31536000"
+            **no_store_headers(),
         }
 
         # Add Content-Length if content is provided
