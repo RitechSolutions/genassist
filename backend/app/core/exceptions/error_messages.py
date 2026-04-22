@@ -145,6 +145,7 @@ class ErrorKey(Enum):
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
     EMPTY_MESSAGES_FOR_CONVERSATION = "EMPTY_MESSAGES"
     TEST_CASES_HAVE_RESULTS = "TEST_CASES_HAVE_RESULTS"
+    AZURE_INIT_FAILED = "AZURE_INIT_FAILED"
 
 
 ERROR_MESSAGES = {
@@ -286,6 +287,7 @@ ERROR_MESSAGES = {
         ErrorKey.EMPTY_MESSAGES_FOR_CONVERSATION: "No messages were found for this conversation.",
         ErrorKey.TEST_CASES_HAVE_RESULTS: "This dataset has cases with existing evaluation results. "
                                           "Delete the related evaluations first, then try again.",
+        ErrorKey.AZURE_INIT_FAILED: "Azure initialization failed.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
