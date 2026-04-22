@@ -84,76 +84,64 @@ class FolderRequest(PathRequest):
     folderpath: str
 
 
+class ListDirRequest(SMBConnection):
+    subpath: str = ""
+    only_files: bool = False
+    only_dirs: bool = False
+    extension: Optional[str] = None
+    name_contains: Optional[str] = None
+    pattern: Optional[str] = None
+
+
+class ExistsRequest(SMBConnection):
+    path: str = ""
+
+
 # -----------------------------------------------------------------------------
 # API Endpoints
 # -----------------------------------------------------------------------------
 
-@router.get("/list", response_model=List[str], )
-async def list_dir(
-    smb_host: Optional[str] = None,
-    smb_share: Optional[str] = None,
-    smb_user: Optional[str] = None,
-    smb_pass: Optional[str] = None,
-    smb_port: Optional[int] = None,
-    use_local_fs: bool = False,
-    local_root: Optional[str] = None,
-    subpath: str = "",
-    only_files: bool = False,
-    only_dirs: bool = False,
-    extension: Optional[str] = None,
-    name_contains: Optional[str] = None,
-    pattern: Optional[str] = None,
-):
+@router.post("/list", response_model=List[str], dependencies=[Depends(auth)])
+async def list_dir(req: ListDirRequest):
     """List directory contents with optional filters."""
     try:
         async with SMBShareFSService(
-            smb_host=smb_host,
-            smb_share=smb_share,
-            smb_user=smb_user,
-            smb_pass=smb_pass,
-            smb_port=smb_port,
-            use_local_fs=use_local_fs,
-            local_root=local_root,
+            smb_host=req.smb_host,
+            smb_share=req.smb_share,
+            smb_user=req.smb_user,
+            smb_pass=req.smb_pass,
+            smb_port=req.smb_port,
+            use_local_fs=req.use_local_fs,
+            local_root=req.local_root,
         ) as svc:
             return await svc.list_dir(
-                subpath=subpath,
-                only_files=only_files,
-                only_dirs=only_dirs,
-                extension=extension,
-                name_contains=name_contains,
-                pattern=pattern,
+                subpath=req.subpath,
+                only_files=req.only_files,
+                only_dirs=req.only_dirs,
+                extension=req.extension,
+                name_contains=req.name_contains,
+                pattern=req.pattern,
             )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/read", dependencies=[Depends(auth)])
-async def read_file(
-    smb_host: Optional[str] = None,
-    smb_share: Optional[str] = None,
-    smb_user: Optional[str] = None,
-    smb_pass: Optional[str] = None,
-    smb_port: Optional[int] = None,
-    use_local_fs: bool = False,
-    local_root: Optional[str] = None,
-    filepath: str = "",
-    binary: bool = False,
-):
+@router.post("/read", dependencies=[Depends(auth)])
+async def read_file(req: FileRequest):
     """Read file content."""
-    # Sanitize filepath to prevent path traversal attacks
-    safe_filepath = get_safe_path(filepath)
+    safe_filepath = get_safe_path(req.filepath)
 
     try:
         async with SMBShareFSService(
-            smb_host=smb_host,
-            smb_share=smb_share,
-            smb_user=smb_user,
-            smb_pass=smb_pass,
-            smb_port=smb_port,
-            use_local_fs=use_local_fs,
-            local_root=local_root,
+            smb_host=req.smb_host,
+            smb_share=req.smb_share,
+            smb_user=req.smb_user,
+            smb_pass=req.smb_pass,
+            smb_port=req.smb_port,
+            use_local_fs=req.use_local_fs,
+            local_root=req.local_root,
         ) as svc:
-            return await svc.read_file(safe_filepath, binary=binary)
+            return await svc.read_file(safe_filepath, binary=req.binary)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -245,29 +233,20 @@ async def delete_folder(req: FolderRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/exists", dependencies=[Depends(auth)])
-async def exists(
-    smb_host: Optional[str] = None,
-    smb_share: Optional[str] = None,
-    smb_user: Optional[str] = None,
-    smb_pass: Optional[str] = None,
-    smb_port: Optional[int] = None,
-    use_local_fs: bool = False,
-    local_root: Optional[str] = None,
-    path: str = ""
-):
+@router.post("/exists", dependencies=[Depends(auth)])
+async def exists(req: ExistsRequest):
     """Check if a path exists."""
     try:
         async with SMBShareFSService(
-            smb_host=smb_host,
-            smb_share=smb_share,
-            smb_user=smb_user,
-            smb_pass=smb_pass,
-            smb_port=smb_port,
-            use_local_fs=use_local_fs,
-            local_root=local_root, 
+            smb_host=req.smb_host,
+            smb_share=req.smb_share,
+            smb_user=req.smb_user,
+            smb_pass=req.smb_pass,
+            smb_port=req.smb_port,
+            use_local_fs=req.use_local_fs,
+            local_root=req.local_root,
         ) as svc:
-            return {"exists": await svc.exists(path)}
+            return {"exists": await svc.exists(req.path)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     
