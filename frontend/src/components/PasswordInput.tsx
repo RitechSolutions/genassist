@@ -2,7 +2,7 @@ import * as React from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/button";
-import { Input } from "@/components/ui/input";
+import { SimpleInput } from "@/components/ui/simpleInput";
 import { cn } from "@/helpers/utils";
 
 export type PasswordInputProps = React.InputHTMLAttributes<HTMLInputElement>;
@@ -13,7 +13,7 @@ const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
 
     return (
       <div className="relative">
-        <Input
+        <SimpleInput
           type={showPassword ? "text" : "password"}
           className={cn("pr-10", className)}
           ref={ref}

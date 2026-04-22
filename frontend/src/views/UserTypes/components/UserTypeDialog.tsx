@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/dialog";
-import { Input } from "@/components/ui/input";
+import { SimpleInput as Input } from "@/components/ui/simpleInput";
 import { Label } from "@/components/label";
 import { updateUserType, createUserType } from "@/services/userTypes";
 import { Button } from "@/components/button";

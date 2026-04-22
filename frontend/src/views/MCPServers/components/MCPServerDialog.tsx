@@ -6,9 +6,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Input } from "@/components/ui/input";
+import { SimpleInput as Input } from "@/components/ui/simpleInput";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/ui/textarea";
+import { SimpleTextarea as Textarea } from "@/components/ui/simpleTextarea";
 import { Switch } from "@/components/switch";
 import { Button } from "@/components/button";
 import { toast } from "react-hot-toast";

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Input } from '@/components/ui/input';
+import { SimpleInput as Input } from '@/components/ui/simpleInput';
 import {
   Select,
   SelectContent,

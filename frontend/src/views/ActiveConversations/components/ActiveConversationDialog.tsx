@@ -21,7 +21,7 @@ import {
   TranscriptEntry,
   ConversationFeedbackEntry,
 } from "@/interfaces/transcript.interface";
-import { Input } from "@/components/ui/input";
+import { SimpleInput } from "@/components/ui/simpleInput";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import { conversationService } from "@/services/liveConversations";
@@ -30,7 +30,7 @@ import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmModels";
 import toast from "react-hot-toast";
 import { formatDuration, formatMessageTime, formatDateTime } from "../helpers/format";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { SimpleTextarea } from "@/components/ui/simpleTextarea";
 import { submitConversationFeedback } from "@/services/transcripts";
 import { isWsEnabled } from "@/config/api";
 import { getSentimentFromHostility } from "@/views/Transcripts/helpers/formatting";
@@ -737,7 +737,7 @@ function TranscriptDialogContent({
                       <h4 className="text-sm font-medium mb-3">
                         Feedback details
                       </h4>
-                      <Textarea
+                      <SimpleTextarea
                         rows={5}
                         value={feedbackMessage}
                         onChange={(e) => setFeedbackMessage(e.target.value)}
@@ -912,7 +912,7 @@ function TranscriptDialogContent({
             ) : (
               <>
                 <div className="flex items-center gap-2">
-                  <Input
+                  <SimpleInput
                     className="flex-1"
                     placeholder="Type a message as Admin..."
                     value={chatInput}

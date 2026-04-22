@@ -7,9 +7,9 @@ import {
   DialogTitle,
 } from "@/components/dialog";
 import { Button } from "@/components/button";
-import { Input } from "@/components/ui/input";
+import { SimpleInput as Input } from "@/components/ui/simpleInput";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/ui/textarea";
+import { SimpleTextarea as Textarea } from "@/components/ui/simpleTextarea";
 import {
   Select,
   SelectContent,

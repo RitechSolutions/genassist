@@ -3,7 +3,7 @@ import { Eye, EyeOff, Copy } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { Button } from "@/components/button";
-import { Input } from "@/components/ui/input";
+import { SimpleInput } from "@/components/ui/simpleInput";
 import { cn } from "@/helpers/utils";
 
 export type SecretInputProps = Omit<
@@ -32,7 +32,7 @@ const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
 
     return (
       <div className="relative">
-        <Input
+        <SimpleInput
           ref={ref}
           readOnly
           type={show ? "text" : "password"}

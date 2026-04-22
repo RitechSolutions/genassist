@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { SimpleInput as Input } from "@/components/ui/simpleInput";
+import { SimpleTextarea as Textarea } from "@/components/ui/simpleTextarea";
 import { Label } from "@/components/label";
 import { JsonInput } from "@/components/JsonInput";
 import { Checkbox } from "@/components/checkbox";
