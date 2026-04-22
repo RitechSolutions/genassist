@@ -154,6 +154,40 @@ class PIIAnonymizer:
         logger.debug("PIIAnonymizer.mask: %d PII span(s) masked", len(items))
         return masked, {"items": items}
 
+    def redact(self, text: str, entities: list[str] | None = None) -> str:
+        """
+        Permanently remove PII spans, replacing them with '[REDACTED]'.
+        Unlike mask(), this is a one-way operation — original values are discarded.
+        Use this at system boundaries to strip sensitive data before it reaches
+        any downstream consumer (DB, LLM, logs, WebSocket).
+        """
+        if not text:
+            return text
+
+        target_entities = entities or self._entities
+        analyzer = _get_engines()
+        results = analyzer.analyze(text=text, entities=target_entities, language=self._language)
+
+        if not results:
+            return text
+
+        results = sorted(results, key=lambda r: (-r.score, r.start))
+        deduplicated: list = []
+        for result in results:
+            if any(
+                result.start < existing.end and result.end > existing.start
+                for existing in deduplicated
+            ):
+                continue
+            deduplicated.append(result)
+
+        redacted = text
+        for result in sorted(deduplicated, key=lambda r: r.start, reverse=True):
+            redacted = redacted[:result.start] + "[REDACTED]" + redacted[result.end:]
+
+        logger.debug("PIIAnonymizer.redact: %d PII span(s) redacted", len(deduplicated))
+        return redacted
+
     def unmask(self, text: str, token_map: dict[str, Any]) -> str:
         """
         Restore original PII values using the token_map produced by mask().
