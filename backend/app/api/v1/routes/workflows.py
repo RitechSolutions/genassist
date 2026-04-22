@@ -16,10 +16,13 @@ from app.modules.workflow.utils import generate_python_function_template
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
 from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
 from app.services.llm_providers import LlmProviderService
+from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.services.workflow import WorkflowService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE", "US_SSN"])
 
 # Supported node types
 SUPPORTED_NODE_TYPES = [
@@ -216,6 +219,10 @@ async def execute_workflow(
     if not input_data:
         raise HTTPException(status_code=400, detail="Input data is required")
 
+    # Redact cardholder data before it enters the workflow engine
+    if isinstance(input_data.get("message"), str):
+        input_data["message"] = _pii_redactor.redact(input_data["message"])
+
     try:
         # Get the workflow from the service
         workflow_service = injector.get(WorkflowService)
@@ -268,6 +275,10 @@ async def test_workflow(
     if not input_data:
         raise HTTPException(
             status_code=400, detail="Input message is required")
+
+    # Redact cardholder data before it enters the workflow engine
+    if isinstance(input_data.get("message"), str):
+        input_data["message"] = _pii_redactor.redact(input_data["message"])
 
     try:
         # Determine workflow source

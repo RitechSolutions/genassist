@@ -1,9 +1,11 @@
 from typing import List
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_injector import Injected
-from app.core.permissions.constants import Permissions as P
+
 from app.auth.dependencies import auth, permissions
+from app.core.permissions.constants import Permissions as P
 from app.schemas.tenants import TenantCreate, TenantResponse, TenantUpdate
 from app.services.tenant import TenantService
 
@@ -22,7 +24,7 @@ async def create_tenant(
 ):
     """Create a new tenant"""
 
-    tenant = await service.create_tenant(
+    response_data = await service.create_tenant(
         name=tenant_data.name,
         slug=tenant_data.slug,
         description=tenant_data.description,
@@ -30,13 +32,19 @@ async def create_tenant(
         subdomain=tenant_data.subdomain,
     )
 
-    if not tenant:
+    if isinstance(response_data, ValueError) and len(response_data.args) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=response_data.args[0] if len(response_data.args) > 0 else "Failed to create tenant",
+        )
+
+    if not response_data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to create tenant. Tenant may already exist.",
         )
 
-    return tenant
+    return response_data
 
 
 @router.get(

@@ -23,9 +23,12 @@ from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import update_stats_incrementally
 from app.services.conversations import ConversationService
 from app.core.utils.custom_attributes import extract_custom_attributes
+from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.services.file_manager import FileManagerService
 
 logger = logging.getLogger(__name__)
+
+_pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE", "US_SSN"])
 
 
 # send message to the socket
@@ -88,9 +91,12 @@ async def process_conversation_update_with_agent(
             if current_user_id != conversation.supervisor_id:
                 raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER_OTHER)
 
-    # Generate IDs upfront for all incoming messages
+    # Generate IDs and redact cardholder data before any downstream
+    # consumer (WebSocket, LLM, database, logs) sees the raw text.
     for message in model.messages:
         message.id = generate_sequential_uuid()
+        if message.text:
+            message.text = _pii_redactor.redact(message.text)
 
     # Broadcast user message immediately with pre-generated ID
     user_message = model.messages[0]

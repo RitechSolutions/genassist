@@ -25,6 +25,10 @@ export const FeatureFlags = {
       SHOW_COST_PER_CONVERSATION: 'analytics.showCostPerConversation',
     },
 
+    LLM_SETTINGS: {
+      SHOW_LOCAL_FINE_TUNE: 'llmSettings.showLocalFineTune',
+    },
+
     ADMIN_TOOLS: {
       APP_SETTINGS: 'ui.menu.app-settings',
     },
