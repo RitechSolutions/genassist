@@ -33,17 +33,19 @@ async def upload_file(
     prefix: Optional[str] = Form(None),
 ):
     """Upload a file stream to Azure Blob"""
+    tmp_path = None
     try:
         svc = AzureStorageService.from_request(AzureConnection(connection_string=connection_string, container=container))
 
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(await file.read())
-            tmp_path = tmp.name
+        fd, tmp_path = tempfile.mkstemp()
+        os.close(fd)
+        async with aiofiles.open(tmp_path, "wb") as tmp:
+            await tmp.write(await file.read())
 
         url = svc.file_upload(tmp_path, destination_name=destination_name, prefix=prefix)
         return {"status": "success", "url": url}
     finally:
-        if "tmp_path" in locals() and os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
 
 
