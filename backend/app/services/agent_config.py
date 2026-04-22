@@ -94,12 +94,9 @@ class AgentConfigService:
         # Some routes historically injected this field manually; returning it here
         # keeps backward compatibility and prevents downstream clients from
         # failing after an update.
-        try:
-            if getattr(agent, "operator", None) and getattr(agent.operator, "user", None):
-                agent_read.user_id = agent.operator.user.id
-        except Exception:
-            # Best-effort: never fail the request due to missing relationship loads.
-            pass
+        if getattr(agent, "operator", None) is not None:
+            # Use the FK column to avoid async lazy-loading `operator.user`.
+            agent_read.user_id = agent.operator.user_id
 
         return agent_read
 
