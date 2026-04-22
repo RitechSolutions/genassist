@@ -3,12 +3,14 @@ from typing import Optional, List
 from pydantic import BaseModel
 import tempfile
 import os
-
 from app.auth.dependencies import auth
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.services.AzureStorageService import AzureStorageService
-
+import logging
 router = APIRouter(dependencies=[Depends(auth)])
 
+logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
 # Pydantic models matching request style
@@ -47,7 +49,8 @@ def get_service(req: AzureConnection) -> AzureStorageService:
             container_name=req.container,
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Azure init failed: {e}")
+        logger.error(e)
+        raise AppException(error_key=ErrorKey.AZURE_INIT_FAILED)
 
 
 # -----------------------------------------------------------------------------
@@ -63,11 +66,8 @@ async def list_files(
     prefix: Optional[str] = None
 ):
     """List blobs in a container with optional prefix"""
-    try:
-        svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
-        return svc.file_list(prefix=prefix)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
+    return svc.file_list(prefix=prefix)
 
 
 @router.get("/exists", dependencies=[
@@ -81,11 +81,8 @@ async def file_exists(
 
 ):
     """Check if a blob exists"""
-    try:
-        svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
-        return {"exists": svc.file_exists(filename, prefix=prefix)}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
+    return {"exists": svc.file_exists(filename, prefix=prefix)}
 
 
 @router.post("/upload", dependencies=[
@@ -109,9 +106,6 @@ async def upload_file(
 
         url = svc.file_upload(tmp_path, destination_name=destination_name, prefix=prefix)
         return {"status": "success", "url": url}
-
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Upload failed: {e}")
     finally:
         if "tmp_path" in locals() and os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -122,18 +116,15 @@ async def upload_file(
     ])
 async def upload_file_content(req: FileRequest):
     """Upload provided text/bytes content directly"""
-    try:
-        svc = get_service(req)
-        data = req.content.encode("utf-8") if not req.binary else req.content
-        url = svc.file_upload_content(
-            local_file_content=data,
-            local_file_name=req.filename,
-            destination_name=req.filename,
-            prefix=req.prefix,
-        )
-        return {"status": "success", "url": url}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    svc = get_service(req)
+    data = req.content.encode("utf-8") if not req.binary else req.content
+    url = svc.file_upload_content(
+        local_file_content=data,
+        local_file_name=req.filename,
+        destination_name=req.filename,
+        prefix=req.prefix,
+    )
+    return {"status": "success", "url": url}
 
 
 @router.delete("/file", dependencies=[
@@ -141,12 +132,9 @@ async def upload_file_content(req: FileRequest):
     ])
 async def delete_file(req: FileRequest):
     """Delete a blob"""
-    try:
-        svc = get_service(req)
-        ok = svc.file_delete(req.filename, prefix=req.prefix)
-        return {"status": "success" if ok else "failed", "deleted": ok}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    svc = get_service(req)
+    ok = svc.file_delete(req.filename, prefix=req.prefix)
+    return {"status": "success" if ok else "failed", "deleted": ok}
 
 
 @router.post("/move", dependencies=[
@@ -154,17 +142,14 @@ async def delete_file(req: FileRequest):
     ])
 async def move_file(req: MoveRequest):
     """Move a blob (copy then delete original)"""
-    try:
-        svc = get_service(req)
-        url = svc.file_move(
-            source_name=req.source_name,
-            destination_name=req.destination_name,
-            source_prefix=req.source_prefix,
-            destination_prefix=req.destination_prefix,
-        )
-        return {"status": "success", "url": url}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    svc = get_service(req)
+    url = svc.file_move(
+        source_name=req.source_name,
+        destination_name=req.destination_name,
+        source_prefix=req.source_prefix,
+        destination_prefix=req.destination_prefix,
+    )
+    return {"status": "success", "url": url}
 
 
 @router.get("/bucket-exists", dependencies=[
@@ -172,8 +157,5 @@ async def move_file(req: MoveRequest):
     ])
 async def bucket_exists(connectionstring: str, container: str):
     """Check if container exists"""
-    try:
-        svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
-        return {"exists": svc.bucket_exists()}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
+    return {"exists": svc.bucket_exists()}
