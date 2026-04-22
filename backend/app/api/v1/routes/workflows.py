@@ -22,7 +22,7 @@ from app.services.workflow import WorkflowService
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-_pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE"])
+_pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE", "US_SSN"])
 
 # Supported node types
 SUPPORTED_NODE_TYPES = [

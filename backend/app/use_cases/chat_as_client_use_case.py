@@ -28,7 +28,7 @@ from app.services.file_manager import FileManagerService
 
 logger = logging.getLogger(__name__)
 
-_pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE"])
+_pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE", "US_SSN"])
 
 
 # send message to the socket
