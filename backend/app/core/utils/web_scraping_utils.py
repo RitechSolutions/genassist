@@ -12,6 +12,13 @@ _HTTPX_TIMEOUT = 10  # seconds
 _PLAYWRIGHT_TIMEOUT = 10_000  # milliseconds
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
+_ALLOWED_HOSTS = frozenset({
+    # Add explicit trusted hosts here.
+    # "example.com",
+})
+_ALLOWED_HOST_SUFFIXES = frozenset({
+    # Add trusted domain suffixes here (subdomains allowed), e.g. ".example.com"
+})
 
 _FORWARDED_HEADER_ALLOWLIST = frozenset({
     "accept",
@@ -29,6 +36,22 @@ def _is_blocked_ip(addr: str) -> bool:
         return not ip.is_global or ip.is_multicast
     except ValueError:
         return True
+
+
+def _is_allowed_host(hostname: str) -> bool:
+    host = hostname.strip(".").lower()
+    if not host:
+        return False
+    if host in _ALLOWED_HOSTS:
+        return True
+    return any(host.endswith(suffix) for suffix in _ALLOWED_HOST_SUFFIXES)
+
+
+def _enforce_allowed_host(url: str) -> None:
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    if not _is_allowed_host(hostname):
+        raise ValueError(f"Host {hostname!r} is not in the allowed outbound host list")
 
 
 async def _validate_url(url: str) -> None:
@@ -68,6 +91,7 @@ async def fetch_from_url(
     use_http_request: bool = False,
 ) -> str:
     """Fetch URL content using Playwright by default, or httpx when requested."""
+    _enforce_allowed_host(url)
     await _validate_url(url)
     safe_headers = _safe_headers(headers)
 
@@ -96,6 +120,7 @@ async def fetch_from_url(
                     raise ValueError(
                         f"Redirect to disallowed scheme: {urlparse(redirect_url).scheme!r}"
                     )
+                _enforce_allowed_host(redirect_url)
                 await _validate_url(redirect_url)
                 response = await client.get(redirect_url)
                 current_url = redirect_url
@@ -112,6 +137,7 @@ async def fetch_from_url(
 
         async def _block_private_routes(route: Route) -> None:
             try:
+                _enforce_allowed_host(route.request.url)
                 await _validate_url(route.request.url)
                 await route.continue_()
             except ValueError:
