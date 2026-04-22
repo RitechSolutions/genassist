@@ -1,7 +1,7 @@
 from typing import Dict, List
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, Request, UploadFile, File, HTTPException
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from fastapi_injector import Injected
 
@@ -11,7 +11,6 @@ from app.schemas.agent import AgentCreate, AgentListItem, AgentRead, AgentUpdate
 from app.schemas.common import PaginatedResponse
 from app.schemas.filter import BaseFilterModel
 from app.services.agent_config import AgentConfigService
-
 
 router = APIRouter()
 
@@ -79,12 +78,9 @@ async def get_config_by_id(
     agent_id: UUID, config_service: AgentConfigService = Injected(AgentConfigService)
 ):
     """Get a specific agent configuration by ID"""
-    agent_model = await config_service.get_by_id_full(agent_id)
-    agent_read = AgentRead.model_validate(agent_model).model_copy(
-        update={"user_id": agent_model.operator.user.id}
-    )
-    return agent_read
-
+    # `config_service.get_by_id_full` returns an `AgentRead` (cached) with
+    # workflow + security settings and a consistently populated `user_id`.
+    return await config_service.get_by_id_full(agent_id)
 
 @router.post(
     "/configs",
@@ -103,7 +99,13 @@ async def create_config(
     result = await config_service.create(agent_create, user_id=current_user.id)
 
     return AgentRead.model_validate(result).model_copy(
-        update={"user_id": result.operator.user.id if result.operator else None}
+        update={
+            "user_id": (
+                result.operator.user.id
+                if getattr(result, "operator", None) and getattr(result.operator, "user", None)
+                else None
+            )
+        }
     )
 
 

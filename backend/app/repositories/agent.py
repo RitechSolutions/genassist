@@ -1,13 +1,16 @@
 from typing import Tuple
 from uuid import UUID
+
 from injector import inject
-from sqlalchemy import select, func, asc, desc
+from sqlalchemy import asc, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
+
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models import AgentModel, OperatorModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.filter import BaseFilterModel
+
 
 @inject
 class AgentRepository(DbRepository[AgentModel]):

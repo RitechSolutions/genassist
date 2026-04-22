@@ -90,6 +90,17 @@ class AgentConfigService:
         null_unloaded_attributes(agent)
         agent_read = AgentRead.model_validate(agent)
 
+        # Ensure `user_id` is consistently set across all endpoints.
+        # Some routes historically injected this field manually; returning it here
+        # keeps backward compatibility and prevents downstream clients from
+        # failing after an update.
+        try:
+            if getattr(agent, "operator", None) and getattr(agent.operator, "user", None):
+                agent_read.user_id = agent.operator.user.id
+        except Exception:
+            # Best-effort: never fail the request due to missing relationship loads.
+            pass
+
         return agent_read
 
     async def get_by_id_cached(self, agent_id: UUID) -> AgentModel:
@@ -316,6 +327,7 @@ class AgentConfigService:
         # Convert to Pydantic model for caching (avoids pickling SQLAlchemy objects)
         null_unloaded_attributes(agent)
         agent_read = AgentRead.model_validate(agent)
+        agent_read.user_id = user_id
 
         return agent_read
 
