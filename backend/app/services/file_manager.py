@@ -190,10 +190,6 @@ class FileManagerService:
             if not upload_ok:
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail=(
-                        f"Failed to upload file {file_path} on storage provider "
-                        f"{self.storage_provider.name}"
-                    ),
                 )
 
             file_mime_type = streamed_mime or file.content_type or "application/octet-stream"
