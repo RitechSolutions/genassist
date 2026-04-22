@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import { Button } from "@/components/button";
 import { Loader2, Upload, ChevronDown, ChevronUp, Download } from "lucide-react";

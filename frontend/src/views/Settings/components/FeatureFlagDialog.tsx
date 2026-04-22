@@ -12,9 +12,9 @@ import {
   DialogTitle,
 } from "@/components/dialog";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/switch";
 import { createFeatureFlag, updateFeatureFlag } from "@/services/featureFlags";
 import { Loader2 } from "lucide-react";

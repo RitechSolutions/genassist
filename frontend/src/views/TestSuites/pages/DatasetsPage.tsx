@@ -12,8 +12,8 @@ import {
 } from "@/services/testSuites";
 import {TestSuite} from "@/interfaces/testSuite.interface";
 import {Button} from "@/components/button";
-import {Input} from "@/components/input";
-import {Textarea} from "@/components/textarea";
+import {Input} from "@/components/ui/input";
+import {Textarea} from "@/components/ui/textarea";
 import {Label} from "@/components/label";
 import {useNavigate} from "react-router-dom";
 import {Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,} from "@/components/ui/dialog";
