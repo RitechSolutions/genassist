@@ -72,10 +72,12 @@ def apply_agent_cors_headers(
         response.headers["Access-Control-Allow-Methods"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "*"
     elif "*" in allowed_origins:
-        # Allow all origins if explicitly configured
+        # Wildcard CORS is only safe for non-credentialed requests. Do not emit
+        # Access-Control-Allow-Credentials when returning "*".
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers.pop("Access-Control-Allow-Credentials", None)
 
     return response
 
