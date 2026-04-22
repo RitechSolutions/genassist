@@ -1,40 +1,13 @@
 from fastapi import APIRouter, Depends, Form, UploadFile, HTTPException
 from typing import Optional, List
-from pydantic import BaseModel
 import tempfile
 import os
 
 from app.auth.dependencies import auth
 from app.services.AzureStorageService import AzureStorageService
+from app.schemas.azure_blob import AzureConnection, AzureFileRequest as FileRequest, AzureListRequest as ListRequest, AzureMoveRequest as MoveRequest
 
 router = APIRouter(dependencies=[Depends(auth)])
-
-
-# -----------------------------------------------------------------------------
-# Pydantic models matching request style
-# -----------------------------------------------------------------------------
-class AzureConnection(BaseModel):
-    connectionstring: Optional[str] = None
-    container: Optional[str] = None
-
-
-class FileRequest(AzureConnection):
-    filename: str
-    prefix: Optional[str] = None
-    overwrite: Optional[bool] = True
-    content: Optional[str] = None  # For text/binary content upload
-    binary: Optional[bool] = False
-
-
-class MoveRequest(AzureConnection):
-    source_name: str
-    destination_name: str
-    source_prefix: Optional[str] = None
-    destination_prefix: Optional[str] = None
-
-
-class ListRequest(AzureConnection):
-    prefix: Optional[str] = None
 
 
 # -----------------------------------------------------------------------------
