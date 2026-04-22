@@ -130,7 +130,6 @@ class AuthService:
             raise AppException(
                 error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD,
                 status_code=401,
-                error_detail="Username not found.",
             )
 
         if not user.is_active:
@@ -143,7 +142,6 @@ class AuthService:
             raise AppException(
                 error_key=ErrorKey.INVALID_USERNAME_OR_PASSWORD,
                 status_code=401,
-                error_detail="Incorrect password.",
             )
 
         return user
