@@ -4,6 +4,7 @@ import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
 import {
   Workflow,
   WorkflowCreatePayload,
+  WorkflowMinimal,
   WorkflowUpdatePayload,
 } from "@/interfaces/workflow.interface";
 import { NodeData } from "@/views/AIAgents/Workflows/types/nodes";
@@ -12,6 +13,10 @@ const BASE = "genagent/workflow";
 
 // Get all workflows
 export const getAllWorkflows = () => apiRequest<Workflow[]>("GET", `${BASE}/`);
+
+// Get lightweight workflow list (id, name, version only)
+export const getWorkflowsMinimal = () =>
+  apiRequest<WorkflowMinimal[]>("GET", `${BASE}/minimal`);
 
 // Get workflow by ID
 export const getWorkflowById = (id: string) =>
@@ -111,5 +116,19 @@ export const createWorkflowFromWizard = (payload: WorkflowWizardPayload) =>
   apiRequest<WorkflowWizardResponse>(
     "POST",
     "workflow-manager/config/from-wizard",
+    payload as unknown as Record<string, unknown>
+  );
+
+export interface WorkflowBuilderPayload {
+  workflow_name: string;
+  workflow_json: string;
+  workflow_description?: string;
+}
+
+// Create a workflow from the enhanced builder format (supports branching, tool connections, config overrides)
+export const createWorkflowFromBuilder = (payload: WorkflowBuilderPayload) =>
+  apiRequest<WorkflowWizardResponse>(
+    "POST",
+    "workflow-builder/config/from-builder",
     payload as unknown as Record<string, unknown>
   );

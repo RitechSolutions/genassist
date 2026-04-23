@@ -78,7 +78,7 @@ class AppSettingsService:
                 value = decrypt_key(value)
             except Exception as e:
                 logger.error(
-                    f"Error decrypting field '{field_name}' for type '{setting_type}': {e}"
+                    "Error decrypting field for type '%s': %s", setting_type, type(e).__name__
                 )
 
         return value
@@ -137,7 +137,7 @@ class AppSettingsService:
                     ):  # Fernet encrypted strings start with this
                         encrypted_values[field_name] = encrypt_key(value)
                 except Exception as e:
-                    logger.error(f"Error encrypting field '{field_name}': {e}")
+                    logger.error("Error encrypting field for type '%s': %s", setting_type, type(e).__name__)
                     raise AppException(
                         status_code=500,
                         error_key=ErrorKey.INTERNAL_ERROR,

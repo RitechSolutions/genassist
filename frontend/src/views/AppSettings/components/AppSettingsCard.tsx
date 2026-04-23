@@ -146,7 +146,7 @@ export function AppSettingsCard({
               <div key={key} className="text-sm">
                 <span className="font-medium text-gray-600">{key}:</span>{" "}
                 <span className="font-mono text-xs">
-                  {value && value.length > 0 ? "••••••••" : "—"}
+                  {String(value).length > 0 ? "••••••••" : "—"}
                 </span>
               </div>
             ))}

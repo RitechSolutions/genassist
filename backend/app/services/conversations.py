@@ -16,6 +16,8 @@ from app.auth.utils import (
     get_current_user_id,
     is_current_user_supervisor_or_admin,
 )
+from starlette_context import context
+from starlette_context.errors import ContextDoesNotExistError
 from app.cache.redis_cache import invalidate_conversation_cache, make_key_builder
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
@@ -399,14 +401,20 @@ class ConversationService:
 
 
     async def get_conversations(self, conversation_filter: ConversationFilter):
+        try:
+            group_id = context.get("group_id")
+            supervised_group_ids = context.get("supervised_group_ids") or []
+        except (LookupError, ContextDoesNotExistError):
+            group_id = None
+            supervised_group_ids = []
 
-        # If not supervisor or admin, you can see only your conversations
-        if not is_current_user_supervisor_or_admin():
-            # if not admin/super and not operator, can't see any conversations
+        has_group_context = bool(group_id or supervised_group_ids)
+
+        # Group/supervisor users: group-scope clause applied at repository level.
+        # No-group non-admin users: fall back to filtering by their own operator.
+        if not is_current_user_supervisor_or_admin() and not has_group_context:
             if not get_current_operator_id():
                 return []
-                # raise AppException(error_key=ErrorKey.OPERATOR_NOT_FOUND)
-            # if operator exists we filter by the operator id
             conversation_filter.operator_id = get_current_operator_id()
 
         models = await self.conversation_repo.fetch_conversations_with_relations(conversation_filter,

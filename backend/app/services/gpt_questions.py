@@ -1,18 +1,17 @@
 import logging
+import os
 
+from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.exception_classes import AppException
-from app.core.config.settings import settings
 
-import opik
 # from opik.integrations.openai import track_openai
 from opik import track
 from opik.integrations.langchain import OpikTracer
-import os
-from dotenv import load_dotenv
 
+from app.core.config.settings import settings
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +28,14 @@ class QuestionAnswerer:
         else:
             self.llm = ChatOpenAI(model=llm_model, temperature=temperature)
         logger.debug(f"Initialized TranscriptQuestionAnswerer with model: {llm_model}")
-    
+
     def answer_question(self, transcript_json: str, question: str) -> str:
 
         prompt = f"""
         You are an AI assistant. You have been provided with a JSON transcript of a conversation between a customer and an agent.
         Use this transcript to answer the question accurately.
 
-        Answer the question based on the transcript. If the question is not about the transcript or related to the 
+        Answer the question based on the transcript. If the question is not about the transcript or related to the
         conversation, answer with this :'This question is not allowed, please contact an administrator'.
         The answer should always be in plain text and not as a json structure.
 

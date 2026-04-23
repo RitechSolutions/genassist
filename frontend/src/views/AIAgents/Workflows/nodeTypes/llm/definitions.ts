@@ -11,6 +11,12 @@ import AgentNode from "./agentNode";
 import LLMModelNode from "./modelNode";
 import ToolBuilderNode from "./toolBuilderNode";
 import MCPNode from "./mcpNode";
+import {
+  AI_AGENT_HELP_CONTENT,
+  LANGUAGE_MODEL_HELP_CONTENT,
+  MCP_SERVER_HELP_CONTENT,
+  TOOL_BUILDER_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const AGENT_NODE_DEFINITION: NodeTypeDefinition<AgentNodeData> = {
   type: "agentNode",
@@ -18,6 +24,7 @@ export const AGENT_NODE_DEFINITION: NodeTypeDefinition<AgentNodeData> = {
   description:
     "Runs an AI-powered agent capable of reasoning, taking actions, and calling tools.",
   shortDescription: "Run an AI agent",
+  helpContent: AI_AGENT_HELP_CONTENT,
   configSubtitle:
     "Configure the AI agent settings, including provider, agent type, prompts, and memory.",
   category: "ai",
@@ -69,6 +76,7 @@ export const MODEL_NODE_DEFINITION: NodeTypeDefinition<LLMModelNodeData> = {
   description:
     "Runs a large language model using a prompt and adjustable model settings.",
   shortDescription: "Run a language model",
+  helpContent: LANGUAGE_MODEL_HELP_CONTENT,
   configSubtitle:
     "Configure the language model settings, including provider, prompts, and memory options.",
   category: "ai",
@@ -113,6 +121,7 @@ export const TOOL_BUILDER_NODE_DEFINITION: NodeTypeDefinition<ToolBuilderNodeDat
     description:
       "Defines a custom tool that an AI agent can call, including parameters and output templates.",
     shortDescription: "Define a custom tool",
+    helpContent: TOOL_BUILDER_HELP_CONTENT,
     configSubtitle:
       "Configure the custom tool definition, including description, parameters, and output template.",
     category: "ai",
@@ -159,9 +168,10 @@ export const MCP_NODE_DEFINITION: NodeTypeDefinition<MCPNodeData> = {
   label: "MCP Server",
   description:
     "Connects to an MCP (Model Context Protocol) server and exposes selected tools to agents.",
-  shortDescription: "Connect to MCP server",
+  shortDescription: "Remote MCP via HTTP/SSE — API key or OIDC discovery",
+  helpContent: MCP_SERVER_HELP_CONTENT,
   configSubtitle:
-    "Configure MCP server connection and select which tools to expose to your agent.",
+    "Set server URL, auth (API key or OIDC issuer URL + client credentials + scope), then pick tools.",
   category: "ai",
   icon: "Server",
   defaultData: {

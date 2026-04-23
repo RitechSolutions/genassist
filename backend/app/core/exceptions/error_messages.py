@@ -33,6 +33,7 @@ class ErrorKey(Enum):
     INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS"
     API_KEY_MISSING = "API_KEY_MISSING"
     INVALID_API_KEY = "INVALID_API_KEY"
+    API_KEY_EXPIRED = "API_KEY_EXPIRED"
     COULD_NOT_VALIDATE_CREDENTIALS = "COULD_NOT_VALIDATE_CREDENTIALS"
     EXPIRED_TOKEN = "EXPIRED_TOKEN"
     NOT_AUTHENTICATED = "NOT_AUTHENTICATED"
@@ -144,6 +145,7 @@ class ErrorKey(Enum):
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
     EMPTY_MESSAGES_FOR_CONVERSATION = "EMPTY_MESSAGES"
     TEST_CASES_HAVE_RESULTS = "TEST_CASES_HAVE_RESULTS"
+    AZURE_INIT_FAILED = "AZURE_INIT_FAILED"
 
 
 ERROR_MESSAGES = {
@@ -171,6 +173,7 @@ ERROR_MESSAGES = {
         ErrorKey.INSUFFICIENT_PERMISSIONS: "Insufficient permissions for this action.",
         ErrorKey.API_KEY_MISSING: "Api key is required.",
         ErrorKey.INVALID_API_KEY: "Invalid API key.",
+        ErrorKey.API_KEY_EXPIRED: "This API key has expired.",
         ErrorKey.COULD_NOT_VALIDATE_CREDENTIALS: "Could not validate credentials.",
         ErrorKey.EXPIRED_TOKEN: "Token has expired.",
         ErrorKey.NOT_AUTHENTICATED: "Not authenticated. Provide API Key or Login.",
@@ -284,6 +287,7 @@ ERROR_MESSAGES = {
         ErrorKey.EMPTY_MESSAGES_FOR_CONVERSATION: "No messages were found for this conversation.",
         ErrorKey.TEST_CASES_HAVE_RESULTS: "This dataset has cases with existing evaluation results. "
                                           "Delete the related evaluations first, then try again.",
+        ErrorKey.AZURE_INIT_FAILED: "Azure initialization failed.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",

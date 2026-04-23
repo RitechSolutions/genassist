@@ -14,6 +14,7 @@ import Notifications from "@/views/Notifications";
 import Settings from "./views/Settings";
 import NotFound from "@/views/NotFound";
 import Roles from "@/views/Roles/pages/Roles";
+import UserGroups from "@/views/UserGroups/Index";
 import Users from "./views/Users/Index";
 import UserTypes from "./views/UserTypes/pages/UserTypes";
 import ApiKeys from "./views/ApiKeys/pages/ApiKeys";
@@ -26,17 +27,20 @@ import LlmAnalyst from "@/views/LlmAnalyst/Index";
 import LLMProviders from "@/views/LlmProviders/Index";
 import FineTune from "@/views/FineTune/Index";
 import FineTuneJobDetail from "@/views/FineTune/pages/FineTuneJobDetail";
+import LocalFineTune from "@/views/LocalFineTune/Index";
+import LocalFineTuneJobDetail from "@/views/LocalFineTune/pages/LocalFineTuneJobDetail";
 import Tools from "@/views/Tools/Index";
 import CreateTool from "@/views/Tools/pages/CreateTool";
 import KnowledgeBase from "@/views/KnowledgeBase/Index";
 import KnowledgeBaseForm from "@/views/KnowledgeBase/pages/KnowledgeBaseForm";
 import MLModels from "@/views/MLModels/Index";
 import MLModelDetail from "@/views/MLModels/components/MLModelDetail";
-import { FeatureFlags } from "./views/Settings/pages/FeatureFlags";
+import { FeatureFlags as FeatureFlagsPage } from "./views/Settings/pages/FeatureFlags";
 import { Translations } from "./views/Settings/pages/Translations";
 import { Languages } from "./views/Settings/pages/Languages";
 import { FileManagerFiles } from "./views/Settings/pages/FileManagerFiles";
-import { useFeatureFlag } from "./context/FeatureFlagContext";
+import { FeatureFlags as FeatureFlagKeys } from "@/config/featureFlags";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { GlobalChat } from "./components/GlobalChat";
 import ServerDownPage from "@/components/ServerDownPage";
 import { useServerStatus } from "@/context/ServerStatusContext";
@@ -86,7 +90,9 @@ const ProtectedLayout = () => {
 export type RegistrationStatus = "loading" | "new" | "existing";
 
 export const RoutesProvider = () => {
-  const { isEnabled } = useFeatureFlag();
+  const showLocalFineTune = useFeatureFlagVisible(
+    FeatureFlagKeys.LLM_SETTINGS.SHOW_LOCAL_FINE_TUNE
+  );
 
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("loading");
   const [skipOnboarding, setSkipOnboarding] = useState(false);
@@ -158,7 +164,7 @@ export const RoutesProvider = () => {
               ),
             },
             {
-              path: "analytics",
+              path: "analytics/ai-insights",
               element: (
                 <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
                   <Analytics />
@@ -193,7 +199,7 @@ export const RoutesProvider = () => {
               path: "settings/feature-flags",
               element: (
                 <ProtectedRoute requiredPermissions={["read:feature_flag"]}>
-                  <FeatureFlags />
+                  <FeatureFlagsPage />
                 </ProtectedRoute>
               ),
             },
@@ -238,6 +244,14 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "user-groups",
+              element: (
+                <ProtectedRoute requiredPermissions={["read:user_group"]}>
+                  <UserGroups />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "llm-analyst",
               element: (
                 <ProtectedRoute requiredPermissions={["read:llm_analyst"]}>
@@ -267,6 +281,30 @@ export const RoutesProvider = () => {
                 <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
                   <FineTuneJobDetail />
                 </ProtectedRoute>
+              ),
+            },
+            {
+              path: "local-fine-tune",
+              element: (
+                showLocalFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                    <LocalFineTune />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
+              ),
+            },
+            {
+              path: "local-fine-tune/:id",
+              element: (
+                showLocalFineTune ? (
+                  <ProtectedRoute requiredPermissions={["*", "update:llm_provider"]}>
+                    <LocalFineTuneJobDetail />
+                  </ProtectedRoute>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
               ),
             },
             {
@@ -464,7 +502,7 @@ export const RoutesProvider = () => {
         { path: "office365/oauth/callback", element: <Office365OAuthCallback />},
         { path: "*", element: <NotFound /> }
       ]),
-    [isEnabled],
+    [showLocalFineTune],
   );
 
   const organizationRouter = useMemo(

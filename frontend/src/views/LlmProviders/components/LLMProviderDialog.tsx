@@ -7,8 +7,7 @@ import {
   DialogTitle,
 } from "@/components/dialog";
 import { Input } from "@/components/input";
-import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
+import { Label } from '@/components/label';
 import { Switch } from "@/components/switch";
 import { Button } from "@/components/button";
 import { Loader2 } from "lucide-react";
@@ -27,10 +26,22 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/select";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ConnectionTestPanel } from '@/components/ConnectionTestPanel';
 import type { ConnectionStatus } from '@/interfaces/connectionStatus.interface';
+import { SchemaFormRenderer } from '@/components/SchemaFormRenderer';
+import type { FieldSchema, FieldValue } from '@/interfaces/dynamicFormSchemas.interface';
+
+function hasAdvancedFieldChanges(fields: FieldSchema[], data: Record<string, FieldValue>): boolean {
+  return fields
+    .filter((f) => !f.required)
+    .some((f) => {
+      const val = data[f.name];
+      if (val === undefined || val === null || val === '') return false;
+      if (Array.isArray(val) && val.length === 0) return false;
+      return val !== (f.default ?? null);
+    });
+}
 
 interface LLMProviderDialogProps {
   isOpen: boolean;
@@ -86,7 +97,12 @@ export function LLMProviderDialog({
         setLlmModel(providerToEdit.llm_model);
         setConnectionData(providerToEdit.connection_data);
         setIsActive(providerToEdit.is_active === 1);
-        setShowAdvanced(false);
+        setShowAdvanced(
+          hasAdvancedFieldChanges(
+            supportedModels[providerToEdit.llm_model_provider]?.fields ?? [],
+            providerToEdit.connection_data
+          )
+        );
         setTestStatus(providerToEdit.connection_status ?? null);
         setTestedConnectionData(
           providerToEdit.connection_status ? structuredClone(providerToEdit.connection_data) : null
@@ -99,25 +115,25 @@ export function LLMProviderDialog({
 
   useEffect(() => {
     if (llmType && supportedModels[llmType]) {
-      const defaultValues = supportedModels[llmType].fields.reduce(
-        (acc, field) => {
-          if (field.default !== undefined && !connectionData[field.name]) {
-            acc[field.name] = field.default as string | number | string[];
-          }
-          return acc;
-        },
-        {} as Record<string, string | number | string[]>
-      );
+      setConnectionData((prev) => {
+        const defaultValues = supportedModels[llmType].fields.reduce(
+          (acc, field) => {
+            if (field.default !== undefined && !prev[field.name]) {
+              acc[field.name] = field.default as string | number | string[];
+            }
+            return acc;
+          },
+          {} as Record<string, string | number | string[]>
+        );
 
-      if (Object.keys(defaultValues).length > 0) {
-        if (defaultValues.model) {
-          setLlmModel(defaultValues.model.toString());
+        if (Object.keys(defaultValues).length > 0) {
+          if (defaultValues.model) {
+            setLlmModel(defaultValues.model.toString());
+          }
+          return { ...prev, ...defaultValues };
         }
-        setConnectionData((prev) => ({
-          ...prev,
-          ...defaultValues,
-        }));
-      }
+        return prev;
+      });
     }
   }, [llmType, supportedModels]);
 
@@ -132,13 +148,13 @@ export function LLMProviderDialog({
     setTestedConnectionData(null);
   };
 
-  const handleConnectionDataChange = (field: FieldSchema, value: string | number | string[]) => {
-    if (field.name === 'model') {
+  const handleConnectionDataChange = (fieldName: string, value: string | number | string[]) => {
+    if (fieldName === 'model') {
       setLlmModel(value as string);
     }
     setConnectionData((prev) => ({
       ...prev,
-      [field.name]: value,
+      [fieldName]: value,
     }));
   };
 
@@ -239,73 +255,14 @@ export function LLMProviderDialog({
     }
   };
 
-  const renderField = (field: FieldSchema) => {
-    const value = connectionData[field.name] ?? field.default ?? '';
+  const hasOptionalFields = (supportedModels[llmType]?.fields.filter((f) => !f.required) ?? []).length > 0;
 
-    switch (field.type) {
-      case 'select':
-        return (
-          <Select value={value as string} onValueChange={(val) => handleConnectionDataChange(field, val)}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={`Select ${field.label}`} />
-            </SelectTrigger>
-            <SelectContent>
-              {field.options?.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-      case 'number':
-        return (
-          <Input
-            type="number"
-            value={value as number}
-            onChange={(e) => handleConnectionDataChange(field, parseFloat(e.target.value))}
-            min={field.min}
-            max={field.max}
-            step={field.step}
-            placeholder={field.label}
-          />
-        );
-      case 'password':
-        return (
-          <Input
-            type="password"
-            value={value as string}
-            onChange={(e) => handleConnectionDataChange(field, e.target.value)}
-            placeholder={field.label}
-          />
-        );
-      case 'tags':
-        return (
-          <Textarea
-            value={Array.isArray(value) ? value.join(', ') : ''}
-            onChange={(e) =>
-              handleConnectionDataChange(
-                field,
-                e.target.value.split(',').map((tag) => tag.trim())
-              )
-            }
-            placeholder={field.label}
-            rows={2}
-          />
-        );
-      default:
-        return (
-          <Input
-            type="text"
-            value={value as string}
-            onChange={(e) => handleConnectionDataChange(field, e.target.value)}
-            placeholder={field.label}
-          />
-        );
-    }
-  };
-  const requiredFields = supportedModels[llmType]?.fields.filter((field) => field.required) ?? [];
-  const optionalFields = supportedModels[llmType]?.fields.filter((field) => !field.required) ?? [];
+  const hasAdvancedChanges = hasAdvancedFieldChanges(supportedModels[llmType]?.fields ?? [], connectionData);
+
+  useEffect(() => {
+    if (hasAdvancedChanges) setShowAdvanced(true);
+  }, [hasAdvancedChanges]);
+
   const hasChangedSinceTest =
     testStatus !== null &&
     testedConnectionData !== null &&
@@ -355,46 +312,34 @@ export function LLMProviderDialog({
 
             {llmType && supportedModels[llmType] && (
               <>
-                <div className="space-y-4">
-                  {requiredFields.map((field) => (
-                    <div key={`${llmType}-${field.name}`} className="space-y-2">
-                      <Label htmlFor={field.name}>
-                        {field.label}
-                        {field.required && <span className="text-red-500 ml-1">*</span>}
-                      </Label>
-                      {renderField(field)}
-                      {field.description && <p className="text-sm text-muted-foreground">{field.description}</p>}
-                    </div>
-                  ))}
-                </div>
+                <SchemaFormRenderer
+                  schema={{ fields: supportedModels[llmType].fields }}
+                  connectionData={connectionData}
+                  onChange={handleConnectionDataChange}
+                  showAdvanced={false}
+                />
                 <div className="flex items-center gap-2 border-t pt-4">
                   <div className="flex items-center gap-2">
                     <Label htmlFor="is_active">Active</Label>
                     <Switch id="is_active" checked={isActive} onCheckedChange={setIsActive} />
                   </div>
                   <div className="flex-1" />
-                  {optionalFields.length > 0 && (
+                  {hasOptionalFields && (
                     <div className="flex items-center gap-2">
                       <Label htmlFor="show_advanced">Advanced</Label>
                       <Switch id="show_advanced" checked={showAdvanced} onCheckedChange={setShowAdvanced} />
                     </div>
                   )}
                 </div>
-
-                <div className="space-y-4">
-                  {showAdvanced &&
-                    optionalFields.map((field) => (
-                      <div key={`${llmType}-${field.name}`} className="space-y-2">
-                        <Label htmlFor={field.name}>
-                          {field.label}
-                          {field.required && <span className="text-red-500 ml-1">*</span>}
-                        </Label>
-                        {renderField(field)}
-                        {field.description && <p className="text-sm text-muted-foreground">{field.description}</p>}
-                      </div>
-                    ))}
-                </div>
-
+                {showAdvanced && (
+                  <SchemaFormRenderer
+                    schema={{ fields: supportedModels[llmType].fields }}
+                    connectionData={connectionData}
+                    onChange={handleConnectionDataChange}
+                    showAdvanced={true}
+                    advancedOnly={true}
+                  />
+                )}
                 <ConnectionTestPanel
                   isTesting={isTesting}
                   testStatus={testStatus}

@@ -1,10 +1,13 @@
-# AzureStorageService.py
-# !pip install azure-storage-blob
-###############################################
-
+import logging
 import os
 from typing import Optional, List
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from azure.storage.blob import BlobServiceClient, ContainerClient
+
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
+from app.schemas.azure_blob import AzureConnection
+
+logger = logging.getLogger(__name__)
 
 
 class AzureStorageService:
@@ -54,10 +57,18 @@ class AzureStorageService:
         self._container_name = name
         return self._service.get_container_client(name)
 
+    @classmethod
+    def from_request(cls, req: AzureConnection) -> "AzureStorageService":
+        try:
+            return cls(connection_string=req.connection_string, container_name=req.container)
+        except Exception as e:
+            logger.error(e)
+            raise AppException(error_key=ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED)
+
     @staticmethod
     def test_connection(cd: dict) -> dict:
         service = AzureStorageService(
-            connection_string=cd["connectionstring"],
+            connection_string=cd["connection_string"],
             container_name=cd.get("container"),
         )
         service.bucket_exists(cd.get("container"))
@@ -179,24 +190,3 @@ class AzureStorageService:
         except Exception as e:
             print(f"XX - Error listing files: {e}")
             return []
-
-#############################################
-## Usage
-#############################################
-
-# service = AzureStorageService(
-#     connection_string="DefaultEndpointsProtocol=https;AccountName=xxx;AccountKey=yyy;EndpointSuffix=core.windows.net",
-#     container_name="my-audio-bucket"
-# )
-
-# service.file_upload(
-#     local_file_path="./audio/test.wav",
-#     destination_name="uploads/test.wav"
-# )
-
-# files = service.file_list(prefix="uploads/")
-# print(files)
-
-# print(service.file_exists("test.wav", prefix="uploads"))
-
-# service.file_delete("test.wav", prefix="uploads")

@@ -11,6 +11,11 @@ import SetStateNode from "../chat/setStateNode";
 import { NodeProps } from "reactflow";
 import ChatOutputNode from "./chatOutputNode";
 import { createSimpleSchema } from "../../types/schemas";
+import {
+  FINISH_NODE_HELP_CONTENT,
+  SET_STATE_NODE_HELP_CONTENT,
+  START_NODE_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const CHAT_INPUT_NODE_DEFINITION: NodeTypeDefinition<ChatInputNodeData> =
   {
@@ -19,6 +24,7 @@ export const CHAT_INPUT_NODE_DEFINITION: NodeTypeDefinition<ChatInputNodeData> =
     description:
       "Defines the entry point of the workflow where inputs are received.",
     shortDescription: "Start workflow execution",
+    helpContent: START_NODE_HELP_CONTENT,
     category: "io",
     icon: "ArrowRightFromLine",
     defaultData: {
@@ -57,6 +63,7 @@ export const CHAT_OUTPUT_NODE_DEFINITION: NodeTypeDefinition<ChatOutputNodeData>
     description:
       "Defines the endpoint of the workflow where final outputs are delivered.",
     shortDescription: "Finish workflow execution",
+    helpContent: FINISH_NODE_HELP_CONTENT,
     category: "io",
     icon: "ArrowRightToLine",
     defaultData: {
@@ -87,6 +94,7 @@ export const SET_STATE_NODE_DEFINITION: NodeTypeDefinition<SetStateNodeData> = {
   description:
     "Sets the value of a stateful parameter that persists across workflow executions.",
   shortDescription: "Set stateful parameter value",
+  helpContent: SET_STATE_NODE_HELP_CONTENT,
   configSubtitle:
     "Configure which stateful parameter to update and what value to set.",
   category: "io",

@@ -1,5 +1,6 @@
-from ast import Dict
+import asyncio
 import re
+import tempfile
 from uuid import UUID
 import uuid
 from fastapi import UploadFile
@@ -22,6 +23,8 @@ from app.core.config.settings import file_storage_settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.app_settings import AppSettingsRead
+from app.core.utils.cache_headers import no_store_headers
+from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
 
 logger = logging.getLogger(__name__)
 
@@ -93,13 +96,13 @@ class FileManagerService:
         # Build Content-Disposition header with both ASCII fallback and UTF-8 version
         content_disposition = f'{disposition_type};filename="{filename_encoded}";filename*=UTF-8\'\'{filename_utf8_encoded}'
 
-        headers = {
+        # NOTE: Do not set CORS headers here; they should be handled centrally by CORSMiddleware.
+        # Also, never mark these responses as publicly cacheable: file bytes can be user/tenant scoped.
+        headers: dict[str, str] = {
             "content-type": media_type,
             "content-disposition": content_disposition,
             "x-content-type-options": "nosniff",
-            "access-control-allow-origin": "*",
-            "access-control-expose-headers": "Age, Date, Content-Length, Content-Range, X-Content-Duration, X-Cache",
-            "cache-control": "public, max-age=31536000"
+            **no_store_headers(),
         }
 
         # Add Content-Length if content is provided
@@ -126,48 +129,72 @@ class FileManagerService:
             file: File to upload
             allowed_extensions: Optional list of allowed file extensions
         """
-
+        file_path = "unknown"
+        file_name = file.filename or "unnamed"
         try:
-            file_extension = file.filename.split(".")[-1] if "." in file.filename else ""
+            file_extension = file.filename.split(".")[-1] if "." in (file.filename or "") else ""
             file_extension = file_extension.lower() if file_extension else "txt"
 
-            # check if file extension is allowed
             if allowed_extensions is not None:
                 self._validate_file_extension(file_extension, allowed_extensions)
 
-            # read from the file
-            file_content = await file.read()
-            file_size = len(file_content)
-            file_mime_type = file.content_type
-            file_name = file.filename
-
-            # check if file size is allowed
-            if max_file_size is not None:
-                self._validate_file_size(file_size, max_file_size)
-
-            # Prefer the storage provider coming from the request payload; fall back to the
-            # already configured provider if present, otherwise default to "local".
             file_storage_provider = (
                 file_base.storage_provider
                 or (self.storage_provider.name if self.storage_provider else None)
                 or "local"
             )
 
-            # Generate a unique file name only when the client hasn't provided one
             unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
             file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
 
-            # Get or initialize the storage provider
             provider_name = file_storage_provider or "local"
             await self._initialize_storage_provider(provider_name)
             if not self.storage_provider or not self.storage_provider.is_initialized():
                 raise ValueError("Storage provider not initialized")
 
-            # Resolve the storage path that will be persisted with the file metadata.
-            # If the caller has explicitly provided a storage_path, prefer that.
             storage_path = file_base.storage_path or self.storage_provider.get_base_path()
 
-            # create the file data
+            # Stream bytes to storage (avoid loading entire file into memory).
+            if self.storage_provider.name == "local":
+                dest = os.path.join(
+                    self.storage_provider.get_base_path(),
+                    file_path.replace("\\", "/").lstrip("/"),
+                )
+                file_size, streamed_mime = await async_stream_uploadfile_to_path(
+                    file, dest, max_file_size
+                )
+                upload_ok = True
+            else:
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".upload")
+                tmp_path = tmp.name
+                tmp.close()
+                upload_ok = False
+                try:
+                    file_size, streamed_mime = await async_stream_uploadfile_to_path(
+                        file, tmp_path, max_file_size
+                    )
+                    upload_ok = await self.storage_provider.upload_file_from_local_path(
+                        tmp_path,
+                        file_path,
+                        file_metadata={
+                            "name": file_base.name or file_name,
+                            "mime_type": streamed_mime or file.content_type or "application/octet-stream",
+                        },
+                    )
+                finally:
+                    if os.path.exists(tmp_path):
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
+
+            if not upload_ok:
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                )
+
+            file_mime_type = streamed_mime or file.content_type or "application/octet-stream"
+
             file_data = FileBase(
                 name=file_base.name or file_name,
                 original_filename=file_base.original_filename or file_name,
@@ -183,22 +210,134 @@ class FileManagerService:
                 permissions=file_base.permissions,
             )
 
-            # Upload file content if provided
-            if file_content is not None:
-                upload_result = await self.storage_provider.upload_file(
-                    file_content=file_content,
-                    file_path=file_path,
-                    file_metadata={"name": file_data.name, "mime_type": file_data.mime_type}
-                )
-                if not upload_result:
-                    raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Failed to upload file {file_path} on storage provider {self.storage_provider.name}")
+            return await self.repository.create_file(file_data)
+        except AppException:
+            raise
         except Exception as e:
             logger.error(f"Failed to create file: {e}")
-            raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Failed to create file {file_path} on storage provider {self.storage_provider.name}: {str(e)}")
-        finally:
-            # Create file metadata record
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=(
+                    f"Failed to create file {file_path} on storage provider "
+                    f"{getattr(self.storage_provider, 'name', 'unknown')}: {str(e)}"
+                ),
+            )
+
+    async def create_file_from_local_path(
+        self,
+        local_path: str,
+        file_base: FileBase,
+        *,
+        original_filename: str,
+        mime_type: Optional[str] = None,
+        allowed_extensions: Optional[list[str]] = None,
+        max_file_size: Optional[int] = None,
+        delete_source: bool = True,
+    ) -> FileModel:
+        """
+        Register a file that already exists on disk (e.g. after a chunked upload) in storage + DB.
+        """
+        file_path = "unknown"
+        file_name = original_filename or "unnamed"
+        try:
+            if not os.path.isfile(local_path):
+                raise ValueError(f"Local path does not exist or is not a file: {local_path}")
+
+            file_size = os.path.getsize(local_path)
+            if max_file_size is not None:
+                self._validate_file_size(file_size, max_file_size)
+
+            file_extension = (
+                original_filename.split(".")[-1].lower()
+                if "." in original_filename
+                else "txt"
+            )
+            if allowed_extensions is not None:
+                self._validate_file_extension(file_extension, allowed_extensions)
+
+            file_storage_provider = (
+                file_base.storage_provider
+                or (self.storage_provider.name if self.storage_provider else None)
+                or "local"
+            )
+
+            unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
+            file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
+
+            provider_name = file_storage_provider or "local"
+            await self._initialize_storage_provider(provider_name)
+            if not self.storage_provider or not self.storage_provider.is_initialized():
+                raise ValueError("Storage provider not initialized")
+
+            storage_path = file_base.storage_path or self.storage_provider.get_base_path()
+
+            if self.storage_provider.name == "local":
+                dest = os.path.join(
+                    self.storage_provider.get_base_path(),
+                    file_path.replace("\\", "/").lstrip("/"),
+                )
+                import shutil
+
+                def _copy() -> None:
+                    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+                    shutil.copy2(local_path, dest)
+
+                await asyncio.to_thread(_copy)
+            else:
+                upload_ok = await self.storage_provider.upload_file_from_local_path(
+                    local_path,
+                    file_path,
+                    file_metadata={
+                        "name": file_base.name or file_name,
+                        "mime_type": mime_type or "application/octet-stream",
+                    },
+                )
+                if not upload_ok:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            f"Failed to upload file {file_path} on storage provider "
+                            f"{self.storage_provider.name}"
+                        ),
+                    )
+
+            file_mime_type = mime_type or "application/octet-stream"
+
+            file_data = FileBase(
+                name=file_base.name or file_name,
+                original_filename=file_base.original_filename or file_name,
+                mime_type=file_mime_type,
+                size=file_size,
+                file_extension=file_extension,
+                storage_provider=file_storage_provider,
+                storage_path=storage_path,
+                path=file_path,
+                description=file_base.description,
+                file_metadata=file_base.file_metadata,
+                tags=file_base.tags,
+                permissions=file_base.permissions,
+            )
+
             db_file = await self.repository.create_file(file_data)
+
+            if delete_source:
+                try:
+                    os.unlink(local_path)
+                except OSError:
+                    pass
+
             return db_file
+        except AppException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to create file from local path: {e}")
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=(
+                    f"Failed to create file {file_path} on storage provider "
+                    f"{getattr(self.storage_provider, 'name', 'unknown')}: {str(e)}"
+                ),
+            )
 
     async def get_file_by_id(self, file_id: UUID) -> FileModel:
         """Get file metadata by ID."""
@@ -283,7 +422,8 @@ class FileManagerService:
         user_id: Optional[UUID] = None,
         storage_provider: Optional[str] = None,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
+        offset: Optional[int] = None,
+        tag: Optional[str] = None,
     ) -> list[FileModel]:
         """List files with optional filtering."""
         return await self.repository.list_files(
@@ -291,7 +431,8 @@ class FileManagerService:
             storage_provider=storage_provider,
             user_id=user_id,
             limit=limit,
-            offset=offset
+            offset=offset,
+            tag=tag,
         )
 
     async def update_file(self, file_id: UUID, file: UploadFile, file_base: FileBase) -> FileModel:

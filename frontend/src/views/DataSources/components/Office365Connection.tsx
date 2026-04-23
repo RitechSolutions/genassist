@@ -86,8 +86,8 @@ export function Office365Connection({
       const selectedAppSettings = appSettings.find(
         (setting) => setting.id === appSettingsId
       );
-      const clientId = selectedAppSettings?.values?.microsoft_client_id;
-      const tenantId = selectedAppSettings?.values?.microsoft_tenant_id;
+      const clientId = selectedAppSettings?.values?.microsoft_client_id as string | undefined;
+      const tenantId = selectedAppSettings?.values?.microsoft_tenant_id as string | undefined;
       let datasourceId = dataSource?.id;
 
       if (!datasourceId) {

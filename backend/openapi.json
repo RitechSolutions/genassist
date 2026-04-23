@@ -577,6 +577,423 @@
         }
       }
     },
+    "/api/user-groups": {
+      "get": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Get All",
+        "operationId": "get_all_api_user_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserGroupRead"
+                  },
+                  "type": "array",
+                  "title": "Response Get All Api User Groups Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_user_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserGroupCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserGroupRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/user-groups/{group_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Get",
+        "operationId": "get_api_user_groups__group_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserGroupRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Update",
+        "operationId": "update_api_user_groups__group_id__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserGroupUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserGroupRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Delete",
+        "operationId": "delete_api_user_groups__group_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/user-groups/{group_id}/supervisors": {
+      "get": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Get Supervisors",
+        "operationId": "get_supervisors_api_user_groups__group_id__supervisors_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": "Response Get Supervisors Api User Groups  Group Id  Supervisors Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/user-groups/{group_id}/supervisors/{user_id}": {
+      "post": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Add Supervisor",
+        "operationId": "add_supervisor_api_user_groups__group_id__supervisors__user_id__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "User Groups"
+        ],
+        "summary": "Remove Supervisor",
+        "operationId": "remove_supervisor_api_user_groups__group_id__supervisors__user_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/user-type/{user_type_id}": {
       "get": {
         "tags": [
@@ -1533,6 +1950,69 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ApiKeyUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/api-keys/{api_key_id}/rotate": {
+      "post": {
+        "tags": [
+          "v1",
+          "ApiKeys"
+        ],
+        "summary": "Rotate Api Key",
+        "description": "Issue a new secret for this API key. The previous secret can remain valid for a bounded\noverlap window to support agent and integration cutovers.",
+        "operationId": "rotate_api_key_api_api_keys__api_key_id__rotate_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "api_key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Api Key Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyRotate"
               }
             }
           }
@@ -4951,6 +5431,22 @@
             }
           },
           {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
             "name": "id_suffix",
             "in": "query",
             "required": false,
@@ -5840,6 +6336,22 @@
             }
           },
           {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
             "name": "id_suffix",
             "in": "query",
             "required": false,
@@ -6392,6 +6904,22 @@
             }
           },
           {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
             "name": "id_suffix",
             "in": "query",
             "required": false,
@@ -6855,6 +7383,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/llm-providers/minimal": {
+      "get": {
+        "tags": [
+          "v1",
+          "LlmProviders"
+        ],
+        "summary": "Get All Minimal",
+        "description": "Get a lightweight list of all LLM providers (no connection_data or connection_status).",
+        "operationId": "get_all_minimal_api_llm_providers_minimal_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LlmProviderMinimal"
+                  },
+                  "type": "array",
+                  "title": "Response Get All Minimal Api Llm Providers Minimal Get"
                 }
               }
             }
@@ -7726,6 +8289,24 @@
           }
         ],
         "parameters": [
+          {
+            "name": "is_system",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by system (true) or user (false) agents",
+              "title": "Is System"
+            },
+            "description": "Filter by system (true) or user (false) agents"
+          },
           {
             "name": "skip",
             "in": "query",
@@ -8792,6 +9373,227 @@
         ]
       }
     },
+    "/api/genagent/knowledge/upload-session": {
+      "post": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Create Kb Upload Session",
+        "description": "Start a chunked upload for a single large file (backward compatible with /upload).",
+        "operationId": "create_kb_upload_session_api_genagent_knowledge_upload_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KbUploadSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbUploadSessionCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/knowledge/upload-session/{session_id}/chunk": {
+      "post": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Kb Upload Session Chunk",
+        "description": "Append one chunk to a staged upload session.",
+        "operationId": "kb_upload_session_chunk_api_genagent_knowledge_upload_session__session_id__chunk_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_kb_upload_session_chunk_api_genagent_knowledge_upload_session__session_id__chunk_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/knowledge/upload-session/{session_id}/complete": {
+      "post": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Kb Upload Session Complete",
+        "description": "Finalize staged bytes into storage + files row (same shape as one legacy /upload item).",
+        "operationId": "kb_upload_session_complete_api_genagent_knowledge_upload_session__session_id__complete_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Kb Upload Session Complete Api Genagent Knowledge Upload Session  Session Id  Complete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/knowledge/upload-session/{session_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Knowledge Base"
+        ],
+        "summary": "Kb Upload Session Status",
+        "operationId": "kb_upload_session_status_api_genagent_knowledge_upload_session__session_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbUploadSessionStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/knowledge/upload-chat-file": {
       "post": {
         "tags": [
@@ -9246,6 +10048,41 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/workflow/minimal": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflows"
+        ],
+        "summary": "Get Workflows Minimal",
+        "description": "Get a lightweight list of all workflows (id, name, version only).",
+        "operationId": "get_workflows_minimal_api_genagent_workflow_minimal_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowMinimal"
+                  },
+                  "type": "array",
+                  "title": "Response Get Workflows Minimal Api Genagent Workflow Minimal Get"
+                }
               }
             }
           }
@@ -10661,6 +11498,24 @@
               ],
               "title": "Offset"
             }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If set, only files whose `tags` (JSON array of strings, see FileBase.tags) include this value (exact string match).",
+              "title": "Tag"
+            },
+            "description": "If set, only files whose `tags` (JSON array of strings, see FileBase.tags) include this value (exact string match)."
           }
         ],
         "responses": {
@@ -10923,6 +11778,16 @@
               "format": "uuid",
               "title": "File Id"
             }
+          },
+          {
+            "name": "force_proxy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force Proxy"
+            }
           }
         ],
         "responses": {
@@ -10984,6 +11849,292 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/upload": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Upload Files",
+        "description": "Upload multiple files and return UploadFileResponse-compatible dicts.\n\nThis endpoint mirrors the legacy `genagent/knowledge/upload` response shape,\nbut is owned by file-manager.",
+        "operationId": "upload_files_api_file_manager_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_files_api_file_manager_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Upload Files Api File Manager Upload Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/file-manager/upload-session": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Create Files Upload Session",
+        "operationId": "create_files_upload_session_api_file_manager_upload_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilesUploadSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesUploadSessionCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/file-manager/upload-session/{session_id}/chunk": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Files Upload Session Chunk",
+        "operationId": "files_upload_session_chunk_api_file_manager_upload_session__session_id__chunk_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "chunk_index",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Chunk Index"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_files_upload_session_chunk_api_file_manager_upload_session__session_id__chunk_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/upload-session/{session_id}/complete": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Files Upload Session Complete",
+        "operationId": "files_upload_session_complete_api_file_manager_upload_session__session_id__complete_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Files Upload Session Complete Api File Manager Upload Session  Session Id  Complete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/file-manager/upload-session/{session_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Files Upload Session Status",
+        "operationId": "files_upload_session_status_api_file_manager_upload_session__session_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilesUploadSessionStatusResponse"
+                }
               }
             }
           },
@@ -11971,6 +13122,610 @@
         }
       }
     },
+    "/api/genagent/prompt-editor/versions/{workflow_id}/{node_id}/{prompt_field}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "List Versions",
+        "operationId": "list_versions_api_genagent_prompt_editor_versions__workflow_id___node_id___prompt_field__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PromptVersionRead"
+                  },
+                  "title": "Response List Versions Api Genagent Prompt Editor Versions  Workflow Id   Node Id   Prompt Field  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Create Version",
+        "operationId": "create_version_api_genagent_prompt_editor_versions__workflow_id___node_id___prompt_field__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptVersionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptVersionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/versions/{version_id}/restore": {
+      "post": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Restore Version",
+        "operationId": "restore_version_api_genagent_prompt_editor_versions__version_id__restore_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptVersionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/versions/{version_id}": {
+      "delete": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Delete Version",
+        "operationId": "delete_version_api_genagent_prompt_editor_versions__version_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/versions/{version_id}/hard": {
+      "delete": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Hard Delete Version",
+        "operationId": "hard_delete_version_api_genagent_prompt_editor_versions__version_id__hard_delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/config/{workflow_id}/{node_id}/{prompt_field}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Get Config",
+        "operationId": "get_config_api_genagent_prompt_editor_config__workflow_id___node_id___prompt_field__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptConfigRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/config/{workflow_id}/{node_id}/{prompt_field}/gold-suite": {
+      "put": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Link Gold Suite",
+        "operationId": "link_gold_suite_api_genagent_prompt_editor_config__workflow_id___node_id___prompt_field__gold_suite_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoldSuiteLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptConfigRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/evaluate/{workflow_id}/{node_id}/{prompt_field}": {
+      "post": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Evaluate Prompt",
+        "operationId": "evaluate_prompt_api_genagent_prompt_editor_evaluate__workflow_id___node_id___prompt_field__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptEvalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptEvalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/optimize/{workflow_id}/{node_id}/{prompt_field}": {
+      "post": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "Optimize Prompt",
+        "operationId": "optimize_prompt_api_genagent_prompt_editor_optimize__workflow_id___node_id___prompt_field__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Field"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptOptimizeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptOptimizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/eval/suites": {
       "get": {
         "tags": [
@@ -12611,6 +14366,61 @@
             }
           }
         }
+      }
+    },
+    "/api/genagent/eval/runs/batch": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Runs"
+        ],
+        "summary": "Get Runs Batch",
+        "description": "Fetch multiple test runs by their IDs in a single request.",
+        "operationId": "get_runs_batch_api_genagent_eval_runs_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRunsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TestRun"
+                  },
+                  "type": "array",
+                  "title": "Response Get Runs Batch Api Genagent Eval Runs Batch Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/genagent/eval/runs/{run_id}": {
@@ -14785,7 +16595,7 @@
       }
     },
     "/api/smb-share/smb/list": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "SMB (Windows) share file/folder operations",
@@ -14793,212 +16603,28 @@
         ],
         "summary": "List Dir",
         "description": "List directory contents with optional filters.",
-        "operationId": "list_dir_api_smb_share_smb_list_get",
-        "parameters": [
-          {
-            "name": "smb_host",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Host"
+        "operationId": "list_dir_api_smb_share_smb_list_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListDirRequest"
+              }
             }
           },
-          {
-            "name": "smb_share",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Share"
-            }
-          },
-          {
-            "name": "smb_user",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb User"
-            }
-          },
-          {
-            "name": "smb_pass",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Pass"
-            }
-          },
-          {
-            "name": "smb_port",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Port"
-            }
-          },
-          {
-            "name": "use_local_fs",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Use Local Fs"
-            }
-          },
-          {
-            "name": "local_root",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Local Root"
-            }
-          },
-          {
-            "name": "subpath",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Subpath"
-            }
-          },
-          {
-            "name": "only_files",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Only Files"
-            }
-          },
-          {
-            "name": "only_dirs",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Only Dirs"
-            }
-          },
-          {
-            "name": "extension",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Extension"
-            }
-          },
-          {
-            "name": "name_contains",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Name Contains"
-            }
-          },
-          {
-            "name": "pattern",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Pattern"
-            }
-          },
-          {
-            "name": "dependencies",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "title": "Dependencies"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "type": "string"
                   },
-                  "title": "Response List Dir Api Smb Share Smb List Get"
+                  "type": "array",
+                  "title": "Response List Dir Api Smb Share Smb List Post"
                 }
               }
             }
@@ -15013,11 +16639,19 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/smb-share/smb/read": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "SMB (Windows) share file/folder operations",
@@ -15025,143 +16659,17 @@
         ],
         "summary": "Read File",
         "description": "Read file content.",
-        "operationId": "read_file_api_smb_share_smb_read_get",
-        "parameters": [
-          {
-            "name": "smb_host",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Host"
+        "operationId": "read_file_api_smb_share_smb_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRequest"
+              }
             }
           },
-          {
-            "name": "smb_share",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Share"
-            }
-          },
-          {
-            "name": "smb_user",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb User"
-            }
-          },
-          {
-            "name": "smb_pass",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Pass"
-            }
-          },
-          {
-            "name": "smb_port",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Port"
-            }
-          },
-          {
-            "name": "use_local_fs",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Use Local Fs"
-            }
-          },
-          {
-            "name": "local_root",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Local Root"
-            }
-          },
-          {
-            "name": "filepath",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Filepath"
-            }
-          },
-          {
-            "name": "binary",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Binary"
-            }
-          },
-          {
-            "name": "dependencies",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "title": "Dependencies"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -15181,7 +16689,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/smb-share/smb/write": {
@@ -15194,25 +16710,15 @@
         "summary": "Write File",
         "description": "Write or update a file.",
         "operationId": "write_file_api_smb_share_smb_write_post",
-        "parameters": [
-          {
-            "name": "dependencies",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "title": "Dependencies"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__api__v1__routes__smb_share_router__FileRequest"
+                "$ref": "#/components/schemas/FileRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -15233,7 +16739,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/smb-share/smb/file": {
@@ -15246,25 +16760,15 @@
         "summary": "Delete File",
         "description": "Delete a file.",
         "operationId": "delete_file_api_smb_share_smb_file_delete",
-        "parameters": [
-          {
-            "name": "dependencies",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "title": "Dependencies"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__api__v1__routes__smb_share_router__FileRequest"
+                "$ref": "#/components/schemas/FileRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -15285,7 +16789,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/smb-share/smb/folder": {
@@ -15298,25 +16810,15 @@
         "summary": "Create Folder",
         "description": "Create a new folder (recursively).",
         "operationId": "create_folder_api_smb_share_smb_folder_post",
-        "parameters": [
-          {
-            "name": "dependencies",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "title": "Dependencies"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/FolderRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -15337,7 +16839,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -15348,25 +16858,15 @@
         "summary": "Delete Folder",
         "description": "Delete a folder and its contents.",
         "operationId": "delete_folder_api_smb_share_smb_folder_delete",
-        "parameters": [
-          {
-            "name": "dependencies",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "title": "Dependencies"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/FolderRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -15387,11 +16887,19 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/smb-share/smb/exists": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "SMB (Windows) share file/folder operations",
@@ -15399,133 +16907,17 @@
         ],
         "summary": "Exists",
         "description": "Check if a path exists.",
-        "operationId": "exists_api_smb_share_smb_exists_get",
-        "parameters": [
-          {
-            "name": "smb_host",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Host"
+        "operationId": "exists_api_smb_share_smb_exists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExistsRequest"
+              }
             }
           },
-          {
-            "name": "smb_share",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Share"
-            }
-          },
-          {
-            "name": "smb_user",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb User"
-            }
-          },
-          {
-            "name": "smb_pass",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Pass"
-            }
-          },
-          {
-            "name": "smb_port",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Port"
-            }
-          },
-          {
-            "name": "use_local_fs",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Use Local Fs"
-            }
-          },
-          {
-            "name": "local_root",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Local Root"
-            }
-          },
-          {
-            "name": "path",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Path"
-            }
-          },
-          {
-            "name": "dependencies",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "title": "Dependencies"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -15545,7 +16937,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/smb-share/smb/execute-celery-jobs": {
@@ -16425,77 +17825,35 @@
       }
     },
     "/api/azure-blob-storage/list": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "Azure Blob Storage"
         ],
         "summary": "List Files",
         "description": "List blobs in a container with optional prefix",
-        "operationId": "list_files_api_azure_blob_storage_list_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connectionstring",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connectionstring"
+        "operationId": "list_files_api_azure_blob_storage_list_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AzureListRequest"
+              }
             }
           },
-          {
-            "name": "container",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Container"
-            }
-          },
-          {
-            "name": "prefix",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Prefix"
-            }
-          },
-          {
-            "name": "dependencies",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "title": "Dependencies"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "type": "string"
                   },
-                  "title": "Response List Files Api Azure Blob Storage List Get"
+                  "type": "array",
+                  "title": "Response List Files Api Azure Blob Storage List Post"
                 }
               }
             }
@@ -16510,77 +17868,44 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/azure-blob-storage/exists": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "Azure Blob Storage"
         ],
         "summary": "File Exists",
         "description": "Check if a blob exists",
-        "operationId": "file_exists_api_azure_blob_storage_exists_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connectionstring",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connectionstring"
+        "operationId": "file_exists_api_azure_blob_storage_exists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AzureFileRequest"
+              }
             }
           },
-          {
-            "name": "container",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Container"
-            }
-          },
-          {
-            "name": "filename",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Filename"
-            }
-          },
-          {
-            "name": "prefix",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Prefix"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureExistsResponse"
+                }
               }
             }
           },
@@ -16594,7 +17919,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/azure-blob-storage/upload": {
@@ -16606,75 +17939,24 @@
         "summary": "Upload File",
         "description": "Upload a file stream to Azure Blob",
         "operationId": "upload_file_api_azure_blob_storage_upload_post",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connectionstring",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connectionstring"
-            }
-          },
-          {
-            "name": "container",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Container"
-            }
-          },
-          {
-            "name": "destination_name",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Destination Name"
-            }
-          },
-          {
-            "name": "prefix",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Prefix"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_upload_file_api_azure_blob_storage_upload_post"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureUploadResponse"
+                }
               }
             }
           },
@@ -16688,7 +17970,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/azure-blob-storage/upload-content": {
@@ -16704,7 +17994,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__api__v1__routes__azure_blob_router__FileRequest"
+                "$ref": "#/components/schemas/AzureFileRequest"
               }
             }
           },
@@ -16715,7 +18005,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureUploadResponse"
+                }
               }
             }
           },
@@ -16753,7 +18045,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__api__v1__routes__azure_blob_router__FileRequest"
+                "$ref": "#/components/schemas/AzureFileRequest"
               }
             }
           },
@@ -16764,7 +18056,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureDeleteResponse"
+                }
               }
             }
           },
@@ -16802,7 +18096,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MoveRequest"
+                "$ref": "#/components/schemas/AzureMoveRequest"
               }
             }
           },
@@ -16813,7 +18107,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureUploadResponse"
+                }
               }
             }
           },
@@ -16839,48 +18135,32 @@
       }
     },
     "/api/azure-blob-storage/bucket-exists": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "Azure Blob Storage"
         ],
         "summary": "Bucket Exists",
         "description": "Check if container exists",
-        "operationId": "bucket_exists_api_azure_blob_storage_bucket_exists_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connectionstring",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connectionstring"
+        "operationId": "bucket_exists_api_azure_blob_storage_bucket_exists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AzureConnection"
+              }
             }
           },
-          {
-            "name": "container",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Container"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureExistsResponse"
+                }
               }
             }
           },
@@ -16894,7 +18174,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/public-registration/registration-id": {
@@ -16980,6 +18268,55 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/workflow-builder/config/from-builder": {
+      "post": {
+        "tags": [
+          "v1",
+          "Workflow Builder"
+        ],
+        "summary": "Create Workflow From Builder",
+        "description": "Create a new Agent + Workflow from a structured builder specification.\n\nThe builder format extends the wizard format with:\n- Explicit edges (supporting branching, tool connections)\n- Config overrides per node\n- Non-default sourceHandle/targetHandle for special ports\n\nFalls back to linear chain if edges are not provided.",
+        "operationId": "create_workflow_from_builder_api_workflow_builder_config_from_builder_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_workflow_from_builder_api_workflow_builder_config_from_builder_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -17221,7 +18558,7 @@
           "MCP"
         ],
         "summary": "List Mcp Tools Get",
-        "description": "List available tools from active MCP servers (MCP Protocol endpoint - GET).\n\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - GET).\n\nAuthenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)\nand returns all tools exposed by the authenticated MCP server.",
         "operationId": "list_mcp_tools_get_api_mcp_tools_get",
         "parameters": [
           {
@@ -17274,7 +18611,7 @@
           "MCP"
         ],
         "summary": "List Mcp Tools Post",
-        "description": "List available tools from active MCP servers (MCP Protocol endpoint - POST).\n\nThis endpoint matches the MCP client's expected format for tool discovery.\nAuthenticates using API key from Authorization header and returns all tools\nexposed by the authenticated MCP server.",
+        "description": "List available tools from active MCP servers (MCP Protocol endpoint - POST).\n\nThis endpoint matches the MCP client's expected format for tool discovery.\nAuthenticates via ``Authorization: Bearer`` (static MCP API key or OAuth 2.0 JWT)\nand returns all tools exposed by the authenticated MCP server.",
         "operationId": "list_mcp_tools_post_api_mcp_tools_list_post",
         "parameters": [
           {
@@ -17327,7 +18664,7 @@
           "MCP"
         ],
         "summary": "Execute Mcp Tool",
-        "description": "Execute a workflow as an MCP tool (MCP Protocol endpoint).\n\nAuthenticates using API key, finds the tool in the server's workflows,\nvalidates arguments, and executes the workflow.",
+        "description": "Execute a workflow as an MCP tool (MCP Protocol endpoint).\n\nAuthenticates with a static MCP API key or OAuth 2.0 access token, finds the tool\nin the server's workflows, validates arguments, and executes the workflow.",
         "operationId": "execute_mcp_tool_api_mcp_tools_call_post",
         "parameters": [
           {
@@ -18523,6 +19860,11 @@
             "type": "boolean",
             "title": "Is Active",
             "default": false
+          },
+          "is_system": {
+            "type": "boolean",
+            "title": "Is System",
+            "default": false
           }
         },
         "type": "object",
@@ -18702,6 +20044,11 @@
           "has_welcome_image": {
             "type": "boolean",
             "title": "Has Welcome Image",
+            "default": false
+          },
+          "is_system": {
+            "type": "boolean",
+            "title": "Is System",
             "default": false
           }
         },
@@ -19495,6 +20842,20 @@
             ],
             "title": "Agent Id",
             "description": "Filed used to determine if api key is being created for agent to assign agent permission."
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 730.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days",
+            "description": "If set, the key stops authenticating after this many days from creation (UTC). Omit for no expiry."
           }
         },
         "type": "object",
@@ -19570,6 +20931,44 @@
           "key_val": {
             "type": "string",
             "title": "Key Val"
+          },
+          "previous_hashed_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Hashed Expires At",
+            "description": "When set, the prior secret is accepted for API auth until this time (UTC)."
+          },
+          "credential_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Expires At",
+            "description": "When set, this key record (current secret) is not accepted for API auth at or after this instant (UTC)."
+          },
+          "credential_expiry_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Expiry Days",
+            "description": "Stored expiry selection in days (30/90/180/365). Null means Never."
           }
         },
         "type": "object",
@@ -19582,6 +20981,21 @@
           "key_val"
         ],
         "title": "ApiKeyRead"
+      },
+      "ApiKeyRotate": {
+        "properties": {
+          "overlap_seconds": {
+            "type": "integer",
+            "maximum": 604800.0,
+            "minimum": 0.0,
+            "title": "Overlap Seconds",
+            "description": "How long the previous secret remains valid (max 7 days). 0 = immediate cutover.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ApiKeyRotate",
+        "description": "Rotate the raw secret. The new value is returned once in `key_val` (same as create).\n\nIf overlap_seconds > 0, the previous secret remains valid until that instant (UTC),\nso integrations can be updated without a hard cutover."
       },
       "ApiKeyUpdate": {
         "properties": {
@@ -19623,6 +21037,20 @@
               }
             ],
             "title": "Role Ids"
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 730.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days",
+            "description": "If set: 0 clears expiry (Never); otherwise sets/overwrites credential expiry to now + this many days (UTC). Omit to leave unchanged."
           }
         },
         "type": "object",
@@ -19936,6 +21364,282 @@
         "title": "AuditLogSearchResult",
         "description": "Schema for audit log search results - excludes json_changes."
       },
+      "AzureConnection": {
+        "properties": {
+          "connection_string": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection String"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          }
+        },
+        "type": "object",
+        "title": "AzureConnection"
+      },
+      "AzureDeleteResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "deleted"
+        ],
+        "title": "AzureDeleteResponse"
+      },
+      "AzureExistsResponse": {
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exists"
+        ],
+        "title": "AzureExistsResponse"
+      },
+      "AzureFileRequest": {
+        "properties": {
+          "connection_string": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection String"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          },
+          "overwrite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overwrite",
+            "default": true
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "binary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binary",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename"
+        ],
+        "title": "AzureFileRequest"
+      },
+      "AzureListRequest": {
+        "properties": {
+          "connection_string": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection String"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          }
+        },
+        "type": "object",
+        "title": "AzureListRequest"
+      },
+      "AzureMoveRequest": {
+        "properties": {
+          "connection_string": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection String"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "destination_name": {
+            "type": "string",
+            "title": "Destination Name"
+          },
+          "source_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Prefix"
+          },
+          "destination_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Prefix"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_name",
+          "destination_name"
+        ],
+        "title": "AzureMoveRequest"
+      },
+      "AzureUploadResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "url"
+        ],
+        "title": "AzureUploadResponse"
+      },
+      "BatchRunsRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ids",
+            "description": "List of test run UUIDs to fetch."
+          }
+        },
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "title": "BatchRunsRequest"
+      },
       "Body_add_conversation_feedback_api_conversations_feedback__conversation_id__patch": {
         "properties": {
           "feedback": {
@@ -20245,6 +21949,29 @@
         ],
         "title": "Body_create_file_api_file_manager_files_post"
       },
+      "Body_create_workflow_from_builder_api_workflow_builder_config_from_builder_post": {
+        "properties": {
+          "workflow_name": {
+            "type": "string",
+            "title": "Workflow Name"
+          },
+          "workflow_json": {
+            "type": "string",
+            "title": "Workflow Json"
+          },
+          "workflow_description": {
+            "type": "string",
+            "title": "Workflow Description",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_name",
+          "workflow_json"
+        ],
+        "title": "Body_create_workflow_from_builder_api_workflow_builder_config_from_builder_post"
+      },
       "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post": {
         "properties": {
           "workflow_name": {
@@ -20263,6 +21990,20 @@
         ],
         "title": "Body_create_workflow_from_wizard_api_workflow_manager_config_from_wizard_post"
       },
+      "Body_files_upload_session_chunk_api_file_manager_upload_session__session_id__chunk_post": {
+        "properties": {
+          "chunk": {
+            "type": "string",
+            "format": "binary",
+            "title": "Chunk"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk"
+        ],
+        "title": "Body_files_upload_session_chunk_api_file_manager_upload_session__session_id__chunk_post"
+      },
       "Body_import_cost_rates_csv_api_llm_cost_rates_import_post": {
         "properties": {
           "file": {
@@ -20276,6 +22017,25 @@
           "file"
         ],
         "title": "Body_import_cost_rates_csv_api_llm_cost_rates_import_post"
+      },
+      "Body_kb_upload_session_chunk_api_genagent_knowledge_upload_session__session_id__chunk_post": {
+        "properties": {
+          "chunk": {
+            "type": "string",
+            "format": "binary",
+            "title": "Chunk"
+          },
+          "chunk_index": {
+            "type": "integer",
+            "title": "Chunk Index",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk"
+        ],
+        "title": "Body_kb_upload_session_chunk_api_genagent_knowledge_upload_session__session_id__chunk_post"
       },
       "Body_process_files_api_genagent_knowledge_process_files_post": {
         "properties": {
@@ -20463,11 +22223,37 @@
             "type": "string",
             "format": "binary",
             "title": "File"
+          },
+          "connection_string": {
+            "type": "string",
+            "title": "Connection String"
+          },
+          "container": {
+            "type": "string",
+            "title": "Container"
+          },
+          "destination_name": {
+            "type": "string",
+            "title": "Destination Name"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
           }
         },
         "type": "object",
         "required": [
-          "file"
+          "file",
+          "connection_string",
+          "container",
+          "destination_name"
         ],
         "title": "Body_upload_file_api_azure_blob_storage_upload_post"
       },
@@ -20525,6 +22311,23 @@
           "purpose"
         ],
         "title": "Body_upload_file_to_openai_api_openai_upload_post"
+      },
+      "Body_upload_files_api_file_manager_upload_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "format": "binary"
+            },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_upload_files_api_file_manager_upload_post"
       },
       "Body_upload_pkl_file_api_ml_models_upload_post": {
         "properties": {
@@ -21918,6 +23721,89 @@
         "title": "DiscoverToolsResponse",
         "description": "Response model for tool discovery"
       },
+      "ExistsRequest": {
+        "properties": {
+          "smb_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Host"
+          },
+          "smb_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Share"
+          },
+          "smb_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb User"
+          },
+          "smb_pass": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Pass"
+          },
+          "smb_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Port",
+            "default": 445
+          },
+          "use_local_fs": {
+            "type": "boolean",
+            "title": "Use Local Fs",
+            "default": false
+          },
+          "local_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Root"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ExistsRequest"
+      },
       "FeatureFlagCreate": {
         "properties": {
           "key": {
@@ -22051,6 +23937,142 @@
           "very_bad"
         ],
         "title": "Feedback"
+      },
+      "FileRequest": {
+        "properties": {
+          "smb_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Host"
+          },
+          "smb_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Share"
+          },
+          "smb_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb User"
+          },
+          "smb_pass": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Pass"
+          },
+          "smb_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Port",
+            "default": 445
+          },
+          "use_local_fs": {
+            "type": "boolean",
+            "title": "Use Local Fs",
+            "default": false
+          },
+          "local_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Root"
+          },
+          "subpath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subpath",
+            "default": ""
+          },
+          "filepath": {
+            "type": "string",
+            "title": "Filepath"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "binary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binary",
+            "default": false
+          },
+          "overwrite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overwrite",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "filepath"
+        ],
+        "title": "FileRequest"
       },
       "FileResponse": {
         "properties": {
@@ -22295,6 +24317,122 @@
         ],
         "title": "FileUploadResponse"
       },
+      "FilesUploadSessionCreate": {
+        "properties": {
+          "original_filename": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Original Filename"
+          },
+          "expected_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Size",
+            "description": "Optional declared total size in bytes for validation on complete"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "original_filename"
+        ],
+        "title": "FilesUploadSessionCreate"
+      },
+      "FilesUploadSessionCreateResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "max_chunk_bytes": {
+            "type": "integer",
+            "title": "Max Chunk Bytes",
+            "description": "Maximum bytes accepted per /chunk request"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "max_chunk_bytes"
+        ],
+        "title": "FilesUploadSessionCreateResponse"
+      },
+      "FilesUploadSessionStatusResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "bytes_received": {
+            "type": "integer",
+            "title": "Bytes Received"
+          },
+          "expected_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Bytes"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "bytes_received"
+        ],
+        "title": "FilesUploadSessionStatusResponse"
+      },
       "FolderRequest": {
         "properties": {
           "smb_host": {
@@ -22456,6 +24594,38 @@
           "message"
         ],
         "title": "GmailAuthResponse"
+      },
+      "GoldSuiteLinkRequest": {
+        "properties": {
+          "suite_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suite Id",
+            "description": "ID of an existing test suite to link. If omitted a new suite is created."
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "Name for the new gold suite (used only when suite_id is omitted)."
+          }
+        },
+        "type": "object",
+        "title": "GoldSuiteLinkRequest",
+        "description": "Link an existing suite or create a new one."
       },
       "HTTPValidationError": {
         "properties": {
@@ -23653,6 +25823,122 @@
         "title": "KBRead",
         "description": "Response model"
       },
+      "KbUploadSessionCreate": {
+        "properties": {
+          "original_filename": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Original Filename"
+          },
+          "expected_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Size",
+            "description": "Optional declared total size in bytes for validation on complete"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "original_filename"
+        ],
+        "title": "KbUploadSessionCreate"
+      },
+      "KbUploadSessionCreateResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "max_chunk_bytes": {
+            "type": "integer",
+            "title": "Max Chunk Bytes",
+            "description": "Maximum bytes accepted per /chunk request"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "max_chunk_bytes"
+        ],
+        "title": "KbUploadSessionCreateResponse"
+      },
+      "KbUploadSessionStatusResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "bytes_received": {
+            "type": "integer",
+            "title": "Bytes Received"
+          },
+          "expected_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Bytes"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "bytes_received"
+        ],
+        "title": "KbUploadSessionStatusResponse"
+      },
       "LanguageCreate": {
         "properties": {
           "code": {
@@ -23727,6 +26013,132 @@
         },
         "type": "object",
         "title": "LanguageUpdate"
+      },
+      "ListDirRequest": {
+        "properties": {
+          "smb_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Host"
+          },
+          "smb_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Share"
+          },
+          "smb_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb User"
+          },
+          "smb_pass": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Pass"
+          },
+          "smb_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Port",
+            "default": 445
+          },
+          "use_local_fs": {
+            "type": "boolean",
+            "title": "Use Local Fs",
+            "default": false
+          },
+          "local_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Root"
+          },
+          "subpath": {
+            "type": "string",
+            "title": "Subpath",
+            "default": ""
+          },
+          "only_files": {
+            "type": "boolean",
+            "title": "Only Files",
+            "default": false
+          },
+          "only_dirs": {
+            "type": "boolean",
+            "title": "Only Dirs",
+            "default": false
+          },
+          "extension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extension"
+          },
+          "name_contains": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Contains"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern"
+          }
+        },
+        "type": "object",
+        "title": "ListDirRequest"
       },
       "LlmAnalyst": {
         "properties": {
@@ -24187,6 +26599,65 @@
         ],
         "title": "LlmProviderCreate"
       },
+      "LlmProviderMinimal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "llm_model_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model Provider"
+          },
+          "llm_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "LlmProviderMinimal"
+      },
       "LlmProviderRead": {
         "properties": {
           "name": {
@@ -24375,11 +26846,86 @@
             "minLength": 1,
             "title": "Name"
           },
-          "api_key": {
+          "auth_type": {
             "type": "string",
-            "minLength": 32,
+            "enum": [
+              "api_key",
+              "oauth2"
+            ],
+            "title": "Auth Type",
+            "default": "api_key"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Api Key",
-            "description": "API key for authentication (minimum 32 characters)"
+            "description": "Required when auth_type is api_key (minimum 32 characters)"
+          },
+          "oauth2_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Client Id",
+            "description": "Required when auth_type is oauth2 (M2M client id)"
+          },
+          "oauth2_client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Client Secret",
+            "description": "Required when auth_type is oauth2"
+          },
+          "oauth2_issuer_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Issuer Url",
+            "description": "When auth_type is oauth2 \u2014 full URL to openid-configuration (token/JWKS endpoints discovered from this document)"
+          },
+          "oauth2_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Scope",
+            "description": "Space-separated scopes \u2014 token request (outbound) or optional JWT scope/scp check (inbound)"
+          },
+          "oauth2_audience": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Audience",
+            "description": "Optional expected JWT audience (aud) \u2014 comma-separated allowlist; omit to skip aud check"
           },
           "workflows": {
             "items": {
@@ -24412,7 +26958,6 @@
         "type": "object",
         "required": [
           "name",
-          "api_key",
           "workflows"
         ],
         "title": "MCPServerCreate",
@@ -24461,10 +27006,17 @@
             "title": "Url",
             "description": "MCP server URL (generated by backend)"
           },
-          "api_key": {
+          "auth_type": {
             "type": "string",
-            "title": "Api Key",
-            "description": "Masked API key (***)"
+            "title": "Auth Type",
+            "description": "api_key or oauth2",
+            "default": "api_key"
+          },
+          "auth_values": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Auth Values",
+            "description": "Stored auth for the UI (management API only): api_key \u2192 {api_key: '***'} when configured; oauth2 \u2192 issuer URL, optional scope, audience, decrypted oauth2_client_id, oauth2_client_secret_set (bool; secret is never returned)"
           },
           "workflows": {
             "items": {
@@ -24497,7 +27049,6 @@
         "required": [
           "name",
           "id",
-          "api_key",
           "workflows",
           "is_deleted",
           "user_id",
@@ -24522,18 +27073,87 @@
             ],
             "title": "Name"
           },
-          "api_key": {
+          "auth_type": {
             "anyOf": [
               {
                 "type": "string",
-                "minLength": 32
+                "enum": [
+                  "api_key",
+                  "oauth2"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Type"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Api Key",
-            "description": "API key for authentication (minimum 32 characters)"
+            "description": "If set, must be at least 32 characters (api_key auth)"
+          },
+          "oauth2_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Client Id"
+          },
+          "oauth2_client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Client Secret"
+          },
+          "oauth2_issuer_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Issuer Url"
+          },
+          "oauth2_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Scope"
+          },
+          "oauth2_audience": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth2 Audience"
           },
           "workflows": {
             "anyOf": [
@@ -25509,68 +28129,6 @@
           "other"
         ],
         "title": "ModelType"
-      },
-      "MoveRequest": {
-        "properties": {
-          "connectionstring": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Connectionstring"
-          },
-          "container": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Container"
-          },
-          "source_name": {
-            "type": "string",
-            "title": "Source Name"
-          },
-          "destination_name": {
-            "type": "string",
-            "title": "Destination Name"
-          },
-          "source_prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Prefix"
-          },
-          "destination_prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Destination Prefix"
-          }
-        },
-        "type": "object",
-        "required": [
-          "source_name",
-          "destination_name"
-        ],
-        "title": "MoveRequest"
       },
       "NodeDailyStatsItem": {
         "properties": {
@@ -26554,6 +29112,333 @@
           "cancelled"
         ],
         "title": "PipelineRunStatus"
+      },
+      "PromptConfigRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workflow Id"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "prompt_field": {
+            "type": "string",
+            "title": "Prompt Field"
+          },
+          "gold_suite_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Suite Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "workflow_id",
+          "node_id",
+          "prompt_field",
+          "created_at"
+        ],
+        "title": "PromptConfigRead"
+      },
+      "PromptEvalCaseResult": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "input": {
+            "type": "string",
+            "title": "Input"
+          },
+          "expected": {
+            "type": "string",
+            "title": "Expected"
+          },
+          "actual": {
+            "type": "string",
+            "title": "Actual"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metrics"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "input",
+          "expected",
+          "actual"
+        ],
+        "title": "PromptEvalCaseResult"
+      },
+      "PromptEvalRequest": {
+        "properties": {
+          "prompt_content": {
+            "type": "string",
+            "title": "Prompt Content",
+            "description": "The system prompt to evaluate."
+          },
+          "techniques": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Techniques",
+            "description": "Evaluator technique identifiers."
+          },
+          "provider_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Provider Id",
+            "description": "LLM provider to run the prompt against."
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt_content",
+          "provider_id"
+        ],
+        "title": "PromptEvalRequest"
+      },
+      "PromptEvalResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/PromptEvalCaseResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PromptEvalSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "summary"
+        ],
+        "title": "PromptEvalResponse"
+      },
+      "PromptEvalSummary": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "passed": {
+            "type": "integer",
+            "title": "Passed"
+          },
+          "avg_score": {
+            "type": "number",
+            "title": "Avg Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "passed",
+          "avg_score"
+        ],
+        "title": "PromptEvalSummary"
+      },
+      "PromptOptimizeRequest": {
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Provider Id",
+            "description": "LLM provider for generating the optimized prompt."
+          },
+          "current_prompt": {
+            "type": "string",
+            "title": "Current Prompt",
+            "description": "The current system prompt to improve."
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions",
+            "description": "Optional extra instructions to guide optimization."
+          },
+          "failed_cases": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Cases",
+            "description": "Recent failed evaluation cases for context."
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "current_prompt"
+        ],
+        "title": "PromptOptimizeRequest"
+      },
+      "PromptOptimizeResponse": {
+        "properties": {
+          "suggested_prompt": {
+            "type": "string",
+            "title": "Suggested Prompt"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "suggested_prompt",
+          "explanation"
+        ],
+        "title": "PromptOptimizeResponse"
+      },
+      "PromptVersionCreate": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "The prompt text."
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Optional human-readable label."
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "PromptVersionCreate"
+      },
+      "PromptVersionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workflow_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workflow Id"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "prompt_field": {
+            "type": "string",
+            "title": "Prompt Field"
+          },
+          "version_number": {
+            "type": "integer",
+            "title": "Version Number"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "workflow_id",
+          "node_id",
+          "prompt_field",
+          "version_number",
+          "content",
+          "is_active",
+          "created_at"
+        ],
+        "title": "PromptVersionRead"
       },
       "QueryRequest": {
         "properties": {
@@ -28439,6 +31324,18 @@
             "type": "string",
             "format": "uuid",
             "title": "User Type Id"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
           }
         },
         "type": "object",
@@ -28464,6 +31361,121 @@
           "email"
         ],
         "title": "UserCreateMinimal"
+      },
+      "UserGroupCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "UserGroupCreate"
+      },
+      "UserGroupRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id"
+        ],
+        "title": "UserGroupRead"
+      },
+      "UserGroupUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "UserGroupUpdate"
       },
       "UserRead": {
         "properties": {
@@ -28535,6 +31547,28 @@
             ],
             "title": "Force Upd Pass Date",
             "description": "Date when we force updating password date on login"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "supervised_group_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Supervised Group Ids",
+            "description": "Group IDs this user supervises",
+            "default": []
           }
         },
         "type": "object",
@@ -28723,6 +31757,18 @@
               }
             ],
             "title": "Notes"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
           }
         },
         "type": "object",
@@ -29439,6 +32485,30 @@
         ],
         "title": "WorkflowCreate"
       },
+      "WorkflowMinimal": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version"
+        ],
+        "title": "WorkflowMinimal"
+      },
       "WorkflowUpdate": {
         "properties": {
           "name": {
@@ -29672,223 +32742,6 @@
           "email"
         ],
         "title": "ZendeskRequester"
-      },
-      "app__api__v1__routes__azure_blob_router__FileRequest": {
-        "properties": {
-          "connectionstring": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Connectionstring"
-          },
-          "container": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Container"
-          },
-          "filename": {
-            "type": "string",
-            "title": "Filename"
-          },
-          "prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prefix"
-          },
-          "overwrite": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Overwrite",
-            "default": true
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "binary": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binary",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "filename"
-        ],
-        "title": "FileRequest"
-      },
-      "app__api__v1__routes__smb_share_router__FileRequest": {
-        "properties": {
-          "smb_host": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb Host"
-          },
-          "smb_share": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb Share"
-          },
-          "smb_user": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb User"
-          },
-          "smb_pass": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb Pass"
-          },
-          "smb_port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb Port",
-            "default": 445
-          },
-          "use_local_fs": {
-            "type": "boolean",
-            "title": "Use Local Fs",
-            "default": false
-          },
-          "local_root": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Local Root"
-          },
-          "subpath": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subpath",
-            "default": ""
-          },
-          "filepath": {
-            "type": "string",
-            "title": "Filepath"
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "string",
-                "format": "binary"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "binary": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binary",
-            "default": false
-          },
-          "overwrite": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Overwrite",
-            "default": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "filepath"
-        ],
-        "title": "FileRequest"
       }
     },
     "securitySchemes": {

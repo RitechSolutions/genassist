@@ -1,8 +1,14 @@
 import React from "react";
-import { Play, Settings, Trash2 } from "lucide-react";
+import { CircleHelp, MoreVertical, Play, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/button";
 import { CardHeader } from "@/components/card";
 import { renderIcon } from "../utils/iconUtils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
 
 interface NodeHeaderProps {
   iconName: string;
@@ -13,6 +19,7 @@ interface NodeHeaderProps {
   isSpecialNode?: boolean;
   onSettings?: () => void;
   onTest?: () => void;
+  onHelpClick?: () => void;
   onDeleteClick: () => void;
 }
 
@@ -25,6 +32,7 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
   isSpecialNode,
   onSettings,
   onTest,
+  onHelpClick,
   onDeleteClick: onDeleteClick,
 }) => {
   const isSpecialNoError = isSpecialNode && !hasError;
@@ -65,6 +73,7 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
               variant="ghost"
               className="h-8 w-8 text-accent-foreground hover:bg-white"
               onClick={onSettings}
+              data-node-settings
             >
               <Settings className="h-4 w-4" />
             </Button>
@@ -81,16 +90,35 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
               <Play className="h-4 w-4" />
             </Button>
           )}
-          <Button
-            size="icon"
-            variant="ghost"
-            className={`h-8 w-8 text-${
-              isSpecialNoError ? "white" : "accent-foreground"
-            } hover:bg-white`}
-            onClick={onDeleteClick}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className={`h-8 w-8 text-${
+                  isSpecialNoError ? "white" : "accent-foreground"
+                } hover:bg-white`}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={6} className="z-[2100] min-w-[140px]">
+              <DropdownMenuItem
+                onSelect={() => onHelpClick?.()}
+                disabled={!onHelpClick}
+              >
+                <CircleHelp className="mr-2 h-4 w-4" />
+                Help
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={onDeleteClick}
+                className="text-red-600 focus:bg-red-50 focus:text-red-700"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </CardHeader>

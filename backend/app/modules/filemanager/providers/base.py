@@ -71,6 +71,27 @@ class BaseStorageProvider(ABC):
         """
         pass
 
+    async def upload_file_from_local_path(
+        self,
+        local_path: str,
+        file_path: str,
+        file_metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Upload from a local filesystem path (avoids loading the whole file into memory).
+
+        Default implementation reads the file and delegates to upload_file().
+        Providers may override with native streaming uploads (e.g. S3 upload_file).
+        """
+        import asyncio
+
+        def _read_all() -> bytes:
+            with open(local_path, "rb") as f:
+                return f.read()
+
+        content = await asyncio.to_thread(_read_all)
+        return await self.upload_file(content, file_path, file_metadata)
+
     @abstractmethod
     async def download_file(self, file_path: str) -> bytes:
         """

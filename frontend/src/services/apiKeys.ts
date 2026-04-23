@@ -30,6 +30,7 @@ export const createApiKey = async (apiKeyData: Partial<ApiKey> & { role_ids?: st
     assigned_user_id?: string;
     user_id?: string;
     agent_id?: string;
+    expires_in_days?: number;
   };
 
   const requestData: RequestData = {
@@ -42,6 +43,10 @@ export const createApiKey = async (apiKeyData: Partial<ApiKey> & { role_ids?: st
 
   if (apiKeyData.agent_id) {
     requestData.agent_id = apiKeyData.agent_id;
+  }
+
+  if (typeof apiKeyData.expires_in_days === "number") {
+    requestData.expires_in_days = apiKeyData.expires_in_days;
   }
 
   const response = await apiRequest<ApiKey>("POST", "api-keys/", requestData);
@@ -68,6 +73,10 @@ export const updateApiKey = async (
     requestData.agent_id = apiKeyData.agent_id;
   }
 
+  if (typeof apiKeyData.expires_in_days === "number") {
+    requestData.expires_in_days = apiKeyData.expires_in_days;
+  }
+
   const response = await apiRequest<ApiKey>(
     "PATCH",
     `api-keys/${id}/`,
@@ -83,6 +92,19 @@ export const updateApiKey = async (
 
 export const revokeApiKey = async (id: string): Promise<void> => {
   await apiRequest("DELETE", `api-keys/${id}/`);
+};
+
+export const rotateApiKey = async (
+  id: string,
+  overlapSeconds = 0
+): Promise<ApiKey> => {
+  const response = await apiRequest<ApiKey>("POST", `api-keys/${id}/rotate`, {
+    overlap_seconds: overlapSeconds,
+  });
+  if (!response) {
+    throw new Error("Failed to rotate API key");
+  }
+  return response;
 };
 
 export const getApiKeys = async (userId?: string): Promise<ApiKey[]> => {

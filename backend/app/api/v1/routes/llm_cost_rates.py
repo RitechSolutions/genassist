@@ -10,6 +10,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.schemas.llm_cost_rate import LlmCostRateImportResult, LlmCostRateRead
 from app.services.llm_cost_rates import LlmCostRateService
+from app.core.utils.cache_headers import no_store_headers
 
 router = APIRouter()
 
@@ -67,7 +68,10 @@ async def export_cost_rates_csv(
     return StreamingResponse(
         iter([csv_text]),
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="llm-cost-rates.csv"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="llm-cost-rates.csv"',
+            **no_store_headers(),
+        },
     )
 
 

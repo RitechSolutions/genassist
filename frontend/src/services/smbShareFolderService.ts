@@ -47,13 +47,7 @@ export const listDirectory = async (
   }
 ): Promise<string[]> => {
   try {
-    const query = new URLSearchParams(
-      Object.entries(params)
-        .filter(([_, v]) => v !== undefined && v !== null)
-        .map(([k, v]) => [k, String(v)])
-    ).toString();
-
-    const data = await apiRequest<string[]>("GET", `smb-share/smb/list?${query}`);
+    const data = await apiRequest<string[]>("POST", "smb-share/smb/list", params as unknown as Record<string, unknown>);
     if (!data) return [];
     return data;
   } catch (error) {
@@ -68,13 +62,7 @@ export const readFile = async (
   params: Omit<SMBFileRequest, "content" | "overwrite">
 ): Promise<string | Blob> => {
   try {
-    const query = new URLSearchParams(
-      Object.entries(params)
-        .filter(([_, v]) => v !== undefined && v !== null)
-        .map(([k, v]) => [k, String(v)])
-    ).toString();
-
-    const data = await apiRequest<string | Blob>("GET", `smb-share/smb/read?${query}`);
+    const data = await apiRequest<string | Blob>("POST", "smb-share/smb/read", params as unknown as Record<string, unknown>);
     return data;
   } catch (error) {
     throw error;
@@ -144,13 +132,7 @@ export const checkPathExists = async (
   params: SMBConnection & { path: string }
 ): Promise<boolean> => {
   try {
-    const query = new URLSearchParams(
-      Object.entries(params)
-        .filter(([_, v]) => v !== undefined && v !== null)
-        .map(([k, v]) => [k, String(v)])
-    ).toString();
-
-    const data = await apiRequest<{ exists: boolean }>("GET", `smb-share/smb/exists?${query}`);
+    const data = await apiRequest<{ exists: boolean }>("POST", "smb-share/smb/exists", params as unknown as Record<string, unknown>);
     return data?.exists ?? false;
   } catch (error) {
     throw error;
