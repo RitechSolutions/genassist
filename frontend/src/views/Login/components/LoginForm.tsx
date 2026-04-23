@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/checkbox";
 import { Link } from "react-router-dom";
 import { PasswordInput } from "@/components/PasswordInput";

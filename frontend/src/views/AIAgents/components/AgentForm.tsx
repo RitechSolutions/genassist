@@ -12,7 +12,7 @@ import {
 import { getAllLLMAnalysts } from "@/services/llmAnalyst";
 import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
 import { Button } from "@/components/button";
-import { SimpleInput as Input } from "@/components/ui/simpleInput";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import {
   ChevronLeft,
@@ -33,7 +33,7 @@ import {
   SheetDescription,
   SheetClose,
 } from "@/components/sheet";
-import { SimpleTextarea as Textarea } from "@/components/ui/simpleTextarea";
+import { Textarea } from "@/components/ui/textarea";
 import { TranslationDialog } from "@/views/Settings/components/TranslationDialog";
 import { DisclaimerEditor } from "@/components/DisclaimerEditor";
 import { getTranslationByKey, getLanguages } from "@/services/translations";

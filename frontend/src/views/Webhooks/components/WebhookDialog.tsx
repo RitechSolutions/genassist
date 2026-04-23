@@ -5,7 +5,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/dialog";
 import {
   Select,
@@ -14,9 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { SimpleInput as Input } from "@/components/ui/simpleInput";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
-import { SimpleTextarea as Textarea } from "@/components/ui/simpleTextarea";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/switch";
 import { Separator } from "@/components/separator";
 import { Button } from "@/components/button";

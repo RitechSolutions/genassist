@@ -2,12 +2,11 @@ import { Button } from "@/components/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { SimpleInput as Input } from "@/components/ui/simpleInput";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import { Eye, EyeOff, Copy } from "lucide-react";
 import { ApiKeyDialogLogic } from "./ApiKeyDialogLogic";

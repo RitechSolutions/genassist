@@ -5,8 +5,8 @@ import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
-import { SimpleInput as Input } from "@/components/ui/simpleInput";
-import { SimpleTextarea as Textarea } from "@/components/ui/simpleTextarea";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,

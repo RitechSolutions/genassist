@@ -6,15 +6,14 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
 import { Button } from "@/components/button";
-import { SimpleInput as Input } from "@/components/ui/simpleInput";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
-import { SimpleTextarea as Textarea } from "@/components/ui/simpleTextarea";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/switch";
 import { createFeatureFlag, updateFeatureFlag } from "@/services/featureFlags";
 import { Loader2 } from "lucide-react";

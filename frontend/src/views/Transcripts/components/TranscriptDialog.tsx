@@ -19,11 +19,11 @@ import {
   type AgentResponseLogSummary,
 } from '@/services/transcripts';
 import { Transcript, ConversationFeedbackEntry } from '@/interfaces/transcript.interface';
-import { SimpleInput as Input } from '@/components/ui/simpleInput';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/button';
 import { askAIQuestion } from '@/services/aiChat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs';
-import { SimpleTextarea as Textarea } from '@/components/ui/simpleTextarea';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/useToast';
 import { formatMessageTime, formatCallTimestamp, formatDateTime, getEffectiveSentiment } from '../helpers/formatting';
 import { MetricCards } from './MetricCard';

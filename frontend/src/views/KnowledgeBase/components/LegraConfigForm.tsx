@@ -1,5 +1,5 @@
 import React from "react";
-import { SimpleTextarea as Textarea } from "@/components/ui/simpleTextarea";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/switch";
 import { HelpCircle } from "lucide-react";
 

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/label";
-import { Switch } from "@/components/switch";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import {
   Select,
   SelectContent,
@@ -270,7 +269,7 @@ export const OutlierHandler: React.FC<OutlierHandlerProps> = ({
                           </SelectContent>
                         </Select>
                         {column.method === "iqr" && column.strategy !== "no_action" && (
-                          <Input
+                          <RichInput
                             type="number"
                             step="0.1"
                             min="0.5"
@@ -288,7 +287,7 @@ export const OutlierHandler: React.FC<OutlierHandlerProps> = ({
                           />
                         )}
                         {column.method === "zscore" && column.strategy !== "no_action" && (
-                          <Input
+                          <RichInput
                             type="number"
                             step="0.1"
                             min="1"

@@ -2,7 +2,7 @@ import * as React from "react";
 
 import { cn } from "@/helpers/utils";
 
-const SimpleInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
+const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => {
     return (
       <input
@@ -18,6 +18,6 @@ const SimpleInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"inp
   }
 );
 
-SimpleInput.displayName = "SimpleInput";
+Input.displayName = "Input";
 
-export { SimpleInput };
+export { Input };

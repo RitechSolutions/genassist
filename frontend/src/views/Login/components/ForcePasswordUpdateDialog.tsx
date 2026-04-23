@@ -7,7 +7,7 @@ import {
   DialogFooter,
 } from "@/components/dialog";
 import { Label } from "@/components/label";
-import { SimpleInput as Input } from "@/components/ui/simpleInput";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/button";
 import { toast } from "react-hot-toast";
 import { apiRequest } from "@/config/api";

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { TemplateNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { Save } from "lucide-react";
@@ -67,7 +67,7 @@ export const TemplateNodeDialog: React.FC<TemplateNodeDialogProps> = (
       <div className="space-y-4">
         <div>
           <Label htmlFor="name">Node Name</Label>
-          <Input
+          <RichInput
             id="name"
             value={templateData.name}
             onChange={(e) =>
