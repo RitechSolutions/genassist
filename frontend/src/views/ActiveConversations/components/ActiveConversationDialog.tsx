@@ -43,6 +43,30 @@ function toEpochMs(ct: string | number | undefined | null): number {
   return isNaN(t) ? 0 : t;
 }
 
+function areMessagesEquivalent(
+  previous: TranscriptEntry[],
+  next: TranscriptEntry[]
+): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+
+  for (let index = 0; index < previous.length; index += 1) {
+    const prevMsg = previous[index];
+    const nextMsg = next[index];
+
+    if (
+      prevMsg.type !== nextMsg.type ||
+      prevMsg.speaker !== nextMsg.speaker ||
+      prevMsg.text !== nextMsg.text ||
+      toEpochMs(prevMsg.create_time) !== toEpochMs(nextMsg.create_time)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 interface Props {
   transcript: Transcript | null;
   isOpen: boolean;
@@ -99,7 +123,7 @@ function TranscriptDialogContent({
   onOpenChange,
   onTakeOver,
   refetchConversations,
-  messages = [],
+  messages,
 }: Props): JSX.Element {
   const feedbackCacheRef = useRef<Map<string, ConversationFeedbackEntry>>(
     new Map()
@@ -108,6 +132,10 @@ function TranscriptDialogContent({
     const raw = transcript?.messages ?? transcript?.transcript;
     return Array.isArray(raw) ? raw : [];
   }, [transcript?.messages, transcript?.transcript]);
+  const incomingMessages = useMemo(
+    () => (Array.isArray(messages) ? messages : []),
+    [messages]
+  );
 
   const hasSupervisorTakeover = useMemo(() => {
     if (!transcript) return false;
@@ -345,8 +373,8 @@ function TranscriptDialogContent({
       }
     }
 
-    if (messages.length > 0) {
-      for (const msg of messages) {
+    if (incomingMessages.length > 0) {
+      for (const msg of incomingMessages) {
         if (
           !currentMsgs.some(
             (m) => m.text === msg.text && toEpochMs(m.create_time) === toEpochMs(msg.create_time)
@@ -396,7 +424,11 @@ function TranscriptDialogContent({
       return true;
     });
 
-    setLocalMessages(dedupedMsgs);
+    setLocalMessages((prevMessages) =>
+      areMessagesEquivalent(prevMessages, dedupedMsgs)
+        ? prevMessages
+        : dedupedMsgs
+    );
 
     if (!userInitiatedTakeOver) {
       setHasTakenOver(
@@ -404,7 +436,7 @@ function TranscriptDialogContent({
           currentMsgs.some((msg) => msg.type === "takeover")
       );
     }
-  }, [transcriptMessages, transcript, wsMessages, messages, sentMessages, isOpen, userInitiatedTakeOver]);
+  }, [transcriptMessages, transcript, wsMessages, incomingMessages, sentMessages, isOpen, userInitiatedTakeOver]);
 
   useEffect(() => {
     if (scrollRef.current) {
