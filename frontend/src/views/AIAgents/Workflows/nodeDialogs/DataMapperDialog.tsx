@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
 import { Save, HelpCircle } from "lucide-react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 
 import { DataMapperNodeData } from "@/views/AIAgents/Workflows/types/nodes";
 import {
@@ -67,7 +67,7 @@ export const DataMapperDialog: React.FC<DataMapperDialogProps> = (props) => {
       <div className="space-y-4">
         <div>
           <Label>Node Name</Label>
-          <Input
+          <RichInput
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Enter the name of this node"

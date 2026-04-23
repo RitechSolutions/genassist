@@ -29,6 +29,7 @@ const categoryLabels: Record<string, string> = {
   io: "I/O",
   ai: "AI",
   routing: "Routing",
+  utils: "Utils",
   integrations: "Integrations",
   formatting: "Formatting",
   tools: "Tools",
