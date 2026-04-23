@@ -163,7 +163,7 @@ export default function AuditLogs() {
                   <div className="w-40">
                     <Select value={selectedUser ?? ""} onValueChange={(value) => setSelectedUser(value === "" ? null : value)}>
                       <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
-                        {selectedUser ? users.find((u) => u.id === selectedUser)?.username : "Select User"}
+                        <span className="truncate">{selectedUser ? users.find((u) => u.id === selectedUser)?.username : "Select User"}</span>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={null}>All Users</SelectItem>
