@@ -235,8 +235,7 @@ class MLModelManager:
         is_valid, error = await loop.run_in_executor(
             None,  # Use default executor for this quick check
             validate_pickle_file_safe,
-            pkl_file,
-            5,  # 5 second timeout for validation
+            pkl_file
         )
 
         if not is_valid:
