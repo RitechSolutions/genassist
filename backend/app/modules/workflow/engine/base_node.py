@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Literal, Optional, List
 import logging
 import time
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.modules.workflow.engine.utils import replace_config_vars, extract_code_params
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -95,13 +96,13 @@ class BaseNode(ABC):
         """Set the node output and save to state."""
         self.output_data = output
         self.state.set_node_output(self.node_id, output)
-        logger.debug(f"Node {self.node_id} output set: {output}")
+        logger.debug("Node %s output set: %s", self.node_id, redact_sensitive_substrings(str(output)))
 
     def set_node_input(self, input_data: Any) -> None:
         """Set the node input and save to state."""
         self.input_data = input_data
         self.state.set_node_input(self.node_id, input_data)
-        logger.debug(f"Node {self.node_id} input set: {input_data}")
+        logger.debug("Node %s input set: %s", self.node_id, redact_sensitive_substrings(str(input_data)))
 
     def get_input(self) -> Any:
         """Get the current input data."""
@@ -348,7 +349,7 @@ class BaseNode(ABC):
             # Log replacements for debugging
             if replacements:
                 logger.debug(
-                    "Node %s variable replacements: %s", self.node_id, replacements
+                    "Node %s variable replacements: %s", self.node_id, redact_sensitive_substrings(str(replacements))
                 )
 
             # Extract params.get("varName") references from code fields
@@ -425,7 +426,7 @@ class BaseNode(ABC):
             source_output = self.get_state().get_node_output(source_node_id)
 
             logger.debug("Node %s retrieved output from source node %s: %s",
-                         self.node_id, source_node_id, source_output)
+                         self.node_id, source_node_id, redact_sensitive_substrings(str(source_output)))
         else:
             source_output = {}
             for edge in input_edges:
