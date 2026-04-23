@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any, Optional
 
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -413,11 +414,11 @@ def _encode_replacement_value(replacement_value: Any, var_name: str, json_string
                 # For strings inside JSON string fields, remove outer quotes
                 # The JSON encoding already properly escapes all special characters.
                 json_replacement = json_encoded[1:-1]
-                logger.debug(f"Replaced {var_name} with escaped string content: {json_replacement}")
+                logger.debug("Replaced %s with escaped string content: %s", var_name, redact_sensitive_substrings(json_replacement))
             else:
                 # In non-string context (e.g. whole JSON value), use JSON as-is
                 json_replacement = json_encoded
-                logger.debug(f"Replaced {var_name} with JSON string value for object context: {json_replacement}")
+                logger.debug("Replaced %s with JSON string value for object context: %s", var_name, redact_sensitive_substrings(json_replacement))
         else:
             # Non-string values (objects, lists, numbers, bools, None)
             if in_string_context:
