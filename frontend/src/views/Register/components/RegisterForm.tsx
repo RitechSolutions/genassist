@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
-import { Link } from "react-router-dom";
+import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/PasswordInput";
 
 interface RegisterFormProps {

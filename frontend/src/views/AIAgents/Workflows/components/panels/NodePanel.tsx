@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, ArrowUp } from "lucide-react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
 import { renderIcon } from "@/views/AIAgents/Workflows/utils/iconUtils";
@@ -427,7 +427,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
                 <div className="px-4 pt-4 pb-2 sticky top-0 bg-background z-10">
                   <div className="relative flex items-center">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
+                    <RichInput
                       type="text"
                       placeholder="Search nodes..."
                       value={searchQuery}

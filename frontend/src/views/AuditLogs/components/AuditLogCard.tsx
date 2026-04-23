@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/table";
-import { Loader2, View, Search, XCircle } from "lucide-react";
+import { Loader2, View, XCircle } from "lucide-react";
 import { Button } from "@/components/button";
 import { formatDate, getTimeFromDatetime } from "@/helpers/utils";
 import { AuditLogCardProps } from "@/interfaces/audit-log.interface";
@@ -20,6 +20,7 @@ export function AuditLogCard({
   users,
   selectedUser,
   onViewDetails,
+  isRefreshing = false,
 }: AuditLogCardProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error] = useState<string | null>(null);
@@ -79,44 +80,54 @@ export function AuditLogCard({
       </div>
 
       {!loading && filteredAuditLogs.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Table Name</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>User</TableHead>
-              <Can permissions={["read:audit_log"]}>
-                <TableHead>Details</TableHead>
-              </Can>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredAuditLogs.map((log) => (
-              <TableRow key={log.id}>
-                <TableCell>
-                  {formatDate(log.modified_at)} -{" "}
-                  {getTimeFromDatetime(log.modified_at)}
-                </TableCell>
-                <TableCell>{log.table_name}</TableCell>
-                <TableCell>{log.action_name}</TableCell>
-                <TableCell>{getUsername(log.modified_by)}</TableCell>
+        <div className="relative">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Log Id</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Table Name</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>User</TableHead>
                 <Can permissions={["read:audit_log"]}>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onViewDetails(log.id)}
-                      title="View Details"
-                    >
-                      <View size="24" />
-                    </Button>
-                  </TableCell>
+                  <TableHead>Details</TableHead>
                 </Can>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {filteredAuditLogs.map((log) => (
+                <TableRow key={log.id}>
+                  <TableCell>{log.id}</TableCell>
+                  <TableCell>
+                    {formatDate(log.modified_at)} -{" "}
+                    {getTimeFromDatetime(log.modified_at)}
+                  </TableCell>
+                  <TableCell>{log.table_name}</TableCell>
+                  <TableCell>{log.action_name}</TableCell>
+                  <TableCell>{getUsername(log.modified_by)}</TableCell>
+                  <Can permissions={["read:audit_log"]}>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onViewDetails(log.id)}
+                        title="View Details"
+                      >
+                        <View size="24" />
+                      </Button>
+                    </TableCell>
+                  </Can>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          {isRefreshing && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-md">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </div>
       )}
     </Card>
   );

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
 import { Save, HelpCircle, Plus, Trash2 } from "lucide-react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import {
   Select,
   SelectTrigger,
@@ -130,7 +130,7 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
       <div className="space-y-4">
         <div>
           <Label>Node Name</Label>
-          <Input
+          <RichInput
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Enter the name of this node"
@@ -233,7 +233,7 @@ export const SetStateDialog: React.FC<SetStateDialogProps> = (props) => {
                   </Select>
                 ) : (
                   <>
-                    <Input
+                    <RichInput
                       value={state.key}
                       onChange={(e) =>
                         updateStateEntry(index, "key", e.target.value)

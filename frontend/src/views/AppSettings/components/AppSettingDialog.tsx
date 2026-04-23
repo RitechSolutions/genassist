@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/dialog';
 import { Button } from '@/components/button';
-import { Input } from '@/components/input';
+import { Input } from '@/components/ui/input';
 import { createAppSetting, getAppSettingsFormSchemas, updateAppSetting } from '@/services/appSettings';
 import { Switch } from '@/components/switch';
 import { Label } from '@/components/label';

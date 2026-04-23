@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { KnowledgeBaseNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Checkbox } from "@/components/checkbox";
 import { ScrollArea } from "@/components/scroll-area";
@@ -104,7 +104,7 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
     >
       <div className="space-y-2">
         <Label htmlFor="name">Node Name</Label>
-        <Input
+        <RichInput
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -127,7 +127,7 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="limit">Limit</Label>
-          <Input
+          <RichInput
             id="limit"
             type="number"
             value={limit}
