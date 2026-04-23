@@ -161,7 +161,6 @@ const menuItems: MenuItem[] = [
         title: "Configuration Vars",
         url: "/app-settings",
         permissionsRequired: ["read:app_setting"],
-        feature_flag: FeatureFlags.ADMIN_TOOLS.APP_SETTINGS,
       },
     ],
   },

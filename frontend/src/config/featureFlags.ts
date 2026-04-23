@@ -29,10 +29,6 @@ export const FeatureFlags = {
       SHOW_LOCAL_FINE_TUNE: 'llmSettings.showLocalFineTune',
     },
 
-    ADMIN_TOOLS: {
-      APP_SETTINGS: 'ui.menu.app-settings',
-    },
-  
     // Workflow specific flags
     WORKFLOW: {
       CHAT_INPUT: 'workflow.chatInput',
