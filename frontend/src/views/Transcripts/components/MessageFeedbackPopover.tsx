@@ -1,6 +1,6 @@
 import { MessageCircle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
-import { Textarea } from "@/components/textarea";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/button";
 
 type MessageFeedbackPopoverProps = {

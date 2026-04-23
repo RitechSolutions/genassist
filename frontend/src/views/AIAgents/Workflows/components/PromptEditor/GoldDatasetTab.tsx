@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Database, Plus, Trash2, Edit2, Check, X } from "lucide-react";
 import { Button } from "@/components/button";
-import { Textarea } from "@/components/textarea";
+import { RichTextarea } from "@/components/richTextarea";
 import { Label } from "@/components/label";
 import { getPromptConfig, linkGoldSuite } from "@/services/promptEditor";
 import {
@@ -174,7 +174,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">Input Message</Label>
-            <Textarea
+            <RichTextarea
               value={newInput}
               onChange={(e) => setNewInput(e.target.value)}
               placeholder="User input message..."
@@ -184,7 +184,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Expected Output</Label>
-            <Textarea
+            <RichTextarea
               value={newExpected}
               onChange={(e) => setNewExpected(e.target.value)}
               placeholder="Expected assistant response..."
@@ -222,7 +222,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs">Input</Label>
-                      <Textarea
+                      <RichTextarea
                         value={editInput}
                         onChange={(e) => setEditInput(e.target.value)}
                         rows={3}
@@ -231,7 +231,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Expected</Label>
-                      <Textarea
+                      <RichTextarea
                         value={editExpected}
                         onChange={(e) => setEditExpected(e.target.value)}
                         rows={3}

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/label";
-import { Switch } from "@/components/switch";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Button } from "@/components/button";
 import {
   Select,
@@ -134,7 +133,7 @@ export const FeatureEngineeringHandler: React.FC<
                     <div className="space-y-2">
                       <div>
                         <Label className="text-xs">New Column Name</Label>
-                        <Input
+                        <RichInput
                           value={feature.newColumnName}
                           onChange={(e) =>
                             handleFeatureChange(feature.id, {
@@ -172,7 +171,7 @@ export const FeatureEngineeringHandler: React.FC<
                       {feature.strategy === "custom_expression" && (
                         <div>
                           <Label className="text-xs">Expression</Label>
-                          <Input
+                          <RichInput
                             value={feature.expression || ""}
                             onChange={(e) =>
                               handleFeatureChange(feature.id, {
@@ -213,7 +212,7 @@ export const FeatureEngineeringHandler: React.FC<
                           </div>
                           <div>
                             <Label className="text-xs">Number of Bins</Label>
-                            <Input
+                            <RichInput
                               type="number"
                               min="2"
                               max="100"
@@ -267,7 +266,7 @@ export const FeatureEngineeringHandler: React.FC<
                         <>
                           <div>
                             <Label className="text-xs">Degree</Label>
-                            <Input
+                            <RichInput
                               type="number"
                               min="2"
                               max="5"

@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/dialog";
 import { Label } from "@/components/label";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/button";
 import { SecretInput } from "@/components/SecretInput";
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import {
@@ -121,7 +121,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
         </div>
         <div className="space-y-2">
           <Label>Minimum provenance score (0-1)</Label>
-          <Input
+          <RichInput
             type="number"
             step="0.01"
             min={0}
@@ -239,7 +239,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             </div>
             <div className="space-y-2">
               <Label>Embedding model name</Label>
-              <Input
+              <RichInput
                 value={localData.embedding_model_name ?? ""}
                 onChange={(e) =>
                   setLocalData((prev) => ({
