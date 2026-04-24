@@ -22,6 +22,8 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
+from app.core.utils.sensitive_data_utils import redact_structure
+
 router = APIRouter()
 
 
@@ -210,7 +212,7 @@ async def redis_health():
 @router.get("/mock/{endpoint}")
 async def mock_get_endpoint(endpoint: str, request: Request):
     """Mock any GET endpoint - returns the endpoint name and query parameters."""
-    query_params = dict(request.query_params)
+    query_params = redact_structure(dict(request.query_params))
     return {
         "endpoint": endpoint,
         "method": "GET",
@@ -281,8 +283,9 @@ async def echo_request(request: Request):
         body = await request.json()
     except Exception:
         body = None
-    headers = dict(request.headers)
-    query_params = dict(request.query_params)
+    headers = redact_structure(dict(request.headers))
+    query_params = redact_structure(dict(request.query_params))
+    body = redact_structure(body)
 
     return {
         "method": request.method,
