@@ -36,6 +36,8 @@ _SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 _HEX_TOKEN_RE = re.compile(r"\b[a-f0-9]{32,}\b", re.IGNORECASE)
 _B64URL_TOKEN_RE = re.compile(r"\b[a-zA-Z0-9_-]{32,}\b")
 
+TOKEN_REDACTION_LABEL = "[TOKEN]"
+
 
 def is_sensitive_field_name(field_name: str) -> bool:
     return bool(_SENSITIVE_FIELD_RE.search(field_name or ""))
@@ -98,17 +100,17 @@ def redact_sensitive_substrings(value: Any, *, redacted: str = "[REDACTED]") -> 
     # First, redact obvious sensitive key/value pairs in free-form strings.
     redacted_value = _SENSITIVE_KV_RE.sub(_redact_sensitive_kv, value)
 
-    # Then redact sensitive-looking substrings (more specific first).
-    for pattern in (
-        _JWT_RE,
-        _EMAIL_RE,
-        _SSN_RE,
-        _CC_RE,
-        _PHONE_RE,
-        _HEX_TOKEN_RE,
-        _B64URL_TOKEN_RE,
+    # Redact sensitive-looking substrings with corresponding labels.
+    for pattern, label in (
+        (_JWT_RE,       TOKEN_REDACTION_LABEL),
+        (_EMAIL_RE,     "[EMAIL]"),
+        (_SSN_RE,       "[SSN]"),
+        (_CC_RE,        "[CARD]"),
+        (_PHONE_RE,     "[PHONE]"),
+        (_HEX_TOKEN_RE, TOKEN_REDACTION_LABEL),
+        (_B64URL_TOKEN_RE, TOKEN_REDACTION_LABEL),
     ):
-        redacted_value = pattern.sub(redacted, redacted_value)
+        redacted_value = pattern.sub(label, redacted_value)
 
     return redacted_value
 
