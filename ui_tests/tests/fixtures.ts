@@ -36,9 +36,6 @@ export const test = base.extend({
     const seedAdminUsername = process.env.SEED_ADMIN_USERNAME ?? '';
     const seedAdminPassword = process.env.SEED_ADMIN_PASSWORD ?? '';
 
-    console.log('seedAdminUsername', seedAdminUsername);
-    console.log('seedAdminPassword', seedAdminPassword);
-
     if (!seedAdminUsername || !seedAdminPassword) {
       throw new Error(
         'Missing SEED_ADMIN_USERNAME / SEED_ADMIN_PASSWORD. Set them before running ui_tests.'
