@@ -263,7 +263,7 @@ async def handle_media_stream(
                     and transcription_ws.state == websockets.protocol.State.OPEN
                 ):
                     incoming_message = await transcription_ws.recv()
-                    logger.debug(f"Received incoming message: {incoming_message}")
+                    logger.debug("Received incoming transcription message [%d bytes]", len(incoming_message))
                     incoming_transcription_response = json.loads(incoming_message)
                     if incoming_transcription_response.get("type") == "error":
                         raise Exception(
@@ -275,7 +275,7 @@ async def handle_media_stream(
                         == "conversation.item.input_audio_transcription.completed"
                     ):
                         final_transcript = incoming_transcription_response["transcript"]
-                        logger.debug(f"Final Transcript: '{final_transcript}'")
+                        logger.debug("Final transcript received [%d chars]", len(final_transcript))
 
                         agent_response = await process_with_agent(
                             agent_id, session_id, final_transcript, agent_service
