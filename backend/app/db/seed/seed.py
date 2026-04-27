@@ -45,6 +45,16 @@ from app.schemas.app_settings import AppSettingsCreate
 
 logger = logging.getLogger(__name__)
 
+def _get_seed_password(env_name: str) -> str:
+    value = os.environ.get(env_name)
+    if value:
+        return value
+
+    raise ValueError(
+        f"Missing required seed password env var {env_name}. "
+        "Set it to a strong value before running DB seeding."
+    )
+
 
 def create_crud_permissions(resource: str, description_template: str = "Allows {action} {resource} data"):
     """Helper function to generate CRUD permissions for a resource."""
@@ -190,13 +200,13 @@ async def seed_data(session: AsyncSession, injector: Injector):
     await session.commit()
 
     # Create users - passwords from environment variables with secure defaults for development
-    # In production, these should be set via environment variables
+    # In production, these must be set via environment variables (no hardcoded defaults).
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    seed_admin_password = os.environ.get('SEED_ADMIN_PASSWORD', 'genadmin')
-    seed_supervisor_password = os.environ.get('SEED_SUPERVISOR_PASSWORD', 'gensupervisor1')
-    seed_operator_password = os.environ.get('SEED_OPERATOR_PASSWORD', 'genoperator1')
-    seed_apiuser_password = os.environ.get('SEED_APIUSER_PASSWORD', 'genapiuser1')
-    seed_transcribe_operator_password = os.environ.get('SEED_TRANSCRIBE_OPERATOR_PASSWORD', 'gentranscribeoperator1')
+    seed_admin_password = _get_seed_password("SEED_ADMIN_PASSWORD")
+    seed_supervisor_password = _get_seed_password("SEED_SUPERVISOR_PASSWORD")
+    seed_operator_password = _get_seed_password("SEED_OPERATOR_PASSWORD")
+    seed_apiuser_password = _get_seed_password("SEED_APIUSER_PASSWORD")
+    seed_transcribe_operator_password = _get_seed_password("SEED_TRANSCRIBE_OPERATOR_PASSWORD")
 
     # Seed usernames from environment variables with defaults for development
     seed_admin_username = os.environ.get('SEED_ADMIN_USERNAME', 'admin')

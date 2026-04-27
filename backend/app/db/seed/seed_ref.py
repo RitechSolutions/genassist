@@ -1,15 +1,17 @@
-import asyncio
-from datetime import datetime
 import io
-import os
-from fastapi import UploadFile
-from pathlib import Path
-from injector import Injector
-from sqlalchemy.ext.asyncio import AsyncSession
-from passlib.context import CryptContext
-from uuid import UUID
+import asyncio
 import logging
+import os
+from pathlib import Path
+from uuid import UUID
+
+from fastapi import UploadFile
+from injector import Injector
+from passlib.context import CryptContext
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.auth.utils import hash_api_key
+from app.core.config.settings import settings
 from app.core.utils.date_time_utils import shift_datetime
 from app.core.utils.encryption_utils import encrypt_key
 from app.db.models.api_key import ApiKeyModel
@@ -25,16 +27,15 @@ from app.db.models.user import UserModel
 from app.db.models.user_role import UserRoleModel
 from app.db.models.user_type import UserTypeModel
 from app.db.seed.seed_data_config import seed_test_data
-from app.schemas.recording import RecordingCreate
-from app.core.config.settings import settings
-from app.services.agent_tool import ToolService
-from app.schemas.agent_tool import ToolConfigBase
-from app.services.agent_knowledge import KnowledgeBaseService
 from app.schemas.agent_knowledge import KBCreate, KBRead
-from app.schemas.datasource import DataSourceCreate
-from app.services.datasources import DataSourceService
-from app.services.app_settings import AppSettingsService
+from app.schemas.agent_tool import ToolConfigBase
 from app.schemas.app_settings import AppSettingsCreate
+from app.schemas.datasource import DataSourceCreate
+from app.schemas.recording import RecordingCreate
+from app.services.agent_knowledge import KnowledgeBaseService
+from app.services.agent_tool import ToolService
+from app.services.app_settings import AppSettingsService
+from app.services.datasources import DataSourceService
 
 # Import agent seeding functions from separate module
 from app.db.seed.seed_agents import (
@@ -43,6 +44,16 @@ from app.db.seed.seed_agents import (
 )
 
 logger = logging.getLogger(__name__)
+
+def _get_seed_password(env_name: str) -> str:
+    value = os.environ.get(env_name)
+    if value:
+        return value
+
+    raise ValueError(
+        f"Missing required seed password env var {env_name}. "
+        "Set it to a strong value before running DB seeding."
+    )
 
 
 # ============================================================================
@@ -211,25 +222,25 @@ async def seed_users(session: AsyncSession, user_types: dict, roles: dict) -> di
 
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     admin = UserModel(username='admin', email='admin@genassist.ritech.io', is_active=1,
-                      hashed_password=pwd_context.hash('genadmin'), user_type_id=user_types['interactive'].id,
+                      hashed_password=pwd_context.hash(_get_seed_password("SEED_ADMIN_PASSWORD")), user_type_id=user_types['interactive'].id,
                       id=seed_test_data.admin_user_id,
                       force_upd_pass_date=shift_datetime(
                           unit="months", amount=3)
                       )
     supervisor = UserModel(username='supervisor1', email='supervisor1@genassist.ritech.io', is_active=1,
-                           hashed_password=pwd_context.hash('gensupervisor1'), user_type_id=user_types['interactive'].id,
+                           hashed_password=pwd_context.hash(_get_seed_password("SEED_SUPERVISOR_PASSWORD")), user_type_id=user_types['interactive'].id,
                            force_upd_pass_date=shift_datetime(
                                unit="months", amount=3)
                            )
     operator = UserModel(id=UUID(seed_test_data.operator_user_id), username='operator1',
                          email='operator1@genassist.ritech.io',
                          is_active=1,
-                         hashed_password=pwd_context.hash('genoperator1'), user_type_id=user_types['interactive'].id,
+                         hashed_password=pwd_context.hash(_get_seed_password("SEED_OPERATOR_PASSWORD")), user_type_id=user_types['interactive'].id,
                          force_upd_pass_date=shift_datetime(
                              unit="months", amount=3)
                          )
     apiuser = UserModel(username='apiuser1', email='apiuser1@genassist.ritech.io', is_active=1,
-                        hashed_password=pwd_context.hash('genapiuser1'), user_type_id=user_types['console'].id,
+                        hashed_password=pwd_context.hash(_get_seed_password("SEED_APIUSER_PASSWORD")), user_type_id=user_types['console'].id,
                         force_upd_pass_date=shift_datetime(
                             unit="months", amount=3)
                         )
@@ -237,7 +248,7 @@ async def seed_users(session: AsyncSession, user_types: dict, roles: dict) -> di
     transcribe_operator_user = UserModel(id=UUID(seed_test_data.transcribe_operator_user_id), username='transcribeoperator1',
                                          email='transcribeoperator1@genassist.ritech.io',
                                          is_active=1,
-                                         hashed_password=pwd_context.hash('gentranscribeoperator1'), user_type_id=user_types['console'].id,
+                                         hashed_password=pwd_context.hash(_get_seed_password("SEED_TRANSCRIBE_OPERATOR_PASSWORD")), user_type_id=user_types['console'].id,
                                          force_upd_pass_date=shift_datetime(
                                              unit="months", amount=3)
                                          )
@@ -664,7 +675,7 @@ async def seed_tools(session: AsyncSession, created_by: UUID, injector: Injector
 
 
 async def create_conversation(session: AsyncSession, operator: OperatorModel, data_source: DataSourceModel, customer: CustomerModel, injector: Injector):
-    metadata = RecordingCreate(
+    _metadata = RecordingCreate(
         operator_id=operator.id,
         transcription_model_name=settings.DEFAULT_WHISPER_MODEL,
         llm_analyst_speaker_separator_id=None,
@@ -680,8 +691,8 @@ async def create_conversation(session: AsyncSession, operator: OperatorModel, da
     contents = open(filename, "rb").read()
 
     headers = {'content-type': "audio/mp3"}
-    file = UploadFile(file=io.BytesIO(contents),
-                      filename="test.mp3", headers=headers)
+    _file = UploadFile(file=io.BytesIO(contents),
+                       filename="test.mp3", headers=headers)
 
     # await injector.get(AudioService).process_recording(file, metadata)
 
