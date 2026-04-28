@@ -60,14 +60,20 @@ class ExternalAgentNode(BaseNode):
             return {"error": f"HTTP call failed: {e}"}
 
         if "error" in api_response and api_response.get("status", 200) >= 400:
-            return {"error": api_response.get("data", {}).get("error", "HTTP error")}
+            return {
+                "error": api_response.get("data", {}).get("error", "HTTP error"),
+                "_raw_response": api_response.get("data"),
+            }
 
         response_data = api_response.get("data", api_response)
 
         if mapping_script:
-            return await self._apply_mapping_script(mapping_script, response_data)
+            result = await self._apply_mapping_script(mapping_script, response_data)
+        else:
+            result = self._apply_field_mapping(response_data, message_field, steps_field)
 
-        return self._apply_field_mapping(response_data, message_field, steps_field)
+        result["_raw_response"] = response_data
+        return result
 
     # ------------------------------------------------------------------ #
     # Auth helpers                                                          #
@@ -146,12 +152,26 @@ class ExternalAgentNode(BaseNode):
         self, script: str, response_data: Any
     ) -> Dict[str, Any]:
         try:
-            result = await execute_python_code(script, params={"response": response_data})
-            if not isinstance(result, dict) or "message" not in result:
-                logger.warning("Mapping script did not return expected format; wrapping output")
-                return {"message": str(result), "steps": []}
-            result.setdefault("steps", [])
-            return result
+            # wrap_code=False: user writes plain code that sets `result` directly,
+            # no executable_function wrapper required.
+            execution = await execute_python_code(
+                script, params={"response": response_data}, wrap_code=False
+            )
+
+            if execution.get("errors"):
+                logger.error("Mapping script errors: %s", execution["errors"])
+                return {"error": f"Mapping script error: {execution['errors']}"}
+
+            mapped = execution.get("result")
+            if not isinstance(mapped, dict) or "message" not in mapped:
+                logger.warning(
+                    "Mapping script did not return expected format (got %r); wrapping output",
+                    type(mapped).__name__,
+                )
+                return {"message": str(mapped), "steps": []}
+
+            mapped.setdefault("steps", [])
+            return mapped
         except Exception as e:
             logger.error("Mapping script error: %s", e)
             return {"error": f"Mapping script error: {e}"}
