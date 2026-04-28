@@ -9,7 +9,16 @@ import logging
 import asyncio
 import concurrent.futures
 
+from app.modules.workflow.sandbox import (
+    make_sandboxed_namespace,
+    validate_code_ast,
+    SandboxViolation,
+)
+
 logger = logging.getLogger(__name__)
+
+# Maximum wall-clock seconds for user-supplied Python code execution.
+_EXEC_TIMEOUT_SECONDS = 30
 
 
 def add_executable_function(code: str) -> str:
@@ -38,62 +47,68 @@ def add_executable_function(code: str) -> str:
 def _execute_python_code_sync(
     code: str, params: Dict[str, Any], wrap_code: bool = True
 ) -> Dict[str, Any]:
-    """Execute Python code in a controlled environment (synchronous version for thread execution)"""
-    # Capture stdout and stderr
+    """Execute user-supplied Python code in a sandboxed environment.
+
+    Security controls applied:
+    - Restricted builtins (no open/exec/eval/compile/__import__)
+    - Import allowlist enforced via custom __import__
+    - AST pre-scan blocks dunder attribute-chain escapes
+    - SSRF-safe requests wrapper blocks internal/metadata endpoints
+    """
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
 
     try:
-        # Create a namespace for the code to execute in
-        namespace = {
-            "params": params,
-            "result": None,
-            "logger": logger,
-            # Add commonly used libraries
-            "json": importlib.import_module("json"),
-            "requests": importlib.import_module("requests"),
-            "datetime": importlib.import_module("datetime"),
-            "math": importlib.import_module("math"),
-            "re": importlib.import_module("re"),
-            "pandas": importlib.import_module("pandas"),
-            "numpy": importlib.import_module("numpy"),
-        }
         if wrap_code:
             executable = add_executable_function(code)
         else:
             executable = code
 
-        logger.debug(f"Executable code: {executable}")
+        # AST validation — reject dangerous attribute access before exec
+        validate_code_ast(executable)
 
-        # Execute the code with redirected output
+        # Build sandboxed namespace with restricted builtins
+        namespace = make_sandboxed_namespace(params, logger)
+
+        # Execute with redirected output
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-            exec(executable, namespace)
+            exec(executable, namespace)  # noqa: S102
 
-        # Get the result from the namespace if available
         result = namespace.get("result")
         global_errors = namespace.get("errors")
-        # Construct the response
         output = stdout_buffer.getvalue()
         errors = stderr_buffer.getvalue()
 
         if global_errors:
             errors = errors + "\nGlobal errors: " + str(global_errors)
-        response = {"result": result, "output": output, "errors": errors}
 
-        return response
+        return {"result": result, "output": output, "errors": errors}
 
+    except SandboxViolation as sv:
+        logger.warning("Sandbox violation in user code: %s", sv)
+        return {
+            "error": f"Sandbox violation: {sv}",
+            "traceback": "",
+            "output": stdout_buffer.getvalue(),
+            "errors": stderr_buffer.getvalue(),
+        }
+    except SyntaxError as se:
+        logger.warning("Syntax error in user code: %s", se)
+        return {
+            "error": f"Syntax error: {se}",
+            "traceback": "",
+            "output": stdout_buffer.getvalue(),
+            "errors": stderr_buffer.getvalue(),
+        }
     except Exception as e:
-        # Capture any errors during execution
-        error_traceback = traceback.format_exc()
-        logger.error(f"Error in Python code execution: {str(e)}\n{error_traceback}")
+        logger.error("Error in sandboxed Python execution: %s", type(e).__name__)
 
-        # Get any output that was captured before the error
         output = stdout_buffer.getvalue()
         errors = stderr_buffer.getvalue()
 
         return {
             "error": str(e),
-            "traceback": error_traceback,
+            "traceback": "",
             "output": output,
             "errors": errors,
         }
@@ -125,24 +140,36 @@ def sanitize_python_code(code: str) -> str:
 async def execute_python_code(
     code: str, params: Dict[str, Any], wrap_code: bool = True
 ) -> Dict[str, Any]:
-    """Execute Python code in a controlled environment asynchronously in a new thread"""
+    """Execute user Python code asynchronously in a sandboxed thread with timeout."""
     try:
         code = sanitize_python_code(code)
-        # Create a thread pool executor
         loop = asyncio.get_event_loop()
 
-        # Run the synchronous function in a thread pool
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            result = await loop.run_in_executor(
-                executor, _execute_python_code_sync, code, params, wrap_code
+            future = executor.submit(
+                _execute_python_code_sync, code, params, wrap_code
             )
+            try:
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(None, future.result, _EXEC_TIMEOUT_SECONDS),
+                    timeout=_EXEC_TIMEOUT_SECONDS + 5,
+                )
+            except (asyncio.TimeoutError, concurrent.futures.TimeoutError):
+                future.cancel()
+                logger.warning("User Python code execution timed out after %ds", _EXEC_TIMEOUT_SECONDS)
+                return {
+                    "error": f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds",
+                    "traceback": "",
+                    "output": "",
+                    "errors": "",
+                }
 
         return result
     except Exception as e:
-        logger.error(f"Error in async Python code execution: {str(e)}")
+        logger.error("Error in async Python code execution: %s", type(e).__name__)
         return {
             "error": str(e),
-            "traceback": traceback.format_exc(),
+            "traceback": "",
             "output": "",
             "errors": "",
         }
