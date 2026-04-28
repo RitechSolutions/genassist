@@ -33,6 +33,7 @@ class ExternalAgentNode(BaseNode):
         message_field: str = config.get("messageField", "message")
         steps_field: str = config.get("stepsField", "steps")
         mapping_script: str = config.get("mappingScript", "")
+        timeout: int = int(config.get("timeout") or 30)
 
         self.set_node_input({
             "endpoint": endpoint,
@@ -51,7 +52,7 @@ class ExternalAgentNode(BaseNode):
         )
 
         try:
-            api_response = await self._call_endpoint(method, endpoint, headers, request_body)
+            api_response = await self._call_endpoint(method, endpoint, headers, request_body, timeout)
         except Exception as e:
             logger.error("External agent HTTP call failed: %s", e)
             return {"error": f"HTTP call failed: {e}"}
@@ -96,7 +97,8 @@ class ExternalAgentNode(BaseNode):
 
 
     async def _call_endpoint(
-        self, method: str, endpoint: str, headers: Dict[str, str], request_body: str
+        self, method: str, endpoint: str, headers: Dict[str, str], request_body: str,
+        timeout: int = 30,
     ) -> Dict[str, Any]:
         if not endpoint.startswith(("http://", "https://")):
             endpoint = f"https://{endpoint}"
@@ -108,7 +110,7 @@ class ExternalAgentNode(BaseNode):
             except json.JSONDecodeError:
                 logger.warning("Request body is not valid JSON; sending as plain text")
 
-        timeout = aiohttp.ClientTimeout(total=30)
+        timeout = aiohttp.ClientTimeout(total=timeout)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             request_kwargs: Dict[str, Any] = {"headers": headers}
             if json_data is not None:
