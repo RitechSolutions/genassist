@@ -16,7 +16,7 @@ import { DraggableInput } from "../components/custom/DraggableInput";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { RichInput } from "@/components/richInput";
 
-const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const;
+const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH"] as const;
 const AUTH_TYPES = ["none", "bearer", "api_key", "basic"] as const;
 type AuthType = (typeof AUTH_TYPES)[number];
 
