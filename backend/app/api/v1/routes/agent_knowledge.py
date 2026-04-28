@@ -170,6 +170,11 @@ async def update_knowledge_item(
     # Enrich files with storage metadata when using remote providers (S3, etc.)
     await populate_remote_file_metadata(result, file_manager_service)
 
+    # Drop any cached RAG service for this KB so the next get_service rebuild
+    # picks up the updated rag_config (e.g. an embedding-model swap that
+    # changes the vector dimension and target table).
+    await rag_manager.cleanup_service(str(item_id))
+
     # Load knowledge item using simplified manager
     schedule_rag_load(rag_manager, result, action="update")
     return result
