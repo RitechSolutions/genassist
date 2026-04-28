@@ -37,7 +37,7 @@ class GptKpiAnalyzer:
         if (transcript is None or transcript.strip() == "" or len(transcript) == 0 or transcript == "[]"):
             raise AppException(ErrorKey.TRANSCRIPT_NOT_FOUND)
         else:
-            logger.debug(f"analyzing transcript: {transcript}")
+            logger.debug("Analyzing transcript [%d chars]", len(transcript))
 
         last_error_msg = ""
         last_response = ""
@@ -82,7 +82,7 @@ class GptKpiAnalyzer:
                 # If we reach here, it's a retryable error (e.g., parsing failure)
                 last_error_msg = str(e)
                 logger.error(
-                        f"Attempt {attempt}: Failed to parse GPT response as JSON. Error: {last_error_msg} - LastResponse: {last_response} - Prompt: {user_prompt}")
+                        "Attempt %d: Failed to parse GPT response as JSON. Error: %s", attempt, last_error_msg)
 
         # If we exhausted all retries without success, raise an appropriate exception
         logger.error(f"Failed to analyze transcript after {max_attempts} attempts. Last error: {last_error_msg}")
@@ -230,7 +230,6 @@ Please make sure your response strictly follows the requested format and especia
         Transcript:
         {transcript_segments}
         """
-        logger.debug(f"User prompt for hostility:{user_prompt}")
         user_msg = HumanMessage(content=user_prompt)
 
         try:

@@ -45,7 +45,7 @@ except Exception as e:
 """
 
 
-def validate_pickle_file_safe(pkl_file: str, timeout: int = 5) -> Tuple[bool, Optional[str]]:
+def validate_pickle_file_safe(pkl_file: str, timeout: int = 15) -> Tuple[bool, Optional[str]]:
     """
     Safely validate a pickle file by loading it in a subprocess.
 
@@ -108,10 +108,10 @@ def validate_pickle_file_safe(pkl_file: str, timeout: int = 5) -> Tuple[bool, Op
 def get_model_info(pkl_file: str) -> dict:
     """
     Get basic information about a pickle file safely.
-    
+
     Args:
         pkl_file: Path to the pickle file
-        
+
     Returns:
         Dictionary with model information
     """
@@ -122,47 +122,47 @@ def get_model_info(pkl_file: str) -> dict:
         "is_valid": False,
         "error": None
     }
-    
+
     if not info["file_exists"]:
         info["error"] = "File not found"
         return info
-    
+
     info["file_size"] = os.path.getsize(pkl_file)
-    
+
     # Validate the file
     is_valid, error = validate_pickle_file_safe(pkl_file)
     info["is_valid"] = is_valid
     info["error"] = error
-    
+
     return info
 
 
 def check_xgboost_compatibility(model) -> Tuple[bool, Optional[str]]:
     """
     Check if an XGBoost model is compatible with the current version.
-    
+
     Args:
         model: Loaded model object
-        
+
     Returns:
         Tuple of (is_compatible, message)
     """
     try:
         import xgboost as xgb
         current_version = xgb.__version__
-        
+
         # Check if it's an XGBoost model
         model_type = type(model).__name__
         if 'XGB' not in model_type and 'Booster' not in model_type:
             return True, None  # Not an XGBoost model
-        
+
         # Try to get model version
         if hasattr(model, 'get_params'):
             # It's likely compatible if we can get params
             return True, None
-        
+
         return True, None
-        
+
     except Exception as e:
         return False, f"XGBoost compatibility check failed: {str(e)}"
 

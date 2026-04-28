@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { cn } from "@/lib/utils";
 
@@ -151,7 +151,7 @@ export const DraggableInput: React.FC<DraggableInputProps> = ({
           isDragOver && "ring-2 ring-blue-500 ring-opacity-50"
         )}
       >
-        <Input
+        <RichInput
           ref={inputRef}
           id={id}
           value={value}

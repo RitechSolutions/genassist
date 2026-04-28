@@ -22,7 +22,7 @@ const TEXTAREA_TYPO_CLASS = "text-sm leading-normal whitespace-pre-wrap break-wo
 const OVERLAY_BASE_CLASS =
   "block absolute inset-0 pointer-events-none px-3 py-2 select-none z-0 overflow-hidden text-foreground"
 
-const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
+const RichTextarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, value, onFocus, onChange, onMouseUp, ...props }, ref) => {
     const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
     const overlayRef = React.useRef<HTMLDivElement | null>(null)
@@ -139,6 +139,6 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     )
   }
 )
-Textarea.displayName = "Textarea"
+RichTextarea.displayName = "RichTextarea"
 
-export { Textarea }
+export { RichTextarea }

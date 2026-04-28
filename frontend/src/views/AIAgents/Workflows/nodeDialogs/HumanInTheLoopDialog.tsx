@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { HumanInTheLoopNodeData, HumanInTheLoopFormField } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import {
   Select,
@@ -184,7 +184,7 @@ export const HumanInTheLoopDialog: React.FC<
     >
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
-        <Input
+        <RichInput
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -293,7 +293,7 @@ export const HumanInTheLoopDialog: React.FC<
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Field Name (key)</Label>
-                <Input
+                <RichInput
                   value={fieldDialog.field.name}
                   onChange={(e) => updateDialogField("name", e.target.value)}
                   placeholder="e.g. location"
@@ -302,7 +302,7 @@ export const HumanInTheLoopDialog: React.FC<
               </div>
               <div>
                 <Label className="text-xs">Label</Label>
-                <Input
+                <RichInput
                   value={fieldDialog.field.label}
                   onChange={(e) => updateDialogField("label", e.target.value)}
                   placeholder="e.g. Your Location"
@@ -341,7 +341,7 @@ export const HumanInTheLoopDialog: React.FC<
 
             <div>
               <Label className="text-xs">Placeholder</Label>
-              <Input
+              <RichInput
                 value={fieldDialog.field.placeholder || ""}
                 onChange={(e) =>
                   updateDialogField("placeholder", e.target.value)
@@ -353,7 +353,7 @@ export const HumanInTheLoopDialog: React.FC<
 
             <div>
               <Label className="text-xs">Description</Label>
-              <Input
+              <RichInput
                 value={fieldDialog.field.description || ""}
                 onChange={(e) =>
                   updateDialogField("description", e.target.value)
@@ -370,7 +370,7 @@ export const HumanInTheLoopDialog: React.FC<
                 <div className="space-y-1">
                   {(fieldDialog.field.options || []).map((opt, optIdx) => (
                     <div key={optIdx} className="flex items-center gap-1">
-                      <Input
+                      <RichInput
                         value={opt.value}
                         onChange={(e) =>
                           updateOption(optIdx, "value", e.target.value)
@@ -378,7 +378,7 @@ export const HumanInTheLoopDialog: React.FC<
                         placeholder="Value"
                         className="text-xs h-7"
                       />
-                      <Input
+                      <RichInput
                         value={opt.label}
                         onChange={(e) =>
                           updateOption(optIdx, "label", e.target.value)

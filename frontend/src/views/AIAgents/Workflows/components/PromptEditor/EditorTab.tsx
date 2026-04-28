@@ -4,7 +4,7 @@ import { AlertCircle, CheckCircle2, Loader2, Play, Sparkles, XCircle } from 'luc
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/accordion';
 import { Button } from '@/components/button';
 import { Label } from '@/components/label';
-import { Textarea } from '@/components/textarea';
+import { RichTextarea } from '@/components/richTextarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/select';
 import { Badge } from '@/components/badge';
 import { Switch } from '@/components/switch';
@@ -204,7 +204,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
       <div className="space-y-2">
         <Label>Prompt Content</Label>
-        <Textarea
+        <RichTextarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Enter your prompt..."
@@ -234,7 +234,7 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
               <div className="space-y-2 px-2">
                 <Label className="text-sm">Additional Instructions (optional)</Label>
-                <Textarea
+                <RichTextarea
                   value={optimizeInstructions}
                   onChange={(e) => setOptimizeInstructions(e.target.value)}
                   placeholder="e.g., Make it more concise, add examples, enforce JSON output..."

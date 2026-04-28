@@ -736,7 +736,6 @@ export const useChat = ({
           setThinkingDelayMs(thinking.delayMs || 1000);
         }
         if (chatServiceRef.current.getAvailableLanguages) {
-          debugger;
           const langs = chatServiceRef.current.getAvailableLanguages();
           if (Array.isArray(langs)) {
             setAvailableLanguages(langs);

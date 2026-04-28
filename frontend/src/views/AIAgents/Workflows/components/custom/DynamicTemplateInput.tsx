@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Textarea } from "@/components/textarea";
+import { RichTextarea } from "@/components/richTextarea";
 import { Badge } from "@/components/badge";
 import { ScrollArea } from "@/components/scroll-area";
 import { createSimpleSchema, NodeSchema } from "../../types/schemas";
@@ -118,7 +118,7 @@ const DynamicTemplateInput: React.FC<DynamicTemplateInputProps> = ({
       {/* Template Input */}
       <div className="space-y-2">
         <label className="text-sm font-medium">Template</label>
-        <Textarea
+        <RichTextarea
           value={template}
           onChange={(e) => setTemplate(e.target.value)}
           placeholder={placeholder}

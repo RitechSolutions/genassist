@@ -10,8 +10,8 @@ import {
 } from "@/services/mlModels";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
-import { Textarea } from "@/components/textarea";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,

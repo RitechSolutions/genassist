@@ -1,9 +1,9 @@
 import * as React from "react"
-import { Input } from "@/components/input"
+import { RichInput } from "@/components/richInput"
 import { cn } from "@/helpers/utils"
 import { NodeSchema } from "../../types/schemas"
 
-interface DynamicInputProps extends React.ComponentProps<typeof Input> {
+interface DynamicInputProps extends React.ComponentProps<typeof RichInput> {
   availableParams?: string[]
   inputSchema?: NodeSchema
 }
@@ -69,7 +69,7 @@ const DynamicInput = React.forwardRef<HTMLInputElement, DynamicInputProps>(
 
     return (
       <div className="relative w-full min-w-0">
-        <Input
+        <RichInput
           ref={ref}
           className={cn("w-full", className)}
           value={value}
