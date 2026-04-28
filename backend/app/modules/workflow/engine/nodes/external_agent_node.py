@@ -19,9 +19,6 @@ logger = logging.getLogger(__name__)
 class ExternalAgentNode(BaseNode):
     """Calls an external agent API and maps its response to the standard agent format."""
 
-    # ------------------------------------------------------------------ #
-    # Public interface                                                      #
-    # ------------------------------------------------------------------ #
 
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         endpoint: str = config.get("endpoint", "")
@@ -75,9 +72,6 @@ class ExternalAgentNode(BaseNode):
         result["_raw_response"] = response_data
         return result
 
-    # ------------------------------------------------------------------ #
-    # Auth helpers                                                          #
-    # ------------------------------------------------------------------ #
 
     def _build_auth_headers(
         self,
@@ -100,9 +94,6 @@ class ExternalAgentNode(BaseNode):
             result["Authorization"] = f"Basic {credentials}"
         return result
 
-    # ------------------------------------------------------------------ #
-    # HTTP call                                                             #
-    # ------------------------------------------------------------------ #
 
     async def _call_endpoint(
         self, method: str, endpoint: str, headers: Dict[str, str], request_body: str
@@ -144,9 +135,6 @@ class ExternalAgentNode(BaseNode):
 
                 return {"status": response.status, "data": data}
 
-    # ------------------------------------------------------------------ #
-    # Response mapping                                                      #
-    # ------------------------------------------------------------------ #
 
     async def _apply_mapping_script(
         self, script: str, response_data: Any
