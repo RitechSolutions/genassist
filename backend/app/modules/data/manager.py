@@ -264,13 +264,13 @@ class AgentRAGServiceManager:
                 logger.warning(f"Could not get service for KB {kb_id}")
                 continue
 
-            # Track doc_ids we (re)insert for this KB so that on an "update"
-            # we can drop only orphans afterwards. We deliberately do NOT
-            # bulk-delete before re-ingesting — add_document already replaces
-            # rows that share a doc_id, so deleting up front only created a
-            # window where a failed re-ingest (extraction error, embedder
-            # swap with bad config, etc.) would wipe the KB with no recovery.
-            inserted_doc_ids: set[str] = set()
+            if action == "update":
+                # Get all existing document IDs from RAG storage and delete them
+                existing_ids = await service.get_document_ids()
+                if existing_ids:
+                    delete_result: dict = await bulk_delete_documents(service, existing_ids)
+                    logger.debug(
+                        f"KB document deletion results: {delete_result}")
 
             # Process all items for this KB
             for item in items:
@@ -353,51 +353,10 @@ class AgentRAGServiceManager:
                         )
                         results.append({"id": doc_id, "result": result})
 
-                        # Consider the doc "inserted" if any provider reported
-                        # success (vector store, legra, etc.). Used to compute
-                        # which old docs are now orphans.
-                        if isinstance(result, dict):
-                            if any(result.values()):
-                                inserted_doc_ids.add(doc_id)
-                        elif result:
-                            inserted_doc_ids.add(doc_id)
-
                 except Exception as e:
                     logger.error(f"Error loading item {item.id}: {e}")
                     results.append(
                         {"id": doc_id, "result": {}, "error": str(e)})
-
-            # Post-insert orphan cleanup. Only runs on "update" and only
-            # after at least one document was successfully (re)inserted —
-            # this preserves the existing vectors when re-ingestion fails
-            # outright (e.g. all source files unreachable, embedder
-            # misconfigured), instead of leaving the KB empty.
-            if action == "update":
-                if not inserted_doc_ids:
-                    logger.error(
-                        f"KB {kb_id} update produced 0 successfully ingested "
-                        f"documents; preserving existing vectors. Check the "
-                        f"file extraction errors above."
-                    )
-                else:
-                    try:
-                        existing_ids = await service.get_document_ids()
-                        obsolete_ids = [
-                            eid for eid in existing_ids
-                            if eid not in inserted_doc_ids
-                        ]
-                        if obsolete_ids:
-                            delete_result = await bulk_delete_documents(
-                                service, obsolete_ids
-                            )
-                            logger.debug(
-                                f"KB {kb_id} obsolete document cleanup: "
-                                f"{delete_result}"
-                            )
-                    except Exception as e:
-                        logger.error(
-                            f"KB {kb_id} obsolete document cleanup failed: {e}"
-                        )
 
         return results
 
