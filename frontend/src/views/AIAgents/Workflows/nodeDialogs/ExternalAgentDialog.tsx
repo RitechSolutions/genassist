@@ -37,6 +37,7 @@ export const ExternalAgentDialog: React.FC<
   const [authPassword, setAuthPassword] = useState(data.authPassword || "");
   const [messageField, setMessageField] = useState(data.messageField || "message");
   const [stepsField, setStepsField] = useState(data.stepsField || "steps");
+  const [timeout, setTimeout] = useState<number>(data.timeout ?? 30);
   const [mappingScript, setMappingScript] = useState(data.mappingScript || "");
   const [showAdvanced, setShowAdvanced] = useState(!!data.mappingScript);
 
@@ -53,6 +54,7 @@ export const ExternalAgentDialog: React.FC<
     setAuthPassword(data.authPassword || "");
     setMessageField(data.messageField || "message");
     setStepsField(data.stepsField || "steps");
+    setTimeout(data.timeout ?? 30);
     setMappingScript(data.mappingScript || "");
     setShowAdvanced(!!data.mappingScript);
   }, [isOpen]);
@@ -70,6 +72,7 @@ export const ExternalAgentDialog: React.FC<
       authHeader,
       authUsername,
       authPassword,
+      timeout,
       messageField,
       stepsField,
       mappingScript,
@@ -165,6 +168,18 @@ export const ExternalAgentDialog: React.FC<
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="timeout">Timeout (seconds)</Label>
+        <RichInput
+          id="timeout"
+          type="number"
+          value={String(timeout)}
+          onChange={(e) => setTimeout(Math.max(1, parseInt(e.target.value) || 30))}
+          placeholder="30"
+          className="w-full"
+        />
       </div>
 
       {/* Authentication */}

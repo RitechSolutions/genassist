@@ -227,6 +227,7 @@ export const EXTERNAL_AGENT_NODE_DEFINITION: NodeTypeDefinition<ExternalAgentNod
     authHeader: "Authorization",
     authUsername: "",
     authPassword: "",
+    timeout: 30,
     messageField: "message",
     stepsField: "steps",
     mappingScript: "",

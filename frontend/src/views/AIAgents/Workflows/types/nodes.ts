@@ -168,6 +168,7 @@ export interface ExternalAgentNodeData extends BaseNodeData {
   authHeader?: string;
   authUsername?: string;
   authPassword?: string;
+  timeout?: number;
   messageField: string;
   stepsField?: string;
   mappingScript?: string;
