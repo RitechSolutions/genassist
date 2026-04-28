@@ -1,12 +1,48 @@
 """
-Model file validation to prevent segfaults and incompatible models from loading
+Model file validation to prevent segfaults and incompatible models from loading.
+
+Security: The subprocess validator uses RestrictedUnpickler (via safe_pickle)
+to block arbitrary code execution from crafted pickle files. The file path is
+passed as a command-line argument, not interpolated into source code.
 """
 import logging
 import os
 import subprocess
-from typing import Optional, Tuple
+import sys
+from typing import Tuple, Optional
 
 logger = logging.getLogger(__name__)
+
+# Validation script passed to the subprocess. The file path is received via
+# sys.argv[1] — never interpolated into source — eliminating code injection.
+# Uses the project's RestrictedUnpickler so crafted __reduce__ payloads are
+# blocked even inside the subprocess.
+_VALIDATION_SCRIPT = """\
+import sys, signal
+
+def timeout_handler(signum, frame):
+    sys.exit(124)
+
+signal.signal(signal.SIGALRM, timeout_handler)
+signal.alarm(int(sys.argv[2]))
+
+try:
+    # Import the project's safe loader
+    from app.core.utils.safe_pickle import safe_pickle_load
+
+    with open(sys.argv[1], 'rb') as f:
+        model = safe_pickle_load(f)
+
+    model_type = type(model).__name__
+    if hasattr(model, 'predict'):
+        pass
+
+    print("OK")
+    sys.exit(0)
+except Exception as e:
+    print(f"ERROR: {type(e).__name__}: {e}")
+    sys.exit(1)
+"""
 
 
 def validate_pickle_file_safe(pkl_file: str, timeout: int = 15) -> Tuple[bool, Optional[str]]:
@@ -15,6 +51,10 @@ def validate_pickle_file_safe(pkl_file: str, timeout: int = 15) -> Tuple[bool, O
 
     This prevents segfaults from crashing the main application.
     If the model causes a segfault, it only crashes the subprocess.
+
+    Security: the file path is passed as ``sys.argv[1]`` (not via f-string
+    interpolation into source code), and the subprocess uses
+    ``RestrictedUnpickler`` to block ``__reduce__``-based exploits.
 
     Args:
         pkl_file: Path to the pickle file
@@ -26,65 +66,33 @@ def validate_pickle_file_safe(pkl_file: str, timeout: int = 15) -> Tuple[bool, O
     if not os.path.exists(pkl_file):
         return False, f"File not found: {pkl_file}"
 
-    # Create a simple validation script
-    validation_script = f"""
-import sys
-import pickle
-import signal
-
-def timeout_handler(signum, frame):
-    sys.exit(124)  # Timeout exit code
-
-signal.signal(signal.SIGALRM, timeout_handler)
-signal.alarm({timeout})
-
-try:
-    with open('{pkl_file}', 'rb') as f:
-        model = pickle.load(f)
-
-    # Basic validation - try to access the model
-    model_type = type(model).__name__
-
-    # Try to get basic attributes
-    if hasattr(model, 'predict'):
-        # It's a model with predict method
-        pass
-
-    print("OK")
-    sys.exit(0)
-except Exception as e:
-    print(f"ERROR: {{type(e).__name__}}: {{str(e)}}")
-    sys.exit(1)
-"""
-
     try:
-        # Run validation in subprocess
         result = subprocess.run(
-            ['python', '-c', validation_script],
+            [sys.executable, "-c", _VALIDATION_SCRIPT, pkl_file, str(timeout)],
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout + 2,  # small grace period over the in-process alarm
         )
 
         if result.returncode == 0 and "OK" in result.stdout:
-            logger.info(f"Model validation passed: {pkl_file}")
+            logger.info("Model validation passed: %s", pkl_file)
             return True, None
         elif result.returncode == 124:
             error_msg = f"Model validation timed out after {timeout}s (may be too large or corrupted)"
             logger.error(error_msg)
             return False, error_msg
-        elif result.returncode == 139:  # SIGSEGV (segfault)
+        elif result.returncode == 139:  # SIGSEGV
             error_msg = "Model causes segmentation fault (incompatible version or corrupted file)"
             logger.error(error_msg)
             return False, error_msg
-        elif result.returncode < 0:  # Killed by signal
+        elif result.returncode < 0:
             signal_num = -result.returncode
             error_msg = f"Model validation killed by signal {signal_num}"
             logger.error(error_msg)
             return False, error_msg
         else:
             error_msg = result.stdout.strip() or result.stderr.strip() or "Unknown error"
-            logger.error(f"Model validation failed: {error_msg}")
+            logger.error("Model validation failed: %s", error_msg)
             return False, error_msg
 
     except subprocess.TimeoutExpired:
@@ -92,7 +100,7 @@ except Exception as e:
         logger.error(error_msg)
         return False, error_msg
     except Exception as e:
-        error_msg = f"Validation error: {type(e).__name__}: {str(e)}"
+        error_msg = f"Validation error: {type(e).__name__}"
         logger.error(error_msg)
         return False, error_msg
 

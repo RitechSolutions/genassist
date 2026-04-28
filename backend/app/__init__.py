@@ -20,6 +20,7 @@ from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
 from app.file_system.file_system import ensure_directories
 from app.middlewares._middleware import build_middlewares
 from app.middlewares.rate_limit_middleware import init_rate_limiter
+from app.routes import health
 
 init_logging()
 logger = logging.getLogger(__name__)
@@ -50,6 +51,9 @@ def create_app() -> FastAPI:
     # TODO: retest this
     # from fastapi.staticfiles import StaticFiles
     # app.mount("/docu", StaticFiles(directory="docs-site", html=True), name="docu")
+
+    # Service-level probes (outside `/api`)
+    app.include_router(health.router)
 
     register_routers(app)
 
