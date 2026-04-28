@@ -105,7 +105,7 @@ class ExternalAgentNode(BaseNode):
             endpoint = f"https://{endpoint}"
 
         json_data: Optional[Any] = None
-        if request_body and method in ("POST", "PUT", "PATCH", "DELETE"):
+        if request_body and method in ("POST", "PUT", "PATCH"):
             try:
                 json_data = json.loads(request_body) if isinstance(request_body, str) else request_body
             except json.JSONDecodeError:
@@ -121,7 +121,6 @@ class ExternalAgentNode(BaseNode):
                 "GET": session.get,
                 "POST": session.post,
                 "PUT": session.put,
-                "DELETE": session.delete,
                 "PATCH": session.patch,
             }
             http_fn = method_map.get(method)
