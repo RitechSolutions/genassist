@@ -32,7 +32,7 @@ class DataMapperNode(BaseNode):
         self.set_node_input(input_data)
         if not python_script:
             logger.warning("No Python script configured for data mapper")
-            # Return empty result if no scriptthe
+            # Return empty result if no script
             return {"error": "No Python script configured for data mapper"}
 
         try:
