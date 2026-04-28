@@ -7,7 +7,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/dialog";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Button } from "@/components/button";
 import { Switch } from "@/components/switch";
@@ -16,6 +16,17 @@ import { ApiKey } from "@/interfaces/api-key.interface";
 import toast from "react-hot-toast";
 import { Copy, Eye, EyeOff } from "lucide-react";
 import { maskInput } from "@/helpers/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  API_KEY_EXPIRY_PRESET_VALUES,
+  presetToExpiresInDays,
+} from "@/components/api-keys/apiKeyExpiryPresets";
 
 interface Props {
   agentId: string;
@@ -39,6 +50,7 @@ export default function ApiKeyForm({
   const [saving, setSaving] = useState(false);
   const [isKeyVisible, setIsKeyVisible] = useState(false);
   const toggleKeyVisibility = () => setIsKeyVisible((v) => !v);
+  const [expiryPreset, setExpiryPreset] = useState<string>("never");
 
   useEffect(() => {
     if (existingKey) {
@@ -48,6 +60,7 @@ export default function ApiKeyForm({
     } else {
       setName("");
       setIsActive(true);
+      setExpiryPreset("never");
     }
   }, [existingKey, open]);
 
@@ -64,12 +77,14 @@ export default function ApiKeyForm({
         });
         toast.success("API key updated successfully.");
       } else {
+        const expiresInDays = presetToExpiresInDays(expiryPreset);
         saved = await createApiKey({
           name,
           is_active: isActive ? 1 : 0,
           user_id: userId,
           role_ids: [],
           agent_id: agentId,
+          ...(expiresInDays !== undefined ? { expires_in_days: expiresInDays } : {}),
         });
         toast.success("API key generated successfully.");
       }
@@ -115,18 +130,39 @@ export default function ApiKeyForm({
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input
+              <RichInput
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
 
+            {!existingKey ? (
+              <div className="space-y-2">
+                <Label htmlFor="credential-expiry">Credential expires</Label>
+                <Select value={expiryPreset} onValueChange={setExpiryPreset}>
+                  <SelectTrigger id="credential-expiry">
+                    <SelectValue placeholder="Expiry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {API_KEY_EXPIRY_PRESET_VALUES.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Key stops working after this unless rotated earlier.
+                </p>
+              </div>
+            ) : null}
+
             {existingKey?.key_val && (
               <div className="space-y-2">
                 <Label htmlFor="api_key">API Key</Label>
                 <div className="relative flex flex-row items-center">
-                  <Input
+                  <RichInput
                     id="api_key"
                     readOnly
                     className="w-full z-10"

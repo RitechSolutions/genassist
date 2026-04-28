@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { RegisterForm } from "../components/RegisterForm";
 import TermsAndPolicyNotice from "@/components/TermsAndPolicyNotice";
@@ -9,6 +9,7 @@ import { GenAssistLogo } from "@/components/GenAssistLogo";
 const RegisterPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleRegister = async (
     username: string,
@@ -26,7 +27,7 @@ const RegisterPage = () => {
       // Add your registration logic here
       // For now, just simulate success
       toast.success("Account created successfully.");
-      navigate("/login");
+      navigate("/login", { state: location.state });
     } catch (error) {
       toast.error("Failed to create account.");
     } finally {
@@ -55,6 +56,7 @@ const RegisterPage = () => {
             <span className="text-zinc-500">Already have an account? </span>
             <Link
               to="/login"
+              state={location.state}
               className="text-black hover:underline font-medium"
             >
               Sign in

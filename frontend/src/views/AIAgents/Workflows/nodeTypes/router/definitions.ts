@@ -7,6 +7,10 @@ import {
 } from "../../types/nodes";
 import RouterNode from "./routerNode";
 import AggregatorNode from "./aggregatorNode";
+import {
+  CONDITIONAL_ROUTER_HELP_CONTENT,
+  RESULT_MERGER_HELP_CONTENT,
+} from "./helperDefinition";
 
 export const ROUTER_NODE_DEFINITION: NodeTypeDefinition<RouterNodeData> = {
   type: "routerNode",
@@ -14,6 +18,7 @@ export const ROUTER_NODE_DEFINITION: NodeTypeDefinition<RouterNodeData> = {
   description:
     "Routes data along different branches based on evaluation of a condition.",
   shortDescription: "Route based on a condition",
+  helpContent: CONDITIONAL_ROUTER_HELP_CONTENT,
   configSubtitle:
     "Configure routing conditions, including comparison values and logic.",
   category: "routing",
@@ -62,6 +67,7 @@ export const AGGREGATOR_NODE_DEFINITION: NodeTypeDefinition<AggregatorNodeData> 
     description:
       "Merges results from multiple branches and returns once conditions are met.",
     shortDescription: "Merge results",
+    helpContent: RESULT_MERGER_HELP_CONTENT,
     configSubtitle:
       "Configure result aggregation settings, including strategy and timeout.",
     category: "routing",

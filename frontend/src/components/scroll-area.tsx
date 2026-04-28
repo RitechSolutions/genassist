@@ -3,22 +3,36 @@ import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 
 import { cn } from "@/helpers/utils"
 
+type ScrollAreaProps = React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root> & {
+  /** Merged onto the scrollable viewport (e.g. onScroll, onWheel for nested modals). */
+  viewportProps?: Omit<
+    React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Viewport>,
+    "children"
+  >;
+};
+
 const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
->(({ className, children, ...props }, ref) => (
-  <ScrollAreaPrimitive.Root
-    ref={ref}
-    className={cn("relative overflow-hidden", className)}
-    {...props}
-  >
-    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
-      {children}
-    </ScrollAreaPrimitive.Viewport>
-    <ScrollBar />
-    <ScrollAreaPrimitive.Corner />
-  </ScrollAreaPrimitive.Root>
-))
+  ScrollAreaProps
+>(({ className, children, viewportProps, ...props }, ref) => {
+  const { className: viewportClassName, ...viewportRest } = viewportProps ?? {};
+  return (
+    <ScrollAreaPrimitive.Root
+      ref={ref}
+      className={cn("relative overflow-hidden", className)}
+      {...props}
+    >
+      <ScrollAreaPrimitive.Viewport
+        className={cn("h-full w-full rounded-[inherit]", viewportClassName)}
+        {...viewportRest}
+      >
+        {children}
+      </ScrollAreaPrimitive.Viewport>
+      <ScrollBar />
+      <ScrollAreaPrimitive.Corner />
+    </ScrollAreaPrimitive.Root>
+  );
+});
 ScrollArea.displayName = ScrollAreaPrimitive.Root.displayName
 
 const ScrollBar = React.forwardRef<

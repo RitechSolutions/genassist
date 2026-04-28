@@ -196,7 +196,7 @@ async def get_agent_chat_locales(
     response_model=ConversationRead,
     dependencies=[
         Depends(auth),
-        # Depends(permissions(P.Conversation.READ))
+        Depends(permissions(P.Conversation.READ))
     ],
 )
 async def get(
@@ -844,7 +844,7 @@ async def websocket_endpoint(
 @router.websocket("/ws/dashboard/list")
 async def websocket_dashboard_endpoint(
     websocket: WebSocket,
-    principal: SocketPrincipal = socket_auth([P.Dashboard.READ]),
+    principal: SocketPrincipal = socket_auth([P.Conversation.READ_IN_PROGRESS]),
     lang: Optional[str] = Query(default="en"),
     topics: list[str] = Query(default=["message", "update", "finalize", "hostile", "statistics"]),
     socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),

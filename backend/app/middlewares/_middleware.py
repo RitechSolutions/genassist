@@ -52,6 +52,11 @@ def get_allowed_origins() -> list[str]:
         additional_origins = [origin.strip() for origin in settings.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
         # Add unique origins only
         for origin in additional_origins:
+            # Never allow wildcard origins here. With allow_credentials=True, "*" is unsafe and
+            # also not permitted by the CORS spec for credentialed requests.
+            if origin == "*":
+                logger.warning("Ignoring CORS_ALLOWED_ORIGINS='*' because credentials are enabled")
+                continue
             if origin not in allowed_origins:
                 allowed_origins.append(origin)
 

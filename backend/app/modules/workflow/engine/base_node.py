@@ -15,6 +15,7 @@ from app.core.observability.otel import (
     is_otel_runtime_enabled,
     record_workflow_node_duration,
 )
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -104,13 +105,13 @@ class BaseNode(ABC):
         """Set the node output and save to state."""
         self.output_data = output
         self.state.set_node_output(self.node_id, output)
-        logger.debug(f"Node {self.node_id} output set: {output}")
+        logger.debug("Node %s output set: %s", self.node_id, redact_sensitive_substrings(str(output)))
 
     def set_node_input(self, input_data: Any) -> None:
         """Set the node input and save to state."""
         self.input_data = input_data
         self.state.set_node_input(self.node_id, input_data)
-        logger.debug(f"Node {self.node_id} input set: {input_data}")
+        logger.debug("Node %s input set: %s", self.node_id, redact_sensitive_substrings(str(input_data)))
 
     def get_input(self) -> Any:
         """Get the current input data."""
@@ -352,7 +353,7 @@ class BaseNode(ABC):
                         logger.debug(
                             "Node %s variable replacements: %s",
                             self.node_id,
-                            replacements,
+                        redact_sensitive_substrings(str(replacements)),
                         )
 
                     # Extract params.get("varName") references from code fields
@@ -364,7 +365,11 @@ class BaseNode(ABC):
                         direct_input=direct_input,
                     )
                     if self.code_params:
-                        logger.debug("Node %s code params: %s", self.node_id, self.code_params)
+                        logger.debug(
+                            "Node %s code params: %s",
+                            self.node_id,
+                            redact_sensitive_substrings(str(self.code_params)),
+                        )
 
                     self.set_node_input(replacements)
                     result = await self.process(resolved_config_data)
@@ -429,7 +434,10 @@ class BaseNode(ABC):
             source_output = self.get_state().get_node_output(source_node_id)
 
             logger.debug(
-                "Node %s retrieved output from source node %s: %s", self.node_id, source_node_id, source_output
+                "Node %s retrieved output from source node %s: %s",
+                self.node_id,
+                source_node_id,
+                redact_sensitive_substrings(str(source_output)),
             )
         else:
             source_output = {}

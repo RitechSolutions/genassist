@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import aliased, selectinload
 
+from app.db.events.group_scope import get_group_scope_clause
 from app.db.models.agent import AgentModel
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.app_settings import AppSettingsModel
@@ -160,6 +161,10 @@ class DashboardRepository:
             query = query.where(ConversationModel.conversation_date >= from_date)
         if to_date:
             query = query.where(ConversationModel.conversation_date <= to_date)
+
+        group_clause = get_group_scope_clause(ConversationModel)
+        if group_clause is not None:
+            query = query.where(group_clause)
 
         result = await self.db.execute(query)
         row = result.first()

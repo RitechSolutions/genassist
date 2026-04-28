@@ -2,12 +2,11 @@ import { Button } from "@/components/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import { Eye, EyeOff, Copy } from "lucide-react";
 import { ApiKeyDialogLogic } from "./ApiKeyDialogLogic";
@@ -15,6 +14,14 @@ import { ApiKey } from "@/interfaces/api-key.interface";
 import { ApiRoleSelection } from "./ApiRoleSelection";
 import { Switch } from "@/components/switch";
 import { maskInput } from "@/helpers/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { API_KEY_EXPIRY_PRESET_VALUES } from "@/components/api-keys/apiKeyExpiryPresets";
 
 interface ApiKeyDialogProps {
   isOpen: boolean;
@@ -33,6 +40,27 @@ export function ApiKeyDialog({
   mode = "create",
   apiKeyToEdit = null,
 }: ApiKeyDialogProps) {
+  const formatExpiresIn = (credentialExpiresAt?: string | null) => {
+    if (!credentialExpiresAt) return null;
+    const expMs = new Date(credentialExpiresAt).getTime();
+    if (Number.isNaN(expMs)) return null;
+    const nowMs = Date.now();
+    const diffMs = expMs - nowMs;
+    if (diffMs <= 0) return "Expired";
+
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+
+    const days = Math.floor(diffMs / day);
+    const hours = Math.floor((diffMs % day) / hour);
+    const minutes = Math.floor((diffMs % hour) / minute);
+
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
   const {
     name,
     setName,
@@ -50,6 +78,8 @@ export function ApiKeyDialog({
     handleSubmit,
     copyToClipboard,
     dialogMode,
+    expiryPreset,
+    setExpiryPreset,
   } = ApiKeyDialogLogic({
     isOpen,
     mode,
@@ -58,6 +88,11 @@ export function ApiKeyDialog({
     onApiKeyUpdated,
     onOpenChange,
   });
+
+  const expiresInLabel =
+    dialogMode === "edit"
+      ? formatExpiresIn(apiKeyToEdit?.credential_expires_at ?? null)
+      : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -98,6 +133,66 @@ export function ApiKeyDialog({
                 onCheckedChange={setIsActive}
               />
             </div>
+
+            {dialogMode === "edit" ? (
+              <div className="space-y-2">
+                <Label>Credential expires</Label>
+                <Select value={expiryPreset} onValueChange={setExpiryPreset}>
+                  <SelectTrigger id="credential-expiry-edit">
+                    <SelectValue placeholder="Expiry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {API_KEY_EXPIRY_PRESET_VALUES.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {apiKeyToEdit?.credential_expires_at ? (
+                  <div className="text-sm">
+                    {expiresInLabel ? (
+                      <span>
+                        Expires in{" "}
+                        <span className="font-medium">{expiresInLabel}</span>
+                      </span>
+                    ) : (
+                      <span>Expiration is set.</span>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    This key currently never expires.
+                  </p>
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  On rotate, expiration will be recalculated from now based on this setting (unless set to Never).
+                </p>
+              </div>
+            ) : null}
+
+            {dialogMode === "create" && !hasGeneratedKey ? (
+              <div className="space-y-2">
+                <Label htmlFor="credential-expiry">Credential expires</Label>
+                <Select value={expiryPreset} onValueChange={setExpiryPreset}>
+                  <SelectTrigger id="credential-expiry">
+                    <SelectValue placeholder="Expiry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {API_KEY_EXPIRY_PRESET_VALUES.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Key stops working after this unless rotated earlier.
+                </p>
+              </div>
+            ) : null}
 
             {hasGeneratedKey && generatedKey && (
               <div className="space-y-2 mt-4">

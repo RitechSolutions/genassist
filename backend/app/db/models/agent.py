@@ -6,9 +6,10 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.db.events.group_scope import GroupScopedMixin
 
 
-class AgentModel(Base):
+class AgentModel(Base, GroupScopedMixin):
     __tablename__ = "agents"
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -24,6 +25,7 @@ class AgentModel(Base):
     workflow_id: Mapped[UUID] = mapped_column(ForeignKey("workflows.id"), nullable=True)
     input_disclaimer_html: Mapped[Optional[str]] = mapped_column(Text(), nullable=True)
     llm_analyst_id: Mapped[Optional[UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     # Relationships
     operator = relationship("OperatorModel", back_populates="agent", uselist=False)

@@ -1,18 +1,32 @@
 import logging
+import re
 from typing import Dict
+
+from sqlalchemy import NullPool, create_engine, text
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     async_sessionmaker,
     create_async_engine,
-    AsyncEngine,
 )
-from sqlalchemy import NullPool, create_engine, text
+
 from app.core.config.settings import settings
+from app.db import models  # noqa: F401
 from app.db.base import Base
 
-
-from app.db import models  # noqa: F401
-
 logger = logging.getLogger(__name__)
+
+_TENANT_SLUG_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+
+def _is_safe_tenant_slug(tenant: str) -> bool:
+    """
+    Defense-in-depth: tenant slugs become part of database identifiers/URLs.
+    We only allow an ASCII slug that can be safely mapped to a Postgres identifier.
+    """
+    tenant = (tenant or "").strip()
+    if tenant == "master":
+        return True
+    return bool(_TENANT_SLUG_RE.fullmatch(tenant))
 
 
 class MultiTenantSessionManager:
@@ -95,8 +109,15 @@ class MultiTenantSessionManager:
     async def create_tenant_database(self, tenant: str = "master") -> bool:
         """Create a new tenant database with the same schema as master using Alembic (async version)"""
         try:
+            if not _is_safe_tenant_slug(tenant):
+                logger.warning("Rejected tenant database creation due to invalid slug")
+                return False
+
             # First create the database (sanitize tenant_id for database name)
             tenant_db_name = settings.get_tenant_database_name(tenant)
+            if len(tenant_db_name) > 63:
+                logger.warning("Rejected tenant database creation due to name length")
+                return False
 
             # Use sync engine for database creation (still needed for CREATE DATABASE)
             postgres_url = settings.POSTGRES_URL
@@ -105,15 +126,15 @@ class MultiTenantSessionManager:
             with engine.connect() as conn:
                 # Check if database exists
                 result = conn.execute(
-                    text(
-                        f"SELECT 1 FROM pg_database WHERE datname = '{tenant_db_name}'"
-                    )
+                    text("SELECT 1 FROM pg_database WHERE datname = :db_name"),
+                    {"db_name": tenant_db_name},
                 )
                 if result.fetchone():
                     logger.info(f"Tenant database '{tenant_db_name}' already exists")
                 else:
                     # Create database
-                    conn.execute(text(f"CREATE DATABASE {tenant_db_name}"))
+                    quoted_db_name = engine.dialect.identifier_preparer.quote(tenant_db_name)
+                    conn.execute(text(f"CREATE DATABASE {quoted_db_name}"))
                     logger.info(f"Created tenant database: {tenant_db_name}")
 
             # Now create the schema in the tenant database using async engine
@@ -128,9 +149,10 @@ class MultiTenantSessionManager:
 
             # Stamp the database at head to mark it as fully migrated
             # We don't run actual migrations because Base.metadata.create_all() creates tables with current schema
-            from alembic.config import Config
-            from alembic import command
             import os
+
+            from alembic import command
+            from alembic.config import Config
 
             # Point Alembic at our alembic.ini configurations (same pattern as migrations.py)
             # Get the project root relative to this file
@@ -169,16 +191,17 @@ class MultiTenantSessionManager:
         """Seed a tenant database with initial data"""
         try:
             # Set tenant context so that dependency injection uses the tenant session
-            from app.core.tenant_scope import set_tenant_context, clear_tenant_context
+            from app.core.tenant_scope import clear_tenant_context, set_tenant_context
 
             set_tenant_context(tenant)
 
             try:
                 # Import and run the seed function inside a request scope so DI shares the same session
-                from app.db.seed.seed import seed_data
-                from app.dependencies.injector import injector
                 from fastapi_injector import RequestScopeFactory
                 from sqlalchemy.ext.asyncio import AsyncSession
+
+                from app.db.seed.seed import seed_data
+                from app.dependencies.injector import injector
 
                 request_scope_factory = injector.get(RequestScopeFactory)
                 async with request_scope_factory.create_scope():

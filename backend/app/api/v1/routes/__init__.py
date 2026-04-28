@@ -39,16 +39,19 @@ from app.api.v1.routes import (
     tenants,
     translations,
     twilio_agents,
+    prompt_editor,
     test_cases,
     test_evaluations,
     test_runs,
     test_suites,
+    user_groups,
     user_types,
     users,
     voice,
     webhook,
     webhook_execute,
     workflow_manager,
+    workflow_builder,
     workflows,
     zendesk,
 )
@@ -60,6 +63,7 @@ router = APIRouter(**default_router_options)
 
 router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 router.include_router(users.router, prefix="/user", tags=["User"])
+router.include_router(user_groups.router, prefix="/user-groups", tags=["User Groups"])
 router.include_router(user_types.router, prefix="/user-type", tags=["UserTypes"])
 router.include_router(roles.router, prefix="/roles", tags=["Roles"])
 router.include_router(api_keys.router, prefix="/api-keys", tags=["ApiKeys"])
@@ -114,6 +118,7 @@ router.include_router(
 router.include_router(file_manager.router, prefix="/file-manager", tags=["FileManager"])
 router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 
+router.include_router(prompt_editor.router, prefix="/genagent/prompt-editor", tags=["Prompt Editor"])
 router.include_router(test_suites.router, prefix="/genagent/eval", tags=["Test Suites"])
 router.include_router(test_cases.router, prefix="/genagent/eval", tags=["Test Cases"])
 router.include_router(test_runs.router, prefix="/genagent/eval", tags=["Test Runs"])
@@ -147,6 +152,9 @@ router.include_router(
 )
 router.include_router(
     workflow_manager.router, prefix="/workflow-manager", tags=["Workflow Manager"]
+)
+router.include_router(
+    workflow_builder.router, prefix="/workflow-builder", tags=["Workflow Builder"]
 )
 router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
 router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP Servers"])

@@ -424,9 +424,14 @@ async def seed_data(session: AsyncSession, injector: Injector):
     db_kb = await seed_knowledge_base_for_sql_database(session, admin.id, injector)
     # s3_kb = await seed_knowledge_base_for_s3(session, admin.id, s3_data_source, injector)
 
+    # Seed workflow builder KBs
+    workflow_builder_kb = await seed_workflow_builder_kb(session, admin.id, injector)
+    workflow_examples_kb = await seed_workflow_examples_kb(session, admin.id, injector)
+
     # Seed agents
     await seed_demo_agent(session, agent_role, injector, [product_docs], admin.id)
     await seed_gen_agent(session, agent_role, injector, [product_docs, gen_assist_kb, db_kb], admin.id)
+    await seed_workflow_builder_agent(session, agent_role, injector, workflow_builder_kb, workflow_examples_kb, admin.id)
 
     # Seed common workflows
     # await seed_zendesk_agent(session, agent_role, injector, [product_docs, gen_assist_kb, db_kb], admin.id)
@@ -657,6 +662,7 @@ async def seed_demo_agent(session: AsyncSession, agent_role: RoleModel,  injecto
     config_service = injector.get(AgentConfigService)
     # Create the agent configuration
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
+    agent_model.is_system = True
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
     workflow_update_data = WorkflowUpdate(name=workflow_model.name,
@@ -731,6 +737,7 @@ async def seed_gen_agent(session: AsyncSession, agent_role: RoleModel, injector:
     config_service = injector.get(AgentConfigService)
     # Create the agent configuration
     agent_model = await config_service.create(support_agent, user_id=owner_user_id)
+    agent_model.is_system = True
     full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
 
     workflow_update_data = WorkflowUpdate(name=workflow_model.name,
@@ -1371,3 +1378,182 @@ async def seed_connection_data_for_slack(
 
     except Exception as e:
         logger.error(f"Failed to seed Slack connection data: {e}")
+
+
+async def _seed_internal_kb(
+    session: AsyncSession,
+    injector: Injector,
+    *,
+    filename: str,
+    name: str,
+    description: str,
+    fallback_content: str,
+) -> KBRead:
+    """Create a single internal (text-based, no-RAG) knowledge base from a seed file."""
+    kb_service: KnowledgeBaseService = injector.get(KnowledgeBaseService)
+
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    path = Path(dir_path) / "knowledge" / filename
+
+    if path.exists():
+        content = path.read_text(encoding="utf-8")
+    else:
+        content = fallback_content
+        logger.warning(f"{filename} not found at {path}")
+
+    kb_item = KBCreate(
+        name=name,
+        description=description,
+        type="text",
+        source="internal",
+        content=content,
+        file_path=None,
+        file_type="text",
+        files=[],
+        vector_store={"config": "default"},
+        rag_config={
+            "enabled": False,
+            "vector_db": {"enabled": False},
+            "light_rag": {"enabled": False},
+        },
+    )
+
+    res = await kb_service.create(kb_item)
+    await session.commit()
+    return res
+
+
+async def seed_workflow_builder_kb(
+    session: AsyncSession,
+    created_by: UUID,
+    injector: Injector,
+) -> KBRead:
+    """Seed the Workflow Node Specifications knowledge base."""
+    res = await _seed_internal_kb(
+        session, injector,
+        filename="node_specs.md",
+        name="Workflow Node Specifications",
+        description="Comprehensive documentation of all GenAssist workflow node types, their configurations, handlers, and usage patterns.",
+        fallback_content="Node specifications not found. Please regenerate node_specs.md.",
+    )
+    logger.debug("Workflow Node Specifications KB seeding complete.")
+    return res
+
+
+async def seed_workflow_examples_kb(
+    session: AsyncSession,
+    created_by: UUID,
+    injector: Injector,
+) -> KBRead:
+    """Seed the Workflow Examples knowledge base."""
+    res = await _seed_internal_kb(
+        session, injector,
+        filename="workflow_examples.md",
+        name="Workflow Examples",
+        description="Curated correct workflow examples for common use cases including chatbots, KB integrations, routing, guardrails, and multi-tool agents.",
+        fallback_content="Workflow examples not found.",
+    )
+    logger.debug("Workflow Examples KB seeding complete.")
+    return res
+
+    logger.debug("Workflow Examples KB seeding complete.")
+    return res
+
+
+async def seed_workflow_builder_agent(
+    session: AsyncSession,
+    agent_role: RoleModel,
+    injector: Injector,
+    specs_kb: KBRead,
+    examples_kb: KBRead,
+    owner_user_id: UUID,
+):
+    """Seed the Workflow Builder Agent with its workflow."""
+    workflow_service = injector.get(WorkflowService)
+
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    filename = dir_path + "/workflow_builder_wf_data.json"
+    file_path = Path(filename)
+    json_str = file_path.read_text()
+
+    # Replace KB placeholders with actual KB IDs
+    json_str = json_str.replace("KB_ID_LIST", f'"{specs_kb.id}"')
+    json_str = json_str.replace("WORKFLOW_EXAMPLES_KB_ID", f'"{examples_kb.id}"')
+
+    # Replace LLM_PROVIDER_ID placeholder — user configures this after seeding
+    json_str = json_str.replace('"LLM_PROVIDER_ID"', "null")
+
+    sample_wf = json.loads(json_str)
+
+    wf_nodes = sample_wf["nodes"]
+    wf_edges = sample_wf["edges"]
+    wf_execution_state = sample_wf.get("executionState", {
+        "source": "",
+        "session": {"message": ""},
+        "nodeOutputs": {},
+    })
+
+    workflow = WorkflowCreate(
+        name="Workflow Builder Agent",
+        description="AI agent that creates workflows from natural language descriptions",
+        nodes=wf_nodes,
+        edges=wf_edges,
+        executionState=wf_execution_state,
+        version="1.0",
+    )
+
+    workflow_model = await workflow_service.create(workflow)
+
+    builder_agent = AgentCreate(
+        name="Workflow Builder",
+        description="AI agent that creates workflows from natural language descriptions",
+        is_active=True,
+        welcome_message="Hi! Tell me what you'd like your agent to do and I'll build the workflow for you.",
+        welcome_title="What would you like your agent to do?",
+        possible_queries=[
+            "Build a customer support chatbot",
+            "Create an email automation workflow",
+            "Make a data analysis pipeline with Jira integration",
+        ],
+        workflow_id=workflow_model.id,
+    )
+
+    config_service = injector.get(AgentConfigService)
+    agent_model = await config_service.create(builder_agent, user_id=owner_user_id)
+    agent_model.is_system = True
+    full_agent: AgentModel = await config_service.get_by_id_full(agent_model.id)
+
+    workflow_update_data = WorkflowUpdate(
+        name=workflow_model.name,
+        description=workflow_model.description,
+        nodes=wf_nodes,
+        edges=wf_edges,
+        user_id=owner_user_id,
+        version=workflow_model.version,
+        agent_id=full_agent.id,
+    )
+
+    await workflow_service.update(workflow_model.id, workflow_update_data)
+
+    # Create operator role
+    await session.refresh(full_agent.operator, ["user"])
+    await session.refresh(agent_role)
+
+    urm = UserRoleModel(role_id=agent_role.id, user_id=full_agent.operator.user.id)
+    session.add(urm)
+    await session.commit()
+
+    # Create API key for the builder agent
+    agent_key = ApiKeyModel(
+        key_val=encrypt_key("workflow_builder_123"),
+        hashed_value=hash_api_key("workflow_builder_123"),
+        name="workflow-builder default key",
+        is_active=1,
+        user_id=full_agent.operator.user.id,
+    )
+    agent_key.api_key_roles.append(ApiKeyRoleModel(role=agent_role))
+    session.add(agent_key)
+
+    await session.commit()
+
+    logger.debug("Workflow Builder Agent seeding complete.")

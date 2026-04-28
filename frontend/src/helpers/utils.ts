@@ -24,6 +24,15 @@ export function getTimeFromDatetime(datetimeString: string): string {
   return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
+export const formatFeedbackDate = (timestamp: string) => {
+  const date = new Date(timestamp);
+  const month = date.toLocaleDateString('en-US', { month: 'long' });
+  const day = date.getDate();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${month} ${day}, ${hours}:${minutes}`;
+};
+
 export function tryParse(value: any) {
   try {
     const first = JSON.parse(value);
@@ -69,8 +78,16 @@ export function downloadFile(fileUrl: string, filename: string) {
   }
 }
 
-export function getFileDownloadUrl(fileId: string, baseUrl: string, tenantId: string): string {
-  let url = new URL(`file-manager/files/${fileId}/source`, baseUrl).toString();
+export type FileManagerFileUrlKind = "source" | "download";
+
+export function getFileDownloadUrl(
+  fileId: string,
+  baseUrl: string,
+  tenantId: string,
+  kind: FileManagerFileUrlKind = "source"
+): string {
+  const segment = kind === "download" ? "download" : "source";
+  let url = new URL(`file-manager/files/${fileId}/${segment}`, baseUrl).toString();
 
   if (tenantId) {
     url = url.includes("?") ? `${url}&X-Tenant-Id=${tenantId}` : `${url}?X-Tenant-Id=${tenantId}`;

@@ -332,6 +332,9 @@ export interface MCPTool {
 // Connection configuration types
 export type MCPConnectionType = "stdio" | "sse" | "http";
 
+export type MCPAuthType = "api_key" | "oauth2" | "none";
+export type MCPOAuth2Flow = "client_credentials";
+
 export interface STDIOConnectionConfig {
   command: string; // Required: Command to run
   args?: string[]; // Optional: Command arguments
@@ -340,7 +343,21 @@ export interface STDIOConnectionConfig {
 
 export interface HTTPConnectionConfig {
   url: string; // Required: Server URL
-  api_key?: string; // Optional: API key for auth
+  // --- Authentication ---
+  auth_type?: MCPAuthType; // "api_key" (default) | "oauth2" | "none"
+  // api_key auth
+  api_key?: string;
+  // oauth2 auth
+  oauth2_flow?: MCPOAuth2Flow; // "client_credentials" (default)
+  oauth2_client_id?: string;
+  oauth2_client_secret?: string;
+  /** Full openid-configuration URL — token_endpoint read from this document (preferred) */
+  oauth2_issuer_url?: string;
+  /** Direct token endpoint (legacy; omit when using issuer URL) */
+  oauth2_token_url?: string;
+  oauth2_scopes?: string[]; // e.g. ["openid", "mcp"]
+  oauth2_audience?: string; // Some IdPs (Auth0, etc.) require audience on token request
+  // --- General ---
   headers?: Record<string, string>; // Optional: Custom headers
   timeout?: number; // Optional: Timeout in seconds
 }
@@ -352,6 +369,18 @@ export interface MCPNodeData extends ToolBaseNodeData {
   connectionConfig: MCPConnectionConfig; // Required: Configuration based on connection type
   availableTools: MCPTool[];
   whitelistedTools: string[]; // Array of tool names to expose
+}
+
+export interface NodeHelpSection {
+  title: string;
+  body?: string;
+  bullets?: string[];
+  steps?: string[];
+}
+
+export interface NodeHelpContent {
+  intro: string;
+  sections?: NodeHelpSection[];
 }
 
 // Workflow Executor Node Data
@@ -388,6 +417,14 @@ export interface GuardrailNliNodeData extends BaseNodeData {
   nli_model_name?: string;
 }
 
+// File Reader Node Data
+export interface FileReaderNodeData extends BaseNodeData {
+  fileName?: string;
+  filePath?: string;
+  fileUrl?: string;
+  fileId?: string;
+}
+
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
@@ -417,13 +454,15 @@ export type NodeData =
   | HumanInTheLoopNodeData
   | SetStateNodeData
   | GuardrailProvenanceNodeData
-  | GuardrailNliNodeData;
+  | GuardrailNliNodeData
+  | FileReaderNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
   label: string;
   description: string;
   shortDescription?: string;
+  helpContent?: NodeHelpContent;
   configSubtitle?: string;
   category:
     | "io"

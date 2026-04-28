@@ -22,36 +22,38 @@ RUN apt-get update && \
         && apt-get clean \
         && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip first
-RUN python3 -m pip install --upgrade pip setuptools wheel
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/0.7.12/install.sh | sh && \
+    cp /root/.local/bin/uv /usr/local/bin/uv && \
+    cp /root/.local/bin/uvx /usr/local/bin/uvx
 
 # Install core dependencies first
-RUN pip3 install --no-cache-dir \
+RUN uv pip install --system --no-cache-dir \
     "numpy==2.1.3" \
     scipy \
     typing-extensions \
     packaging
 
 # Install PyTorch with CUDA support (BEFORE other requirements)
-RUN pip3 install --no-cache-dir \
+RUN uv pip install --system --no-cache-dir \
     torch \
     torchaudio \
     --index-url https://download.pytorch.org/whl/cu124
 
 # Install other basic packages
-RUN pip3 install --no-cache-dir \
+RUN uv pip install --system --no-cache-dir \
     fastapi \
-    uvicorn[standard] \
+    "uvicorn[standard]" \
     python-multipart \
     aiofiles==24.1.0 \
     pydub
 
 # Install Whisper from git (as specified in your requirements)
-RUN pip3 install --no-cache-dir \
-   git+https://github.com/openai/whisper.git@517a43ecd132a2089d85f4ebc044728a71d49f6e
+RUN uv pip install --system --no-cache-dir \
+   "git+https://github.com/openai/whisper.git@517a43ecd132a2089d85f4ebc044728a71d49f6e"
 
 # Install faster-whisper (as specified in requirements)
-RUN pip3 install --no-cache-dir faster-whisper
+RUN uv pip install --system --no-cache-dir faster-whisper
 
 
 # Copy application

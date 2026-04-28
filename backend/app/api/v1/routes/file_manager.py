@@ -1,13 +1,14 @@
 import base64
-from typing import List, Optional
+import uuid
+from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
-from app.core.config.settings import file_storage_settings
+from app.core.config.settings import file_storage_settings, settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 
@@ -17,8 +18,14 @@ from app.core.project_path import DATA_VOLUME
 from app.core.utils.redirect_utils import validate_s3_download_redirect_url
 from app.schemas.app_settings import AppSettingsCreate
 from app.schemas.file import FileBase, FileResponse
+from app.schemas.files_upload import (
+    FilesUploadSessionCreate,
+    FilesUploadSessionCreateResponse,
+    FilesUploadSessionStatusResponse,
+)
 from app.services.app_settings import AppSettingsService
 from app.services.file_manager import FileManagerService
+from app.services.file_upload_session import FileUploadSessionService
 
 router = APIRouter()
 
@@ -90,24 +97,24 @@ async def download_file(
 ):
     """Download a file by ID."""
     try:
-        # download the file
-        file, content = await service.download_file(file_id)
+        file = await service.get_file_by_id(file_id)
 
-        # get the file url if the service is using s3
+        # For S3-backed files, redirect to a presigned URL to avoid proxying large payloads
+        # through the API process (CPU/memory bottleneck).
         if file.storage_provider == "s3":
-            # get the file url
             file_url = await service.get_file_url(file)
             safe_url = validate_s3_download_redirect_url(
                 file_url, file_storage_settings.AWS_S3_ENDPOINT_URL
             )
-            # Use Response + Location instead of RedirectResponse so redirect
-            # sinks that only match RedirectResponse(url=...) do not fire; behavior is equivalent.
             return Response(
                 status_code=status.HTTP_302_FOUND,
                 headers={"Location": safe_url},
             )
 
-        headers, media_type = service.build_file_headers(file, content=content, disposition_type="attachment")
+        _file, content = await service.download_file(file_id)
+        headers, media_type = service.build_file_headers(
+            file, content=content, disposition_type="attachment"
+        )
 
         return Response(
             content=content,
@@ -123,6 +130,7 @@ async def get_file_source(
     file_id: UUID,
     request: Request,
     service: FileManagerService = Injected(FileManagerService),
+    force_proxy: bool = False,
 ):
     """Get file source content for inline display."""
     try:
@@ -138,9 +146,20 @@ async def get_file_source(
                 headers=headers
             )
 
-        # if the service is not using s3, download the file content
-        # For GET requests, download the file content
-        file, content = await service.download_file(file_id)
+        # Default behavior: for S3-backed files, redirect to presigned URL instead of
+        # proxying bytes through the API process. `force_proxy=true` keeps legacy behavior.
+        if file.storage_provider == "s3" and not force_proxy:
+            file_url = await service.get_file_url(file)
+            safe_url = validate_s3_download_redirect_url(
+                file_url, file_storage_settings.AWS_S3_ENDPOINT_URL
+            )
+            return Response(
+                status_code=status.HTTP_302_FOUND,
+                headers={"Location": safe_url},
+            )
+
+        # Legacy / non-S3 behavior: download and return bytes inline.
+        _file, content = await service.download_file(file_id)
         headers, media_type = service.build_file_headers(file, content=content, disposition_type="inline")
 
         return Response(
@@ -180,6 +199,13 @@ async def list_files(
     storage_provider: Optional[str] = None,
     limit: Optional[int] = None,
     offset: Optional[int] = None,
+    tag: Optional[str] = Query(
+        None,
+        description=(
+            "If set, only files whose `tags` (JSON array of strings, see FileBase.tags) "
+            "include this value (exact string match)."
+        ),
+    ),
     service: FileManagerService = Injected(FileManagerService),
 ):
     """List files with optional filtering."""
@@ -187,7 +213,8 @@ async def list_files(
         files = await service.list_files(
             storage_provider=storage_provider,
             limit=limit,
-            offset=offset
+            offset=offset,
+            tag=tag,
         )
         return files
     except Exception as e:
@@ -222,3 +249,151 @@ async def delete_file(
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except Exception as e:
         raise AppException(ErrorKey.FILE_NOT_FOUND,404,f"File not found: {str(e)}")
+
+
+# ==================== Upload convenience endpoints ====================
+
+
+@router.post(
+    "/upload",
+    response_model=List[Dict[str, str]],
+    dependencies=[Depends(auth), Depends(permissions(P.FileManager.CREATE))],
+)
+async def upload_files(
+    request: Request,
+    files: List[UploadFile] = File(...),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """
+    Upload multiple files and return UploadFileResponse-compatible dicts.
+
+    This endpoint mirrors the legacy `genagent/knowledge/upload` response shape,
+    but is owned by file-manager.
+    """
+    try:
+        app_settings_config = await app_settings_svc.get_by_type_and_name(
+            "FileManagerSettings", "File Manager Settings"
+        )
+        storage_provider = await file_manager_service.initialize(
+            base_url=str(request.base_url).rstrip("/"),
+            base_path=str(DATA_VOLUME),
+            app_settings=app_settings_config,
+        )
+    except Exception:
+        storage_provider = None
+
+    results: list[dict] = []
+    max_file_size = settings.MAX_CONTENT_LENGTH
+
+    for f in files:
+        if max_file_size is not None and f.size is not None and f.size > max_file_size:
+            raise AppException(
+                ErrorKey.FILE_SIZE_TOO_LARGE,
+                400,
+                f"File exceeds maximum allowed size ({max_file_size} bytes).",
+            )
+        ext = f.filename.split(".")[-1] if f.filename and "." in f.filename else ""
+        unique_name = f"{uuid.uuid4()}.{ext}" if ext else f"{uuid.uuid4()}"
+        sub_folder = "uploads"
+        file_base = FileBase(
+            name=unique_name,
+            storage_path=storage_provider.get_base_path() if storage_provider else str(DATA_VOLUME),
+            path=sub_folder,
+            storage_provider=(storage_provider.name if storage_provider else "local"),
+            file_extension=ext,
+        )
+        created = await file_manager_service.create_file(
+            file=f,
+            file_base=file_base,
+            max_file_size=max_file_size,
+        )
+        file_url = await file_manager_service.get_file_source_url(created.id)
+        result = {
+            "filename": unique_name,
+            "original_filename": f.filename or unique_name,
+            "file_type": "url",
+            "file_url": file_url,
+            "file_id": str(created.id),
+        }
+        if created.storage_provider == "local":
+            result["file_path"] = f"{created.storage_path}/{created.path}"
+        results.append(result)
+
+    return results
+
+
+@router.post(
+    "/upload-session",
+    response_model=FilesUploadSessionCreateResponse,
+    dependencies=[Depends(auth), Depends(permissions(P.FileManager.CREATE))],
+)
+async def create_files_upload_session(
+    payload: FilesUploadSessionCreate,
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+):
+    try:
+        return await svc.create_session(
+            payload.original_filename,
+            payload.expected_size,
+            payload.content_type,
+        )
+    except ValueError as e:
+        raise AppException(ErrorKey.MISSING_PARAMETER, 400, str(e))
+
+
+@router.post(
+    "/upload-session/{session_id}/chunk",
+    dependencies=[Depends(auth), Depends(permissions(P.FileManager.CREATE))],
+)
+async def files_upload_session_chunk(
+    session_id: UUID,
+    chunk: UploadFile = File(...),
+    chunk_index: int = 0,
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+):
+    try:
+        data = await chunk.read()
+        total = await svc.append_chunk(session_id, data, chunk_index)
+        return {"status": "ok", "bytes_received": total}
+    except ValueError as e:
+        raise AppException(ErrorKey.MISSING_PARAMETER, 400, str(e))
+
+
+@router.post(
+    "/upload-session/{session_id}/complete",
+    response_model=Dict[str, str],
+    dependencies=[Depends(auth), Depends(permissions(P.FileManager.CREATE))],
+)
+async def files_upload_session_complete(
+    session_id: UUID,
+    request: Request,
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    try:
+        return await svc.complete_session(
+            session_id,
+            request,
+            file_manager_service,
+            app_settings_svc,
+            sub_folder="uploads",
+        )
+    except ValueError as e:
+        raise AppException(ErrorKey.MISSING_PARAMETER, 400, str(e))
+
+
+@router.get(
+    "/upload-session/{session_id}",
+    response_model=FilesUploadSessionStatusResponse,
+    dependencies=[Depends(auth), Depends(permissions(P.FileManager.READ))],
+)
+async def files_upload_session_status(
+    session_id: UUID,
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+):
+    try:
+        return await svc.get_status(session_id)
+    except ValueError as e:
+        raise AppException(ErrorKey.FILE_NOT_FOUND, 404, str(e))

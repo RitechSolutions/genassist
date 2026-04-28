@@ -19,11 +19,11 @@ import {
   type AgentResponseLogSummary,
 } from '@/services/transcripts';
 import { Transcript, ConversationFeedbackEntry } from '@/interfaces/transcript.interface';
-import { Input } from '@/components/input';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/button';
 import { askAIQuestion } from '@/services/aiChat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs';
-import { Textarea } from '@/components/textarea';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/useToast';
 import { formatMessageTime, formatCallTimestamp, formatDateTime, getEffectiveSentiment } from '../helpers/formatting';
 import { MetricCards } from './MetricCard';
@@ -34,6 +34,7 @@ import { ConversationEntryWrapper } from '@/views/ActiveConversations/common/Con
 import { AgentResponseLogDialog } from '@/components/AgentResponseLogDialog';
 import { Switch } from '@/components/switch';
 import { DollarSign } from 'lucide-react';
+import { formatFeedbackDate } from '@/helpers/utils';
 
 type TranscriptDialogProps = {
   transcript: Transcript | null;
@@ -371,15 +372,6 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange }: Transcrip
       setFeedbackMessage(userFeedback.feedback_message);
       setIsEditing(true);
     }
-  };
-
-  const formatFeedbackDate = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const month = date.toLocaleDateString('en-US', { month: 'long' });
-    const day = date.getDate();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${month} ${day}, ${hours}:${minutes}`;
   };
 
   const handleMessageFeedback = async (messageId: string, feedback: 'good' | 'bad') => {

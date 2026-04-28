@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { TrainModelNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import {
   Select,
@@ -245,7 +245,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
           {/* Node Name */}
           <div className="space-y-2">
             <Label htmlFor="name">Node Name</Label>
-            <Input
+            <RichInput
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -387,7 +387,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                   </Button>
                 </div>
                 <div className="space-y-2">
-                  <Input
+                  <RichInput
                     value={featureColumns.join(", ")}
                     onChange={(e) =>
                       handleCommaSeparatedInputChange(e.target.value)

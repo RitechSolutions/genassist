@@ -1,7 +1,7 @@
 import { FC, useState, useEffect } from "react";
 import { Button } from "@/components/button";
 import { Plus } from "lucide-react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import {
   Select,
   SelectTrigger,
@@ -192,7 +192,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Parameter Name</label>
-            <Input
+            <RichInput
               placeholder="param_1"
               value={formData.name}
               onChange={(e) =>
@@ -225,7 +225,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Description</label>
-            <Input
+            <RichInput
               placeholder="Parameter description"
               value={formData.description}
               onChange={(e) =>
@@ -294,7 +294,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Default Value</label>
-            <Input
+            <RichInput
               placeholder="Default value (optional)"
               value={formData.defaultValue || ""}
               onChange={(e) =>
@@ -345,6 +345,12 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
   const [dialogMode, setDialogMode] = useState<"edit" | "create">("create");
   const chatInputSchema = useChatInputSchema();
   const suggestedParams = listSuggestedParams || (suggestParams ? chatInputSchema : {});
+  const validDynamicParams = Object.entries(dynamicParams ?? {}).filter(
+    (entry): entry is [string, SchemaField] => {
+      const param = entry[1];
+      return Boolean(param && typeof param === "object");
+    }
+  );
   const handleParamClick = (name: string) => {
     setSelectedParamName(name);
     setDialogMode("edit");
@@ -392,7 +398,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
       {label && <Label htmlFor="parameters">{label}</Label>}
 
       <div className="flex flex-wrap gap-2 items-center min-w-0">
-        {Object.entries(dynamicParams ?? {})
+        {validDynamicParams
           .filter(([name, param]) => !suggestedParams[name])
           .map(([name, param]) => (
             <Badge
@@ -404,7 +410,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
               {name}
             </Badge>
           ))}
-        {Object.entries(dynamicParams ?? {})
+        {validDynamicParams
           .filter(([name, param]) => suggestedParams[name])
           .map(([name, param]) => (
             <Badge
@@ -457,7 +463,7 @@ export const ParameterSection: FC<ParameterSectionProps> = ({
         isOpen={dialogOpen}
         onOpenChange={setDialogOpen}
         paramName={selectedParamName}
-        param={selectedParamName ? dynamicParams[selectedParamName] : null}
+        param={selectedParamName ? dynamicParams?.[selectedParamName] ?? null : null}
         onSave={handleSave}
         onDelete={handleDelete}
         mode={dialogMode}

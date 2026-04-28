@@ -5,6 +5,28 @@ import { createApiKey, updateApiKey } from "@/services/apiKeys";
 import { toast } from "react-hot-toast";
 import { Role } from "@/interfaces/role.interface";
 import { ApiKey } from "@/interfaces/api-key.interface";
+import { presetToExpiresInDays } from "@/components/api-keys/apiKeyExpiryPresets";
+
+const PRESET_DAY_VALUES = new Set([30, 90, 180, 365]);
+
+function inferPresetFromApiKey(apiKey: ApiKey): string {
+  if (typeof apiKey.credential_expiry_days === "number") {
+    if (apiKey.credential_expiry_days <= 0) return "never";
+    return String(apiKey.credential_expiry_days);
+  }
+
+  // Legacy fallback: try to infer from created_at -> credential_expires_at (if present).
+  if (apiKey.created_at && apiKey.credential_expires_at) {
+    const createdMs = new Date(apiKey.created_at).getTime();
+    const expMs = new Date(apiKey.credential_expires_at).getTime();
+    if (!Number.isNaN(createdMs) && !Number.isNaN(expMs) && expMs > createdMs) {
+      const days = Math.round((expMs - createdMs) / (24 * 60 * 60 * 1000));
+      if (PRESET_DAY_VALUES.has(days)) return String(days);
+    }
+  }
+
+  return "never";
+}
 
 export function ApiKeyDialogLogic({
   isOpen,
@@ -31,6 +53,7 @@ export function ApiKeyDialogLogic({
   const [dialogMode, setDialogMode] = useState<"create" | "edit">(mode);
   const [userId, setUserId] = useState<string | null>(null);
   const [hasGeneratedKey, setHasGeneratedKey] = useState(false);
+  const [expiryPreset, setExpiryPreset] = useState<string>("never");
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -50,6 +73,7 @@ export function ApiKeyDialogLogic({
           );
           setGeneratedKey(apiKeyToEdit.key_val);
           setHasGeneratedKey(true);
+          setExpiryPreset(inferPresetFromApiKey(apiKeyToEdit));
         } else {
           setDialogMode("create");
           setName("");
@@ -57,6 +81,7 @@ export function ApiKeyDialogLogic({
           setSelectedRoles([]);
           setHasGeneratedKey(false);
           setGeneratedKey(null);
+          setExpiryPreset("never");
         }
       } catch (error) {
         toast.error("Failed to fetch user information.");
@@ -83,6 +108,7 @@ export function ApiKeyDialogLogic({
     setAvailableRoles([]);
     setUserId(null);
     setHasGeneratedKey(false);
+    setExpiryPreset("never");
   };
 
   const toggleRole = (roleId: string) => {
@@ -104,11 +130,13 @@ export function ApiKeyDialogLogic({
     try {
       setLoading(true);
       if (dialogMode === "create" && userId && !hasGeneratedKey) {
+        const expiresInDays = presetToExpiresInDays(expiryPreset);
         const result = await createApiKey({
           name,
           user_id: userId,
           role_ids: selectedRoles,
           is_active: isActive ? 1 : 0,
+          ...(expiresInDays !== undefined ? { expires_in_days: expiresInDays } : {}),
         });
         setGeneratedKey(result.key_val);
         setHasGeneratedKey(true);
@@ -129,30 +157,31 @@ export function ApiKeyDialogLogic({
           role_ids: selectedRoles,
         };
 
-        await updateApiKey(apiKeyToEdit.id, updateData);
+        const expiresInDays = presetToExpiresInDays(expiryPreset);
+        // Persist the user's selection on the record.
+        // - undefined => "never" => backend expects 0 to clear/store Never
+        // - number => set/store that many days
+        updateData.expires_in_days = expiresInDays ?? 0;
+
+        const updatedFromApi = await updateApiKey(apiKeyToEdit.id, updateData);
         toast.success("API key updated successfully.");
 
         if (onApiKeyUpdated) {
-          const updatedKey: ApiKey = {
-            ...apiKeyToEdit,
-            ...commonFields,
-            roles: availableRoles.filter((role) =>
-              selectedRoles.includes(role.id)
-            ),
-          };
-          onApiKeyUpdated(updatedKey);
+          onApiKeyUpdated(updatedFromApi);
         }
 
         onOpenChange(false);
       }
-    } catch (error) {
-      const data = error.response.data;
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: Record<string, unknown> } };
+      const data = err.response?.data;
       let errorMessage = "";
 
-      if (data.error) {
-        errorMessage = data.error;
-      } else if (data.detail) {
-        errorMessage = data.detail["0"].msg;
+      if (data?.error) {
+        errorMessage = String(data.error);
+      } else if (data?.detail && typeof data.detail === "object") {
+        const d0 = (data.detail as Record<string, { msg?: string }>)["0"];
+        errorMessage = d0?.msg ?? "";
       }
 
       toast.error(
@@ -197,5 +226,7 @@ export function ApiKeyDialogLogic({
     toggleRole,
     handleSubmit,
     copyToClipboard,
+    expiryPreset,
+    setExpiryPreset,
   };
 }

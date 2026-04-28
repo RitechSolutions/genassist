@@ -106,7 +106,7 @@ export function AuditLogDetailsDialog({
   if (loading) {
     return (
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[40vw]">
           <DialogHeader>
             <DialogTitle>Loading Details...</DialogTitle>
             <DialogDescription>Preparing the JSON data ...</DialogDescription>
@@ -124,9 +124,9 @@ export function AuditLogDetailsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[40vw]">
         <DialogHeader>
-          <DialogTitle>Audit Log Details</DialogTitle>
+          <DialogTitle>Audit Log Details ({auditLogId})</DialogTitle>
         </DialogHeader>
         <div className="p-4">
           {error ? (

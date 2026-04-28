@@ -25,10 +25,10 @@ export const FeatureFlags = {
       SHOW_COST_PER_CONVERSATION: 'analytics.showCostPerConversation',
     },
 
-    ADMIN_TOOLS: {
-      APP_SETTINGS: 'ui.menu.app-settings',
+    LLM_SETTINGS: {
+      SHOW_LOCAL_FINE_TUNE: 'llmSettings.showLocalFineTune',
     },
-  
+
     // Workflow specific flags
     WORKFLOW: {
       CHAT_INPUT: 'workflow.chatInput',

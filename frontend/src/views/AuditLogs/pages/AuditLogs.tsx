@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchAuditLogs, fetchUsers } from "@/services/auditLogs";
 import { SidebarProvider, SidebarTrigger } from "@/components/sidebar";
 import { AppSidebar } from "@/layout/app-sidebar";
@@ -7,7 +7,7 @@ import { AuditLogDetailsDialog } from "@/views/AuditLogs/components/AuditLogDeta
 import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
 import { Select, SelectItem, SelectContent, SelectTrigger } from "@/components/select";
-import { format, startOfDay, subDays, endOfDay } from "date-fns";
+import { format, startOfDay, subDays, endOfDay, addDays } from "date-fns";
 import { Calendar } from "@/components/calendar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/popover";
 import {
@@ -21,10 +21,12 @@ import {
 } from "@/components/pagination";
 import { getPageList } from "@/helpers/pagination";
 import { SearchInput } from "@/components/SearchInput";
+import { RefreshCcw } from "lucide-react";
+import { User } from "@/interfaces/user.interface";
 
 const getDefaultDateRange = () => {
   const today = new Date();
-  return { from: startOfDay(subDays(today, 1)), to: endOfDay(today) };
+  return { from: startOfDay(subDays(today, 1)), to: endOfDay(addDays(today, 1)) };
 };
 
 export default function AuditLogs() {
@@ -32,13 +34,14 @@ export default function AuditLogs() {
   const defaultRange = getDefaultDateRange();
 
   const [filteredAuditLogs, setFilteredAuditLogs] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateRange, setDateRange] = useState(defaultRange);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 30;
 
@@ -46,20 +49,20 @@ export default function AuditLogs() {
   const totalPages = currentPage + (isLastPage ? 0 : 1);
   const pageList = getPageList(currentPage, totalPages);
 
-  const fetchFilteredAuditLogs = async () => {
+  const fetchFilteredAuditLogs = useCallback(async () => {
     const date_from = dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : "";
     const date_to = dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : "";
     const action = selectedAction || "";
     const user = selectedUser ?? undefined;
     const offset = (currentPage - 1) * pageSize;
 
-
     try {
+      setIsRefreshing(true);
       const logs = await fetchAuditLogs(
         date_from,
         date_to,
         action,
-        user, 
+        user,
         pageSize,
         offset
       );
@@ -67,21 +70,31 @@ export default function AuditLogs() {
         const matchesSearchQuery =
           log.table_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           log.action_name.toLowerCase().includes(searchQuery.toLowerCase());
-  
+
         const matchesUser = selectedUser ? log.modified_by === selectedUser : true;
-  
+
         const logDate = new Date(log.modified_at);
         const isWithinDateRange =
           (!dateRange.from || logDate >= dateRange.from) &&
           (!dateRange.to || logDate <= dateRange.to);
-  
+
         return matchesSearchQuery && matchesUser && isWithinDateRange;
       });
       setFilteredAuditLogs(filtered);
     } catch (error) {
       // ignore
+    } finally {
+      setIsRefreshing(false);
     }
-  };
+  }, [
+    currentPage,
+    dateRange.from,
+    dateRange.to,
+    pageSize,
+    searchQuery,
+    selectedAction,
+    selectedUser,
+  ]);
 
   useEffect(() => {
     const fetchUsersData = async () => {
@@ -97,7 +110,7 @@ export default function AuditLogs() {
 
   useEffect(() => {
     fetchFilteredAuditLogs();
-  }, [dateRange, selectedUser, selectedAction, currentPage]);
+  }, [fetchFilteredAuditLogs]);
 
   const handleViewDetails = (logId: string) => {
     setSelectedAuditLogId(logId);
@@ -150,7 +163,7 @@ export default function AuditLogs() {
                   <div className="w-40">
                     <Select value={selectedUser ?? ""} onValueChange={(value) => setSelectedUser(value === "" ? null : value)}>
                       <SelectTrigger className="w-full h-full text-sm border rounded-full px-4 py-2 bg-white focus:ring-0 focus:ring-offset-0">
-                        {selectedUser ? users.find((u) => u.id === selectedUser)?.username : "Select User"}
+                        <span className="truncate">{selectedUser ? users.find((u) => u.id === selectedUser)?.username : "Select User"}</span>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={null}>All Users</SelectItem>
@@ -174,6 +187,17 @@ export default function AuditLogs() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* add refresh button */}
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    onClick={fetchFilteredAuditLogs}
+                    disabled={isRefreshing}
+                  >
+                    <RefreshCcw className="w-4 h-4" />
+                    Refresh
+                  </Button>
                 </div>
 
                 <div className="relative flex gap-x-4">
@@ -194,6 +218,7 @@ export default function AuditLogs() {
                 users={users}
                 selectedUser={selectedUser}
                 onViewDetails={handleViewDetails}
+                isRefreshing={isRefreshing}
               />
 
               <Pagination>
@@ -205,7 +230,7 @@ export default function AuditLogs() {
                     setCurrentPage((p) => Math.max(1, p - 1));
                     }}
                     aria-disabled={currentPage <= 1}
-                    className={currentPage <= 1 
+                    className={currentPage <= 1
                       ? "opacity-50 cursor-not-allowed"
                       : "cursor-pointer"}
                   />
@@ -238,7 +263,7 @@ export default function AuditLogs() {
                       setCurrentPage((p) => p + 1);
                         }}
                         aria-disabled={filteredAuditLogs.length < pageSize}
-                        className={filteredAuditLogs.length < pageSize 
+                        className={filteredAuditLogs.length < pageSize
                           ? "opacity-50 cursor-not-allowed"
                           : "cursor-pointer"}
                   />

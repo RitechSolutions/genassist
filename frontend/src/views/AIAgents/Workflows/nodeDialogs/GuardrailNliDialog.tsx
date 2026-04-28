@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import {
@@ -131,7 +131,7 @@ export const GuardrailNliDialog: React.FC<Props> = (props) => {
         </div>
         <div className="space-y-2">
           <Label>Minimum entailment score (0-1)</Label>
-          <Input
+          <RichInput
             type="number"
             step="0.01"
             min={0}

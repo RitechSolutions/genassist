@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { TrainDataSourceNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import {
   Select,
@@ -51,6 +51,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   const [csvFilePath, setCsvFilePath] = useState(data.csvFilePath ?? null);
   const [csvFileId, setCsvFileId] = useState(data.csvFileId ?? null);
   const [csvFileUrl, setCsvFileUrl] = useState(data.csvFileUrl ?? null);
+  const [isCsvUploading, setIsCsvUploading] = useState(false);
   const [availableDataSources, setAvailableDataSources] = useState<
     DataSource[]
   >([]);
@@ -171,8 +172,11 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>
-            <Save className="h-4 w-4 mr-2" />
+          <Button
+            onClick={handleSave}
+            loading={isCsvUploading}
+            icon={<Save className="h-4 w-4" />}
+          >
             Save Changes
           </Button>
         </>
@@ -191,7 +195,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         {/* Node Name */}
         <div className="space-y-2">
           <Label htmlFor="name">Node Name</Label>
-          <Input
+          <RichInput
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -248,6 +252,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
             initialServerFilePath={csvFilePath ?? ""}
             initialServerFileUrl={csvFileUrl ?? ""}
             initialOriginalFileName={csvFileName ?? ""}
+            onUploadingChange={setIsCsvUploading}
             onUploadComplete={(result) => {
               setCsvFileName(result.original_filename);
               setCsvFilePath(result.file_path);
