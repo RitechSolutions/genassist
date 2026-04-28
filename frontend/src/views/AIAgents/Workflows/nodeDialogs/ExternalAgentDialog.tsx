@@ -321,16 +321,28 @@ export const ExternalAgentDialog: React.FC<
           Advanced: Python mapping script
         </button>
         {showAdvanced && (
-          <div className="space-y-1">
-            <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 font-mono whitespace-pre-wrap break-all overflow-x-auto">
-              {`# params["response"] contains the full API JSON response
-# Store your result in the 'result' variable
-# result must be a dict with "message" (str) and optionally "steps" (list)
-
+          <div className="space-y-2">
+            <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 space-y-2">
+              <div>
+                <p className="font-semibold text-gray-700">What it does</p>
+                <p className="mt-0.5">Runs a Python snippet after the HTTP call. Use it when the external API returns a structure that field-path mapping alone can&apos;t handle.</p>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-700">How to write it</p>
+                <ul className="mt-0.5 list-disc list-inside space-y-0.5">
+                  <li><code className="bg-gray-100 px-1 rounded">params["response"]</code> — the full parsed JSON body from the API</li>
+                  <li>Assign <code className="bg-gray-100 px-1 rounded">result</code> — a dict with <code className="bg-gray-100 px-1 rounded">"message"</code> <span className="text-gray-400">(str, required)</span> and <code className="bg-gray-100 px-1 rounded">"steps"</code> <span className="text-gray-400">(list, optional)</span></li>
+                  <li>When set, this script overrides the field-path mapping above</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-700">Example</p>
+                <pre className="mt-1 bg-gray-100 rounded p-2 font-mono text-xs overflow-x-auto">{`response = params["response"]
 result = {
-    "message": params["response"]["output"]["text"],
-    "steps": params["response"].get("steps", []),
-}`}
+    "message": response["output"]["text"],
+    "steps": response["output"].get("reasoning", []),
+}`}</pre>
+              </div>
             </div>
             <DraggableTextArea
               value={mappingScript}
