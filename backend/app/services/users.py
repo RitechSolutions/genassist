@@ -72,7 +72,7 @@ class UserService:
             )
             return None
         user_auth = UserReadAuth.model_validate(user)
-        logger.debug(f"User found: user_id={user_id}, tenant_id={tenant_id}, username={user_auth.username}")
+        logger.debug("User found: user_id=%s, tenant_id=%s", user_id, tenant_id)
         # if user.user_type.name == 'console':
         #     raise AppException(error_key=ErrorKey.LOGIN_ERROR_CONSOLE_USER)
         return user_auth

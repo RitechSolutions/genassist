@@ -377,7 +377,7 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
         name="Azure Blob Storage",
         fields=[
             FieldSchema(
-                name="connectionstring",
+                name="connection_string",
                 type="password",
                 label="Connection String",
                 required=True,

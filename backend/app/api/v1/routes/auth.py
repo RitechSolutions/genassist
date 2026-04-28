@@ -54,7 +54,12 @@ async def refresh_token(
 ):
     from app.core.tenant_scope import get_tenant_context
 
-    user = await auth_service.decode_jwt(refresh_token)  # Decode user
+    # Only accept tokens with typ=refresh (rejects access tokens)
+    user = await auth_service.decode_jwt(refresh_token, expected_typ="refresh")
+
+    # Revoke the old refresh token so it cannot be reused (rotation)
+    await auth_service.revoke_refresh_token(refresh_token)
+
     tenant_id = get_tenant_context()
     token_data = {"sub": user.username, "user_id": str(user.id), "tenant_id": tenant_id}
     access_token = auth_service.create_access_token(data=token_data)

@@ -8,8 +8,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
-import { Input } from "@/components/input";
+import { RichTextarea } from "@/components/richTextarea";
+import { RichInput } from "@/components/richInput";
 import { Checkbox } from "@/components/checkbox";
 import {
   Select,
@@ -475,7 +475,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
                         </div>
                       ) : currentType === "object" || currentType === "array" ? (
                         <div className="space-y-2">
-                          <Textarea
+                          <RichTextarea
                             id={field.id}
                             placeholder={
                               field.placeholder ||
@@ -519,7 +519,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
                           </SelectContent>
                         </Select>
                       ) : (
-                        <Input
+                        <RichInput
                           id={field.id}
                           type={currentType === "number" ? "number" : field.type === "date" ? "date" : "text"}
                           placeholder={field.placeholder}

@@ -15,6 +15,7 @@ from app.schemas.open_ai_fine_tuning import (
 )
 from app.schemas.user import UserUpdate
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
+from app.core.utils.cache_headers import no_store_headers
 
 
 logger = logging.getLogger(__name__)
@@ -142,7 +143,10 @@ async def download_file(
     return Response(
         content=content.read(),
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{file_id}.jsonl"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_id}.jsonl"',
+            **no_store_headers(),
+        },
     )
 
 
@@ -218,7 +222,10 @@ async def generate_training_file_from_conversations(
         return Response(
             content=jsonl_bytes,
             media_type="application/jsonl",
-            headers={"Content-Disposition": 'attachment; filename="training_data.jsonl"'},
+            headers={
+                "Content-Disposition": 'attachment; filename="training_data.jsonl"',
+                **no_store_headers(),
+            },
         )
 
     filename = "training_conversations.jsonl"

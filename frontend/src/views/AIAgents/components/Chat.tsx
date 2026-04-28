@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { initializeAgent, queryAgent, getAgentConfig } from "@/services/api";
+import { queryAgent, getAgentConfig } from "@/services/api";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { ArrowLeft, Send, Bot, User, Loader2 } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/avatar";
+import { Avatar, AvatarFallback } from "@/components/avatar";
 import { Separator } from "@/components/separator";
 import { Badge } from "@/components/badge";
 import {
@@ -235,7 +235,7 @@ const Chat: React.FC = () => {
 
         <CardFooter className="border-t p-4 bg-background">
           <form className="flex w-full gap-2" onSubmit={handleSendMessage}>
-            <Input
+            <RichInput
               ref={inputRef}
               type="text"
               value={input}

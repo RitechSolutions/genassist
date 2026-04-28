@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Label } from "@/components/label";
 import { cn } from "@/lib/utils";
-import { Textarea } from "@/components/textarea";
+import { RichTextarea } from "@/components/richTextarea";
 
 interface DraggableTextAreaProps {
   id?: string;
@@ -153,7 +153,7 @@ export const DraggableTextArea: React.FC<DraggableTextAreaProps> = ({
           isDragOver && "ring-2 ring-blue-500 ring-opacity-50"
         )}
       >
-        <Textarea
+        <RichTextarea
           ref={textareaRef}
           id={id}
           value={value}

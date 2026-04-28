@@ -60,7 +60,7 @@ async def get_access_token(
 
         token_data = response.json()
 
-        logger.debug(f"Token exchange successful: {token_data}")
+        logger.debug("Token exchange successful")
 
         # Calculate expiration time
         expires_in = token_data.get('expires_in', 3600)  # Default 1 hour
@@ -120,7 +120,7 @@ async def get_user_email(access_token: str) -> str:
                 status_code=400,
                 detail="Failed to retrieve user email from Gmail profile"
             )
-        logger.info(f"Retrieved user email: {user_email}")
+        logger.info("Retrieved user email successfully")
         return user_email
     except Exception as e:
         logger.error(f"Error fetching user email: {e}")

@@ -1,6 +1,6 @@
 import { FC } from "react";
-import { Input } from "@/components/input";
-import { Textarea } from "@/components/textarea";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectTrigger,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { TrainDataSourceNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import {
   Select,
@@ -195,7 +195,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         {/* Node Name */}
         <div className="space-y-2">
           <Label htmlFor="name">Node Name</Label>
-          <Input
+          <RichInput
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}

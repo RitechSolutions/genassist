@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { RouterNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Save } from "lucide-react";
 import {
@@ -86,7 +86,7 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
     >
       <div className="space-y-2">
         <Label htmlFor="node-name">Node Name</Label>
-        <Input
+        <RichInput
           id="node-name"
           value={name}
           onChange={(e) => setName(e.target.value)}

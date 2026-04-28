@@ -13,7 +13,7 @@ import { Button, buttonVariants } from "@/components/button";
 import { Card } from "@/components/card";
 import { Badge } from "@/components/badge";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
+import { Textarea } from "@/components/ui/textarea";
 import { TagsFieldInput } from "@/components/TagsFieldInput";
 import { Progress } from "@/components/progress";
 import {

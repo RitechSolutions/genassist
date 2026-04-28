@@ -7,7 +7,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/dialog";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Button } from "@/components/button";
 import { Switch } from "@/components/switch";
@@ -130,7 +130,7 @@ export default function ApiKeyForm({
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input
+              <RichInput
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -162,7 +162,7 @@ export default function ApiKeyForm({
               <div className="space-y-2">
                 <Label htmlFor="api_key">API Key</Label>
                 <div className="relative flex flex-row items-center">
-                  <Input
+                  <RichInput
                     id="api_key"
                     readOnly
                     className="w-full z-10"

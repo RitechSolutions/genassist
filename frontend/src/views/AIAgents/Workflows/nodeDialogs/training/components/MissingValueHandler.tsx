@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/label";
-import { Switch } from "@/components/switch";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import {
   Select,
   SelectContent,
@@ -253,7 +252,7 @@ export const MissingValueHandler: React.FC<MissingValueHandlerProps> = ({
                         </SelectContent>
                       </Select>
                       {column.strategy === "impute_constant" && (
-                        <Input
+                        <RichInput
                           type="text"
                           placeholder="0"
                           value={column.imputeValue?.toString() || "0"}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ZendeskTicketNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { Save, Plus, X } from "lucide-react";
@@ -153,7 +153,7 @@ export const ZendeskTicketDialog: React.FC<ZendeskTicketDialogProps> = (
       >
         <div className="space-y-2">
           <Label htmlFor="node-name">Node Name</Label>
-          <Input
+          <RichInput
             id="node-name"
             value={name}
             onChange={(e) => setName(e.target.value)}

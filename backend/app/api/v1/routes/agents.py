@@ -1,4 +1,5 @@
 import logging
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from typing import Any, Dict, Optional
 from uuid import UUID
 
@@ -87,7 +88,7 @@ async def run_query_agent_logic(
             session_message=session_message,
             metadata=metadata
             )
-    logger.debug(f"Workflow Final Result: {result}")
+    logger.debug("Workflow Final Result: %s", redact_sensitive_substrings(str(result)))
 
     backward_compatibility_result = {
                 "status": result.get("status"),
@@ -100,8 +101,8 @@ async def run_query_agent_logic(
                 "cost_usd": result.get("cost_usd", 0.0),
     }
 
-    logger.debug(f"Result: {result}")
-    logger.debug(f"Backward compatibility result: {backward_compatibility_result}")
+    logger.debug("Result: %s", redact_sensitive_substrings(str(result)))
+    logger.debug("Backward compatibility result: %s", redact_sensitive_substrings(str(backward_compatibility_result)))
     if backward_compatibility_result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("message"))
     return backward_compatibility_result

@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
+import { RichTextarea } from "@/components/richTextarea";
 import {
   Select,
   SelectContent,
@@ -281,7 +281,7 @@ export const EvaluateOptimizeTab: React.FC<EvaluateOptimizeTabProps> = ({
         <p className="font-medium">Optimize Prompt</p>
         <div className="space-y-2">
           <Label className="text-sm">Additional Instructions (optional)</Label>
-          <Textarea
+          <RichTextarea
             value={optimizeInstructions}
             onChange={(e) => setOptimizeInstructions(e.target.value)}
             placeholder="e.g., Make the tone more professional, add examples..."

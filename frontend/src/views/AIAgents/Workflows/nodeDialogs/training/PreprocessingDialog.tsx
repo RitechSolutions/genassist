@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { PreprocessingNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { useToast } from "@/components/use-toast";
 import {
@@ -10,7 +10,6 @@ import {
   Code,
   Settings,
   Search,
-  Plus,
   X,
   GripVertical,
   Play,
@@ -34,7 +33,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { NodeConfigPanel } from "../../components/NodeConfigPanel";
@@ -598,7 +596,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
           {/* Node Name */}
           <div className="space-y-2">
             <Label htmlFor="name">Node Name</Label>
-            <Input
+            <RichInput
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}

@@ -81,7 +81,7 @@ async def ws_tts(
     await websocket.accept()
     
     text_message = await websocket.receive_text()
-    logger.debug("Received data: %s", text_message)
+    logger.debug("Received WebSocket data [%d bytes]", len(text_message))
     message = json.loads(text_message)["text"]
 
     #await websocket.send_text('|AUDIO_START|')

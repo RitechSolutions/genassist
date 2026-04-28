@@ -1,122 +1,66 @@
-from fastapi import APIRouter, Depends, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, Form
 from typing import Optional, List
-from pydantic import BaseModel
 import tempfile
 import os
+import aiofiles
 from app.auth.dependencies import auth
-from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.exception_classes import AppException
 from app.services.AzureStorageService import AzureStorageService
-import logging
+from app.schemas.azure_blob import (
+    AzureConnection,
+    AzureFileRequest as FileRequest,
+    AzureListRequest as ListRequest,
+    AzureMoveRequest as MoveRequest,
+    AzureExistsResponse,
+    AzureUploadResponse,
+    AzureDeleteResponse,
+)
+
 router = APIRouter(dependencies=[Depends(auth)])
 
-logger = logging.getLogger(__name__)
 
-# -----------------------------------------------------------------------------
-# Pydantic models matching request style
-# -----------------------------------------------------------------------------
-class AzureConnection(BaseModel):
-    connectionstring: Optional[str] = None
-    container: Optional[str] = None
-
-
-class FileRequest(AzureConnection):
-    filename: str
-    prefix: Optional[str] = None
-    overwrite: Optional[bool] = True
-    content: Optional[str] = None  # For text/binary content upload
-    binary: Optional[bool] = False
-
-
-class MoveRequest(AzureConnection):
-    source_name: str
-    destination_name: str
-    source_prefix: Optional[str] = None
-    destination_prefix: Optional[str] = None
-
-
-class ListRequest(AzureConnection):
-    prefix: Optional[str] = None
-
-
-# -----------------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------------
-def get_service(req: AzureConnection) -> AzureStorageService:
-    try:
-        return AzureStorageService(
-            connection_string=req.connectionstring,
-            container_name=req.container,
-        )
-    except Exception as e:
-        logger.error(e)
-        raise AppException(error_key=ErrorKey.AZURE_INIT_FAILED)
-
-
-# -----------------------------------------------------------------------------
-# API Endpoints
-# -----------------------------------------------------------------------------
-
-@router.get("/list", response_model=List[str], dependencies=[
-        Depends(auth),
-    ])
-async def list_files(
-    connectionstring: str,
-    container: str,
-    prefix: Optional[str] = None
-):
+@router.post("/list", response_model=List[str])
+async def list_files(req: ListRequest):
     """List blobs in a container with optional prefix"""
-    svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
-    return svc.file_list(prefix=prefix)
+    svc = AzureStorageService.from_request(req)
+    return svc.file_list(prefix=req.prefix)
 
 
-@router.get("/exists", dependencies=[
-        Depends(auth),
-    ])
-async def file_exists(
-    connectionstring: str,
-    container: str,
-    filename: str,
-    prefix: Optional[str] = None,
-
-):
+@router.post("/exists", response_model=AzureExistsResponse)
+async def file_exists(req: FileRequest):
     """Check if a blob exists"""
-    svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
-    return {"exists": svc.file_exists(filename, prefix=prefix)}
+    svc = AzureStorageService.from_request(req)
+    return AzureExistsResponse(exists=svc.file_exists(req.filename, prefix=req.prefix))
 
 
-@router.post("/upload", dependencies=[
-        Depends(auth),
-    ])
+@router.post("/upload", response_model=AzureUploadResponse)
 async def upload_file(
-    connectionstring: str,
-    container: str,
-    destination_name: str,
     file: UploadFile,
-    prefix: Optional[str] = None
+    connection_string: str = Form(...),
+    container: str = Form(...),
+    destination_name: str = Form(...),
+    prefix: Optional[str] = Form(None),
 ):
     """Upload a file stream to Azure Blob"""
+    tmp_path = None
     try:
-        svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
+        svc = AzureStorageService.from_request(AzureConnection(connection_string=connection_string, container=container))
 
-        # Save the uploaded data to a temporary file because the service requires a path
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(await file.read())
-            tmp_path = tmp.name
+        fd, tmp_path = tempfile.mkstemp()
+        os.close(fd)
+        async with aiofiles.open(tmp_path, "wb") as tmp:
+            await tmp.write(await file.read())
 
         url = svc.file_upload(tmp_path, destination_name=destination_name, prefix=prefix)
-        return {"status": "success", "url": url}
+        return AzureUploadResponse(status="success", url=url)
     finally:
-        if "tmp_path" in locals() and os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
 
 
-@router.post("/upload-content", dependencies=[
-        Depends(auth),
-    ])
+@router.post("/upload-content", response_model=AzureUploadResponse)
 async def upload_file_content(req: FileRequest):
     """Upload provided text/bytes content directly"""
-    svc = get_service(req)
+    svc = AzureStorageService.from_request(req)
     data = req.content.encode("utf-8") if not req.binary else req.content
     url = svc.file_upload_content(
         local_file_content=data,
@@ -124,38 +68,32 @@ async def upload_file_content(req: FileRequest):
         destination_name=req.filename,
         prefix=req.prefix,
     )
-    return {"status": "success", "url": url}
+    return AzureUploadResponse(status="success", url=url)
 
 
-@router.delete("/file", dependencies=[
-        Depends(auth),
-    ])
+@router.delete("/file", response_model=AzureDeleteResponse)
 async def delete_file(req: FileRequest):
     """Delete a blob"""
-    svc = get_service(req)
+    svc = AzureStorageService.from_request(req)
     ok = svc.file_delete(req.filename, prefix=req.prefix)
-    return {"status": "success" if ok else "failed", "deleted": ok}
+    return AzureDeleteResponse(status="success" if ok else "failed", deleted=ok)
 
 
-@router.post("/move", dependencies=[
-        Depends(auth),
-    ])
+@router.post("/move", response_model=AzureUploadResponse)
 async def move_file(req: MoveRequest):
     """Move a blob (copy then delete original)"""
-    svc = get_service(req)
+    svc = AzureStorageService.from_request(req)
     url = svc.file_move(
         source_name=req.source_name,
         destination_name=req.destination_name,
         source_prefix=req.source_prefix,
         destination_prefix=req.destination_prefix,
     )
-    return {"status": "success", "url": url}
+    return AzureUploadResponse(status="success", url=url)
 
 
-@router.get("/bucket-exists", dependencies=[
-        Depends(auth),
-    ])
-async def bucket_exists(connectionstring: str, container: str):
+@router.post("/bucket-exists", response_model=AzureExistsResponse)
+async def bucket_exists(req: AzureConnection):
     """Check if container exists"""
-    svc = get_service(AzureConnection(connectionstring=connectionstring, container=container))
-    return {"exists": svc.bucket_exists()}
+    svc = AzureStorageService.from_request(req)
+    return AzureExistsResponse(exists=svc.bucket_exists())

@@ -16,8 +16,7 @@ import { DraggableInput } from "../components/custom/DraggableInput";
 import { getAllWorkflows } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
-import { Input } from "@/components/input";
-import { valueToString } from "../utils/helpers";
+import { RichInput } from "@/components/richInput";
 
 export const WorkflowExecutorDialog: React.FC<
   BaseNodeDialogProps<WorkflowExecutorNodeData, WorkflowExecutorNodeData>
@@ -155,7 +154,7 @@ export const WorkflowExecutorDialog: React.FC<
     >
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
-        <Input
+        <RichInput
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}

@@ -10,7 +10,7 @@ import {
 } from "@/services/testSuites";
 import { TestCase, TestSuite } from "@/interfaces/testSuite.interface";
 import { Button } from "@/components/button";
-import { Textarea } from "@/components/textarea";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/label";
 import { ChevronLeft, ChevronDown, ChevronRight, Plus, ListOrdered, Pencil, Trash2 } from "lucide-react";
 import JsonViewer from "@/components/JsonViewer";

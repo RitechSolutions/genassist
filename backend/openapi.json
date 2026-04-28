@@ -16595,7 +16595,7 @@
       }
     },
     "/api/smb-share/smb/list": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "SMB (Windows) share file/folder operations",
@@ -16603,204 +16603,28 @@
         ],
         "summary": "List Dir",
         "description": "List directory contents with optional filters.",
-        "operationId": "list_dir_api_smb_share_smb_list_get",
-        "parameters": [
-          {
-            "name": "smb_host",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Host"
+        "operationId": "list_dir_api_smb_share_smb_list_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListDirRequest"
+              }
             }
           },
-          {
-            "name": "smb_share",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Share"
-            }
-          },
-          {
-            "name": "smb_user",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb User"
-            }
-          },
-          {
-            "name": "smb_pass",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Pass"
-            }
-          },
-          {
-            "name": "smb_port",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Port"
-            }
-          },
-          {
-            "name": "use_local_fs",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Use Local Fs"
-            }
-          },
-          {
-            "name": "local_root",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Local Root"
-            }
-          },
-          {
-            "name": "subpath",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Subpath"
-            }
-          },
-          {
-            "name": "only_files",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Only Files"
-            }
-          },
-          {
-            "name": "only_dirs",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Only Dirs"
-            }
-          },
-          {
-            "name": "extension",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Extension"
-            }
-          },
-          {
-            "name": "name_contains",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Name Contains"
-            }
-          },
-          {
-            "name": "pattern",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Pattern"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "type": "string"
                   },
-                  "title": "Response List Dir Api Smb Share Smb List Get"
+                  "type": "array",
+                  "title": "Response List Dir Api Smb Share Smb List Post"
                 }
               }
             }
@@ -16815,19 +16639,7 @@
               }
             }
           }
-        }
-      }
-    },
-    "/api/smb-share/smb/read": {
-      "get": {
-        "tags": [
-          "v1",
-          "SMB (Windows) share file/folder operations",
-          "SMB Share / Local FS"
-        ],
-        "summary": "Read File",
-        "description": "Read file content.",
-        "operationId": "read_file_api_smb_share_smb_read_get",
+        },
         "security": [
           {
             "APIKeyHeader": []
@@ -16835,135 +16647,29 @@
           {
             "OAuth2PasswordBearer": []
           }
+        ]
+      }
+    },
+    "/api/smb-share/smb/read": {
+      "post": {
+        "tags": [
+          "v1",
+          "SMB (Windows) share file/folder operations",
+          "SMB Share / Local FS"
         ],
-        "parameters": [
-          {
-            "name": "smb_host",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Host"
+        "summary": "Read File",
+        "description": "Read file content.",
+        "operationId": "read_file_api_smb_share_smb_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRequest"
+              }
             }
           },
-          {
-            "name": "smb_share",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Share"
-            }
-          },
-          {
-            "name": "smb_user",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb User"
-            }
-          },
-          {
-            "name": "smb_pass",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Pass"
-            }
-          },
-          {
-            "name": "smb_port",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Port"
-            }
-          },
-          {
-            "name": "use_local_fs",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Use Local Fs"
-            }
-          },
-          {
-            "name": "local_root",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Local Root"
-            }
-          },
-          {
-            "name": "filepath",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Filepath"
-            }
-          },
-          {
-            "name": "binary",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Binary"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -16983,7 +16689,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/smb-share/smb/write": {
@@ -17000,7 +16714,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__api__v1__routes__smb_share_router__FileRequest"
+                "$ref": "#/components/schemas/FileRequest"
               }
             }
           },
@@ -17050,7 +16764,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__api__v1__routes__smb_share_router__FileRequest"
+                "$ref": "#/components/schemas/FileRequest"
               }
             }
           },
@@ -17185,7 +16899,7 @@
       }
     },
     "/api/smb-share/smb/exists": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "SMB (Windows) share file/folder operations",
@@ -17193,133 +16907,17 @@
         ],
         "summary": "Exists",
         "description": "Check if a path exists.",
-        "operationId": "exists_api_smb_share_smb_exists_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "smb_host",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Host"
+        "operationId": "exists_api_smb_share_smb_exists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExistsRequest"
+              }
             }
           },
-          {
-            "name": "smb_share",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Share"
-            }
-          },
-          {
-            "name": "smb_user",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb User"
-            }
-          },
-          {
-            "name": "smb_pass",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Pass"
-            }
-          },
-          {
-            "name": "smb_port",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Smb Port"
-            }
-          },
-          {
-            "name": "use_local_fs",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Use Local Fs"
-            }
-          },
-          {
-            "name": "local_root",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Local Root"
-            }
-          },
-          {
-            "name": "path",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Path"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -17339,7 +16937,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/smb-share/smb/execute-celery-jobs": {
@@ -18219,69 +17825,35 @@
       }
     },
     "/api/azure-blob-storage/list": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "Azure Blob Storage"
         ],
         "summary": "List Files",
         "description": "List blobs in a container with optional prefix",
-        "operationId": "list_files_api_azure_blob_storage_list_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connectionstring",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connectionstring"
+        "operationId": "list_files_api_azure_blob_storage_list_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AzureListRequest"
+              }
             }
           },
-          {
-            "name": "container",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Container"
-            }
-          },
-          {
-            "name": "prefix",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Prefix"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
                   "items": {
                     "type": "string"
                   },
-                  "title": "Response List Files Api Azure Blob Storage List Get"
+                  "type": "array",
+                  "title": "Response List Files Api Azure Blob Storage List Post"
                 }
               }
             }
@@ -18296,77 +17868,44 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/azure-blob-storage/exists": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "Azure Blob Storage"
         ],
         "summary": "File Exists",
         "description": "Check if a blob exists",
-        "operationId": "file_exists_api_azure_blob_storage_exists_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connectionstring",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connectionstring"
+        "operationId": "file_exists_api_azure_blob_storage_exists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AzureFileRequest"
+              }
             }
           },
-          {
-            "name": "container",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Container"
-            }
-          },
-          {
-            "name": "filename",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Filename"
-            }
-          },
-          {
-            "name": "prefix",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Prefix"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureExistsResponse"
+                }
               }
             }
           },
@@ -18380,7 +17919,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/azure-blob-storage/upload": {
@@ -18392,75 +17939,24 @@
         "summary": "Upload File",
         "description": "Upload a file stream to Azure Blob",
         "operationId": "upload_file_api_azure_blob_storage_upload_post",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connectionstring",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connectionstring"
-            }
-          },
-          {
-            "name": "container",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Container"
-            }
-          },
-          {
-            "name": "destination_name",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Destination Name"
-            }
-          },
-          {
-            "name": "prefix",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Prefix"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_upload_file_api_azure_blob_storage_upload_post"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureUploadResponse"
+                }
               }
             }
           },
@@ -18474,7 +17970,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/azure-blob-storage/upload-content": {
@@ -18490,7 +17994,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__api__v1__routes__azure_blob_router__FileRequest"
+                "$ref": "#/components/schemas/AzureFileRequest"
               }
             }
           },
@@ -18501,7 +18005,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureUploadResponse"
+                }
               }
             }
           },
@@ -18539,7 +18045,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__api__v1__routes__azure_blob_router__FileRequest"
+                "$ref": "#/components/schemas/AzureFileRequest"
               }
             }
           },
@@ -18550,7 +18056,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureDeleteResponse"
+                }
               }
             }
           },
@@ -18588,7 +18096,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MoveRequest"
+                "$ref": "#/components/schemas/AzureMoveRequest"
               }
             }
           },
@@ -18599,7 +18107,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureUploadResponse"
+                }
               }
             }
           },
@@ -18625,48 +18135,32 @@
       }
     },
     "/api/azure-blob-storage/bucket-exists": {
-      "get": {
+      "post": {
         "tags": [
           "v1",
           "Azure Blob Storage"
         ],
         "summary": "Bucket Exists",
         "description": "Check if container exists",
-        "operationId": "bucket_exists_api_azure_blob_storage_bucket_exists_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "connectionstring",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Connectionstring"
+        "operationId": "bucket_exists_api_azure_blob_storage_bucket_exists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AzureConnection"
+              }
             }
           },
-          {
-            "name": "container",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Container"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AzureExistsResponse"
+                }
               }
             }
           },
@@ -18680,7 +18174,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/public-registration/registration-id": {
@@ -21862,6 +21364,265 @@
         "title": "AuditLogSearchResult",
         "description": "Schema for audit log search results - excludes json_changes."
       },
+      "AzureConnection": {
+        "properties": {
+          "connection_string": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection String"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          }
+        },
+        "type": "object",
+        "title": "AzureConnection"
+      },
+      "AzureDeleteResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "deleted"
+        ],
+        "title": "AzureDeleteResponse"
+      },
+      "AzureExistsResponse": {
+        "properties": {
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exists"
+        ],
+        "title": "AzureExistsResponse"
+      },
+      "AzureFileRequest": {
+        "properties": {
+          "connection_string": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection String"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          },
+          "overwrite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overwrite",
+            "default": true
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "binary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binary",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename"
+        ],
+        "title": "AzureFileRequest"
+      },
+      "AzureListRequest": {
+        "properties": {
+          "connection_string": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection String"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          }
+        },
+        "type": "object",
+        "title": "AzureListRequest"
+      },
+      "AzureMoveRequest": {
+        "properties": {
+          "connection_string": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection String"
+          },
+          "container": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "destination_name": {
+            "type": "string",
+            "title": "Destination Name"
+          },
+          "source_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Prefix"
+          },
+          "destination_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Prefix"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_name",
+          "destination_name"
+        ],
+        "title": "AzureMoveRequest"
+      },
+      "AzureUploadResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "url"
+        ],
+        "title": "AzureUploadResponse"
+      },
       "BatchRunsRequest": {
         "properties": {
           "ids": {
@@ -22462,11 +22223,37 @@
             "type": "string",
             "format": "binary",
             "title": "File"
+          },
+          "connection_string": {
+            "type": "string",
+            "title": "Connection String"
+          },
+          "container": {
+            "type": "string",
+            "title": "Container"
+          },
+          "destination_name": {
+            "type": "string",
+            "title": "Destination Name"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
           }
         },
         "type": "object",
         "required": [
-          "file"
+          "file",
+          "connection_string",
+          "container",
+          "destination_name"
         ],
         "title": "Body_upload_file_api_azure_blob_storage_upload_post"
       },
@@ -23934,6 +23721,89 @@
         "title": "DiscoverToolsResponse",
         "description": "Response model for tool discovery"
       },
+      "ExistsRequest": {
+        "properties": {
+          "smb_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Host"
+          },
+          "smb_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Share"
+          },
+          "smb_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb User"
+          },
+          "smb_pass": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Pass"
+          },
+          "smb_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Port",
+            "default": 445
+          },
+          "use_local_fs": {
+            "type": "boolean",
+            "title": "Use Local Fs",
+            "default": false
+          },
+          "local_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Root"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ExistsRequest"
+      },
       "FeatureFlagCreate": {
         "properties": {
           "key": {
@@ -24067,6 +23937,142 @@
           "very_bad"
         ],
         "title": "Feedback"
+      },
+      "FileRequest": {
+        "properties": {
+          "smb_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Host"
+          },
+          "smb_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Share"
+          },
+          "smb_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb User"
+          },
+          "smb_pass": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Pass"
+          },
+          "smb_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Port",
+            "default": 445
+          },
+          "use_local_fs": {
+            "type": "boolean",
+            "title": "Use Local Fs",
+            "default": false
+          },
+          "local_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Root"
+          },
+          "subpath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subpath",
+            "default": ""
+          },
+          "filepath": {
+            "type": "string",
+            "title": "Filepath"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "binary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binary",
+            "default": false
+          },
+          "overwrite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overwrite",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "filepath"
+        ],
+        "title": "FileRequest"
       },
       "FileResponse": {
         "properties": {
@@ -26007,6 +26013,132 @@
         },
         "type": "object",
         "title": "LanguageUpdate"
+      },
+      "ListDirRequest": {
+        "properties": {
+          "smb_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Host"
+          },
+          "smb_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Share"
+          },
+          "smb_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb User"
+          },
+          "smb_pass": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Pass"
+          },
+          "smb_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smb Port",
+            "default": 445
+          },
+          "use_local_fs": {
+            "type": "boolean",
+            "title": "Use Local Fs",
+            "default": false
+          },
+          "local_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Root"
+          },
+          "subpath": {
+            "type": "string",
+            "title": "Subpath",
+            "default": ""
+          },
+          "only_files": {
+            "type": "boolean",
+            "title": "Only Files",
+            "default": false
+          },
+          "only_dirs": {
+            "type": "boolean",
+            "title": "Only Dirs",
+            "default": false
+          },
+          "extension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extension"
+          },
+          "name_contains": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Contains"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern"
+          }
+        },
+        "type": "object",
+        "title": "ListDirRequest"
       },
       "LlmAnalyst": {
         "properties": {
@@ -27997,68 +28129,6 @@
           "other"
         ],
         "title": "ModelType"
-      },
-      "MoveRequest": {
-        "properties": {
-          "connectionstring": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Connectionstring"
-          },
-          "container": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Container"
-          },
-          "source_name": {
-            "type": "string",
-            "title": "Source Name"
-          },
-          "destination_name": {
-            "type": "string",
-            "title": "Destination Name"
-          },
-          "source_prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Prefix"
-          },
-          "destination_prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Destination Prefix"
-          }
-        },
-        "type": "object",
-        "required": [
-          "source_name",
-          "destination_name"
-        ],
-        "title": "MoveRequest"
       },
       "NodeDailyStatsItem": {
         "properties": {
@@ -32672,223 +32742,6 @@
           "email"
         ],
         "title": "ZendeskRequester"
-      },
-      "app__api__v1__routes__azure_blob_router__FileRequest": {
-        "properties": {
-          "connectionstring": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Connectionstring"
-          },
-          "container": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Container"
-          },
-          "filename": {
-            "type": "string",
-            "title": "Filename"
-          },
-          "prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Prefix"
-          },
-          "overwrite": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Overwrite",
-            "default": true
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "binary": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binary",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "filename"
-        ],
-        "title": "FileRequest"
-      },
-      "app__api__v1__routes__smb_share_router__FileRequest": {
-        "properties": {
-          "smb_host": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb Host"
-          },
-          "smb_share": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb Share"
-          },
-          "smb_user": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb User"
-          },
-          "smb_pass": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb Pass"
-          },
-          "smb_port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Smb Port",
-            "default": 445
-          },
-          "use_local_fs": {
-            "type": "boolean",
-            "title": "Use Local Fs",
-            "default": false
-          },
-          "local_root": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Local Root"
-          },
-          "subpath": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subpath",
-            "default": ""
-          },
-          "filepath": {
-            "type": "string",
-            "title": "Filepath"
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "string",
-                "format": "binary"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "binary": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binary",
-            "default": false
-          },
-          "overwrite": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Overwrite",
-            "default": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "filepath"
-        ],
-        "title": "FileRequest"
       }
     },
     "securitySchemes": {

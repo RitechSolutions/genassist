@@ -1,7 +1,7 @@
 import { FC, useState, useEffect } from "react";
 import { Button } from "@/components/button";
 import { Plus } from "lucide-react";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import {
   Select,
   SelectTrigger,
@@ -192,7 +192,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Parameter Name</label>
-            <Input
+            <RichInput
               placeholder="param_1"
               value={formData.name}
               onChange={(e) =>
@@ -225,7 +225,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Description</label>
-            <Input
+            <RichInput
               placeholder="Parameter description"
               value={formData.description}
               onChange={(e) =>
@@ -294,7 +294,7 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
           )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Default Value</label>
-            <Input
+            <RichInput
               placeholder="Default value (optional)"
               value={formData.defaultValue || ""}
               onChange={(e) =>

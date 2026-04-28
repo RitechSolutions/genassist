@@ -8,7 +8,7 @@ import { VersionsSidebar } from "./VersionsSidebar";
 import { GoldDatasetTab } from "./GoldDatasetTab";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { createPromptVersion } from "@/services/promptEditor";
 import { AxiosError } from "axios";
 
@@ -236,7 +236,7 @@ export const PromptEditorDialog: React.FC<PromptEditorDialogProps> = ({
                             <div className="text-xs font-medium mb-2">
                               Version label (optional)
                             </div>
-                            <Input
+                            <RichInput
                               ref={saveLabelInputRef}
                               value={saveLabelDraft}
                               onChange={(e) => setSaveLabelDraft(e.target.value)}

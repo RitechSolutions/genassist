@@ -13,7 +13,7 @@ import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { Switch } from "@/components/switch";
 import { BaseLLMNodeData } from "../types/nodes";
 import { DraggableTextArea } from "./custom/DraggableTextArea";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { LLMProviderDialog } from "@/views/LlmProviders/components/LLMProviderDialog";
 import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
 import { Info, X } from "lucide-react";
@@ -234,7 +234,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor={`name-input-${id}`}>Node Name</Label>
-        <Input
+        <RichInput
           id={`name-input-${id}`}
           value={config.name || ""}
           onChange={handleNameChange}
@@ -355,7 +355,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
               <Label htmlFor={`system-prompt-input-${id}`}>
                 Max Iterations
               </Label>
-              <Input
+              <RichInput
                 id={`max-iterations-input-${id}`}
                 value={config.maxIterations}
                 type="number"
@@ -416,7 +416,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
           {config.memoryTrimmingMode === "message_count" || !config.memoryTrimmingMode ? (
             <div className="space-y-2">
               <Label htmlFor={`max-messages-${id}`}>Max Messages</Label>
-              <Input
+              <RichInput
                 id={`max-messages-${id}`}
                 type="number"
                 min={1}
@@ -446,7 +446,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`compacting-threshold-${id}`}
                   type="number"
                   min={10}
@@ -476,7 +476,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`compacting-keep-recent-${id}`}
                   type="number"
                   min={5}
@@ -543,7 +543,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                   </Tooltip>
                 </div>
                 <div className="flex gap-2">
-                  <Input
+                  <RichInput
                     value={entityInput}
                     onChange={(e) => setEntityInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -606,7 +606,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-passthrough-${id}`}
                   type="number"
                   min={4}
@@ -636,7 +636,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-group-size-${id}`}
                   type="number"
                   min={2}
@@ -666,7 +666,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-group-overlap-${id}`}
                   type="number"
                   min={0}
@@ -699,7 +699,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-query-context-${id}`}
                   type="number"
                   min={1}
@@ -729,7 +729,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-top-k-${id}`}
                   type="number"
                   min={1}
@@ -759,7 +759,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-recent-messages-${id}`}
                   type="number"
                   min={2}
@@ -788,7 +788,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`rag-max-history-hours-${id}`}
                   type="number"
                   min={0}
@@ -827,7 +827,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`token-budget-${id}`}
                   type="number"
                   min={1000}
@@ -856,7 +856,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input
+                <RichInput
                   id={`conversation-history-tokens-${id}`}
                   type="number"
                   min={0}

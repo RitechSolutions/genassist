@@ -18,7 +18,7 @@ const INPUT_TYPO_CLASS = "text-base md:text-sm leading-normal whitespace-pre"
 const OVERLAY_BASE_CLASS =
   "block absolute inset-0 pointer-events-none px-3 py-2 select-none z-0 text-foreground"
 
-const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
+const RichInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, value, onFocus, onChange, onMouseUp, ...props }, ref) => {
     const inputRef = React.useRef<HTMLInputElement | null>(null)
     const pendingCursorRef = React.useRef<number | null>(null)
@@ -121,6 +121,6 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
     )
   }
 )
-Input.displayName = "Input"
+RichInput.displayName = "RichInput"
 
-export { Input }
+export { RichInput }

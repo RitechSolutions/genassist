@@ -181,7 +181,7 @@ export const getWsVersion = (): number => {
 export const apiRequest = async <T>(
   method: Method,
   endpoint: string,
-  data?: Record<string, unknown> | URLSearchParams,
+  data?: Record<string, unknown> | URLSearchParams | FormData,
   config: Partial<AxiosRequestConfig> = {}
 ): Promise<T | null> => {
   const baseURL = await getApiUrl();

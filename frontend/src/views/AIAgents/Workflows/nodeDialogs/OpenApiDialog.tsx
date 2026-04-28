@@ -8,7 +8,7 @@ import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { Button } from "@/components/button";
 import { Save } from "lucide-react";
 import { Label } from "@/components/label";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import {
   Select,
   SelectContent,
@@ -106,7 +106,7 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
           {/* Node Name */}
           <div className="space-y-2">
             <Label htmlFor="name">Node Name</Label>
-            <Input
+            <RichInput
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}

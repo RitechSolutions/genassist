@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
-import { Input } from "@/components/input";
 import {
   Select,
   SelectContent,

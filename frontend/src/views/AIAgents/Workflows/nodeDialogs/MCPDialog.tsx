@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { MCPNodeData, MCPTool, MCPConnectionType, MCPAuthType, STDIOConnectionConfig, HTTPConnectionConfig } from "../types/nodes";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Checkbox } from "@/components/checkbox";
 import { ScrollArea } from "@/components/scroll-area";
-import { Textarea } from "@/components/textarea";
+import { RichTextarea } from "@/components/richTextarea";
 import { Save, RefreshCw } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
@@ -378,7 +378,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
     >
       <div className="space-y-2">
         <Label htmlFor="name">Node Name</Label>
-        <Input
+        <RichInput
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -389,7 +389,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
 
       <div className="space-y-2">
         <Label htmlFor="description">Description</Label>
-        <Input
+        <RichInput
           id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -452,7 +452,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
 
           <div className="space-y-2">
             <Label htmlFor="stdioEnv">Environment Variables (JSON)</Label>
-            <Textarea
+            <RichTextarea
               id="stdioEnv"
               value={stdioEnv}
               onChange={(e) => setStdioEnv(e.target.value)}
@@ -637,7 +637,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
 
           <div className="space-y-2">
             <Label htmlFor="httpTimeout">Timeout (seconds)</Label>
-            <Input
+            <RichInput
               id="httpTimeout"
               type="number"
               value={httpTimeout}
@@ -653,7 +653,7 @@ export const MCPDialog: React.FC<MCPDialogProps> = (props) => {
 
           <div className="space-y-2">
             <Label htmlFor="httpHeaders">Custom Headers (JSON)</Label>
-            <Textarea
+            <RichTextarea
               id="httpHeaders"
               value={httpHeaders}
               onChange={(e) => setHttpHeaders(e.target.value)}

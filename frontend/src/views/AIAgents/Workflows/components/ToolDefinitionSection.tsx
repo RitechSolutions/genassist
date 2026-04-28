@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { NodeSchema, SchemaField } from "../types/schemas";
-import { Input } from "@/components/input";
-import { Textarea } from "@/components/textarea";
+import { RichInput } from "@/components/richInput";
+import { RichTextarea } from "@/components/richTextarea";
 import { Label } from "@/components/label";
 import { ParameterSection } from "./custom/ParameterSection";
 import { ToolBaseNodeData } from "../types/nodes";
@@ -71,7 +71,7 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
     <div className="space-y-4 w-full min-w-0">
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
-        <Input
+        <RichInput
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -82,7 +82,7 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
 
       <div className="space-y-2">
         <Label htmlFor="description">Description</Label>
-        <Textarea
+        <RichTextarea
           id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}

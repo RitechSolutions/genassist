@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from "@/components/dialog";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import { Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";

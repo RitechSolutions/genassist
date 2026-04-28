@@ -1,5 +1,5 @@
 import { Copy, Eraser } from "lucide-react";
-import { Input } from "@/components/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
 import { FileUploader } from "@/components/FileUploader";

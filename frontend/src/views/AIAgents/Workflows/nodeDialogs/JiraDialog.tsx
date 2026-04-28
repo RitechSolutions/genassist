@@ -3,7 +3,7 @@ import { JiraNodeData } from "../types/nodes";
 import { BaseNodeDialogProps } from "./base";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Save } from "lucide-react";
 import { DraggableInput } from "../components/custom/DraggableInput";
@@ -100,7 +100,7 @@ export const JiraDialog: React.FC<JiraDialogProps> = (props) => {
       >
         <div className="space-y-2">
           <Label htmlFor="name">Tool Name</Label>
-          <Input
+          <RichInput
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}

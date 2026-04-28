@@ -8,9 +8,9 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/button";
-import { Input } from "@/components/input";
+import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
-import { Textarea } from "@/components/textarea";
+import { RichTextarea } from "@/components/richTextarea";
 import { Checkbox } from "@/components/checkbox";
 import {
   Select,
@@ -404,7 +404,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                   </span>
                 )}
               </div>
-              <Input
+              <RichInput
                 id="test-input-message"
                 placeholder="Enter your message"
                 value={testInput.message || ""}
@@ -451,7 +451,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                         </Label>
                       </div>
                       <div className="flex gap-2">
-                        <Input
+                        <RichInput
                           id="test-input-thread_id"
                           type="text"
                           placeholder="Thread ID will be auto-generated"
@@ -534,7 +534,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                 </Label>
                               </div>
                             ) : isObjectOrArray ? (
-                              <Textarea
+                              <RichTextarea
                                 id={`test-input-${key}`}
                                 placeholder={`Enter ${field.description || key} as JSON`}
                                 value={testInput[key] || ""}
@@ -553,7 +553,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                                 rows={4}
                               />
                             ) : (
-                              <Input
+                              <RichInput
                                 id={`test-input-${key}`}
                                 type={isNumber ? "number" : "text"}
                                 placeholder={`Enter ${field.description || key}`}
@@ -696,7 +696,7 @@ const WorkflowTestDialog: React.FC<WorkflowTestDialogProps> = ({
                             </SelectContent>
                           </Select>
                         ) : (
-                          <Input
+                          <RichInput
                             id={fieldKey}
                             type={
                               field.type === "number"
