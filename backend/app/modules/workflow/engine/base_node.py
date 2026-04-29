@@ -193,7 +193,7 @@ class BaseNode(ABC):
             config = {}
         logger.info(f"Dummy process called for node {self.node_id}")
         logger.debug(f"Node input: {node_input}")
-        logger.info(f"Node config: {config}")
+        logger.info("Node config: %s", truncate_for_log(str(config)))
         return f"Success on node_input: {node_input}"
 
     def get_connected_nodes(
