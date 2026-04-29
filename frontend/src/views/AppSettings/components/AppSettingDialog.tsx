@@ -242,7 +242,7 @@ export function AppSettingDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {Object.keys(appSettingSchemas)
-                      .filter((key) => key !== 'FileManagerSettings')
+                      .filter((key) => key !== 'FileManagerSettings' && key !== 'Security')
                       .map((key) => (
                         <SelectItem key={key} value={key}>
                           {appSettingSchemas[key].name}

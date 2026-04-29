@@ -232,6 +232,34 @@ APP_SETTINGS_SCHEMAS: Dict[str, TypeSchema] = {
             ),
         ],
     ),
+    "Security": TypeSchema(
+        name="Security",
+        fields=[
+            FieldSchema(
+                name="data_residency",
+                label="Data Residency Zones",
+                type="tags",
+                required=False,
+                description=(
+                    "Restrict Bedrock LLM provider traffic to regions within these zones. "
+                    "Leave empty for no restriction."
+                ),
+                encrypted=False,
+                options=[
+                    {"label": "European Union (EU)", "value": "EU"},
+                    {"label": "Canada (CA)", "value": "CA"},
+                    {"label": "United States (US)", "value": "US"},
+                    {"label": "US GovCloud (US_GOV)", "value": "US_GOV"},
+                    {"label": "Asia Pacific (AP)", "value": "AP"},
+                    {"label": "South America (SA)", "value": "SA"},
+                    {"label": "Middle East (ME)", "value": "ME"},
+                    {"label": "Africa (AF)", "value": "AF"},
+                    {"label": "Israel (IL)", "value": "IL"},
+                    {"label": "Mexico (MX)", "value": "MX"},
+                ],
+            ),
+        ],
+    ),
 }
 
 APP_SETTINGS_SCHEMAS_DICT = convert_typed_schemas_to_dict(APP_SETTINGS_SCHEMAS)

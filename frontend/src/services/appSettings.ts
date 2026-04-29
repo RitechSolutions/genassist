@@ -86,6 +86,43 @@ export const getAppSettingsFormSchemas = async (): Promise<DynamicFormSchema> =>
   }
 };
 
+export interface SecuritySettings {
+  id?: string;
+  name: string;
+  description?: string;
+  type: "Security";
+  values: {
+    data_residency: string[];
+  };
+  is_active: number;
+}
+
+export const getSecuritySettings = async (): Promise<SecuritySettings | null> => {
+  try {
+    const all = await getAllAppSettings();
+    const row = all.find((s) => s.type === "Security" && s.is_active === 1) ?? all.find((s) => s.type === "Security");
+    return row ? (row as unknown as SecuritySettings) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const updateSecuritySettings = async (settings: SecuritySettings): Promise<void> => {
+  const payload = {
+    name: settings.name,
+    type: settings.type,
+    values: settings.values,
+    description: settings.description || "Data residency and security policy settings",
+    is_active: settings.is_active,
+  };
+
+  if (settings.id) {
+    await updateAppSetting(settings.id, payload as unknown as Partial<AppSetting>);
+  } else {
+    await createAppSetting(payload as unknown as Partial<AppSetting>);
+  }
+};
+
 export const updateFileManagerSettings = async (settings: FileManagerSettings): Promise<void> => {
   const requestData = {
     name: settings.name,
