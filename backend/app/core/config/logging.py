@@ -5,12 +5,14 @@ Call  init_logging()  *once* early in startup (before anything logs).
 import logging
 import os
 import sys
-
 from contextvars import ContextVar
+
 from loguru import logger
+
 from app.core.config.settings import settings
 from app.core.project_path import DATA_VOLUME
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.string_utils import truncate_for_log
 
 
 def _pii_filter(record: dict) -> bool:
@@ -39,10 +41,13 @@ class _InterceptHandler(logging.Handler):
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
+        msg = record.getMessage()
+        if record.levelno <= logging.DEBUG:
+            msg = truncate_for_log(msg)
         logger.bind(**record.__dict__.get("extra", {})).opt(
             depth=6,  # keep caller info accurate
             exception=record.exc_info
-        ).log(level, record.getMessage())
+        ).log(level, msg)
 
 def _patch_stdlib(level: str) -> None:
     logging.root.setLevel(level)
