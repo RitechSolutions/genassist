@@ -17,6 +17,8 @@ import socket
 from typing import Any, Dict
 from urllib.parse import urlparse
 
+from app.core.utils.string_utils import truncate_for_log
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -25,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Modules that user code may import via `import X`
 ALLOWED_MODULES: frozenset[str] = frozenset({
-    "json", "math", "re", "datetime", "collections", "itertools",
+    "json", "math", "random", "re", "datetime", "collections", "itertools",
     "functools", "string", "decimal", "fractions", "statistics",
     "copy", "typing", "traceback", "textwrap", "enum", "uuid",
     "hashlib", "hmac", "base64", "csv", "io",
@@ -231,6 +233,28 @@ _PRESEEDED_MODULES: dict[str, str] = {
 }
 
 
+class _TruncatingLogger:
+    """Wrapper around a real logger that truncates messages from user code."""
+
+    def __init__(self, real_logger: Any) -> None:
+        self._logger = real_logger
+
+    def _truncate(self, args: tuple) -> tuple:
+        return tuple(truncate_for_log(str(a)) for a in args)
+
+    def debug(self, msg: str, *args: Any) -> None:
+        self._logger.debug(msg, *self._truncate(args))
+
+    def info(self, msg: str, *args: Any) -> None:
+        self._logger.info(msg, *self._truncate(args))
+
+    def warning(self, msg: str, *args: Any) -> None:
+        self._logger.warning(msg, *self._truncate(args))
+
+    def error(self, msg: str, *args: Any) -> None:
+        self._logger.error(msg, *self._truncate(args))
+
+
 def make_sandboxed_namespace(params: Dict[str, Any], logger_instance: Any) -> dict:
     """Build an exec namespace with restricted builtins and pre-seeded modules.
 
@@ -240,7 +264,7 @@ def make_sandboxed_namespace(params: Dict[str, Any], logger_instance: Any) -> di
         "__builtins__": _SAFE_BUILTINS,
         "params": params,
         "result": None,
-        "logger": logger_instance,
+        "logger": _TruncatingLogger(logger_instance),
     }
 
     for alias, mod_name in _PRESEEDED_MODULES.items():
