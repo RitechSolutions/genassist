@@ -17,12 +17,15 @@ Available endpoints:
 
 import logging
 from typing import Any, Dict
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+# @deprecated: This endpoint is deprecated and will be removed in the future.
+# Use the /api/v1/health endpoint instead.
+router = APIRouter(deprecated=True)
 
 
 @router.get("")
@@ -43,10 +46,10 @@ async def redis_health():
     Redis connection health check endpoint.
     Returns detailed information about all Redis connection pools.
     """
-    from app.dependencies.injector import injector
-    from app.dependencies.dependency_injection import RedisString, RedisBinary
-    from app.modules.websockets.socket_connection_manager import SocketConnectionManager
     from app.core.config.settings import settings
+    from app.dependencies.dependency_injection import RedisBinary, RedisString
+    from app.dependencies.injector import injector
+    from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 
     health_status = {
         "status": "unknown",
