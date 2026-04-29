@@ -10,7 +10,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 from uuid import UUID
 
 from injector import inject
@@ -114,6 +114,7 @@ class MLModelManager:
         if not hasattr(self, "_cached_models"):
             self._cached_models: Dict[str, CachedMLModel] = {}
             self._loading_locks: Dict[str, asyncio.Lock] = {}
+            self._validated_files: Set[str] = set()
             logger.info("MLModelManager initialized")
 
     async def get_model(
@@ -259,13 +260,17 @@ class MLModelManager:
         if not os.path.exists(pkl_file):
             raise FileNotFoundError(f"Model file not found: {pkl_file}")
 
-        # Step 1: Validate model in subprocess (prevents segfaults from crashing main app)
-        logger.debug(f"Pre-validating model file: {pkl_file}")
-        await self._validate_model_safe(pkl_file)
+        # Only run the expensive subprocess validation once per file path.
+        # Subsequent loads of the same file (e.g. after cache eviction due to
+        # timestamp change) skip it because the file was already proven safe.
+        if pkl_file not in self._validated_files:
+            # Step 1: Validate model in subprocess (prevents segfaults from crashing main app)
+            logger.debug(f"Pre-validating model file: {pkl_file}")
+            await self._validate_model_safe(pkl_file)
+            self._validated_files.add(pkl_file)
 
         # Step 2: Load model in thread pool with timeout
         loop = asyncio.get_running_loop()
-        logger.debug(f"Offloading pickle load to thread pool for {pkl_file}")
 
         try:
             # Set a timeout of 60 seconds for model loading
@@ -289,14 +294,16 @@ class MLModelManager:
             model_id: UUID of the model to invalidate
         """
         model_id_str = str(model_id)
-        if model_id_str in self._cached_models:
-            del self._cached_models[model_id_str]
+        cached = self._cached_models.pop(model_id_str, None)
+        if cached:
+            self._validated_files.discard(cached.pkl_file)
             logger.info(f"Invalidated cached model {model_id_str}")
 
     def clear_cache(self) -> None:
         """Clear all cached models"""
         count = len(self._cached_models)
         self._cached_models.clear()
+        self._validated_files.clear()
         logger.info(f"Cleared {count} cached models")
 
     def get_cache_stats(self) -> Dict[str, Any]:
