@@ -43,6 +43,11 @@ export interface FileManagerSettings {
     base_path: string;
     aws_bucket_name: string;
     azure_container_name: string;
+    /**
+     * Server-derived capability flag (read-only).
+     * Present in `values` from `GET /file-manager/settings`.
+     */
+    direct_s3_upload_enabled?: boolean;
   };
   is_active: number;
 }
