@@ -10,6 +10,12 @@ async def health():
 
 @router.get("/ready")
 async def ready(request: Request):
+    """
+    Readiness probe.
+
+    Websocket service's `/ready` endpoint, but validates websocket-critical
+    dependencies (WebSocket connection manager) instead of WS connection stats.
+    """
     manager = request.app.state.manager
     stats = manager.get_stats()
     return {"service": "websocket", "status": "ready", **stats}
