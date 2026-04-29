@@ -39,6 +39,9 @@ class LlmProvidersModel(Base):
     is_default: Mapped[Optional[int]] = mapped_column(Integer)
 
     llm_model: Mapped[Optional[str]] = mapped_column(String)
+    # Regions this provider is permitted to serve (e.g. ["eu-west-1", "ca-central-1"]).
+    # Used to enforce tenant data residency policies at runtime.
+    allowed_regions: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
 
     llm_analysts = relationship("LlmAnalystModel", back_populates="llm_provider", foreign_keys=[LlmAnalystModel.llm_provider_id])
     knowledge_bases = relationship("KnowledgeBaseModel", back_populates="llm_provider")

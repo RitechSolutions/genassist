@@ -96,6 +96,12 @@ class LLMProvider:
         else:
             llm_provider = await llm_provider_service.get_by_id(model_id)
 
+        from app.core.data_residency import assert_provider_residency
+        from app.services.tenant import TenantService
+
+        tenant_service = injector.get(TenantService)
+        await assert_provider_residency(llm_provider.allowed_regions, tenant_service)
+
         try:
             # Validate connection data
             validated_data = json.loads(
