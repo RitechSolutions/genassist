@@ -106,7 +106,7 @@ def _build_input_array(
         return np.empty((0, 0))
 
     # Fall back to input columns when model doesn't provide feature ordering
-    if not feature_names:
+    if len(feature_names) == 0:
         feature_names = list(normalized_inputs.keys())
 
     input_cols = set(normalized_inputs)
@@ -218,7 +218,7 @@ class MLModelInferenceNode(BaseNode):
 
             # Prepare input array for prediction (always batch format)
             # Fall back to input columns when model doesn't provide feature ordering
-            if not feature_names:
+            if len(feature_names) == 0:
                 feature_names = list(normalized_inputs.keys())
             try:
                 input_data = _build_input_array(normalized_inputs, feature_names)
