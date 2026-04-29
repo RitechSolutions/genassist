@@ -57,10 +57,16 @@ class ExternalAgentNode(BaseNode):
             logger.error("External agent HTTP call failed: %s", e)
             return {"error": f"HTTP call failed: {e}"}
 
-        if "error" in api_response and api_response.get("status", 200) >= 400:
+        if api_response.get("status", 200) >= 400:
+            error_data = api_response.get("data", {})
+            error_msg = (
+                error_data.get("detail")
+                or error_data.get("error")
+                or f"HTTP {api_response['status']}"
+            )
             return {
-                "error": api_response.get("data", {}).get("error", "HTTP error"),
-                "_raw_response": api_response.get("data"),
+                "error": error_msg,
+                "_raw_response": error_data,
             }
 
         response_data = api_response.get("data", api_response)
