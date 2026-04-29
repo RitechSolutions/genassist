@@ -4,9 +4,11 @@ from typing import List, Optional
 from uuid import UUID
 
 from injector import inject
+from sqlalchemy import select
 
 from app.core.config.settings import settings
 from app.core.permissions import sync_permissions_for_tenant
+from app.core.tenant_scope import get_tenant_context
 from app.db.models.tenant import TenantModel
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.repositories.tenant import TenantRepository
@@ -135,6 +137,23 @@ class TenantService:
         await self.repository.db.commit()
         await self.repository.db.refresh(tenant)
         return tenant
+
+    async def get_current_tenant_data_residency(self) -> Optional[str]:
+        """Return the data_residency for the current request's tenant.
+
+        Always reads from the master DB because the tenants table is only
+        populated there; the injected session points to the tenant DB.
+        """
+        tenant_slug = get_tenant_context()
+        if not settings.MULTI_TENANT_ENABLED or not tenant_slug or tenant_slug == "master":
+            return None
+
+        factory = multi_tenant_manager.get_tenant_session_factory("master")
+        async with factory() as session:
+            result = await session.execute(
+                select(TenantModel.data_residency).where(TenantModel.slug == tenant_slug)
+            )
+            return result.scalar_one_or_none()
 
     async def deactivate_tenant(self, tenant_id: UUID) -> bool:
         """Deactivate a tenant"""

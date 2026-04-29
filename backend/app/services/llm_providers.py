@@ -11,8 +11,10 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.bi_utils import get_masked_api_key
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
+from app.core.data_residency import assert_provider_residency
 from app.repositories.llm_providers import LlmProviderRepository
 from app.schemas.llm import LlmProviderCreate, LlmProviderMinimal, LlmProviderRead, LlmProviderUpdate
+from app.services.tenant import TenantService
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +30,9 @@ class LlmProviderService:
         "aws_secret_access_key",
     ]
 
-    def __init__(self, repository: LlmProviderRepository):
+    def __init__(self, repository: LlmProviderRepository, tenant_service: TenantService):
         self.repository = repository
+        self.tenant_service = tenant_service
 
     async def create(self, data: LlmProviderCreate):
         connection_data = data.connection_data.copy()
@@ -45,6 +48,8 @@ class LlmProviderService:
             data.connection_status = data.connection_status.model_dump(mode="json")
         else:
             data.connection_status = {"status": "Untested", "last_tested_at": None, "message": None}
+
+        await assert_provider_residency(data.allowed_regions, self.tenant_service)
 
         model = await self.repository.create(data)
         return model
@@ -130,6 +135,9 @@ class LlmProviderService:
 
         for field, value in update_data.items():
             setattr(obj, field, value)
+
+        await assert_provider_residency(obj.allowed_regions, self.tenant_service)
+
         model = await self.repository.update(obj)
         return model
 

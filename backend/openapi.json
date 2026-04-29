@@ -26531,6 +26531,20 @@
             ],
             "title": "Is Default",
             "default": 0
+          },
+          "allowed_regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Regions"
           }
         },
         "type": "object",
@@ -26588,6 +26602,20 @@
             ],
             "title": "Is Default",
             "default": 0
+          },
+          "allowed_regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Regions"
           }
         },
         "type": "object",
@@ -26740,6 +26768,20 @@
             "title": "Is Default",
             "default": 0
           },
+          "allowed_regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Regions"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -26833,6 +26875,20 @@
             ],
             "title": "Is Default",
             "default": 0
+          },
+          "allowed_regions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Regions"
           }
         },
         "type": "object",

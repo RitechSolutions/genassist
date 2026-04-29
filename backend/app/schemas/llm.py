@@ -15,6 +15,7 @@ class LlmProviderBase(BaseModel):
     connection_status: Optional[ConnectionStatus] = None
     is_active: Optional[int] = 1
     is_default: Optional[int] = 0
+    allowed_regions: Optional[List[str]] = None
     model_config = ConfigDict(
         from_attributes = True
     )
