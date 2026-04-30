@@ -583,7 +583,7 @@ const KnowledgeBaseForm: React.FC = () => {
       if (editingItem) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await updateKnowledgeItem(editingItem.id, dataToSubmit as any);
-        setSuccess(`Knowledge base item "${dataToSubmit.name}" updated successfully`);
+        toast.success(`Knowledge base item "${dataToSubmit.name}" updated successfully`);
 
         if (syncAfterSaveRef.current) {
           syncAfterSaveRef.current = false;
@@ -595,7 +595,7 @@ const KnowledgeBaseForm: React.FC = () => {
         dataToSubmit.id = uuidv4();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await createKnowledgeItem(dataToSubmit as any);
-        setSuccess(`Knowledge base item "${dataToSubmit.name}" created successfully`);
+        toast.success(`Knowledge base item "${dataToSubmit.name}" created successfully`);
       }
 
       navigate('/knowledge-base');
