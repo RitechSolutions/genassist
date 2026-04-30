@@ -1,7 +1,8 @@
-import io
 import asyncio
+import io
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -26,6 +27,12 @@ from app.db.models.role_permission import RolePermissionModel
 from app.db.models.user import UserModel
 from app.db.models.user_role import UserRoleModel
 from app.db.models.user_type import UserTypeModel
+
+# Import agent seeding functions from separate module
+from app.db.seed.seed_agents import (
+    seed_demo_agent,
+    seed_gen_agent,
+)
 from app.db.seed.seed_data_config import seed_test_data
 from app.schemas.agent_knowledge import KBCreate, KBRead
 from app.schemas.agent_tool import ToolConfigBase
@@ -37,18 +44,21 @@ from app.services.agent_tool import ToolService
 from app.services.app_settings import AppSettingsService
 from app.services.datasources import DataSourceService
 
-# Import agent seeding functions from separate module
-from app.db.seed.seed_agents import (
-    seed_demo_agent,
-    seed_gen_agent,
-)
-
 logger = logging.getLogger(__name__)
 
 def _get_seed_password(env_name: str) -> str:
     value = os.environ.get(env_name)
     if value:
         return value
+
+    # Match seed.py behavior: strict in prod, ergonomic in dev.
+    if settings.DEBUG or settings.DEV or settings.FASTAPI_DEBUG:
+        default_password = os.environ.get("SEED_ADMIN_PASSWORD", "change-me")
+        logger.warning(
+            "Missing %s; using SEED_ADMIN_PASSWORD/dev default for seeding.",
+            env_name,
+        )
+        return default_password
 
     raise ValueError(
         f"Missing required seed password env var {env_name}. "
