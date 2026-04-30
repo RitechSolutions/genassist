@@ -9,7 +9,6 @@ RESIDENCY_REGION_MAP: Dict[str, FrozenSet[str]] = {
     }),
     "CA": frozenset({"ca-central-1", "ca-west-1"}),
     "US": frozenset({"us-east-1", "us-east-2", "us-west-1", "us-west-2"}),
-    "US_GOV": frozenset({"us-gov-east-1", "us-gov-west-1"}),
     "AP": frozenset({
         "ap-northeast-1", "ap-northeast-2", "ap-northeast-3",
         "ap-south-1", "ap-south-2",
