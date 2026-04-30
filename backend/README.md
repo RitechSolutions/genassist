@@ -63,7 +63,7 @@ python run.py
 
 - **Swagger UI:** http://localhost:8000/docs
 - **API Key:** `test123`
-- **User Auth:** `admin` / `genadmin`
+- **User Auth**: `admin` / value of `SEED_ADMIN_PASSWORD`
 
 ## Development
 
