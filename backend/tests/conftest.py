@@ -1,3 +1,5 @@
+import os
+import secrets
 import sys
 from pathlib import Path
 import pytest
@@ -5,12 +7,22 @@ from starlette.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.core.config.settings import settings
-from app.db.seed.seed_data_config import seed_test_data
 
 
 @pytest.fixture(scope="session")
 def anyio_backend():
     return 'asyncio'
+
+# Ensure tests have deterministic (but non-hardcoded) seed credentials.
+# This keeps credentials out of source while allowing login-based tests.
+@pytest.fixture(scope="session", autouse=True)
+def _seed_test_password_env():
+    os.environ.setdefault("SEED_ADMIN_PASSWORD", secrets.token_urlsafe(24))
+    os.environ.setdefault("SEED_SUPERVISOR_PASSWORD", secrets.token_urlsafe(24))
+    os.environ.setdefault("SEED_OPERATOR_PASSWORD", secrets.token_urlsafe(24))
+    os.environ.setdefault("SEED_APIUSER_PASSWORD", secrets.token_urlsafe(24))
+    os.environ.setdefault("SEED_TRANSCRIBE_OPERATOR_PASSWORD", secrets.token_urlsafe(24))
+    return True
 
 # Add the project root directory to the Python path
 project_root = Path(__file__).parent.parent
@@ -30,6 +42,7 @@ def client(app_def):
 
 @pytest.fixture(scope="session")
 def token(client, request):
+    from app.db.seed.seed_data_config import seed_test_data
     role = getattr(request, "param", "admin")  # default role
 
     if role == "admin":
