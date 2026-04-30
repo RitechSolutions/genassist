@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi_injector import Injected
@@ -13,7 +14,9 @@ from app.schemas.dashboard import (
     DashboardSummaryStats,
     IntegrationsResponse,
 )
+from app.schemas.notification import NotificationFeedResponse
 from app.services.dashboard import DashboardService
+from app.services.notification_feed import NotificationFeedService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -164,3 +167,40 @@ async def get_integrations(
     - Other configured integrations
     """
     return await dashboard_service.get_integrations()
+
+
+@router.get(
+    "/notifications",
+    response_model=NotificationFeedResponse,
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Dashboard.READ)),
+    ],
+    summary="Get notification feed",
+    description="Returns recent notification candidates from real backend events.",
+)
+async def get_notifications(
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of notifications"),
+    skip: int = Query(default=0, ge=0, le=10_000, description="Offset into the merged feed"),
+    notification_type: Literal[
+        "all",
+        "conversation_started",
+        "conversation_hostility",
+        "conversation_finalized_hostility",
+    ] = Query(
+        default="all",
+        description="Server-side type filter for notification categories.",
+    ),
+    include_conversation_started: bool = Query(
+        default=True,
+        description="When false, omits conversation-started rows from the feed (pagination-stable).",
+    ),
+    notification_feed_service: NotificationFeedService = Injected(NotificationFeedService),
+) -> NotificationFeedResponse:
+    items, has_more = await notification_feed_service.get_feed(
+        limit=limit,
+        skip=skip,
+        include_conversation_started=include_conversation_started,
+        notification_type=notification_type,
+    )
+    return NotificationFeedResponse(items=items, has_more=has_more)

@@ -26,6 +26,9 @@ from app.schemas.ml_model_pipeline import MLModelPipelineArtifactCreate
 from app.tasks.base import run_task_for_all_tenants
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
+from app.dependencies.injector import injector
+from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+from app.services.realtime_notifications import emit_notification, notification_payload
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +189,18 @@ async def execute_pipeline_run_async(run_id: UUID):
                 try:
                     await run_repository.update_status(
                         run_id, PipelineRunStatus.FAILED, error_message=str(e)
+                    )
+                    socket_connection_manager = injector.get(SocketConnectionManager)
+                    emit_notification(
+                        socket_connection_manager=socket_connection_manager,
+                        tenant_id=tenant_id,
+                        payload=notification_payload(
+                            notification_id=f"workflow_failed:pipeline:{run_id}",
+                            title="Workflow Run Failed",
+                            description=f"Pipeline run {str(run_id)[:8]}... failed.",
+                            level="error",
+                            action_url="/ml-models",
+                        ),
                     )
                 except AppException as update_error:
                     if update_error.error_key == ErrorKey.NOT_FOUND:

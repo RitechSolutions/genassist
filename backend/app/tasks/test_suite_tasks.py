@@ -11,6 +11,10 @@ from celery import shared_task
 
 from app.core.tenant_scope import set_tenant_context, clear_tenant_context
 from app.tasks.base import create_task_wrapper
+from app.core.tenant_scope import get_tenant_context
+from app.dependencies.injector import injector
+from app.modules.websockets.socket_connection_manager import SocketConnectionManager
+from app.services.realtime_notifications import emit_notification, notification_payload
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,17 @@ async def _execute_test_suite_run_async(
         run.status = "failed"
         run.summary_metrics = {"error": "Suite not found"}
         await service.run_repo.update(run)
+        emit_notification(
+            socket_connection_manager=injector.get(SocketConnectionManager),
+            tenant_id=get_tenant_context(),
+            payload=notification_payload(
+                notification_id=f"workflow_failed:test:{run_id}",
+                title="Workflow Run Failed",
+                description=f"Test run {str(run_id)[:8]}... failed.",
+                level="error",
+                action_url="/tests/evaluations",
+            ),
+        )
         return
 
     workflow = await service.workflow_service.get_by_id(UUID(str(run.workflow_id)))

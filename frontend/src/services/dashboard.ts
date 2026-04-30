@@ -6,6 +6,7 @@ import type {
   AgentStatsResponse,
   IntegrationsResponse,
 } from "@/interfaces/dashboard.interface";
+import type { Notification } from "@/interfaces/notification.interface";
 
 /**
  * Fetch complete dashboard data
@@ -92,6 +93,83 @@ export const fetchDashboardIntegrations = async (): Promise<IntegrationsResponse
     console.error("Error fetching dashboard integrations:", error);
     return null;
   }
+};
+
+type NotificationFeedItemRaw = Omit<Notification, "read" | "actionUrl"> & {
+  action_url: string;
+};
+
+function mapNotificationFeedItems(
+  items: NotificationFeedItemRaw[]
+): Notification[] {
+  return items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    timestamp: item.timestamp,
+    type: item.type,
+    read: false,
+    actionUrl: item.action_url,
+  }));
+}
+
+export type NotificationFeedPageResult = {
+  items: Notification[];
+  hasMore: boolean;
+};
+
+export type NotificationTypeFilter =
+  | "all"
+  | "conversation_started"
+  | "conversation_hostility"
+  | "conversation_finalized_hostility";
+
+/** Paginated notification feed (merged, sorted server-side). */
+export const fetchDashboardNotificationsPage = async (
+  limit: number,
+  skip: number,
+  includeConversationStarted: boolean,
+  notificationType: NotificationTypeFilter = "all"
+): Promise<NotificationFeedPageResult | null> => {
+  try {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    params.set("skip", String(skip));
+    params.set("notification_type", notificationType);
+    params.set("include_conversation_started", String(includeConversationStarted));
+    const response = await apiRequest<{
+      items: NotificationFeedItemRaw[];
+      has_more: boolean;
+    }>("get", `/dashboard/notifications?${params.toString()}`);
+    if (!response) return null;
+    return {
+      items: mapNotificationFeedItems(response.items),
+      hasMore: Boolean(response.has_more),
+    };
+  } catch (error) {
+    console.error("Error fetching dashboard notifications:", error);
+    return null;
+  }
+};
+
+export type FetchDashboardNotificationsOptions = {
+  skip?: number;
+  includeConversationStarted?: boolean;
+  notificationType?: NotificationTypeFilter;
+};
+
+/** First page (or window) of notifications for sidebar / bell cache. */
+export const fetchDashboardNotifications = async (
+  limit: number = 50,
+  options?: FetchDashboardNotificationsOptions
+): Promise<Notification[] | null> => {
+  const page = await fetchDashboardNotificationsPage(
+    limit,
+    options?.skip ?? 0,
+    options?.includeConversationStarted ?? true,
+    options?.notificationType ?? "all"
+  );
+  return page?.items ?? null;
 };
 
 /**

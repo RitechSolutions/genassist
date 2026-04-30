@@ -135,6 +135,17 @@ const SettingsPage = () => {
                           </Button>
                         </Link>
                       </div>
+                      <div className="flex flex-col">
+                        <h3 className="font-medium animate-fade-up animate-delay-100">Notifications</h3>
+                        <p className="text-sm text-muted-foreground mb-2 animate-fade-up animate-delay-200">
+                          Configure how in-app notifications are shown to you
+                        </p>
+                        <Link to="/settings/notifications">
+                          <Button variant="outline" className="mt-2 animate-fade-up animate-delay-300">
+                            Manage Notifications
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 </Card>

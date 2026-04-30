@@ -68,6 +68,11 @@ from app.services.analytics_realtime import (
     update_conversation_started,
     update_feedback_given,
 )
+from app.services.realtime_notifications import (
+    emit_notification,
+    notification_payload,
+    transcript_conversation_notification_url,
+)
 from app.services.auth import AuthService
 from app.services.conversations import ConversationService
 from app.services.dashboard import DashboardService
@@ -226,6 +231,7 @@ async def start(
     service: ConversationService = Injected(ConversationService),
     auth_service: AuthService = Injected(AuthService),
     translations_service: TranslationsService = Injected(TranslationsService),
+    socket_connection_manager: SocketConnectionManager = Injected(SocketConnectionManager),
 ):
     """
     Create a new in-progress conversation and store the partial transcript.
@@ -341,6 +347,20 @@ async def start(
     json_response = JSONResponse(content=response)
     apply_agent_cors_headers(request, json_response, agent_security_settings)
 
+    emit_notification(
+        socket_connection_manager=socket_connection_manager,
+        tenant_id=tenant_id,
+        current_user_id=get_current_user_id(),
+        payload=notification_payload(
+            notification_id=f"conversation_started:{conversation.id}",
+            title="Conversation Started",
+            description=f"A new conversation started (ID: {str(conversation.id)[:8]}...).",
+            level="info",
+            action_url=transcript_conversation_notification_url(conversation.id),
+            timestamp=conversation.created_at,
+        ),
+    )
+
     return json_response
 
 
@@ -441,6 +461,7 @@ async def update_no_agent(
             if get_current_user_id() != conversation.supervisor_id:
                 raise AppException(ErrorKey.CONVERSATION_TAKEN_OVER_OTHER)
 
+    previous_hostility_score = int(conversation.in_progress_hostility_score or 0)
     updated_conversation = await service.update_in_progress_conversation(conversation_id, model)
 
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
@@ -465,6 +486,25 @@ async def update_no_agent(
             tenant_id=tenant_id,
         )
     )
+
+    current_hostility_score = int(updated_conversation.in_progress_hostility_score or 0)
+    if previous_hostility_score <= 50 < current_hostility_score:
+        emit_notification(
+            socket_connection_manager=socket_connection_manager,
+            tenant_id=tenant_id,
+            current_user_id=get_current_user_id(),
+            payload=notification_payload(
+                notification_id=f"conversation_hostility:{updated_conversation.id}",
+                title="High Hostility Detected",
+                description=(
+                    f"Conversation {str(updated_conversation.id)[:8]}... reached hostility score "
+                    f"{current_hostility_score}%."
+                ),
+                level="warning",
+                action_url=transcript_conversation_notification_url(updated_conversation.id),
+                timestamp=updated_conversation.updated_at,
+            ),
+        )
 
     upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
 
