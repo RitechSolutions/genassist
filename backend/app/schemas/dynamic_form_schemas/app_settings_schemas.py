@@ -249,7 +249,6 @@ APP_SETTINGS_SCHEMAS: Dict[str, TypeSchema] = {
                     {"label": "European Union (EU)", "value": "EU"},
                     {"label": "Canada (CA)", "value": "CA"},
                     {"label": "United States (US)", "value": "US"},
-                    {"label": "US GovCloud (US_GOV)", "value": "US_GOV"},
                     {"label": "Asia Pacific (AP)", "value": "AP"},
                     {"label": "South America (SA)", "value": "SA"},
                     {"label": "Middle East (ME)", "value": "ME"},

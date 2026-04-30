@@ -11,7 +11,6 @@ const RESIDENCY_OPTIONS = [
   { value: "EU", label: "European Union (EU)" },
   { value: "CA", label: "Canada (CA)" },
   { value: "US", label: "United States (US)" },
-  { value: "US_GOV", label: "US GovCloud (US_GOV)" },
   { value: "AP", label: "Asia Pacific (AP)" },
   { value: "SA", label: "South America (SA)" },
   { value: "ME", label: "Middle East (ME)" },
