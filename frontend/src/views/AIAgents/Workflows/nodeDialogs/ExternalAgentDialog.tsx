@@ -14,7 +14,10 @@ import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
+import { DraggableAceEditor } from "../components/custom/DraggableAceEditor";
 import { RichInput } from "@/components/richInput";
+import "ace-builds/src-noconflict/mode-python";
+import "ace-builds/src-noconflict/theme-twilight";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH"] as const;
 const AUTH_TYPES = ["none", "bearer", "api_key", "basic"] as const;
@@ -362,11 +365,15 @@ result = {
 }`}</pre>
               </div>
             </div>
-            <DraggableTextArea
+            <DraggableAceEditor
+              id="mapping-script-editor"
+              name="mapping-script-editor"
+              mode="python"
+              theme="twilight"
               value={mappingScript}
-              onChange={(e) => setMappingScript(e.target.value)}
-              placeholder="# Write Python here to map the response..."
-              className="font-mono text-xs h-40 resize-none w-full"
+              onChange={setMappingScript}
+              width="100%"
+              height="100%"
             />
             <div className="text-xs text-gray-500">
               When set, this script overrides the field path mapping above.
