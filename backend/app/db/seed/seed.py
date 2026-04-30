@@ -1,17 +1,20 @@
 import asyncio
-from datetime import datetime
 import io
 import json
-import os
-from typing import List
-from fastapi import UploadFile
-from pathlib import Path
-from injector import Injector
-from sqlalchemy.ext.asyncio import AsyncSession
-from passlib.context import CryptContext
-from uuid import UUID
 import logging
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import List
+from uuid import UUID
+
+from fastapi import UploadFile
+from injector import Injector
+from passlib.context import CryptContext
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.auth.utils import hash_api_key
+from app.core.config.settings import settings
 from app.core.utils.date_time_utils import shift_datetime
 from app.core.utils.encryption_utils import encrypt_key
 from app.db.models import AgentModel
@@ -29,21 +32,43 @@ from app.db.models.user_role import UserRoleModel
 from app.db.models.user_type import UserTypeModel
 from app.db.seed.seed_data_config import seed_test_data
 from app.schemas.agent import AgentCreate
-from app.schemas.recording import RecordingCreate
-from app.core.config.settings import settings
-from app.schemas.workflow import WorkflowCreate, WorkflowUpdate
-from app.services.agent_tool import ToolService
-from app.schemas.agent_tool import ToolConfigBase
-from app.services.agent_knowledge import KnowledgeBaseService
 from app.schemas.agent_knowledge import KBCreate, KBRead
-from app.services.agent_config import AgentConfigService
-from app.services.workflow import WorkflowService
-from app.schemas.datasource import DataSourceCreate
-from app.services.datasources import DataSourceService
-from app.services.app_settings import AppSettingsService
+from app.schemas.agent_tool import ToolConfigBase
 from app.schemas.app_settings import AppSettingsCreate
+from app.schemas.datasource import DataSourceCreate
+from app.schemas.recording import RecordingCreate
+from app.schemas.workflow import WorkflowCreate, WorkflowUpdate
+from app.services.agent_config import AgentConfigService
+from app.services.agent_knowledge import KnowledgeBaseService
+from app.services.agent_tool import ToolService
+from app.services.app_settings import AppSettingsService
+from app.services.datasources import DataSourceService
+from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
+
+def _get_seed_password(env_name: str) -> str:
+    value = os.environ.get(env_name)
+    if value:
+        return value
+
+    # Backward compatible behavior:
+    # - In production, passwords must be explicitly provided via env vars.
+    # - In dev/debug, allow a predictable default so seeding (and tenant provisioning) works out of the box.
+    #
+    # This keeps production safe while avoiding "silent" tenant seed failures that omit the admin user.
+    if settings.DEBUG or settings.DEV or settings.FASTAPI_DEBUG:
+        default_password = os.environ.get("SEED_ADMIN_PASSWORD", "change-me")
+        logger.warning(
+            "Missing %s; using SEED_ADMIN_PASSWORD/dev default for seeding.",
+            env_name,
+        )
+        return default_password
+
+    raise ValueError(
+        f"Missing required seed password env var {env_name}. "
+        "Set it to a strong value before running DB seeding."
+    )
 
 
 def create_crud_permissions(resource: str, description_template: str = "Allows {action} {resource} data"):
@@ -190,13 +215,13 @@ async def seed_data(session: AsyncSession, injector: Injector):
     await session.commit()
 
     # Create users - passwords from environment variables with secure defaults for development
-    # In production, these should be set via environment variables
+    # In production, these must be set via environment variables (no hardcoded defaults).
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    seed_admin_password = os.environ.get('SEED_ADMIN_PASSWORD', 'genadmin')
-    seed_supervisor_password = os.environ.get('SEED_SUPERVISOR_PASSWORD', 'gensupervisor1')
-    seed_operator_password = os.environ.get('SEED_OPERATOR_PASSWORD', 'genoperator1')
-    seed_apiuser_password = os.environ.get('SEED_APIUSER_PASSWORD', 'genapiuser1')
-    seed_transcribe_operator_password = os.environ.get('SEED_TRANSCRIBE_OPERATOR_PASSWORD', 'gentranscribeoperator1')
+    seed_admin_password = _get_seed_password("SEED_ADMIN_PASSWORD")
+    seed_supervisor_password = _get_seed_password("SEED_SUPERVISOR_PASSWORD")
+    seed_operator_password = _get_seed_password("SEED_OPERATOR_PASSWORD")
+    seed_apiuser_password = _get_seed_password("SEED_APIUSER_PASSWORD")
+    seed_transcribe_operator_password = _get_seed_password("SEED_TRANSCRIBE_OPERATOR_PASSWORD")
 
     # Seed usernames from environment variables with defaults for development
     seed_admin_username = os.environ.get('SEED_ADMIN_USERNAME', 'admin')
