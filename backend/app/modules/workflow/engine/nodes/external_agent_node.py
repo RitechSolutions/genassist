@@ -154,9 +154,10 @@ class ExternalAgentNode(BaseNode):
                 script, params={"response": response_data}, wrap_code=False
             )
 
-            if execution.get("errors"):
-                logger.error("Mapping script errors: %s", execution["errors"])
-                return {"error": f"Mapping script error: {execution['errors']}"}
+            error_msg = execution.get("errors") or execution.get("error")
+            if error_msg:
+                logger.error("Mapping script errors: %s", error_msg)
+                return {"error": f"Mapping script error: {error_msg}"}
 
             mapped = execution.get("result")
             if not isinstance(mapped, dict) or "message" not in mapped:
