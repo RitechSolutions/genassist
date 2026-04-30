@@ -99,7 +99,6 @@ class AgentCORSMiddleware(BaseHTTPMiddleware):
                     "Access-Control-Allow-Methods": request.headers.get("access-control-request-method", "*"),
                     "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", "*"),
                     "Access-Control-Allow-Credentials": "true",
-                    "Access-Control-Max-Age": "600",
                 },
             )
 
