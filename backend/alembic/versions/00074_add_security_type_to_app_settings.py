@@ -1,7 +1,7 @@
 """add Security type to app_settings
 
-Revision ID: c3d4e5f6a7b8
-Revises: f5e3ae54e989
+Revision ID: f5e3ae54e989
+Revises: f1a2b3c4d5e6
 Create Date: 2026-04-29 00:00:00.000000
 
 """
