@@ -5,6 +5,39 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Ready",
+        "description": "Readiness probe.\n\nBackend service's `/ready` endpoint, but validates backend-critical\ndependencies (Redis) instead of WS connection stats.",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/token": {
       "post": {
         "tags": [
@@ -16096,7 +16129,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/playground/health": {
@@ -16117,7 +16151,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/playground/health/redis": {
@@ -16138,7 +16173,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/playground/mock/{endpoint}": {
@@ -16150,6 +16186,7 @@
         "summary": "Mock Get Endpoint",
         "description": "Mock any GET endpoint - returns the endpoint name and query parameters.",
         "operationId": "mock_get_endpoint_api_playground_mock__endpoint__get",
+        "deprecated": true,
         "parameters": [
           {
             "name": "endpoint",
@@ -16190,6 +16227,7 @@
         "summary": "Mock Post Endpoint",
         "description": "Mock any POST endpoint - returns the endpoint name and request body.",
         "operationId": "mock_post_endpoint_api_playground_mock__endpoint__post",
+        "deprecated": true,
         "parameters": [
           {
             "name": "endpoint",
@@ -16230,6 +16268,7 @@
         "summary": "Mock Put Endpoint",
         "description": "Mock any PUT endpoint - returns the endpoint name and request body.",
         "operationId": "mock_put_endpoint_api_playground_mock__endpoint__put",
+        "deprecated": true,
         "parameters": [
           {
             "name": "endpoint",
@@ -16270,6 +16309,7 @@
         "summary": "Mock Delete Endpoint",
         "description": "Mock any DELETE endpoint - returns the endpoint name.",
         "operationId": "mock_delete_endpoint_api_playground_mock__endpoint__delete",
+        "deprecated": true,
         "parameters": [
           {
             "name": "endpoint",
@@ -16310,6 +16350,7 @@
         "summary": "Mock Patch Endpoint",
         "description": "Mock any PATCH endpoint - returns the endpoint name and request body.",
         "operationId": "mock_patch_endpoint_api_playground_mock__endpoint__patch",
+        "deprecated": true,
         "parameters": [
           {
             "name": "endpoint",
@@ -16361,7 +16402,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/playground/sample-data": {
@@ -16382,7 +16424,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/playground/sample-response": {
@@ -16425,7 +16468,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/playground/error/{status_code}": {
@@ -16437,6 +16481,7 @@
         "summary": "Mock Error",
         "description": "Mock different HTTP error responses.",
         "operationId": "mock_error_api_playground_error__status_code__get",
+        "deprecated": true,
         "parameters": [
           {
             "name": "status_code",
@@ -16479,6 +16524,7 @@
         "summary": "Mock Delay",
         "description": "Mock a delayed response.",
         "operationId": "mock_delay_api_playground_delay__seconds__get",
+        "deprecated": true,
         "parameters": [
           {
             "name": "seconds",
@@ -16521,6 +16567,7 @@
         "summary": "Get Parkings",
         "description": "Get Pittsburgh parking zones filtered by location and radius.",
         "operationId": "get_parkings_api_playground_getParkings_get",
+        "deprecated": true,
         "parameters": [
           {
             "name": "latitude",
@@ -16591,7 +16638,8 @@
               }
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/smb-share/smb/list": {
@@ -21072,6 +21120,7 @@
               "Slack",
               "Jira",
               "FileManagerSettings",
+              "Security",
               "Other"
             ],
             "title": "Type"
@@ -21122,6 +21171,7 @@
               "Slack",
               "Jira",
               "FileManagerSettings",
+              "Security",
               "Other"
             ],
             "title": "Type"
@@ -21199,6 +21249,7 @@
                   "Slack",
                   "Jira",
                   "FileManagerSettings",
+                  "Security",
                   "Other"
                 ]
               },

@@ -77,7 +77,8 @@ def apply_agent_cors_headers(
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "*"
-        response.headers.pop("Access-Control-Allow-Credentials", None)
+        if "access-control-allow-credentials" in response.headers:
+            del response.headers["access-control-allow-credentials"]
 
     return response
 

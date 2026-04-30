@@ -11,6 +11,7 @@ export interface AppSetting {
     | "Slack"
     | "Jira"
     | "FileManagerSettings"
+    | "Security"
     | "Other";
   values: Record<string, FieldValue>;
   description?: string;

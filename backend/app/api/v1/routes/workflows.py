@@ -17,6 +17,7 @@ from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS
 from app.schemas.workflow import Workflow, WorkflowCreate, WorkflowMinimal, WorkflowUpdate
 from app.services.llm_providers import LlmProviderService
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
+from app.core.utils.string_utils import truncate_for_log
 from app.services.workflow import WorkflowService
 
 router = APIRouter()
@@ -140,7 +141,7 @@ async def update_workflow(
     Update a workflow
     """
     logger.info(f"Updating workflow: {workflow_id}")
-    logger.info(f"Workflow data: {workflow_data}")
+    logger.info("Workflow data: %s", truncate_for_log(str(workflow_data)))
     workflow = await service.get_by_id(workflow_id)
 
     if not workflow:

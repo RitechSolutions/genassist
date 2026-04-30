@@ -96,6 +96,16 @@ class LLMProvider:
         else:
             llm_provider = await llm_provider_service.get_by_id(model_id)
 
+        from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
+        from app.services.app_settings import AppSettingsService
+
+        app_settings_service = injector.get(AppSettingsService)
+        regions = bedrock_regions_from_connection_data(
+            llm_provider.llm_model_provider,
+            llm_provider.connection_data,
+        )
+        await assert_provider_residency(regions, app_settings_service)
+
         try:
             # Validate connection data
             validated_data = json.loads(
