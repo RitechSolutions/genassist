@@ -301,9 +301,9 @@ export const ExternalAgentDialog: React.FC<
       <div className="space-y-2">
         <Label>Response Mapping</Label>
         <div className="text-xs text-gray-500 mb-1">
-          Dot-notation path into the API JSON response (e.g. <code>output.text</code>)
+          Point to where the message lives in the JSON response using dot-notation (e.g. <code>output.text</code>). Use the Python script below if you need to combine fields, add fallback logic, or transform the data.
         </div>
-        <div className="space-y-2">
+        <div className={`space-y-2 ${mappingScript ? "opacity-40 pointer-events-none" : ""}`}>
           <div className="space-y-1">
             <Label className="text-xs">Message field path</Label>
             <DraggableInput
@@ -323,6 +323,9 @@ export const ExternalAgentDialog: React.FC<
             />
           </div>
         </div>
+        {mappingScript && (
+          <p className="text-xs text-amber-600">Field paths are ignored — Python script is active.</p>
+        )}
       </div>
 
       {/* Advanced: Python mapping script */}
@@ -339,8 +342,8 @@ export const ExternalAgentDialog: React.FC<
           <div className="space-y-2">
             <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 space-y-2">
               <div>
-                <p className="font-semibold text-gray-700">What it does</p>
-                <p className="mt-0.5">Runs a Python snippet after the HTTP call. Use it when the external API returns a structure that field-path mapping alone can&apos;t handle.</p>
+                <p className="font-semibold text-gray-700">When to use this</p>
+                <p className="mt-0.5">Use this instead of the field paths above when you need to <strong>combine multiple fields</strong>, add <strong>fallback/conditional logic</strong>, or <strong>transform</strong> the response (e.g. extract items from a list). For simple cases where the message is at a known path, the field inputs above are enough.</p>
               </div>
               <div>
                 <p className="font-semibold text-gray-700">How to write it</p>
@@ -354,8 +357,8 @@ export const ExternalAgentDialog: React.FC<
                 <p className="font-semibold text-gray-700">Example</p>
                 <pre className="mt-1 bg-gray-100 rounded p-2 font-mono text-xs overflow-x-auto">{`response = params["response"]
 result = {
-    "message": response["output"]["text"],
-    "steps": response["output"].get("reasoning", []),
+    "message": response.get("answer") or response["fallback_text"],
+    "steps": [s["description"] for s in response.get("reasoning_steps", [])],
 }`}</pre>
               </div>
             </div>
