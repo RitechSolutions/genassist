@@ -242,6 +242,8 @@ class ConversationService:
         if conversation.status == ConversationStatus.FINALIZED.value:
             raise AppException(ErrorKey.CONVERSATION_FINALIZED)
 
+        hostility_at_finalize = int(conversation.in_progress_hostility_score or 0)
+
         resolved_analyst_id = llm_analyst_id or seed_test_data.llm_analyst_kpi_analyzer_id
 
         # Mark as finalized and record which analyst was used
@@ -266,6 +268,44 @@ class ConversationService:
             await self.store_zendesk_analysis(saved_conversation, conversation_analysis)
 
         await invalidate_conversation_cache(conversation_id)
+
+        if hostility_at_finalize >= 50:
+            try:
+                # Lazy imports avoid circular import: dependency_injection → … → ConversationService
+                from app.core.tenant_scope import get_tenant_context
+                from app.dependencies.injector import injector
+                from app.modules.websockets.socket_connection_manager import (
+                    SocketConnectionManager,
+                )
+                from app.services.realtime_notifications import (
+                    emit_notification,
+                    notification_payload,
+                    transcript_conversation_notification_url,
+                )
+
+                socket_manager = injector.get(SocketConnectionManager)
+                emit_notification(
+                    socket_connection_manager=socket_manager,
+                    tenant_id=get_tenant_context(),
+                    current_user_id=get_current_user_id(),
+                    payload=notification_payload(
+                        notification_id=f"conversation_finalized_hostility:{conversation_id}",
+                        title="Live conversation finalized",
+                        description=(
+                            f"Conversation {str(conversation_id)[:8]}... finalized with hostility score "
+                            f"{hostility_at_finalize}%."
+                        ),
+                        level="warning",
+                        action_url=transcript_conversation_notification_url(conversation_id),
+                        timestamp=saved_conversation.updated_at
+                        or datetime.now(timezone.utc),
+                    ),
+                )
+            except Exception:
+                logger.warning(
+                    "Emit finalized high-hostility notification failed",
+                    exc_info=True,
+                )
 
         return ConversationAnalysisRead.model_validate(conversation_analysis)
 

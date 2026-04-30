@@ -5,4 +5,5 @@ export type Notification = {
   timestamp: string
   type: "info" | "success" | "warning" | "error"
   read: boolean
+  actionUrl?: string
 } 
