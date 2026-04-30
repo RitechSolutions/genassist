@@ -62,8 +62,14 @@ export default function GdprConversations() {
   const [isOpeningTranscript, setIsOpeningTranscript] = useState(false);
 
   const [conversationIdsToDelete, setConversationIdsToDelete] = useState<string[]>([]);
+  const [finalizedConversationIdsSelected, setFinalizedConversationIdsSelected] = useState<
+    Set<string>
+  >(() => new Set());
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const isFinalizedConversation = (item: Pick<GdprConversationItem, "status">): boolean =>
+    (item.status ?? "").toLowerCase() === "finalized";
 
   const performSearch = useCallback(
     async (email: string, page: number) => {
@@ -85,6 +91,7 @@ export default function GdprConversations() {
         setTotal(response.total);
         setActiveEmail(trimmed);
         setSelectedConversationIds(new Set());
+        setFinalizedConversationIdsSelected(new Set());
       } catch (err) {
         const axiosError = err as AxiosError<{ error?: string }>;
         const apiMessage =
@@ -94,6 +101,7 @@ export default function GdprConversations() {
         setItems([]);
         setTotal(0);
         setSelectedConversationIds(new Set());
+        setFinalizedConversationIdsSelected(new Set());
       } finally {
         setLoading(false);
       }
@@ -118,6 +126,7 @@ export default function GdprConversations() {
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     setSelectedConversationIds(new Set());
+    setFinalizedConversationIdsSelected(new Set());
     if (activeEmail) {
       performSearch(activeEmail, page);
     }
@@ -127,12 +136,28 @@ export default function GdprConversations() {
   const allOnPageSelected = items.length > 0 && selectedCount === items.length;
 
   const toggleSelectedConversation = (conversationId: string, checked: boolean) => {
+    const item = items.find((candidate) => candidate.id === conversationId);
+    const isFinalized = item ? isFinalizedConversation(item) : false;
+
     setSelectedConversationIds((prev) => {
       const next = new Set(prev);
       if (checked) next.add(conversationId);
       else next.delete(conversationId);
       return next;
     });
+
+    setFinalizedConversationIdsSelected((prev) => {
+      const next = new Set(prev);
+      if (checked && isFinalized) next.add(conversationId);
+      else next.delete(conversationId);
+      return next;
+    });
+
+    if (checked && isFinalized) {
+      toast(
+        "This conversation is finalized and cannot be hard-deleted. It can still be soft-deleted or anonymized.",
+      );
+    }
   };
 
   const toggleSelectAllOnPage = (checked: boolean) => {
@@ -140,6 +165,19 @@ export default function GdprConversations() {
       if (!checked) return new Set();
       return new Set(items.map((item) => item.id));
     });
+    setFinalizedConversationIdsSelected(() => {
+      if (!checked) return new Set();
+      return new Set(items.filter((item) => isFinalizedConversation(item)).map((item) => item.id));
+    });
+
+    if (checked) {
+      const finalizedCount = items.filter((item) => isFinalizedConversation(item)).length;
+      if (finalizedCount > 0) {
+        toast(
+          `${finalizedCount} finalized conversation${finalizedCount === 1 ? "" : "s"} selected. Finalized conversations cannot be hard-deleted.`,
+        );
+      }
+    }
   };
 
   const handleBulkDeleteClick = () => {
@@ -171,8 +209,24 @@ export default function GdprConversations() {
     if (conversationIdsToDelete.length === 0) return;
     setIsDeleting(true);
     try {
+      const blockedIds =
+        mode === "hard" ? finalizedConversationIdsSelected : new Set<string>();
+      const idsToProcess =
+        mode === "hard"
+          ? conversationIdsToDelete.filter((id) => !blockedIds.has(id))
+          : conversationIdsToDelete;
+
+      if (mode === "hard" && idsToProcess.length === 0) {
+        toast.error(
+          `Hard delete is not allowed for finalized conversations. ${conversationIdsToDelete.length} selected item${
+            conversationIdsToDelete.length === 1 ? "" : "s"
+          } would be skipped.`,
+        );
+        return;
+      }
+
       const failures: { id: string; message: string }[] = [];
-      for (const id of conversationIdsToDelete) {
+      for (const id of idsToProcess) {
         try {
           await deleteConversationForGdpr(id, mode);
         } catch (err) {
@@ -184,7 +238,7 @@ export default function GdprConversations() {
         }
       }
 
-      const succeededCount = conversationIdsToDelete.length - failures.length;
+      const succeededCount = idsToProcess.length - failures.length;
       if (succeededCount > 0) {
         toast.success(
           mode === "hard"
@@ -192,6 +246,11 @@ export default function GdprConversations() {
             : mode === "anonymize"
               ? `${succeededCount} conversation${succeededCount === 1 ? "" : "s"} anonymized.`
               : `${succeededCount} conversation${succeededCount === 1 ? "" : "s"} soft-deleted (PII scrubbed).`,
+        );
+      }
+      if (mode === "hard" && blockedIds.size > 0) {
+        toast(
+          `${blockedIds.size} finalized conversation${blockedIds.size === 1 ? "" : "s"} skipped (hard delete not allowed).`,
         );
       }
       if (failures.length > 0) {
@@ -203,6 +262,7 @@ export default function GdprConversations() {
       setIsDialogOpen(false);
       setConversationIdsToDelete([]);
       setSelectedConversationIds(new Set());
+      setFinalizedConversationIdsSelected(new Set());
       // Refetch to reflect the new state. ``soft`` rows disappear from the
       // default list; ``anonymize`` rows stay but lose PII; ``hard`` rows are
       // gone from the list entirely.
@@ -216,7 +276,10 @@ export default function GdprConversations() {
 
   const handleDialogOpenChange = (open: boolean) => {
     setIsDialogOpen(open);
-    if (!open) setConversationIdsToDelete([]);
+    if (!open) {
+      setConversationIdsToDelete([]);
+      setFinalizedConversationIdsSelected(new Set());
+    }
   };
 
   const headers = [
@@ -411,6 +474,7 @@ export default function GdprConversations() {
         isInProgress={isDeleting}
         conversationId={conversationIdsToDelete.length === 1 ? conversationIdsToDelete[0] : null}
         conversationCount={conversationIdsToDelete.length}
+        hardDeleteBlockedCount={finalizedConversationIdsSelected.size}
       />
 
       {isLiveTranscriptSelected ? (
