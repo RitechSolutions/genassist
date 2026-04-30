@@ -17,6 +17,7 @@ interface GdprDeleteDialogProps {
   onConfirm: (mode: GdprDeleteMode) => Promise<void>;
   isInProgress: boolean;
   conversationId: string | null;
+  conversationCount?: number | null;
   defaultMode?: GdprDeleteMode;
 }
 
@@ -51,6 +52,7 @@ export function GdprDeleteDialog({
   onConfirm,
   isInProgress,
   conversationId,
+  conversationCount,
   defaultMode = "soft",
 }: GdprDeleteDialogProps) {
   const [mode, setMode] = useState<GdprDeleteMode>(defaultMode);
@@ -76,16 +78,34 @@ export function GdprDeleteDialog({
             <X className="h-4 w-4" />
           </button>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete conversation for GDPR?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {conversationCount && conversationCount > 1
+                ? "Delete conversations for GDPR?"
+                : "Delete conversation for GDPR?"}
+            </AlertDialogTitle>
             <AlertDialogDescription className="pb-2">
-              Choose how this conversation
-              {conversationId ? (
+              {conversationCount && conversationCount > 1 ? (
                 <>
-                  {" "}
-                  (<span className="font-mono text-xs">{conversationId.slice(-8)}</span>)
+                  Choose how these conversations{" "}
+                  (<span className="font-medium">{conversationCount}</span> selected) should be
+                  erased. The action is logged for auditing.
                 </>
-              ) : null}
-              {" "}should be erased. The action is logged for auditing.
+              ) : (
+                <>
+                  Choose how this conversation
+                  {conversationId ? (
+                    <>
+                      {" "}
+                      (
+                      <span className="font-mono text-xs">
+                        {conversationId.slice(-8)}
+                      </span>
+                      )
+                    </>
+                  ) : null}{" "}
+                  should be erased. The action is logged for auditing.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
 

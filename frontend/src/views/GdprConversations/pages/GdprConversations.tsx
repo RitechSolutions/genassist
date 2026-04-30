@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AxiosError } from "axios";
-import { Search, Trash2, ShieldAlert } from "lucide-react";
+import { Search, ShieldAlert, MessageCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { PageLayout } from "@/components/PageLayout";
@@ -18,6 +18,11 @@ import {
   searchConversationsByEmail,
 } from "@/services/gdprConversations";
 import { GdprDeleteDialog } from "../components/GdprDeleteDialog";
+import { conversationService } from "@/services/liveConversations";
+import { transformTranscript } from "@/views/Transcripts/helpers/transformers";
+import type { Transcript } from "@/interfaces/transcript.interface";
+import { TranscriptDialog } from "@/views/Transcripts/components/TranscriptDialog";
+import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
 
 const PAGE_SIZE = 10;
 
@@ -47,9 +52,16 @@ export default function GdprConversations() {
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedConversationIds, setSelectedConversationIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
-  const [conversationToDelete, setConversationToDelete] =
-    useState<GdprConversationItem | null>(null);
+  const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(null);
+  const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
+  const [isLiveTranscriptSelected, setIsLiveTranscriptSelected] = useState(false);
+  const [isOpeningTranscript, setIsOpeningTranscript] = useState(false);
+
+  const [conversationIdsToDelete, setConversationIdsToDelete] = useState<string[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -72,6 +84,7 @@ export default function GdprConversations() {
         setItems(response.items);
         setTotal(response.total);
         setActiveEmail(trimmed);
+        setSelectedConversationIds(new Set());
       } catch (err) {
         const axiosError = err as AxiosError<{ error?: string }>;
         const apiMessage =
@@ -80,6 +93,7 @@ export default function GdprConversations() {
         setError(apiMessage);
         setItems([]);
         setTotal(0);
+        setSelectedConversationIds(new Set());
       } finally {
         setLoading(false);
       }
@@ -103,63 +117,139 @@ export default function GdprConversations() {
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
+    setSelectedConversationIds(new Set());
     if (activeEmail) {
       performSearch(activeEmail, page);
     }
   };
 
-  const handleDeleteClick = (item: GdprConversationItem) => {
-    setConversationToDelete(item);
+  const selectedCount = selectedConversationIds.size;
+  const allOnPageSelected = items.length > 0 && selectedCount === items.length;
+
+  const toggleSelectedConversation = (conversationId: string, checked: boolean) => {
+    setSelectedConversationIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(conversationId);
+      else next.delete(conversationId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllOnPage = (checked: boolean) => {
+    setSelectedConversationIds(() => {
+      if (!checked) return new Set();
+      return new Set(items.map((item) => item.id));
+    });
+  };
+
+  const handleBulkDeleteClick = () => {
+    const ids = Array.from(selectedConversationIds);
+    if (ids.length === 0) return;
+    setConversationIdsToDelete(ids);
     setIsDialogOpen(true);
   };
 
+  const handleOpenConversation = async (conversationId: string) => {
+    if (!conversationId || isOpeningTranscript) return;
+    try {
+      setIsOpeningTranscript(true);
+      const backend = await conversationService.fetchConversationsTranscriptsAndData(conversationId);
+      const transformed = transformTranscript(backend);
+      setSelectedTranscript(transformed);
+      setIsLiveTranscriptSelected(
+        transformed?.status === "in_progress" || transformed?.status === "takeover"
+      );
+      setIsTranscriptOpen(true);
+    } catch {
+      toast.error("Could not open conversation. It may not exist or you may not have access.");
+    } finally {
+      setIsOpeningTranscript(false);
+    }
+  };
+
   const handleDeleteConfirm = async (mode: GdprDeleteMode) => {
-    if (!conversationToDelete) return;
+    if (conversationIdsToDelete.length === 0) return;
     setIsDeleting(true);
     try {
-      await deleteConversationForGdpr(conversationToDelete.id, mode);
-      toast.success(
-        mode === "hard"
-          ? "Conversation permanently deleted."
-          : mode === "anonymize"
-            ? "Conversation anonymized."
-            : "Conversation soft-deleted (PII scrubbed).",
-      );
+      const failures: { id: string; message: string }[] = [];
+      for (const id of conversationIdsToDelete) {
+        try {
+          await deleteConversationForGdpr(id, mode);
+        } catch (err) {
+          const axiosError = err as AxiosError<{ error?: string }>;
+          const apiMessage =
+            axiosError.response?.data?.error ??
+            (err instanceof Error ? err.message : "Failed to delete conversation.");
+          failures.push({ id, message: apiMessage });
+        }
+      }
+
+      const succeededCount = conversationIdsToDelete.length - failures.length;
+      if (succeededCount > 0) {
+        toast.success(
+          mode === "hard"
+            ? `${succeededCount} conversation${succeededCount === 1 ? "" : "s"} permanently deleted.`
+            : mode === "anonymize"
+              ? `${succeededCount} conversation${succeededCount === 1 ? "" : "s"} anonymized.`
+              : `${succeededCount} conversation${succeededCount === 1 ? "" : "s"} soft-deleted (PII scrubbed).`,
+        );
+      }
+      if (failures.length > 0) {
+        toast.error(
+          `Failed to delete ${failures.length} conversation${failures.length === 1 ? "" : "s"}.`,
+        );
+      }
+
       setIsDialogOpen(false);
-      setConversationToDelete(null);
+      setConversationIdsToDelete([]);
+      setSelectedConversationIds(new Set());
       // Refetch to reflect the new state. ``soft`` rows disappear from the
       // default list; ``anonymize`` rows stay but lose PII; ``hard`` rows are
       // gone from the list entirely.
       if (activeEmail) {
         await performSearch(activeEmail, currentPage);
       }
-    } catch (err) {
-      const axiosError = err as AxiosError<{ error?: string }>;
-      const apiMessage =
-        axiosError.response?.data?.error ??
-        (err instanceof Error ? err.message : "Failed to delete conversation.");
-      toast.error(apiMessage);
     } finally {
       setIsDeleting(false);
     }
   };
 
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) setConversationIdsToDelete([]);
+  };
+
   const headers = [
-    "Conversation",
-    "Email (PII)",
-    "Status",
-    "Created",
-    "Updated",
-    "Action",
+    { label: "", className: "w-12 px-2" },          // checkbox column
+    { label: "Conversation", className: "w-[260px]" },
+    { label: "Email (PII)", className: "w-[220px]" },
+    { label: "Status", className: "w-[120px]" },
+    { label: "Created", className: "w-[160px]" },
+    { label: "Updated", className: "w-[160px]" },
+    { label: "Open", className: "w-[110px]" },
   ];
 
   const renderRow = (item: GdprConversationItem) => {
     const requesterEmail = getRequesterEmail(item);
     const isAnonymized = Boolean(item.pii_redacted_at);
+    const isChecked = selectedConversationIds.has(item.id);
     return (
       <TableRow key={item.id}>
+        <TableCell>
+          <div className="flex items-center justify-center">
+          <input
+            type="checkbox"
+            aria-label={`Select conversation ${item.id}`}
+            checked={isChecked}
+            onChange={(event) => toggleSelectedConversation(item.id, event.target.checked)}
+            className="h-4 w-4 accent-primary"
+          />
+          </div>
+        </TableCell>
         <TableCell className="font-mono text-xs break-all">
-          {item.id}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="break-all">{item.id}</span>
+          </div>
           {item.zendesk_ticket_id ? (
             <Badge variant="outline" className="ml-2">
               Zendesk #{item.zendesk_ticket_id}
@@ -191,14 +281,15 @@ export default function GdprConversations() {
         </TableCell>
         <TableCell>
           <Button
-            variant="outline"
+            type="button"
+            variant="default"
             size="sm"
-            onClick={() => handleDeleteClick(item)}
             className="rounded-full"
-            title="Delete conversation for GDPR"
+            title="Open conversation"
+            onClick={() => handleOpenConversation(item.id)}
+            disabled={isOpeningTranscript}
           >
-            <Trash2 className="h-4 w-4" />
-            Delete
+            <MessageCircle className="h-2 w-2" /> Open
           </Button>
         </TableCell>
       </TableRow>
@@ -263,6 +354,33 @@ export default function GdprConversations() {
 
       {activeEmail && (
         <>
+          <Card className="p-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-2">
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={allOnPageSelected}
+                    onChange={(event) => toggleSelectAllOnPage(event.target.checked)}
+                    disabled={items.length === 0 || loading}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  Select <b>{selectedCount}</b> conversations
+                </label>
+              </div>
+              <Button
+                type="button"
+                variant="destructive"
+                className="rounded-full"
+                disabled={selectedCount === 0 || loading}
+                onClick={handleBulkDeleteClick}
+                title="Delete selected conversations for GDPR"
+              >
+                Delete selected
+              </Button>
+            </div>
+          </Card>
+
           <DataTable
             data={items}
             loading={loading}
@@ -288,11 +406,32 @@ export default function GdprConversations() {
 
       <GdprDeleteDialog
         isOpen={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
+        onOpenChange={handleDialogOpenChange}
         onConfirm={handleDeleteConfirm}
         isInProgress={isDeleting}
-        conversationId={conversationToDelete?.id ?? null}
+        conversationId={conversationIdsToDelete.length === 1 ? conversationIdsToDelete[0] : null}
+        conversationCount={conversationIdsToDelete.length}
       />
+
+      {isLiveTranscriptSelected ? (
+        <ActiveConversationDialog
+          transcript={selectedTranscript}
+          isOpen={isTranscriptOpen}
+          onOpenChange={(open) => {
+            setIsTranscriptOpen(open);
+            if (!open) setSelectedTranscript(null);
+          }}
+        />
+      ) : (
+        <TranscriptDialog
+          transcript={selectedTranscript}
+          isOpen={isTranscriptOpen}
+          onOpenChange={(open) => {
+            setIsTranscriptOpen(open);
+            if (!open) setSelectedTranscript(null);
+          }}
+        />
+      )}
     </PageLayout>
   );
 }
