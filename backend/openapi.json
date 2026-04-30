@@ -21120,6 +21120,7 @@
               "Slack",
               "Jira",
               "FileManagerSettings",
+              "Security",
               "Other"
             ],
             "title": "Type"
@@ -21170,6 +21171,7 @@
               "Slack",
               "Jira",
               "FileManagerSettings",
+              "Security",
               "Other"
             ],
             "title": "Type"
@@ -21247,6 +21249,7 @@
                   "Slack",
                   "Jira",
                   "FileManagerSettings",
+                  "Security",
                   "Other"
                 ]
               },
