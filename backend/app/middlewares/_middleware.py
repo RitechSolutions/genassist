@@ -27,10 +27,15 @@ from app.middlewares.tenant_middleware import TenantMiddleware
 from app.middlewares.tenant_scope_middleware import TenantScopeMiddleware
 
 
-def get_allowed_origins() -> list[str]:
+def get_allowed_origins() -> tuple[list[str], bool]:
     """
     Get the list of allowed CORS origins.
     Merges default origins with additional origins from CORS_ALLOWED_ORIGINS environment variable.
+
+    Returns:
+        A tuple of (explicit_origins, allow_all).  When allow_all is True the
+        caller should use ``allow_origin_regex=".*"`` so that Starlette reflects
+        the requesting Origin header (compatible with allow_credentials=True).
     """
     default_origins = [
         "http://localhost:8080",
@@ -45,6 +50,7 @@ def get_allowed_origins() -> list[str]:
 
     # Start with default origins
     allowed_origins = default_origins.copy()
+    allow_all = False
 
     # Add additional origins from environment variable if provided
     if settings.CORS_ALLOWED_ORIGINS:
@@ -52,15 +58,32 @@ def get_allowed_origins() -> list[str]:
         additional_origins = [origin.strip() for origin in settings.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
         # Add unique origins only
         for origin in additional_origins:
-            # Never allow wildcard origins here. With allow_credentials=True, "*" is unsafe and
-            # also not permitted by the CORS spec for credentialed requests.
             if origin == "*":
-                logger.warning("Ignoring CORS_ALLOWED_ORIGINS='*' because credentials are enabled")
+                allow_all = True
                 continue
             if origin not in allowed_origins:
                 allowed_origins.append(origin)
 
-    return allowed_origins
+    return allowed_origins, allow_all
+
+
+def _cors_kwargs() -> dict:
+    """Build kwargs for CORSMiddleware based on allowed-origins config."""
+    origins, allow_all = get_allowed_origins()
+    if allow_all:
+        return dict(
+            allow_origins=origins,
+            allow_origin_regex=".*",
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    return dict(
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 def build_middlewares() -> list[Middleware]:
@@ -97,10 +120,7 @@ def build_middlewares() -> list[Middleware]:
             # 5️⃣  CORS
             Middleware(
                 CORSMiddleware,
-                allow_origins=get_allowed_origins(),
-                allow_credentials=True,
-                allow_methods=["*"],
-                allow_headers=["*"],
+                **_cors_kwargs(),
             ),
             Middleware(VersionHeaderMiddleware),
         ]
