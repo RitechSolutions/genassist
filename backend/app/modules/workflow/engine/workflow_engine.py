@@ -16,6 +16,7 @@ from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes import (
     AgentNode,
+    ExternalAgentNode,
     AggregatorNode,
     ApiToolNode,
     CalendarEventsNode,
@@ -81,6 +82,7 @@ class WorkflowEngine:
         cls._node_registry["chatOutputNode"] = ChatOutputNode
         cls._node_registry["routerNode"] = RouterNode
         cls._node_registry["agentNode"] = AgentNode
+        cls._node_registry["externalAgentNode"] = ExternalAgentNode
         cls._node_registry["apiToolNode"] = ApiToolNode
         cls._node_registry["openApiNode"] = OpenAPINode
         cls._node_registry["templateNode"] = TemplateNode

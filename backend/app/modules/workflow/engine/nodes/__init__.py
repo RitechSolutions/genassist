@@ -3,6 +3,7 @@ Node implementations for the workflow engine.
 """
 
 from .agent_node import AgentNode
+from .external_agent_node import ExternalAgentNode
 from .aggregator_node import AggregatorNode
 from .api_tool_node import ApiToolNode
 from .calendar_events_node import CalendarEventsNode
@@ -38,6 +39,7 @@ from .workflow_executor_node import WorkflowExecutorNode
 from .zendesk_tool_node import ZendeskToolNode
 
 __all__ = [
+    "ExternalAgentNode",
     "ChatInputNode",
     "ChatOutputNode",
     "RouterNode",

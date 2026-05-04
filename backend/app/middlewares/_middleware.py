@@ -63,6 +63,51 @@ def get_allowed_origins() -> list[str]:
     return allowed_origins
 
 
+_static_allowed_origins: set[str] | None = None
+
+
+def _get_static_origins() -> set[str]:
+    global _static_allowed_origins
+    if _static_allowed_origins is None:
+        _static_allowed_origins = set(get_allowed_origins())
+    return _static_allowed_origins
+
+
+class AgentCORSMiddleware(BaseHTTPMiddleware):
+    """
+    Dynamic CORS for origins not in the global static list.
+
+    Origins configured per-agent in the database are unknown to the global
+    CORSMiddleware.  This middleware sits *before* it: if the requesting
+    Origin is already in the static list it defers to CORSMiddleware;
+    otherwise it reflects the Origin so per-agent origins work.
+
+    Security: all endpoints authenticate via API key / JWT (not cookies),
+    so reflecting the origin does not enable CSRF.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        origin = request.headers.get("origin")
+        if not origin or origin in _get_static_origins():
+            return await call_next(request)
+
+        if request.method == "OPTIONS":
+            return Response(
+                status_code=200,
+                headers={
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Methods": request.headers.get("access-control-request-method", "*"),
+                    "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", "*"),
+                    "Access-Control-Allow-Credentials": "true",
+                },
+            )
+
+        response = await call_next(request)
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+
 def build_middlewares() -> list[Middleware]:
     """
     Middlewares that must run **before** user-code.
@@ -94,7 +139,9 @@ def build_middlewares() -> list[Middleware]:
             Middleware(RequestContextMiddleware),
             # 4️⃣  Ensures database sessions are closed after each request
             # Middleware(SessionCleanupMiddleware),
-            # 5️⃣  CORS
+            # 5️⃣  Agent-route preflight handler (must sit before CORSMiddleware)
+            Middleware(AgentCORSMiddleware),
+            # 6️⃣  CORS
             Middleware(
                 CORSMiddleware,
                 allow_origins=get_allowed_origins(),
