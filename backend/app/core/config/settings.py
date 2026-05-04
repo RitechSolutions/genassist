@@ -61,6 +61,14 @@ class ProjectSettings(BaseSettings):
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
 
+    # === GDPR Right-to-Erasure ===
+    # Default mode used by the admin GDPR delete endpoint when the caller does
+    # not pass an explicit `mode` query parameter. Allowed values: "soft",
+    # "anonymize", "hard". "soft" preserves backward compatibility because it
+    # only flips the existing `is_deleted` flag and scrubs PII, leaving the
+    # row in place for a manual hard purge later.
+    GDPR_DEFAULT_DELETE_MODE: str = "soft"
+
     # Number of latest messages used for in-progress hostility scoring.
     # If the conversation has fewer messages than this, all messages are used.
     HOSTILITY_SCORE_MESSAGE_COUNT: int = 20

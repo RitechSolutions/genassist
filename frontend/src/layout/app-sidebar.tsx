@@ -217,6 +217,11 @@ const menuItems: MenuItem[] = [
         url: "/user-groups",
         permissionsRequired: ["read:user_group"],
       },
+      {
+        title: "GDPR Requests",
+        url: "/admin/gdpr-conversations",
+        permissionsRequired: ["delete:conversation:gdpr"],
+      },
     ],
   },
   {
