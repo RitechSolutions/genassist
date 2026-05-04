@@ -118,8 +118,13 @@ def _execute_python_code_sync(
     running the AST/builtins sandbox. Kills the process if it exceeds
     _EXEC_TIMEOUT_SECONDS.
     """
-    result_queue: multiprocessing.Queue = multiprocessing.Queue()
-    process = multiprocessing.Process(
+    # fork (not spawn) so the child inherits already-loaded modules.
+    # spawn re-imports everything from scratch, causing 2-5s overhead on macOS
+    # and unnecessary work on Linux. fork is the Linux default; making it
+    # explicit also fixes the slowness on macOS (Python ≥3.12 defaults to spawn).
+    ctx = multiprocessing.get_context("fork")
+    result_queue = ctx.Queue()
+    process = ctx.Process(
         target=_subprocess_worker,
         args=(code, params, wrap_code, result_queue),
         daemon=True,
