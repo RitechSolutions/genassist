@@ -3,11 +3,13 @@ import {
   NodeData,
   NodeTypeDefinition,
   AgentNodeData,
+  ExternalAgentNodeData,
   LLMModelNodeData,
   ToolBuilderNodeData,
   MCPNodeData,
 } from "../../types/nodes";
 import AgentNode from "./agentNode";
+import ExternalAgentNode from "./externalAgentNode";
 import LLMModelNode from "./modelNode";
 import ToolBuilderNode from "./toolBuilderNode";
 import MCPNode from "./mcpNode";
@@ -197,6 +199,57 @@ export const MCP_NODE_DEFINITION: NodeTypeDefinition<MCPNodeData> = {
   createNode: (id, position, data) => ({
     id,
     type: "mcpNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
+export const EXTERNAL_AGENT_NODE_DEFINITION: NodeTypeDefinition<ExternalAgentNodeData> = {
+  type: "externalAgentNode",
+  label: "External Agent",
+  description:
+    "Calls an external agent API and returns a response in the standard agent format (message + steps).",
+  shortDescription: "Call an external agent API",
+  configSubtitle:
+    "Configure the external agent endpoint, authentication, and response field mapping.",
+  category: "ai",
+  icon: "Plug",
+  defaultData: {
+    name: "External Agent",
+    endpoint: "https://",
+    method: "POST",
+    headers: {},
+    requestBody: "",
+    authType: "none",
+    authToken: "",
+    authHeader: "Authorization",
+    authUsername: "",
+    authPassword: "",
+    timeout: 30,
+    messageField: "message",
+    stepsField: "steps",
+    mappingScript: "",
+    handlers: [
+      {
+        id: "input",
+        type: "target",
+        compatibility: "any",
+        position: "left",
+      },
+      {
+        id: "output",
+        type: "source",
+        compatibility: "any",
+        position: "right",
+      },
+    ],
+  },
+  component: ExternalAgentNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "externalAgentNode",
     position,
     data: {
       ...data,

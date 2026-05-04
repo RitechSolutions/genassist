@@ -233,12 +233,20 @@ export function LLMProviderDialog({
 
       if (mode === 'create') {
         const created = await createLLMProvider(data);
+        if (!created) {
+          toast.error('LLM provider blocked by the data residency policy. Check the provider\'s allowed regions.');
+          return;
+        }
         toast.success('LLM provider created successfully.');
         queryClient.invalidateQueries({ queryKey: ['llmProviders'] });
         onProviderSaved(created);
       } else {
         if (!providerId) throw new Error('Missing provider ID');
         const updated = await updateLLMProvider(providerId, data);
+        if (!updated) {
+          toast.error('LLM provider blocked by the data residency policy. Check the provider\'s allowed regions.');
+          return;
+        }
         toast.success('LLM provider updated successfully.');
         queryClient.invalidateQueries({ queryKey: ['llmProviders'] });
         if (onProviderUpdated) {
