@@ -53,6 +53,10 @@ class ProjectSettings(BaseSettings):
     CELERY_ENABLE_SUMMARIZE_FILES_FROM_AZURE_TASK: bool = True
     CELERY_ENABLE_AGGREGATE_AGENT_ANALYTICS_TASK: bool = True
     CELERY_ENABLE_BACKFILL_CUSTOM_ATTRIBUTES_TASK: bool = True
+    # Periodic cleanup of stale direct-S3 upload sessions (companion to
+    # FILES_DIRECT_S3_UPLOAD_ENABLED). Safe to leave on even when the feature
+    # flag is off: with no direct-S3 rows the task simply finds nothing to do.
+    CELERY_ENABLE_CLEANUP_STALE_DIRECT_UPLOADS_TASK: bool = True
 
     # Worker pool: "solo" avoids SIGSEGV with PyTorch/transformers/sentence-transformers (app tasks load these).
     # Use "prefork" only if you run workers that do not import ML libs; set CELERY_WORKER_POOL=prefork.
@@ -109,6 +113,12 @@ class ProjectSettings(BaseSettings):
     # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
     FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
     FILES_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
+    # Direct browser -> S3 presigned PUT uploads (Phase 1: single PUT).
+    # Off by default; enables a new opt-in /file-manager/upload-session/presign + /finalize flow
+    # used only when FILE_MANAGER_PROVIDER == "s3". Existing /upload and /upload-session paths
+    # remain fully functional regardless of this flag.
+    FILES_DIRECT_S3_UPLOAD_ENABLED: bool = False
+    FILES_DIRECT_S3_PRESIGN_EXPIRES_SECONDS: int = 600  # 10 min
     DEFAULT_WINDOW_SECONDS: int = 60
 
     # === Language ===

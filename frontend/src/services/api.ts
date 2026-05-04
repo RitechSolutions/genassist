@@ -271,6 +271,186 @@ export type UploadKnowledgeFilesOptions = {
 /** Never show 100% until the server response completes. */
 const capClientProgress = (pct: number): number => Math.min(95, Math.max(0, pct));
 
+// ==================== File-manager capabilities (direct S3 upload) ====================
+
+export interface FileManagerCapabilities {
+  /** True when backend has FILES_DIRECT_S3_UPLOAD_ENABLED=true and provider=s3. */
+  directS3UploadEnabled: boolean;
+}
+
+/**
+ * Cached, single-flight read of the file-manager settings to discover whether
+ * the direct browser -> S3 presigned PUT upload flow is available. We never
+ * fail loudly: if the request errors we fall back to the legacy upload paths.
+ */
+let _fileManagerCapsCache: Promise<FileManagerCapabilities> | null = null;
+let _fileManagerCapsCachedAt = 0;
+const FILE_MANAGER_CAPS_TTL_MS = 60_000; // 1 minute
+
+export async function getFileManagerCaps(
+  forceRefresh = false
+): Promise<FileManagerCapabilities> {
+  const now = Date.now();
+  const stale = now - _fileManagerCapsCachedAt > FILE_MANAGER_CAPS_TTL_MS;
+  if (!forceRefresh && _fileManagerCapsCache && !stale) {
+    return _fileManagerCapsCache;
+  }
+  _fileManagerCapsCachedAt = now;
+  _fileManagerCapsCache = (async () => {
+    try {
+      const baseURL = await getApiUrl();
+      const url = `${baseURL}file-manager/settings`;
+      const { data } = await api.get<{
+        is_active?: number;
+        values?: { direct_s3_upload_enabled?: boolean };
+      }>(url, { timeout: API_DEFAULT_TIMEOUT_MS });
+      return {
+        directS3UploadEnabled: Boolean(
+          data?.is_active === 1 && data?.values?.direct_s3_upload_enabled
+        ),
+      };
+    } catch {
+      return { directS3UploadEnabled: false };
+    }
+  })();
+  return _fileManagerCapsCache;
+}
+
+interface PresignDirectUploadResponse {
+  session_id: string;
+  file_id: string;
+  object_key: string;
+  presigned_url: string;
+  method: string;
+  required_headers: Record<string, string>;
+  expires_in: number;
+}
+
+interface FinalizeDirectUploadResponse {
+  file_id: string;
+  filename: string;
+  original_filename: string;
+  file_type?: string;
+  file_url?: string;
+  file_path?: string;
+}
+
+/**
+ * Upload a single file directly to S3 using a presigned PUT URL.
+ *
+ * Flow: presign -> PUT to S3 -> finalize. On any error during PUT or finalize
+ * we issue a best-effort `finalize { success: false }` so the server can
+ * release the placeholder ``files`` row, then rethrow.
+ *
+ * Throws on failure; the dispatcher in {@link uploadFiles} catches and falls
+ * back to the legacy chunked-session flow.
+ */
+async function uploadFileViaPresignedS3(
+  file: File,
+  options?: UploadKnowledgeFilesOptions
+): Promise<UploadFileResponse> {
+  const baseURL = await getApiUrl();
+
+  const presignUrl = `${baseURL}file-manager/upload-session/presign`;
+  const { data: presigned } = await api.post<PresignDirectUploadResponse>(
+    presignUrl,
+    {
+      original_filename: file.name,
+      expected_size: file.size,
+      content_type: file.type || "application/octet-stream",
+    },
+    { timeout: API_DEFAULT_TIMEOUT_MS }
+  );
+
+  const finalizeUrl = `${baseURL}file-manager/upload-session/${presigned.session_id}/finalize`;
+
+  // Best-effort failure-finalize. Never throws.
+  const reportFailure = async (errorMessage: string) => {
+    try {
+      await api.post(
+        finalizeUrl,
+        { success: false, error_message: errorMessage.slice(0, 1900) },
+        { timeout: API_DEFAULT_TIMEOUT_MS }
+      );
+    } catch {
+      // ignore; the cleanup task will eventually expire the session.
+    }
+  };
+
+  // PUT directly to S3 with XHR so we get real upload progress without going
+  // through the axios `api` instance (we don't want auth headers/cookies sent
+  // to S3, and S3 won't tolerate unexpected CORS-preflighted headers).
+  const etag = await new Promise<string | null>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(presigned.method || "PUT", presigned.presigned_url, true);
+    Object.entries(presigned.required_headers || {}).forEach(([k, v]) => {
+      try {
+        xhr.setRequestHeader(k, v);
+      } catch {
+        // browsers forbid setting some headers; signed URL covers them.
+      }
+    });
+    if (options?.onProgress) {
+      xhr.upload.onprogress = (ev) => {
+        if (!ev.lengthComputable) return;
+        const pct = Math.round((ev.loaded * 100) / Math.max(ev.total, 1));
+        options.onProgress?.(capClientProgress(pct));
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const headerEtag =
+          xhr.getResponseHeader("ETag") ?? xhr.getResponseHeader("etag");
+        resolve(headerEtag ? headerEtag.replace(/"/g, "") : null);
+      } else {
+        reject(
+          new Error(
+            `S3 PUT failed (${xhr.status} ${xhr.statusText || ""}). ` +
+              "Check bucket CORS for PUT + ETag exposure."
+          )
+        );
+      }
+    };
+    xhr.onerror = () =>
+      reject(
+        new Error(
+          "S3 PUT network error. Likely a CORS or connectivity issue."
+        )
+      );
+    xhr.onabort = () => reject(new Error("S3 PUT aborted."));
+    xhr.send(file);
+  }).catch(async (err) => {
+    await reportFailure(err instanceof Error ? err.message : String(err));
+    throw err;
+  });
+
+  options?.onProgress?.(95);
+
+  let finalized: FinalizeDirectUploadResponse;
+  try {
+    const { data } = await api.post<FinalizeDirectUploadResponse>(
+      finalizeUrl,
+      { success: true, etag },
+      { timeout: API_UPLOAD_TIMEOUT_MS }
+    );
+    finalized = data;
+  } catch (err) {
+    // Server-side validation failure (e.g. size mismatch). The server itself
+    // already cleaned up; we just rethrow so the dispatcher can fall back.
+    throw new Error(formatUploadOrNetworkError(err));
+  }
+
+  options?.onProgress?.(100);
+  return {
+    file_id: finalized.file_id,
+    filename: finalized.filename,
+    original_filename: finalized.original_filename,
+    file_type: finalized.file_type ?? "url",
+    file_url: finalized.file_url,
+    file_path: finalized.file_path,
+  };
+}
+
 async function uploadFilesMultipartViaFileManager(
   files: File[],
   options?: UploadKnowledgeFilesOptions
@@ -356,14 +536,51 @@ async function uploadKnowledgeFileViaSession(
 }
 
 /**
- * Upload knowledge files. Uses chunked session upload for files larger than
- * FILES_UPLOAD_SESSION_THRESHOLD_BYTES; otherwise one multipart request.
+ * Upload knowledge files. Dispatcher:
+ *
+ * 1. If the backend exposes the direct-S3 presigned upload capability, try
+ *    uploading each file straight to S3 (single PUT). On any failure (CORS,
+ *    expired URL, network) we transparently fall back to the legacy
+ *    chunked-session flow so a misconfigured bucket never blocks uploads.
+ * 2. Otherwise, large files use the chunked session upload and small files
+ *    use a single multipart POST through the file-manager API.
  */
 export const uploadFiles = async (
   files: File[],
   options?: UploadKnowledgeFilesOptions
 ): Promise<UploadFileResponse[]> => {
   if (files.length === 0) return [];
+
+  const caps = await getFileManagerCaps();
+  if (caps.directS3UploadEnabled) {
+    const results: UploadFileResponse[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const wrapProgress = (p: number) => {
+        if (!options?.onProgress) return;
+        const totalPct = ((i + p / 100) / files.length) * 100;
+        options.onProgress(Math.min(100, Math.round(totalPct)));
+      };
+      try {
+        const one = await uploadFileViaPresignedS3(f, { onProgress: wrapProgress });
+        results.push(one);
+        continue;
+      } catch (err) {
+        // Direct path failed (CORS, expired signature, server flag flipped
+        // off, etc). Fall back to the legacy session upload so we still
+        // succeed; log a warning for diagnostics.
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[file-manager] direct S3 upload failed, falling back to chunked session:",
+          err
+        );
+      }
+      const part = await uploadKnowledgeFileViaSession(f, { onProgress: wrapProgress });
+      results.push(...part);
+    }
+    return results;
+  }
+
   const allSmall = files.every(
     (f) => f.size <= FILES_UPLOAD_SESSION_THRESHOLD_BYTES
   );

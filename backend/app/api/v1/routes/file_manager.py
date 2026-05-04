@@ -23,6 +23,12 @@ from app.schemas.files_upload import (
     FilesUploadSessionCreateResponse,
     FilesUploadSessionStatusResponse,
 )
+from app.schemas.files_upload_direct import (
+    FinalizeDirectUploadRequest,
+    FinalizeDirectUploadResponse,
+    PresignDirectUploadCreate,
+    PresignDirectUploadResponse,
+)
 from app.services.app_settings import AppSettingsService
 from app.services.file_manager import FileManagerService
 from app.services.file_upload_session import FileUploadSessionService
@@ -55,6 +61,24 @@ async def get_file_manager_settings(svc: AppSettingsService = Injected(AppSettin
 
     # check if the file manager is not enabled from the environment variables
     app_settings.is_active = 1 if file_storage_settings.FILE_MANAGER_ENABLED and app_settings.is_active == 1 else 0
+
+    # Surface the direct browser -> S3 presigned upload capability so the frontend
+    # can pick the right upload path without round-tripping the /env. Read-only:
+    # always derived from server config, never persisted in app_settings.values.
+    active_provider = (
+        (app_settings.values or {}).get("file_manager_provider")
+        or (file_storage_settings.FILE_MANAGER_PROVIDER or "local")
+    )
+    direct_s3_capability = bool(
+        file_storage_settings.FILE_MANAGER_ENABLED
+        and active_provider == "s3"
+        and getattr(settings, "FILES_DIRECT_S3_UPLOAD_ENABLED", False)
+        and app_settings.is_active == 1
+    )
+    if app_settings.values is None:
+        app_settings.values = {}
+    app_settings.values["direct_s3_upload_enabled"] = direct_s3_capability
+
     return app_settings
 
 
@@ -397,3 +421,74 @@ async def files_upload_session_status(
         return await svc.get_status(session_id)
     except ValueError as e:
         raise AppException(ErrorKey.FILE_NOT_FOUND, 404, str(e))
+
+
+# ==================== Direct S3 (presigned PUT) upload flow ====================
+#
+# Opt-in flow gated by ``FILES_DIRECT_S3_UPLOAD_ENABLED`` + ``FILE_MANAGER_PROVIDER=s3``.
+# When the flag is off these endpoints return 501 and clients fall back to
+# ``/file-manager/upload`` and ``/file-manager/upload-session/*`` (legacy).
+
+
+@router.post(
+    "/upload-session/presign",
+    response_model=PresignDirectUploadResponse,
+    dependencies=[Depends(auth), Depends(permissions(P.FileManager.CREATE))],
+)
+async def files_upload_session_presign(
+    payload: PresignDirectUploadCreate,
+    request: Request,
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Allocate an S3 object key, pre-create a pending files row and return a
+    presigned PUT URL the client can use to upload the bytes directly to S3.
+
+    Once the PUT succeeds the client must call ``/upload-session/{session_id}/finalize``.
+    """
+    try:
+        return await svc.create_direct_upload_session(
+            payload,
+            request,
+            file_manager_service,
+            app_settings_svc,
+            sub_folder="uploads",
+        )
+    except AppException:
+        raise
+    except ValueError as e:
+        raise AppException(ErrorKey.MISSING_PARAMETER, 400, str(e))
+
+
+@router.post(
+    "/upload-session/{session_id}/finalize",
+    response_model=FinalizeDirectUploadResponse,
+    dependencies=[Depends(auth), Depends(permissions(P.FileManager.CREATE))],
+)
+async def files_upload_session_finalize(
+    session_id: UUID,
+    body: FinalizeDirectUploadRequest,
+    request: Request,
+    svc: FileUploadSessionService = Injected(FileUploadSessionService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Confirm a direct-S3 upload and register the file in the catalog.
+
+    Send ``{"success": true, "etag": "..."}`` after a successful PUT to S3, or
+    ``{"success": false, "error_message": "..."}`` on failure so the server can
+    clean up the placeholder row and the partial S3 object (best effort).
+    """
+    try:
+        return await svc.finalize_direct_upload_session(
+            session_id,
+            body,
+            request,
+            file_manager_service,
+            app_settings_svc,
+        )
+    except AppException:
+        raise
+    except ValueError as e:
+        raise AppException(ErrorKey.MISSING_PARAMETER, 400, str(e))

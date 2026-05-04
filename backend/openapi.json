@@ -12301,6 +12301,120 @@
         }
       }
     },
+    "/api/file-manager/upload-session/presign": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Files Upload Session Presign",
+        "description": "Allocate an S3 object key, pre-create a pending files row and return a\npresigned PUT URL the client can use to upload the bytes directly to S3.\n\nOnce the PUT succeeds the client must call ``/upload-session/{session_id}/finalize``.",
+        "operationId": "files_upload_session_presign_api_file_manager_upload_session_presign_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignDirectUploadCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignDirectUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/file-manager/upload-session/{session_id}/finalize": {
+      "post": {
+        "tags": [
+          "v1",
+          "FileManager"
+        ],
+        "summary": "Files Upload Session Finalize",
+        "description": "Confirm a direct-S3 upload and register the file in the catalog.\n\nSend ``{\"success\": true, \"etag\": \"...\"}`` after a successful PUT to S3, or\n``{\"success\": false, \"error_message\": \"...\"}`` on failure so the server can\nclean up the placeholder row and the partial S3 object (best effort).",
+        "operationId": "files_upload_session_finalize_api_file_manager_upload_session__session_id__finalize_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalizeDirectUploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalizeDirectUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analytics/agents": {
       "get": {
         "tags": [
@@ -24601,6 +24715,109 @@
         ],
         "title": "FilesUploadSessionStatusResponse"
       },
+      "FinalizeDirectUploadRequest": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "True if the client successfully PUT the bytes to S3, False if the upload errored client-side and the server should clean up the pending record."
+          },
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etag",
+            "description": "Optional ETag returned by S3 on successful PUT (for client-side audit logs)."
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "FinalizeDirectUploadRequest",
+        "description": "Body for ``POST /file-manager/upload-session/{session_id}/finalize``."
+      },
+      "FinalizeDirectUploadResponse": {
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "title": "File Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "original_filename": {
+            "type": "string",
+            "title": "Original Filename"
+          },
+          "file_type": {
+            "type": "string",
+            "title": "File Type",
+            "default": "url"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Url"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "extra": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_id",
+          "filename",
+          "original_filename"
+        ],
+        "title": "FinalizeDirectUploadResponse",
+        "description": "Response for ``POST /file-manager/upload-session/{session_id}/finalize``.\n\nMirrors the dict shape returned by the legacy chunked ``/complete`` endpoint\n(UploadFileResponse-compatible) so the frontend can treat both flows uniformly."
+      },
       "FolderRequest": {
         "properties": {
           "smb_host": {
@@ -29290,6 +29507,97 @@
           "cancelled"
         ],
         "title": "PipelineRunStatus"
+      },
+      "PresignDirectUploadCreate": {
+        "properties": {
+          "original_filename": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Original Filename"
+          },
+          "expected_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Size",
+            "description": "Optional declared total size in bytes. The server will validate the actual size on finalize via S3 HEAD and reject mismatches."
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "original_filename"
+        ],
+        "title": "PresignDirectUploadCreate",
+        "description": "Body for ``POST /file-manager/upload-session/presign``."
+      },
+      "PresignDirectUploadResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "file_id": {
+            "type": "string",
+            "title": "File Id",
+            "description": "UUID of the pre-created files row (status pending)"
+          },
+          "object_key": {
+            "type": "string",
+            "title": "Object Key",
+            "description": "S3 object key the URL was signed for"
+          },
+          "presigned_url": {
+            "type": "string",
+            "title": "Presigned Url"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "default": "PUT"
+          },
+          "required_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Required Headers",
+            "description": "Headers the client MUST send on the PUT request to satisfy the signature"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Lifetime of the presigned URL in seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "file_id",
+          "object_key",
+          "presigned_url",
+          "expires_in"
+        ],
+        "title": "PresignDirectUploadResponse",
+        "description": "Response for ``POST /file-manager/upload-session/presign``.\n\nThe frontend should:\n1. Issue ``method`` (``PUT``) to ``presigned_url`` with the file body and the\n   headers in ``required_headers``.\n2. Then call ``POST /file-manager/upload-session/{session_id}/finalize``."
       },
       "PromptConfigRead": {
         "properties": {

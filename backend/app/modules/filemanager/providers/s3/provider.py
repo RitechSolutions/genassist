@@ -122,6 +122,38 @@ class S3StorageProvider(BaseStorageProvider):
         # get the presigned url for the file
         return self.s3_client.generate_presigned_url('get_object', params, signed_url_expires_in)
 
+    async def generate_presigned_put_url(
+        self,
+        object_key: str,
+        content_type: Optional[str],
+        expires_in: int,
+    ) -> str:
+        """Generate a presigned PUT URL for direct browser uploads.
+
+        Used by the opt-in direct-S3 upload flow. Returns a URL the client can PUT
+        the file body to without holding a server-side connection. If ``content_type``
+        is provided it becomes part of the signature and the client MUST send the
+        same ``Content-Type`` header on PUT.
+        """
+
+        def _sign() -> str:
+            return self.s3_client.generate_presigned_put_url(
+                file_key=object_key,
+                content_type=content_type,
+                expires_in=expires_in,
+                bucket=self.aws_bucket_name,
+            )
+
+        return await asyncio.to_thread(_sign)
+
+    async def head_object(self, object_key: str) -> Dict[str, Any]:
+        """Return ``{key, size, etag, content_type, last_modified}`` for an S3 object."""
+
+        def _head() -> Dict[str, Any]:
+            return self.s3_client.head_object(object_key)
+
+        return await asyncio.to_thread(_head)
+
     def get_stats(self) -> Dict[str, Any]:
         """Get provider statistics."""
         return {
