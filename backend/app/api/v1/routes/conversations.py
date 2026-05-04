@@ -14,6 +14,7 @@ from app.auth.dependencies import (
     auth,
     auth_for_conversation_update,
     permissions,
+    require_admin_user,
     socket_auth,
 )
 from app.auth.dependencies_agent_security import (
@@ -31,6 +32,7 @@ from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
+from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
 from app.middlewares.rate_limit_middleware import (
@@ -685,6 +687,40 @@ async def get_conversation_count(
     conversations_service: ConversationService = Injected(ConversationService),
 ):
     return await conversations_service.count_conversations(conversation_filter)
+
+
+@router.delete(
+    "/{conversation_id}/gdpr",
+    dependencies=[
+        Depends(auth),
+        Depends(require_admin_user),
+        Depends(permissions(P.Conversation.DELETE_GDPR)),
+    ],
+)
+async def gdpr_delete_conversation(
+    conversation_id: UUID,
+    mode: Optional[GdprDeleteMode] = Query(
+        default=None,
+        description=(
+            "Deletion mode for GDPR Right-to-Erasure. Defaults to the value "
+            "of the GDPR_DEFAULT_DELETE_MODE setting (typically 'soft')."
+        ),
+    ),
+    conversations_service: ConversationService = Injected(ConversationService),
+):
+    """Admin-only GDPR Right-to-Erasure delete for a single conversation.
+
+    The endpoint is intentionally additive: the existing internal
+    ``ConversationService.delete_conversation`` continues to work for the
+    stale-cleanup path. This route simply exposes a new admin-gated entry
+    point that supports the three documented modes (soft/anonymize/hard) so
+    deployments can pick the policy that fits their compliance posture
+    without code changes.
+    """
+    effective_mode = mode or GdprDeleteMode(settings.GDPR_DEFAULT_DELETE_MODE)
+    return await conversations_service.gdpr_delete_conversation(
+        conversation_id, effective_mode
+    )
 
 
 @router.patch(

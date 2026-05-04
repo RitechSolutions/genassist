@@ -68,6 +68,15 @@ class ConversationFilter(BaseFilterModel):
     to_create_datetime_messages: Optional[datetime] = Field(None, description="End datetime message was created")
     workflow_id: Optional[UUID] = Field(None, description="Filter conversations by the workflow used by the agent")
     search: Optional[str] = Field(None, description="Search conversations by topic or message (case-insensitive)")
+    email: Optional[str] = Field(
+        None,
+        description=(
+            "Search conversations by an email address: matches "
+            "custom_attributes.pii.requester_email exactly (case-insensitive) and "
+            "falls back to full-text search over transcript_messages.text. Used "
+            "primarily for GDPR Right-to-Erasure flows."
+        ),
+    )
     id_suffix: Optional[str] = Field(None, description="Filter conversations by the last N characters of the UUID")
     custom_attributes: Optional[str] = Field(
         None,

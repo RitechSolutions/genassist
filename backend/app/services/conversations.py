@@ -28,8 +28,10 @@ from app.core.utils.bi_utils import (
 )
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.conversation_type_enum import ConversationType
+from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.enums.transcript_message_type import TranscriptMessageType
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.transcript_utils import (
     schema_to_transcript_message,
     transcript_messages_to_json,
@@ -439,6 +441,101 @@ class ConversationService:
             raise AppException(ErrorKey.CONVERSATION_NOT_FOUND)
         await self.conversation_repo.delete_conversation(conversation)
         return conversation
+
+
+    async def gdpr_delete_conversation(
+        self,
+        conversation_id: UUID,
+        mode: GdprDeleteMode,
+    ) -> dict:
+        """Admin-driven GDPR Right-to-Erasure operation on a single conversation.
+
+        Behavior depends on ``mode``:
+
+        - ``SOFT`` (default): scrub ``custom_attributes.pii`` and flip the
+          existing ``is_deleted`` flag. Backward-compatible because it only
+          uses primitives (`SoftDeleteMixin`) that already exist; the global
+          ORM filter hides the row from all standard reads.
+        - ``ANONYMIZE``: scrub ``custom_attributes.pii``, redact PII inside
+          each ``transcript_messages.text`` via ``redact_sensitive_substrings``,
+          and stamp ``conversations.pii_redacted_at`` for auditing. The row
+          stays visible so per-conversation analytics drilldowns keep working.
+        - ``HARD``: delegate to the existing internal ``delete_conversation``
+          which cascades to messages and analysis. Already-aggregated daily
+          analytics counts are not affected because they store anonymized
+          aggregates (no row-level PII).
+
+        Always emits a structured log line ``gdpr.conversation_deleted`` so the
+        action is traceable without introducing a dedicated audit table.
+        """
+
+        conversation = await self.conversation_repo.fetch_conversation_by_id(
+            conversation_id, include_messages=(mode == GdprDeleteMode.ANONYMIZE)
+        )
+        if not conversation:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
+
+        actor_user_id = get_current_user_id()
+
+        if mode == GdprDeleteMode.HARD:
+            await self.conversation_repo.delete_conversation(conversation)
+            await invalidate_conversation_cache(conversation_id)
+            logger.info(
+                "gdpr.conversation_deleted conversation_id=%s mode=hard actor_user_id=%s",
+                conversation_id,
+                actor_user_id,
+            )
+            return {"conversation_id": str(conversation_id), "mode": mode.value}
+
+        scrubbed_attrs = self._scrub_pii_from_custom_attributes(
+            conversation.custom_attributes
+        )
+
+        if mode == GdprDeleteMode.SOFT:
+            conversation.custom_attributes = scrubbed_attrs
+            conversation.is_deleted = 1
+            await self.conversation_repo.update_conversation(conversation)
+            await invalidate_conversation_cache(conversation_id)
+            logger.info(
+                "gdpr.conversation_deleted conversation_id=%s mode=soft actor_user_id=%s",
+                conversation_id,
+                actor_user_id,
+            )
+            return {"conversation_id": str(conversation_id), "mode": mode.value}
+
+        # ANONYMIZE
+        for message in conversation.messages or []:
+            if message.text:
+                message.text = redact_sensitive_substrings(message.text)
+
+        conversation.custom_attributes = scrubbed_attrs
+        conversation.pii_redacted_at = datetime.now(timezone.utc)
+        if conversation.feedback:
+            conversation.feedback = redact_sensitive_substrings(conversation.feedback)
+        if conversation.negative_reason:
+            conversation.negative_reason = redact_sensitive_substrings(
+                conversation.negative_reason
+            )
+
+        await self.conversation_repo.update_conversation(conversation)
+        await invalidate_conversation_cache(conversation_id)
+        logger.info(
+            "gdpr.conversation_deleted conversation_id=%s mode=anonymize actor_user_id=%s",
+            conversation_id,
+            actor_user_id,
+        )
+        return {"conversation_id": str(conversation_id), "mode": mode.value}
+
+    @staticmethod
+    def _scrub_pii_from_custom_attributes(custom_attributes: Optional[dict]) -> Optional[dict]:
+        """Return a new ``custom_attributes`` dict with the ``pii`` namespace
+        removed. Non-PII keys are preserved so existing workflow filters keep
+        functioning."""
+        if not custom_attributes:
+            return custom_attributes
+        scrubbed = dict(custom_attributes)
+        scrubbed.pop("pii", None)
+        return scrubbed or None
 
 
     async def cleanup_stale_conversations(self, cutoff_time: datetime):
