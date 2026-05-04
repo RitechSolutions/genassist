@@ -59,10 +59,13 @@ def _subprocess_worker(
     # Strip all env vars — user code must not access container secrets
     os.environ.clear()
 
-    # Apply OS-level resource limits (Linux only; silently skipped elsewhere)
+    # Apply CPU time limit (Linux/macOS; silently skipped on unsupported platforms).
+    # RLIMIT_AS (address space) is intentionally omitted: a forked child inherits
+    # the parent's entire virtual memory map (FastAPI, pandas, numpy, etc.) which
+    # already exceeds any reasonable per-script cap, causing immediate MemoryError
+    # on any allocation. Memory abuse is already mitigated by the import allowlist.
     try:
         import resource as _rl
-        _rl.setrlimit(_rl.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))  # 256 MB
         _rl.setrlimit(_rl.RLIMIT_CPU, (_EXEC_TIMEOUT_SECONDS, _EXEC_TIMEOUT_SECONDS))
     except Exception:
         pass
