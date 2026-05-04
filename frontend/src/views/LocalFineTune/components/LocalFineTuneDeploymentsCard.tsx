@@ -1,12 +1,19 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { Loader2, Square, HeartPulse } from "lucide-react";
+import { Loader2, Square, HeartPulse, MessageSquare } from "lucide-react";
 import { toast } from "react-hot-toast";
 import type { LocalFineTuneDeployment } from "@/interfaces/localFineTune.interface";
 import { stopDeployment, checkDeploymentHealth } from "@/services/localFineTune";
+import { LocalFineTuneTestDialog } from "@/views/LocalFineTune/components/LocalFineTuneTestDialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 
 function formatShortDate(value: unknown): string {
   if (value == null || value === "") return "—";
@@ -39,10 +46,27 @@ function renderDeploymentStatus(deployment: LocalFineTuneDeployment) {
     );
   }
   if (s === "failed") {
-    return (
+    const msg = deployment.error_message?.trim();
+    const badge = (
       <Badge variant="destructive" className="px-3 py-1 text-xs font-medium">
         Failed
       </Badge>
+    );
+    if (!msg) return badge;
+    return (
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex flex-col gap-0.5 cursor-default w-fit">
+              {badge}
+              <span className="text-[11px] text-destructive truncate max-w-[180px]">{msg}</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="max-w-xs break-words">
+            {msg}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   }
   if (s === "stopped") {
@@ -78,6 +102,8 @@ export function LocalFineTuneDeploymentsCard({
   const [isStopDialogOpen, setIsStopDialogOpen] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [checkingHealthId, setCheckingHealthId] = useState<string | null>(null);
+  const healthCheckInFlight = useRef<Set<string>>(new Set());
+  const [deploymentToTest, setDeploymentToTest] = useState<LocalFineTuneDeployment | null>(null);
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -90,6 +116,8 @@ export function LocalFineTuneDeploymentsCard({
   }, [deployments, searchQuery]);
 
   const handleHealthCheck = async (deployment: LocalFineTuneDeployment) => {
+    if (healthCheckInFlight.current.has(deployment.id)) return;
+    healthCheckInFlight.current.add(deployment.id);
     setCheckingHealthId(deployment.id);
     try {
       const result = await checkDeploymentHealth(deployment.id);
@@ -98,9 +126,15 @@ export function LocalFineTuneDeploymentsCard({
       } else {
         toast.error(`Unhealthy — ${result.details}`);
       }
-    } catch {
-      toast.error("Health check failed");
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 401) {
+        toast.error("Session expired — please refresh the page");
+      } else {
+        toast.error("Health check failed");
+      }
     } finally {
+      healthCheckInFlight.current.delete(deployment.id);
       setCheckingHealthId(null);
     }
   };
@@ -175,6 +209,20 @@ export function LocalFineTuneDeploymentsCard({
         key: "actions",
         cell: (d) => (
           <div className="flex items-center gap-1">
+            {isActive(d) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                title="Test model"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeploymentToTest(d);
+                }}
+              >
+                <MessageSquare className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -227,6 +275,14 @@ export function LocalFineTuneDeploymentsCard({
         keyExtractor={(d) => d.id}
         pageSize={10}
       />
+
+      {deploymentToTest && (
+        <LocalFineTuneTestDialog
+          isOpen={Boolean(deploymentToTest)}
+          onOpenChange={(open) => { if (!open) setDeploymentToTest(null); }}
+          deployment={deploymentToTest}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={isStopDialogOpen}

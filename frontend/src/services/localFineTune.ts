@@ -172,3 +172,25 @@ export async function checkDeploymentHealth(id: string): Promise<LocalFineTuneDe
     `api/v1/deployments/${id}/health`
   );
 }
+
+export async function testDeploymentInference(
+  apiUrl: string,
+  modelPath: string,
+  message: string
+): Promise<string> {
+  // apiUrl from the server is http://localhost:{port} — repoint to the actual server host
+  const serverHost = new URL(getLocalFineTuneApiUrl()).hostname;
+  const deploymentUrl = new URL(apiUrl);
+  deploymentUrl.hostname = serverHost;
+
+  const response = await axios.post<{
+    choices: { message: { content: string } }[];
+  }>(`${deploymentUrl.origin}/v1/chat/completions`, {
+    model: modelPath,
+    messages: [{ role: "user", content: message }],
+    max_tokens: 512,
+    temperature: 0.7,
+  });
+
+  return response.data.choices[0].message.content;
+}

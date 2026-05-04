@@ -30,7 +30,7 @@ export default function LocalFineTune() {
     <PageLayout>
       <PageHeader
         title="Local Fine-Tune"
-        subtitle="Run and monitor LoRA jobs on your local trainer (separate API)"
+        subtitle="Run and monitor LoRA jobs on your local trainer"
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchPlaceholder={activeTab === "jobs" ? "Search jobs..." : "Search deployments..."}
