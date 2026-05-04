@@ -165,9 +165,6 @@ class LlmProviderService:
         cd = dict(connection_data or {})
 
         if provider_id:
-            # stored_raw = await self.repository.get_by_id(provider_id)
-            # raw_conn = dict((stored_raw.connection_data if stored_raw else None) or {})
-            # decrypted_conn = await self.decrypt_connection_data_fields(dict(raw_conn), provider_id)
             decrypted_conn = await self.decrypt_connection_data_fields(cd)
 
             base = dict(decrypted_conn)
