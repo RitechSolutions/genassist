@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Info,
   Loader2,
+  Rocket,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/card";
 import { Button } from "@/components/button";
@@ -35,6 +36,7 @@ import {
   parseTrainSampleCount,
 } from "@/views/LocalFineTune/utils/trainingEvents";
 import { getLocalFineTuneJobDisplayName } from "@/views/LocalFineTune/utils/jobDisplayName";
+import { LocalFineTuneDeployDialog } from "@/views/LocalFineTune/components/LocalFineTuneDeployDialog";
 
 function formatLearningRate(value: unknown): string {
   if (value === undefined || value === null) return "—";
@@ -61,6 +63,7 @@ export default function LocalFineTuneJobDetail() {
   const [events, setEvents] = useState<LocalFineTuneJobEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDeployDialogOpen, setIsDeployDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -185,6 +188,16 @@ export default function LocalFineTuneJobDetail() {
                 </p>
               </div>
             </div>
+            {normalizedStatus === "succeeded" && job.fine_tuned_model && (
+              <Button
+                variant="outline"
+                className="shrink-0 gap-2"
+                onClick={() => setIsDeployDialogOpen(true)}
+              >
+                <Rocket className="h-4 w-4" />
+                Deploy Model
+              </Button>
+            )}
           </header>
 
           {normalizedStatus === "failed" && job.error?.message && (
@@ -359,6 +372,18 @@ export default function LocalFineTuneJobDetail() {
             </Card>
           )}
         </div>
+      )}
+
+      {job && (
+        <LocalFineTuneDeployDialog
+          isOpen={isDeployDialogOpen}
+          onOpenChange={setIsDeployDialogOpen}
+          jobId={job.id}
+          jobDisplayName={detailTitle}
+          onDeployed={() => {
+            setIsDeployDialogOpen(false);
+          }}
+        />
       )}
     </PageLayout>
   );

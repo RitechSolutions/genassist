@@ -2,14 +2,18 @@ import axios from "axios";
 import { getLocalFineTuneApiUrl } from "@/config/localFineTune";
 import { getAccessToken, getTenantId } from "@/services/auth";
 import type {
+  CreateDeploymentRequest,
   CreateLocalFineTuneJobRequest,
+  DeploymentStopResponse,
+  LocalFineTuneDeployment,
+  LocalFineTuneDeploymentHealth,
   LocalFineTuneJob,
   LocalFineTuneJobEvent,
   LocalFineTuneSupportedModel,
 } from "@/interfaces/localFineTune.interface";
 
 async function localFineTuneRequest<T>(
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   endpoint: string,
   options?: { data?: unknown; params?: Record<string, string | number | boolean> }
 ): Promise<T> {
@@ -22,7 +26,7 @@ async function localFineTuneRequest<T>(
   const tenantId = getTenantId();
 
   const config: {
-    method: "GET" | "POST";
+    method: "GET" | "POST" | "DELETE";
     url: string;
     data?: unknown;
     params?: Record<string, string | number | boolean>;
@@ -135,4 +139,36 @@ export async function createLocalFineTuneJob(
   return localFineTuneRequest<LocalFineTuneJob>("POST", "api/v1/fine-tuning/jobs", {
     data: payload,
   });
+}
+
+export async function createDeployment(
+  payload: CreateDeploymentRequest
+): Promise<LocalFineTuneDeployment> {
+  return localFineTuneRequest<LocalFineTuneDeployment>("POST", "api/v1/deployments", {
+    data: payload,
+  });
+}
+
+export async function listDeployments(): Promise<LocalFineTuneDeployment[]> {
+  const res = await localFineTuneRequest<LocalFineTuneDeployment[]>("GET", "api/v1/deployments");
+  return Array.isArray(res) ? res : [];
+}
+
+export async function getDeployment(id: string): Promise<LocalFineTuneDeployment | null> {
+  try {
+    return await localFineTuneRequest<LocalFineTuneDeployment>("GET", `api/v1/deployments/${id}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function stopDeployment(id: string): Promise<DeploymentStopResponse> {
+  return localFineTuneRequest<DeploymentStopResponse>("DELETE", `api/v1/deployments/${id}`);
+}
+
+export async function checkDeploymentHealth(id: string): Promise<LocalFineTuneDeploymentHealth> {
+  return localFineTuneRequest<LocalFineTuneDeploymentHealth>(
+    "GET",
+    `api/v1/deployments/${id}/health`
+  );
 }
