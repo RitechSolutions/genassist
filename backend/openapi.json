@@ -5480,6 +5480,22 @@
             }
           },
           {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Email"
+            }
+          },
+          {
             "name": "id_suffix",
             "in": "query",
             "required": false,
@@ -6385,6 +6401,22 @@
             }
           },
           {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Email"
+            }
+          },
+          {
             "name": "id_suffix",
             "in": "query",
             "required": false,
@@ -6953,6 +6985,22 @@
             }
           },
           {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Email"
+            }
+          },
+          {
             "name": "id_suffix",
             "in": "query",
             "required": false,
@@ -6983,6 +7031,75 @@
               ],
               "title": "Custom Attributes"
             }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/{conversation_id}/gdpr": {
+      "delete": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Gdpr Delete Conversation",
+        "description": "Admin-only GDPR Right-to-Erasure delete for a single conversation.\n\nThe endpoint is intentionally additive: the existing internal\n``ConversationService.delete_conversation`` continues to work for the\nstale-cleanup path. This route simply exposes a new admin-gated entry\npoint that supports the three documented modes (soft/anonymize/hard) so\ndeployments can pick the policy that fits their compliance posture\nwithout code changes.",
+        "operationId": "gdpr_delete_conversation_api_conversations__conversation_id__gdpr_delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GdprDeleteMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Deletion mode for GDPR Right-to-Erasure. Defaults to the value of the GDPR_DEFAULT_DELETE_MODE setting (typically 'soft').",
+              "title": "Mode"
+            },
+            "description": "Deletion mode for GDPR Right-to-Erasure. Defaults to the value of the GDPR_DEFAULT_DELETE_MODE setting (typically 'soft')."
           }
         ],
         "responses": {
@@ -24580,6 +24697,16 @@
           "folderpath"
         ],
         "title": "FolderRequest"
+      },
+      "GdprDeleteMode": {
+        "type": "string",
+        "enum": [
+          "soft",
+          "anonymize",
+          "hard"
+        ],
+        "title": "GdprDeleteMode",
+        "description": "Modes supported by the admin GDPR conversation deletion endpoint.\n\n- ``SOFT``: flip the existing ``is_deleted`` flag and scrub\n  ``custom_attributes.pii``. Reversible while the row is still on disk;\n  the row is hidden from all standard reads by the global soft-delete\n  ORM filter. Default mode for backward compatibility.\n- ``ANONYMIZE``: keep the row visible (analytics drilldowns continue to\n  work), but scrub ``custom_attributes.pii`` and run the existing\n  ``redact_sensitive_substrings`` helper over each transcript message\n  ``text`` field. Stamps ``conversations.pii_redacted_at`` so the action\n  is auditable.\n- ``HARD``: delegate to the existing internal ``delete_conversation``\n  path, which removes the conversation row and cascades to\n  ``transcript_messages`` and ``conversation_analysis``. Already-aggregated\n  daily analytics counts are unaffected."
       },
       "GenerateTrainingFileRequest": {
         "properties": {

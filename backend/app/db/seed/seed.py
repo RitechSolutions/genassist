@@ -125,9 +125,16 @@ async def seed_data(session: AsyncSession, injector: Injector):
                                                      description='Allow takeover of in progress conversation.',
                                                      is_active=True)
 
+    gdpr_delete_conversation_permission = PermissionModel(
+        name='delete:conversation:gdpr',
+        description='Allow admins to delete or anonymize a conversation for GDPR Right-to-Erasure requests.',
+        is_active=True,
+    )
+
     # Create non-CRUD permissions
     non_standard_crud_permissions = [
         takeover_supervisor_permission,
+        gdpr_delete_conversation_permission,
         PermissionModel(name='create:analyze_recording',
                         description='Allow analysis and transcription of audio record.', is_active=True),
         PermissionModel(name='create:ask_question',

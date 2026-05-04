@@ -47,6 +47,7 @@ class ConversationPermissions:
     UPDATE_IN_PROGRESS = "update:in_progress_conversation"
     TAKEOVER_IN_PROGRESS = "takeover_in_progress_conversation"
     READ_IN_PROGRESS = "read:in_progress_conversation"
+    DELETE_GDPR = "delete:conversation:gdpr"
 
 
 class DataSourcePermissions:

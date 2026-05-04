@@ -16,6 +16,7 @@ import NotFound from "@/views/NotFound";
 import Roles from "@/views/Roles/pages/Roles";
 import UserGroups from "@/views/UserGroups/Index";
 import Users from "./views/Users/Index";
+import GdprConversations from "./views/GdprConversations/Index";
 import UserTypes from "./views/UserTypes/pages/UserTypes";
 import ApiKeys from "./views/ApiKeys/pages/ApiKeys";
 import AppSettings from "./views/AppSettings/Index";
@@ -248,6 +249,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["read:user_group"]}>
                   <UserGroups />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "admin/gdpr-conversations",
+              element: (
+                <ProtectedRoute requiredPermissions={["delete:conversation:gdpr"]}>
+                  <GdprConversations />
                 </ProtectedRoute>
               ),
             },

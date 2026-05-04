@@ -157,6 +157,23 @@ export interface APIToolNodeData extends BaseNodeData {
   requestBody: string;
 }
 
+// External Agent Node Data
+export interface ExternalAgentNodeData extends BaseNodeData {
+  endpoint: string;
+  method: string;
+  headers: Record<string, string>;
+  requestBody: string;
+  authType: "none" | "bearer" | "api_key" | "basic";
+  authToken?: string;
+  authHeader?: string;
+  authUsername?: string;
+  authPassword?: string;
+  timeout?: number;
+  messageField: string;
+  stepsField?: string;
+  mappingScript?: string;
+}
+
 // LLM Model node data
 export interface BaseLLMNodeData extends BaseNodeData {
   providerId: string;
@@ -455,7 +472,8 @@ export type NodeData =
   | SetStateNodeData
   | GuardrailProvenanceNodeData
   | GuardrailNliNodeData
-  | FileReaderNodeData;
+  | FileReaderNodeData
+  | ExternalAgentNodeData;
 // Node type definition
 export interface NodeTypeDefinition<T extends NodeData> {
   type: string;
