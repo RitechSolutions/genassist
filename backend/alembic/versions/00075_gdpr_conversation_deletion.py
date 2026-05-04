@@ -12,7 +12,7 @@ The change is purely additive; existing functionality (soft delete, internal
 hard delete, conversation list/search) is preserved.
 
 Revision ID: g7d8e9f0a1b2
-Revises: f1a2b3c4d5e6
+Revises: f5e3ae54e989
 Create Date: 2026-04-30 11:30:00.000000
 """
 
@@ -23,7 +23,7 @@ from alembic import op
 
 
 revision: str = "g7d8e9f0a1b2"
-down_revision: Union[str, None] = "f1a2b3c4d5e6"
+down_revision: Union[str, None] = "f5e3ae54e989"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
