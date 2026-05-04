@@ -1,13 +1,12 @@
 import json
 import io
+import multiprocessing
+import os
 import re
-import traceback
 from contextlib import redirect_stdout, redirect_stderr
-import importlib
 from typing import Callable, Dict, Any, List, Union
 import logging
 import asyncio
-import concurrent.futures
 
 from app.modules.workflow.sandbox import (
     make_sandboxed_namespace,
@@ -44,33 +43,38 @@ def add_executable_function(code: str) -> str:
     return code + "\n" + "\n".join(template_lines)
 
 
-def _execute_python_code_sync(
-    code: str, params: Dict[str, Any], wrap_code: bool = True
-) -> Dict[str, Any]:
-    """Execute user-supplied Python code in a sandboxed environment.
+def _subprocess_worker(
+    code: str,
+    params: Dict[str, Any],
+    wrap_code: bool,
+    result_queue: "multiprocessing.Queue[Dict[str, Any]]",
+) -> None:
+    """Worker that runs inside an isolated subprocess.
 
-    Security controls applied:
-    - Restricted builtins (no open/exec/eval/compile/__import__)
-    - Import allowlist enforced via custom __import__
-    - AST pre-scan blocks dunder attribute-chain escapes
-    - SSRF-safe requests wrapper blocks internal/metadata endpoints
+    Security controls applied here (in addition to the AST/builtins sandbox):
+    - All environment variables cleared so user code cannot read secrets
+      (JWT_SECRET_KEY, FERNET_KEY, DATABASE_URL, AWS credentials, etc.)
+    - OS-level resource limits applied on Linux (256 MB address space, CPU time cap)
     """
+    # Strip all env vars — user code must not access container secrets
+    os.environ.clear()
+
+    # Apply OS-level resource limits (Linux only; silently skipped elsewhere)
+    try:
+        import resource as _rl
+        _rl.setrlimit(_rl.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))  # 256 MB
+        _rl.setrlimit(_rl.RLIMIT_CPU, (_EXEC_TIMEOUT_SECONDS, _EXEC_TIMEOUT_SECONDS))
+    except Exception:
+        pass
+
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
 
     try:
-        if wrap_code:
-            executable = add_executable_function(code)
-        else:
-            executable = code
-
-        # AST validation — reject dangerous attribute access before exec
+        executable = add_executable_function(code) if wrap_code else code
         validate_code_ast(executable)
+        namespace = make_sandboxed_namespace(params, logging.getLogger(__name__))
 
-        # Build sandboxed namespace with restricted builtins
-        namespace = make_sandboxed_namespace(params, logger)
-
-        # Execute with redirected output
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             exec(executable, namespace)  # noqa: S102
 
@@ -78,39 +82,73 @@ def _execute_python_code_sync(
         global_errors = namespace.get("errors")
         output = stdout_buffer.getvalue()
         errors = stderr_buffer.getvalue()
-
         if global_errors:
             errors = errors + "\nGlobal errors: " + str(global_errors)
-
-        return {"result": result, "output": output, "errors": errors}
+        result_queue.put({"result": result, "output": output, "errors": errors})
 
     except SandboxViolation as sv:
-        logger.warning("Sandbox violation in user code: %s", sv)
-        return {
+        result_queue.put({
             "error": f"Sandbox violation: {sv}",
             "traceback": "",
             "output": stdout_buffer.getvalue(),
             "errors": stderr_buffer.getvalue(),
-        }
+        })
     except SyntaxError as se:
-        logger.warning("Syntax error in user code: %s", se)
-        return {
+        result_queue.put({
             "error": f"Syntax error: {se}",
             "traceback": "",
             "output": stdout_buffer.getvalue(),
             "errors": stderr_buffer.getvalue(),
-        }
+        })
     except Exception as e:
-        logger.error("Error in sandboxed Python execution: %s", type(e).__name__)
-
-        output = stdout_buffer.getvalue()
-        errors = stderr_buffer.getvalue()
-
-        return {
+        result_queue.put({
             "error": str(e),
             "traceback": "",
-            "output": output,
-            "errors": errors,
+            "output": stdout_buffer.getvalue(),
+            "errors": stderr_buffer.getvalue(),
+        })
+
+
+def _execute_python_code_sync(
+    code: str, params: Dict[str, Any], wrap_code: bool = True
+) -> Dict[str, Any]:
+    """Spawn an isolated subprocess to execute user-supplied Python code.
+
+    The subprocess clears its environment and applies resource limits before
+    running the AST/builtins sandbox. Kills the process if it exceeds
+    _EXEC_TIMEOUT_SECONDS.
+    """
+    result_queue: multiprocessing.Queue = multiprocessing.Queue()
+    process = multiprocessing.Process(
+        target=_subprocess_worker,
+        args=(code, params, wrap_code, result_queue),
+        daemon=True,
+    )
+    process.start()
+    process.join(timeout=_EXEC_TIMEOUT_SECONDS)
+
+    if process.is_alive():
+        process.kill()
+        process.join()
+        logger.warning(
+            "User code execution timed out after %ds — subprocess killed",
+            _EXEC_TIMEOUT_SECONDS,
+        )
+        return {
+            "error": f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds",
+            "traceback": "",
+            "output": "",
+            "errors": "",
+        }
+
+    try:
+        return result_queue.get_nowait()
+    except Exception:
+        return {
+            "error": "Subprocess exited without returning a result",
+            "traceback": "",
+            "output": "",
+            "errors": "",
         }
 
 
@@ -140,31 +178,15 @@ def sanitize_python_code(code: str) -> str:
 async def execute_python_code(
     code: str, params: Dict[str, Any], wrap_code: bool = True
 ) -> Dict[str, Any]:
-    """Execute user Python code asynchronously in a sandboxed thread with timeout."""
+    """Execute user Python code asynchronously. Subprocess isolation handles timeout."""
     try:
         code = sanitize_python_code(code)
         loop = asyncio.get_event_loop()
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(
-                _execute_python_code_sync, code, params, wrap_code
-            )
-            try:
-                result = await asyncio.wait_for(
-                    loop.run_in_executor(None, future.result, _EXEC_TIMEOUT_SECONDS),
-                    timeout=_EXEC_TIMEOUT_SECONDS + 5,
-                )
-            except (asyncio.TimeoutError, concurrent.futures.TimeoutError):
-                future.cancel()
-                logger.warning("User Python code execution timed out after %ds", _EXEC_TIMEOUT_SECONDS)
-                return {
-                    "error": f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds",
-                    "traceback": "",
-                    "output": "",
-                    "errors": "",
-                }
-
-        return result
+        # _execute_python_code_sync blocks for at most _EXEC_TIMEOUT_SECONDS
+        # (subprocess is killed if it exceeds that), so run_in_executor won't hang.
+        return await loop.run_in_executor(
+            None, _execute_python_code_sync, code, params, wrap_code
+        )
     except Exception as e:
         logger.error("Error in async Python code execution: %s", type(e).__name__)
         return {
