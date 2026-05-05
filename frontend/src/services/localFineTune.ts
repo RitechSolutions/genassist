@@ -4,12 +4,13 @@ import { getAccessToken, getTenantId } from "@/services/auth";
 import type {
   CreateDeploymentRequest,
   CreateLocalFineTuneJobRequest,
-  DeploymentStopResponse,
+  GpuInfo,
+  SystemGpusResponse,
   LocalFineTuneDeployment,
   LocalFineTuneDeploymentHealth,
   LocalFineTuneJob,
   LocalFineTuneJobEvent,
-  LocalFineTuneSupportedModel,
+  LocalFineTuneSupportedModel, DeploymentStopResponse,
 } from "@/interfaces/localFineTune.interface";
 
 async function localFineTuneRequest<T>(
@@ -171,6 +172,11 @@ export async function checkDeploymentHealth(id: string): Promise<LocalFineTuneDe
     "GET",
     `api/v1/deployments/${id}/health`
   );
+}
+
+export async function listSystemGpus(): Promise<GpuInfo[]> {
+  const res = await localFineTuneRequest<SystemGpusResponse>("GET", "api/v1/system/gpus");
+  return res.cuda_available ? res.gpus : [];
 }
 
 export async function testDeploymentInference(
