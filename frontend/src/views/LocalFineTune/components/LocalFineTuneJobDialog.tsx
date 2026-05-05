@@ -10,11 +10,12 @@ import { Switch } from '@/components/switch';
 import { cn } from '@/helpers/utils';
 import { toast } from 'react-hot-toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { createLocalFineTuneJob, listLocalFineTuneSupportedModels } from '@/services/localFineTune';
+import { createLocalFineTuneJob, listLocalFineTuneSupportedModels, listSystemGpus } from '@/services/localFineTune';
 import { getAccessToken } from '@/services/auth';
 import { listFileManagerFiles } from '@/services/fileManager';
 import type {
   CreateLocalFineTuneJobRequest,
+  GpuInfo,
   LocalFineTuneHyperparameters,
   LocalFineTuneSupportedModel,
 } from '@/interfaces/localFineTune.interface';
@@ -68,6 +69,8 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [fp16, setFp16] = useState(false);
   const [bf16, setBf16] = useState(true);
+  const [availableGpus, setAvailableGpus] = useState<GpuInfo[]>([]);
+  const [selectedGpuIds, setSelectedGpuIds] = useState<number[]>([]);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
   const [suffix, setSuffix] = useState('');
 
@@ -81,13 +84,17 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
     (async () => {
       setModelsLoading(true);
       try {
-        const list = await listLocalFineTuneSupportedModels(0, SUPPORTED_MODELS_PAGE_SIZE);
+        const [list, gpus] = await Promise.all([
+          listLocalFineTuneSupportedModels(0, SUPPORTED_MODELS_PAGE_SIZE),
+          listSystemGpus().catch(() => [] as GpuInfo[]),
+        ]);
         if (cancelled) return;
         setSupportedModels(list);
         setSelectedModelId((prev) => {
           if (prev && list.some((m) => m.id === prev)) return prev;
           return list[0]?.id ?? '';
         });
+        setAvailableGpus(gpus);
       } catch {
         if (!cancelled) {
           setSupportedModels([]);
@@ -215,6 +222,7 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
     setSuffix('');
     setFp16(false);
     setBf16(true);
+    setSelectedGpuIds([]);
     setHyperparams({ ...DEFAULT_HYPERPARAMETERS } as Record<keyof LocalFineTuneHyperparameters, number | ''>);
   };
 
@@ -261,6 +269,7 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
         fp16,
         bf16,
       },
+      gpu_ids: selectedGpuIds.length > 0 ? selectedGpuIds : null,
     };
 
     setSubmitting(true);
@@ -448,6 +457,36 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
                   </div>
                 )}
               </div>
+
+              {availableGpus.length > 0 && (
+                <div className="space-y-2 border-t pt-4">
+                  <Label>GPUs <span className="text-muted-foreground font-normal">(all used if none selected)</span></Label>
+                  <div className="flex flex-wrap gap-2">
+                    {availableGpus.map((gpu) => {
+                      const selected = selectedGpuIds.includes(gpu.id);
+                      return (
+                        <button
+                          key={gpu.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedGpuIds((prev) =>
+                              selected ? prev.filter((id) => id !== gpu.id) : [...prev, gpu.id]
+                            )
+                          }
+                          className={cn(
+                            'px-3 py-1 rounded-md border text-sm transition-colors',
+                            selected
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-background border-input hover:bg-accent'
+                          )}
+                        >
+                          GPU {gpu.id} · {gpu.name} ({gpu.free_memory_gb}GB free)
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 border-t pt-4">
                 <div className="flex-1" />

@@ -20,6 +20,20 @@ export interface LocalFineTuneSupportedModel {
   name: string;
 }
 
+export interface GpuInfo {
+  id: number;
+  name: string;
+  total_memory_gb: number;
+  free_memory_gb: number;
+  used_memory_gb: number;
+  compute_capability: string;
+}
+
+export interface SystemGpusResponse {
+  cuda_available: boolean;
+  gpus: GpuInfo[];
+}
+
 export interface CreateLocalFineTuneJobRequest {
   training_file: string;
   file_token: string;
@@ -29,6 +43,7 @@ export interface CreateLocalFineTuneJobRequest {
   remote_files: boolean;
   cleanup_files?: boolean;
   hyperparameters: LocalFineTuneHyperparameters;
+  gpu_ids?: number[] | null;
 }
 
 export type LocalFineTuneJobStatus =
