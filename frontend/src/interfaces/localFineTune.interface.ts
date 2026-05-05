@@ -10,6 +10,8 @@ export interface LocalFineTuneHyperparameters {
   save_steps?: number;
   eval_steps?: number;
   warmup_steps?: number;
+  fp16?: boolean;
+  bf16?: boolean;
   [key: string]: unknown;
 }
 

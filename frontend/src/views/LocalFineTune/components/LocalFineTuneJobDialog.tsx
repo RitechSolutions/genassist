@@ -33,9 +33,9 @@ const DEFAULT_HYPERPARAMETERS: LocalFineTuneHyperparameters = {
   per_device_train_batch_size: 2,
   gradient_accumulation_steps: 4,
   learning_rate: 2e-4,
-  lora_r: 16,
-  lora_alpha: 16,
-  max_seq_length: 2048,
+  lora_r: 64,
+  lora_alpha: 64,
+  max_seq_length: 4096,
   logging_steps: 1,
   save_steps: 1,
   eval_steps: 1,
@@ -66,6 +66,8 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [fp16, setFp16] = useState(false);
+  const [bf16, setBf16] = useState(true);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
   const [suffix, setSuffix] = useState('');
 
@@ -211,6 +213,8 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
     setTrainingFilePickerOpen(false);
     setShowAdvanced(false);
     setSuffix('');
+    setFp16(false);
+    setBf16(true);
     setHyperparams({ ...DEFAULT_HYPERPARAMETERS } as Record<keyof LocalFineTuneHyperparameters, number | ''>);
   };
 
@@ -254,6 +258,8 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
         save_steps: Number(hyperparams.save_steps) || DEFAULT_HYPERPARAMETERS.save_steps,
         eval_steps: Number(hyperparams.eval_steps) || DEFAULT_HYPERPARAMETERS.eval_steps,
         warmup_steps: Number(hyperparams.warmup_steps) || DEFAULT_HYPERPARAMETERS.warmup_steps,
+        fp16,
+        bf16,
       },
     };
 
@@ -570,6 +576,14 @@ export function LocalFineTuneJobDialog({ isOpen, onOpenChange, onJobCreated }: L
                           }))
                         }
                       />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="fp16-switch">FP16</Label>
+                      <Switch id="fp16-switch" checked={fp16} onCheckedChange={(v) => { setFp16(v); if (v) setBf16(false); }} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="bf16-switch">BF16</Label>
+                      <Switch id="bf16-switch" checked={bf16} onCheckedChange={(v) => { setBf16(v); if (v) setFp16(false); }} />
                     </div>
                   </div>
                 )}
