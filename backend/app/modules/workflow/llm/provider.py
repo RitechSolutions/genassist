@@ -33,16 +33,11 @@ async def build_chat_model(
     elif provider == "vllm_fine_tuned":
         provider = "openai"
         cd["api_key"] = "EMPTY"
-        if model_name and ":::" in model_name:
-            # Test-connection path: form sends api_url:::model_path directly
-            api_url, model_name = model_name.split(":::", 1)
+        # connection_data.model always holds the api_url:::model_path value
+        raw = cd.pop("model", model_name) or model_name
+        if ":::" in raw:
+            api_url, model_name = raw.split(":::", 1)
             cd["base_url"] = f"{api_url}/v1"
-        else:
-            # Inference path: base_url and decrypted model_path stored in connection_data
-            base_url = cd.pop("base_url", "")
-            model_name = cd.pop("model_path", model_name)
-            cd["base_url"] = f"{base_url}/v1"
-        cd.pop("model", None)
     elif provider == "openrouter":
         provider = "openai"
         if "base_url" not in cd:
@@ -186,8 +181,6 @@ class LLMProvider:
             if original_provider not in ["vllm", "vllm_fine_tuned", "ollama"] and "api_key" in validated_data:
                 validated_data["api_key"] = decrypt_key(validated_data["api_key"])
 
-            if original_provider == "vllm_fine_tuned" and "model_path" in validated_data:
-                validated_data["model_path"] = decrypt_key(validated_data["model_path"])
 
             llm = await build_chat_model(
                 provider_name=llm_provider.llm_model_provider,

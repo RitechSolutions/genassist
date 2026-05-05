@@ -28,7 +28,6 @@ class LlmProviderService:
         "api_key",
         "aws_access_key_id",
         "aws_secret_access_key",
-        "model_path",  # vllm_fine_tuned: full filesystem path kept server-side only
     ]
 
     def __init__(self, repository: LlmProviderRepository, app_settings_service: AppSettingsService):
@@ -38,20 +37,17 @@ class LlmProviderService:
     @staticmethod
     def _extract_vllm_fine_tuned(connection_data: Dict[str, Any], llm_model: str):
         """
-        Splits the api_url:::model_path select value into separate fields so the
-        full filesystem path is never returned to the frontend in plaintext.
-        Returns (updated_connection_data, display_name).
+        Extracts a clean display name from the api_url:::model_path select value
+        and stores it as llm_model. connection_data.model retains the full value
+        so the edit form can pre-select the correct deployment.
+        Returns (connection_data, display_name).
         """
         raw = connection_data.get("model", "")
         if ":::" not in raw:
             return connection_data, llm_model
-        api_url, model_path = raw.split(":::", 1)
+        _, model_path = raw.split(":::", 1)
         display_name = model_path.split("/")[-1]
-        cd = dict(connection_data)
-        cd.pop("model", None)
-        cd["base_url"] = api_url
-        cd["model_path"] = model_path  # encrypted by encrypt_connection_data_fields
-        return cd, display_name
+        return connection_data, display_name
 
     async def create(self, data: LlmProviderCreate):
         connection_data = data.connection_data.copy()
@@ -115,10 +111,9 @@ class LlmProviderService:
         update_conn_data = update_data.get("connection_data", {})
 
         if obj.llm_model_provider == "vllm_fine_tuned" and ":::" in update_conn_data.get("model", ""):
-            update_conn_data, update_data["llm_model"] = self._extract_vllm_fine_tuned(
+            _, update_data["llm_model"] = self._extract_vllm_fine_tuned(
                 update_conn_data, update_data.get("llm_model", "")
             )
-            update_data["connection_data"] = update_conn_data
 
         for field_name in self.encrypted_fields:
             if field_name in update_conn_data:
