@@ -535,6 +535,39 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
             ),
         ],
     ),
+    "vllm": TypeSchema(
+        name="vLLM (Local Deployment)",
+        fields=[
+            FieldSchema(
+                name="base_url",
+                type="text",
+                label="Base URL",
+                required=True,
+                default="http://localhost:9000/v1",
+                description="URL of your local vLLM server (e.g., http://localhost:9000/v1)",
+            ),
+            FieldSchema(
+                name="model",
+                type="text",
+                label="Model",
+                required=True,
+                description="Model name served by the vLLM instance",
+            ),
+        ],
+    ),
+    "vllm_fine_tuned": TypeSchema(
+        name="vLLM (Fine-Tuned Deployment)",
+        fields=[
+            FieldSchema(
+                name="model",
+                type="select",
+                label="Deployed Model",
+                required=True,
+                options=[],
+                description="Select a running fine-tune deployment. Options are populated from the Local Fine-Tune service.",
+            ),
+        ],
+    ),
     "perplexity": TypeSchema(
         name="Perplexity",
         fields=[
