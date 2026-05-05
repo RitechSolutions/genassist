@@ -1,11 +1,13 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.auth.utils import oauth2
 from app.cache.redis_cache import invalidate_llm_provider_cache
+from app.core.config.settings import settings
 from app.core.permissions.constants import Permissions as P
 from app.modules.workflow.llm.provider import LLMProvider
 from app.schemas.llm import LlmProviderBase, LlmProviderCreate, LlmProviderMinimal, LlmProviderRead, LlmProviderUpdate
@@ -37,12 +39,14 @@ async def get_all_minimal(service: LlmProviderService = Injected(LlmProviderServ
 
 @router.get(
     "/form_schemas",
-    dependencies=[
-        Depends(auth),
-    ],
+    dependencies=[Depends(auth)],
 )
-async def get_form_schemas(llm_provider: LLMProvider = Injected(LLMProvider)):
-    return await llm_provider.get_configuration_definitions()
+async def get_form_schemas(
+    llm_provider: LLMProvider = Injected(LLMProvider),
+    token: Optional[str] = Depends(oauth2),
+    x_tenant_id: Optional[str] = Header(default=None, alias=settings.TENANT_HEADER_NAME),
+):
+    return await llm_provider.get_configuration_definitions(auth_token=token, tenant_id=x_tenant_id)
 
 
 @router.get(

@@ -7591,6 +7591,32 @@
         ],
         "summary": "Get Form Schemas",
         "operationId": "get_form_schemas_api_llm_providers_form_schemas_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Tenant-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tenant-Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7599,16 +7625,18 @@
                 "schema": {}
               }
             }
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
           },
-          {
-            "OAuth2PasswordBearer": []
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        ]
+        }
       }
     },
     "/api/llm-providers/{llm_provider_id}": {
