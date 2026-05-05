@@ -53,7 +53,7 @@ _DUNDER_DENYLIST: frozenset[str] = frozenset({
 })
 
 _ATTR_DENYLIST: frozenset[str] = frozenset({
-    "environ", "system", "popen", "exec", "eval", "compile",
+    "environ", "system", "popen", "exec", "eval",
     "subprocess", "execvp", "execvpe", "spawnl",
 })
 
