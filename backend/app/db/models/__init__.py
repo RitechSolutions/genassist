@@ -21,7 +21,9 @@ from app.db.models.role import RoleModel
 from app.db.models.role_permission import RolePermissionModel
 from app.db.models.translation import LanguageModel, TranslationKeyModel, TranslationValueModel
 from app.db.models.user import UserModel
+from app.db.models.user_notification_preference import UserNotificationPreferenceModel
 from app.db.models.user_role import UserRoleModel
+from app.db.models.tenant_notification_preference import TenantNotificationPreferenceModel
 from app.db.models.user_type import UserTypeModel
 from app.db.utils.event_hooks_config import auto_register_updated_by
 
@@ -60,6 +62,8 @@ __all__ = [
     "UserTypeModel",
     "UserRoleModel",
     "UserModel",
+    "UserNotificationPreferenceModel",
+    "TenantNotificationPreferenceModel",
     "LlmAnalystModel",
     "LlmProvidersModel",
     "LlmCostRateModel",
@@ -115,6 +119,8 @@ models = [
     AgentExecutionDailyStatsModel,
     NodeExecutionDailyStatsModel,
     UserModel,
+    UserNotificationPreferenceModel,
+    TenantNotificationPreferenceModel,
     RoleModel,
     PermissionModel,
     RolePermissionModel,

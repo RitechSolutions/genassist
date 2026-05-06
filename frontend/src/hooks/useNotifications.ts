@@ -16,7 +16,10 @@ import {
 } from "@/services/dashboard"
 import { useWebSocket } from "@/hooks/useWebSocket"
 import {
+  isConversationFinalizedHostilityNotification,
+  isConversationHostilityNotification,
   isConversationStartedNotification,
+  isWorkflowFailedNotification,
   useNotificationPreferences,
 } from "@/hooks/useNotificationPreferences"
 
@@ -62,12 +65,27 @@ function applyReadMap(items: Notification[]): Notification[] {
 export const useNotifications = () => {
   const queryClient = useQueryClient()
   const { preferences } = useNotificationPreferences()
+  const {
+    conversationStarted,
+    conversationHostility,
+    conversationFinalizedHostility,
+    workflowFailed,
+  } = preferences
 
   const { data: notifications = [], refetch } = useQuery<Notification[]>({
-    queryKey: [...NOTIFICATIONS_QUERY_KEY, preferences.conversationStarted],
+    queryKey: [
+      ...NOTIFICATIONS_QUERY_KEY,
+      conversationStarted,
+      conversationHostility,
+      conversationFinalizedHostility,
+      workflowFailed,
+    ],
     queryFn: async () => {
       const items = await fetchDashboardNotifications(80, {
-        includeConversationStarted: preferences.conversationStarted,
+        includeConversationStarted: conversationStarted,
+        includeConversationHostility: conversationHostility,
+        includeConversationFinalizedHostility: conversationFinalizedHostility,
+        includeWorkflowFailed: workflowFailed,
       })
       return applyReadMap(items ?? [])
     },
@@ -77,11 +95,23 @@ export const useNotifications = () => {
   const updateCachedNotifications = useCallback(
     (updater: (prev: Notification[]) => Notification[]) => {
       queryClient.setQueryData<Notification[]>(
-        [...NOTIFICATIONS_QUERY_KEY, preferences.conversationStarted],
+        [
+          ...NOTIFICATIONS_QUERY_KEY,
+          conversationStarted,
+          conversationHostility,
+          conversationFinalizedHostility,
+          workflowFailed,
+        ],
         (prev) => updater(prev ?? [])
       )
     },
-    [queryClient, preferences.conversationStarted]
+    [
+      queryClient,
+      conversationStarted,
+      conversationHostility,
+      conversationFinalizedHostility,
+      workflowFailed,
+    ]
   )
 
   const markAllAsRead = () => {
@@ -123,10 +153,19 @@ export const useNotifications = () => {
       }
 
       if (!incoming.id) return
+      if (!conversationStarted && isConversationStartedNotification(incoming.id)) {
+        return
+      }
+      if (!conversationHostility && isConversationHostilityNotification(incoming.id)) {
+        return
+      }
       if (
-        !preferences.conversationStarted &&
-        isConversationStartedNotification(incoming.id)
+        !conversationFinalizedHostility &&
+        isConversationFinalizedHostilityNotification(incoming.id)
       ) {
+        return
+      }
+      if (!workflowFailed && isWorkflowFailedNotification(incoming.id)) {
         return
       }
 
@@ -145,7 +184,10 @@ export const useNotifications = () => {
       })
     },
     [
-      preferences.conversationStarted,
+      conversationStarted,
+      conversationHostility,
+      conversationFinalizedHostility,
+      workflowFailed,
       updateCachedNotifications,
       queryClient,
     ]
@@ -162,7 +204,13 @@ export const useNotifications = () => {
 
   useEffect(() => {
     void refetch()
-  }, [preferences.conversationStarted, refetch])
+  }, [
+    conversationStarted,
+    conversationHostility,
+    conversationFinalizedHostility,
+    workflowFailed,
+    refetch,
+  ])
 
   const unreadCount = useMemo(
     () => notifications.filter((notification) => !notification.read).length,
@@ -185,8 +233,18 @@ export const useNotificationsInfinite = ({
 } = {}) => {
   const queryClient = useQueryClient()
   const { preferences } = useNotificationPreferences()
-  const conversationStarted = preferences.conversationStarted
-  const infiniteKey = notificationsInfiniteQueryKey(conversationStarted, typeFilter)
+  const {
+    conversationStarted,
+    conversationHostility,
+    conversationFinalizedHostility,
+    workflowFailed,
+  } = preferences
+  const infiniteKey = [
+    ...notificationsInfiniteQueryKey(conversationStarted, typeFilter),
+    conversationHostility,
+    conversationFinalizedHostility,
+    workflowFailed,
+  ] as const
 
   const infinite = useInfiniteQuery({
     queryKey: infiniteKey,
@@ -196,6 +254,9 @@ export const useNotificationsInfinite = ({
         NOTIFICATIONS_PAGE_SIZE,
         skip,
         conversationStarted,
+        conversationHostility,
+        conversationFinalizedHostility,
+        workflowFailed,
         typeFilter
       )
       if (!page) return { items: [], hasMore: false }
@@ -217,7 +278,7 @@ export const useNotificationsInfinite = ({
   const setInfinitePagesRead = useCallback(
     (predicate: (n: Notification) => boolean) => {
       queryClient.setQueryData<InfiniteData<NotificationFeedPage>>(
-        notificationsInfiniteQueryKey(conversationStarted),
+        infiniteKey,
         (old) => {
           if (!old) return old
           return {
@@ -232,7 +293,15 @@ export const useNotificationsInfinite = ({
         }
       )
     },
-    [queryClient, conversationStarted, typeFilter]
+    [
+      queryClient,
+      conversationStarted,
+      conversationHostility,
+      conversationFinalizedHostility,
+      workflowFailed,
+      typeFilter,
+      infiniteKey,
+    ]
   )
 
   const markAsRead = useCallback(
@@ -242,14 +311,27 @@ export const useNotificationsInfinite = ({
       saveReadMap(readMap)
       setInfinitePagesRead((n) => n.id === id)
       void queryClient.invalidateQueries({
-        queryKey: [...NOTIFICATIONS_QUERY_KEY, conversationStarted],
+        queryKey: [
+          ...NOTIFICATIONS_QUERY_KEY,
+          conversationStarted,
+          conversationHostility,
+          conversationFinalizedHostility,
+          workflowFailed,
+        ],
       })
     },
-    [queryClient, conversationStarted, setInfinitePagesRead]
+    [
+      queryClient,
+      conversationStarted,
+      conversationHostility,
+      conversationFinalizedHostility,
+      workflowFailed,
+      setInfinitePagesRead,
+    ]
   )
 
   const markAllAsRead = useCallback(() => {
-    const key = notificationsInfiniteQueryKey(conversationStarted, typeFilter)
+    const key = infiniteKey
     const pages = queryClient.getQueryData<InfiniteData<NotificationFeedPage>>(
       key
     )
@@ -261,10 +343,24 @@ export const useNotificationsInfinite = ({
     saveReadMap(readMap)
     setInfinitePagesRead(() => true)
     void queryClient.invalidateQueries({
-      queryKey: [...NOTIFICATIONS_QUERY_KEY, conversationStarted],
+      queryKey: [
+        ...NOTIFICATIONS_QUERY_KEY,
+        conversationStarted,
+        conversationHostility,
+        conversationFinalizedHostility,
+        workflowFailed,
+      ],
     })
     toast.success("All loaded notifications are marked as read.")
-  }, [queryClient, conversationStarted, setInfinitePagesRead, typeFilter])
+  }, [
+    queryClient,
+    conversationStarted,
+    conversationHostility,
+    conversationFinalizedHostility,
+    workflowFailed,
+    setInfinitePagesRead,
+    infiniteKey,
+  ])
 
   return {
     notifications: flatNotifications,

@@ -35,6 +35,7 @@ from app.repositories.audio_providers import AudioProviderRepository
 from app.repositories.llm_providers import LlmProviderRepository
 from app.repositories.operator_statistics import OperatorStatisticsRepository
 from app.repositories.operators import OperatorRepository
+from app.repositories.notification_preferences import NotificationPreferencesRepository
 from app.repositories.permissions import PermissionsRepository
 from app.repositories.recordings import RecordingsRepository
 from app.repositories.role_permissions import RolePermissionsRepository
@@ -72,6 +73,7 @@ from app.services.audio_providers import AudioProviderService
 from app.services.llm_providers import LlmProviderService
 from app.services.operator_statistics import OperatorStatisticsService
 from app.services.operators import OperatorService
+from app.services.notification_preferences import NotificationPreferencesService
 from app.services.permissions import PermissionsService
 from app.services.role_permissions import RolePermissionsService
 from app.services.roles import RolesService
@@ -195,6 +197,8 @@ class Dependencies(Module):
 
         binder.bind(OperatorStatisticsService, scope=request_scope)
         binder.bind(OperatorStatisticsRepository, scope=request_scope)
+        binder.bind(NotificationPreferencesRepository, scope=request_scope)
+        binder.bind(NotificationPreferencesService, scope=request_scope)
 
         binder.bind(AgentRepository, scope=request_scope)
         binder.bind(AgentConfigService, scope=request_scope)
