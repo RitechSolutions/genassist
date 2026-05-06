@@ -102,10 +102,9 @@ export async function listLocalFineTuneSupportedModels(
 }
 
 export async function listLocalFineTuneJobs(): Promise<LocalFineTuneJob[]> {
-  const res = await localFineTuneRequest<LocalFineTuneJob[]>(
-    "GET",
-    "api/v1/fine-tuning/jobs"
-  );
+  const res = await localFineTuneRequest<LocalFineTuneJob[]>("GET", "api/v1/fine-tuning/jobs", {
+    params: { order_by: "created_at", sort_direction: "desc"},
+  });
   return Array.isArray(res) ? res : [];
 }
 
@@ -142,6 +141,10 @@ export async function createLocalFineTuneJob(
   });
 }
 
+export async function cancelLocalFineTuneJob(jobId: string): Promise<LocalFineTuneJob> {
+  return localFineTuneRequest<LocalFineTuneJob>("POST", `api/v1/fine-tuning/jobs/${jobId}/cancel`);
+}
+
 export async function createDeployment(
   payload: CreateDeploymentRequest
 ): Promise<LocalFineTuneDeployment> {
@@ -151,7 +154,9 @@ export async function createDeployment(
 }
 
 export async function listDeployments(): Promise<LocalFineTuneDeployment[]> {
-  const res = await localFineTuneRequest<LocalFineTuneDeployment[]>("GET", "api/v1/deployments");
+  const res = await localFineTuneRequest<LocalFineTuneDeployment[]>("GET", "api/v1/deployments", {
+    params: { order_by: "created_at", sort_direction: "desc" },
+  });
   return Array.isArray(res) ? res : [];
 }
 
