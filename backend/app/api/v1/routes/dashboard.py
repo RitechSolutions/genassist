@@ -195,12 +195,27 @@ async def get_notifications(
         default=True,
         description="When false, omits conversation-started rows from the feed (pagination-stable).",
     ),
+    include_conversation_hostility: bool = Query(
+        default=True,
+        description="When false, omits high-hostility notifications.",
+    ),
+    include_conversation_finalized_hostility: bool = Query(
+        default=True,
+        description="When false, omits finalized high-hostility notifications.",
+    ),
+    include_workflow_failed: bool = Query(
+        default=True,
+        description="When false, omits workflow failed notifications.",
+    ),
     notification_feed_service: NotificationFeedService = Injected(NotificationFeedService),
 ) -> NotificationFeedResponse:
     items, has_more = await notification_feed_service.get_feed(
         limit=limit,
         skip=skip,
         include_conversation_started=include_conversation_started,
+        include_conversation_hostility=include_conversation_hostility,
+        include_conversation_finalized_hostility=include_conversation_finalized_hostility,
+        include_workflow_failed=include_workflow_failed,
         notification_type=notification_type,
     )
     return NotificationFeedResponse(items=items, has_more=has_more)

@@ -129,6 +129,9 @@ export const fetchDashboardNotificationsPage = async (
   limit: number,
   skip: number,
   includeConversationStarted: boolean,
+  includeConversationHostility: boolean,
+  includeConversationFinalizedHostility: boolean,
+  includeWorkflowFailed: boolean,
   notificationType: NotificationTypeFilter = "all"
 ): Promise<NotificationFeedPageResult | null> => {
   try {
@@ -137,6 +140,12 @@ export const fetchDashboardNotificationsPage = async (
     params.set("skip", String(skip));
     params.set("notification_type", notificationType);
     params.set("include_conversation_started", String(includeConversationStarted));
+    params.set("include_conversation_hostility", String(includeConversationHostility));
+    params.set(
+      "include_conversation_finalized_hostility",
+      String(includeConversationFinalizedHostility)
+    );
+    params.set("include_workflow_failed", String(includeWorkflowFailed));
     const response = await apiRequest<{
       items: NotificationFeedItemRaw[];
       has_more: boolean;
@@ -155,6 +164,9 @@ export const fetchDashboardNotificationsPage = async (
 export type FetchDashboardNotificationsOptions = {
   skip?: number;
   includeConversationStarted?: boolean;
+  includeConversationHostility?: boolean;
+  includeConversationFinalizedHostility?: boolean;
+  includeWorkflowFailed?: boolean;
   notificationType?: NotificationTypeFilter;
 };
 
@@ -167,6 +179,9 @@ export const fetchDashboardNotifications = async (
     limit,
     options?.skip ?? 0,
     options?.includeConversationStarted ?? true,
+    options?.includeConversationHostility ?? true,
+    options?.includeConversationFinalizedHostility ?? true,
+    options?.includeWorkflowFailed ?? true,
     options?.notificationType ?? "all"
   );
   return page?.items ?? null;

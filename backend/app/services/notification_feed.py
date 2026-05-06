@@ -31,6 +31,9 @@ class NotificationFeedService:
         limit: int = 50,
         skip: int = 0,
         include_conversation_started: bool = True,
+        include_conversation_hostility: bool = True,
+        include_conversation_finalized_hostility: bool = True,
+        include_workflow_failed: bool = True,
         notification_type: NotificationTypeFilter = "all",
     ) -> tuple[list[NotificationItem], bool]:
         fetch_cap = min(max(skip + limit, limit), 500)
@@ -38,12 +41,15 @@ class NotificationFeedService:
             include_conversation_started
             and notification_type in ("all", "conversation_started")
         )
-        include_hostility = notification_type in ("all", "conversation_hostility")
+        include_hostility = (
+            include_conversation_hostility
+            and notification_type in ("all", "conversation_hostility")
+        )
         include_finalized_hostility = notification_type in (
             "all",
             "conversation_finalized_hostility",
-        )
-        include_workflow_failed = notification_type == "all"
+        ) and include_conversation_finalized_hostility
+        include_failed = include_workflow_failed and notification_type == "all"
 
         started = (
             await self._conversation_started_notifications(limit=fetch_cap)
@@ -62,7 +68,7 @@ class NotificationFeedService:
         )
         workflow_failed = (
             await self._workflow_failed_notifications(limit=fetch_cap)
-            if include_workflow_failed
+            if include_failed
             else []
         )
 
