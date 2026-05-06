@@ -10,12 +10,28 @@ export interface LocalFineTuneHyperparameters {
   save_steps?: number;
   eval_steps?: number;
   warmup_steps?: number;
+  fp16?: boolean;
+  bf16?: boolean;
   [key: string]: unknown;
 }
 
 export interface LocalFineTuneSupportedModel {
   id: string;
   name: string;
+}
+
+export interface GpuInfo {
+  id: number;
+  name: string;
+  total_memory_gb: number;
+  free_memory_gb: number;
+  used_memory_gb: number;
+  compute_capability: string;
+}
+
+export interface SystemGpusResponse {
+  cuda_available: boolean;
+  gpus: GpuInfo[];
 }
 
 export interface CreateLocalFineTuneJobRequest {
@@ -27,6 +43,7 @@ export interface CreateLocalFineTuneJobRequest {
   remote_files: boolean;
   cleanup_files?: boolean;
   hyperparameters: LocalFineTuneHyperparameters;
+  gpu_ids?: number[] | null;
 }
 
 export type LocalFineTuneJobStatus =
@@ -64,4 +81,41 @@ export interface LocalFineTuneJob {
   fine_tuned_model?: string | null;
   error?: LocalFineTuneJobError | null;
   [key: string]: unknown;
+}
+
+export type LocalFineTuneDeploymentStatus = "starting" | "running" | "failed" | "stopped";
+
+export interface CreateDeploymentRequest {
+  deployment_id: string;
+  job_id: string;
+  gpu_id?: number | null;
+  max_model_len?: number | null;
+  gpu_memory_utilization?: number;
+  dtype?: string;
+}
+
+export interface LocalFineTuneDeployment {
+  id: string;
+  status: LocalFineTuneDeploymentStatus | string;
+  model_path: string;
+  port: number;
+  gpu_id?: number | null;
+  api_url: string;
+  created_at?: string;
+  process_id?: number | null;
+  error_message?: string | null;
+  max_model_len?: number | null;
+}
+
+export interface LocalFineTuneDeploymentHealth {
+  deployment_id: string;
+  status: "healthy" | "unhealthy" | string;
+  api_url: string;
+  details: string;
+}
+
+export interface DeploymentStopResponse {
+  id: string;
+  status: string;
+  message: string;
 }

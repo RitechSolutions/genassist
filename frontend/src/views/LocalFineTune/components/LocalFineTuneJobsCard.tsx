@@ -4,7 +4,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { Loader2, Trash2 } from "lucide-react";
+import { Ban, Loader2, MoreHorizontal, Rocket, Trash2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import type { LocalFineTuneJob } from "@/interfaces/localFineTune.interface";
 import { formatStatusLabel, inProgressStatuses } from "@/views/FineTune/utils/utils";
@@ -12,6 +12,20 @@ import {
   getLocalFineTuneJobDisplayName,
   getLocalFineTuneJobNameSubtitle,
 } from "@/views/LocalFineTune/utils/jobDisplayName";
+import { cancelLocalFineTuneJob } from "@/services/localFineTune";
+import { LocalFineTuneDeployDialog } from "@/views/LocalFineTune/components/LocalFineTuneDeployDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 
 function formatShortDate(value: unknown): string {
   if (value == null || value === "") return "—";
@@ -94,6 +108,10 @@ export function LocalFineTuneJobsCard({
   const [jobToDelete, setJobToDelete] = useState<LocalFineTuneJob | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [jobToCancel, setJobToCancel] = useState<LocalFineTuneJob | null>(null);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [jobToDeploy, setJobToDeploy] = useState<LocalFineTuneJob | null>(null);
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -146,28 +164,93 @@ export function LocalFineTuneJobsCard({
         key: "status",
         cell: (job) => renderLocalJobStatus(job),
       },
-      // {
-      //   header: "",
-      //   key: "actions",
-      //   cell: (job) => (
-      //     <Button
-      //       variant="ghost"
-      //       size="icon"
-      //       className="h-8 w-8"
-      //       onClick={(e) => {
-      //         e.stopPropagation();
-      //         setJobToDelete(job);
-      //         setIsDeleteDialogOpen(true);
-      //       }}
-      //       title="Remove from list"
-      //     >
-      //       <Trash2 className="h-4 w-4 text-destructive" />
-      //     </Button>
-      //   ),
-      // },
+      {
+        header: "Menu",
+        key: "actions",
+        cell: (job) => {
+          const status = String(job.status ?? "").toLowerCase();
+          const isSucceeded = status === "succeeded";
+          const hasModel = Boolean(job.fine_tuned_model);
+          const isDeployable = isSucceeded && hasModel;
+          const isCancellable = inProgressStatuses.has(status);
+          const disabledReason = !isSucceeded
+            ? "Only Jobs with the status 'Completed' create a model that can be deployed"
+            : "No model path available for this job";
+
+          return (
+            <TooltipProvider delayDuration={200}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="block">
+                        <DropdownMenuItem
+                          disabled={!isDeployable}
+                          onClick={(e) => {
+                            if (!isDeployable) return;
+                            e.stopPropagation();
+                            setJobToDeploy(job);
+                          }}
+                        >
+                          <Rocket className="h-4 w-4 mr-2" />
+                          Deploy
+                        </DropdownMenuItem>
+                      </span>
+                    </TooltipTrigger>
+                    {!isDeployable && (
+                      <TooltipContent side="left">
+                        {disabledReason}
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                  {isCancellable && (
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setJobToCancel(job);
+                        setIsCancelDialogOpen(true);
+                      }}
+                    >
+                      <Ban className="h-4 w-4 mr-2" />
+                      Cancel Job
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </TooltipProvider>
+          );
+        },
+      },
     ],
     []
   );
+
+  const handleCancelConfirm = async () => {
+    if (!jobToCancel) return;
+    try {
+      setIsCancelling(true);
+      const updated = await cancelLocalFineTuneJob(jobToCancel.id);
+      setJobs((prev) => prev.map((j) => (j.id === updated.id ? { ...j, ...updated } : j)));
+      toast.success("Job cancelled");
+    } catch {
+      toast.error("Failed to cancel job");
+    } finally {
+      setIsCancelling(false);
+      setIsCancelDialogOpen(false);
+      setJobToCancel(null);
+    }
+  };
 
   const handleDeleteConfirm = async () => {
     if (!jobToDelete) return;
@@ -211,6 +294,29 @@ export function LocalFineTuneJobsCard({
         secondaryButtonText="Cancel"
         onCancel={() => setJobToDelete(null)}
       />
+
+      <ConfirmDialog
+        isOpen={isCancelDialogOpen}
+        onOpenChange={setIsCancelDialogOpen}
+        onConfirm={handleCancelConfirm}
+        isInProgress={isCancelling}
+        itemName={jobToCancel?.id}
+        title="Cancel job?"
+        description={`This will stop job "${jobToCancel?.id}". The training process will halt at the next checkpoint check.`}
+        primaryButtonText="Cancel Job"
+        secondaryButtonText="Keep Running"
+        onCancel={() => setJobToCancel(null)}
+      />
+
+      {jobToDeploy && (
+        <LocalFineTuneDeployDialog
+          isOpen={Boolean(jobToDeploy)}
+          onOpenChange={(open) => { if (!open) setJobToDeploy(null); }}
+          jobId={jobToDeploy.id}
+          jobDisplayName={getLocalFineTuneJobDisplayName(jobToDeploy)}
+          onDeployed={() => setJobToDeploy(null)}
+        />
+      )}
     </>
   );
 }

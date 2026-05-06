@@ -81,9 +81,11 @@ export function LLMProviderDialog({
   const queryClient = useQueryClient();
 
   const { data, isLoading: isLoadingConfig } = useQuery({
-    queryKey: ['supportedModels'],
+    queryKey: ['supportedModels', isOpen],
     queryFn: () => getLLMProvidersFormSchemas(),
     refetchOnWindowFocus: false,
+    enabled: isOpen,
+    staleTime: 0,
   });
 
   const supportedModels = data ?? {};
