@@ -105,7 +105,7 @@ class NotificationFeedService:
         recent = datetime.now(timezone.utc) - timedelta(days=7)
         stmt = (
             select(ConversationModel)
-            .where(ConversationModel.in_progress_hostility_score > 50)
+            .where(ConversationModel.in_progress_hostility_score >= 50)
             .where(
                 or_(
                     ConversationModel.status.in_(

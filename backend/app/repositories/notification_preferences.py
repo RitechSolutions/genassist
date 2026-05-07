@@ -1,11 +1,18 @@
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.tenant_notification_preference import TenantNotificationPreferenceModel
+from app.db.models.notification_type import NotificationTypeModel
 from app.db.models.user_notification_preference import UserNotificationPreferenceModel
+
+NOTIFICATION_TYPE_DEFINITIONS: dict[str, dict[str, bool]] = {
+    "conversation_started": {"is_tenant": False},
+    "conversation_hostility": {"is_tenant": False},
+    "conversation_finalized_hostility": {"is_tenant": False},
+    "workflow_failed": {"is_tenant": True},
+}
 
 
 @inject
@@ -13,76 +20,70 @@ class NotificationPreferencesRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_user_preferences(self, user_id: UUID) -> UserNotificationPreferenceModel | None:
+    async def ensure_notification_types(self) -> dict[str, NotificationTypeModel]:
+        keys = list(NOTIFICATION_TYPE_DEFINITIONS.keys())
+        result = await self.db.execute(
+            select(NotificationTypeModel).where(NotificationTypeModel.type.in_(keys))
+        )
+        rows = list(result.scalars().all())
+        by_key = {row.type: row for row in rows}
+
+        missing = [key for key in keys if key not in by_key]
+        if missing:
+            for key in missing:
+                row = NotificationTypeModel(
+                    type=key,
+                    is_tenant=NOTIFICATION_TYPE_DEFINITIONS[key]["is_tenant"],
+                    is_enabled=True,
+                )
+                self.db.add(row)
+                by_key[key] = row
+            await self.db.commit()
+            for row in by_key.values():
+                await self.db.refresh(row)
+
+        return by_key
+
+    async def get_user_preferences(
+        self, user_id: UUID
+    ) -> list[UserNotificationPreferenceModel]:
         query = select(UserNotificationPreferenceModel).where(
             UserNotificationPreferenceModel.user_id == user_id
         )
         result = await self.db.execute(query)
-        return result.scalars().first()
+        return list(result.scalars().all())
 
-    async def upsert_user_preferences(
+    async def upsert_user_preference(
         self,
         *,
         user_id: UUID,
-        conversation_started: bool | None = None,
-        conversation_hostility: bool | None = None,
-        conversation_finalized_hostility: bool | None = None,
+        notification_type_id: UUID,
+        is_enabled: bool,
     ) -> UserNotificationPreferenceModel:
-        row = await self.get_user_preferences(user_id)
-        if not row:
-            row = UserNotificationPreferenceModel(user_id=user_id)
-            self.db.add(row)
-
-        if conversation_started is not None:
-            row.conversation_started = conversation_started
-        if conversation_hostility is not None:
-            row.conversation_hostility = conversation_hostility
-        if conversation_finalized_hostility is not None:
-            row.conversation_finalized_hostility = conversation_finalized_hostility
-
-        await self.db.commit()
-        await self.db.refresh(row)
-        return row
-
-    async def get_tenant_id_by_slug(self, slug: str) -> UUID | None:
-        # Use raw SQL for resilience across tenant DBs with schema drift
-        # (e.g. columns existing in model but missing in physical table).
-        result = await self.db.execute(
-            text(
-                """
-                SELECT id
-                FROM tenants
-                WHERE slug = :slug
-                  AND is_deleted = 0
-                LIMIT 1
-                """
-            ),
-            {"slug": slug},
-        )
-        row = result.first()
-        return row[0] if row else None
-
-    async def get_tenant_preferences(self, tenant_id: UUID) -> TenantNotificationPreferenceModel | None:
-        query = select(TenantNotificationPreferenceModel).where(
-            TenantNotificationPreferenceModel.tenant_id == tenant_id
+        query = select(UserNotificationPreferenceModel).where(
+            UserNotificationPreferenceModel.user_id == user_id,
+            UserNotificationPreferenceModel.notification_type_id == notification_type_id,
         )
         result = await self.db.execute(query)
-        return result.scalars().first()
-
-    async def upsert_tenant_preferences(
-        self,
-        *,
-        tenant_id: UUID,
-        workflow_failed: bool | None = None,
-    ) -> TenantNotificationPreferenceModel:
-        row = await self.get_tenant_preferences(tenant_id)
+        row = result.scalars().first()
         if not row:
-            row = TenantNotificationPreferenceModel(tenant_id=tenant_id)
+            row = UserNotificationPreferenceModel(
+                user_id=user_id,
+                notification_type_id=notification_type_id,
+                is_enabled=is_enabled,
+            )
             self.db.add(row)
-
-        if workflow_failed is not None:
-            row.workflow_failed = workflow_failed
+        else:
+            row.is_enabled = is_enabled
 
         await self.db.commit()
         await self.db.refresh(row)
         return row
+
+    async def set_notification_type_enabled(
+        self, notification_type: NotificationTypeModel, is_enabled: bool
+    ) -> NotificationTypeModel:
+        notification_type.is_enabled = is_enabled
+        await self.db.commit()
+        await self.db.refresh(notification_type)
+        return notification_type

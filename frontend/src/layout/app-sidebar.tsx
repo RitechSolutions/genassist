@@ -428,7 +428,7 @@ function UserFooter({
                   </div>
                   {tenantId ? (
                     <div className="truncate text-[11px] text-zinc-400">
-                     Tenant: <span className="font-medium">{tenantId}</span>
+                      Tenant: <span className="font-medium">{tenantId}</span>
                     </div>
                   ) : null}
                 </div>
@@ -456,7 +456,6 @@ function UserFooter({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <NotificationBellPopover compact className="shrink-0" />
       </div>
     </div>
   );
@@ -597,6 +596,10 @@ export function AppSidebar() {
         {/* Logo */}
         <div className="flex items-center px-5 pt-5 pb-4">
           <GenAssistLogo width={150} />
+          <NotificationBellPopover
+            compact
+            className="ml-auto mr-2 shrink-0 !border-0 !bg-transparent shadow-none hover:!bg-transparent"
+          />
         </div>
 
         {/* Scrollable nav */}
