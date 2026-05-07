@@ -1,10 +1,9 @@
 from uuid import UUID
 
 from injector import inject
-import logging
 
 from app.auth.utils import current_user_is_admin
-from app.core.tenant_scope import get_tenant_context
+from app.db.models.notification_type import NotificationTypeModel
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.repositories.notification_preferences import NotificationPreferencesRepository
@@ -13,59 +12,67 @@ from app.schemas.notification_preferences import (
     NotificationPreferencesUpdate,
 )
 
+TYPE_CONVERSATION_STARTED = "conversation_started"
+TYPE_CONVERSATION_HOSTILITY = "conversation_hostility"
+TYPE_CONVERSATION_FINALIZED_HOSTILITY = "conversation_finalized_hostility"
+TYPE_WORKFLOW_FAILED = "workflow_failed"
 
-logger = logging.getLogger(__name__)
-
+TYPE_BY_FIELD = {
+    "conversation_started": TYPE_CONVERSATION_STARTED,
+    "conversation_hostility": TYPE_CONVERSATION_HOSTILITY,
+    "conversation_finalized_hostility": TYPE_CONVERSATION_FINALIZED_HOSTILITY,
+    "workflow_failed": TYPE_WORKFLOW_FAILED,
+}
 
 @inject
 class NotificationPreferencesService:
     def __init__(self, repo: NotificationPreferencesRepository):
         self.repo = repo
 
-    async def _get_current_tenant_id(self) -> UUID | None:
-        tenant_slug = get_tenant_context()
-        if not tenant_slug:
-            return None
-
-        try:
-            tenant_id = await self.repo.get_tenant_id_by_slug(tenant_slug)
-        except Exception as exc:
-            await self.repo.db.rollback()
-            logger.warning(
-                "Unable to resolve tenant by slug '%s' for notification preferences: %s",
-                tenant_slug,
-                type(exc).__name__,
-            )
-            return None
-
-        if not tenant_id:
-            return None
-        return tenant_id
+    @staticmethod
+    def _user_pref_value(
+        *,
+        type_key: str,
+        notification_types: dict[str, NotificationTypeModel],
+        user_pref_by_type_id: dict[UUID, bool],
+    ) -> bool:
+        notification_type = notification_types[type_key]
+        if notification_type.is_tenant:
+            return bool(notification_type.is_enabled)
+        return user_pref_by_type_id.get(notification_type.id, True)
 
     async def get_preferences(self, user_id: UUID) -> NotificationPreferencesRead:
-        tenant_id = await self._get_current_tenant_id()
-        workflow_failed_supported = tenant_id is not None
+        notification_types = await self.repo.ensure_notification_types()
         user_prefs = await self.repo.get_user_preferences(user_id)
-        tenant_prefs = (
-            await self.repo.get_tenant_preferences(tenant_id)
-            if tenant_id
-            else None
-        )
+        user_pref_by_type_id = {
+            pref.notification_type_id: pref.is_enabled for pref in user_prefs
+        }
+
+        workflow_type = notification_types[TYPE_WORKFLOW_FAILED]
+        workflow_manageable = current_user_is_admin() and workflow_type.is_tenant
 
         return NotificationPreferencesRead(
-            conversation_started=(
-                user_prefs.conversation_started if user_prefs else True
+            conversation_started=self._user_pref_value(
+                type_key=TYPE_CONVERSATION_STARTED,
+                notification_types=notification_types,
+                user_pref_by_type_id=user_pref_by_type_id,
             ),
-            conversation_hostility=(
-                user_prefs.conversation_hostility if user_prefs else True
+            conversation_hostility=self._user_pref_value(
+                type_key=TYPE_CONVERSATION_HOSTILITY,
+                notification_types=notification_types,
+                user_pref_by_type_id=user_pref_by_type_id,
             ),
-            conversation_finalized_hostility=(
-                user_prefs.conversation_finalized_hostility if user_prefs else True
+            conversation_finalized_hostility=self._user_pref_value(
+                type_key=TYPE_CONVERSATION_FINALIZED_HOSTILITY,
+                notification_types=notification_types,
+                user_pref_by_type_id=user_pref_by_type_id,
             ),
-            workflow_failed=(tenant_prefs.workflow_failed if tenant_prefs else True),
-            can_manage_workflow_failed=(
-                current_user_is_admin() and workflow_failed_supported
+            workflow_failed=self._user_pref_value(
+                type_key=TYPE_WORKFLOW_FAILED,
+                notification_types=notification_types,
+                user_pref_by_type_id=user_pref_by_type_id,
             ),
+            can_manage_workflow_failed=workflow_manageable,
         )
 
     async def update_preferences(
@@ -73,40 +80,35 @@ class NotificationPreferencesService:
         user_id: UUID,
         dto: NotificationPreferencesUpdate,
     ) -> NotificationPreferencesRead:
+        notification_types = await self.repo.ensure_notification_types()
         is_admin = current_user_is_admin()
-        if dto.workflow_failed is not None and not is_admin:
-            raise AppException(
-                status_code=403,
-                error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE,
-                error_detail="Only admins can update tenant-level workflow failed notifications.",
-            )
+        updates = dto.model_dump(exclude_none=True)
 
-        if any(
-            value is not None
-            for value in (
-                dto.conversation_started,
-                dto.conversation_hostility,
-                dto.conversation_finalized_hostility,
-            )
-        ):
-            await self.repo.upsert_user_preferences(
-                user_id=user_id,
-                conversation_started=dto.conversation_started,
-                conversation_hostility=dto.conversation_hostility,
-                conversation_finalized_hostility=dto.conversation_finalized_hostility,
-            )
-
-        if dto.workflow_failed is not None:
-            tenant_id = await self._get_current_tenant_id()
-            if not tenant_id:
+        for field_name, field_value in updates.items():
+            type_key = TYPE_BY_FIELD.get(field_name)
+            if not type_key:
                 raise AppException(
                     status_code=400,
                     error_key=ErrorKey.MISSING_PARAMETER,
-                    error_detail="Tenant context is required to update tenant-level notification preferences.",
+                    error_detail=f"Unknown notification preference field: {field_name}",
                 )
-            await self.repo.upsert_tenant_preferences(
-                tenant_id=tenant_id,
-                workflow_failed=dto.workflow_failed,
-            )
+
+            notification_type = notification_types[type_key]
+            if notification_type.is_tenant:
+                if not is_admin:
+                    raise AppException(
+                        status_code=403,
+                        error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE,
+                        error_detail="Only admins can update tenant-level notification preferences.",
+                    )
+                await self.repo.set_notification_type_enabled(
+                    notification_type, bool(field_value)
+                )
+            else:
+                await self.repo.upsert_user_preference(
+                    user_id=user_id,
+                    notification_type_id=notification_type.id,
+                    is_enabled=bool(field_value),
+                )
 
         return await self.get_preferences(user_id)

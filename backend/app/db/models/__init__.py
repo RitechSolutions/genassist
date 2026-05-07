@@ -23,7 +23,7 @@ from app.db.models.translation import LanguageModel, TranslationKeyModel, Transl
 from app.db.models.user import UserModel
 from app.db.models.user_notification_preference import UserNotificationPreferenceModel
 from app.db.models.user_role import UserRoleModel
-from app.db.models.tenant_notification_preference import TenantNotificationPreferenceModel
+from app.db.models.notification_type import NotificationTypeModel
 from app.db.models.user_type import UserTypeModel
 from app.db.utils.event_hooks_config import auto_register_updated_by
 
@@ -63,7 +63,7 @@ __all__ = [
     "UserRoleModel",
     "UserModel",
     "UserNotificationPreferenceModel",
-    "TenantNotificationPreferenceModel",
+    "NotificationTypeModel",
     "LlmAnalystModel",
     "LlmProvidersModel",
     "LlmCostRateModel",
@@ -120,7 +120,7 @@ models = [
     NodeExecutionDailyStatsModel,
     UserModel,
     UserNotificationPreferenceModel,
-    TenantNotificationPreferenceModel,
+    NotificationTypeModel,
     RoleModel,
     PermissionModel,
     RolePermissionModel,
