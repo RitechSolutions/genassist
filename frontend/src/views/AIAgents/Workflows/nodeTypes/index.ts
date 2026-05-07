@@ -81,6 +81,12 @@ import TrainModelNode from "./training/trainModelNode";
 import JiraNode from "./integrations/jiraNode";
 import HumanInTheLoopNode from "./io/humanInTheLoopNode";
 import { HUMAN_IN_THE_LOOP_NODE_DEFINITION } from "./io/definitions";
+import TTSNode from "./audio/ttsNode";
+import STTNode from "./audio/sttNode";
+import {
+  TTS_NODE_DEFINITION,
+  STT_NODE_DEFINITION,
+} from "./audio/definitions";
 
 // A function to re-register if needed
 export const registerAllNodeTypes = () => {
@@ -137,6 +143,9 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(HUMAN_IN_THE_LOOP_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(FILE_READER_NODE_DEFINITION);
+
+  nodeRegistry.registerNodeType(TTS_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(STT_NODE_DEFINITION);
 };
 
 // Get node types for React Flow
@@ -177,5 +186,7 @@ export const getNodeTypes = () => {
     workflowExecutorNode: WorkflowExecutorNode,
     humanInTheLoopNode: HumanInTheLoopNode,
     fileReaderNode: FileReaderNode,
+    ttsNode: TTSNode,
+    sttNode: STTNode,
   };
 };
