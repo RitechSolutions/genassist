@@ -96,6 +96,8 @@ interface LocalFineTuneJobsCardProps {
   loading: boolean;
   error: string | null;
   searchQuery: string;
+  onDeployed?: () => void;
+  onFilesDeleted?: () => void;
 }
 
 export function LocalFineTuneJobsCard({
@@ -104,6 +106,8 @@ export function LocalFineTuneJobsCard({
   loading,
   error,
   searchQuery,
+  onDeployed,
+  onFilesDeleted,
 }: LocalFineTuneJobsCardProps) {
   const navigate = useNavigate();
   const [jobToDelete, setJobToDelete] = useState<LocalFineTuneJob | null>(null);
@@ -174,9 +178,12 @@ export function LocalFineTuneJobsCard({
           const isDeployable = isSucceeded && hasModel;
           const isCancellable = inProgressStatuses.has(status);
           const isTerminal = ["succeeded", "failed", "cancelled"].includes(status);
-          const disabledReason = !isSucceeded
-            ? "Only Jobs with the status 'Completed' create a model that can be deployed"
-            : "No model path available for this job";
+          let disabledReason = "No model path available for this job";
+          if (status === "model_deleted") {
+            disabledReason = "The fine-tuned model has been deleted";
+          } else if (!isSucceeded) {
+            disabledReason = "Only jobs with the status 'Completed' create a model that can be deployed";
+          }
 
           return (
             <TooltipProvider delayDuration={200}>
@@ -291,7 +298,10 @@ export function LocalFineTuneJobsCard({
           }}
           jobId={jobToDelete.id}
           jobDisplayName={getLocalFineTuneJobDisplayName(jobToDelete)}
-          onDeleted={() => setJobToDelete(null)}
+          onDeleted={() => {
+            setJobToDelete(null);
+            onFilesDeleted?.();
+          }}
         />
       )}
 
@@ -314,7 +324,10 @@ export function LocalFineTuneJobsCard({
           onOpenChange={(open) => { if (!open) setJobToDeploy(null); }}
           jobId={jobToDeploy.id}
           jobDisplayName={getLocalFineTuneJobDisplayName(jobToDeploy)}
-          onDeployed={() => setJobToDeploy(null)}
+          onDeployed={() => {
+            setJobToDeploy(null);
+            onDeployed?.();
+          }}
         />
       )}
     </>
