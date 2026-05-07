@@ -17,14 +17,12 @@ TTS_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         description="The text to convert to speech. Supports variable syntax.",
     ),
     FieldSchema(
-        name="provider",
+        name="audioProviderId",
         type="select",
-        label="Provider",
+        label="Audio Provider",
         required=True,
-        default="openai",
-        options=[
-            {"value": "openai", "label": "OpenAI"},
-        ],
+        placeholder="Select an audio provider",
+        description="Select a configured audio provider for text-to-speech.",
     ),
     FieldSchema(
         name="voice",

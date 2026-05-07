@@ -17,14 +17,12 @@ STT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         description="Reference to the audio data from a connected TTS or audio-producing node.",
     ),
     FieldSchema(
-        name="provider",
+        name="audioProviderId",
         type="select",
-        label="Provider",
+        label="Audio Provider",
         required=True,
-        default="openai",
-        options=[
-            {"value": "openai", "label": "OpenAI"},
-        ],
+        placeholder="Select an audio provider",
+        description="Select a configured audio provider for speech-to-text.",
     ),
     FieldSchema(
         name="model",

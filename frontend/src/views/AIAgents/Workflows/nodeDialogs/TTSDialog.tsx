@@ -14,6 +14,7 @@ import {
 import { Save } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
+import { useAudioProviderConfig } from "../hooks/useAudioProviderConfig";
 
 type TTSDialogProps = BaseNodeDialogProps<TTSNodeData, TTSNodeData>;
 
@@ -22,19 +23,27 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
 
   const [name, setName] = useState(data.name || "Text to Speech");
   const [text, setText] = useState(data.text || "");
-  const [provider, setProvider] = useState(data.provider || "openai");
+  const [audioProviderId, setAudioProviderId] = useState(data.audioProviderId || "");
   const [voice, setVoice] = useState(data.voice || "nova");
   const [model, setModel] = useState(data.model || "tts-1");
-  const [outputFormat, setOutputFormat] = useState(
-    data.output_format || "mp3",
-  );
+  const [outputFormat, setOutputFormat] = useState(data.output_format || "mp3");
   const [speed, setSpeed] = useState(data.speed ?? 1.0);
+
+  const {
+    providers: audioProviders,
+    providerType,
+    voices,
+    models,
+    formats,
+    supportsSpeed,
+    getDefaultsForProvider,
+  } = useAudioProviderConfig({ capability: "tts", audioProviderId, enabled: isOpen });
 
   useEffect(() => {
     if (isOpen) {
       setName(data.name || "Text to Speech");
       setText(data.text || "");
-      setProvider(data.provider || "openai");
+      setAudioProviderId(data.audioProviderId || "");
       setVoice(data.voice || "nova");
       setModel(data.model || "tts-1");
       setOutputFormat(data.output_format || "mp3");
@@ -42,17 +51,30 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
     }
   }, [isOpen, data]);
 
+  const handleProviderChange = (id: string) => {
+    setAudioProviderId(id);
+    const defaults = getDefaultsForProvider(id);
+    if (defaults) {
+      setVoice(defaults.voice);
+      setModel(defaults.model);
+      setOutputFormat(defaults.outputFormat);
+    }
+  };
+
+  const buildNodeData = (): TTSNodeData => ({
+    ...data,
+    name,
+    text,
+    provider: providerType || "openai",
+    audioProviderId: audioProviderId || undefined,
+    voice,
+    model,
+    output_format: outputFormat,
+    speed,
+  });
+
   const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      text,
-      provider,
-      voice,
-      model,
-      output_format: outputFormat,
-      speed,
-    });
+    onUpdate(buildNodeData());
     onClose();
   };
 
@@ -70,16 +92,7 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        text,
-        provider,
-        voice,
-        model,
-        output_format: outputFormat,
-        speed,
-      }}
+      data={buildNodeData()}
     >
       <div className="space-y-4">
         <div>
@@ -106,13 +119,17 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="provider">Provider</Label>
-          <Select value={provider} onValueChange={setProvider}>
+          <Label htmlFor="audioProviderId">Audio Provider</Label>
+          <Select value={audioProviderId} onValueChange={handleProviderChange}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select provider" />
+              <SelectValue placeholder="Select audio provider" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="openai">OpenAI</SelectItem>
+              {audioProviders?.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name} ({p.provider_type})
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -124,12 +141,11 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
               <SelectValue placeholder="Select voice" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="alloy">Alloy</SelectItem>
-              <SelectItem value="echo">Echo</SelectItem>
-              <SelectItem value="fable">Fable</SelectItem>
-              <SelectItem value="onyx">Onyx</SelectItem>
-              <SelectItem value="nova">Nova</SelectItem>
-              <SelectItem value="shimmer">Shimmer</SelectItem>
+              {voices.map((v) => (
+                <SelectItem key={v.value} value={v.value}>
+                  {v.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -141,8 +157,11 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
               <SelectValue placeholder="Select model" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="tts-1">TTS-1 (Fast)</SelectItem>
-              <SelectItem value="tts-1-hd">TTS-1 HD (Quality)</SelectItem>
+              {models.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -154,37 +173,38 @@ export const TTSDialog: React.FC<TTSDialogProps> = (props) => {
               <SelectValue placeholder="Select format" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="mp3">MP3</SelectItem>
-              <SelectItem value="opus">Opus</SelectItem>
-              <SelectItem value="aac">AAC</SelectItem>
-              <SelectItem value="flac">FLAC</SelectItem>
-              <SelectItem value="wav">WAV</SelectItem>
-              <SelectItem value="pcm">PCM</SelectItem>
+              {formats.map((f) => (
+                <SelectItem key={f.value} value={f.value}>
+                  {f.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
 
-        <div>
-          <Label htmlFor="speed">Speed ({speed}x)</Label>
-          <p className="text-xs text-muted-foreground mb-1">
-            Speech speed (0.25 to 4.0)
-          </p>
-          <RichInput
-            id="speed"
-            type="number"
-            value={String(speed)}
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              if (!isNaN(val) && val >= 0.25 && val <= 4.0) {
-                setSpeed(val);
-              }
-            }}
-            min={0.25}
-            max={4.0}
-            step={0.25}
-            className="w-full"
-          />
-        </div>
+        {supportsSpeed && (
+          <div>
+            <Label htmlFor="speed">Speed ({speed}x)</Label>
+            <p className="text-xs text-muted-foreground mb-1">
+              Speech speed (0.25 to 4.0)
+            </p>
+            <RichInput
+              id="speed"
+              type="number"
+              value={String(speed)}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val) && val >= 0.25 && val <= 4.0) {
+                  setSpeed(val);
+                }
+              }}
+              min={0.25}
+              max={4.0}
+              step={0.25}
+              className="w-full"
+            />
+          </div>
+        )}
       </div>
     </NodeConfigPanel>
   );
